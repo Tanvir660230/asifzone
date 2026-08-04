@@ -1,0 +1,91 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { CheckCircle2 } from "lucide-react";
+import type { Order } from "@clothing-brand/shared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
+import { trackOrder } from "@/lib/api/orders";
+import { ApiError } from "@/lib/api-client";
+
+const SESSION_KEY = "lastOrderPhone";
+
+export default function OrderConfirmationPage() {
+  const { orderNumber } = useParams<{ orderNumber: string }>();
+  const [order, setOrder] = useState<Order | null>(null);
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function attempt(candidatePhone: string) {
+    setError(null);
+    try {
+      const { order: found } = await trackOrder(orderNumber, candidatePhone);
+      setOrder(found);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not find this order");
+    }
+  }
+
+  useEffect(() => {
+    const remembered = sessionStorage.getItem(SESSION_KEY);
+    if (remembered) {
+      attempt(remembered).finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderNumber]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await attempt(phone);
+  }
+
+  if (loading) return null;
+
+  if (!order) {
+    return (
+      <div className="mx-auto max-w-sm px-4 py-24 sm:px-6 lg:px-8">
+        <h1 className="mb-2 font-display text-2xl text-ink-900">Find your order</h1>
+        <p className="mb-6 text-sm text-ink-500">
+          Enter the phone number used for order <span className="text-ink-900">{orderNumber}</span>.
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="phone">Phone number</Label>
+            <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" />
+          </div>
+          {error && <p className="text-sm text-red-700">{error}</p>}
+          <Button type="submit" variant="brass" className="w-full">
+            View order
+          </Button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
+      <CheckCircle2 className="mx-auto mb-4 text-brass-500" size={48} />
+      <h1 className="font-display text-3xl text-ink-900">Thank you, {order.customerName.split(" ")[0]}!</h1>
+      <p className="mt-2 text-ink-500">
+        Your order <span className="text-ink-900">{order.orderNumber}</span> has been placed.
+      </p>
+
+      <div className="mt-8">
+        <OrderSummaryCard order={order} />
+      </div>
+
+      <Link href="/">
+        <Button variant="outline" className="mt-8">
+          Continue Shopping
+        </Button>
+      </Link>
+    </div>
+  );
+}

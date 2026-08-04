@@ -1,0 +1,46 @@
+import type { Request, Response } from "express";
+import { asyncHandler } from "../../lib/async-handler";
+import { processCategoryImage } from "../uploads/upload.service";
+import * as categoryService from "./category.service";
+
+export const list = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ categories: await categoryService.listCategories() });
+});
+
+export const tree = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ tree: await categoryService.getCategoryTree() });
+});
+
+export const getOne = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ category: await categoryService.getCategoryById(req.params.id!) });
+});
+
+export const getBySlug = asyncHandler(async (req: Request, res: Response) => {
+  const category = await categoryService.getCategoryBySlug(req.params.slug!);
+  const breadcrumb = await categoryService.getCategoryBreadcrumb(category);
+  res.json({ category, breadcrumb });
+});
+
+export const uploadImage = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    res.status(400).json({ error: "No image file provided" });
+    return;
+  }
+  const url = await processCategoryImage(req.file.buffer);
+  res.status(201).json({ url });
+});
+
+export const create = asyncHandler(async (req: Request, res: Response) => {
+  const category = await categoryService.createCategory(req.body);
+  res.status(201).json({ category });
+});
+
+export const update = asyncHandler(async (req: Request, res: Response) => {
+  const category = await categoryService.updateCategory(req.params.id!, req.body);
+  res.json({ category });
+});
+
+export const remove = asyncHandler(async (req: Request, res: Response) => {
+  await categoryService.deleteCategory(req.params.id!);
+  res.status(204).send();
+});

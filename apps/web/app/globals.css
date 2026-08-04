@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-cream-100 text-ink-900 antialiased;
+}
+
+@layer base {
+  /* Sitewide keyboard-focus ring — every interactive element gets a visible, on-brand outline
+     instead of relying on (or suppressing) the browser default. */
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-brass-400;
+  }
+}

@@ -1,0 +1,127 @@
+import type { AddFlashSaleItemInput, CreateFlashSaleInput, UpdateFlashSaleInput } from "@clothing-brand/shared";
+import { prisma } from "../../config/prisma";
+import { cacheDelByPrefix } from "../../config/redis";
+import { AppError } from "../../lib/app-error";
+import { computeFlashPrice } from "./flash-sale-pricing";
+
+const include = {
+  items: { include: { product: { include: { images: { orderBy: { sortOrder: "asc" as const }, take: 1 } } } } },
+};
+
+const fullProductInclude = {
+  items: {
+    include: {
+      product: {
+        include: { category: true, variants: true, images: { orderBy: { sortOrder: "asc" as const } } },
+      },
+    },
+  },
+};
+
+async function invalidateProductCache() {
+  await cacheDelByPrefix("products:");
+}
+
+export async function listFlashSales() {
+  return prisma.flashSale.findMany({ orderBy: { startsAt: "desc" }, include });
+}
+
+/** Public homepage feed: the currently-running sale ending soonest (there's usually only one at a time), with each item's product enriched with `activeFlashSale` so it can render through the normal ProductCard. */
+export async function getActiveFlashSaleForHomepage() {
+  const now = new Date();
+  const flashSale = await prisma.flashSale.findFirst({
+    where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
+    orderBy: { endsAt: "asc" },
+    include: fullProductInclude,
+  });
+  if (!flashSale) return null;
+
+  return {
+    ...flashSale,
+    items: flashSale.items.map((item) => ({
+      ...item,
+      product: {
+        ...item.product,
+        activeFlashSale: {
+          flashSaleId: flashSale.id,
+          flashSaleName: flashSale.name,
+          endsAt: flashSale.endsAt,
+          discountType: item.discountType,
+          discountValue: Number(item.discountValue),
+          flashPrice: computeFlashPrice(Number(item.product.basePrice), {
+            discountType: item.discountType,
+            discountValue: Number(item.discountValue),
+          }),
+        },
+      },
+    })),
+  };
+}
+
+export async function getFlashSaleById(id: string) {
+  const flashSale = await prisma.flashSale.findUnique({ where: { id }, include });
+  if (!flashSale) throw AppError.notFound("Flash sale not found");
+  return flashSale;
+}
+
+export async function createFlashSale(input: CreateFlashSaleInput) {
+  const flashSale = await prisma.flashSale.create({ data: input, include });
+  return flashSale;
+}
+
+export async function updateFlashSale(id: string, input: UpdateFlashSaleInput) {
+  await getFlashSaleById(id);
+  const flashSale = await prisma.flashSale.update({ where: { id }, data: input, include });
+  await invalidateProductCache();
+  return flashSale;
+}
+
+export async function deleteFlashSale(id: string) {
+  await getFlashSaleById(id);
+  await prisma.flashSale.delete({ where: { id } });
+  await invalidateProductCache();
+}
+
+export async function addFlashSaleItem(flashSaleId: string, input: AddFlashSaleItemInput) {
+  await getFlashSaleById(flashSaleId);
+
+  const product = await prisma.product.findUnique({ where: { id: input.productId } });
+  if (!product) throw AppError.badRequest("Product does not exist");
+
+  const existing = await prisma.flashSaleItem.findUnique({
+    where: { flashSaleId_productId: { flashSaleId, productId: input.productId } },
+  });
+  if (existing) throw AppError.conflict("This product is already in the flash sale");
+
+  await prisma.flashSaleItem.create({ data: { ...input, flashSaleId } });
+  await invalidateProductCache();
+  return getFlashSaleById(flashSaleId);
+}
+
+export async function removeFlashSaleItem(flashSaleId: string, itemId: string) {
+  const item = await prisma.flashSaleItem.findUnique({ where: { id: itemId } });
+  if (!item || item.flashSaleId !== flashSaleId) throw AppError.notFound("Flash sale item not found");
+  await prisma.flashSaleItem.delete({ where: { id: itemId } });
+  await invalidateProductCache();
+  return getFlashSaleById(flashSaleId);
+}
+
+/** Flips FlashSale.isActive to match the current time window — called by the cron job every minute. Returns how many rows changed, purely for logging. */
+export async function syncFlashSaleActivation(): Promise<number> {
+  const now = new Date();
+
+  const [activated, deactivated] = await Promise.all([
+    prisma.flashSale.updateMany({
+      where: { isActive: false, startsAt: { lte: now }, endsAt: { gte: now } },
+      data: { isActive: true },
+    }),
+    prisma.flashSale.updateMany({
+      where: { isActive: true, endsAt: { lt: now } },
+      data: { isActive: false },
+    }),
+  ]);
+
+  const changed = activated.count + deactivated.count;
+  if (changed > 0) await invalidateProductCache();
+  return changed;
+}

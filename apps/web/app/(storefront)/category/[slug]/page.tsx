@@ -1,0 +1,66 @@
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import type { ProductSort } from "@clothing-brand/shared";
+import { Breadcrumb, categoryBreadcrumbTrail } from "@/components/storefront/breadcrumb";
+import { ProductGrid } from "@/components/storefront/product-grid";
+import { SortSelect } from "@/components/storefront/sort-select";
+import { Pagination } from "@/components/storefront/pagination";
+import { FacetFilters } from "@/components/storefront/facet-filters";
+import { getCategoryBySlug, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
+
+const PAGE_SIZE = 12;
+
+interface Props {
+  params: { slug: string };
+  searchParams: { sort?: string; page?: string; sizes?: string; colors?: string; minPrice?: string; maxPrice?: string };
+}
+
+async function loadCategory(slug: string) {
+  try {
+    return await getCategoryBySlug(slug);
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const data = await loadCategory(params.slug);
+  return { title: data?.category.name ?? "Category" };
+}
+
+export default async function CategoryPage({ params, searchParams }: Props) {
+  const data = await loadCategory(params.slug);
+  if (!data) notFound();
+
+  const { category, breadcrumb } = data;
+  const page = Number(searchParams.page) || 1;
+  const sort = (searchParams.sort as ProductSort) || "newest";
+  const sizes = searchParams.sizes?.split(",").filter(Boolean);
+  const colors = searchParams.colors?.split(",").filter(Boolean);
+  const minPrice = searchParams.minPrice ? Number(searchParams.minPrice) : undefined;
+  const maxPrice = searchParams.maxPrice ? Number(searchParams.maxPrice) : undefined;
+
+  const [result, facets] = await Promise.all([
+    listStorefrontProducts({ category: params.slug, sort, page, pageSize: PAGE_SIZE, sizes, colors, minPrice, maxPrice }),
+    getStorefrontFacets({ category: params.slug }),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <Breadcrumb trail={categoryBreadcrumbTrail(breadcrumb, category)} />
+      <div className="mb-8 mt-4 flex items-end justify-between">
+        <h1 className="font-display text-3xl text-ink-900">{category.name}</h1>
+        <SortSelect />
+      </div>
+
+      <div className="flex gap-10">
+        <FacetFilters facets={facets} />
+        <div className="flex-1">
+          <ProductGrid products={result.items} />
+          <Pagination page={page} totalPages={totalPages} />
+        </div>
+      </div>
+    </div>
+  );
+}
