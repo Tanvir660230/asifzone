@@ -1,4 +1,11 @@
-import type { Customer, CustomerLoginInput, CustomerRegisterInput, UpdateCustomerInput } from "@clothing-brand/shared";
+import type {
+  Customer,
+  CustomerLoginInput,
+  CustomerRegisterInput,
+  UpdateCustomerInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
+} from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 
 export function registerCustomer(input: CustomerRegisterInput) {
@@ -19,4 +26,12 @@ export function getCurrentCustomer() {
 
 export function updateCustomerProfile(input: UpdateCustomerInput) {
   return apiFetch<{ customer: Customer }>("/api/customers/me", { method: "PATCH", body: input });
+}
+
+export function requestPasswordReset(input: ForgotPasswordInput) {
+  return apiFetch<{ message: string }>("/api/customers/forgot-password", { method: "POST", body: input });
+}
+
+export function resetPassword(input: ResetPasswordInput) {
+  return apiFetch<{ message: string }>("/api/customers/reset-password", { method: "POST", body: input });
 }

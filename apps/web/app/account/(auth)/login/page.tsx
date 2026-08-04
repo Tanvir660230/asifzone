@@ -54,7 +54,12 @@ function LoginForm() {
         </div>
 
         <div>
-          <Label htmlFor="password">Password</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link href="/account/forgot-password" className="text-xs text-brass-600 underline hover:text-brass-500">
+              Forgot password?
+            </Link>
+          </div>
           <Input id="password" type="password" autoComplete="current-password" {...register("password")} />
           {errors.password && <p className="mt-1 text-xs text-danger-600">{errors.password.message}</p>}
         </div>

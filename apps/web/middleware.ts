@@ -22,7 +22,11 @@ export function middleware(req: NextRequest) {
   }
 
   if (pathname.startsWith("/account")) {
-    const isAuthPage = pathname === "/account/login" || pathname === "/account/register";
+    const isAuthPage =
+      pathname === "/account/login" ||
+      pathname === "/account/register" ||
+      pathname === "/account/forgot-password" ||
+      pathname === "/account/reset-password";
     const hasSession = req.cookies.has("customer_access_token");
 
     if (!isAuthPage && !hasSession) {

@@ -72,3 +72,23 @@ export const listOrders = asyncHandler(async (req: Request, res: Response) => {
   const result = await customerService.listCustomerOrders(req.customer!.customerId, req.query as never);
   res.json(result);
 });
+
+export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.requestPasswordReset(req.body.email);
+  res.json({ message: "If an account exists for that email, a reset link has been sent." });
+});
+
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.resetPassword(req.body.token, req.body.password);
+  res.json({ message: "Password updated, please sign in." });
+});
+
+// --- admin ---
+
+export const listCustomersAdmin = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await customerService.listCustomersAdmin(req.query as never));
+});
+
+export const getCustomerDetailAdmin = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ customer: await customerService.getCustomerDetailAdmin(req.params.id!) });
+});

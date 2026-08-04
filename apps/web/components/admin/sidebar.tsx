@@ -10,6 +10,7 @@ import {
   Zap,
   Tag,
   Image as ImageIcon,
+  Users,
   LogOut,
   X,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const NAV_SECTIONS = [
     label: "Sales",
     items: [
       { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+      { href: "/admin/customers", label: "Customers", icon: Users },
       { href: "/admin/flash-sales", label: "Flash Sales", icon: Zap },
       { href: "/admin/coupons", label: "Coupons", icon: Tag },
     ],

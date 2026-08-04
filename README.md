@@ -2,7 +2,13 @@
 
 Monorepo: `apps/web` (Next.js storefront + admin), `apps/api` (Express backend), `packages/*` (shared code). See the full architecture/roadmap at `C:\Users\tanvi\.claude\plans\ami-ekta-clothing-brand-logical-cloud.md`.
 
-**Status**: Phases 1–5 complete — admin catalog management, storefront, cart/checkout/payments, flash sales/coupons/banners, and analytics/SEO/security hardening are all implemented. Guest checkout only (no customer accounts yet).
+**Status**: Phases 1–5 complete — admin catalog management, storefront, cart/checkout/payments, flash sales/coupons/banners, and analytics/SEO/security hardening are all implemented. Customer accounts (login, order history, saved addresses, wishlist, password reset) are also implemented, plus an admin customer-management view, an API test suite (`pnpm --filter api test`), a Playwright end-to-end suite (`pnpm --filter web test:e2e`), and a GitHub Actions CI workflow (`.github/workflows/ci.yml`, runs once this repo has a GitHub remote). Cart stays guest/client-side by design — there's no server-side cart to merge on login.
+
+**Not yet set up (all blocked on an external account/access this repo can't create for you):**
+- **Production deployment** — no VPS/domain configured yet. Steps are below once you have Hostinger + Cloudflare access.
+- **Online payments** — no SSLCommerz store ID/password configured. COD works end-to-end regardless; add real credentials to `apps/api/.env` (`SSLCOMMERZ_STORE_ID`/`SSLCOMMERZ_STORE_PASSWORD`) once you have a sandbox or live merchant account.
+- **Transactional email** — no provider configured, so password-reset emails currently only write to `apps/api/.devmail/*.html` and the server console instead of actually sending (see `apps/api/src/lib/mailer.ts`). Once you have a Resend/SendGrid/SES API key, replace the body of `sendMail()` with a real provider call — every caller stays unchanged.
+- **Nightly backups** — `docker/backup.sh` exists but needs to be added to the VPS's crontab after deployment (see below); it can't run until there's a VPS.
 
 ## Prerequisites
 
@@ -54,7 +60,13 @@ docker compose -f docker/docker-compose.yml exec api pnpm db:seed
 
 ## Admin panel feature map
 
-Categories · Products (variants, images, flash-sale pricing shown automatically) · Orders (status workflow, COD/online payment status) · Flash Sales (scheduled campaigns, auto-activate/deactivate via cron) · Coupons (%/fixed, min order, max discount cap, usage limits, expiry) · Banners (homepage hero/promo content) · Dashboard (revenue trend, order status breakdown, top products, low-stock alerts).
+Categories · Products (variants, images, flash-sale pricing shown automatically) · Orders (status workflow, COD/online payment status) · Customers (search, view profile/addresses/orders/wishlist — read-only) · Flash Sales (scheduled campaigns, auto-activate/deactivate via cron) · Coupons (%/fixed, min order, max discount cap, usage limits, expiry) · Banners (homepage hero/promo content) · Dashboard (revenue trend, order status breakdown, top products, low-stock alerts).
+
+## Running automated tests
+
+- **API unit/integration tests** (Vitest + Supertest, run against your local dev database): `pnpm --filter api test`
+- **Browser end-to-end tests** (Playwright, desktop + mobile, requires the API and web dev servers already running via `pnpm dev`): `pnpm --filter web test:e2e`
+- Both run automatically in CI (`.github/workflows/ci.yml`) against a throwaway Postgres service once this repo is pushed to GitHub.
 
 ## Verifying end-to-end
 
@@ -64,4 +76,5 @@ Categories · Products (variants, images, flash-sale pricing shown automatically
 4. **Flash sale**: create one scheduled for "now" in admin, add a product to it, confirm the storefront shows the discounted price and countdown within a minute (cron) or immediately after an API restart.
 5. **Coupon**: create one in admin, apply it at checkout, confirm the discount matches.
 6. **Order tracking**: use the footer "Track Order" link with the order number + phone from step 3.
-7. Confirm data persists: `pnpm --filter api db:studio` opens Prisma Studio against the same database.
+7. **Customer account**: register at `/account/register`, add a saved address, add a product to your wishlist from its product page, use "Forgot password?" on `/account/login` (in dev mode the reset link is written to `apps/api/.devmail/*.html` and logged to the API console instead of emailed), reset your password, and confirm the new password logs in. Then confirm the account shows up under admin → Customers.
+8. Confirm data persists: `pnpm --filter api db:studio` opens Prisma Studio against the same database.

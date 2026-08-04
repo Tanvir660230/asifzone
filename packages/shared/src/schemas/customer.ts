@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { nullableString } from "./common";
+import { nullableString, paginationQuerySchema } from "./common";
 import { BD_DIVISIONS } from "./order";
 
 export const customerRegisterSchema = z.object({
@@ -33,8 +33,24 @@ export const addressSchema = z.object({
 export const createAddressSchema = addressSchema;
 export const updateAddressSchema = addressSchema.partial();
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
+});
+
+export const customerListQuerySchema = paginationQuerySchema.extend({
+  search: z.string().min(1).max(200).optional(),
+});
+
 export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
 export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type CreateAddressInput = z.infer<typeof createAddressSchema>;
 export type UpdateAddressInput = z.infer<typeof updateAddressSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;

@@ -175,6 +175,16 @@ export interface WishlistItem {
   createdAt: string;
 }
 
+export interface AdminCustomerListItem extends Customer {
+  _count: { orders: number; wishlistItems: number };
+}
+
+export interface AdminCustomerDetail extends Customer {
+  addresses: Address[];
+  orders: Order[];
+  wishlistItems: (Omit<WishlistItem, "product"> & { product: Pick<Product, "id" | "name" | "slug"> })[];
+}
+
 export interface Banner {
   id: string;
   placement: "HERO_CAROUSEL" | "PROMO_STRIP";

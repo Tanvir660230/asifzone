@@ -139,16 +139,29 @@ model ProductImage {
 }
 
 model Customer {
-  id            String         @id @default(cuid())
-  name          String
-  email         String         @unique
-  phone         String?
-  passwordHash  String?
-  addresses     Address[]
-  orders        Order[]
-  wishlistItems WishlistItem[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                  String               @id @default(cuid())
+  name                String
+  email               String               @unique
+  phone               String?
+  passwordHash        String?
+  addresses           Address[]
+  orders              Order[]
+  wishlistItems       WishlistItem[]
+  passwordResetTokens PasswordResetToken[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([customerId])
 }
 
 model Address {

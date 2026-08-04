@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import type {
   CustomerRegisterInput,
   CustomerLoginInput,
@@ -6,10 +7,19 @@ import type {
   CreateAddressInput,
   UpdateAddressInput,
   PaginationQuery,
+  CustomerListQuery,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { signCustomerAccessToken, signCustomerRefreshToken, verifyCustomerRefreshToken } from "../../lib/customer-jwt";
+import { sendMail } from "../../lib/mailer";
+import { env } from "../../config/env";
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
+
+function hashToken(token: string) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 const publicSelect = { id: true, name: true, email: true, phone: true, createdAt: true, updatedAt: true } as const;
 
@@ -112,6 +122,84 @@ export async function updateAddress(customerId: string, addressId: string, input
 export async function deleteAddress(customerId: string, addressId: string) {
   await getOwnedAddress(customerId, addressId);
   await prisma.address.delete({ where: { id: addressId } });
+}
+
+export async function requestPasswordReset(email: string) {
+  const customer = await prisma.customer.findUnique({ where: { email: normalizeEmail(email) } });
+  // Always return successfully regardless of whether the email exists, so this endpoint
+  // can't be used to enumerate registered accounts.
+  if (!customer) return;
+
+  const token = crypto.randomBytes(32).toString("hex");
+  await prisma.passwordResetToken.create({
+    data: {
+      customerId: customer.id,
+      tokenHash: hashToken(token),
+      expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+    },
+  });
+
+  const resetUrl = `${env.webOrigin}/account/reset-password?token=${token}`;
+  await sendMail({
+    to: customer.email,
+    subject: "Reset your password",
+    html: `<p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
+  });
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+  const tokenHash = hashToken(token);
+  const resetToken = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+
+  if (!resetToken || resetToken.usedAt || resetToken.expiresAt < new Date()) {
+    throw AppError.badRequest("This reset link is invalid or has expired");
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await prisma.$transaction([
+    prisma.customer.update({ where: { id: resetToken.customerId }, data: { passwordHash } }),
+    prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } }),
+  ]);
+}
+
+// --- admin ---
+
+export async function listCustomersAdmin(query: CustomerListQuery) {
+  const where = query.search
+    ? {
+        OR: [
+          { name: { contains: query.search, mode: "insensitive" as const } },
+          { email: { contains: query.search, mode: "insensitive" as const } },
+          { phone: { contains: query.search } },
+        ],
+      }
+    : {};
+
+  const [items, total] = await Promise.all([
+    prisma.customer.findMany({
+      where,
+      select: { ...publicSelect, _count: { select: { orders: true, wishlistItems: true } } },
+      orderBy: { createdAt: "desc" },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.customer.count({ where }),
+  ]);
+  return { items, total, page: query.page, pageSize: query.pageSize };
+}
+
+export async function getCustomerDetailAdmin(customerId: string) {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: {
+      ...publicSelect,
+      addresses: { orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] },
+      orders: { orderBy: { createdAt: "desc" }, take: 20, include: { items: true } },
+      wishlistItems: { include: { product: { select: { id: true, name: true, slug: true } } } },
+    },
+  });
+  if (!customer) throw AppError.notFound("Customer not found");
+  return customer;
 }
 
 export async function listCustomerOrders(customerId: string, query: PaginationQuery) {
