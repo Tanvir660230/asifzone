@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { checkoutSchema, orderListQuerySchema, updateOrderStatusSchema, trackOrderSchema } from "@clothing-brand/shared";
+import {
+  checkoutSchema,
+  orderListQuerySchema,
+  updateOrderStatusSchema,
+  updateOrderDetailsSchema,
+  trackOrderSchema,
+} from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin } from "../../middlewares/require-admin";
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
@@ -14,3 +20,4 @@ orderRouter.post("/track", checkoutRateLimit, validate(trackOrderSchema), orderC
 orderRouter.get("/", requireAdmin, validate(orderListQuerySchema, "query"), orderController.list);
 orderRouter.get("/:id", requireAdmin, orderController.getOne);
 orderRouter.patch("/:id/status", requireAdmin, validate(updateOrderStatusSchema), orderController.updateStatus);
+orderRouter.patch("/:id/details", requireAdmin, validate(updateOrderDetailsSchema), orderController.updateDetails);

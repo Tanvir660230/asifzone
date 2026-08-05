@@ -58,20 +58,24 @@ export function Modal({ open, onClose, title, children, widthClassName = "max-w-
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/50 p-4 pt-16">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/40 p-4 pt-16 backdrop-blur-sm animate-fade-in">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
         tabIndex={-1}
-        className={`w-full ${widthClassName} rounded-lg bg-cream-50 shadow-xl`}
+        className={`w-full ${widthClassName} animate-modal-in rounded-2xl bg-cream-50 shadow-floatLg`}
       >
         <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
           <h2 id="modal-title" className="font-display text-lg text-ink-900">
             {title}
           </h2>
-          <button onClick={onClose} className="text-ink-400 hover:text-ink-900" aria-label="Close">
+          <button
+            onClick={onClose}
+            className="rounded-full p-1 text-ink-400 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900"
+            aria-label="Close"
+          >
             <X size={20} />
           </button>
         </div>

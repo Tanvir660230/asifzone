@@ -88,6 +88,19 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
   return ids;
 }
 
+/** Other categories under the same parent (or other top-level categories, if this one has no parent) —
+ * used to pair complementary product types for "Complete Your Look" (e.g. Shirts ↔ Trousers). */
+export async function getSiblingCategoryIds(categoryId: string): Promise<string[]> {
+  const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { parentId: true } });
+  if (!category) return [];
+
+  const siblings = await prisma.category.findMany({
+    where: { parentId: category.parentId, id: { not: categoryId } },
+    select: { id: true },
+  });
+  return siblings.map((s) => s.id);
+}
+
 export async function createCategory(input: CreateCategoryInput) {
   if (input.parentId) {
     const parent = await prisma.category.findUnique({ where: { id: input.parentId } });

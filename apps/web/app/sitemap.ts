@@ -1,6 +1,10 @@
 import type { MetadataRoute } from "next";
 import { getCategoryTree, listStorefrontProducts } from "@/lib/api/storefront";
 
+// Metadata route handlers don't inherit the root layout's `dynamic` export — needs its own, for the
+// same reason (requires a live API at build time otherwise, which isn't available during a Docker build).
+export const dynamic = "force-dynamic";
+
 function flattenCategories(nodes: Awaited<ReturnType<typeof getCategoryTree>>["tree"]): { slug: string }[] {
   return nodes.flatMap((node) => [{ slug: node.slug }, ...flattenCategories(node.children)]);
 }

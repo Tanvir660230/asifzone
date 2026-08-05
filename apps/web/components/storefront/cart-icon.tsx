@@ -12,10 +12,14 @@ export function CartIcon() {
   useEffect(() => setMounted(true), []);
 
   return (
-    <Link href="/cart" aria-label="Cart" className="relative text-ink-700 hover:text-brass-500">
+    <Link
+      href="/cart"
+      aria-label="Cart"
+      className="relative text-ink-700 transition-all duration-200 ease-smooth hover:scale-110 hover:text-brass-500"
+    >
       <ShoppingBag size={20} />
       {mounted && count > 0 && (
-        <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900">
+        <span className="absolute -right-2 -top-2 flex h-4 min-w-4 animate-modal-in items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900 shadow-sm">
           {count}
         </span>
       )}

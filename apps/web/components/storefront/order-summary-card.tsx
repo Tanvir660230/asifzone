@@ -5,9 +5,11 @@ const STATUS_LABELS: Record<Order["status"], string> = {
   PENDING: "Pending confirmation",
   CONFIRMED: "Confirmed",
   PROCESSING: "Processing",
+  PACKED: "Packed",
   SHIPPED: "Shipped",
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled",
+  RETURNED: "Returned",
   REFUNDED: "Refunded",
 };
 

@@ -12,6 +12,15 @@ async function findActiveCoupon(code: string) {
   return prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
 }
 
+/** Pure discount math, shared by `evaluateCoupon` (a known code) and `findBestCoupon` (scanning
+ * every eligible code) — does not check expiry/usage/min-order, only computes the amount. */
+function computeCouponDiscount(coupon: { type: string; value: unknown; maxDiscountAmount: unknown }, subtotal: number) {
+  let discount =
+    coupon.type === "PERCENTAGE" ? Math.round((subtotal * Number(coupon.value)) / 100) : Number(coupon.value);
+  if (coupon.maxDiscountAmount) discount = Math.min(discount, Number(coupon.maxDiscountAmount));
+  return Math.min(discount, subtotal);
+}
+
 /** Validates a coupon against a cart subtotal and returns the discount amount — throws with a customer-facing message if it can't be applied. */
 export async function evaluateCoupon(code: string, subtotal: number): Promise<CouponEvaluation> {
   const coupon = await findActiveCoupon(code);
@@ -24,16 +33,45 @@ export async function evaluateCoupon(code: string, subtotal: number): Promise<Co
     throw AppError.badRequest(`Minimum order amount for this coupon is ৳${coupon.minOrderAmount}`);
   }
 
-  let discount =
-    coupon.type === "PERCENTAGE" ? Math.round((subtotal * Number(coupon.value)) / 100) : Number(coupon.value);
-  if (coupon.maxDiscountAmount) discount = Math.min(discount, Number(coupon.maxDiscountAmount));
+  return { coupon, discount: computeCouponDiscount(coupon, subtotal) };
+}
 
-  return { coupon, discount: Math.min(discount, subtotal) };
+/** The single best coupon a shopper already qualifies for at this subtotal, with no code needed —
+ * powers the checkout page's auto-suggestion banner. Same shape as `evaluateCoupon`'s result. */
+export async function findBestCoupon(subtotal: number) {
+  const now = new Date();
+  const candidates = await prisma.coupon.findMany({
+    where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+  });
+
+  let best: { coupon: (typeof candidates)[number]; discount: number } | null = null;
+  for (const coupon of candidates) {
+    if (coupon.expiresAt && coupon.expiresAt < now) continue;
+    if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) continue;
+    if (coupon.minOrderAmount && subtotal < Number(coupon.minOrderAmount)) continue;
+
+    const discount = computeCouponDiscount(coupon, subtotal);
+    if (discount <= 0) continue;
+    if (!best || discount > best.discount) best = { coupon, discount };
+  }
+
+  return best;
 }
 
 /** Called inside the order-creation transaction — atomically increments usage so concurrent checkouts can't both slip past a usage limit. */
 export async function incrementCouponUsage(tx: Prisma.TransactionClient, couponId: string) {
   await tx.coupon.update({ where: { id: couponId }, data: { usedCount: { increment: 1 } } });
+}
+
+/** Every currently-usable coupon, for a customer-facing "available coupons" listing — same
+ * eligibility checks as `findBestCoupon` minus the subtotal filter (there's no cart to check against here). */
+export async function listActiveCoupons() {
+  const now = new Date();
+  const candidates = await prisma.coupon.findMany({
+    where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    orderBy: { createdAt: "desc" },
+  });
+  return candidates.filter((c) => c.usageLimit === null || c.usedCount < c.usageLimit);
 }
 
 // --- admin CRUD ---

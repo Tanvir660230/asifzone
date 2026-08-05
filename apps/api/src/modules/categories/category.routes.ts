@@ -13,6 +13,12 @@ categoryRouter.get("/slug/:slug", categoryController.getBySlug);
 categoryRouter.get("/:id", categoryController.getOne);
 
 categoryRouter.post("/upload-image", requireAdmin, imageUpload.single("image"), categoryController.uploadImage);
+categoryRouter.post(
+  "/upload-banner",
+  requireAdmin,
+  imageUpload.single("image"),
+  categoryController.uploadBannerImage,
+);
 categoryRouter.post("/", requireAdmin, validate(createCategorySchema), categoryController.create);
 categoryRouter.patch("/:id", requireAdmin, validate(updateCategorySchema), categoryController.update);
 categoryRouter.delete("/:id", requireAdmin, categoryController.remove);

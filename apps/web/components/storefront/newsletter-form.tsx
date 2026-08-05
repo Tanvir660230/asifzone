@@ -32,17 +32,17 @@ export function NewsletterForm({ variant = "dark" }: { variant?: "dark" | "light
 
   return (
     <div className="max-w-sm">
-      <form onSubmit={onSubmit} className="flex gap-2">
+      <form onSubmit={onSubmit} className="flex min-w-0 gap-2">
         <input
           type="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Your email address"
+          placeholder="Email address"
           className={cn(
-            "h-10 flex-1 rounded border bg-transparent px-3 text-sm transition-colors placeholder:opacity-60",
+            "h-10 min-w-0 flex-1 rounded-full border bg-transparent px-4 text-sm transition-colors duration-200 ease-smooth placeholder:opacity-60",
             variant === "dark"
-              ? "border-ink-700 text-cream-50 focus:border-brass-400"
+              ? "border-cream-50/20 text-cream-50 focus:border-brass-400"
               : "border-ink-300 text-ink-900 focus:border-brass-400",
           )}
         />
@@ -50,7 +50,7 @@ export function NewsletterForm({ variant = "dark" }: { variant?: "dark" | "light
           type="submit"
           disabled={status === "loading"}
           className={cn(
-            "h-10 shrink-0 rounded px-4 text-xs uppercase tracking-wide transition-colors disabled:opacity-50",
+            "glossy h-10 shrink-0 rounded-full px-4 text-xs uppercase tracking-wide shadow-sm transition-all duration-200 ease-smooth active:scale-95 disabled:opacity-50 disabled:active:scale-100",
             variant === "dark" ? "bg-brass-400 text-ink-900 hover:bg-brass-500" : "bg-ink-900 text-cream-50 hover:bg-ink-800",
           )}
         >

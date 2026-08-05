@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Menu, X, ChevronDown, User, PackageSearch } from "lucide-react";
+import { Menu, X, ChevronDown, User, PackageSearch, Search } from "lucide-react";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
+import { useSearchOverlayStore } from "@/store/search-overlay";
 
 export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const openSearch = useSearchOverlayStore((s) => s.open);
 
   return (
     <div className="lg:hidden">
@@ -21,15 +23,28 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
           // Rendered into document.body rather than in place: the header's `backdrop-blur`
           // creates a containing block for `position: fixed` descendants, which would
           // otherwise clip this overlay to the header's own height instead of the viewport.
-          <div className="fixed inset-0 z-50 bg-cream-50">
-            <div className="flex h-14 items-center justify-between border-b border-ink-100 px-4">
+          <div className="fixed inset-0 z-50 animate-fade-in bg-cream-50">
+            <div className="glass flex h-14 items-center justify-between border-b border-ink-100/70 px-4">
               <span className="font-display text-lg">Menu</span>
-              <button onClick={() => setOpen(false)} aria-label="Close menu">
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close menu"
+                className="rounded-full p-1 transition-colors duration-150 ease-smooth hover:bg-ink-100"
+              >
                 <X size={22} />
               </button>
             </div>
             <nav className="overflow-y-auto px-4 py-4">
               <div className="mb-2 flex gap-4 border-b border-ink-100 pb-4">
+                <button
+                  onClick={() => {
+                    setOpen(false);
+                    openSearch();
+                  }}
+                  className="flex items-center gap-2 text-sm text-ink-700"
+                >
+                  <Search size={16} /> Search
+                </button>
                 <Link
                   href="/account"
                   onClick={() => setOpen(false)}
@@ -62,7 +77,7 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
                       >
                         <ChevronDown
                           size={18}
-                          className={`transition-transform ${expandedId === cat.id ? "rotate-180" : ""}`}
+                          className={`transition-transform duration-200 ease-smooth ${expandedId === cat.id ? "rotate-180" : ""}`}
                         />
                       </button>
                     )}

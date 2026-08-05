@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { siteConfig } from "@/lib/site-config";
 
-export function BrandStory() {
+const FALLBACK_TAGLINE = "Considered clothing, made to last";
+
+export function BrandStory({ storeName, tagline }: { storeName: string; tagline?: string | null }) {
   return (
-    <section className="bg-ink-900 py-24 text-center text-cream-50">
+    <section className="bg-gradient-to-b from-ink-800 via-ink-900 to-ink-950 py-24 text-center text-cream-50">
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -15,9 +16,9 @@ export function BrandStory() {
         className="mx-auto max-w-xl px-4"
       >
         <p className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300">Our Philosophy</p>
-        <h2 className="font-display text-3xl leading-snug sm:text-4xl">{siteConfig.tagline}</h2>
+        <h2 className="font-display text-3xl leading-snug sm:text-4xl">{tagline ?? FALLBACK_TAGLINE}</h2>
         <p className="mt-6 text-sm leading-relaxed text-ink-300">
-          Every {siteConfig.name} piece is chosen for fabric, fit, and finish first — fewer, better garments built
+          Every {storeName} piece is chosen for fabric, fit, and finish first — fewer, better garments built
           to outlast a season.
         </p>
         <Link

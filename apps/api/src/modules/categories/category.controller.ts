@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
-import { processCategoryImage } from "../uploads/upload.service";
+import { processCategoryImage, processCategoryBannerImage } from "../uploads/upload.service";
 import * as categoryService from "./category.service";
 
 export const list = asyncHandler(async (_req: Request, res: Response) => {
@@ -27,6 +27,15 @@ export const uploadImage = asyncHandler(async (req: Request, res: Response) => {
     return;
   }
   const url = await processCategoryImage(req.file.buffer);
+  res.status(201).json({ url });
+});
+
+export const uploadBannerImage = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    res.status(400).json({ error: "No image file provided" });
+    return;
+  }
+  const url = await processCategoryBannerImage(req.file.buffer);
   res.status(201).json({ url });
 });
 

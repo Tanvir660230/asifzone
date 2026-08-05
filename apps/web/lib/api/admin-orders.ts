@@ -1,4 +1,4 @@
-import type { Order, OrderStatus, PaginatedResult } from "@clothing-brand/shared";
+import type { Order, OrderStatus, PaginatedResult, UpdateOrderDetailsInput } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export interface AdminOrderListParams {
@@ -22,6 +22,10 @@ export function getOrder(id: string) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}`);
 }
 
-export function updateOrderStatus(id: string, status: OrderStatus) {
-  return apiFetch<{ order: Order }>(`/api/orders/${id}/status`, { method: "PATCH", body: { status } });
+export function updateOrderStatus(id: string, status: OrderStatus, note?: string) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/status`, { method: "PATCH", body: { status, note } });
+}
+
+export function updateOrderDetails(id: string, input: UpdateOrderDetailsInput) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/details`, { method: "PATCH", body: input });
 }

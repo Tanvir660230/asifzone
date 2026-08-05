@@ -19,3 +19,10 @@ export function listCustomers(params: AdminCustomerListParams = {}) {
 export function getCustomer(id: string) {
   return apiFetch<{ customer: AdminCustomerDetail }>(`/api/customers/admin/${id}`);
 }
+
+export function adjustPoints(id: string, points: number, reason?: string) {
+  return apiFetch<{ customer: AdminCustomerDetail }>(`/api/customers/admin/${id}/points`, {
+    method: "POST",
+    body: { points, reason },
+  });
+}

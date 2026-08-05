@@ -27,7 +27,9 @@ export default function AccountOrdersPage() {
         {data?.items.map((order) => (
           <div key={order.id}>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium text-ink-900">{order.orderNumber}</span>
+              <Link href={`/account/orders/${order.id}`} className="text-sm font-medium text-ink-900 hover:text-brass-600">
+                {order.orderNumber}
+              </Link>
               <span className="text-xs text-ink-400">{new Date(order.createdAt).toLocaleDateString()}</span>
             </div>
             <OrderSummaryCard order={order} />

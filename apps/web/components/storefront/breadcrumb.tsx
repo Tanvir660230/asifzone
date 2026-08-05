@@ -1,22 +1,33 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import type { Category } from "@clothing-brand/shared";
+import { getSiteUrl } from "@/lib/seo";
+import { buildBreadcrumbJsonLd } from "@/lib/structured-data";
 
 export function Breadcrumb({ trail }: { trail: Array<{ name: string; href?: string }> }) {
+  const jsonLd = buildBreadcrumbJsonLd(trail, getSiteUrl());
+
   return (
-    <nav className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-400">
-      <Link href="/" className="hover:text-ink-900">Home</Link>
-      {trail.map((item, i) => (
-        <span key={i} className="flex items-center gap-1.5">
-          <ChevronRight size={12} />
-          {item.href ? (
-            <Link href={item.href} className="hover:text-ink-900">{item.name}</Link>
-          ) : (
-            <span className="text-ink-700">{item.name}</span>
-          )}
-        </span>
-      ))}
-    </nav>
+    <>
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <nav className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-400">
+        <Link href="/" className="hover:text-ink-900">Home</Link>
+        {trail.map((item, i) => (
+          <span key={i} className="flex items-center gap-1.5">
+            <ChevronRight size={12} />
+            {item.href ? (
+              <Link href={item.href} className="hover:text-ink-900">{item.name}</Link>
+            ) : (
+              <span className="text-ink-700">{item.name}</span>
+            )}
+          </span>
+        ))}
+      </nav>
+    </>
   );
 }
 

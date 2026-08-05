@@ -44,10 +44,10 @@ export function Toaster() {
             key={t.id}
             initial={{ opacity: 0, y: 16, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
+            exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className={cn(
-              "pointer-events-auto flex items-start gap-3 rounded-lg border bg-cream-50 px-4 py-3 shadow-lg",
+              "glass pointer-events-auto flex items-start gap-3 rounded-xl border px-4 py-3 shadow-floatLg",
               t.variant === "success" ? "border-success-100" : "border-danger-100",
             )}
             role="status"

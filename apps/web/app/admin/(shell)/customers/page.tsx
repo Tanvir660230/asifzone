@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
+import { Pagination } from "@/components/admin/pagination";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 
 const PAGE_SIZE = 20;
@@ -28,9 +29,9 @@ export default function CustomersPage() {
     <div>
       <PageHeader title="Customers" description="Accounts registered on the storefront." />
 
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Search size={16} className="text-ink-400" />
+          <Search size={16} className="shrink-0 text-ink-400" />
           <Input
             placeholder="Search name, email, phone…"
             value={search}
@@ -38,7 +39,7 @@ export default function CustomersPage() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            className="w-64"
+            className="w-full sm:w-64"
           />
         </div>
         <PageSizeSelect
@@ -51,6 +52,7 @@ export default function CustomersPage() {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -72,7 +74,7 @@ export default function CustomersPage() {
               </tr>
             )}
             {data?.items.map((customer) => (
-              <tr key={customer.id} className="border-t border-ink-100 hover:bg-ink-50">
+              <tr key={customer.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
                 <td className="px-4 py-3">
                   <Link href={`/admin/customers/${customer.id}`} className="text-brass-600 hover:underline">
                     {customer.name}
@@ -87,21 +89,10 @@ export default function CustomersPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-end gap-2 text-sm text-ink-500">
-          <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="disabled:opacity-40">
-            Previous
-          </button>
-          <span>
-            Page {page} of {totalPages}
-          </span>
-          <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="disabled:opacity-40">
-            Next
-          </button>
-        </div>
-      )}
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   );
 }

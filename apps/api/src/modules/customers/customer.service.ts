@@ -14,6 +14,7 @@ import { AppError } from "../../lib/app-error";
 import { signCustomerAccessToken, signCustomerRefreshToken, verifyCustomerRefreshToken } from "../../lib/customer-jwt";
 import { sendMail } from "../../lib/mailer";
 import { env } from "../../config/env";
+import { getSettings } from "../settings/settings.service";
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 
@@ -21,7 +22,15 @@ function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-const publicSelect = { id: true, name: true, email: true, phone: true, createdAt: true, updatedAt: true } as const;
+const publicSelect = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  rewardPoints: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -58,7 +67,15 @@ export async function loginCustomer(input: CustomerLoginInput) {
   return {
     accessToken: signCustomerAccessToken(payload),
     refreshToken: signCustomerRefreshToken(payload),
-    customer: { id: customer.id, name: customer.name, email: customer.email, phone: customer.phone, createdAt: customer.createdAt, updatedAt: customer.updatedAt },
+    customer: {
+      id: customer.id,
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+      rewardPoints: customer.rewardPoints,
+      createdAt: customer.createdAt,
+      updatedAt: customer.updatedAt,
+    },
   };
 }
 
@@ -196,10 +213,51 @@ export async function getCustomerDetailAdmin(customerId: string) {
       addresses: { orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] },
       orders: { orderBy: { createdAt: "desc" }, take: 20, include: { items: true } },
       wishlistItems: { include: { product: { select: { id: true, name: true, slug: true } } } },
+      pointsLedger: { orderBy: { createdAt: "desc" }, take: 20 },
     },
   });
   if (!customer) throw AppError.notFound("Customer not found");
-  return customer;
+
+  const spendAggregate = await prisma.order.aggregate({
+    where: { customerId, status: { not: "CANCELLED" } },
+    _sum: { total: true },
+  });
+
+  return { ...customer, totalSpent: Number(spendAggregate._sum.total ?? 0) };
+}
+
+/** Awards points for a delivered order — idempotent per order, so re-marking DELIVERED (e.g. after an
+ * accidental status revert) never double-pays. No-ops while the store hasn't configured a reward rate. */
+export async function awardDeliveryPoints(customerId: string, orderId: string, orderTotal: number) {
+  const settings = await getSettings();
+  const rate = Number(settings.rewardPointsPerCurrency);
+  if (rate <= 0) return;
+
+  const already = await prisma.rewardPointsEntry.findFirst({ where: { orderId, reason: "order_delivered" } });
+  if (already) return;
+
+  const points = Math.floor(orderTotal * rate);
+  if (points <= 0) return;
+
+  await prisma.$transaction([
+    prisma.rewardPointsEntry.create({ data: { customerId, orderId, points, reason: "order_delivered" } }),
+    prisma.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } }),
+  ]);
+}
+
+export async function adjustRewardPoints(customerId: string, points: number, reason: string) {
+  if (points === 0) throw AppError.badRequest("Point adjustment cannot be zero");
+  const customer = await getCustomerById(customerId);
+  if (customer.rewardPoints + points < 0) {
+    throw AppError.badRequest(`Customer only has ${customer.rewardPoints} points`);
+  }
+
+  await prisma.$transaction([
+    prisma.rewardPointsEntry.create({ data: { customerId, points, reason: reason || "Manual adjustment" } }),
+    prisma.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } }),
+  ]);
+
+  return prisma.customer.findUnique({ where: { id: customerId }, select: publicSelect });
 }
 
 export async function listCustomerOrders(customerId: string, query: PaginationQuery) {
@@ -213,6 +271,20 @@ export async function listCustomerOrders(customerId: string, query: PaginationQu
       take: query.pageSize,
     }),
     prisma.order.count({ where }),
+  ]);
+  return { items, total, page: query.page, pageSize: query.pageSize };
+}
+
+export async function listMyPointsLedger(customerId: string, query: PaginationQuery) {
+  const where = { customerId };
+  const [items, total] = await Promise.all([
+    prisma.rewardPointsEntry.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+    prisma.rewardPointsEntry.count({ where }),
   ]);
   return { items, total, page: query.page, pageSize: query.pageSize };
 }

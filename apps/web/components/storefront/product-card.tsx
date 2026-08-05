@@ -31,6 +31,7 @@ export function ProductCard({ product }: { product: Product }) {
     if (!variant) return;
     addItem({
       variantId: variant.id,
+      productId: product.id,
       productSlug: product.slug,
       productName: product.name,
       sku: variant.sku,
@@ -46,7 +47,7 @@ export function ProductCard({ product }: { product: Product }) {
 
   return (
     <Link href={`/product/${product.slug}`} className="group block">
-      <div className="relative aspect-[3/4] overflow-hidden rounded bg-ink-100">
+      <div className="relative aspect-square overflow-hidden rounded-xl bg-ink-100 shadow-sm transition-shadow duration-300 ease-smooth group-hover:shadow-float">
         {primaryImage ? (
           <>
             <Image
@@ -55,8 +56,8 @@ export function ProductCard({ product }: { product: Product }) {
               fill
               sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
               className={cn(
-                "object-cover transition-opacity duration-500",
-                secondaryImage ? "group-hover:opacity-0" : "duration-500 group-hover:scale-105",
+                "object-cover transition-all duration-500 ease-smooth",
+                secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-105",
               )}
             />
             {secondaryImage && (
@@ -65,7 +66,7 @@ export function ProductCard({ product }: { product: Product }) {
                 alt={secondaryImage.altText ?? product.name}
                 fill
                 sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                className="object-cover opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+                className="object-cover opacity-0 transition-opacity duration-500 ease-smooth group-hover:opacity-100"
               />
             )}
           </>
@@ -87,7 +88,7 @@ export function ProductCard({ product }: { product: Product }) {
           <button
             onClick={handleQuickAdd}
             aria-label="Quick add to cart"
-            className="absolute bottom-3 right-3 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-cream-50 text-ink-900 opacity-0 shadow transition-all duration-300 hover:bg-brass-400 group-hover:translate-y-0 group-hover:opacity-100"
+            className="glass glossy absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-float transition-all duration-300 ease-smooth hover:scale-110 hover:bg-brass-400 active:scale-95 lg:translate-y-2 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
           >
             <ShoppingBag size={16} />
           </button>
@@ -120,7 +121,7 @@ export function ProductCard({ product }: { product: Product }) {
               <span
                 key={color}
                 title={color}
-                className="h-3.5 w-3.5 rounded-full border border-ink-200"
+                className="h-3.5 w-3.5 rounded-full border border-ink-200 transition-transform duration-150 ease-smooth hover:scale-125"
                 style={{ backgroundColor: hex ?? "#d4d4d4" }}
               />
             ))}

@@ -35,7 +35,7 @@ export function CategoryGrid({ categories }: { categories: CategoryTreeNode[] })
               {cat.imageUrl ? (
                 <Image
                   src={cat.imageUrl.startsWith("http") ? cat.imageUrl : `${env.apiUrl}${cat.imageUrl}`}
-                  alt={cat.name}
+                  alt={cat.imageAltText || cat.name}
                   fill
                   sizes="(min-width: 1024px) 25vw, 50vw"
                   className="object-cover transition-transform duration-500 group-hover:scale-105"

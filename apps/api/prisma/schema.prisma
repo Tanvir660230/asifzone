@@ -1,5 +1,9 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" for local dev (whatever the host is); the musl target is what the node:20-alpine
+  // Docker image actually runs on, and its Alpine base ships OpenSSL 3.x, not the 1.1 the
+  // default musl engine binary needs.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -22,9 +26,11 @@ enum OrderStatus {
   PENDING
   CONFIRMED
   PROCESSING
+  PACKED
   SHIPPED
   DELIVERED
   CANCELLED
+  RETURNED
   REFUNDED
 }
 
@@ -45,6 +51,12 @@ enum CouponType {
   FIXED
 }
 
+enum ReturnRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum StockMovementReason {
   ORDER
   RESTOCK
@@ -57,83 +69,248 @@ enum BannerPlacement {
 }
 
 model AdminUser {
+  id                     String               @id @default(cuid())
+  name                   String
+  email                  String               @unique
+  passwordHash           String
+  role                   AdminRole            @default(OWNER)
+  isActive               Boolean              @default(true)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  refreshTokens          RefreshToken[]
+  auditLogs              AuditLog[]
+  statusChanges          OrderStatusHistory[]
+  reviewedReturnRequests ReturnRequest[]
+}
+
+/// DB-tracked refresh tokens (rather than bare stateless JWTs) so a session can actually be revoked —
+/// on logout, on rotation (the old token is marked used/replaced), and via "log out of all devices".
+model RefreshToken {
   id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String
-  role         AdminRole @default(OWNER)
-  isActive     Boolean   @default(true)
+  adminId      String
+  admin        AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  userAgent    String?
   createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+
+  @@index([adminId])
+}
+
+/// Append-only record of admin mutations — who did what, to which entity, when.
+model AuditLog {
+  id         String     @id @default(cuid())
+  adminId    String?
+  admin      AdminUser? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime   @default(now())
+
+  @@index([entityType, entityId])
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+/// Anonymous, aggregate-only log of real storefront searches (not every debounced keystroke) —
+/// powers "Popular Searches" and search-prediction completions.
+model SearchLog {
+  id          String   @id @default(cuid())
+  query       String
+  resultCount Int
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([query])
 }
 
 model Category {
-  id        String     @id @default(cuid())
-  name      String
-  slug      String     @unique
-  imageUrl  String?
-  sortOrder Int        @default(0)
-  isActive  Boolean    @default(true)
-  parentId  String?
-  parent    Category?  @relation("CategoryToParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Category[] @relation("CategoryToParent")
-  products  Product[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id                String             @id @default(cuid())
+  name              String
+  slug              String             @unique
+  imageUrl          String?
+  imageAltText      String?
+  bannerImageUrl    String?
+  sortOrder         Int                @default(0)
+  isActive          Boolean            @default(true)
+  isFeatured        Boolean            @default(false)
+  seoTitle          String?
+  seoDescription    String?
+  parentId          String?
+  parent            Category?          @relation("CategoryToParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children          Category[]         @relation("CategoryToParent")
+  products          Product[]
+  bundleAnchors     Bundle[]           @relation("BundleAnchor")
+  bundleSuggestions BundleSuggestion[] @relation("BundleSuggestionCategory")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@index([parentId])
 }
 
+/// Admin-defined attribute type (e.g. "Color", "Fabric", "Pattern") used to build variant matrices.
+model Attribute {
+  id        String           @id @default(cuid())
+  name      String           @unique
+  slug      String           @unique
+  sortOrder Int              @default(0)
+  values    AttributeValue[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model AttributeValue {
+  id           String                  @id @default(cuid())
+  attributeId  String
+  attribute    Attribute               @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  value        String
+  colorHex     String?
+  sortOrder    Int                     @default(0)
+  variantLinks VariantAttributeValue[]
+  createdAt    DateTime                @default(now())
+
+  @@unique([attributeId, value])
+  @@index([attributeId])
+}
+
 model Product {
-  id              String           @id @default(cuid())
-  name            String
-  slug            String           @unique
-  description     String           @default("")
-  categoryId      String
-  category        Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  brandTier       BrandTier        @default(PREMIUM)
-  basePrice       Decimal          @db.Decimal(10, 2)
-  compareAtPrice  Decimal?         @db.Decimal(10, 2)
-  isActive        Boolean          @default(true)
-  isFeatured      Boolean          @default(false)
-  seoTitle        String?
-  seoDescription  String?
-  variants        ProductVariant[]
-  images          ProductImage[]
-  flashSaleItems  FlashSaleItem[]
-  wishlistItems   WishlistItem[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                String           @id @default(cuid())
+  name              String
+  slug              String           @unique
+  description       String           @default("")
+  categoryId        String
+  category          Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand             String?
+  brandTier         BrandTier        @default(PREMIUM)
+  basePrice         Decimal          @db.Decimal(10, 2)
+  compareAtPrice    Decimal?         @db.Decimal(10, 2)
+  costPrice         Decimal?         @db.Decimal(10, 2)
+  taxRate           Decimal?         @db.Decimal(5, 2)
+  trackInventory    Boolean          @default(true)
+  lowStockThreshold Int              @default(5)
+  restockDate       DateTime?
+  isActive          Boolean          @default(true)
+  isFeatured        Boolean          @default(false)
+  seoTitle          String?
+  seoDescription    String?
+  deletedAt         DateTime?
+  variants          ProductVariant[]
+  images            ProductImage[]
+  flashSaleItems    FlashSaleItem[]
+  wishlistItems     WishlistItem[]
+  viewLogs          ProductViewLog[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([categoryId, isActive])
+  @@index([deletedAt])
 }
 
-model ProductVariant {
-  id             String          @id @default(cuid())
-  productId      String
-  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sku            String          @unique
-  size           String
-  color          String
-  colorHex       String?
-  price          Decimal?        @db.Decimal(10, 2)
-  stock          Int             @default(0)
-  weight         Decimal?        @db.Decimal(6, 2)
-  stockMovements StockMovement[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-
-  @@unique([productId, size, color])
-}
-
-model ProductImage {
+/// Anonymous, aggregate-only log of storefront product-page views — same spirit as SearchLog.
+/// Powers "N people viewed today"; never tied to a session or customer.
+model ProductViewLog {
   id        String   @id @default(cuid())
   productId String
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  url       String
-  altText   String?
-  sortOrder Int      @default(0)
   createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
+}
+
+/// A one-way, server-side mirror of a logged-in customer's client-side (localStorage) cart —
+/// exists purely so cart abandonment can be detected and recovered from; never read back into
+/// the storefront UI. Guests have no Cart row (the server can't identify/email them).
+model Cart {
+  id             String     @id @default(cuid())
+  customerId     String     @unique
+  customer       Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items          CartItem[]
+  reminderSentAt DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([updatedAt])
+}
+
+model CartItem {
+  id        String         @id @default(cuid())
+  cartId    String
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity  Int
+  updatedAt DateTime       @updatedAt
+
+  @@unique([cartId, variantId])
+}
+
+/// A customer's subscription to be emailed when a specific out-of-stock variant is restocked.
+model StockAlert {
+  id         String         @id @default(cuid())
+  customerId String
+  customer   Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  variantId  String
+  variant    ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  notifiedAt DateTime?
+  createdAt  DateTime       @default(now())
+
+  @@unique([customerId, variantId])
+  @@index([variantId])
+}
+
+model ProductVariant {
+  id              String                  @id @default(cuid())
+  productId       String
+  product         Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku             String                  @unique
+  barcode         String?
+  size            String
+  color           String
+  colorHex        String?
+  price           Decimal?                @db.Decimal(10, 2)
+  costPrice       Decimal?                @db.Decimal(10, 2)
+  stock           Int                     @default(0)
+  weight          Decimal?                @db.Decimal(6, 2)
+  imageId         String?
+  image           ProductImage?           @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
+  attributeValues VariantAttributeValue[]
+  stockMovements  StockMovement[]
+  cartItems       CartItem[]
+  stockAlerts     StockAlert[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([productId, size, color])
+  @@index([imageId])
+}
+
+/// Join row linking a variant to one selected value per admin-defined attribute (e.g. Fabric=Cotton). Size/color stay
+/// denormalized on ProductVariant itself since the storefront filters directly on those columns; this table carries
+/// the extra attributes (fabric, pattern, material, ...) plus a full record of every attribute chosen, including size/color.
+model VariantAttributeValue {
+  id               String         @id @default(cuid())
+  variantId        String
+  variant          ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  attributeValueId String
+  attributeValue   AttributeValue @relation(fields: [attributeValueId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, attributeValueId])
+  @@index([variantId])
+}
+
+model ProductImage {
+  id            String           @id @default(cuid())
+  productId     String
+  product       Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url           String
+  altText       String?
+  sortOrder     Int              @default(0)
+  createdAt     DateTime         @default(now())
+  variantsUsing ProductVariant[] @relation("VariantImage")
 
   @@index([productId])
 }
@@ -144,12 +321,31 @@ model Customer {
   email               String               @unique
   phone               String?
   passwordHash        String?
+  rewardPoints        Int                  @default(0)
   addresses           Address[]
   orders              Order[]
   wishlistItems       WishlistItem[]
   passwordResetTokens PasswordResetToken[]
+  pointsLedger        RewardPointsEntry[]
+  cart                Cart?
+  stockAlerts         StockAlert[]
+  returnRequests      ReturnRequest[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
+}
+
+/// Append-only ledger backing Customer.rewardPoints — every earn/redeem/manual adjustment is a row,
+/// so the running total is always explainable rather than a single mutable counter.
+model RewardPointsEntry {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  points     Int
+  reason     String
+  orderId    String?
+  createdAt  DateTime @default(now())
+
+  @@index([customerId])
 }
 
 model PasswordResetToken {
@@ -197,6 +393,40 @@ model Coupon {
   updatedAt         DateTime   @updatedAt
 }
 
+/// A category-driven cross-sell rule: buying from `anchorCategory` (e.g. Panjabi) unlocks a
+/// discount once enough of the suggested accessory categories (Pajama, Ator, Cap, Tasbih, ...)
+/// are also in the cart. Suggestions are categories, not specific products, so new products added
+/// to those categories become suggestible without editing the bundle.
+model Bundle {
+  id                     String             @id @default(cuid())
+  name                   String
+  anchorCategoryId       String
+  anchorCategory         Category           @relation("BundleAnchor", fields: [anchorCategoryId], references: [id], onDelete: Cascade)
+  discountType           CouponType
+  discountValue          Decimal            @db.Decimal(10, 2)
+  /// How many distinct suggested categories must also be in the cart before the discount applies.
+  minSuggestedCategories Int                @default(1)
+  isActive               Boolean            @default(true)
+  sortOrder              Int                @default(0)
+  suggestions            BundleSuggestion[]
+  orders                 Order[]
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([anchorCategoryId, isActive])
+}
+
+model BundleSuggestion {
+  id         String   @id @default(cuid())
+  bundleId   String
+  bundle     Bundle   @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation("BundleSuggestionCategory", fields: [categoryId], references: [id], onDelete: Cascade)
+  sortOrder  Int      @default(0)
+
+  @@unique([bundleId, categoryId])
+}
+
 model Order {
   id            String        @id @default(cuid())
   orderNumber   String        @unique
@@ -215,16 +445,25 @@ model Order {
   shippingAddressLine String
 
   subtotal    Decimal @db.Decimal(10, 2)
-  discount    Decimal @db.Decimal(10, 2) @default(0)
-  shippingFee Decimal @db.Decimal(10, 2) @default(0)
+  discount    Decimal @default(0) @db.Decimal(10, 2)
+  shippingFee Decimal @default(0) @db.Decimal(10, 2)
   total       Decimal @db.Decimal(10, 2)
 
   couponId String?
   coupon   Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
 
-  items              OrderItem[]
-  notes              String?
-  paymentSessionKey  String?
+  bundleId       String?
+  bundle         Bundle? @relation(fields: [bundleId], references: [id], onDelete: SetNull)
+  bundleDiscount Decimal @default(0) @db.Decimal(10, 2)
+
+  items                OrderItem[]
+  statusHistory        OrderStatusHistory[]
+  returnRequests       ReturnRequest[]
+  notes                String?
+  adminNotes           String?
+  trackingNumber       String?
+  carrier              String?
+  paymentSessionKey    String?
   paymentTransactionId String?
 
   createdAt DateTime @default(now())
@@ -233,6 +472,45 @@ model Order {
   @@index([status])
   @@index([customerId])
   @@index([createdAt, status])
+}
+
+/// Append-only timeline of status transitions for an order — powers the admin timeline view.
+model OrderStatusHistory {
+  id               String      @id @default(cuid())
+  orderId          String
+  order            Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status           OrderStatus
+  note             String?
+  changedByAdminId String?
+  changedByAdmin   AdminUser?  @relation(fields: [changedByAdminId], references: [id], onDelete: SetNull)
+  createdAt        DateTime    @default(now())
+
+  @@index([orderId])
+}
+
+/// A customer-initiated return request on a delivered order, reviewed by an admin. Approving one
+/// reuses the existing order-status machinery (transitions the order to RETURNED) rather than
+/// tracking a parallel status of its own — there's no payment-gateway refund API integrated, so
+/// "refund status" is just the order's existing status/paymentStatus shown alongside this record.
+model ReturnRequest {
+  id                String               @id @default(cuid())
+  orderId           String
+  order             Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId        String
+  customer          Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  reason            String
+  note              String?
+  status            ReturnRequestStatus  @default(PENDING)
+  adminNote         String?
+  reviewedAt        DateTime?
+  reviewedByAdminId String?
+  reviewedByAdmin   AdminUser?           @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([status])
 }
 
 model OrderItem {
@@ -316,13 +594,93 @@ model NewsletterSubscriber {
 }
 
 model WishlistItem {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   productId  String
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Product's basePrice at the moment it was wishlisted — the baseline a real price drop is measured against.
+  priceAtAdd Decimal?  @db.Decimal(10, 2)
+  /// Set once a price-drop email has been sent for this entry, so it's never re-sent for the same drop.
+  alertedAt  DateTime?
+  createdAt  DateTime  @default(now())
 
   @@unique([customerId, productId])
   @@index([customerId])
+}
+
+/// System-generated admin alerts (new order, low stock, ...) shown via the bell icon in the admin
+/// topbar — distinct from the per-action toasts, which are immediate feedback on the action you just took.
+model Notification {
+  id        String    @id @default(cuid())
+  type      String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([readAt, createdAt])
+}
+
+/// Single-row store configuration — always read/written via id "singleton". Fields not yet wired
+/// into a live consumer are documented at the call site, not silently unused.
+model StoreSetting {
+  id                      String   @id @default("singleton")
+  storeName               String   @default("Store")
+  tagline                 String?
+  logoUrl                 String?
+  logoOnDarkUrl           String?
+  faviconUrl              String?
+  currency                String   @default("BDT")
+  contactEmail            String?
+  contactPhone            String?
+  shippingFeeDhaka        Decimal  @default(60) @db.Decimal(10, 2)
+  shippingFeeOutsideDhaka Decimal  @default(120) @db.Decimal(10, 2)
+  taxEnabled              Boolean  @default(false)
+  defaultTaxRate          Decimal? @db.Decimal(5, 2)
+  rewardPointsPerCurrency Decimal  @default(0) @db.Decimal(10, 4)
+  updatedAt               DateTime @updatedAt
+}
+
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  YOUTUBE
+  TIKTOK
+  LINKEDIN
+  X
+  WHATSAPP
+  OTHER
+}
+
+/// Admin-managed social links shown as icons in the storefront footer — replaces the old fixed
+/// facebookUrl/instagramUrl/whatsappNumber columns on StoreSetting so any number of platforms
+/// (including a free-form OTHER entry) can be added, reordered, or removed without a migration.
+model SocialLink {
+  id        String         @id @default(cuid())
+  platform  SocialPlatform
+  url       String
+  /// Display label — required when platform is OTHER (no built-in icon/name to fall back to).
+  label     String?
+  sortOrder Int            @default(0)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+/// Admin-managed URL redirect (e.g. after a product/category slug change) — exact-path match only,
+/// no wildcard/regex rules. Enforced in apps/web/middleware.ts against the public /active endpoint.
+model Redirect {
+  id         String   @id @default(cuid())
+  fromPath   String   @unique
+  toPath     String
+  statusCode Int      @default(301)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([isActive])
 }

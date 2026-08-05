@@ -9,6 +9,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   customerListQuerySchema,
+  adjustRewardPointsSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireCustomer } from "../../middlewares/require-customer";
@@ -59,6 +60,14 @@ customerRouter.get(
   validate(paginationQuerySchema, "query"),
   customerController.listOrders,
 );
+customerRouter.get("/me/orders/:id", requireCustomer, customerController.getOrder);
+
+customerRouter.get(
+  "/me/points",
+  requireCustomer,
+  validate(paginationQuerySchema, "query"),
+  customerController.listPoints,
+);
 
 customerRouter.get(
   "/admin",
@@ -67,3 +76,9 @@ customerRouter.get(
   customerController.listCustomersAdmin,
 );
 customerRouter.get("/admin/:id", requireAdmin, customerController.getCustomerDetailAdmin);
+customerRouter.post(
+  "/admin/:id/points",
+  requireAdmin,
+  validate(adjustRewardPointsSchema),
+  customerController.adjustPoints,
+);

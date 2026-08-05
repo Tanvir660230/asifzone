@@ -1,20 +1,40 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { Gift } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 import { formatPrice } from "@/lib/format";
+import { ApiError } from "@/lib/api-client";
 
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const [pointsDelta, setPointsDelta] = useState("");
+  const [pointsReason, setPointsReason] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-customer", id],
     queryFn: () => adminCustomersApi.getCustomer(id),
+  });
+
+  const adjustMutation = useMutation({
+    mutationFn: () => adminCustomersApi.adjustPoints(id, Number(pointsDelta), pointsReason || undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-customer", id] });
+      toast.success("Points adjusted");
+      setPointsDelta("");
+      setPointsReason("");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to adjust points"),
   });
 
   if (isLoading || !data) return <p className="text-ink-400">Loading…</p>;
@@ -35,16 +55,66 @@ export default function CustomerDetailPage() {
         </button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1 text-sm text-ink-700">
-          <p>Name: {customer.name}</p>
-          <p>Email: {customer.email}</p>
-          <p>Phone: {customer.phone ?? "—"}</p>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Profile</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm text-ink-700">
+            <p>Name: {customer.name}</p>
+            <p>Email: {customer.email}</p>
+            <p>Phone: {customer.phone ?? "—"}</p>
+            <p>Total spent: <span className="font-medium text-ink-900">{formatPrice(customer.totalSpent)}</span></p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Gift size={16} className="text-brass-500" /> Reward Points
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-2xl font-display text-ink-900">{customer.rewardPoints.toLocaleString()}</p>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                placeholder="+/- points"
+                value={pointsDelta}
+                onChange={(e) => setPointsDelta(e.target.value)}
+                className="w-28"
+              />
+              <Input
+                placeholder="Reason"
+                value={pointsReason}
+                onChange={(e) => setPointsReason(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!pointsDelta || Number(pointsDelta) === 0 || adjustMutation.isPending}
+                onClick={() => adjustMutation.mutate()}
+              >
+                Apply
+              </Button>
+            </div>
+            {customer.pointsLedger.length > 0 && (
+              <ul className="max-h-32 space-y-1 overflow-y-auto border-t border-ink-100 pt-2 text-xs text-ink-500">
+                {customer.pointsLedger.map((entry) => (
+                  <li key={entry.id} className="flex justify-between">
+                    <span>{entry.reason}</span>
+                    <span className={entry.points >= 0 ? "text-success-600" : "text-danger-600"}>
+                      {entry.points >= 0 ? "+" : ""}
+                      {entry.points}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>

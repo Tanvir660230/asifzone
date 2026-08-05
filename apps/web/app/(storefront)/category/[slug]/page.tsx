@@ -7,6 +7,8 @@ import { SortSelect } from "@/components/storefront/sort-select";
 import { Pagination } from "@/components/storefront/pagination";
 import { FacetFilters } from "@/components/storefront/facet-filters";
 import { getCategoryBySlug, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
+import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { env } from "@/lib/env";
 
 const PAGE_SIZE = 12;
 
@@ -23,9 +25,29 @@ async function loadCategory(slug: string) {
   }
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const data = await loadCategory(params.slug);
-  return { title: data?.category.name ?? "Category" };
+  if (!data) return { title: "Category" };
+
+  const { category } = data;
+  const title = category.seoTitle || category.name;
+  const description = category.seoDescription || undefined;
+  const page = Number(searchParams.page) || 1;
+  const url = `${getSiteUrl()}/category/${category.slug}${page > 1 ? `?page=${page}` : ""}`;
+
+  return {
+    title,
+    description,
+    alternates: { canonical: url },
+    ...buildOpenGraph({
+      title,
+      description,
+      url,
+      images: category.imageUrl
+        ? [category.imageUrl.startsWith("http") ? category.imageUrl : `${env.apiUrl}${category.imageUrl}`]
+        : undefined,
+    }),
+  };
 }
 
 export default async function CategoryPage({ params, searchParams }: Props) {

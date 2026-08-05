@@ -1,6 +1,9 @@
 {
   "extends": "@clothing-brand/config/tsconfig.base.json",
   "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "declaration": true,
     "outDir": "dist",
     "rootDir": "src"
   },

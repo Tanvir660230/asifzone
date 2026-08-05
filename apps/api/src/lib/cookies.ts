@@ -10,6 +10,9 @@ const base: CookieOptions = {
 
 export const accessTokenCookieOptions: CookieOptions = { ...base, maxAge: 15 * 60 * 1000 };
 export const refreshTokenCookieOptions: CookieOptions = { ...base, maxAge: 7 * 24 * 60 * 60 * 1000 };
+// Deliberately NOT httpOnly — the frontend must be able to read this and echo it back as a header
+// for the double-submit CSRF check (see middlewares/csrf.ts).
+export const csrfTokenCookieOptions: CookieOptions = { ...base, httpOnly: false, maxAge: 7 * 24 * 60 * 60 * 1000 };
 
 // Distinct names from the admin cookies above so an admin session and a customer session
 // can coexist in the same browser without colliding.

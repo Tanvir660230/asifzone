@@ -45,5 +45,9 @@ export const getOne = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateStatus = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ order: await orderService.updateOrderStatus(req.params.id!, req.body) });
+  res.json({ order: await orderService.updateOrderStatus(req.params.id!, req.body, req.admin!.adminId) });
+});
+
+export const updateDetails = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.updateOrderDetails(req.params.id!, req.body) });
 });

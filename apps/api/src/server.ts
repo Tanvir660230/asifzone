@@ -3,6 +3,7 @@ import { env } from "./config/env";
 import { prisma } from "./config/prisma";
 import { redis } from "./config/redis";
 import { startFlashSaleCron } from "./jobs/flash-sale-cron";
+import { startCartRecoveryCron } from "./jobs/cart-recovery-cron";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
 
 async function main() {
@@ -11,6 +12,7 @@ async function main() {
 
   await syncFlashSaleActivation().catch((err) => console.error("[flash-sale-cron] initial sync failed:", err));
   startFlashSaleCron();
+  startCartRecoveryCron();
 
   app.listen(env.port, () => {
     console.log(`API listening on http://localhost:${env.port}`);

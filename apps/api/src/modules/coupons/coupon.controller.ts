@@ -8,6 +8,20 @@ export const validate = asyncHandler(async (req: Request, res: Response) => {
   res.json({ code: coupon!.code, type: coupon!.type, value: coupon!.value, discount });
 });
 
+export const active = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ coupons: await couponService.listActiveCoupons() });
+});
+
+export const best = asyncHandler(async (req: Request, res: Response) => {
+  const { subtotal } = req.query as unknown as { subtotal: number };
+  const match = await couponService.findBestCoupon(subtotal);
+  res.json({
+    result: match
+      ? { code: match.coupon.code, type: match.coupon.type, value: match.coupon.value, discount: match.discount }
+      : null,
+  });
+});
+
 export const list = asyncHandler(async (req: Request, res: Response) => {
   res.json(await couponService.listCoupons(req.query as never));
 });

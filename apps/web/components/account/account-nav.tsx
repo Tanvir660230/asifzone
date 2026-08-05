@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, MapPin, Heart, Package, User } from "lucide-react";
+import { LogOut, MapPin, Heart, Package, User, RotateCcw, Gift, Tag, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCurrentCustomer } from "@/hooks/use-current-customer";
 import { logoutCustomer } from "@/lib/customer-auth";
@@ -10,8 +10,12 @@ import { logoutCustomer } from "@/lib/customer-auth";
 const NAV_ITEMS = [
   { href: "/account", label: "Profile", icon: User },
   { href: "/account/orders", label: "Orders", icon: Package },
+  { href: "/account/returns", label: "Returns", icon: RotateCcw },
   { href: "/account/addresses", label: "Addresses", icon: MapPin },
   { href: "/account/wishlist", label: "Wishlist", icon: Heart },
+  { href: "/account/reward-points", label: "Reward Points", icon: Gift },
+  { href: "/account/coupons", label: "Coupons", icon: Tag },
+  { href: "/account/browsing-history", label: "Browsing History", icon: History },
 ];
 
 export function AccountNav() {

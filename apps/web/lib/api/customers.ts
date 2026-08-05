@@ -1,4 +1,11 @@
-import type { Address, CreateAddressInput, UpdateAddressInput, Order, PaginatedResult } from "@clothing-brand/shared";
+import type {
+  Address,
+  CreateAddressInput,
+  UpdateAddressInput,
+  Order,
+  PaginatedResult,
+  RewardPointsEntry,
+} from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export function listAddresses() {
@@ -22,4 +29,15 @@ export function listMyOrders(params: { page?: number; pageSize?: number } = {}) 
   if (params.page) query.set("page", String(params.page));
   if (params.pageSize) query.set("pageSize", String(params.pageSize));
   return apiFetch<PaginatedResult<Order>>(`/api/customers/me/orders?${query.toString()}`);
+}
+
+export function getMyOrder(id: string) {
+  return apiFetch<{ order: Order }>(`/api/customers/me/orders/${id}`);
+}
+
+export function listMyPointsLedger(params: { page?: number; pageSize?: number } = {}) {
+  const query = new URLSearchParams();
+  if (params.page) query.set("page", String(params.page));
+  if (params.pageSize) query.set("pageSize", String(params.pageSize));
+  return apiFetch<PaginatedResult<RewardPointsEntry>>(`/api/customers/me/points?${query.toString()}`);
 }

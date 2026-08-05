@@ -57,9 +57,20 @@ module.exports = {
     full: "9999px",
   },
   // Ink-tinted elevation (warmer than pure-black shadows, matches the neutral palette).
+  // "float"/"floatLg" add a second, tighter shadow layer for hover/active lift states —
+  // stacking a soft far shadow with a crisp near shadow is what makes Apple-style elevation
+  // read as "lifting" rather than just "bigger blur."
   boxShadow: {
     sm: "0 1px 2px 0 rgba(20,20,20,0.06)",
     DEFAULT: "0 4px 12px -2px rgba(20,20,20,0.08), 0 2px 4px -2px rgba(20,20,20,0.04)",
     lg: "0 12px 32px -4px rgba(20,20,20,0.14), 0 4px 8px -4px rgba(20,20,20,0.06)",
+    float: "0 2px 6px -1px rgba(20,20,20,0.07), 0 8px 20px -4px rgba(20,20,20,0.10)",
+    floatLg: "0 8px 16px -4px rgba(20,20,20,0.10), 0 20px 48px -8px rgba(20,20,20,0.18)",
+    glow: "0 0 0 4px rgba(176,141,87,0.14)",
+  },
+  // Apple's signature "ease-out-expo" curve — motion starts fast and settles gently, reads as
+  // smoother/more considered than the browser default eases used everywhere else on the web.
+  transitionTimingFunction: {
+    smooth: "cubic-bezier(0.16, 1, 0.3, 1)",
   },
 };

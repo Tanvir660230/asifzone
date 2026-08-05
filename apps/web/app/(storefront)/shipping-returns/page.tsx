@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
+import { getSiteUrl } from "@/lib/seo";
 
-export const metadata: Metadata = { title: "Shipping & Returns" };
+export const metadata: Metadata = {
+  title: "Shipping & Returns",
+  description: "Delivery timelines, shipping fees, and our return & exchange policy.",
+  alternates: { canonical: `${getSiteUrl()}/shipping-returns` },
+};
 
 export default function ShippingReturnsPage() {
   return (

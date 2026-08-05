@@ -19,6 +19,16 @@ export function uploadCategoryImage(file: File) {
   });
 }
 
+export function uploadCategoryBannerImage(file: File) {
+  const formData = new FormData();
+  formData.append("image", file);
+  return apiFetch<{ url: string }>("/api/categories/upload-banner", {
+    method: "POST",
+    body: formData,
+    isFormData: true,
+  });
+}
+
 export function updateCategory(id: string, input: UpdateCategoryInput) {
   return apiFetch<{ category: Category }>(`/api/categories/${id}`, { method: "PATCH", body: input });
 }

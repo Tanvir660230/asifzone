@@ -46,6 +46,11 @@ export const customerListQuerySchema = paginationQuerySchema.extend({
   search: z.string().min(1).max(200).optional(),
 });
 
+export const adjustRewardPointsSchema = z.object({
+  points: z.number().int().refine((v) => v !== 0, "Point adjustment cannot be zero"),
+  reason: z.string().max(200).optional(),
+});
+
 export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
 export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
@@ -54,3 +59,4 @@ export type UpdateAddressInput = z.infer<typeof updateAddressSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
+export type AdjustRewardPointsInput = z.infer<typeof adjustRewardPointsSchema>;

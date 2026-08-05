@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
+import { Pagination } from "@/components/admin/pagination";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import { formatPrice } from "@/lib/format";
 
@@ -19,9 +20,11 @@ const STATUS_OPTIONS: OrderStatus[] = [
   "PENDING",
   "CONFIRMED",
   "PROCESSING",
+  "PACKED",
   "SHIPPED",
   "DELIVERED",
   "CANCELLED",
+  "RETURNED",
   "REFUNDED",
 ];
 
@@ -29,9 +32,11 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   PENDING: "bg-warning-100 text-warning-700",
   CONFIRMED: "bg-info-100 text-info-700",
   PROCESSING: "bg-info-100 text-info-700",
+  PACKED: "bg-info-100 text-info-700",
   SHIPPED: "bg-info-100 text-info-700",
   DELIVERED: "bg-success-100 text-success-700",
   CANCELLED: "bg-danger-100 text-danger-700",
+  RETURNED: "bg-warning-100 text-warning-700",
   REFUNDED: "bg-ink-200 text-ink-700",
 };
 
@@ -58,10 +63,10 @@ export default function OrdersPage() {
     <div>
       <PageHeader title="Orders" />
 
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
-            <Search size={16} className="text-ink-400" />
+            <Search size={16} className="shrink-0 text-ink-400" />
             <Input
               placeholder="Search order #, name, phone…"
               value={search}
@@ -69,7 +74,7 @@ export default function OrdersPage() {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="w-64"
+              className="w-full sm:w-64"
             />
           </div>
           <Select
@@ -98,6 +103,7 @@ export default function OrdersPage() {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -119,7 +125,7 @@ export default function OrdersPage() {
               </tr>
             )}
             {data?.items.map((order) => (
-              <tr key={order.id} className="border-t border-ink-100 hover:bg-ink-50">
+              <tr key={order.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
                 <td className="px-4 py-3">
                   <Link href={`/admin/orders/${order.id}`} className="text-brass-600 hover:underline">
                     {order.orderNumber}
@@ -142,21 +148,10 @@ export default function OrdersPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-end gap-2 text-sm text-ink-500">
-          <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="disabled:opacity-40">
-            Previous
-          </button>
-          <span>
-            Page {page} of {totalPages}
-          </span>
-          <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="disabled:opacity-40">
-            Next
-          </button>
-        </div>
-      )}
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   );
 }

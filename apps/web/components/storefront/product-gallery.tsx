@@ -29,7 +29,7 @@ export function ProductGallery({ images, productName }: { images: ProductImage[]
   return (
     <div>
       <div
-        className="group relative aspect-[3/4] cursor-zoom-in overflow-hidden rounded bg-ink-100"
+        className="group relative aspect-square cursor-zoom-in overflow-hidden rounded-xl bg-ink-100"
         onMouseMove={handleMouseMove}
         onClick={() => active && setLightboxOpen(true)}
       >
@@ -44,7 +44,7 @@ export function ProductGallery({ images, productName }: { images: ProductImage[]
               style={{ transformOrigin: zoomOrigin }}
               priority
             />
-            <span className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-cream-50/90 text-ink-900 opacity-0 shadow transition-opacity group-hover:opacity-100">
+            <span className="glass glossy absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full text-ink-900 opacity-0 shadow-float transition-opacity duration-200 ease-smooth group-hover:opacity-100">
               <ZoomIn size={16} />
             </span>
           </>

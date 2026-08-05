@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
-import type { Order } from "@clothing-brand/shared";
+import { estimateDelivery, type Order } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
 import { trackOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
+import { formatDateShort } from "@/lib/format";
 
 const SESSION_KEY = "lastOrderPhone";
 
@@ -69,12 +70,17 @@ export default function OrderConfirmationPage() {
     );
   }
 
+  const deliveryEstimate = estimateDelivery(order.shippingDivision, new Date(order.createdAt));
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
       <CheckCircle2 className="mx-auto mb-4 text-brass-500" size={48} />
       <h1 className="font-display text-3xl text-ink-900">Thank you, {order.customerName.split(" ")[0]}!</h1>
       <p className="mt-2 text-ink-500">
         Your order <span className="text-ink-900">{order.orderNumber}</span> has been placed.
+      </p>
+      <p className="mt-1 text-sm text-ink-500">
+        Estimated delivery: {formatDateShort(deliveryEstimate.minDate)} – {formatDateShort(deliveryEstimate.maxDate)}
       </p>
 
       <div className="mt-8">

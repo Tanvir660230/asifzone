@@ -5,17 +5,21 @@ export const orderStatusEnum = z.enum([
   "PENDING",
   "CONFIRMED",
   "PROCESSING",
+  "PACKED",
   "SHIPPED",
   "DELIVERED",
   "CANCELLED",
+  "RETURNED",
   "REFUNDED",
 ]);
 
 export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ"]);
 export const paymentStatusEnum = z.enum(["UNPAID", "PAID", "FAILED", "REFUNDED"]);
 
-/** Flat-rate shipping for MVP — becomes zone-based/admin-configurable in a later phase. */
-export const SHIPPING_FEE_FLAT = 80;
+/** Client-side fallback shown only before real settings have loaded — the authoritative fee is
+ * always looked up from StoreSetting (Dhaka vs. outside-Dhaka) at order-creation time. */
+export const SHIPPING_FEE_DHAKA_FALLBACK = 60;
+export const SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK = 120;
 
 export const BD_DIVISIONS = [
   "Dhaka",
@@ -54,6 +58,13 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
 
 export const updateOrderStatusSchema = z.object({
   status: orderStatusEnum,
+  note: nullableString(500),
+});
+
+export const updateOrderDetailsSchema = z.object({
+  trackingNumber: nullableString(120),
+  carrier: nullableString(80),
+  adminNotes: nullableString(2000),
 });
 
 export const validateCouponSchema = z.object({
@@ -69,6 +80,7 @@ export const trackOrderSchema = z.object({
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
+export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
 export type ValidateCouponInput = z.infer<typeof validateCouponSchema>;
 export type TrackOrderInput = z.infer<typeof trackOrderSchema>;
 export type OrderStatus = z.infer<typeof orderStatusEnum>;

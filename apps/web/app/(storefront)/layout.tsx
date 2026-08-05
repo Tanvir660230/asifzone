@@ -1,19 +1,24 @@
 import type { ReactNode } from "react";
 import { Header } from "@/components/storefront/header";
 import { Footer } from "@/components/storefront/footer";
-import { getActiveBanners, getCategoryTree } from "@/lib/api/storefront";
+import { SearchOverlay } from "@/components/storefront/search-overlay";
+import { CartReminderBanner } from "@/components/storefront/cart-reminder-banner";
+import { getActiveSocialLinks, getCategoryTree, getSiteSettings } from "@/lib/api/storefront";
 
 export default async function StorefrontLayout({ children }: { children: ReactNode }) {
-  const [{ tree }, { banners: announcements }] = await Promise.all([
+  const [{ tree }, { settings }, { links }] = await Promise.all([
     getCategoryTree(),
-    getActiveBanners("PROMO_STRIP"),
+    getSiteSettings(),
+    getActiveSocialLinks(),
   ]);
 
   return (
     <div className="flex min-h-screen flex-col">
-      <Header categories={tree} announcements={announcements} />
+      <Header categories={tree} settings={settings} />
       <main className="flex-1">{children}</main>
-      <Footer />
+      <Footer categories={tree} settings={settings} socialLinks={links} />
+      <SearchOverlay />
+      <CartReminderBanner />
     </div>
   );
 }

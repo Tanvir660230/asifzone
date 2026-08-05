@@ -6,10 +6,142 @@ body {
   @apply bg-cream-100 text-ink-900 antialiased;
 }
 
+/* Desktop screens sit further from the eye than phones, so text/spacing that reads fine on
+   mobile looks cramped and small on a large monitor. Bumping the root font-size at wider
+   breakpoints scales every rem-based Tailwind utility (font sizes, padding, gaps) together,
+   giving a proportional "zoom" without touching every className individually. */
+@media (min-width: 1024px) {
+  html {
+    font-size: 17px;
+  }
+}
+@media (min-width: 1536px) {
+  html {
+    font-size: 18px;
+  }
+}
+
 @layer base {
   /* Sitewide keyboard-focus ring — every interactive element gets a visible, on-brand outline
      instead of relying on (or suppressing) the browser default. */
   :focus-visible {
     @apply outline outline-2 outline-offset-2 outline-brass-400;
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  ::selection {
+    @apply bg-brass-200 text-ink-900;
+  }
+
+  /* Thin, low-contrast scrollbars read as more considered than the chunky OS default —
+     the same instinct behind macOS's overlay scrollbars. Firefox + WebKit both covered. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.ink.200") transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-ink-200;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-300;
+  }
+}
+
+@layer components {
+  /* Frosted-glass surface for anything that floats above content — sticky headers, dropdowns,
+     modals. Reads as premium/native because content behind it stays partially legible instead
+     of being fully occluded, the same trick used by macOS/iOS translucent chrome. */
+  .glass {
+    @apply bg-cream-50/75 backdrop-blur-xl backdrop-saturate-150;
+  }
+  .glass-dark {
+    @apply bg-ink-900/75 backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  /* Glossy "liquid glass" sheen for filled buttons/pills/swatches — a bright top highlight over a
+     soft inset shadow, so a solid-color control reads as a lit glass capsule (iOS 26 Liquid Glass)
+     instead of a flat color fill. Layered as background-image so it works on top of any Tailwind
+     bg-* color and never fights with the element's own content for z-index/pointer-events. */
+  .glossy {
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 45%, rgba(255, 255, 255, 0) 65%);
+    box-shadow:
+      inset 0 1px 1px rgba(255, 255, 255, 0.5),
+      inset 0 -2px 5px rgba(0, 0, 0, 0.14);
+  }
+  .glossy:active {
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.22),
+      inset 0 -1px 1px rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* Tiptap output — both the editor surface and any read-only render of the same HTML (e.g. the
+   storefront product description) share these rules so the two never visually diverge. */
+.tiptap-content {
+  @apply text-sm leading-relaxed text-ink-700;
+}
+.tiptap-content p {
+  @apply mb-3;
+}
+.tiptap-content h2 {
+  @apply mb-3 mt-6 font-display text-xl text-ink-900 first:mt-0;
+}
+.tiptap-content h3 {
+  @apply mb-2 mt-5 font-display text-lg text-ink-900 first:mt-0;
+}
+.tiptap-content h4 {
+  @apply mb-2 mt-4 text-sm font-semibold uppercase tracking-wide text-ink-900 first:mt-0;
+}
+.tiptap-content ul {
+  @apply mb-3 list-disc space-y-1 pl-5;
+}
+.tiptap-content ol {
+  @apply mb-3 list-decimal space-y-1 pl-5;
+}
+.tiptap-content blockquote {
+  @apply mb-3 border-l-2 border-brass-400 pl-4 italic text-ink-500;
+}
+.tiptap-content code {
+  @apply rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-800;
+}
+.tiptap-content pre {
+  @apply mb-3 overflow-x-auto rounded-md bg-ink-900 p-3 text-cream-100;
+}
+.tiptap-content pre code {
+  @apply bg-transparent p-0 text-cream-100;
+}
+.tiptap-content a {
+  @apply text-brass-600 underline underline-offset-2;
+}
+.tiptap-content img {
+  @apply mb-3 rounded-md;
+}
+.tiptap-content table {
+  @apply mb-3 w-full table-fixed border-collapse overflow-hidden rounded-md border border-ink-200 text-left;
+}
+.tiptap-content th,
+.tiptap-content td {
+  @apply border border-ink-200 px-2 py-1.5 align-top;
+}
+.tiptap-content th {
+  @apply bg-ink-50 font-medium text-ink-700;
+}
+.tiptap-content div[data-youtube-video] iframe {
+  @apply mb-3 aspect-video w-full rounded-md;
+}
+.tiptap-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply pointer-events-none float-left h-0 text-ink-300;
 }

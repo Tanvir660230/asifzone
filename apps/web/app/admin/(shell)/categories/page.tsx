@@ -78,6 +78,7 @@ export default function CategoriesPage() {
       />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -97,7 +98,7 @@ export default function CategoriesPage() {
               </tr>
             )}
             {rows.map((cat) => (
-              <tr key={cat.id} className="border-t border-ink-100">
+              <tr key={cat.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
                 <td className="px-4 py-3" style={{ paddingLeft: `${16 + cat.depth * 24}px` }}>
                   {cat.depth > 0 && <span className="mr-1 text-ink-300">└</span>}
                   {cat.name}
@@ -122,6 +123,7 @@ export default function CategoriesPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <Modal

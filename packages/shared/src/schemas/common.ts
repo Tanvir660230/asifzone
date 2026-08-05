@@ -40,6 +40,10 @@ export function nullableEmail() {
   return z.preprocess(blankToNull, z.string().email().nullable().optional());
 }
 
+export function nullableDate() {
+  return z.preprocess(blankToNull, z.coerce.date().nullable().optional());
+}
+
 export function slugify(input: string): string {
   return input
     .trim()

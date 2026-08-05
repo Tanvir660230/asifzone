@@ -77,6 +77,7 @@ export default function CouponsPage() {
       />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -99,7 +100,7 @@ export default function CouponsPage() {
               </tr>
             )}
             {data?.items.map((c) => (
-              <tr key={c.id} className="border-t border-ink-100">
+              <tr key={c.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
                 <td className="px-4 py-3 font-medium">{c.code}</td>
                 <td className="px-4 py-3">{c.type === "PERCENTAGE" ? `${c.value}%` : formatPrice(c.value)}</td>
                 <td className="px-4 py-3 text-ink-500">{c.minOrderAmount ? formatPrice(c.minOrderAmount) : "—"}</td>
@@ -122,6 +123,7 @@ export default function CouponsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add coupon">

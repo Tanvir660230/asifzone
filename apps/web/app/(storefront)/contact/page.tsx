@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
 import { Mail, MessageCircle, Package } from "lucide-react";
-import { siteConfig } from "@/lib/site-config";
+import { getSiteSettings } from "@/lib/api/storefront";
+import { getSiteUrl } from "@/lib/seo";
 
-export const metadata: Metadata = { title: "Contact Us" };
+export const metadata: Metadata = {
+  title: "Contact Us",
+  description: "Get in touch with our support team for order help, questions, or feedback.",
+  alternates: { canonical: `${getSiteUrl()}/contact` },
+};
 
-export default function ContactPage() {
+export default async function ContactPage() {
+  const { settings } = await getSiteSettings();
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 lg:px-8">
       <h1 className="mb-3 font-display text-3xl text-ink-900">Contact us</h1>
@@ -13,9 +20,9 @@ export default function ContactPage() {
       <div className="space-y-5">
         <div className="flex items-center gap-3 text-sm text-ink-700">
           <Mail size={18} className="text-brass-500" />
-          {siteConfig.contactEmail ? (
-            <a href={`mailto:${siteConfig.contactEmail}`} className="hover:text-brass-500">
-              {siteConfig.contactEmail}
+          {settings.contactEmail ? (
+            <a href={`mailto:${settings.contactEmail}`} className="hover:text-brass-500">
+              {settings.contactEmail}
             </a>
           ) : (
             <span className="text-ink-400">Email support coming soon</span>
@@ -23,9 +30,9 @@ export default function ContactPage() {
         </div>
         <div className="flex items-center gap-3 text-sm text-ink-700">
           <MessageCircle size={18} className="text-brass-500" />
-          {siteConfig.contactPhone ? (
-            <a href={`tel:${siteConfig.contactPhone}`} className="hover:text-brass-500">
-              {siteConfig.contactPhone}
+          {settings.contactPhone ? (
+            <a href={`tel:${settings.contactPhone}`} className="hover:text-brass-500">
+              {settings.contactPhone}
             </a>
           ) : (
             <span className="text-ink-400">Phone support coming soon</span>

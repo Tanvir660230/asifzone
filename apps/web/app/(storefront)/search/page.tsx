@@ -1,13 +1,24 @@
+import type { Metadata } from "next";
 import { SearchBox } from "@/components/storefront/search-box";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { FacetFilters } from "@/components/storefront/facet-filters";
 import { getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
+import { getSiteUrl } from "@/lib/seo";
 
 interface Props {
   searchParams: { q?: string; sizes?: string; colors?: string; minPrice?: string; maxPrice?: string };
 }
 
-export const metadata = { title: "Search" };
+export function generateMetadata({ searchParams }: Props): Metadata {
+  const query = searchParams.q?.trim();
+  return {
+    title: query ? `Search results for "${query}"` : "Search",
+    alternates: { canonical: `${getSiteUrl()}/search` },
+    // The bare /search landing page (in the sitemap) stays indexable; every query-result variant
+    // is near-duplicate content, so keep those out of the index rather than indexing every permutation.
+    ...(query ? { robots: { index: false, follow: true } } : {}),
+  };
+}
 
 export default async function SearchPage({ searchParams }: Props) {
   const query = searchParams.q?.trim();

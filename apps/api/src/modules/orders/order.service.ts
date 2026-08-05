@@ -1,12 +1,19 @@
-import type { CheckoutInput, OrderListQuery, UpdateOrderStatusInput } from "@clothing-brand/shared";
-import { SHIPPING_FEE_FLAT } from "@clothing-brand/shared";
+import type { CheckoutInput, OrderListQuery, UpdateOrderStatusInput, UpdateOrderDetailsInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
+import { notify } from "../../lib/notify";
 import { evaluateCoupon, incrementCouponUsage } from "../coupons/coupon.service";
+import { evaluateBundleForItems } from "../bundles/bundle.service";
 import { computeFlashPrice, getActiveFlashInfoByProduct, type ActiveFlashInfo } from "../flash-sales/flash-sale-pricing";
+import { getSettings } from "../settings/settings.service";
+import { awardDeliveryPoints } from "../customers/customer.service";
+import { clearCart } from "../cart/cart.service";
 
-const include = { items: true };
+const include = {
+  items: true,
+  statusHistory: { orderBy: { createdAt: "asc" as const }, include: { changedByAdmin: { select: { name: true } } } },
+};
 
 /** A running flash sale overrides everything else — it's already the "this is the price right now" figure. */
 function effectivePrice(
@@ -53,7 +60,20 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
     couponId = evaluation.coupon!.id;
   }
 
-  const shippingFee = SHIPPING_FEE_FLAT;
+  // Bundle discounts are detected automatically from cart contents, not opted into like a coupon —
+  // stacks additively with any coupon, clamped so the two together never exceed the subtotal.
+  let bundleId: string | null = null;
+  let bundleDiscount = 0;
+  const bundleMatch = await evaluateBundleForItems(input.items);
+  if (bundleMatch) {
+    bundleId = bundleMatch.bundle.id;
+    bundleDiscount = bundleMatch.discount;
+    discount = Math.min(discount + bundleDiscount, subtotal);
+  }
+
+  const settings = await getSettings();
+  const shippingFee =
+    input.shippingDivision === "Dhaka" ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
   const total = subtotal - discount + shippingFee;
 
   const order = await prisma.$transaction(async (tx) => {
@@ -85,6 +105,8 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
         shippingFee,
         total,
         couponId,
+        bundleId,
+        bundleDiscount,
         items: {
           create: input.items.map((item) => {
             const variant = variantById.get(item.variantId)!;
@@ -99,6 +121,7 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
             };
           }),
         },
+        statusHistory: { create: { status: "PENDING" } },
       },
       include,
     });
@@ -117,6 +140,32 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
     return created;
   });
 
+  notify({
+    type: "order.created",
+    title: `New order ${order.orderNumber}`,
+    body: `${order.customerName} · ${input.items.length} item(s)`,
+    link: `/admin/orders/${order.id}`,
+  });
+
+  // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
+  // abandonment sweep must not fire on it.
+  if (customerId) {
+    clearCart(customerId).catch((err) => console.error("[cart] clear after order failed:", err));
+  }
+
+  for (const item of input.items) {
+    const variant = variantById.get(item.variantId)!;
+    const remaining = variant.stock - item.quantity;
+    if (variant.product.trackInventory && remaining <= variant.product.lowStockThreshold) {
+      notify({
+        type: "product.low_stock",
+        title: `Low stock: ${variant.product.name}`,
+        body: `${variant.size}/${variant.color} — ${Math.max(0, remaining)} left`,
+        link: `/admin/products/${variant.productId}/edit`,
+      });
+    }
+  }
+
   return order;
 }
 
@@ -124,6 +173,59 @@ export async function getOrderById(id: string) {
   const order = await prisma.order.findUnique({ where: { id }, include });
   if (!order) throw AppError.notFound("Order not found");
   return order;
+}
+
+/** Ownership-checked order detail for a logged-in customer's own order page. Attaches live
+ * per-item availability (current price/stock/image) via the same manual variantId -> Product join
+ * used elsewhere in this file (OrderItem has no Prisma relation to ProductVariant, only a plain
+ * id column) — this is what "Reorder" checks before adding anything back to the cart. */
+export async function getOrderForCustomer(customerId: string, orderId: string) {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include });
+  if (!order || order.customerId !== customerId) throw AppError.notFound("Order not found");
+
+  const variantIds = order.items.map((i) => i.variantId);
+  const variants = await prisma.productVariant.findMany({
+    where: { id: { in: variantIds } },
+    select: {
+      id: true,
+      price: true,
+      stock: true,
+      product: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          basePrice: true,
+          isActive: true,
+          deletedAt: true,
+          images: { take: 1, orderBy: { sortOrder: "asc" }, select: { url: true } },
+        },
+      },
+    },
+  });
+  const variantById = new Map(variants.map((v) => [v.id, v]));
+
+  const items = order.items.map((item) => {
+    const variant = variantById.get(item.variantId);
+    const available = variant && variant.product.isActive && !variant.product.deletedAt && variant.stock > 0;
+    return {
+      ...item,
+      live: available
+        ? {
+            productId: variant.product.id,
+            productSlug: variant.product.slug,
+            productName: variant.product.name,
+            imageUrl: variant.product.images[0]?.url ?? null,
+            price: Number(variant.price ?? variant.product.basePrice),
+            maxStock: variant.stock,
+          }
+        : null,
+    };
+  });
+
+  const returnRequests = await prisma.returnRequest.findMany({ where: { orderId }, orderBy: { createdAt: "desc" } });
+
+  return { ...order, items, returnRequests };
 }
 
 /** Guest order tracking — requires the phone on the order too, so an order number alone (visible in a shared link, browser history, etc.) isn't enough to see someone else's address. */
@@ -161,9 +263,33 @@ export async function listOrders(query: OrderListQuery) {
   return { items, total, page: query.page, pageSize: query.pageSize };
 }
 
-export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput) {
+export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
   await getOrderById(id);
-  return prisma.order.update({ where: { id }, data: { status: input.status }, include });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.update({
+      where: { id },
+      data: {
+        status: input.status,
+        statusHistory: {
+          create: { status: input.status, note: input.note ?? null, changedByAdminId: changedByAdminId ?? null },
+        },
+      },
+      include,
+    });
+    return order;
+  });
+
+  if (input.status === "DELIVERED" && updated.customerId) {
+    await awardDeliveryPoints(updated.customerId, updated.id, Number(updated.total));
+  }
+
+  return updated;
+}
+
+export async function updateOrderDetails(id: string, input: UpdateOrderDetailsInput) {
+  await getOrderById(id);
+  return prisma.order.update({ where: { id }, data: input, include });
 }
 
 export async function markOrderPaid(orderNumber: string, transactionId: string) {

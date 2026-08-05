@@ -21,8 +21,12 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
   const banner = banners[index];
   if (!banner) return null;
 
+  function goTo(delta: 1 | -1) {
+    setIndex((i) => (i + delta + banners.length) % banners.length);
+  }
+
   const slide = (
-    <div className="relative h-[70vh] min-h-[420px] overflow-hidden bg-ink-900">
+    <div className="relative h-[70vh] min-h-[420px] touch-pan-y overflow-hidden bg-ink-900">
       <AnimatePresence mode="sync">
         <motion.div
           key={banner.id}
@@ -30,6 +34,13 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 1 }}
+          drag={banners.length > 1 ? "x" : false}
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.2}
+          onDragEnd={(_, info) => {
+            if (info.offset.x < -60) goTo(1);
+            else if (info.offset.x > 60) goTo(-1);
+          }}
           className="absolute inset-0 flex items-center justify-center text-center text-cream-50"
         >
           <motion.div
@@ -61,14 +72,14 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
                 </motion.p>
               )}
               {banner.title && (
-                <motion.h1
+                <motion.h2
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.35, duration: 0.7 }}
                   className="font-display text-4xl sm:text-5xl lg:text-6xl"
                 >
                   {banner.title}
-                </motion.h1>
+                </motion.h2>
               )}
             </div>
           )}
@@ -82,13 +93,16 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
       {banner.linkUrl ? <Link href={banner.linkUrl}>{slide}</Link> : slide}
 
       {banners.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2">
+        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2 rounded-full px-3 py-2">
           {banners.map((b, i) => (
             <button
               key={b.id}
               onClick={() => setIndex(i)}
               aria-label={`Slide ${i + 1}`}
-              className={cn("h-1.5 rounded-full transition-all", i === index ? "w-6 bg-brass-400" : "w-1.5 bg-cream-50/60")}
+              className={cn(
+                "h-1.5 rounded-full transition-all duration-300 ease-smooth",
+                i === index ? "w-6 bg-brass-400" : "w-1.5 bg-cream-50/60 hover:bg-cream-50",
+              )}
             />
           ))}
         </div>

@@ -23,6 +23,11 @@ export const couponListQuerySchema = paginationQuerySchema.extend({
   search: z.string().min(1).max(200).optional(),
 });
 
+export const bestCouponQuerySchema = z.object({
+  subtotal: z.coerce.number().positive(),
+});
+
 export type CreateCouponInput = z.infer<typeof createCouponSchema>;
 export type UpdateCouponInput = z.infer<typeof updateCouponSchema>;
 export type CouponListQuery = z.infer<typeof couponListQuerySchema>;
+export type BestCouponQuery = z.infer<typeof bestCouponQuerySchema>;

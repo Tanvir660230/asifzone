@@ -98,6 +98,7 @@ export default function FlashSalesPage() {
       />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -121,7 +122,7 @@ export default function FlashSalesPage() {
             {data?.flashSales.map((fs) => {
               const status = statusOf(fs);
               return (
-                <tr key={fs.id} className="border-t border-ink-100">
+                <tr key={fs.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
                   <td className="px-4 py-3">{fs.name}</td>
                   <td className="px-4 py-3">
                     <Badge className={status.className}>{status.label}</Badge>
@@ -144,6 +145,7 @@ export default function FlashSalesPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New flash sale">

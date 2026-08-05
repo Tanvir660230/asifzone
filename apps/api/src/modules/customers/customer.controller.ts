@@ -8,6 +8,7 @@ import {
   CUSTOMER_REFRESH_COOKIE,
 } from "../../lib/cookies";
 import * as customerService from "./customer.service";
+import { getOrderForCustomer } from "../orders/order.service";
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { accessToken, refreshToken, customer } = await customerService.registerCustomer(req.body);
@@ -73,6 +74,16 @@ export const listOrders = asyncHandler(async (req: Request, res: Response) => {
   res.json(result);
 });
 
+export const getOrder = asyncHandler(async (req: Request, res: Response) => {
+  const order = await getOrderForCustomer(req.customer!.customerId, req.params.id!);
+  res.json({ order });
+});
+
+export const listPoints = asyncHandler(async (req: Request, res: Response) => {
+  const result = await customerService.listMyPointsLedger(req.customer!.customerId, req.query as never);
+  res.json(result);
+});
+
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
   await customerService.requestPasswordReset(req.body.email);
   res.json({ message: "If an account exists for that email, a reset link has been sent." });
@@ -91,4 +102,9 @@ export const listCustomersAdmin = asyncHandler(async (req: Request, res: Respons
 
 export const getCustomerDetailAdmin = asyncHandler(async (req: Request, res: Response) => {
   res.json({ customer: await customerService.getCustomerDetailAdmin(req.params.id!) });
+});
+
+export const adjustPoints = asyncHandler(async (req: Request, res: Response) => {
+  const customer = await customerService.adjustRewardPoints(req.params.id!, req.body.points, req.body.reason);
+  res.json({ customer });
 });

@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { uploadCategoryImage } from "@/lib/api/categories";
+import { uploadCategoryImage, uploadCategoryBannerImage } from "@/lib/api/categories";
 import { ApiError } from "@/lib/api-client";
 
 interface CategoryFormProps {
@@ -57,10 +57,15 @@ export function CategoryForm({ categories, initial, onSubmit, onCancel }: Catego
           slug: initial.slug,
           parentId: initial.parentId,
           imageUrl: initial.imageUrl,
+          imageAltText: initial.imageAltText,
+          bannerImageUrl: initial.bannerImageUrl,
           sortOrder: initial.sortOrder,
           isActive: initial.isActive,
+          isFeatured: initial.isFeatured,
+          seoTitle: initial.seoTitle,
+          seoDescription: initial.seoDescription,
         }
-      : { sortOrder: 0, isActive: true },
+      : { sortOrder: 0, isActive: true, isFeatured: false },
   });
 
   const excluded = initial ? collectDescendantIds(categories, initial.id) : new Set<string>();
@@ -70,6 +75,11 @@ export function CategoryForm({ categories, initial, onSubmit, onCancel }: Catego
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const uploadMutation = useMutation({ mutationFn: uploadCategoryImage });
+
+  const bannerImageUrl = watch("bannerImageUrl");
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+  const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
+  const bannerUploadMutation = useMutation({ mutationFn: uploadCategoryBannerImage });
 
   async function handleImageSelected(file: File | null) {
     if (!file) return;
@@ -81,6 +91,19 @@ export function CategoryForm({ categories, initial, onSubmit, onCancel }: Catego
       setUploadError(err instanceof ApiError ? err.message : "Image upload failed");
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleBannerSelected(file: File | null) {
+    if (!file) return;
+    setBannerUploadError(null);
+    try {
+      const { url } = await bannerUploadMutation.mutateAsync(file);
+      setValue("bannerImageUrl", url, { shouldValidate: true });
+    } catch (err) {
+      setBannerUploadError(err instanceof ApiError ? err.message : "Image upload failed");
+    } finally {
+      if (bannerInputRef.current) bannerInputRef.current.value = "";
     }
   }
 
@@ -146,15 +169,72 @@ export function CategoryForm({ categories, initial, onSubmit, onCancel }: Catego
         {uploadError && <p className="mt-1 text-xs text-danger-600">{uploadError}</p>}
       </div>
 
+      <div>
+        <Label htmlFor="imageAltText">Image alt text (optional)</Label>
+        <Input id="imageAltText" placeholder={`Defaults to "${initial?.name ?? "category name"}"`} {...register("imageAltText")} />
+      </div>
+
+      <div>
+        <Label>Banner image (category page hero, optional)</Label>
+        <input type="hidden" {...register("bannerImageUrl")} />
+        {bannerImageUrl ? (
+          <div className="relative mt-1 h-20 w-full overflow-hidden rounded-lg border border-ink-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={bannerImageUrl} alt="" className="h-full w-full object-cover" />
+            <button
+              type="button"
+              onClick={() => setValue("bannerImageUrl", "", { shouldValidate: true })}
+              className="absolute right-2 top-2 rounded-full bg-ink-900/70 p-1 text-cream-50"
+              aria-label="Remove banner image"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => bannerInputRef.current?.click()}
+            disabled={bannerUploadMutation.isPending}
+            className="mt-1 flex h-20 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
+          >
+            <Upload size={18} />
+            <span className="text-xs">{bannerUploadMutation.isPending ? "Uploading…" : "Click to upload a banner"}</span>
+          </button>
+        )}
+        <input
+          ref={bannerInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={(e) => handleBannerSelected(e.target.files?.[0] ?? null)}
+        />
+        {bannerUploadError && <p className="mt-1 text-xs text-danger-600">{bannerUploadError}</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="seoTitle">SEO title</Label>
+          <Input id="seoTitle" placeholder="Defaults to category name" {...register("seoTitle")} />
+        </div>
+        <div>
+          <Label htmlFor="seoDescription">Meta description</Label>
+          <Input id="seoDescription" placeholder="Shown in search results" {...register("seoDescription")} />
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label htmlFor="sortOrder">Sort order</Label>
           <Input id="sortOrder" type="number" {...register("sortOrder", { valueAsNumber: true })} />
         </div>
-        <div className="flex items-end pb-2">
+        <div className="flex items-end gap-4 pb-2">
           <label className="flex items-center gap-2 text-sm text-ink-700">
             <Checkbox {...register("isActive")} />
             Active
+          </label>
+          <label className="flex items-center gap-2 text-sm text-ink-700">
+            <Checkbox {...register("isFeatured")} />
+            Featured
           </label>
         </div>
       </div>

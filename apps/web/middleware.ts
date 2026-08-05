@@ -1,8 +1,38 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const REDIRECT_REVALIDATE_SECONDS = 300;
+
+interface ActiveRedirect {
+  fromPath: string;
+  toPath: string;
+  statusCode: number;
+}
+
+/** Admin-managed redirects (e.g. after a slug change) — fetched with Next's fetch cache so this is
+ * one API call per revalidate window across all traffic, not one per request. A fetch failure (API
+ * down, etc.) must never break the site, so it just falls through to normal routing. */
+async function findActiveRedirect(pathname: string): Promise<ActiveRedirect | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/redirects/active`, {
+      next: { revalidate: REDIRECT_REVALIDATE_SECONDS },
+    });
+    if (!res.ok) return null;
+    const { redirects } = (await res.json()) as { redirects: ActiveRedirect[] };
+    return redirects.find((r) => r.fromPath === pathname) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Cheap presence check only — the API independently verifies the JWT signature on every request via requireAdmin/requireCustomer. This just keeps signed-out users off gated pages without a round trip. */
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  const redirect = await findActiveRedirect(pathname);
+  if (redirect) {
+    return NextResponse.redirect(new URL(redirect.toPath, req.url), redirect.statusCode);
+  }
 
   if (pathname.startsWith("/admin")) {
     const isLoginPage = pathname === "/admin/login";
@@ -46,5 +76,7 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/account/:path*"],
+  // Runs on every page request (not just /admin and /account) so admin-managed redirects can
+  // apply anywhere on the site — excludes static assets/Next internals, which never have redirects.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
