@@ -6,7 +6,7 @@ dist/
 .env.*
 !.env.example
 *.log
-uploads/
+/apps/api/uploads/
 .devmail/
 test-results/
 playwright-report/

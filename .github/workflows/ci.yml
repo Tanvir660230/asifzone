@@ -52,6 +52,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared package
+        run: pnpm --filter @clothing-brand/shared build
+
+      - name: Generate Prisma client
+        run: pnpm --filter api prisma:generate
+
       - name: Apply migrations
         run: pnpm --filter api exec prisma migrate deploy
 
