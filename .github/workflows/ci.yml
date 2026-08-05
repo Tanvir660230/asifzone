@@ -61,6 +61,9 @@ jobs:
       - name: Apply migrations
         run: pnpm --filter api exec prisma migrate deploy
 
+      - name: Seed admin + demo catalog
+        run: pnpm --filter api db:seed
+
       - name: Typecheck API
         run: pnpm --filter api exec tsc --noEmit -p tsconfig.json
 
@@ -75,9 +78,6 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: http://localhost:4000
           NEXT_PUBLIC_SITE_URL: http://localhost:3000
-
-      - name: Seed admin + demo catalog
-        run: pnpm --filter api db:seed
 
       - name: Install Playwright browsers
         run: pnpm --filter web exec playwright install --with-deps chromium
