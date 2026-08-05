@@ -57,9 +57,28 @@ async function seedDemoCatalog() {
   console.log("Seeded demo category + product (Classic Cotton Tee)");
 }
 
+/** A demo customer so the admin Customers list (and anything that assumes at least one exists,
+ * e.g. the e2e suite) isn't relying on some other test/spec having registered one first. */
+async function seedDemoCustomer() {
+  const email = "demo.customer@example.com";
+  const existing = await prisma.customer.findUnique({ where: { email } });
+  if (existing) {
+    console.log("Demo customer already seeded");
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash("DemoCustomer123!", 12);
+  await prisma.customer.create({
+    data: { name: "Demo Customer", email, passwordHash },
+  });
+
+  console.log(`Seeded demo customer: ${email}`);
+}
+
 async function main() {
   await seedAdmin();
   await seedDemoCatalog();
+  await seedDemoCustomer();
 }
 
 main()
