@@ -37,7 +37,9 @@ test.describe("customer account journey", () => {
     await page.goto("/account/register");
     await page.getByLabel("Name").fill("Playwright User");
     await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password").fill(originalPassword);
+    // exact: true — otherwise this also matches the PasswordInput's "Show password" toggle button,
+    // whose aria-label contains "password" as a substring of the default case-insensitive match.
+    await page.getByLabel("Password", { exact: true }).fill(originalPassword);
     await page.getByRole("button", { name: /create account/i }).click();
     await expect(page).toHaveURL(/\/account$/);
     await expect(page.getByText(/Hi, Playwright/i)).toBeVisible();
@@ -57,7 +59,7 @@ test.describe("customer account journey", () => {
     await expect(page).toHaveURL(/\/account\/login/);
 
     await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password").fill(newPassword);
+    await page.getByLabel("Password", { exact: true }).fill(newPassword);
     await page.getByRole("button", { name: /sign in/i }).click();
     await expect(page).toHaveURL(/\/account$/);
 
