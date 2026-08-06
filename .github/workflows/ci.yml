@@ -173,4 +173,8 @@ jobs:
             mv docker/.env.next docker/.env
             docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
             docker compose -f docker/docker-compose.yml exec -T api npx prisma migrate deploy
+            # api/web just got recreated with fresh container IPs, and nginx.conf may have
+            # changed too (its ./nginx/nginx.conf mount does not itself trigger a reload) — always
+            # restart nginx so it never keeps proxying to a dead container.
+            docker compose -f docker/docker-compose.yml restart nginx
           '

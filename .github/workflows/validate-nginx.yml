@@ -1,0 +1,27 @@
+name: Validate nginx config
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Syntax-check the new config in a throwaway container (doesn't touch the live one)
+        run: |
+          scp -i ~/.ssh/deploy_key docker/nginx/nginx.conf root@${{ secrets.VPS_HOST }}:/tmp/nginx.conf.candidate
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
+            docker run --rm \
+              --volumes-from docker-nginx-1:ro \
+              -v /tmp/nginx.conf.candidate:/etc/nginx/conf.d/default.conf:ro \
+              nginx:1.27-alpine nginx -t
+          '
