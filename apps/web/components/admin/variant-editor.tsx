@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useFieldArray, type Control, type UseFormRegister, type UseFormWatch } from "react-hook-form";
+import { useFieldArray, type Control, type UseFormRegister, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 import {
   DndContext,
   closestCenter,
@@ -25,13 +25,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import type { StagedImage } from "./image-uploader";
 
 interface VariantEditorProps {
   control: Control<CreateProductInput>;
   register: UseFormRegister<CreateProductInput>;
   watch: UseFormWatch<CreateProductInput>;
+  setValue: UseFormSetValue<CreateProductInput>;
   attributes: Attribute[];
   productImages: ProductImage[];
+  /** Only passed while creating a new product — images picked in the gallery uploader above
+   * aren't saved yet, so variant image assignment has to work off these in-memory files instead
+   * of `productImages` (which is always empty until the product exists). */
+  stagedImages?: StagedImage[];
+  variantImageKeys?: Record<number, string>;
+  onVariantImageKeyChange?: (index: number, key: string) => void;
   skuPrefix?: string;
 }
 
@@ -50,7 +58,18 @@ function cartesianProduct(groups: AttributeValue[][]): AttributeValue[][] {
   );
 }
 
-export function VariantEditor({ control, register, watch, attributes, productImages, skuPrefix = "SKU" }: VariantEditorProps) {
+export function VariantEditor({
+  control,
+  register,
+  watch,
+  setValue,
+  attributes,
+  productImages,
+  stagedImages,
+  variantImageKeys,
+  onVariantImageKeyChange,
+  skuPrefix = "SKU",
+}: VariantEditorProps) {
   const { fields, append, remove, move } = useFieldArray({ control, name: "variants" });
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
   // Attributes load asynchronously (separate query), so this can't be a one-shot useState initializer —
@@ -246,6 +265,19 @@ export function VariantEditor({ control, register, watch, attributes, productIma
                       <Input placeholder="Black" {...register(`variants.${index}.color`)} />
                     </div>
                     <div>
+                      <Label className="text-[11px]">Color code</Label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="color"
+                          value={/^#[0-9a-fA-F]{6}$/.test(watch(`variants.${index}.colorHex`) ?? "") ? (watch(`variants.${index}.colorHex`) as string) : "#000000"}
+                          onChange={(e) => setValue(`variants.${index}.colorHex`, e.target.value, { shouldDirty: true })}
+                          className="h-9 w-9 shrink-0 cursor-pointer rounded border border-ink-200 bg-transparent p-0.5"
+                          aria-label="Pick color"
+                        />
+                        <Input placeholder="#000000" {...register(`variants.${index}.colorHex`)} />
+                      </div>
+                    </div>
+                    <div>
                       <Label className="text-[11px]">Price override</Label>
                       <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.price`, { valueAsNumber: true })} />
                     </div>
@@ -263,14 +295,32 @@ export function VariantEditor({ control, register, watch, attributes, productIma
                     </div>
                     <div className="col-span-2">
                       <Label className="text-[11px]">Variant image</Label>
-                      <Select {...register(`variants.${index}.imageId`)} disabled={productImages.length === 0}>
-                        <option value="">{productImages.length === 0 ? "Upload product images first…" : "Use default product image"}</option>
-                        {productImages.map((img) => (
-                          <option key={img.id} value={img.id}>
-                            {img.altText || img.url.split("/").pop()}
-                          </option>
-                        ))}
-                      </Select>
+                      {productImages.length > 0 ? (
+                        <Select {...register(`variants.${index}.imageId`)}>
+                          <option value="">Use default product image</option>
+                          {productImages.map((img) => (
+                            <option key={img.id} value={img.id}>
+                              {img.altText || img.url.split("/").pop()}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : stagedImages && stagedImages.length > 0 ? (
+                        <Select
+                          value={variantImageKeys?.[index] ?? ""}
+                          onChange={(e) => onVariantImageKeyChange?.(index, e.target.value)}
+                        >
+                          <option value="">Use default product image</option>
+                          {stagedImages.map((img) => (
+                            <option key={img.key} value={img.key}>
+                              {img.file.name}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <Select disabled>
+                          <option value="">Upload product images first…</option>
+                        </Select>
+                      )}
                     </div>
                   </div>
                 </SortableVariantRow>

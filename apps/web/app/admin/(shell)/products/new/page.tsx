@@ -17,6 +17,7 @@ export default function NewProductPage() {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: categoriesApi.listCategories });
   const [error, setError] = useState<string | null>(null);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
+  const [variantImageKeys, setVariantImageKeys] = useState<Record<number, string>>({});
 
   async function handleSubmit(values: CreateProductInput) {
     setError(null);
@@ -24,10 +25,33 @@ export default function NewProductPage() {
       const { product } = await productsApi.createProduct(values);
       if (stagedImages.length) {
         try {
-          await productsApi.uploadProductImages(
+          const { product: withImages } = await productsApi.uploadProductImages(
             product.id,
             stagedImages.map((s) => s.file),
           );
+
+          // Staged images have no real id until this upload — now that they do (in the same
+          // order they were staged in, since this is a brand-new product's first upload),
+          // resolve each variant's chosen staged key to its real image id.
+          if (Object.keys(variantImageKeys).length) {
+            const stagedKeyToImageId = new Map(stagedImages.map((s, i) => [s.key, withImages.images[i]?.id]));
+            const variants = withImages.variants.map((v, index) => ({
+              id: v.id,
+              sku: v.sku,
+              barcode: v.barcode,
+              size: v.size,
+              sizeLabel: v.sizeLabel,
+              color: v.color,
+              colorHex: v.colorHex,
+              price: v.price ? Number(v.price) : undefined,
+              costPrice: v.costPrice ? Number(v.costPrice) : undefined,
+              stock: v.stock,
+              weight: v.weight ? Number(v.weight) : undefined,
+              imageId: variantImageKeys[index] ? (stagedKeyToImageId.get(variantImageKeys[index]!) ?? null) : v.imageId,
+              attributeValueIds: (v.attributeValues ?? []).map((av) => av.attributeValueId),
+            }));
+            await productsApi.updateProduct(product.id, { ...values, variants });
+          }
         } catch {
           // Product was created successfully; only the image upload failed. Don't block the
           // redirect — the admin can retry the upload from the edit page it lands on.
@@ -59,7 +83,14 @@ export default function NewProductPage() {
         </CardHeader>
         <CardContent>
           {error && <p className="mb-4 text-sm text-danger-600">{error}</p>}
-          <ProductForm categories={data?.categories ?? []} onSubmit={handleSubmit} submitLabel="Create product" />
+          <ProductForm
+            categories={data?.categories ?? []}
+            onSubmit={handleSubmit}
+            submitLabel="Create product"
+            stagedImages={stagedImages}
+            variantImageKeys={variantImageKeys}
+            onVariantImageKeyChange={(index, key) => setVariantImageKeys((m) => ({ ...m, [index]: key }))}
+          />
         </CardContent>
       </Card>
     </div>

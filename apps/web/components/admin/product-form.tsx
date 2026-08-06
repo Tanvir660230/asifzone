@@ -19,6 +19,7 @@ import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
 import { VariantEditor } from "./variant-editor";
+import type { StagedImage } from "./image-uploader";
 
 // Tiptap + its ~9 sub-packages are large and admin-only — split out of the main bundle and
 // only fetched once this form actually renders.
@@ -64,9 +65,21 @@ interface ProductFormProps {
   initial?: Product;
   onSubmit: (values: CreateProductInput) => Promise<void>;
   submitLabel?: string;
+  /** Only relevant while creating a new product — see VariantEditorProps for why these exist. */
+  stagedImages?: StagedImage[];
+  variantImageKeys?: Record<number, string>;
+  onVariantImageKeyChange?: (index: number, key: string) => void;
 }
 
-export function ProductForm({ categories, initial, onSubmit, submitLabel = "Save product" }: ProductFormProps) {
+export function ProductForm({
+  categories,
+  initial,
+  onSubmit,
+  submitLabel = "Save product",
+  stagedImages,
+  variantImageKeys,
+  onVariantImageKeyChange,
+}: ProductFormProps) {
   const { data: attributesData } = useQuery({ queryKey: ["attributes"], queryFn: attributesApi.listAttributes });
   const attributes = attributesData?.attributes ?? [];
 
@@ -316,8 +329,12 @@ export function ProductForm({ categories, initial, onSubmit, submitLabel = "Save
           control={control}
           register={register}
           watch={watch}
+          setValue={setValue}
           attributes={attributes}
           productImages={initial?.images ?? []}
+          stagedImages={stagedImages}
+          variantImageKeys={variantImageKeys}
+          onVariantImageKeyChange={onVariantImageKeyChange}
           skuPrefix={(initial?.slug ?? watch("name") ?? "SKU").toString()}
         />
         {errors.variants && <p className="mt-1 text-xs text-danger-600">{errors.variants.message as string}</p>}
