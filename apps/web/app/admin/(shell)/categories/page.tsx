@@ -2,45 +2,88 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2 } from "lucide-react";
-import type { Category, CreateCategoryInput } from "@clothing-brand/shared";
+import { Plus } from "lucide-react";
+import type { Category, CreateCategoryInput, ReorderCategoriesInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { CategoryForm } from "@/components/admin/category-form";
+import { CategoryTree } from "@/components/admin/category-tree";
 import { PageHeader } from "@/components/admin/page-header";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
 import * as categoriesApi from "@/lib/api/categories";
-import { flattenCategoryTree } from "@/lib/category-tree";
 import { ApiError } from "@/lib/api-client";
+
+const CATEGORIES_KEY = ["categories"] as const;
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["categories"], queryFn: categoriesApi.listCategories });
+  const { data, isLoading } = useQuery({ queryKey: CATEGORIES_KEY, queryFn: categoriesApi.listCategories });
   const [editing, setEditing] = useState<Category | "new" | null>(null);
+  const [newParentId, setNewParentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const categories = data?.categories ?? [];
-  const rows = flattenCategoryTree(categories);
 
   const createMutation = useMutation({
     mutationFn: categoriesApi.createCategory,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categories"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
   });
   const updateMutation = useMutation({
     mutationFn: ({ id, input }: { id: string; input: CreateCategoryInput }) =>
       categoriesApi.updateCategory(id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["categories"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
   });
   const deleteMutation = useMutation({
     mutationFn: categoriesApi.deleteCategory,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY });
       toast.success("Category deleted");
     },
   });
+
+  // Instant feedback on the switch, not a spinner — the cache is patched immediately and only
+  // rolled back if the PATCH actually fails, so toggling a category on/off feels free.
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      categoriesApi.updateCategory(id, { isActive }),
+    onMutate: async ({ id, isActive }) => {
+      await queryClient.cancelQueries({ queryKey: CATEGORIES_KEY });
+      const previous = queryClient.getQueryData<{ categories: Category[] }>(CATEGORIES_KEY);
+      queryClient.setQueryData<{ categories: Category[] } | undefined>(CATEGORIES_KEY, (old) =>
+        old ? { categories: old.categories.map((c) => (c.id === id ? { ...c, isActive } : c)) } : old,
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(CATEGORIES_KEY, context.previous);
+      toast.error("Failed to update category status");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+  });
+
+  // Same optimistic pattern for drag reorder — the tree re-sorts the instant you drop, the network
+  // call just makes it durable.
+  const reorderMutation = useMutation({
+    mutationFn: (input: ReorderCategoriesInput) => categoriesApi.reorderCategories(input),
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: CATEGORIES_KEY });
+      const previous = queryClient.getQueryData<{ categories: Category[] }>(CATEGORIES_KEY);
+      const nextSortOrder = new Map(input.items.map((item) => [item.id, item.sortOrder]));
+      queryClient.setQueryData<{ categories: Category[] } | undefined>(CATEGORIES_KEY, (old) =>
+        old
+          ? { categories: old.categories.map((c) => (nextSortOrder.has(c.id) ? { ...c, sortOrder: nextSortOrder.get(c.id)! } : c)) }
+          : old,
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(CATEGORIES_KEY, context.previous);
+      toast.error("Failed to save the new order");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+  });
+
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   async function handleSubmit(values: CreateCategoryInput) {
@@ -66,69 +109,49 @@ export default function CategoriesPage() {
     }
   }
 
+  function openNew(parentId: string | null = null) {
+    setNewParentId(parentId);
+    setEditing("new");
+  }
+
+  function closeModal() {
+    setEditing(null);
+    setNewParentId(null);
+  }
+
   return (
     <div>
       <PageHeader
         title="Categories"
         action={
-          <Button variant="brass" onClick={() => setEditing("new")}>
+          <Button variant="brass" onClick={() => openNew(null)}>
             <Plus size={16} /> Add category
           </Button>
         }
       />
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
-            <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Slug</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={5} cols={4} />}
-            {!isLoading && rows.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-ink-400">
-                  No categories yet — add your first one.
-                </td>
-              </tr>
-            )}
-            {rows.map((cat) => (
-              <tr key={cat.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                <td className="px-4 py-3" style={{ paddingLeft: `${16 + cat.depth * 24}px` }}>
-                  {cat.depth > 0 && <span className="mr-1 text-ink-300">└</span>}
-                  {cat.name}
-                </td>
-                <td className="px-4 py-3 text-ink-500">{cat.slug}</td>
-                <td className="px-4 py-3">
-                  <Badge className={cat.isActive ? "bg-success-100 text-success-700" : ""}>
-                    {cat.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex justify-end gap-3">
-                    <button onClick={() => setEditing(cat)} className="text-ink-500 hover:text-ink-900" aria-label="Edit">
-                      <Pencil size={16} />
-                    </button>
-                    <button onClick={() => handleDelete(cat)} className="text-ink-500 hover:text-danger-600" aria-label="Delete">
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-16 animate-pulse rounded-xl border border-ink-100 bg-cream-50" />
+          ))}
         </div>
-      </div>
+      ) : (
+        <CategoryTree
+          categories={categories}
+          onToggleActive={(category, next) => toggleActiveMutation.mutate({ id: category.id, isActive: next })}
+          onEdit={setEditing}
+          onDelete={handleDelete}
+          onAddChild={(parentId) => openNew(parentId)}
+          onReorder={(parentId, orderedIds) =>
+            reorderMutation.mutate({ items: orderedIds.map((id, index) => ({ id, sortOrder: index })) })
+          }
+        />
+      )}
 
       <Modal
         open={editing !== null}
-        onClose={() => setEditing(null)}
+        onClose={closeModal}
         title={editing === "new" ? "Add category" : `Edit ${editing ? editing.name : ""}`}
       >
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
@@ -136,8 +159,9 @@ export default function CategoriesPage() {
           <CategoryForm
             categories={categories}
             initial={editing === "new" ? undefined : editing}
+            defaultParentId={editing === "new" ? newParentId : undefined}
             onSubmit={handleSubmit}
-            onCancel={() => setEditing(null)}
+            onCancel={closeModal}
           />
         )}
       </Modal>

@@ -150,3 +150,8 @@ export const removeImage = asyncHandler(async (req: Request, res: Response) => {
   await productService.deleteProductImage(req.params.id!, req.params.imageId!);
   res.status(204).send();
 });
+
+export const updateImageAltText = asyncHandler(async (req: Request, res: Response) => {
+  await productService.updateProductImageAltText(req.params.id!, req.params.imageId!, req.body.altText);
+  res.status(204).send();
+});

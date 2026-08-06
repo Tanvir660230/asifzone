@@ -1,18 +1,28 @@
+import crypto from "crypto";
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import {
   accessTokenCookieOptions,
   refreshTokenCookieOptions,
+  refreshTokenSessionCookieOptions,
+  csrfTokenCookieOptions,
   CUSTOMER_ACCESS_COOKIE,
   CUSTOMER_REFRESH_COOKIE,
 } from "../../lib/cookies";
 import * as customerService from "./customer.service";
 import { getOrderForCustomer } from "../orders/order.service";
 
+// Same double-submit token as the admin login flow (middlewares/csrf.ts) — customer login was
+// never issuing this cookie, which left every customer-session mutation unprotected by the CSRF
+// check regardless of what the middleware itself checked for.
+function withCsrfCookie(res: Response) {
+  return res.cookie("csrf_token", crypto.randomBytes(24).toString("hex"), csrfTokenCookieOptions);
+}
+
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { accessToken, refreshToken, customer } = await customerService.registerCustomer(req.body);
-  res
+  withCsrfCookie(res)
     .cookie(CUSTOMER_ACCESS_COOKIE, accessToken, accessTokenCookieOptions)
     .cookie(CUSTOMER_REFRESH_COOKIE, refreshToken, refreshTokenCookieOptions)
     .status(201)
@@ -21,14 +31,41 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { accessToken, refreshToken, customer } = await customerService.loginCustomer(req.body);
-  res
+  const refreshCookieOptions = req.body.rememberMe === false ? refreshTokenSessionCookieOptions : refreshTokenCookieOptions;
+  withCsrfCookie(res)
+    .cookie(CUSTOMER_ACCESS_COOKIE, accessToken, accessTokenCookieOptions)
+    .cookie(CUSTOMER_REFRESH_COOKIE, refreshToken, refreshCookieOptions)
+    .json({ customer });
+});
+
+export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
+  const { accessToken, refreshToken, customer } = await customerService.loginWithGoogle(req.body.idToken);
+  withCsrfCookie(res)
+    .cookie(CUSTOMER_ACCESS_COOKIE, accessToken, accessTokenCookieOptions)
+    .cookie(CUSTOMER_REFRESH_COOKIE, refreshToken, refreshTokenCookieOptions)
+    .json({ customer });
+});
+
+export const requestOtp = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.requestOtp(req.body.phone);
+  res.json({ message: "A verification code has been sent." });
+});
+
+export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
+  const { accessToken, refreshToken, customer } = await customerService.verifyOtp(req.body);
+  withCsrfCookie(res)
     .cookie(CUSTOMER_ACCESS_COOKIE, accessToken, accessTokenCookieOptions)
     .cookie(CUSTOMER_REFRESH_COOKIE, refreshToken, refreshTokenCookieOptions)
     .json({ customer });
 });
 
 export const logout = asyncHandler(async (_req: Request, res: Response) => {
-  res.clearCookie(CUSTOMER_ACCESS_COOKIE).clearCookie(CUSTOMER_REFRESH_COOKIE).status(204).send();
+  res
+    .clearCookie(CUSTOMER_ACCESS_COOKIE)
+    .clearCookie(CUSTOMER_REFRESH_COOKIE)
+    .clearCookie("csrf_token")
+    .status(204)
+    .send();
 });
 
 export const refresh = asyncHandler(async (req: Request, res: Response) => {
@@ -84,6 +121,20 @@ export const listPoints = asyncHandler(async (req: Request, res: Response) => {
   res.json(result);
 });
 
+export const listMyPushSubscriptions = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ subscriptions: await customerService.listPushSubscriptions(req.customer!.customerId) });
+});
+
+export const subscribePush = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.subscribeToPush(req.customer!.customerId, req.body);
+  res.status(201).json({ ok: true });
+});
+
+export const unsubscribePush = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.unsubscribeFromPush(req.customer!.customerId, (req.query as { endpoint: string }).endpoint);
+  res.status(204).send();
+});
+
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
   await customerService.requestPasswordReset(req.body.email);
   res.json({ message: "If an account exists for that email, a reset link has been sent." });
@@ -92,6 +143,16 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
   await customerService.resetPassword(req.body.token, req.body.password);
   res.json({ message: "Password updated, please sign in." });
+});
+
+export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.verifyEmail(req.body.token);
+  res.json({ message: "Email verified." });
+});
+
+export const resendVerification = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.resendVerificationEmail(req.customer!.customerId);
+  res.json({ message: "Verification email sent." });
 });
 
 // --- admin ---

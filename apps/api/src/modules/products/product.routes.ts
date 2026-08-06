@@ -13,9 +13,11 @@ import {
   bulkProductIdsSchema,
   bulkProductStatusSchema,
   bulkProductCategorySchema,
+  updateImageAltTextSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin } from "../../middlewares/require-admin";
+import { trackingRateLimit } from "../../middlewares/rate-limit";
 import { imageUpload } from "../uploads/upload.middleware";
 import * as productController from "./product.controller";
 
@@ -64,11 +66,13 @@ productRouter.get("/:id/budget-alternatives", productController.budgetAlternativ
 productRouter.get("/:id/upgrade-options", productController.upgradeOptions);
 productRouter.get("/:id/premium-alternatives", productController.premiumAlternatives);
 productRouter.get("/:id/urgency-signals", productController.urgencySignals);
-productRouter.post("/:id/view", productController.recordView);
+productRouter.post("/:id/view", trackingRateLimit, productController.recordView);
 
 productRouter.get("/export/csv", requireAdmin, productController.exportCsv);
-productRouter.get("/", validate(productListQuerySchema, "query"), productController.list);
-productRouter.get("/:id", productController.getOne);
+// Both of these return full records (costPrice included, isActive/deletedAt unfiltered) and are
+// only ever called from the admin console — the storefront uses GET /storefront and GET /slug/:slug.
+productRouter.get("/", requireAdmin, validate(productListQuerySchema, "query"), productController.list);
+productRouter.get("/:id", requireAdmin, productController.getOne);
 
 productRouter.post("/bulk/delete", requireAdmin, validate(bulkProductIdsSchema), productController.bulkDelete);
 productRouter.post("/bulk/status", requireAdmin, validate(bulkProductStatusSchema), productController.bulkStatus);
@@ -87,3 +91,9 @@ productRouter.post(
   productController.uploadImages,
 );
 productRouter.delete("/:id/images/:imageId", requireAdmin, productController.removeImage);
+productRouter.patch(
+  "/:id/images/:imageId",
+  requireAdmin,
+  validate(updateImageAltTextSchema),
+  productController.updateImageAltText,
+);

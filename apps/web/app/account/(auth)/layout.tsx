@@ -2,6 +2,9 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 
+// Session-aware pages, must always be live — never cached or statically served.
+export const dynamic = "force-dynamic";
+
 export default async function AccountAuthLayout({ children }: { children: ReactNode }) {
   const { settings } = await getSiteSettings();
 

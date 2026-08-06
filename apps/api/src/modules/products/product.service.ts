@@ -763,7 +763,26 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
       const toDelete = existing.variants.filter((v) => !incomingIds.has(v.id));
 
       if (toDelete.length) {
-        await tx.productVariant.deleteMany({ where: { id: { in: toDelete.map((v) => v.id) } } });
+        const deletableIds = toDelete.map((v) => v.id);
+        const referenced = await tx.orderItem.findMany({
+          where: { variantId: { in: deletableIds } },
+          select: { variantId: true },
+          distinct: ["variantId"],
+        });
+        const referencedIds = new Set(referenced.map((r) => r.variantId));
+        const safeToDelete = deletableIds.filter((vid) => !referencedIds.has(vid));
+        const mustKeep = deletableIds.filter((vid) => referencedIds.has(vid));
+
+        if (safeToDelete.length) {
+          await tx.productVariant.deleteMany({ where: { id: { in: safeToDelete } } });
+        }
+        // A variant with real order history can't be hard-deleted — StockMovement cascades on
+        // variant delete, and OrderItem.variantId has no FK to fall back on, so deleting it would
+        // silently erase that order's stock audit trail. Zero its stock instead: it drops out of
+        // checkout the same as a delete would, without destroying history.
+        if (mustKeep.length) {
+          await tx.productVariant.updateMany({ where: { id: { in: mustKeep } }, data: { stock: 0 } });
+        }
       }
 
       for (const variant of input.variants) {
@@ -912,5 +931,12 @@ export async function deleteProductImage(productId: string, imageId: string) {
   if (!image || image.productId !== productId) throw AppError.notFound("Image not found");
   await prisma.productImage.delete({ where: { id: imageId } });
   await deleteProductImageFiles(image.url);
+  await invalidateCache();
+}
+
+export async function updateProductImageAltText(productId: string, imageId: string, altText: string) {
+  const image = await prisma.productImage.findUnique({ where: { id: imageId } });
+  if (!image || image.productId !== productId) throw AppError.notFound("Image not found");
+  await prisma.productImage.update({ where: { id: imageId }, data: { altText } });
   await invalidateCache();
 }

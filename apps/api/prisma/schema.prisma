@@ -81,6 +81,24 @@ model AdminUser {
   auditLogs              AuditLog[]
   statusChanges          OrderStatusHistory[]
   reviewedReturnRequests ReturnRequest[]
+  sentInvites            AdminInvite[]
+}
+
+/// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
+/// public registration route. No AdminUser row exists until the invite is accepted with a password.
+model AdminInvite {
+  id          String    @id @default(cuid())
+  email       String
+  name        String
+  role        AdminRole
+  tokenHash   String    @unique
+  invitedById String
+  invitedBy   AdminUser @relation(fields: [invitedById], references: [id])
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
 }
 
 /// DB-tracked refresh tokens (rather than bare stateless JWTs) so a session can actually be revoked —
@@ -221,6 +239,27 @@ model ProductViewLog {
   @@index([productId, createdAt])
 }
 
+/// Anonymous, cookie-based pageview beacon — one row per route the visitor lands on. `sessionId`
+/// is a random id the storefront generates client-side and keeps for the browser session; it's
+/// never tied to a customer account. `referrer`/`utm*` are captured once, at the first pageview of
+/// the session, and the client re-sends that same first-touch value on every later pageview in the
+/// same session — so grouping by sessionId and taking any one row gives first-touch attribution
+/// without a second query. Powers traffic sources, conversion rate, bounce rate, and campaign
+/// performance; joined to Order.sessionId for revenue attribution.
+model PageView {
+  id          String   @id @default(cuid())
+  sessionId   String
+  path        String
+  referrer    String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  createdAt   DateTime @default(now())
+
+  @@index([sessionId, createdAt])
+  @@index([createdAt])
+}
+
 /// A one-way, server-side mirror of a logged-in customer's client-side (localStorage) cart —
 /// exists purely so cart abandonment can be detected and recovered from; never read back into
 /// the storefront UI. Guests have no Cart row (the server can't identify/email them).
@@ -316,22 +355,37 @@ model ProductImage {
 }
 
 model Customer {
-  id                  String               @id @default(cuid())
-  name                String
-  email               String               @unique
-  phone               String?
-  passwordHash        String?
-  rewardPoints        Int                  @default(0)
-  addresses           Address[]
-  orders              Order[]
-  wishlistItems       WishlistItem[]
-  passwordResetTokens PasswordResetToken[]
-  pointsLedger        RewardPointsEntry[]
-  cart                Cart?
-  stockAlerts         StockAlert[]
-  returnRequests      ReturnRequest[]
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  id                     String                  @id @default(cuid())
+  name                   String
+  email                  String                  @unique
+  /// Set once the email-verification link is clicked, or immediately for Google/phone-OTP signups
+  /// (Google verifies email ownership itself; phone-OTP accounts skip email verification entirely).
+  emailVerifiedAt        DateTime?
+  phone                  String?
+  passwordHash           String?
+  /// Google "sub" claim — set for accounts created or linked via Google sign-in. Null for
+  /// email/password-only or phone-OTP-only accounts.
+  googleId               String?                 @unique
+  rewardPoints           Int                     @default(0)
+  /// Bumped on password reset so every refresh token issued before the reset is rejected —
+  /// refresh tokens are stateless JWTs, so this is what lets a reset actually revoke a stolen one.
+  tokenVersion           Int                     @default(0)
+  /// Explicit consent for SMS marketing sends (Campaign channel SMS) — separate from `phone` itself,
+  /// since phone is collected for account/contact purposes and isn't consent on its own.
+  smsMarketingOptIn      Boolean                 @default(false)
+  addresses              Address[]
+  orders                 Order[]
+  wishlistItems          WishlistItem[]
+  passwordResetTokens    PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  pointsLedger           RewardPointsEntry[]
+  cart                   Cart?
+  stockAlerts            StockAlert[]
+  returnRequests         ReturnRequest[]
+  campaignRecipients     CampaignRecipient[]
+  pushSubscriptions      PushSubscription[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 }
 
 /// Append-only ledger backing Customer.rewardPoints — every earn/redeem/manual adjustment is a row,
@@ -360,6 +414,32 @@ model PasswordResetToken {
   @@index([customerId])
 }
 
+model EmailVerificationToken {
+  id         String    @id @default(cuid())
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([customerId])
+}
+
+/// One row per outstanding phone-login code — `attempts` caps guesses at a 6-digit code (invalidated
+/// after 5 wrong tries) independent of the per-IP rate limit on the request route itself.
+model PhoneOtp {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone])
+}
+
 model Address {
   id          String   @id @default(cuid())
   customerId  String
@@ -375,6 +455,9 @@ model Address {
   createdAt   DateTime @default(now())
 
   @@index([customerId])
+  // At most one isDefault=true row per customer is also enforced at the DB level by a raw partial
+  // unique index (see migration add_address_one_default_per_customer) — Prisma's schema DSL can't
+  // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
 }
 
 model Coupon {
@@ -435,6 +518,10 @@ model Order {
   status        OrderStatus   @default(PENDING)
   paymentMethod PaymentMethod
   paymentStatus PaymentStatus @default(UNPAID)
+  /// The storefront session (see PageView.sessionId) that placed this order, if the checkout
+  /// beacon fired — links revenue back to conversion rate/traffic-source/campaign analytics.
+  /// Never tied to a customer account; just the anonymous client-generated session id.
+  sessionId     String?
 
   customerName        String
   customerEmail       String?
@@ -472,6 +559,7 @@ model Order {
   @@index([status])
   @@index([customerId])
   @@index([createdAt, status])
+  @@index([sessionId])
 }
 
 /// Append-only timeline of status transitions for an order — powers the admin timeline view.
@@ -493,20 +581,20 @@ model OrderStatusHistory {
 /// tracking a parallel status of its own — there's no payment-gateway refund API integrated, so
 /// "refund status" is just the order's existing status/paymentStatus shown alongside this record.
 model ReturnRequest {
-  id                String               @id @default(cuid())
+  id                String              @id @default(cuid())
   orderId           String
-  order             Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order             Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
   customerId        String
-  customer          Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   reason            String
   note              String?
-  status            ReturnRequestStatus  @default(PENDING)
+  status            ReturnRequestStatus @default(PENDING)
   adminNote         String?
   reviewedAt        DateTime?
   reviewedByAdminId String?
-  reviewedByAdmin   AdminUser?           @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  reviewedByAdmin   AdminUser?          @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@index([orderId])
   @@index([customerId])
@@ -683,4 +771,86 @@ model Redirect {
   updatedAt  DateTime @updatedAt
 
   @@index([isActive])
+}
+
+enum CampaignChannel {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+enum CampaignRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+/// A saved audience filter (e.g. "no order in 30 days", "has ordered at least once") that a
+/// Campaign targets. `filter` is interpreted by the campaign service rather than modeled as
+/// columns, so new filter types don't require a migration.
+model Segment {
+  id        String     @id @default(cuid())
+  name      String
+  filter    Json
+  campaigns Campaign[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+/// A one-off or scheduled send (email/SMS/push) to a Segment. Delivery to each recipient is
+/// tracked as its own CampaignRecipient row rather than a single campaign-level status, so a
+/// partial failure is visible per-customer and retryable without resending to everyone.
+model Campaign {
+  id          String              @id @default(cuid())
+  name        String
+  channel     CampaignChannel
+  status      CampaignStatus      @default(DRAFT)
+  subject     String?
+  body        String
+  segmentId   String?
+  segment     Segment?            @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  recipients  CampaignRecipient[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([status, scheduledAt])
+}
+
+model CampaignRecipient {
+  id         String                  @id @default(cuid())
+  campaignId String
+  campaign   Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status     CampaignRecipientStatus @default(PENDING)
+  sentAt     DateTime?
+  error      String?
+  createdAt  DateTime                @default(now())
+
+  @@unique([campaignId, customerId])
+  @@index([customerId])
+}
+
+/// A customer's registered browser for Web Push. `p256dh`/`auth` are the subscription's
+/// encryption keys, as returned by PushManager.subscribe() in the browser.
+model PushSubscription {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  createdAt  DateTime @default(now())
+
+  @@index([customerId])
 }

@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { Pagination } from "@/components/admin/pagination";
 import * as auditApi from "@/lib/api/audit";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 
 const ACTION_COLOR: Record<string, string> = {
   create: "bg-success-100 text-success-700",
@@ -23,12 +24,24 @@ function actionBadgeClass(action: string) {
 export default function AuditLogPage() {
   const [page, setPage] = useState(1);
   const pageSize = 30;
+  const { data: currentAdmin } = useCurrentAdmin();
+  const isOwner = currentAdmin?.admin.role === "OWNER";
   const { data, isLoading } = useQuery({
     queryKey: ["audit-logs", page],
     queryFn: () => auditApi.listAuditLogs(page, pageSize),
+    enabled: isOwner,
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+
+  if (currentAdmin && !isOwner) {
+    return (
+      <div>
+        <PageHeader title="Audit Log" />
+        <p className="text-sm text-ink-500">Only store owners can review the audit log.</p>
+      </div>
+    );
+  }
 
   return (
     <div>

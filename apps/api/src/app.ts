@@ -27,11 +27,18 @@ import { uploadRouter } from "./modules/uploads/upload.routes";
 import { auditRouter } from "./modules/audit/audit.routes";
 import { notificationRouter } from "./modules/notifications/notification.routes";
 import { settingsRouter } from "./modules/settings/settings.routes";
+import { aiRouter } from "./modules/ai/ai.routes";
+import { campaignRouter } from "./modules/campaigns/campaign.routes";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
 
 export const app = express();
+
+// Trust exactly one hop: nginx is always the sole reverse proxy in front of this app (in Docker
+// Compose in prod; no proxy at all in local dev, where this is a no-op). Without it, express-rate-limit
+// can't tell real client IPs apart behind the proxy — every request looks like it comes from nginx.
+app.set("trust proxy", 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: env.webOrigin, credentials: true }));
@@ -69,6 +76,8 @@ app.use("/api/uploads", uploadRouter);
 app.use("/api/audit-logs", auditRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/settings", settingsRouter);
+app.use("/api/ai", aiRouter);
+app.use("/api/campaigns", campaignRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -11,6 +11,7 @@ import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { WishlistButton } from "./wishlist-button";
 import { StockAlertButton } from "./stock-alert-button";
+import { SizeGuideModal } from "./size-guide-modal";
 
 const CRITICAL_STOCK_THRESHOLD = 3;
 
@@ -86,7 +87,10 @@ export function VariantSelector({
     <div className="space-y-5">
       {sizes.length > 0 && (
         <div>
-          <p className="mb-2 text-xs uppercase tracking-wide text-ink-500">Size</p>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs uppercase tracking-wide text-ink-500">Size</p>
+            <SizeGuideModal />
+          </div>
           <div className="flex flex-wrap gap-2">
             {sizes.map((size) => (
               <button

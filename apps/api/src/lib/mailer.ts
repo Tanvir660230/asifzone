@@ -1,5 +1,7 @@
 import fs from "fs";
 import path from "path";
+import { Resend } from "resend";
+import { env } from "../config/env";
 
 interface MailInput {
   to: string;
@@ -8,12 +10,9 @@ interface MailInput {
 }
 
 const devMailDir = path.join(process.cwd(), ".devmail");
+const resend = env.resend.apiKey ? new Resend(env.resend.apiKey) : null;
 
-// No transactional email provider is configured yet. This writes each email to disk and
-// logs it instead of sending it, so reset links are reachable during development. Swap
-// the body of this function for a real provider (Resend/SendGrid/SES) call once a
-// provider API key exists — every caller of sendMail stays unchanged.
-export async function sendMail({ to, subject, html }: MailInput): Promise<void> {
+function writeDevMail({ to, subject, html }: MailInput) {
   console.log(`[mailer] (dev mode, not actually sent) To: ${to} | Subject: ${subject}`);
 
   fs.mkdirSync(devMailDir, { recursive: true });
@@ -23,4 +22,21 @@ export async function sendMail({ to, subject, html }: MailInput): Promise<void> 
     `<!-- To: ${to} -->\n<!-- Subject: ${subject} -->\n${html}`,
   );
   console.log(`[mailer] preview written to apps/api/.devmail/${filename}`);
+}
+
+// No RESEND_API_KEY configured yet: fall back to writing each email to disk and logging it, so
+// reset links stay reachable during local dev/CI without a real provider account.
+export async function sendMail({ to, subject, html }: MailInput): Promise<void> {
+  if (!resend) {
+    writeDevMail({ to, subject, html });
+    return;
+  }
+
+  const { error } = await resend.emails.send({
+    from: env.resend.fromAddress,
+    to,
+    subject,
+    html,
+  });
+  if (error) throw new Error(`[mailer] Resend send failed: ${error.message}`);
 }

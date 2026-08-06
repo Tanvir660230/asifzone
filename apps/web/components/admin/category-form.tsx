@@ -17,6 +17,8 @@ import { ApiError } from "@/lib/api-client";
 interface CategoryFormProps {
   categories: Category[];
   initial?: Category;
+  /** Pre-selects a parent when opening the form fresh from a tree row's "Add sub-category" action. */
+  defaultParentId?: string | null;
   onSubmit: (values: CreateCategoryInput) => Promise<void>;
   onCancel: () => void;
 }
@@ -42,7 +44,7 @@ function collectDescendantIds(categories: Category[], rootId: string): Set<strin
   return ids;
 }
 
-export function CategoryForm({ categories, initial, onSubmit, onCancel }: CategoryFormProps) {
+export function CategoryForm({ categories, initial, defaultParentId, onSubmit, onCancel }: CategoryFormProps) {
   const {
     register,
     handleSubmit,
@@ -65,7 +67,7 @@ export function CategoryForm({ categories, initial, onSubmit, onCancel }: Catego
           seoTitle: initial.seoTitle,
           seoDescription: initial.seoDescription,
         }
-      : { sortOrder: 0, isActive: true, isFeatured: false },
+      : { sortOrder: 0, isActive: true, isFeatured: false, parentId: defaultParentId ?? null },
   });
 
   const excluded = initial ? collectDescendantIds(categories, initial.id) : new Set<string>();

@@ -1,6 +1,7 @@
 import { prisma } from "../../config/prisma";
 import { sendMail } from "../../lib/mailer";
 import { env } from "../../config/env";
+import { escapeHtml } from "../../lib/html";
 
 export async function subscribe(customerId: string, variantId: string) {
   await prisma.stockAlert.upsert({
@@ -32,7 +33,7 @@ export async function notifyBackInStock(variantId: string) {
     await sendMail({
       to: alert.customer.email,
       subject: `Back in stock: ${alert.variant.product.name}`,
-      html: `<p>Hi ${alert.customer.name},</p><p><strong>${alert.variant.product.name}</strong> (${alert.variant.size}/${alert.variant.color}) is back in stock.</p><p><a href="${productUrl}">${productUrl}</a></p>`,
+      html: `<p>Hi ${escapeHtml(alert.customer.name)},</p><p><strong>${alert.variant.product.name}</strong> (${alert.variant.size}/${alert.variant.color}) is back in stock.</p><p><a href="${productUrl}">${productUrl}</a></p>`,
     });
   }
 

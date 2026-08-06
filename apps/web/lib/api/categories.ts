@@ -1,4 +1,4 @@
-import type { Category, CreateCategoryInput, UpdateCategoryInput } from "@clothing-brand/shared";
+import type { Category, CreateCategoryInput, UpdateCategoryInput, ReorderCategoriesInput } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export function listCategories() {
@@ -35,4 +35,8 @@ export function updateCategory(id: string, input: UpdateCategoryInput) {
 
 export function deleteCategory(id: string) {
   return apiFetch<void>(`/api/categories/${id}`, { method: "DELETE" });
+}
+
+export function reorderCategories(input: ReorderCategoriesInput) {
+  return apiFetch<void>("/api/categories/reorder", { method: "POST", body: input });
 }

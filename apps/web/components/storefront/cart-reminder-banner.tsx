@@ -33,7 +33,11 @@ export function CartReminderBanner() {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-4 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-full border border-ink-200 bg-cream-50 px-4 py-3 shadow-floatLg animate-fade-in sm:left-auto sm:right-4 sm:translate-x-0">
+    <div
+      // bottom-20 (not bottom-4) — this only ever shows when the cart has items, which is exactly
+      // when StickyCartBar occupies the bottom of the viewport; stacking above it avoids overlap.
+      className="fixed bottom-20 left-1/2 z-40 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-full border border-ink-200 bg-cream-50 px-4 py-3 shadow-floatLg animate-fade-in sm:left-auto sm:right-4 sm:translate-x-0"
+    >
       <ShoppingBag size={18} className="shrink-0 text-brass-500" />
       <p className="flex-1 text-sm text-ink-700">
         Still interested?{" "}

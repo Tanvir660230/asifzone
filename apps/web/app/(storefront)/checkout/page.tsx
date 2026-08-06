@@ -23,6 +23,7 @@ import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
 import { createOrder } from "@/lib/api/orders";
+import { getSessionId } from "@/lib/analytics";
 import { validateCoupon, getBestCoupon, type CouponPreview } from "@/lib/api/coupons";
 import { previewBundle } from "@/lib/api/bundles";
 import { listAddresses } from "@/lib/api/customers";
@@ -180,6 +181,7 @@ export default function CheckoutPage() {
       ...values,
       couponCode: coupon?.code,
       items: items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      sessionId: getSessionId() || undefined,
     };
 
     try {

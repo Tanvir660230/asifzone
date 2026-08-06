@@ -5,6 +5,7 @@ import { prisma } from "../../config/prisma";
 
 const email = `vitest_wishlist_${Date.now()}@example.com`;
 let cookies: string[] | undefined;
+let csrfToken: string;
 let productId: string;
 
 describe("wishlist", () => {
@@ -13,6 +14,9 @@ describe("wishlist", () => {
       .post("/api/customers/register")
       .send({ name: "Vitest Wishlist User", email, password: "SomePass123" });
     cookies = registerRes.get("Set-Cookie");
+    // csrf_token is set alongside the session cookies (middlewares/csrf.ts) — every mutating
+    // request below needs to echo it back as a header, like the real frontend does.
+    csrfToken = cookies!.find((c) => c.startsWith("csrf_token="))!.split(";")[0]!.split("=")[1]!;
 
     const product = await prisma.product.findFirst();
     if (!product) throw new Error("Seed at least one product before running wishlist tests");
@@ -31,7 +35,11 @@ describe("wishlist", () => {
   });
 
   it("adds a product and lists it back with product details", async () => {
-    const addRes = await request(app).post("/api/wishlist").set("Cookie", cookies!).send({ productId });
+    const addRes = await request(app)
+      .post("/api/wishlist")
+      .set("Cookie", cookies!)
+      .set("X-CSRF-Token", csrfToken)
+      .send({ productId });
     expect(addRes.status).toBe(201);
 
     const listRes = await request(app).get("/api/wishlist").set("Cookie", cookies!);
@@ -40,13 +48,16 @@ describe("wishlist", () => {
   });
 
   it("is idempotent when the same product is added twice", async () => {
-    await request(app).post("/api/wishlist").set("Cookie", cookies!).send({ productId });
+    await request(app).post("/api/wishlist").set("Cookie", cookies!).set("X-CSRF-Token", csrfToken).send({ productId });
     const listRes = await request(app).get("/api/wishlist").set("Cookie", cookies!);
     expect(listRes.body.items).toHaveLength(1);
   });
 
   it("removes a product", async () => {
-    const removeRes = await request(app).delete(`/api/wishlist/${productId}`).set("Cookie", cookies!);
+    const removeRes = await request(app)
+      .delete(`/api/wishlist/${productId}`)
+      .set("Cookie", cookies!)
+      .set("X-CSRF-Token", csrfToken);
     expect(removeRes.status).toBe(204);
 
     const listRes = await request(app).get("/api/wishlist").set("Cookie", cookies!);

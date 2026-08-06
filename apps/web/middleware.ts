@@ -35,6 +35,12 @@ export async function middleware(req: NextRequest) {
   }
 
   if (pathname.startsWith("/admin")) {
+    // Same reasoning as /account/verify-email below — an admin accepting an invite may or may not
+    // already have a different session, and the page must work either way.
+    if (pathname === "/admin/accept-invite") {
+      return NextResponse.next();
+    }
+
     const isLoginPage = pathname === "/admin/login";
     const hasSession = req.cookies.has("access_token");
 
@@ -52,6 +58,13 @@ export async function middleware(req: NextRequest) {
   }
 
   if (pathname.startsWith("/account")) {
+    // Works the same whether the visitor is logged in (resending from the account banner) or not
+    // (clicking the email link straight from a mail client, no session yet) — never gated or
+    // bounced away either direction, unlike the auth pages below.
+    if (pathname === "/account/verify-email") {
+      return NextResponse.next();
+    }
+
     const isAuthPage =
       pathname === "/account/login" ||
       pathname === "/account/register" ||

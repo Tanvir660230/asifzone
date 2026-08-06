@@ -336,7 +336,9 @@ export interface Customer {
   id: string;
   name: string;
   email: string;
+  emailVerifiedAt: string | null;
   phone: string | null;
+  smsMarketingOptIn: boolean;
   rewardPoints: number;
   createdAt: string;
   updatedAt: string;
@@ -436,4 +438,44 @@ export interface Banner {
   endsAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PushSubscriptionSummary {
+  id: string;
+  endpoint: string;
+  createdAt: string;
+}
+
+export interface Segment {
+  id: string;
+  name: string;
+  filter: { type: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CampaignRecipientCounts {
+  PENDING: number;
+  SENT: number;
+  FAILED: number;
+}
+
+export interface Campaign {
+  id: string;
+  name: string;
+  channel: "EMAIL" | "SMS" | "PUSH";
+  status: "DRAFT" | "SCHEDULED" | "SENDING" | "SENT" | "FAILED";
+  subject: string | null;
+  body: string;
+  segmentId: string | null;
+  segment: Segment | null;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  recipientCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CampaignDetail extends Campaign {
+  recipientCounts: CampaignRecipientCounts;
 }

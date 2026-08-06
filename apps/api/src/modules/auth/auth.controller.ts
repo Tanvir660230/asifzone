@@ -52,3 +52,36 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
   const admin = await authService.getAdminById(req.admin!.adminId);
   res.json({ admin });
 });
+
+export const listAdmins = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ admins: await authService.listAdmins() });
+});
+
+export const setAdminActive = asyncHandler(async (req: Request, res: Response) => {
+  const admin = await authService.setAdminActive(req.params.id!, req.admin!.adminId, req.body.isActive);
+  res.json({ admin });
+});
+
+export const listAdminInvites = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ invites: await authService.listAdminInvites() });
+});
+
+export const createAdminInvite = asyncHandler(async (req: Request, res: Response) => {
+  await authService.createAdminInvite(req.body, req.admin!.adminId);
+  res.status(201).json({ message: "Invite sent." });
+});
+
+export const revokeAdminInvite = asyncHandler(async (req: Request, res: Response) => {
+  await authService.revokeAdminInvite(req.params.id!);
+  res.status(204).send();
+});
+
+export const acceptAdminInvite = asyncHandler(async (req: Request, res: Response) => {
+  const { accessToken, refreshToken, admin } = await authService.acceptAdminInvite(req.body.token, req.body.password);
+  issueCsrfCookie(res);
+  res
+    .cookie("access_token", accessToken, accessTokenCookieOptions)
+    .cookie("refresh_token", refreshToken, refreshTokenCookieOptions)
+    .status(201)
+    .json({ admin });
+});

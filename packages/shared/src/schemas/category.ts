@@ -17,5 +17,19 @@ export const createCategorySchema = z.object({
 
 export const updateCategorySchema = createCategorySchema.partial();
 
+// Persists a drag-and-drop reorder within one sibling group at once — every item must share the
+// same parentId (the service enforces this), so this can't be used to reparent a category.
+export const reorderCategoriesSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().cuid(),
+        sortOrder: z.number().int().min(0),
+      }),
+    )
+    .min(1),
+});
+
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
+export type ReorderCategoriesInput = z.infer<typeof reorderCategoriesSchema>;

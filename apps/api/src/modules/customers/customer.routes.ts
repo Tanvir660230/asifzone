@@ -8,13 +8,19 @@ import {
   paginationQuerySchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
+  googleLoginSchema,
+  requestOtpSchema,
+  verifyOtpSchema,
   customerListQuerySchema,
   adjustRewardPointsSchema,
+  pushSubscribeSchema,
+  pushUnsubscribeQuerySchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireCustomer } from "../../middlewares/require-customer";
 import { requireAdmin } from "../../middlewares/require-admin";
-import { loginRateLimit } from "../../middlewares/rate-limit";
+import { loginRateLimit, otpRequestRateLimit } from "../../middlewares/rate-limit";
 import * as customerController from "./customer.controller";
 
 export const customerRouter = Router();
@@ -35,6 +41,12 @@ customerRouter.post(
   validate(resetPasswordSchema),
   customerController.resetPassword,
 );
+customerRouter.post("/verify-email", loginRateLimit, validate(verifyEmailSchema), customerController.verifyEmail);
+customerRouter.post("/resend-verification", requireCustomer, customerController.resendVerification);
+
+customerRouter.post("/google", loginRateLimit, validate(googleLoginSchema), customerController.googleLogin);
+customerRouter.post("/otp/request", otpRequestRateLimit, validate(requestOtpSchema), customerController.requestOtp);
+customerRouter.post("/otp/verify", loginRateLimit, validate(verifyOtpSchema), customerController.verifyOtp);
 
 customerRouter.get("/me", requireCustomer, customerController.me);
 customerRouter.patch("/me", requireCustomer, validate(updateCustomerSchema), customerController.updateMe);
@@ -67,6 +79,20 @@ customerRouter.get(
   requireCustomer,
   validate(paginationQuerySchema, "query"),
   customerController.listPoints,
+);
+
+customerRouter.get("/me/push-subscriptions", requireCustomer, customerController.listMyPushSubscriptions);
+customerRouter.post(
+  "/me/push-subscriptions",
+  requireCustomer,
+  validate(pushSubscribeSchema),
+  customerController.subscribePush,
+);
+customerRouter.delete(
+  "/me/push-subscriptions",
+  requireCustomer,
+  validate(pushUnsubscribeQuerySchema, "query"),
+  customerController.unsubscribePush,
 );
 
 customerRouter.get(

@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import dynamic from "next/dynamic";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
+import { Sparkles } from "lucide-react";
 import {
   createProductSchema,
   type Category,
@@ -15,10 +18,46 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
-import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { VariantEditor } from "./variant-editor";
+
+// Tiptap + its ~9 sub-packages are large and admin-only — split out of the main bundle and
+// only fetched once this form actually renders.
+const RichTextEditor = dynamic(
+  () => import("@/components/admin/rich-text-editor").then((m) => m.RichTextEditor),
+  { ssr: false },
+);
 import * as attributesApi from "@/lib/api/attributes";
 import { uploadEditorImage } from "@/lib/api/uploads";
+import * as aiApi from "@/lib/api/ai";
+import { ApiError } from "@/lib/api-client";
+import { toast } from "@/components/ui/toast";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
+
+function AiGenerateButton({ onGenerate, disabled }: { onGenerate: () => Promise<string>; disabled?: boolean }) {
+  const [loading, setLoading] = useState(false);
+
+  async function handleClick() {
+    setLoading(true);
+    try {
+      await onGenerate();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "AI generation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled || loading}
+      className="inline-flex items-center gap-1 text-xs text-brass-600 hover:text-brass-700 disabled:opacity-50"
+    >
+      <Sparkles size={12} /> {loading ? "Generating…" : "Generate with AI"}
+    </button>
+  );
+}
 
 interface ProductFormProps {
   categories: Category[];
@@ -31,11 +70,18 @@ export function ProductForm({ categories, initial, onSubmit, submitLabel = "Save
   const { data: attributesData } = useQuery({ queryKey: ["attributes"], queryFn: attributesApi.listAttributes });
   const attributes = attributesData?.attributes ?? [];
 
+  const { data: aiStatus } = useQuery({ queryKey: ["ai-status"], queryFn: aiApi.getAiStatus });
+  // AI generation is OWNER-only on the backend (it bills real API usage) — hide the entry points
+  // for STAFF rather than showing a button that always 403s.
+  const { data: currentAdmin } = useCurrentAdmin();
+  const canUseAi = aiStatus?.configured && currentAdmin?.admin.role === "OWNER";
+
   const {
     register,
     control,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CreateProductInput>({
     resolver: zodResolver(createProductSchema),
@@ -87,6 +133,11 @@ export function ProductForm({ categories, initial, onSubmit, submitLabel = "Save
   const margin =
     basePrice && costPrice && basePrice > 0 ? (((basePrice - costPrice) / basePrice) * 100).toFixed(1) : null;
 
+  const productName = watch("name");
+  const categoryName = categories.find((c) => c.id === watch("categoryId"))?.name;
+  const brandName = watch("brand");
+  const aiProductContext = { productName: productName || undefined, category: categoryName, brand: brandName ?? undefined };
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       <FormSection title="Basic information">
@@ -137,7 +188,26 @@ export function ProductForm({ categories, initial, onSubmit, submitLabel = "Save
         </div>
 
         <div>
-          <Label>Description</Label>
+          <div className="mb-1 flex items-center justify-between">
+            <Label>Description</Label>
+            {canUseAi && (
+              <AiGenerateButton
+                disabled={!productName}
+                onGenerate={async () => {
+                  const { text } = await aiApi.generateAiContent({ type: "product_description", ...aiProductContext });
+                  setValue(
+                    "description",
+                    text
+                      .split(/\n{2,}/)
+                      .map((p) => `<p>${p.trim()}</p>`)
+                      .join(""),
+                    { shouldDirty: true },
+                  );
+                  return text;
+                }}
+              />
+            )}
+          </div>
           <Controller
             control={control}
             name="description"
@@ -206,11 +276,35 @@ export function ProductForm({ categories, initial, onSubmit, submitLabel = "Save
       <FormSection title="SEO">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="seoTitle">SEO title</Label>
+            <div className="mb-1 flex items-center justify-between">
+              <Label htmlFor="seoTitle">SEO title</Label>
+              {canUseAi && (
+                <AiGenerateButton
+                  disabled={!productName}
+                  onGenerate={async () => {
+                    const { text } = await aiApi.generateAiContent({ type: "seo_title", ...aiProductContext });
+                    setValue("seoTitle", text, { shouldDirty: true });
+                    return text;
+                  }}
+                />
+              )}
+            </div>
             <Input id="seoTitle" placeholder="Defaults to product name" {...register("seoTitle")} />
           </div>
           <div>
-            <Label htmlFor="seoDescription">Meta description</Label>
+            <div className="mb-1 flex items-center justify-between">
+              <Label htmlFor="seoDescription">Meta description</Label>
+              {canUseAi && (
+                <AiGenerateButton
+                  disabled={!productName}
+                  onGenerate={async () => {
+                    const { text } = await aiApi.generateAiContent({ type: "meta_description", ...aiProductContext });
+                    setValue("seoDescription", text, { shouldDirty: true });
+                    return text;
+                  }}
+                />
+              )}
+            </div>
             <Input id="seoDescription" placeholder="Shown in search results" {...register("seoDescription")} />
           </div>
         </div>

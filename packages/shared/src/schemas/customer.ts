@@ -12,11 +12,38 @@ export const customerRegisterSchema = z.object({
 export const customerLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  // Defaults to today's persistent (7-day) session when omitted — explicitly `false` is the one
+  // that changes anything, shortening the session to browser-close rather than the other way round.
+  rememberMe: z.boolean().optional(),
+});
+
+export const googleLoginSchema = z.object({
+  idToken: z.string().min(1),
+});
+
+const PHONE_REGEX = /^01[3-9]\d{8}$/;
+
+export const requestOtpSchema = z.object({
+  phone: z.string().regex(PHONE_REGEX, "Enter a valid Bangladeshi phone number"),
+});
+
+export const verifyOtpSchema = z.object({
+  phone: z.string().regex(PHONE_REGEX, "Enter a valid Bangladeshi phone number"),
+  code: z.string().length(6),
+  // Only required the first time a new phone number verifies — an existing customer's phone
+  // logs in without them.
+  name: z.string().min(1).max(200).optional(),
+  email: z.string().email().optional(),
+});
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1),
 });
 
 export const updateCustomerSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   phone: nullableString(20),
+  smsMarketingOptIn: z.boolean().optional(),
 });
 
 export const addressSchema = z.object({
@@ -53,6 +80,10 @@ export const adjustRewardPointsSchema = z.object({
 
 export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
 export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
+export type GoogleLoginInput = z.infer<typeof googleLoginSchema>;
+export type RequestOtpInput = z.infer<typeof requestOtpSchema>;
+export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 export type CreateAddressInput = z.infer<typeof createAddressSchema>;
 export type UpdateAddressInput = z.infer<typeof updateAddressSchema>;

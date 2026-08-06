@@ -1,17 +1,28 @@
 import type { Metadata } from "next";
+import nextDynamic from "next/dynamic";
 import { Hero } from "@/components/storefront/hero";
 import { HeroCarousel } from "@/components/storefront/hero-carousel";
 import { TrustStrip } from "@/components/storefront/trust-strip";
 import { CategoryGrid } from "@/components/storefront/category-grid";
-import { BrandStory } from "@/components/storefront/brand-story";
-import { ValuesGrid } from "@/components/storefront/values-grid";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { FlashSaleSection } from "@/components/storefront/flash-sale-section";
-import { SmartRecommendations } from "@/components/storefront/smart-recommendations";
 import { PersonalizedLeadSection } from "@/components/storefront/personalized-lead-section";
-import { NewsletterSection } from "@/components/storefront/newsletter-section";
 import { getActiveBanners, getActiveFlashSale, getCategoryTree, getSiteSettings, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+
+// Below-the-fold sections — split out of the main bundle since they're not needed for first paint.
+const BrandStory = nextDynamic(() => import("@/components/storefront/brand-story").then((m) => m.BrandStory));
+const ValuesGrid = nextDynamic(() => import("@/components/storefront/values-grid").then((m) => m.ValuesGrid));
+const SmartRecommendations = nextDynamic(() =>
+  import("@/components/storefront/smart-recommendations").then((m) => m.SmartRecommendations),
+);
+const NewsletterSection = nextDynamic(() =>
+  import("@/components/storefront/newsletter-section").then((m) => m.NewsletterSection),
+);
+
+// Flat route with a real server-side settings fetch — without this, `next build` would try to
+// prerender it and fail (the api container isn't reachable during the Docker image build).
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { settings } = await getSiteSettings();

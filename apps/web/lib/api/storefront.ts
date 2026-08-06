@@ -21,12 +21,27 @@ async function storefrontFetch<T>(path: string, revalidate = REVALIDATE_SECONDS)
   return res.json();
 }
 
+/** Used by layouts that wrap every route and can never be force-dynamic themselves — falls back to
+ * `fallback` on any fetch failure (including the Docker image build, when the api container isn't
+ * reachable yet) instead of failing the whole page render. */
+async function safe<T>(fetcher: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fetcher();
+  } catch {
+    return fallback;
+  }
+}
+
 export interface CategoryTreeNode extends Category {
   children: CategoryTreeNode[];
 }
 
 export function getCategoryTree() {
   return storefrontFetch<{ tree: CategoryTreeNode[] }>("/api/categories/tree");
+}
+
+export function getCategoryTreeSafe() {
+  return safe(getCategoryTree, { tree: [] });
 }
 
 export function getCategoryBySlug(slug: string) {
@@ -81,8 +96,34 @@ export function getSiteSettings() {
   return storefrontFetch<{ settings: StoreSettings }>("/api/settings", 300);
 }
 
+const DEFAULT_STORE_SETTINGS: StoreSettings = {
+  id: "singleton",
+  storeName: "Store",
+  tagline: null,
+  logoUrl: null,
+  logoOnDarkUrl: null,
+  faviconUrl: null,
+  currency: "BDT",
+  contactEmail: null,
+  contactPhone: null,
+  shippingFeeDhaka: "60",
+  shippingFeeOutsideDhaka: "120",
+  taxEnabled: false,
+  defaultTaxRate: null,
+  rewardPointsPerCurrency: "0",
+  updatedAt: new Date(0).toISOString(),
+};
+
+export function getSiteSettingsSafe() {
+  return safe(getSiteSettings, { settings: DEFAULT_STORE_SETTINGS });
+}
+
 export function getActiveSocialLinks() {
   return storefrontFetch<{ links: SocialLink[] }>("/api/social-links/active", 300);
+}
+
+export function getActiveSocialLinksSafe() {
+  return safe(getActiveSocialLinks, { links: [] });
 }
 
 export function getSimilarProducts(productId: string) {

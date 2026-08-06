@@ -53,3 +53,8 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   await categoryService.deleteCategory(req.params.id!);
   res.status(204).send();
 });
+
+export const reorder = asyncHandler(async (req: Request, res: Response) => {
+  await categoryService.reorderCategories(req.body);
+  res.status(204).send();
+});

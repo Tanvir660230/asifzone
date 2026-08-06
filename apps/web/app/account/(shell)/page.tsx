@@ -7,10 +7,12 @@ import { updateCustomerSchema, type UpdateCustomerInput } from "@clothing-brand/
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useCurrentCustomer } from "@/hooks/use-current-customer";
 import { updateCustomerProfile } from "@/lib/customer-auth";
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api-client";
+import { PushNotificationToggle } from "@/components/account/push-notification-toggle";
 
 export default function AccountProfilePage() {
   const { data, isLoading, refetch } = useCurrentCustomer();
@@ -24,7 +26,13 @@ export default function AccountProfilePage() {
   } = useForm<UpdateCustomerInput>({ resolver: zodResolver(updateCustomerSchema) });
 
   useEffect(() => {
-    if (data?.customer) reset({ name: data.customer.name, phone: data.customer.phone });
+    if (data?.customer) {
+      reset({
+        name: data.customer.name,
+        phone: data.customer.phone,
+        smsMarketingOptIn: data.customer.smsMarketingOptIn,
+      });
+    }
   }, [data, reset]);
 
   async function onSubmit(values: UpdateCustomerInput) {
@@ -61,12 +69,22 @@ export default function AccountProfilePage() {
           <Input id="phone" placeholder="01XXXXXXXXX" {...register("phone")} />
         </div>
 
+        <label className="flex items-center gap-2 text-sm text-ink-700">
+          <Checkbox {...register("smsMarketingOptIn")} />
+          Send me SMS updates about sales and offers
+        </label>
+
         {serverError && <p className="text-sm text-danger-600">{serverError}</p>}
 
         <Button type="submit" variant="brass" disabled={isSubmitting}>
           {isSubmitting ? "Saving…" : "Save changes"}
         </Button>
       </form>
+
+      <div className="mt-8 max-w-md">
+        <h2 className="mb-3 font-display text-lg text-ink-900">Notifications</h2>
+        <PushNotificationToggle />
+      </div>
     </div>
   );
 }

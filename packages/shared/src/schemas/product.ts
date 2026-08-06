@@ -59,10 +59,13 @@ export const productListQuerySchema = paginationQuerySchema.extend({
   trashed: z.coerce.boolean().optional(),
 });
 
+export const updateImageAltTextSchema = z.object({ altText: z.string().min(1).max(300) });
+
 export const bulkProductIdsSchema = z.object({ ids: z.array(z.string().cuid()).min(1).max(500) });
 export const bulkProductStatusSchema = bulkProductIdsSchema.extend({ isActive: z.boolean() });
 export const bulkProductCategorySchema = bulkProductIdsSchema.extend({ categoryId: z.string().cuid() });
 
+export type UpdateImageAltTextInput = z.infer<typeof updateImageAltTextSchema>;
 export type BulkProductIdsInput = z.infer<typeof bulkProductIdsSchema>;
 export type BulkProductStatusInput = z.infer<typeof bulkProductStatusSchema>;
 export type BulkProductCategoryInput = z.infer<typeof bulkProductCategorySchema>;

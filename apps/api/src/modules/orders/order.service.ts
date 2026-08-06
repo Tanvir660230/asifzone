@@ -91,6 +91,7 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
       data: {
         orderNumber: generateOrderNumber(),
         customerId,
+        sessionId: input.sessionId ?? null,
         paymentMethod: input.paymentMethod,
         customerName: input.customerName,
         customerEmail: input.customerEmail ?? null,
@@ -292,10 +293,21 @@ export async function updateOrderDetails(id: string, input: UpdateOrderDetailsIn
   return prisma.order.update({ where: { id }, data: input, include });
 }
 
-export async function markOrderPaid(orderNumber: string, transactionId: string) {
-  return prisma.order.update({
-    where: { orderNumber },
-    data: { paymentStatus: "PAID", status: "CONFIRMED", paymentTransactionId: transactionId },
+/** verifiedAmount must come from the payment gateway's own validation record, never from the callback
+ * body — it's the last line of defense against a valid val_id for one order being replayed against a
+ * different, more expensive order's tran_id. */
+export async function markOrderPaid(orderNumber: string, transactionId: string, verifiedAmount: number) {
+  return prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { orderNumber } });
+    if (!order) throw AppError.notFound("Order not found");
+    if (order.paymentStatus === "PAID") return order;
+    if (Math.abs(Number(order.total) - verifiedAmount) > 0.01) {
+      throw AppError.badRequest("Payment amount does not match order total");
+    }
+    return tx.order.update({
+      where: { orderNumber },
+      data: { paymentStatus: "PAID", status: "CONFIRMED", paymentTransactionId: transactionId },
+    });
   });
 }
 

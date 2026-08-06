@@ -10,6 +10,9 @@ const base: CookieOptions = {
 
 export const accessTokenCookieOptions: CookieOptions = { ...base, maxAge: 15 * 60 * 1000 };
 export const refreshTokenCookieOptions: CookieOptions = { ...base, maxAge: 7 * 24 * 60 * 60 * 1000 };
+// Same cookie, no maxAge — expires when the browser closes. Used only for customer login with
+// "remember me" explicitly unchecked; admin sessions and the default customer login are unaffected.
+export const refreshTokenSessionCookieOptions: CookieOptions = { ...base };
 // Deliberately NOT httpOnly — the frontend must be able to read this and echo it back as a header
 // for the double-submit CSRF check (see middlewares/csrf.ts).
 export const csrfTokenCookieOptions: CookieOptions = { ...base, httpOnly: false, maxAge: 7 * 24 * 60 * 60 * 1000 };

@@ -5,6 +5,10 @@ import type {
   UpdateCustomerInput,
   ForgotPasswordInput,
   ResetPasswordInput,
+  VerifyEmailInput,
+  GoogleLoginInput,
+  RequestOtpInput,
+  VerifyOtpInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 
@@ -34,4 +38,24 @@ export function requestPasswordReset(input: ForgotPasswordInput) {
 
 export function resetPassword(input: ResetPasswordInput) {
   return apiFetch<{ message: string }>("/api/customers/reset-password", { method: "POST", body: input });
+}
+
+export function verifyEmail(input: VerifyEmailInput) {
+  return apiFetch<{ message: string }>("/api/customers/verify-email", { method: "POST", body: input });
+}
+
+export function resendVerificationEmail() {
+  return apiFetch<{ message: string }>("/api/customers/resend-verification", { method: "POST" });
+}
+
+export function loginWithGoogle(input: GoogleLoginInput) {
+  return apiFetch<{ customer: Customer }>("/api/customers/google", { method: "POST", body: input });
+}
+
+export function requestOtp(input: RequestOtpInput) {
+  return apiFetch<{ message: string }>("/api/customers/otp/request", { method: "POST", body: input });
+}
+
+export function verifyOtp(input: VerifyOtpInput) {
+  return apiFetch<{ customer: Customer }>("/api/customers/otp/verify", { method: "POST", body: input });
 }

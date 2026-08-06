@@ -1,7 +1,7 @@
 import type { SyncCartInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 
-const ABANDONMENT_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour of inactivity
+export const ABANDONMENT_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour of inactivity
 
 /** Full-replace upsert — the client's localStorage cart is always the source of truth; this is
  * a one-way mirror purely so cart abandonment can be detected for a logged-in customer. Never

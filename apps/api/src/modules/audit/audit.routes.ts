@@ -1,13 +1,16 @@
 import { Router } from "express";
-import { requireAdmin } from "../../middlewares/require-admin";
+import { requireAdmin, requireRole } from "../../middlewares/require-admin";
 import { asyncHandler } from "../../lib/async-handler";
 import { prisma } from "../../config/prisma";
 
 export const auditRouter = Router();
 
+// OWNER-only — a STAFF account shouldn't be able to review (or notice gaps in) the record of
+// admin actions, including their own.
 auditRouter.get(
   "/",
   requireAdmin,
+  requireRole("OWNER"),
   asyncHandler(async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 30));

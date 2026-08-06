@@ -15,13 +15,16 @@ interface SslCallbackBody {
 export const success = asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as SslCallbackBody;
   const orderNumber = body.tran_id;
-  const isValid = orderNumber && body.val_id && (await validateSslcommerzTransaction(body.val_id));
+  const validation = body.val_id ? await validateSslcommerzTransaction(body.val_id) : null;
+  // validation.tranId comes from SSLCommerz's own record for this val_id, not the request body —
+  // this is what stops a valid val_id from a small order being replayed against a bigger one.
+  const verified = validation && orderNumber && validation.tranId === orderNumber;
 
-  if (!isValid || !orderNumber) {
+  if (!verified || !orderNumber) {
     return res.redirect(`${env.webOrigin}/checkout?paymentError=1`);
   }
 
-  await markOrderPaid(orderNumber, body.bank_tran_id ?? body.val_id ?? "");
+  await markOrderPaid(orderNumber, body.bank_tran_id ?? body.val_id ?? "", validation.amount);
   res.redirect(`${env.webOrigin}/order-confirmation/${orderNumber}`);
 });
 
@@ -38,8 +41,9 @@ export const cancel = asyncHandler(async (req: Request, res: Response) => {
 /** Server-to-server notification — the authoritative confirmation, independent of whether the customer's browser made it back to success_url. */
 export const ipn = asyncHandler(async (req: Request, res: Response) => {
   const body = req.body as SslCallbackBody;
-  if (body.tran_id && body.val_id && (await validateSslcommerzTransaction(body.val_id))) {
-    await markOrderPaid(body.tran_id, body.bank_tran_id ?? body.val_id);
+  const validation = body.val_id ? await validateSslcommerzTransaction(body.val_id) : null;
+  if (validation && body.tran_id && validation.tranId === body.tran_id) {
+    await markOrderPaid(body.tran_id, body.bank_tran_id ?? body.val_id ?? "", validation.amount);
   }
   res.status(200).send("OK");
 });

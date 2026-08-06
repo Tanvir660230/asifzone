@@ -6,6 +6,7 @@ import { MegaMenu } from "./mega-menu";
 import { MobileNav } from "./mobile-nav";
 import { CartIcon } from "./cart-icon";
 import { SearchTriggerButton } from "./search-trigger-button";
+import { StickySearchBar } from "./sticky-search-bar";
 
 interface HeaderProps {
   categories: CategoryTreeNode[];
@@ -49,7 +50,10 @@ export function Header({ categories, settings }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-5">
-            <SearchTriggerButton />
+            <StickySearchBar />
+            <div className="lg:hidden">
+              <SearchTriggerButton />
+            </div>
             <Link
               href="/track-order"
               aria-label="Track your order"

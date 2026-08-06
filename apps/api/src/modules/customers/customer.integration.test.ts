@@ -6,6 +6,15 @@ import { prisma } from "../../config/prisma";
 const email = `vitest_${Date.now()}@example.com`;
 const password = "OriginalPass1";
 
+/** Login/register responses set csrf_token alongside the session cookies (middlewares/csrf.ts) —
+ * any test that POSTs with a customer session attached needs to echo it back as a header, exactly
+ * like the real frontend's double-submit check does. */
+function extractCookieValue(cookies: string[], name: string): string {
+  const raw = cookies.find((c) => c.startsWith(`${name}=`));
+  if (!raw) throw new Error(`Cookie "${name}" not found in Set-Cookie response`);
+  return raw.split(";")[0]!.split("=")[1]!;
+}
+
 describe("customer accounts", () => {
   afterAll(async () => {
     await prisma.customer.deleteMany({ where: { email } });
@@ -39,9 +48,13 @@ describe("customer accounts", () => {
 
   it("logs out and invalidates the session cookie", async () => {
     const loginRes = await request(app).post("/api/customers/login").send({ email, password });
-    const cookies = loginRes.get("Set-Cookie");
+    const cookies = loginRes.get("Set-Cookie")!;
+    const csrfToken = extractCookieValue(cookies, "csrf_token");
 
-    const logoutRes = await request(app).post("/api/customers/logout").set("Cookie", cookies!);
+    const logoutRes = await request(app)
+      .post("/api/customers/logout")
+      .set("Cookie", cookies)
+      .set("X-CSRF-Token", csrfToken);
     expect(logoutRes.status).toBe(204);
   });
 

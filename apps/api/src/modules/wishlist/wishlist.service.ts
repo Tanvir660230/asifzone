@@ -1,6 +1,7 @@
 import { prisma } from "../../config/prisma";
 import { sendMail } from "../../lib/mailer";
 import { env } from "../../config/env";
+import { escapeHtml } from "../../lib/html";
 
 const productInclude = {
   variants: true,
@@ -47,7 +48,7 @@ export async function notifyPriceDrop(productId: string, newPrice: number) {
     await sendMail({
       to: item.customer.email,
       subject: `Price drop: ${item.product.name}`,
-      html: `<p>Hi ${item.customer.name},</p><p><strong>${item.product.name}</strong> dropped from ৳${oldPrice} to ৳${newPrice}.</p><p><a href="${productUrl}">${productUrl}</a></p>`,
+      html: `<p>Hi ${escapeHtml(item.customer.name)},</p><p><strong>${item.product.name}</strong> dropped from ৳${oldPrice} to ৳${newPrice}.</p><p><a href="${productUrl}">${productUrl}</a></p>`,
     });
   }
 

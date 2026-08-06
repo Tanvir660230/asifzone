@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { StorefrontFacets } from "@/lib/api/storefront";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
 
 export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
@@ -17,6 +18,23 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
   const minPrice = searchParams.get("minPrice") ?? "";
   const maxPrice = searchParams.get("maxPrice") ?? "";
   const activeCount = activeSizes.length + activeColors.length + (minPrice ? 1 : 0) + (maxPrice ? 1 : 0);
+
+  // Local + debounced so typing a price doesn't fire a router.push (full RSC refetch) on
+  // every keystroke — that was janky and hurt INP.
+  const [minPriceInput, setMinPriceInput] = useState(minPrice);
+  const [maxPriceInput, setMaxPriceInput] = useState(maxPrice);
+  const debouncedMinPrice = useDebouncedValue(minPriceInput, 500);
+  const debouncedMaxPrice = useDebouncedValue(maxPriceInput, 500);
+
+  useEffect(() => {
+    if (debouncedMinPrice !== minPrice) setPriceParam("minPrice", debouncedMinPrice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedMinPrice]);
+
+  useEffect(() => {
+    if (debouncedMaxPrice !== maxPrice) setPriceParam("maxPrice", debouncedMaxPrice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedMaxPrice]);
 
   function updateParams(mutate: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams.toString());
@@ -42,6 +60,8 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
   }
 
   function clearAll() {
+    setMinPriceInput("");
+    setMaxPriceInput("");
     updateParams((params) => {
       params.delete("sizes");
       params.delete("colors");
@@ -108,8 +128,8 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
               type="number"
               min={0}
               placeholder={String(facets.minPrice)}
-              value={minPrice}
-              onChange={(e) => setPriceParam("minPrice", e.target.value)}
+              value={minPriceInput}
+              onChange={(e) => setMinPriceInput(e.target.value)}
               className="h-9 w-full rounded border border-ink-200 px-2 text-sm focus:border-brass-400"
             />
             <span className="text-ink-400">–</span>
@@ -117,8 +137,8 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
               type="number"
               min={0}
               placeholder={String(facets.maxPrice)}
-              value={maxPrice}
-              onChange={(e) => setPriceParam("maxPrice", e.target.value)}
+              value={maxPriceInput}
+              onChange={(e) => setMaxPriceInput(e.target.value)}
               className="h-9 w-full rounded border border-ink-200 px-2 text-sm focus:border-brass-400"
             />
           </div>

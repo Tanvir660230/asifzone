@@ -122,6 +122,25 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Verify required secrets are set
+        run: |
+          missing=""
+          for name in JWT_ACCESS_SECRET JWT_REFRESH_SECRET JWT_CUSTOMER_ACCESS_SECRET JWT_CUSTOMER_REFRESH_SECRET POSTGRES_PASSWORD REDIS_PASSWORD; do
+            eval "value=\${${name}}"
+            if [ -z "$value" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Refusing to deploy — missing/empty GitHub secrets:$missing"
+            exit 1
+          fi
+        env:
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_CUSTOMER_ACCESS_SECRET: ${{ secrets.JWT_CUSTOMER_ACCESS_SECRET }}
+          JWT_CUSTOMER_REFRESH_SECRET: ${{ secrets.JWT_CUSTOMER_REFRESH_SECRET }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+
       - name: Write docker/.env
         run: |
           : > docker.env
@@ -132,6 +151,13 @@ jobs:
           echo "WEB_ORIGIN=${{ secrets.WEB_ORIGIN }}" >> docker.env
           echo "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> docker.env
           echo "NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker.env
+          # Same public domain as NEXT_PUBLIC_SITE_URL — everything lives behind one nginx host in
+          # this deploy, and this is what the API embeds into category/banner/logo/editor image
+          # URLs. No separate secret to maintain; reusing NEXT_PUBLIC_SITE_URL keeps it from ever
+          # drifting out of sync with the domain the site actually runs on.
+          echo "API_ORIGIN=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker.env
+          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> docker.env
+          echo "REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}" >> docker.env
 
       - name: Transfer to VPS
         run: |

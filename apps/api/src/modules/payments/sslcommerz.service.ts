@@ -61,8 +61,17 @@ export async function initSslcommerzSession(params: InitSessionParams): Promise<
   return { gatewayUrl: data.GatewayPageURL, sessionKey: data.sessionkey ?? "" };
 }
 
+export interface SslValidationResult {
+  /** The tran_id SSLCommerz has on file for this val_id — this is what we set as orderNumber when
+   * the session was started, so it's the source of truth for which order was actually paid. Never
+   * trust a tran_id supplied directly in the callback body without checking it against this. */
+  tranId: string;
+  amount: number;
+  status: string;
+}
+
 /** Confirms an IPN/redirect callback is genuine by re-checking the transaction against SSLCommerz's own records — never trust the callback payload alone. */
-export async function validateSslcommerzTransaction(valId: string): Promise<boolean> {
+export async function validateSslcommerzTransaction(valId: string): Promise<SslValidationResult | null> {
   const query = new URLSearchParams({
     val_id: valId,
     store_id: env.sslcommerz.storeId,
@@ -71,6 +80,9 @@ export async function validateSslcommerzTransaction(valId: string): Promise<bool
   });
 
   const res = await fetch(`${BASE_URL}/validator/api/validationserverAPI.php?${query.toString()}`);
-  const data = (await res.json()) as { status?: string };
-  return data.status === "VALID" || data.status === "VALIDATED";
+  const data = (await res.json()) as { status?: string; tran_id?: string; amount?: string };
+  if ((data.status !== "VALID" && data.status !== "VALIDATED") || !data.tran_id || !data.amount) {
+    return null;
+  }
+  return { tranId: data.tran_id, amount: Number(data.amount), status: data.status };
 }

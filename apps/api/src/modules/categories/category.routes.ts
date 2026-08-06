@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createCategorySchema, updateCategorySchema } from "@clothing-brand/shared";
+import { createCategorySchema, updateCategorySchema, reorderCategoriesSchema } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin } from "../../middlewares/require-admin";
 import { imageUpload } from "../uploads/upload.middleware";
@@ -20,5 +20,6 @@ categoryRouter.post(
   categoryController.uploadBannerImage,
 );
 categoryRouter.post("/", requireAdmin, validate(createCategorySchema), categoryController.create);
+categoryRouter.post("/reorder", requireAdmin, validate(reorderCategoriesSchema), categoryController.reorder);
 categoryRouter.patch("/:id", requireAdmin, validate(updateCategorySchema), categoryController.update);
 categoryRouter.delete("/:id", requireAdmin, categoryController.remove);

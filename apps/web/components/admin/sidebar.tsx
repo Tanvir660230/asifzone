@@ -22,14 +22,28 @@ import {
   ArrowRightLeft,
   LogOut,
   X,
+  Bot,
+  Megaphone,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 
+/** Matches the backend's requireRole("OWNER") gates (settings, audit log, team) — hidden rather than
+ * shown-then-403'd, since a STAFF account can never use them regardless. */
+const OWNER_ONLY_HREFS = new Set(["/admin/settings", "/admin/audit-log", "/admin/team"]);
+
 const NAV_SECTIONS = [
-  { label: "Overview", items: [{ href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  {
+    label: "Overview",
+    items: [
+      { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/admin/ai-assistant", label: "AI Assistant", icon: Bot },
+    ],
+  },
   {
     label: "Catalog",
     items: [
@@ -57,10 +71,15 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    label: "Marketing",
+    items: [{ href: "/admin/campaigns", label: "Campaigns", icon: Megaphone }],
+  },
+  {
     label: "System",
     items: [
       { href: "/admin/settings", label: "Settings", icon: Settings },
       { href: "/admin/redirects", label: "Redirects", icon: ArrowRightLeft },
+      { href: "/admin/team", label: "Team", icon: Shield },
       { href: "/admin/audit-log", label: "Audit Log", icon: ScrollText },
     ],
   },
@@ -76,6 +95,13 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const router = useRouter();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
+  const { data: currentAdmin } = useCurrentAdmin();
+  const isOwner = currentAdmin?.admin.role === "OWNER";
+
+  const visibleSections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => isOwner || !OWNER_ONLY_HREFS.has(item.href)),
+  })).filter((section) => section.items.length > 0);
 
   async function handleLogout() {
     await logoutAdmin();
@@ -107,7 +133,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {NAV_SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.label}>
             <p className="mb-1 px-3 text-xs uppercase tracking-wide text-ink-500">{section.label}</p>
             <div className="space-y-1">

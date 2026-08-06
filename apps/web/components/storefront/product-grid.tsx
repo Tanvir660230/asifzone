@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import type { Product } from "@clothing-brand/shared";
 import { ProductCard } from "./product-card";
@@ -14,9 +15,15 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
 };
 
-export function ProductGrid({ products }: { products: Product[] }) {
+interface ProductGridProps {
+  products: Product[];
+  /** Overrides the plain default empty-state text — e.g. a category page's premium "Coming Soon" panel. */
+  emptyState?: ReactNode;
+}
+
+export function ProductGrid({ products, emptyState }: ProductGridProps) {
   if (products.length === 0) {
-    return <p className="py-16 text-center text-ink-400">No products found.</p>;
+    return emptyState ?? <p className="py-16 text-center text-ink-400">No products found.</p>;
   }
 
   return (

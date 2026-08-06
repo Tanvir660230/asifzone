@@ -58,9 +58,18 @@ export async function findBestCoupon(subtotal: number) {
   return best;
 }
 
-/** Called inside the order-creation transaction — atomically increments usage so concurrent checkouts can't both slip past a usage limit. */
+/** Called inside the order-creation transaction — atomically increments usage so concurrent checkouts
+ * can't both slip past a usage limit. Uses a conditional raw UPDATE (mirroring the stock-decrement
+ * pattern above) because Prisma's `update`/`updateMany` can't express "usedCount < usageLimit" as a
+ * single-row-atomic filter when both sides are columns on the row being updated. */
 export async function incrementCouponUsage(tx: Prisma.TransactionClient, couponId: string) {
-  await tx.coupon.update({ where: { id: couponId }, data: { usedCount: { increment: 1 } } });
+  const affected = await tx.$executeRaw`
+    UPDATE "Coupon" SET "usedCount" = "usedCount" + 1
+    WHERE id = ${couponId} AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")
+  `;
+  if (affected === 0) {
+    throw AppError.conflict("Coupon usage limit reached");
+  }
 }
 
 /** Every currently-usable coupon, for a customer-facing "available coupons" listing — same

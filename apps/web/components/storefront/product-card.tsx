@@ -3,12 +3,14 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ShoppingBag } from "lucide-react";
+import { ShoppingBag, Eye, Scale } from "lucide-react";
 import type { Product } from "@clothing-brand/shared";
 import { env } from "@/lib/env";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useCartStore } from "@/store/cart";
+import { useQuickViewStore } from "@/store/quick-view";
+import { useCompareStore } from "@/store/compare";
 import { WishlistButton } from "./wishlist-button";
 
 export function ProductCard({ product }: { product: Product }) {
@@ -17,12 +19,27 @@ export function ProductCard({ product }: { product: Product }) {
   const flash = product.activeFlashSale;
   const addItem = useCartStore((s) => s.addItem);
   const [justAdded, setJustAdded] = useState(false);
+  const openQuickView = useQuickViewStore((s) => s.open);
+  const toggleCompare = useCompareStore((s) => s.toggle);
+  const isComparing = useCompareStore((s) => s.items.some((i) => i.id === product.id));
 
   const colors = useMemo(() => {
     const seen = new Map<string, string | null>();
     for (const v of product.variants) if (!seen.has(v.color)) seen.set(v.color, v.colorHex);
     return Array.from(seen.entries());
   }, [product.variants]);
+
+  function handleQuickView(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    openQuickView(product);
+  }
+
+  function handleToggleCompare(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleCompare(product);
+  }
 
   function handleQuickAdd(e: React.MouseEvent) {
     e.preventDefault();
@@ -83,6 +100,28 @@ export function ProductCard({ product }: { product: Product }) {
             Sold out
           </span>
         )}
+        <div className="absolute left-3 top-3 flex flex-col gap-1.5 transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100">
+          <button
+            onClick={handleQuickView}
+            aria-label="Quick view"
+            title="Quick view"
+            className="glass flex h-8 w-8 items-center justify-center rounded-full text-ink-700 shadow-sm transition-all duration-200 ease-smooth hover:scale-110 hover:text-brass-600"
+          >
+            <Eye size={14} />
+          </button>
+          <button
+            onClick={handleToggleCompare}
+            aria-label={isComparing ? "Remove from compare" : "Add to compare"}
+            aria-pressed={isComparing}
+            title="Compare"
+            className={cn(
+              "glass flex h-8 w-8 items-center justify-center rounded-full shadow-sm transition-all duration-200 ease-smooth hover:scale-110",
+              isComparing ? "text-brass-600" : "text-ink-700 hover:text-brass-600",
+            )}
+          >
+            <Scale size={14} />
+          </button>
+        </div>
         <WishlistButton productId={product.id} className="absolute right-3 top-3 h-8 w-8" />
         {totalStock > 0 && (
           <button

@@ -2,6 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
+  poweredByHeader: false,
+  experimental: {
+    optimizePackageImports: ["lucide-react", "@tanstack/react-query", "framer-motion"],
+  },
   images: {
     remotePatterns: [
       { protocol: "http", hostname: "localhost" },

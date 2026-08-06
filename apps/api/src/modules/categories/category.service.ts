@@ -1,5 +1,5 @@
 import type { Category } from "@prisma/client";
-import type { CreateCategoryInput, UpdateCategoryInput } from "@clothing-brand/shared";
+import type { CreateCategoryInput, UpdateCategoryInput, ReorderCategoriesInput } from "@clothing-brand/shared";
 import { slugify } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
@@ -20,12 +20,16 @@ export async function listCategories() {
   });
 }
 
+/** Powers the storefront nav (mega menu / mobile nav / footer), so only active categories are
+ * included — an inactive category is filtered out of `all` before the tree is built, which also
+ * drops any of its children regardless of their own isActive (a hidden branch stays fully hidden;
+ * there's no such thing as an active category nested under a hidden one). */
 export async function getCategoryTree() {
   const cacheKey = `${CACHE_PREFIX}tree`;
   const cached = await cacheGet<unknown[]>(cacheKey);
   if (cached) return cached;
 
-  const all = await prisma.category.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  const all = await prisma.category.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
   const byParent = new Map<string | null, typeof all>();
   for (const cat of all) {
     const key = cat.parentId ?? null;
@@ -138,6 +142,26 @@ export async function updateCategory(id: string, input: UpdateCategoryInput) {
   const category = await prisma.category.update({ where: { id }, data });
   await invalidateCache();
   return category;
+}
+
+/** Persists a drag-and-drop reorder within a single sibling group. All items must already share
+ * the same parentId — this is a pure reorder, not a way to reparent a category (that stays a
+ * deliberate action via the edit form, which already guards against creating a cycle). */
+export async function reorderCategories(input: ReorderCategoriesInput) {
+  const ids = input.items.map((item) => item.id);
+  const existing = await prisma.category.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, parentId: true },
+  });
+  if (existing.length !== ids.length) throw AppError.badRequest("One or more categories were not found");
+
+  const parentIds = new Set(existing.map((c) => c.parentId));
+  if (parentIds.size > 1) throw AppError.badRequest("All reordered categories must share the same parent");
+
+  await prisma.$transaction(
+    input.items.map((item) => prisma.category.update({ where: { id: item.id }, data: { sortOrder: item.sortOrder } })),
+  );
+  await invalidateCache();
 }
 
 export async function deleteCategory(id: string) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 
 function getRemaining(endsAt: string) {
   const diff = Math.max(0, new Date(endsAt).getTime() - Date.now());
@@ -24,13 +25,12 @@ export function CountdownTimer({ endsAt, className }: { endsAt: string; classNam
     return () => clearInterval(interval);
   }, [endsAt]);
 
-  if (!remaining || remaining.expired) return null;
+  if (remaining?.expired) return null;
 
   const pad = (n: number) => String(n).padStart(2, "0");
+  // Same "--:--:--" width as a real reading, pre-mount — avoids a layout shift once the
+  // client value replaces it (tabular-nums keeps digit widths from jittering after that).
+  const text = remaining ? `${pad(remaining.hours)}:${pad(remaining.minutes)}:${pad(remaining.seconds)}` : "--:--:--";
 
-  return (
-    <span className={className}>
-      {pad(remaining.hours)}:{pad(remaining.minutes)}:{pad(remaining.seconds)}
-    </span>
-  );
+  return <span className={cn(className, "tabular-nums")}>{text}</span>;
 }

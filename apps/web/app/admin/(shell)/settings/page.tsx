@@ -16,6 +16,7 @@ import { toast } from "@/components/ui/toast";
 import * as settingsApi from "@/lib/api/settings";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 
 interface LogoUploadFieldProps {
   label: string;
@@ -93,6 +94,8 @@ function LogoUploadField({ label, helpText, value, onChange, onRemove, previewBa
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: settingsApi.getSettings });
+  const { data: currentAdmin } = useCurrentAdmin();
+  const isOwner = currentAdmin?.admin.role === "OWNER";
 
   const {
     register,
@@ -138,6 +141,15 @@ export default function SettingsPage() {
   const taxEnabled = watch("taxEnabled");
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
+
+  if (currentAdmin && !isOwner) {
+    return (
+      <div>
+        <PageHeader title="Settings" />
+        <p className="text-sm text-ink-500">Only store owners can view or change store settings.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl">

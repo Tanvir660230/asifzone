@@ -49,6 +49,9 @@ export const checkoutSchema = z.object({
   paymentMethod: paymentMethodEnum,
   couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
   notes: nullableString(500),
+  /// The storefront analytics session id (see PageView) — lets revenue be attributed back to a
+  /// traffic source/campaign. Optional: omitted for old clients or if tracking failed to init.
+  sessionId: z.string().max(64).optional(),
 });
 
 export const orderListQuerySchema = paginationQuerySchema.extend({

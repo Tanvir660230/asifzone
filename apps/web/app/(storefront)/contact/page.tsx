@@ -3,6 +3,9 @@ import { Mail, MessageCircle, Package } from "lucide-react";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl } from "@/lib/seo";
 
+// Flat route with a real server-side settings fetch — see apps/web/app/(storefront)/page.tsx for why.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Contact Us",
   description: "Get in touch with our support team for order help, questions, or feedback.",

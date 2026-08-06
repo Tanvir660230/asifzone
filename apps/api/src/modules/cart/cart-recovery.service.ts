@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "../../config/prisma";
 import { sendMail } from "../../lib/mailer";
 import { env } from "../../config/env";
+import { escapeHtml } from "../../lib/html";
 import { getSimilarProducts } from "../products/product.service";
 import { findAbandonedCarts, markReminderSent, type AbandonedCart } from "./cart.service";
 
@@ -70,18 +71,28 @@ async function sendCartRecoveryEmail(cart: AbandonedCart): Promise<void> {
   const alternativesHtml = await buildAlternativesHtml(cart);
   const cartUrl = `${env.webOrigin}/cart`;
 
-  await sendMail({
-    to: cart.customer.email,
-    subject: "You left something in your cart",
-    html: `
-      <p>Hi ${cart.customer.name},</p>
-      <p>You left these items in your cart:</p>
-      <ul>${itemsHtml}</ul>
-      <p>Use code <strong>${couponCode}</strong> for ${COUPON_VALUE_PERCENT}% off if you check out within 7 days.</p>
-      ${alternativesHtml}
-      <p><a href="${cartUrl}">${cartUrl}</a></p>
-    `,
-  });
+  try {
+    await sendMail({
+      to: cart.customer.email,
+      subject: "You left something in your cart",
+      html: `
+        <p>Hi ${escapeHtml(cart.customer.name)},</p>
+        <p>You left these items in your cart:</p>
+        <ul>${itemsHtml}</ul>
+        <p>Use code <strong>${couponCode}</strong> for ${COUPON_VALUE_PERCENT}% off if you check out within 7 days.</p>
+        ${alternativesHtml}
+        <p><a href="${cartUrl}">${cartUrl}</a></p>
+      `,
+    });
+  } catch (err) {
+    // The coupon had to be minted before we knew the send would work (its code goes in the body).
+    // If the send fails, deactivate it immediately rather than leaving a live, redeemable,
+    // never-delivered coupon behind — a persistently-failing address would otherwise accumulate
+    // one every cron run (every 15 minutes) forever. The cart stays un-reminded, so a fresh coupon
+    // is minted and tried again on the next sweep.
+    await prisma.coupon.update({ where: { code: couponCode }, data: { isActive: false } }).catch(() => {});
+    throw err;
+  }
 
   await markReminderSent(cart.id);
 }
