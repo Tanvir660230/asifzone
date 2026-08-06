@@ -18,3 +18,13 @@ export function uploadLogo(file: File) {
     isFormData: true,
   });
 }
+
+export function uploadFavicon(file: File) {
+  const formData = new FormData();
+  formData.append("image", file);
+  return apiFetch<{ url: string }>("/api/settings/upload-favicon", {
+    method: "POST",
+    body: formData,
+    isFormData: true,
+  });
+}

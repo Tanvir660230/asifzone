@@ -10,9 +10,9 @@ export function SearchTriggerButton() {
       type="button"
       onClick={open}
       aria-label="Search"
-      className="text-ink-700 transition-all duration-200 ease-smooth hover:scale-110 hover:text-brass-500"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-700 transition-all duration-200 ease-smooth hover:bg-ink-100 hover:text-brass-500"
     >
-      <Search size={20} />
+      <Search size={19} />
     </button>
   );
 }

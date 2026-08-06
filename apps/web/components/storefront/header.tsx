@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PackageSearch, User } from "lucide-react";
 import type { StoreSettings } from "@clothing-brand/shared";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
+import { cn } from "@/lib/utils";
 import { MegaMenu } from "./mega-menu";
 import { MobileNav } from "./mobile-nav";
 import { CartIcon } from "./cart-icon";
@@ -22,11 +23,17 @@ function getInitials(name: string): string {
     .join("");
 }
 
+/** Shared treatment for every icon-only action in the header (track order, account, cart, mobile
+ * search) — a soft circular hover surface reads as one deliberate button style instead of icons
+ * just floating loose against the header background. */
+const iconButtonClass =
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-700 transition-all duration-200 ease-smooth hover:bg-ink-100 hover:text-brass-500";
+
 export function Header({ categories, settings }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30">
-      <div className="glass border-b border-ink-200 shadow-sm">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="glass border-b border-ink-200 shadow-[0_4px_20px_-8px_rgba(17,17,17,0.08)]">
+        <div className="mx-auto flex h-[4.5rem] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <MobileNav categories={categories} />
             <Link
@@ -49,26 +56,21 @@ export function Header({ categories, settings }: HeaderProps) {
             <MegaMenu categories={categories} />
           </div>
 
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-1 sm:gap-2">
             <StickySearchBar />
             <div className="lg:hidden">
               <SearchTriggerButton />
             </div>
-            <Link
-              href="/track-order"
-              aria-label="Track your order"
-              className="hidden text-ink-700 transition-all duration-200 ease-smooth hover:scale-110 hover:text-brass-500 sm:block"
-            >
-              <PackageSearch size={20} />
-            </Link>
-            <Link
-              href="/account"
-              aria-label="Your account"
-              className="text-ink-700 transition-all duration-200 ease-smooth hover:scale-110 hover:text-brass-500"
-            >
-              <User size={20} />
-            </Link>
-            <CartIcon />
+
+            <div className="ml-1 flex items-center gap-0.5 border-l border-ink-200 pl-2 sm:ml-2 sm:pl-3">
+              <Link href="/track-order" aria-label="Track your order" className={cn(iconButtonClass, "hidden sm:flex")}>
+                <PackageSearch size={19} />
+              </Link>
+              <Link href="/account" aria-label="Your account" className={iconButtonClass}>
+                <User size={19} />
+              </Link>
+              <CartIcon />
+            </div>
           </div>
         </div>
       </div>

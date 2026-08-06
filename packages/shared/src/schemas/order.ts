@@ -32,6 +32,46 @@ export const BD_DIVISIONS = [
   "Mymensingh",
 ] as const;
 
+/** All 64 official districts grouped by division — lets the checkout/address forms offer a
+ * courier-style cascading picker (division narrows district) instead of free-text district entry,
+ * which was a common source of typos and failed deliveries. */
+export const BD_DISTRICTS_BY_DIVISION = {
+  Dhaka: [
+    "Dhaka",
+    "Faridpur",
+    "Gazipur",
+    "Gopalganj",
+    "Kishoreganj",
+    "Madaripur",
+    "Manikganj",
+    "Munshiganj",
+    "Narayanganj",
+    "Narsingdi",
+    "Rajbari",
+    "Shariatpur",
+    "Tangail",
+  ],
+  Chattogram: [
+    "Bandarban",
+    "Brahmanbaria",
+    "Chandpur",
+    "Chattogram",
+    "Cumilla",
+    "Cox's Bazar",
+    "Feni",
+    "Khagrachhari",
+    "Lakshmipur",
+    "Noakhali",
+    "Rangamati",
+  ],
+  Rajshahi: ["Bogura", "Joypurhat", "Naogaon", "Natore", "Chapainawabganj", "Pabna", "Rajshahi", "Sirajganj"],
+  Khulna: ["Bagerhat", "Chuadanga", "Jashore", "Jhenaidah", "Khulna", "Kushtia", "Magura", "Meherpur", "Narail", "Satkhira"],
+  Barishal: ["Barguna", "Barishal", "Bhola", "Jhalokati", "Patuakhali", "Pirojpur"],
+  Sylhet: ["Habiganj", "Moulvibazar", "Sunamganj", "Sylhet"],
+  Rangpur: ["Dinajpur", "Gaibandha", "Kurigram", "Lalmonirhat", "Nilphamari", "Panchagarh", "Rangpur", "Thakurgaon"],
+  Mymensingh: ["Jamalpur", "Mymensingh", "Netrokona", "Sherpur"],
+} as const satisfies Record<(typeof BD_DIVISIONS)[number], readonly string[]>;
+
 export const checkoutItemSchema = z.object({
   variantId: z.string().cuid(),
   quantity: z.number().int().min(1).max(20),

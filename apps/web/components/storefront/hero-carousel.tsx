@@ -26,14 +26,14 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
   }
 
   const slide = (
-    <div className="relative h-[70vh] min-h-[420px] touch-pan-y overflow-hidden bg-ink-900">
-      <AnimatePresence mode="sync">
+    <div className="relative h-[58vh] min-h-[400px] touch-pan-y overflow-hidden bg-ink-900 sm:h-[70vh] sm:min-h-[420px]">
+      <AnimatePresence mode="sync" initial={false}>
         <motion.div
           key={banner.id}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 1 }}
+          transition={{ duration: 0.4 }}
           drag={banners.length > 1 ? "x" : false}
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={0.2}
@@ -43,29 +43,65 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
           }}
           className="absolute inset-0 flex items-center justify-center text-center text-cream-50"
         >
+          {/* The image itself renders at full opacity immediately — no fade-in — so the hero never
+              looks hazy/washed-out on load. `scale` still eases from 1.06 to 1 as a slow, purely
+              ambient Ken Burns drift; it's decoupled from opacity so it never delays the reveal. */}
           <motion.div
-            initial={{ opacity: 0, scale: 1.06 }}
-            animate={{ opacity: 0.7, scale: 1 }}
-            transition={{ duration: 6, ease: "linear" }}
+            initial={{ scale: 1.06 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 8, ease: "linear" }}
             className="absolute inset-0"
           >
-            <Image
-              src={banner.imageUrl}
-              alt={banner.title ?? ""}
-              fill
-              priority={index === 0}
-              sizes="100vw"
-              className="object-cover"
-            />
+            {banner.mobileImageUrl ? (
+              // Art direction, not just a resize: a wide desktop banner and a phone screen have
+              // completely different aspect ratios, so `object-cover` alone has to crop most of
+              // the image's width away — on a banner with text baked into the photo (common for
+              // these), that crop is as likely to cut the headline as the product shot. Two
+              // separate images, swapped by breakpoint, let the mobile one be framed on purpose
+              // instead of whatever a center-crop of the desktop image happens to land on.
+              <>
+                <Image
+                  src={banner.mobileImageUrl}
+                  alt={banner.title ?? ""}
+                  fill
+                  priority={index === 0}
+                  sizes="100vw"
+                  className="object-cover sm:hidden"
+                />
+                <Image
+                  src={banner.imageUrl}
+                  alt={banner.title ?? ""}
+                  fill
+                  priority={index === 0}
+                  sizes="100vw"
+                  className="hidden object-cover sm:block"
+                />
+              </>
+            ) : (
+              // No dedicated mobile crop uploaded yet — fall back to the desktop image, but bias
+              // the crop toward the left on small screens instead of dead-center. Most banners of
+              // this shape put their headline in the left third, so this at least keeps the
+              // message in frame on a phone rather than showing only whatever's in the middle.
+              <Image
+                src={banner.imageUrl}
+                alt={banner.title ?? ""}
+                fill
+                priority={index === 0}
+                sizes="100vw"
+                className="object-cover object-[20%_50%] sm:object-[50%_50%]"
+              />
+            )}
           </motion.div>
-          <div className="absolute inset-0 bg-gradient-to-b from-ink-950/50 via-ink-900/20 to-ink-900/70" />
+          {(banner.title || banner.subtitle) && (
+            <div className="absolute inset-0 bg-gradient-to-b from-ink-950/35 via-transparent to-ink-950/55" />
+          )}
           {(banner.title || banner.subtitle) && (
             <div className="relative z-10 px-4">
               {banner.subtitle && (
                 <motion.p
-                  initial={{ opacity: 0, y: 12 }}
+                  initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2, duration: 0.6 }}
+                  transition={{ delay: 0.05, duration: 0.35 }}
                   className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300"
                 >
                   {banner.subtitle}
@@ -73,9 +109,9 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
               )}
               {banner.title && (
                 <motion.h2
-                  initial={{ opacity: 0, y: 16 }}
+                  initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.35, duration: 0.7 }}
+                  transition={{ delay: 0.12, duration: 0.4 }}
                   className="font-display text-4xl sm:text-5xl lg:text-6xl"
                 >
                   {banner.title}

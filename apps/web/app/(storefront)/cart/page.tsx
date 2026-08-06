@@ -7,6 +7,7 @@ import { Trash2, Heart, Gift } from "lucide-react";
 import type { BundleCartPreview, Product } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { useCartStore, useCartSubtotal } from "@/store/cart";
+import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { env } from "@/lib/env";
 import { formatPrice } from "@/lib/format";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
@@ -29,6 +30,12 @@ export default function CartPage() {
   // Zustand's persisted state hydrates after mount — render nothing cart-specific until then to avoid a flash of "empty cart".
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Landing on the full cart page means the shopper wants to check out everything in it, not
+  // whatever single item a previous "Buy Now" click staged — discard any leftover express item so
+  // it can't silently hijack this checkout later (see checkout/page.tsx for the other half of this).
+  const clearExpressItem = useExpressCheckoutStore((s) => s.clear);
+  useEffect(() => clearExpressItem(), [clearExpressItem]);
 
   // Real-time check: is any cart line now low/out of stock? If so, surface real alternatives
   // for it, rather than trusting the stale `maxStock` captured at add-to-cart time.

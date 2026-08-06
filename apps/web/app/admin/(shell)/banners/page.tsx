@@ -25,6 +25,7 @@ export default function BannersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mobileFileInputRef = useRef<HTMLInputElement>(null);
 
   const createMutation = useMutation({
     mutationFn: bannersApi.createBanner,
@@ -56,6 +57,7 @@ export default function BannersPage() {
     defaultValues: { placement: "HERO_CAROUSEL", isActive: true, sortOrder: 0, imageUrl: "" },
   });
   const imageUrl = watch("imageUrl");
+  const mobileImageUrl = watch("mobileImageUrl");
 
   async function handleImageSelected(file: File | null) {
     if (!file) return;
@@ -67,6 +69,19 @@ export default function BannersPage() {
       setError(err instanceof ApiError ? err.message : "Image upload failed");
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleMobileImageSelected(file: File | null) {
+    if (!file) return;
+    setError(null);
+    try {
+      const { url } = await uploadMutation.mutateAsync(file);
+      setValue("mobileImageUrl", url, { shouldValidate: true });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Image upload failed");
+    } finally {
+      if (mobileFileInputRef.current) mobileFileInputRef.current.value = "";
     }
   }
 
@@ -163,6 +178,46 @@ export default function BannersPage() {
               onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
             />
             {errors.imageUrl && <p className="mt-1 text-xs text-danger-600">{errors.imageUrl.message}</p>}
+          </div>
+          <div>
+            <Label>Mobile image (optional)</Label>
+            <p className="mb-1 text-xs text-ink-400">
+              The image above is usually wide and landscape — on a phone screen it gets cropped down to a narrow
+              sliver, which often cuts off any text baked into the photo. Upload a tall/portrait crop of the same
+              scene here and phones will use it instead.
+            </p>
+            <input type="hidden" {...register("mobileImageUrl")} />
+            {mobileImageUrl ? (
+              <div className="relative mt-1 h-32 w-24 overflow-hidden rounded-lg border border-ink-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={mobileImageUrl} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setValue("mobileImageUrl", "", { shouldValidate: true })}
+                  className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50"
+                  aria-label="Remove mobile image"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => mobileFileInputRef.current?.click()}
+                disabled={uploadMutation.isPending}
+                className="mt-1 flex h-32 w-24 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
+              >
+                <Upload size={18} />
+                <span className="text-center text-[11px]">{uploadMutation.isPending ? "Uploading…" : "Upload"}</span>
+              </button>
+            )}
+            <input
+              ref={mobileFileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => handleMobileImageSelected(e.target.files?.[0] ?? null)}
+            />
           </div>
           <div>
             <Label htmlFor="placement">Placement</Label>

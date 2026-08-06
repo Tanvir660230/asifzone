@@ -11,25 +11,25 @@ export function Hero({ tagline }: { tagline?: string | null }) {
       <div className="absolute inset-0 bg-gradient-to-b from-ink-950/50 via-transparent to-ink-950/40" />
       <div className="relative z-10 px-4">
         <motion.p
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
+          transition={{ duration: 0.35 }}
           className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300"
         >
           New Season
         </motion.p>
         <motion.h2
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.7 }}
+          transition={{ delay: 0.08, duration: 0.4 }}
           className="font-display text-4xl sm:text-5xl lg:text-6xl"
         >
           {tagline ?? FALLBACK_TAGLINE}
         </motion.h2>
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35, duration: 0.6 }}
+          transition={{ delay: 0.16, duration: 0.35 }}
         >
           <Link
             href="/search"

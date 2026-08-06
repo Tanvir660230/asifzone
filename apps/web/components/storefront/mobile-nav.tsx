@@ -14,7 +14,11 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
 
   return (
     <div className="lg:hidden">
-      <button onClick={() => setOpen(true)} aria-label="Open menu" className="text-ink-900">
+      <button
+        onClick={() => setOpen(true)}
+        aria-label="Open menu"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-900 transition-colors duration-200 ease-smooth hover:bg-ink-100"
+      >
         <Menu size={22} />
       </button>
 

@@ -29,6 +29,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { default: settings.storeName, template: `%s | ${settings.storeName}` },
     description: settings.tagline ?? undefined,
     alternates: { canonical: siteUrl },
+    icons: settings.faviconUrl ? { icon: settings.faviconUrl } : undefined,
     ...buildOpenGraph({
       title: settings.storeName,
       description: settings.tagline ?? undefined,

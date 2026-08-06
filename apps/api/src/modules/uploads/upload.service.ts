@@ -66,6 +66,21 @@ async function processSiteImage(buffer: Buffer, folder: string, width: number): 
 }
 
 export const processLogoImage = (buffer: Buffer) => processSiteImage(buffer, "branding", 600);
+/** Square-cropped so it reads correctly as a browser tab icon regardless of the source image's
+ * aspect ratio — unlike the logo, which keeps its natural proportions. */
+export async function processFaviconImage(buffer: Buffer): Promise<string> {
+  const id = randomUUID();
+  const dir = path.join(process.cwd(), env.uploadsDir, "branding");
+  await ensureDir(dir);
+
+  const filePath = path.join(dir, `${id}-favicon.png`);
+  await sharp(buffer)
+    .resize({ width: 512, height: 512, fit: "cover" })
+    .png()
+    .toFile(filePath);
+
+  return `${env.apiOrigin}/uploads/branding/${id}-favicon.png`;
+}
 export const processBannerImage = (buffer: Buffer) => processSiteImage(buffer, "banners", 1920);
 export const processCategoryImage = (buffer: Buffer) => processSiteImage(buffer, "categories", 800);
 export const processCategoryBannerImage = (buffer: Buffer) => processSiteImage(buffer, "category-banners", 1600);

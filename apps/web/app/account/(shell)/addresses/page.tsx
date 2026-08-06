@@ -1,11 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Star, Trash2 } from "lucide-react";
-import { createAddressSchema, BD_DIVISIONS, type Address, type CreateAddressInput } from "@clothing-brand/shared";
+import {
+  createAddressSchema,
+  BD_DIVISIONS,
+  BD_DISTRICTS_BY_DIVISION,
+  type Address,
+  type CreateAddressInput,
+} from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -139,6 +145,8 @@ function AddressForm({
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CreateAddressInput>({
     resolver: zodResolver(createAddressSchema),
@@ -153,8 +161,22 @@ function AddressForm({
           addressLine: initial.addressLine,
           isDefault: initial.isDefault,
         }
-      : { division: BD_DIVISIONS[0], isDefault: false },
+      : { division: BD_DIVISIONS[0], district: BD_DISTRICTS_BY_DIVISION[BD_DIVISIONS[0]][0], isDefault: false },
   });
+
+  const division = watch("division") || BD_DIVISIONS[0];
+  const district = watch("district");
+  const districtOptions: readonly string[] = BD_DISTRICTS_BY_DIVISION[division] ?? [];
+
+  // Courier-style cascading picker, matching the checkout form: narrow the district list to the
+  // selected division and drop any district that no longer belongs to it.
+  useEffect(() => {
+    const firstDistrict = districtOptions[0];
+    if (firstDistrict && !districtOptions.includes(district)) {
+      setValue("district", firstDistrict);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [division]);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -187,13 +209,19 @@ function AddressForm({
         </div>
         <div>
           <Label htmlFor="district">District</Label>
-          <Input id="district" {...register("district")} />
+          <Select id="district" {...register("district")}>
+            {districtOptions.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </Select>
           {errors.district && <p className="mt-1 text-xs text-danger-600">{errors.district.message}</p>}
         </div>
       </div>
       <div>
         <Label htmlFor="area">Area / Thana</Label>
-        <Input id="area" {...register("area")} />
+        <Input id="area" placeholder="e.g. Gulshan, Dhanmondi" {...register("area")} />
         {errors.area && <p className="mt-1 text-xs text-danger-600">{errors.area.message}</p>}
       </div>
       <div>

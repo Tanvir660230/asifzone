@@ -15,11 +15,11 @@ export function CartIcon() {
     <Link
       href="/cart"
       aria-label="Cart"
-      className="relative text-ink-700 transition-all duration-200 ease-smooth hover:scale-110 hover:text-brass-500"
+      className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-700 transition-all duration-200 ease-smooth hover:bg-ink-100 hover:text-brass-500"
     >
-      <ShoppingBag size={20} />
+      <ShoppingBag size={19} />
       {mounted && count > 0 && (
-        <span className="absolute -right-2 -top-2 flex h-4 min-w-4 animate-modal-in items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900 shadow-sm">
+        <span className="absolute right-1 top-1 flex h-4 min-w-4 animate-modal-in items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900 shadow-sm">
           {count}
         </span>
       )}

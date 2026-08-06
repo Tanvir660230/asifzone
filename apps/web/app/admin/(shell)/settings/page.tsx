@@ -26,12 +26,24 @@ interface LogoUploadFieldProps {
   onRemove: () => void;
   /** Preview swatch background — should match where this logo variant is actually shown, so the admin can judge contrast before saving. */
   previewBackground: "light" | "dark";
+  /** Which endpoint to upload through — logo and favicon are processed differently server-side (favicon gets square-cropped to a small PNG). */
+  uploadFn: (file: File) => Promise<{ url: string }>;
+  uploadLabel?: string;
 }
 
-function LogoUploadField({ label, helpText, value, onChange, onRemove, previewBackground }: LogoUploadFieldProps) {
+function LogoUploadField({
+  label,
+  helpText,
+  value,
+  onChange,
+  onRemove,
+  previewBackground,
+  uploadFn,
+  uploadLabel = "Upload logo",
+}: LogoUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const uploadMutation = useMutation({ mutationFn: settingsApi.uploadLogo });
+  const uploadMutation = useMutation({ mutationFn: uploadFn });
 
   async function handleSelected(file: File | null) {
     if (!file) return;
@@ -40,7 +52,7 @@ function LogoUploadField({ label, helpText, value, onChange, onRemove, previewBa
       const { url } = await uploadMutation.mutateAsync(file);
       onChange(url);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Logo upload failed");
+      setError(err instanceof ApiError ? err.message : "Upload failed");
     } finally {
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -75,7 +87,7 @@ function LogoUploadField({ label, helpText, value, onChange, onRemove, previewBa
           className="mt-1 flex h-20 w-40 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
         >
           <Upload size={18} />
-          <span className="text-xs">{uploadMutation.isPending ? "Uploading…" : "Upload logo"}</span>
+          <span className="text-xs">{uploadMutation.isPending ? "Uploading…" : uploadLabel}</span>
         </button>
       )}
       <input
@@ -108,6 +120,7 @@ export default function SettingsPage() {
 
   const logoUrl = watch("logoUrl");
   const logoOnDarkUrl = watch("logoOnDarkUrl");
+  const faviconUrl = watch("faviconUrl");
 
   useEffect(() => {
     if (!data) return;
@@ -171,13 +184,9 @@ export default function SettingsPage() {
               <Label htmlFor="tagline">Tagline</Label>
               <Input id="tagline" placeholder="Considered clothing, made to last" {...register("tagline")} />
             </div>
-            <div>
-              <Label htmlFor="faviconUrl">Favicon URL</Label>
-              <Input id="faviconUrl" placeholder="https://…" {...register("faviconUrl")} />
-            </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
             <div>
               <input type="hidden" {...register("logoUrl")} />
               <LogoUploadField
@@ -185,6 +194,7 @@ export default function SettingsPage() {
                 helpText="Shown in the header and anywhere else with a light background. A transparent PNG works best."
                 value={logoUrl}
                 previewBackground="light"
+                uploadFn={settingsApi.uploadLogo}
                 onChange={(url) => setValue("logoUrl", url, { shouldValidate: true })}
                 onRemove={() => setValue("logoUrl", "", { shouldValidate: true })}
               />
@@ -196,8 +206,22 @@ export default function SettingsPage() {
                 helpText="A bright/light-colored version, shown in the footer and other dark sections. Falls back to the light-background logo if left empty."
                 value={logoOnDarkUrl}
                 previewBackground="dark"
+                uploadFn={settingsApi.uploadLogo}
                 onChange={(url) => setValue("logoOnDarkUrl", url, { shouldValidate: true })}
                 onRemove={() => setValue("logoOnDarkUrl", "", { shouldValidate: true })}
+              />
+            </div>
+            <div>
+              <input type="hidden" {...register("faviconUrl")} />
+              <LogoUploadField
+                label="Favicon"
+                helpText="The small icon shown in the browser tab. Square images work best — it's cropped to a square automatically."
+                value={faviconUrl}
+                previewBackground="light"
+                uploadFn={settingsApi.uploadFavicon}
+                uploadLabel="Upload favicon"
+                onChange={(url) => setValue("faviconUrl", url, { shouldValidate: true })}
+                onRemove={() => setValue("faviconUrl", "", { shouldValidate: true })}
               />
             </div>
           </div>

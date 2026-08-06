@@ -41,7 +41,10 @@ export function CategoryGrid({ categories }: { categories: CategoryTreeNode[] })
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
                 />
               ) : (
-                <div className="flex h-full items-center justify-center bg-ink-200 text-ink-400">{cat.name}</div>
+                // No category photo uploaded yet — a branded ink/brass gradient reads as a
+                // deliberate placeholder rather than a broken image. Name isn't repeated here
+                // since the bottom label already shows it.
+                <div className="h-full bg-gradient-to-br from-ink-700 via-ink-800 to-ink-950 transition-transform duration-500 group-hover:scale-105" />
               )}
               <div className="absolute inset-0 flex items-end bg-gradient-to-t from-ink-950/60 to-transparent p-4">
                 <span className="text-sm uppercase tracking-wide text-cream-50">{cat.name}</span>

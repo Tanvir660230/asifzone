@@ -20,3 +20,10 @@ settingsRouter.post(
   imageUpload.single("image"),
   settingsController.uploadLogo,
 );
+settingsRouter.post(
+  "/upload-favicon",
+  requireAdmin,
+  requireRole("OWNER"),
+  imageUpload.single("image"),
+  settingsController.uploadFavicon,
+);
