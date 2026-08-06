@@ -7,6 +7,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Set up deploy key
         run: |
           mkdir -p ~/.ssh
@@ -14,17 +16,11 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Check categories table
+      - name: Seed the category tree into production (run once)
         run: |
+          scp -i ~/.ssh/deploy_key apps/api/.seed-categories-prod.js root@${{ secrets.VPS_HOST }}:/tmp/seed-categories-prod.js
           ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
             cd /opt/asifzone
-            docker compose -f docker/docker-compose.yml exec -T api node -e "
-              const { PrismaClient } = require(\"@prisma/client\");
-              const prisma = new PrismaClient();
-              prisma.category.findMany({ select: { id: true, name: true, parentId: true, isActive: true } }).then(rows => {
-                console.log(\"count:\", rows.length);
-                console.log(JSON.stringify(rows, null, 1));
-                process.exit(0);
-              }).catch(e => { console.error(e); process.exit(1); });
-            "
+            cat /tmp/seed-categories-prod.js | docker compose -f docker/docker-compose.yml exec -T api node
+            rm /tmp/seed-categories-prod.js
           '
