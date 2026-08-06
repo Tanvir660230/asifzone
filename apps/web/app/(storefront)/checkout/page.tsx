@@ -349,13 +349,34 @@ export default function CheckoutPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="customerName">Full name</Label>
-                <Input id="customerName" autoComplete="name" {...register("customerName")} />
-                {errors.customerName && <p className="mt-1 text-xs text-danger-600">{errors.customerName.message}</p>}
+                <Input
+                  id="customerName"
+                  autoComplete="name"
+                  aria-invalid={!!errors.customerName}
+                  aria-describedby={errors.customerName ? "customerName-error" : undefined}
+                  {...register("customerName")}
+                />
+                {errors.customerName && (
+                  <p id="customerName-error" className="mt-1 text-xs text-danger-600">
+                    {errors.customerName.message}
+                  </p>
+                )}
               </div>
               <div>
                 <Label htmlFor="customerPhone">Phone</Label>
-                <Input id="customerPhone" placeholder="01XXXXXXXXX" autoComplete="tel" {...register("customerPhone")} />
-                {errors.customerPhone && <p className="mt-1 text-xs text-danger-600">{errors.customerPhone.message}</p>}
+                <Input
+                  id="customerPhone"
+                  placeholder="01XXXXXXXXX"
+                  autoComplete="tel"
+                  aria-invalid={!!errors.customerPhone}
+                  aria-describedby={errors.customerPhone ? "customerPhone-error" : undefined}
+                  {...register("customerPhone")}
+                />
+                {errors.customerPhone && (
+                  <p id="customerPhone-error" className="mt-1 text-xs text-danger-600">
+                    {errors.customerPhone.message}
+                  </p>
+                )}
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="customerEmail">Email (optional)</Label>
@@ -405,25 +426,55 @@ export default function CheckoutPage() {
               </div>
               <div>
                 <Label htmlFor="shippingDistrict">District</Label>
-                <Select id="shippingDistrict" autoComplete="address-level2" {...register("shippingDistrict")}>
+                <Select
+                  id="shippingDistrict"
+                  autoComplete="address-level2"
+                  aria-invalid={!!errors.shippingDistrict}
+                  aria-describedby={errors.shippingDistrict ? "shippingDistrict-error" : undefined}
+                  {...register("shippingDistrict")}
+                >
                   {districtOptions.map((d) => (
                     <option key={d} value={d}>
                       {d}
                     </option>
                   ))}
                 </Select>
-                {errors.shippingDistrict && <p className="mt-1 text-xs text-danger-600">{errors.shippingDistrict.message}</p>}
+                {errors.shippingDistrict && (
+                  <p id="shippingDistrict-error" className="mt-1 text-xs text-danger-600">
+                    {errors.shippingDistrict.message}
+                  </p>
+                )}
               </div>
               <div>
                 <Label htmlFor="shippingArea">Area / Thana</Label>
-                <Input id="shippingArea" placeholder="e.g. Gulshan, Dhanmondi" autoComplete="address-level3" {...register("shippingArea")} />
-                {errors.shippingArea && <p className="mt-1 text-xs text-danger-600">{errors.shippingArea.message}</p>}
+                <Input
+                  id="shippingArea"
+                  placeholder="e.g. Gulshan, Dhanmondi"
+                  autoComplete="address-level3"
+                  aria-invalid={!!errors.shippingArea}
+                  aria-describedby={errors.shippingArea ? "shippingArea-error" : undefined}
+                  {...register("shippingArea")}
+                />
+                {errors.shippingArea && (
+                  <p id="shippingArea-error" className="mt-1 text-xs text-danger-600">
+                    {errors.shippingArea.message}
+                  </p>
+                )}
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="shippingAddressLine">House / Road / Details</Label>
-                <Textarea id="shippingAddressLine" rows={2} autoComplete="street-address" {...register("shippingAddressLine")} />
+                <Textarea
+                  id="shippingAddressLine"
+                  rows={2}
+                  autoComplete="street-address"
+                  aria-invalid={!!errors.shippingAddressLine}
+                  aria-describedby={errors.shippingAddressLine ? "shippingAddressLine-error" : undefined}
+                  {...register("shippingAddressLine")}
+                />
                 {errors.shippingAddressLine && (
-                  <p className="mt-1 text-xs text-danger-600">{errors.shippingAddressLine.message}</p>
+                  <p id="shippingAddressLine-error" className="mt-1 text-xs text-danger-600">
+                    {errors.shippingAddressLine.message}
+                  </p>
                 )}
               </div>
               <div className="sm:col-span-2">

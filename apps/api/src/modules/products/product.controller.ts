@@ -155,3 +155,8 @@ export const updateImageAltText = asyncHandler(async (req: Request, res: Respons
   await productService.updateProductImageAltText(req.params.id!, req.params.imageId!, req.body.altText);
   res.status(204).send();
 });
+
+export const reorderImages = asyncHandler(async (req: Request, res: Response) => {
+  const product = await productService.reorderProductImages(req.params.id!, req.body.imageIds);
+  res.json({ product });
+});

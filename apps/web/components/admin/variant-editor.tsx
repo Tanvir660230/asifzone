@@ -2,7 +2,23 @@
 
 import { useState } from "react";
 import { useFieldArray, type Control, type UseFormRegister, type UseFormWatch } from "react-hook-form";
-import { ChevronDown, Sparkles, Trash2 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { ChevronDown, GripVertical, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Attribute, AttributeValue, CreateProductInput, ProductImage } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +51,7 @@ function cartesianProduct(groups: AttributeValue[][]): AttributeValue[][] {
 }
 
 export function VariantEditor({ control, register, watch, attributes, productImages, skuPrefix = "SKU" }: VariantEditorProps) {
-  const { fields, append, remove } = useFieldArray({ control, name: "variants" });
+  const { fields, append, remove, move } = useFieldArray({ control, name: "variants" });
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
   // Attributes load asynchronously (separate query), so this can't be a one-shot useState initializer —
   // it needs to open as soon as attributes actually arrive, not just at first mount.
@@ -44,6 +60,20 @@ export function VariantEditor({ control, register, watch, attributes, productIma
   if (!autoOpened && attributes.length > 0 && fields.length <= 1) {
     setAutoOpened(true);
     setGeneratorOpen(true);
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = fields.findIndex((f) => f.id === active.id);
+    const newIndex = fields.findIndex((f) => f.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    move(oldIndex, newIndex);
   }
 
   function toggleValue(attributeId: string, valueId: string) {
@@ -142,89 +172,113 @@ export function VariantEditor({ control, register, watch, attributes, productIma
         </div>
       )}
 
-      <div className="space-y-3">
-        {fields.map((field, index) => {
-          const attributeValueIds = watch(`variants.${index}.attributeValueIds`) ?? [];
-          const chips = attributeValueIds
-            .map((id) => {
-              for (const attr of attributes) {
-                const val = attr.values.find((v) => v.id === id);
-                if (val) return `${attr.name}: ${val.value}`;
-              }
-              return null;
-            })
-            .filter(Boolean) as string[];
+      {fields.length > 1 && (
+        <p className="mb-2 text-xs text-ink-400">
+          Drag <GripVertical size={11} className="inline -mt-0.5" /> to reorder — the top variant's color and size are what
+          customers see selected by default on the product page.
+        </p>
+      )}
 
-          return (
-            <div key={field.id} className="rounded-lg border border-ink-100 bg-cream-50 p-3">
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <div className="flex flex-wrap gap-1">
-                  {chips.map((chip) => (
-                    <span key={chip} className="rounded-full bg-ink-100 px-2 py-0.5 text-[11px] text-ink-600">
-                      {chip}
-                    </span>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => remove(index)}
-                  className="shrink-0 text-ink-400 hover:text-danger-600"
-                  aria-label="Remove variant"
-                  disabled={fields.length === 1}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={fields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-3">
+            {fields.map((field, index) => {
+              const attributeValueIds = watch(`variants.${index}.attributeValueIds`) ?? [];
+              const chips = attributeValueIds
+                .map((id) => {
+                  for (const attr of attributes) {
+                    const val = attr.values.find((v) => v.id === id);
+                    if (val) return `${attr.name}: ${val.value}`;
+                  }
+                  return null;
+                })
+                .filter(Boolean) as string[];
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                <div>
-                  <Label className="text-[11px]">SKU</Label>
-                  <Input placeholder="SKU-001" {...register(`variants.${index}.sku`)} />
-                </div>
-                <div>
-                  <Label className="text-[11px]">Barcode</Label>
-                  <Input placeholder="Optional" {...register(`variants.${index}.barcode`)} />
-                </div>
-                <div>
-                  <Label className="text-[11px]">Size</Label>
-                  <Input placeholder="M / L / XL" {...register(`variants.${index}.size`)} />
-                </div>
-                <div>
-                  <Label className="text-[11px]">Color</Label>
-                  <Input placeholder="Black" {...register(`variants.${index}.color`)} />
-                </div>
-                <div>
-                  <Label className="text-[11px]">Price override</Label>
-                  <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.price`, { valueAsNumber: true })} />
-                </div>
-                <div>
-                  <Label className="text-[11px]">Cost price</Label>
-                  <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.costPrice`, { valueAsNumber: true })} />
-                </div>
-                <div>
-                  <Label className="text-[11px]">Stock</Label>
-                  <Input type="number" {...register(`variants.${index}.stock`, { valueAsNumber: true })} />
-                </div>
-                <div>
-                  <Label className="text-[11px]">Weight (kg)</Label>
-                  <Input type="number" step="0.01" placeholder="Optional" {...register(`variants.${index}.weight`, { valueAsNumber: true })} />
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-[11px]">Variant image</Label>
-                  <Select {...register(`variants.${index}.imageId`)} disabled={productImages.length === 0}>
-                    <option value="">{productImages.length === 0 ? "Upload product images first…" : "Use default product image"}</option>
-                    {productImages.map((img) => (
-                      <option key={img.id} value={img.id}>
-                        {img.altText || img.url.split("/").pop()}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              return (
+                <SortableVariantRow key={field.id} id={field.id} isDefault={index === 0}>
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {chips.map((chip) => (
+                        <span key={chip} className="rounded-full bg-ink-100 px-2 py-0.5 text-[11px] text-ink-600">
+                          {chip}
+                        </span>
+                      ))}
+                      {index !== 0 && (
+                        <button
+                          type="button"
+                          onClick={() => move(index, 0)}
+                          className="rounded-full px-2 py-0.5 text-[11px] text-ink-400 hover:bg-brass-50 hover:text-brass-700"
+                        >
+                          Set as default
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => remove(index)}
+                      className="shrink-0 text-ink-400 hover:text-danger-600"
+                      aria-label="Remove variant"
+                      disabled={fields.length === 1}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                    <div>
+                      <Label className="text-[11px]">SKU</Label>
+                      <Input placeholder="SKU-001" {...register(`variants.${index}.sku`)} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Barcode</Label>
+                      <Input placeholder="Optional" {...register(`variants.${index}.barcode`)} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Size</Label>
+                      <Input placeholder="M / L / XL / 21" {...register(`variants.${index}.size`)} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Equivalent size</Label>
+                      <Input placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Color</Label>
+                      <Input placeholder="Black" {...register(`variants.${index}.color`)} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Price override</Label>
+                      <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.price`, { valueAsNumber: true })} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Cost price</Label>
+                      <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.costPrice`, { valueAsNumber: true })} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Stock</Label>
+                      <Input type="number" {...register(`variants.${index}.stock`, { valueAsNumber: true })} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px]">Weight (kg)</Label>
+                      <Input type="number" step="0.01" placeholder="Optional" {...register(`variants.${index}.weight`, { valueAsNumber: true })} />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-[11px]">Variant image</Label>
+                      <Select {...register(`variants.${index}.imageId`)} disabled={productImages.length === 0}>
+                        <option value="">{productImages.length === 0 ? "Upload product images first…" : "Use default product image"}</option>
+                        {productImages.map((img) => (
+                          <option key={img.id} value={img.id}>
+                            {img.altText || img.url.split("/").pop()}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+                </SortableVariantRow>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
 
       <Button
         type="button"
@@ -235,6 +289,44 @@ export function VariantEditor({ control, register, watch, attributes, productIma
       >
         Add variant manually
       </Button>
+    </div>
+  );
+}
+
+interface SortableVariantRowProps {
+  id: string;
+  isDefault: boolean;
+  children: React.ReactNode;
+}
+
+function SortableVariantRow({ id, isDefault, children }: SortableVariantRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "rounded-lg border border-ink-100 bg-cream-50 p-3 pl-9 relative",
+        isDragging && "z-10 shadow-float ring-2 ring-brass-300",
+      )}
+    >
+      <button
+        type="button"
+        className="absolute left-2 top-3 touch-none rounded p-1 text-ink-300 hover:text-ink-600 active:cursor-grabbing"
+        aria-label="Drag to reorder"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={15} />
+      </button>
+      {isDefault && (
+        <span className="absolute left-8 top-2 flex items-center gap-1 rounded-full bg-brass-100 px-2 py-0.5 text-[10px] font-medium text-brass-700">
+          <Star size={10} className="fill-brass-500 text-brass-500" /> Default
+        </span>
+      )}
+      {children}
     </div>
   );
 }

@@ -46,7 +46,18 @@ export default function AccountProfilePage() {
     }
   }
 
-  if (isLoading || !data?.customer) return <p className="text-ink-400">Loading…</p>;
+  if (isLoading || !data?.customer) {
+    return (
+      <div className="animate-pulse">
+        <div className="mb-6 h-7 w-24 rounded bg-ink-100" />
+        <div className="max-w-md space-y-4">
+          <div className="h-10 w-full rounded-lg bg-ink-100" />
+          <div className="h-10 w-full rounded-lg bg-ink-100" />
+          <div className="h-10 w-full rounded-lg bg-ink-100" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

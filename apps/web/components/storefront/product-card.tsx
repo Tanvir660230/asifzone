@@ -5,9 +5,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { ShoppingBag, Eye, Scale } from "lucide-react";
 import type { Product } from "@clothing-brand/shared";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, isPaleColor } from "@/lib/utils";
 import { useCartStore } from "@/store/cart";
 import { useQuickViewStore } from "@/store/quick-view";
 import { useCompareStore } from "@/store/compare";
@@ -63,33 +63,35 @@ export function ProductCard({ product }: { product: Product }) {
   }
 
   return (
-    <Link href={`/product/${product.slug}`} className="group block">
+    <div className="group block">
       <div className="relative aspect-square overflow-hidden rounded-xl bg-ink-100 shadow-sm transition-shadow duration-300 ease-smooth group-hover:shadow-float">
-        {primaryImage ? (
-          <>
-            <Image
-              src={`${env.apiUrl}${primaryImage.url}`}
-              alt={primaryImage.altText ?? product.name}
-              fill
-              sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-              className={cn(
-                "object-cover transition-all duration-500 ease-smooth",
-                secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-105",
-              )}
-            />
-            {secondaryImage && (
+        <Link href={`/product/${product.slug}`} className="absolute inset-0" aria-label={product.name}>
+          {primaryImage ? (
+            <>
               <Image
-                src={`${env.apiUrl}${secondaryImage.url}`}
-                alt={secondaryImage.altText ?? product.name}
+                src={resolveImageUrl(primaryImage.url)}
+                alt={primaryImage.altText ?? product.name}
                 fill
                 sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                className="object-cover opacity-0 transition-opacity duration-500 ease-smooth group-hover:opacity-100"
+                className={cn(
+                  "object-cover transition-all duration-500 ease-smooth",
+                  secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-105",
+                )}
               />
-            )}
-          </>
-        ) : (
-          <div className="flex h-full items-center justify-center text-ink-300">No image</div>
-        )}
+              {secondaryImage && (
+                <Image
+                  src={resolveImageUrl(secondaryImage.url)}
+                  alt={secondaryImage.altText ?? product.name}
+                  fill
+                  sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                  className="object-cover opacity-0 transition-opacity duration-500 ease-smooth group-hover:opacity-100"
+                />
+              )}
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center text-ink-300">No image</div>
+          )}
+        </Link>
         {flash && (
           <span className="absolute left-3 top-3 rounded-full bg-brass-400 px-2 py-1 text-xs uppercase tracking-wide text-ink-900">
             Flash Sale
@@ -100,7 +102,7 @@ export function ProductCard({ product }: { product: Product }) {
             Sold out
           </span>
         )}
-        <div className="absolute left-3 top-3 flex flex-col gap-1.5 transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100">
+        <div className="absolute left-3 top-3 z-10 flex flex-col gap-1.5 transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100">
           <button
             onClick={handleQuickView}
             aria-label="Quick view"
@@ -122,21 +124,21 @@ export function ProductCard({ product }: { product: Product }) {
             <Scale size={14} />
           </button>
         </div>
-        <WishlistButton productId={product.id} className="absolute right-3 top-3 h-8 w-8" />
+        <WishlistButton productId={product.id} className="absolute right-3 top-3 z-10 h-8 w-8" />
         {totalStock > 0 && (
           <button
             onClick={handleQuickAdd}
             aria-label="Quick add to cart"
-            className="glass glossy absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-float transition-all duration-300 ease-smooth hover:scale-110 hover:bg-brass-400 active:scale-95 lg:translate-y-2 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
+            className="glass glossy absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-float transition-all duration-300 ease-smooth hover:scale-110 hover:bg-brass-400 active:scale-95 lg:translate-y-2 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
           >
             <ShoppingBag size={16} />
           </button>
         )}
         {justAdded && (
-          <span className="absolute bottom-3 right-3 rounded-full bg-ink-900 px-3 py-2 text-xs text-cream-50">Added ✓</span>
+          <span className="absolute bottom-3 right-3 z-10 rounded-full bg-ink-900 px-3 py-2 text-xs text-cream-50">Added ✓</span>
         )}
       </div>
-      <div className="mt-3 space-y-1.5">
+      <Link href={`/product/${product.slug}`} className="mt-3 block space-y-1.5">
         <p className="text-xs uppercase tracking-wide text-ink-400">{product.brandTier}</p>
         <h3 className="text-sm text-ink-900">{product.name}</h3>
         <div className="flex items-center gap-2">
@@ -160,14 +162,17 @@ export function ProductCard({ product }: { product: Product }) {
               <span
                 key={color}
                 title={color}
-                className="h-3.5 w-3.5 rounded-full border border-ink-200 transition-transform duration-150 ease-smooth hover:scale-125"
+                className={cn(
+                  "h-3.5 w-3.5 rounded-full border transition-transform duration-150 ease-smooth hover:scale-125",
+                  isPaleColor(hex) ? "border-ink-300" : "border-ink-200",
+                )}
                 style={{ backgroundColor: hex ?? "#d4d4d4" }}
               />
             ))}
             {colors.length > 5 && <span className="text-[11px] text-ink-400">+{colors.length - 5}</span>}
           </div>
         )}
-      </div>
-    </Link>
+      </Link>
+    </div>
   );
 }

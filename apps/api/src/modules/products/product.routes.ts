@@ -14,6 +14,7 @@ import {
   bulkProductStatusSchema,
   bulkProductCategorySchema,
   updateImageAltTextSchema,
+  reorderImagesSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin } from "../../middlewares/require-admin";
@@ -89,6 +90,12 @@ productRouter.post(
   requireAdmin,
   imageUpload.array("images", 10),
   productController.uploadImages,
+);
+productRouter.patch(
+  "/:id/images/reorder",
+  requireAdmin,
+  validate(reorderImagesSchema),
+  productController.reorderImages,
 );
 productRouter.delete("/:id/images/:imageId", requireAdmin, productController.removeImage);
 productRouter.patch(

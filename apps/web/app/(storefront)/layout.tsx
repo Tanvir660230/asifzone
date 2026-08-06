@@ -10,6 +10,7 @@ import { QuickViewModal } from "@/components/storefront/quick-view-modal";
 import { CompareBar } from "@/components/storefront/compare-bar";
 import { PageTransition } from "@/components/storefront/page-transition";
 import { SkipToContentLink } from "@/components/storefront/skip-to-content-link";
+import { Toaster } from "@/components/ui/toast";
 import { getActiveSocialLinksSafe, getCategoryTreeSafe, getSiteSettingsSafe } from "@/lib/api/storefront";
 
 export default async function StorefrontLayout({ children }: { children: ReactNode }) {
@@ -34,6 +35,7 @@ export default async function StorefrontLayout({ children }: { children: ReactNo
       <LiveChatWidget />
       <QuickViewModal />
       <CompareBar />
+      <Toaster />
     </div>
   );
 }

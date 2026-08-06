@@ -108,6 +108,7 @@ export function ProductForm({ categories, initial, onSubmit, submitLabel = "Save
             sku: v.sku,
             barcode: v.barcode,
             size: v.size,
+            sizeLabel: v.sizeLabel,
             color: v.color,
             colorHex: v.colorHex,
             price: v.price ? Number(v.price) : undefined,

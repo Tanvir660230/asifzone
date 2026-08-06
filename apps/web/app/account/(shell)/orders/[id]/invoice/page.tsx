@@ -15,7 +15,14 @@ export default function AccountOrderInvoicePage() {
   const { data: orderData, isLoading } = useQuery({ queryKey: ["my-order", id], queryFn: () => getMyOrder(id) });
   const { data: settingsData } = useQuery({ queryKey: ["settings"], queryFn: getSettings });
 
-  if (isLoading || !orderData) return <p className="p-8 text-ink-400">Loading…</p>;
+  if (isLoading || !orderData) {
+    return (
+      <div className="mx-auto max-w-3xl animate-pulse space-y-4 p-6 sm:p-10">
+        <div className="h-6 w-40 rounded bg-ink-100" />
+        <div className="h-64 w-full rounded bg-ink-100" />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl p-6 sm:p-10">

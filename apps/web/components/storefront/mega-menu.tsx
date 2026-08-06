@@ -1,11 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import type { FocusEvent, KeyboardEvent } from "react";
 import Link from "next/link";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 
 export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
+
+  const closeOnBlur = (e: FocusEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setOpenId(null);
+    }
+  };
+
+  const closeOnEscape = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      setOpenId(null);
+      (e.currentTarget.querySelector("a") as HTMLAnchorElement | null)?.focus();
+    }
+  };
 
   return (
     <nav className="flex items-center gap-8">
@@ -15,9 +29,14 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
           className="relative"
           onMouseEnter={() => setOpenId(cat.id)}
           onMouseLeave={() => setOpenId(null)}
+          onFocus={() => setOpenId(cat.id)}
+          onBlur={closeOnBlur}
+          onKeyDown={closeOnEscape}
         >
           <Link
             href={`/category/${cat.slug}`}
+            aria-haspopup={cat.children.length > 0 ? "true" : undefined}
+            aria-expanded={cat.children.length > 0 ? openId === cat.id : undefined}
             className="group/navlink relative block py-2 text-sm uppercase tracking-wide text-ink-800 transition-colors duration-200 ease-smooth hover:text-brass-500"
           >
             {cat.name}

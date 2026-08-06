@@ -24,7 +24,16 @@ export default function AccountCouponsPage() {
     <div>
       <h1 className="mb-6 font-display text-2xl text-ink-900">Coupons</h1>
 
-      {isLoading && <p className="text-ink-400">Loading…</p>}
+      {isLoading && (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="animate-pulse border border-dashed border-brass-200 bg-brass-50/50 p-4">
+              <div className="h-4 w-28 rounded bg-ink-100" />
+              <div className="mt-2 h-3 w-40 rounded bg-ink-100" />
+            </div>
+          ))}
+        </div>
+      )}
       {!isLoading && data?.coupons.length === 0 && <p className="text-ink-400">No active coupons right now.</p>}
 
       <div className="space-y-3">

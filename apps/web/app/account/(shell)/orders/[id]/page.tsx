@@ -62,7 +62,21 @@ export default function AccountOrderDetailPage() {
     onError: (err) => setReturnError(err instanceof ApiError ? err.message : "Could not submit return request"),
   });
 
-  if (isLoading || !data) return <p className="text-ink-400">Loading…</p>;
+  if (isLoading || !data) {
+    return (
+      <div className="animate-pulse space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-7 w-40 rounded bg-ink-100" />
+            <div className="h-3 w-32 rounded bg-ink-100" />
+          </div>
+          <div className="h-8 w-24 rounded bg-ink-100" />
+        </div>
+        <div className="h-32 rounded-lg border border-ink-100 bg-ink-50" />
+        <div className="h-40 rounded-lg border border-ink-100 bg-ink-50" />
+      </div>
+    );
+  }
 
   const { order } = data;
   const latestReturnRequest = order.returnRequests?.[0];

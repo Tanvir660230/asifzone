@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ProductGrid } from "@/components/storefront/product-grid";
+import { ProductGridSkeleton } from "@/components/storefront/skeletons/product-grid-skeleton";
 import { listWishlist } from "@/lib/api/wishlist";
 
 export default function AccountWishlistPage() {
@@ -12,7 +13,7 @@ export default function AccountWishlistPage() {
     <div>
       <h1 className="mb-6 font-display text-2xl text-ink-900">Wishlist</h1>
 
-      {isLoading && <p className="text-ink-400">Loading…</p>}
+      {isLoading && <ProductGridSkeleton count={4} />}
       {!isLoading && data?.items.length === 0 && (
         <p className="text-ink-400">
           Nothing saved yet —{" "}

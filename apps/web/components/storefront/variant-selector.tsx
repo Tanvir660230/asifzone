@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ProductVariant } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, isPaleColor } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
@@ -24,6 +24,9 @@ interface VariantSelectorProps {
   basePrice: string;
   lowStockThreshold: number;
   restockDate: string | null;
+  /** Called whenever the selected variant changes (including the initial default selection),
+   * so a parent can sync the product gallery to that variant's assigned image. */
+  onVariantChange?: (variant: ProductVariant | undefined) => void;
 }
 
 export function VariantSelector({
@@ -35,6 +38,7 @@ export function VariantSelector({
   basePrice,
   lowStockThreshold,
   restockDate,
+  onVariantChange,
 }: VariantSelectorProps) {
   const router = useRouter();
   const sizes = useMemo(() => Array.from(new Set(variants.map((v) => v.size))), [variants]);
@@ -48,6 +52,12 @@ export function VariantSelector({
   const [justAdded, setJustAdded] = useState(false);
 
   const selectedVariant = variants.find((v) => v.size === selectedSize && v.color === selectedColor);
+
+  useEffect(() => {
+    onVariantChange?.(selectedVariant);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVariant?.id]);
+
   const sizeHasStock = (size: string) => variants.some((v) => v.size === size && v.stock > 0);
   const comboHasStock = (size: string, color: string) =>
     variants.some((v) => v.size === size && v.color === color && v.stock > 0);
@@ -92,21 +102,24 @@ export function VariantSelector({
             <SizeGuideModal />
           </div>
           <div className="flex flex-wrap gap-2">
-            {sizes.map((size) => (
-              <button
-                key={size}
-                onClick={() => setSelectedSize(size)}
-                disabled={!sizeHasStock(size)}
-                className={cn(
-                  "h-10 min-w-10 rounded-full border px-3 text-sm transition-all duration-200 ease-smooth active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
-                  selectedSize === size
-                    ? "glossy border-ink-900 bg-ink-900 text-cream-50 shadow-sm"
-                    : "border-ink-200 hover:border-ink-900",
-                )}
-              >
-                {size}
-              </button>
-            ))}
+            {sizes.map((size) => {
+              const sizeLabel = variants.find((v) => v.size === size)?.sizeLabel;
+              return (
+                <button
+                  key={size}
+                  onClick={() => setSelectedSize(size)}
+                  disabled={!sizeHasStock(size)}
+                  className={cn(
+                    "h-10 min-w-10 rounded-full border px-3 text-sm transition-all duration-200 ease-smooth active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
+                    selectedSize === size
+                      ? "glossy border-ink-900 bg-ink-900 text-cream-50 shadow-sm"
+                      : "border-ink-200 hover:border-ink-900",
+                  )}
+                >
+                  {sizeLabel ? `${size} (${sizeLabel})` : size}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -130,7 +143,11 @@ export function VariantSelector({
                   aria-pressed={selectedColor === color}
                   className={cn(
                     "glossy h-9 w-9 rounded-full border-2 shadow-sm transition-all duration-200 ease-smooth active:scale-90 disabled:cursor-not-allowed disabled:opacity-30",
-                    selectedColor === color ? "border-brass-400 ring-2 ring-brass-200" : "border-ink-200",
+                    selectedColor === color
+                      ? "border-brass-400 ring-2 ring-brass-200"
+                      : isPaleColor(colorHex)
+                        ? "border-ink-300"
+                        : "border-ink-200",
                   )}
                   style={{ backgroundColor: colorHex ?? "#d4d4d4" }}
                 />

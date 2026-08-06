@@ -49,6 +49,7 @@ export interface ProductVariant {
   sku: string;
   barcode: string | null;
   size: string;
+  sizeLabel: string | null;
   color: string;
   colorHex: string | null;
   price: string | null;
@@ -56,6 +57,7 @@ export interface ProductVariant {
   stock: number;
   weight: string | null;
   imageId: string | null;
+  sortOrder: number;
   attributeValues?: VariantAttributeValue[];
 }
 

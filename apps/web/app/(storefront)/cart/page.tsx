@@ -8,7 +8,7 @@ import type { BundleCartPreview, Product } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { useCartStore, useCartSubtotal } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { addToWishlist } from "@/lib/api/wishlist";
@@ -145,7 +145,7 @@ export default function CartPage() {
             <div className="flex gap-4">
               <div className="relative h-24 w-20 shrink-0 overflow-hidden bg-ink-100">
                 {item.imageUrl && (
-                  <Image src={`${env.apiUrl}${item.imageUrl}`} alt={item.productName} fill sizes="80px" className="object-cover" />
+                  <Image src={resolveImageUrl(item.imageUrl)} alt={item.productName} fill sizes="80px" className="object-cover" />
                 )}
               </div>
 
@@ -162,8 +162,10 @@ export default function CartPage() {
                   <div className="flex items-center border border-ink-200">
                     <button
                       onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
-                      className="h-8 w-8 text-ink-700 hover:bg-ink-50"
+                      disabled={item.quantity <= 1}
+                      className="h-8 w-8 text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-200 disabled:hover:bg-transparent"
                       aria-label="Decrease quantity"
+                      title={item.quantity <= 1 ? "Use the trash icon to remove this item" : undefined}
                     >
                       −
                     </button>
@@ -211,7 +213,7 @@ export default function CartPage() {
                     >
                       {alt.images[0] && (
                         <span className="relative h-6 w-6 overflow-hidden rounded-full bg-ink-100">
-                          <Image src={`${env.apiUrl}${alt.images[0].url}`} alt={alt.name} fill sizes="24px" className="object-cover" />
+                          <Image src={resolveImageUrl(alt.images[0].url)} alt={alt.name} fill sizes="24px" className="object-cover" />
                         </span>
                       )}
                       {alt.name}

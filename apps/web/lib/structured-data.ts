@@ -1,5 +1,5 @@
 import type { Product, StoreSettings } from "@clothing-brand/shared";
-import { env } from "./env";
+import { resolveImageUrl } from "./image-url";
 
 export function buildProductJsonLd(product: Product, siteUrl: string, storeName: string) {
   const price = product.activeFlashSale?.flashPrice ?? product.basePrice;
@@ -10,7 +10,7 @@ export function buildProductJsonLd(product: Product, siteUrl: string, storeName:
     "@type": "Product",
     name: product.name,
     description: product.description || undefined,
-    image: product.images.map((img) => `${env.apiUrl}${img.url}`),
+    image: product.images.map((img) => resolveImageUrl(img.url)),
     brand: { "@type": "Brand", name: storeName },
     sku: product.variants[0]?.sku,
     offers: {

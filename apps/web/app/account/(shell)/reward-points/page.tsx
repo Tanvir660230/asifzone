@@ -17,7 +17,19 @@ export default function AccountRewardPointsPage() {
         <p className="mt-1 font-display text-3xl text-ink-900">{customerData?.customer?.rewardPoints ?? 0} pts</p>
       </div>
 
-      {isLoading && <p className="text-ink-400">Loading…</p>}
+      {isLoading && (
+        <div className="animate-pulse divide-y divide-ink-100 border-y border-ink-100">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="flex items-center justify-between py-3">
+              <div className="space-y-1.5">
+                <div className="h-3.5 w-32 rounded bg-ink-100" />
+                <div className="h-2.5 w-20 rounded bg-ink-100" />
+              </div>
+              <div className="h-3.5 w-12 rounded bg-ink-100" />
+            </div>
+          ))}
+        </div>
+      )}
       {!isLoading && data?.items.length === 0 && <p className="text-ink-400">No points activity yet.</p>}
 
       <div className="divide-y divide-ink-100 border-y border-ink-100">

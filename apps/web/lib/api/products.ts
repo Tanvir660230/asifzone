@@ -85,3 +85,10 @@ export function deleteProductImage(productId: string, imageId: string) {
 export function updateProductImageAltText(productId: string, imageId: string, altText: string) {
   return apiFetch<void>(`/api/products/${productId}/images/${imageId}`, { method: "PATCH", body: { altText } });
 }
+
+export function reorderProductImages(productId: string, imageIds: string[]) {
+  return apiFetch<{ product: Product }>(`/api/products/${productId}/images/reorder`, {
+    method: "PATCH",
+    body: { imageIds },
+  });
+}

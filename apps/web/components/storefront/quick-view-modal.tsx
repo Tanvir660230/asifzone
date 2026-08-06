@@ -8,7 +8,7 @@ import { VariantSelector } from "./variant-selector";
 import { CountdownTimer } from "./countdown-timer";
 import { useQuickViewStore } from "@/store/quick-view";
 import { formatPrice } from "@/lib/format";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 
 export function QuickViewModal() {
@@ -28,7 +28,7 @@ export function QuickViewModal() {
           <div className="relative aspect-square overflow-hidden rounded-lg bg-ink-100">
             {current && (
               <Image
-                src={`${env.apiUrl}${current.url}`}
+                src={resolveImageUrl(current.url)}
                 alt={current.altText ?? product.name}
                 fill
                 sizes="(min-width: 640px) 40vw, 90vw"
@@ -47,7 +47,7 @@ export function QuickViewModal() {
                     i === activeImage ? "border-brass-400" : "border-transparent",
                   )}
                 >
-                  <Image src={`${env.apiUrl}${img.url}`} alt="" fill sizes="56px" className="object-cover" />
+                  <Image src={resolveImageUrl(img.url)} alt="" fill sizes="56px" className="object-cover" />
                 </button>
               ))}
             </div>

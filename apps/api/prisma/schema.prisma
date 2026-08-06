@@ -308,6 +308,7 @@ model ProductVariant {
   sku             String                  @unique
   barcode         String?
   size            String
+  sizeLabel       String?
   color           String
   colorHex        String?
   price           Decimal?                @db.Decimal(10, 2)
@@ -316,6 +317,7 @@ model ProductVariant {
   weight          Decimal?                @db.Decimal(6, 2)
   imageId         String?
   image           ProductImage?           @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
+  sortOrder       Int                     @default(0)
   attributeValues VariantAttributeValue[]
   stockMovements  StockMovement[]
   cartItems       CartItem[]

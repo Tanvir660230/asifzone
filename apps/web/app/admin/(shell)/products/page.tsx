@@ -17,7 +17,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import * as productsApi from "@/lib/api/products";
 import * as categoriesApi from "@/lib/api/categories";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 
@@ -301,7 +301,7 @@ export default function ProductsPage() {
                       <div className="h-10 w-10 shrink-0 overflow-hidden rounded bg-ink-100">
                         {thumb && (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={`${env.apiUrl}${thumb.url}`} alt="" className="h-full w-full object-cover" />
+                          <img src={resolveImageUrl(thumb.url)} alt="" className="h-full w-full object-cover" />
                         )}
                       </div>
                       <span>{p.name}</span>

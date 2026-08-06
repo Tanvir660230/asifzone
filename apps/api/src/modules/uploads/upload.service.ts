@@ -19,7 +19,7 @@ async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
 }
 
-/** Resizes an uploaded image buffer into thumb/card/full WebP variants and returns the public URL for the "full" size (others are used by the frontend's responsive srcset). */
+/** Resizes an uploaded image buffer into thumb/card/full WebP variants and returns the public URL for the "full" size (others are used by the frontend's responsive srcset). Returned as an absolute same-origin URL, matching processSiteImage, so it stays eligible for next/image regardless of where it's rendered from. */
 export async function processProductImage(buffer: Buffer, originalName: string): Promise<ProcessedImage> {
   const id = randomUUID();
   const dir = path.join(process.cwd(), env.uploadsDir, "products");
@@ -33,7 +33,7 @@ export async function processProductImage(buffer: Buffer, originalName: string):
   );
 
   return {
-    url: `/uploads/products/${id}-full.webp`,
+    url: `${env.apiOrigin}/uploads/products/${id}-full.webp`,
     altText: originalName,
   };
 }

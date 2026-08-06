@@ -23,15 +23,22 @@ const CACHE_TTL_SECONDS = 120;
 const include = {
   variants: {
     include: { attributeValues: { include: { attributeValue: { include: { attribute: true } } } } },
+    orderBy: { sortOrder: "asc" as const },
   },
   images: { orderBy: { sortOrder: "asc" as const } },
   category: true,
 };
 
-/** Nested-create shape for a variant's attribute links — `attributeValueIds` isn't a real column, it drives this join table instead. */
-function toVariantCreateData(variant: CreateVariantInput) {
+/** Nested-create shape for a variant's attribute links — `attributeValueIds` isn't a real column, it drives this join table instead.
+ * `sortOrder` comes from the variant's position in the submitted array: the storefront shows `variants[0]`'s color/size as the
+ * default selection, so reordering variants in the admin form is how "which color is the main one" gets set. */
+function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   const { attributeValueIds = [], ...rest } = variant;
-  return { ...rest, attributeValues: { create: attributeValueIds.map((attributeValueId) => ({ attributeValueId })) } };
+  return {
+    ...rest,
+    sortOrder,
+    attributeValues: { create: attributeValueIds.map((attributeValueId) => ({ attributeValueId })) },
+  };
 }
 
 /** Attaches `activeFlashSale` (flash-discounted price, if any is currently running) to each product — storefront-facing reads only. */
@@ -734,7 +741,7 @@ export async function createProduct(input: CreateProductInput) {
     data: {
       ...productData,
       slug,
-      variants: { create: variants.map(toVariantCreateData) },
+      variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
     },
     include,
   });
@@ -785,10 +792,10 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
         }
       }
 
-      for (const variant of input.variants) {
+      for (const [index, variant] of input.variants.entries()) {
         if (variant.id) {
           const { id: variantId, attributeValueIds = [], ...updateData } = variant;
-          await tx.productVariant.update({ where: { id: variantId }, data: updateData });
+          await tx.productVariant.update({ where: { id: variantId }, data: { ...updateData, sortOrder: index } });
           await tx.variantAttributeValue.deleteMany({ where: { variantId } });
           if (attributeValueIds.length) {
             await tx.variantAttributeValue.createMany({
@@ -796,7 +803,7 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
             });
           }
         } else {
-          await tx.productVariant.create({ data: { ...toVariantCreateData(variant), productId: id } });
+          await tx.productVariant.create({ data: { ...toVariantCreateData(variant, index), productId: id } });
         }
       }
     }
@@ -939,4 +946,21 @@ export async function updateProductImageAltText(productId: string, imageId: stri
   if (!image || image.productId !== productId) throw AppError.notFound("Image not found");
   await prisma.productImage.update({ where: { id: imageId }, data: { altText } });
   await invalidateCache();
+}
+
+/** Reorders a product's images to match `imageIds` — index 0 becomes the main/featured image
+ * (everywhere else in the app just reads `images[0]` for that). Also doubles as "set as main":
+ * the caller moves one id to the front of the array and passes the whole thing. */
+export async function reorderProductImages(productId: string, imageIds: string[]) {
+  const images = await prisma.productImage.findMany({ where: { productId }, select: { id: true } });
+  const existingIds = new Set(images.map((img) => img.id));
+  if (imageIds.length !== existingIds.size || imageIds.some((id) => !existingIds.has(id))) {
+    throw AppError.badRequest("imageIds must match this product's existing images exactly");
+  }
+
+  await prisma.$transaction(
+    imageIds.map((id, sortOrder) => prisma.productImage.update({ where: { id }, data: { sortOrder } })),
+  );
+  await invalidateCache();
+  return getProductById(productId);
 }

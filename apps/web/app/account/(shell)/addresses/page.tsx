@@ -81,7 +81,18 @@ export default function AccountAddressesPage() {
         </Button>
       </div>
 
-      {isLoading && <p className="text-ink-400">Loading…</p>}
+      {isLoading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {Array.from({ length: 2 }, (_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border border-ink-100 bg-cream-50 p-4">
+              <div className="h-3.5 w-24 rounded bg-ink-100" />
+              <div className="mt-3 h-3 w-32 rounded bg-ink-100" />
+              <div className="mt-1.5 h-3 w-28 rounded bg-ink-100" />
+              <div className="mt-1.5 h-3 w-full rounded bg-ink-100" />
+            </div>
+          ))}
+        </div>
+      )}
       {!isLoading && data?.addresses.length === 0 && <p className="text-ink-400">No saved addresses yet.</p>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

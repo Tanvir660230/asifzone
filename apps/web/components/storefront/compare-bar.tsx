@@ -8,7 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useCompareStore, MAX_COMPARE_ITEMS } from "@/store/compare";
 import { formatPrice } from "@/lib/format";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 
 function attributeList(values: (string | null)[]): string {
   const unique = Array.from(new Set(values.filter((v): v is string => Boolean(v))));
@@ -33,7 +33,7 @@ export function CompareBar() {
               return (
                 <div key={product.id} className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-ink-100">
                   {image && (
-                    <Image src={`${env.apiUrl}${image.url}`} alt={product.name} fill sizes="48px" className="object-cover" />
+                    <Image src={resolveImageUrl(image.url)} alt={product.name} fill sizes="48px" className="object-cover" />
                   )}
                   <button
                     onClick={() => remove(product.id)}
@@ -69,7 +69,7 @@ export function CompareBar() {
                     <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-ink-100">
                       {product.images[0] && (
                         <Image
-                          src={`${env.apiUrl}${product.images[0].url}`}
+                          src={resolveImageUrl(product.images[0].url)}
                           alt={product.name}
                           fill
                           sizes="200px"

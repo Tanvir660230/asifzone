@@ -8,6 +8,7 @@ export const createVariantSchema = z.object({
   sku: z.string().min(1).max(64),
   barcode: nullableString(64),
   size: z.string().min(1).max(32),
+  sizeLabel: nullableString(32),
   color: z.string().min(1).max(48),
   colorHex: z.preprocess(
     blankToNull,
@@ -60,6 +61,7 @@ export const productListQuerySchema = paginationQuerySchema.extend({
 });
 
 export const updateImageAltTextSchema = z.object({ altText: z.string().min(1).max(300) });
+export const reorderImagesSchema = z.object({ imageIds: z.array(z.string().cuid()).min(1) });
 
 export const bulkProductIdsSchema = z.object({ ids: z.array(z.string().cuid()).min(1).max(500) });
 export const bulkProductStatusSchema = bulkProductIdsSchema.extend({ isActive: z.boolean() });

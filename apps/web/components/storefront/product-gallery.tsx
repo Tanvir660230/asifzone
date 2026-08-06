@@ -1,19 +1,33 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, X, ZoomIn } from "lucide-react";
 import type { ProductImage } from "@clothing-brand/shared";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 
-export function ProductGallery({ images, productName }: { images: ProductImage[]; productName: string }) {
+interface ProductGalleryProps {
+  images: ProductImage[];
+  productName: string;
+  /** When set (e.g. the selected variant's assigned image), the gallery jumps to that image —
+   * used to sync the photo with a color/variant selection elsewhere on the page. */
+  focusImageId?: string | null;
+}
+
+export function ProductGallery({ images, productName, focusImageId }: ProductGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [zoomOrigin, setZoomOrigin] = useState("50% 50%");
   const active = images[activeIndex];
+
+  useEffect(() => {
+    if (!focusImageId) return;
+    const index = images.findIndex((img) => img.id === focusImageId);
+    if (index !== -1) setActiveIndex(index);
+  }, [focusImageId, images]);
 
   function handleMouseMove(e: MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -36,7 +50,7 @@ export function ProductGallery({ images, productName }: { images: ProductImage[]
         {active ? (
           <>
             <Image
-              src={`${env.apiUrl}${active.url}`}
+              src={resolveImageUrl(active.url)}
               alt={active.altText ?? productName}
               fill
               sizes="(min-width: 1024px) 50vw, 100vw"
@@ -64,7 +78,7 @@ export function ProductGallery({ images, productName }: { images: ProductImage[]
                 i === activeIndex ? "border-brass-400" : "border-transparent",
               )}
             >
-              <Image src={`${env.apiUrl}${img.url}`} alt="" fill sizes="10vw" className="object-cover" />
+              <Image src={resolveImageUrl(img.url)} alt="" fill sizes="10vw" className="object-cover" />
             </button>
           ))}
         </div>
@@ -123,7 +137,7 @@ export function ProductGallery({ images, productName }: { images: ProductImage[]
                 onClick={(e) => e.stopPropagation()}
               >
                 <Image
-                  src={`${env.apiUrl}${active.url}`}
+                  src={resolveImageUrl(active.url)}
                   alt={active.altText ?? productName}
                   fill
                   sizes="90vw"

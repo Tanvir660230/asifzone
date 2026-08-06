@@ -47,7 +47,16 @@ export default function OrderConfirmationPage() {
     await attempt(phone);
   }
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-2xl animate-pulse px-4 py-16 text-center sm:px-6 lg:px-8">
+        <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-ink-100" />
+        <div className="mx-auto h-8 w-64 rounded bg-ink-100" />
+        <div className="mx-auto mt-3 h-4 w-48 rounded bg-ink-100" />
+        <div className="mx-auto mt-8 h-48 rounded-lg border border-ink-100 bg-ink-50" />
+      </div>
+    );
+  }
 
   if (!order) {
     return (

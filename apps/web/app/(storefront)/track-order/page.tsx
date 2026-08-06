@@ -5,16 +5,28 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { trackOrder } from "@/lib/api/orders";
+import { ApiError } from "@/lib/api-client";
 
 export default function TrackOrderPage() {
   const router = useRouter();
   const [orderNumber, setOrderNumber] = useState("");
   const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    sessionStorage.setItem("lastOrderPhone", phone);
-    router.push(`/order-confirmation/${encodeURIComponent(orderNumber.trim())}`);
+    setError(null);
+    setChecking(true);
+    try {
+      await trackOrder(orderNumber.trim(), phone);
+      sessionStorage.setItem("lastOrderPhone", phone);
+      router.push(`/order-confirmation/${encodeURIComponent(orderNumber.trim())}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not find this order");
+      setChecking(false);
+    }
   }
 
   return (
@@ -36,8 +48,9 @@ export default function TrackOrderPage() {
           <Label htmlFor="phone">Phone number</Label>
           <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" required />
         </div>
-        <Button type="submit" variant="brass" className="w-full">
-          Track order
+        {error && <p className="text-sm text-danger-600">{error}</p>}
+        <Button type="submit" variant="brass" className="w-full" disabled={checking}>
+          {checking ? "Checking…" : "Track order"}
         </Button>
       </form>
     </div>

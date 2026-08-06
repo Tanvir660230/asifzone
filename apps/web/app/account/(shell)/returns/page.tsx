@@ -12,7 +12,19 @@ export default function AccountReturnsPage() {
     <div>
       <h1 className="mb-6 font-display text-2xl text-ink-900">Returns &amp; Refunds</h1>
 
-      {isLoading && <p className="text-ink-400">Loading…</p>}
+      {isLoading && (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="animate-pulse border border-ink-100 p-4">
+              <div className="flex items-center justify-between">
+                <div className="h-3.5 w-24 rounded bg-ink-100" />
+                <div className="h-4 w-16 rounded-full bg-ink-100" />
+              </div>
+              <div className="mt-2 h-3 w-40 rounded bg-ink-100" />
+            </div>
+          ))}
+        </div>
+      )}
       {!isLoading && data?.items.length === 0 && <p className="text-ink-400">No return requests yet.</p>}
 
       <div className="space-y-3">

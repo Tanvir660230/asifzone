@@ -17,6 +17,9 @@ export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
 export function blankToNull(value: unknown) {
   if (value === "") return null;
   if (typeof value === "number" && Number.isNaN(value)) return null;
+  // react-hook-form's `valueAsDate` reads an empty date input as `new Date("")` (Invalid Date),
+  // not null/undefined — normalize that the same way as any other "field left blank" case.
+  if (value instanceof Date && Number.isNaN(value.getTime())) return null;
   return value;
 }
 

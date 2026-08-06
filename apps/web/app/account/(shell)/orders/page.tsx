@@ -5,6 +5,21 @@ import { useQuery } from "@tanstack/react-query";
 import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
 import { listMyOrders } from "@/lib/api/customers";
 
+function OrderSummaryCardSkeleton() {
+  return (
+    <div className="animate-pulse border border-ink-100 p-6">
+      <div className="mb-4 flex items-center justify-between border-b border-ink-100 pb-4">
+        <div className="h-3 w-14 rounded bg-ink-100" />
+        <div className="h-3 w-24 rounded bg-ink-100" />
+      </div>
+      <div className="space-y-2">
+        <div className="h-3 w-full rounded bg-ink-100" />
+        <div className="h-3 w-2/3 rounded bg-ink-100" />
+      </div>
+    </div>
+  );
+}
+
 export default function AccountOrdersPage() {
   const { data, isLoading } = useQuery({ queryKey: ["my-orders"], queryFn: () => listMyOrders() });
 
@@ -12,7 +27,13 @@ export default function AccountOrdersPage() {
     <div>
       <h1 className="mb-6 font-display text-2xl text-ink-900">Order history</h1>
 
-      {isLoading && <p className="text-ink-400">Loading…</p>}
+      {isLoading && (
+        <div className="space-y-6">
+          {Array.from({ length: 3 }, (_, i) => (
+            <OrderSummaryCardSkeleton key={i} />
+          ))}
+        </div>
+      )}
       {!isLoading && data?.items.length === 0 && (
         <p className="text-ink-400">
           No orders yet —{" "}

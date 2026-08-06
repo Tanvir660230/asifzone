@@ -1,17 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { StorefrontFacets } from "@/lib/api/storefront";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { cn } from "@/lib/utils";
+import { cn, isPaleColor } from "@/lib/utils";
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    triggerRef.current = document.activeElement as HTMLElement | null;
+    const panel = drawerRef.current;
+    const focusable = panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
+    (focusable[0] ?? panel)?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMobileOpen(false);
+        return;
+      }
+      if (e.key !== "Tab" || !panel) return;
+
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      triggerRef.current?.focus();
+    };
+  }, [mobileOpen]);
 
   const activeSizes = searchParams.get("sizes")?.split(",").filter(Boolean) ?? [];
   const activeColors = searchParams.get("colors")?.split(",").filter(Boolean) ?? [];
@@ -109,7 +150,11 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
                 aria-pressed={activeColors.includes(color)}
                 className={cn(
                   "glossy h-8 w-8 rounded-full border-2 shadow-sm transition-all duration-200 ease-smooth active:scale-90",
-                  activeColors.includes(color) ? "border-brass-400 ring-2 ring-brass-200" : "border-ink-200",
+                  activeColors.includes(color)
+                    ? "border-brass-400 ring-2 ring-brass-200"
+                    : isPaleColor(colorHex)
+                      ? "border-ink-300"
+                      : "border-ink-200",
                 )}
                 style={{ backgroundColor: colorHex ?? "#d4d4d4" }}
               />
@@ -168,9 +213,18 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
       <aside className="hidden w-56 shrink-0 lg:block">{panel}</aside>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-cream-50 lg:hidden">
+        <div
+          ref={drawerRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mobile-filters-title"
+          tabIndex={-1}
+          className="fixed inset-0 z-50 flex flex-col bg-cream-50 lg:hidden"
+        >
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-4">
-            <h2 className="font-display text-lg text-ink-900">Filters</h2>
+            <h2 id="mobile-filters-title" className="font-display text-lg text-ink-900">
+              Filters
+            </h2>
             <button onClick={() => setMobileOpen(false)} aria-label="Close filters">
               <X size={20} />
             </button>
