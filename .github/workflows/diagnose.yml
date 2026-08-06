@@ -1,0 +1,30 @@
+name: Diagnose production
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Check categories table
+        run: |
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
+            cd /opt/asifzone
+            docker compose -f docker/docker-compose.yml exec -T api node -e "
+              const { PrismaClient } = require(\"@prisma/client\");
+              const prisma = new PrismaClient();
+              prisma.category.findMany({ select: { id: true, name: true, parentId: true, isActive: true } }).then(rows => {
+                console.log(\"count:\", rows.length);
+                console.log(JSON.stringify(rows, null, 1));
+                process.exit(0);
+              }).catch(e => { console.error(e); process.exit(1); });
+            "
+          '
