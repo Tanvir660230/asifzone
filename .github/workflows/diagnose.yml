@@ -1,0 +1,29 @@
+name: Diagnose production containers
+
+on:
+  workflow_dispatch:
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Container status and recent logs
+        run: |
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
+            cd /opt/asifzone
+            echo "=== docker compose ps ==="
+            docker compose -f docker/docker-compose.yml ps
+            echo "=== api logs (last 100) ==="
+            docker compose -f docker/docker-compose.yml logs --tail=100 api
+            echo "=== web logs (last 100) ==="
+            docker compose -f docker/docker-compose.yml logs --tail=100 web
+            echo "=== nginx logs (last 40) ==="
+            docker compose -f docker/docker-compose.yml logs --tail=40 nginx
+          '
