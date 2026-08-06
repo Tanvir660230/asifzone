@@ -14,16 +14,14 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Container status and recent logs
+      - name: Restart nginx (picks up api/web container IPs after they were recreated) and show status
         run: |
           ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
             cd /opt/asifzone
+            docker compose -f docker/docker-compose.yml restart nginx
+            sleep 2
             echo "=== docker compose ps ==="
             docker compose -f docker/docker-compose.yml ps
-            echo "=== api logs (last 100) ==="
-            docker compose -f docker/docker-compose.yml logs --tail=100 api
-            echo "=== web logs (last 100) ==="
-            docker compose -f docker/docker-compose.yml logs --tail=100 web
-            echo "=== nginx logs (last 40) ==="
-            docker compose -f docker/docker-compose.yml logs --tail=40 nginx
+            echo "=== nginx logs (last 20) ==="
+            docker compose -f docker/docker-compose.yml logs --tail=20 nginx
           '
