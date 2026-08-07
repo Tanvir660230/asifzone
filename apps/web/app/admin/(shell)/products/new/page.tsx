@@ -58,6 +58,7 @@ export default function NewProductPage() {
           toast.error("Product created, but image upload failed — try uploading again on the edit page.");
         }
       }
+      toast.success(`"${product.name}" was created`);
       router.push(`/admin/products/${product.id}/edit`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to create product");
