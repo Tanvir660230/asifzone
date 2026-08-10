@@ -30,7 +30,6 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/clothing_brand?schema=public
       REDIS_URL: redis://localhost:6379
       JWT_ACCESS_SECRET: ci-access-secret
-      JWT_REFRESH_SECRET: ci-refresh-secret
       JWT_CUSTOMER_ACCESS_SECRET: ci-customer-access-secret
       JWT_CUSTOMER_REFRESH_SECRET: ci-customer-refresh-secret
       WEB_ORIGIN: http://localhost:3000
@@ -52,6 +51,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # critical (not high) is the actual gate: the remaining high/moderate findings as of this
+      # writing are all vendored inside next@15's own optional/internal deps (sharp, postcss) —
+      # not reachable via our own dependency pins or pnpm overrides, so a high-level gate would
+      # block every PR on something no change in this repo can fix. Re-tighten this once Next.js
+      # bumps those internally (check `pnpm audit` — if it's down to 0, drop back to --audit-level high).
+      - name: Audit dependencies
+        run: pnpm audit --audit-level critical
+
       - name: Build shared package
         run: pnpm --filter @clothing-brand/shared build
 
@@ -63,6 +70,9 @@ jobs:
 
       - name: Seed admin + demo catalog
         run: pnpm --filter api db:seed
+
+      - name: Lint
+        run: pnpm lint
 
       - name: Typecheck API
         run: pnpm --filter api exec tsc --noEmit -p tsconfig.json
@@ -125,7 +135,7 @@ jobs:
       - name: Verify required secrets are set
         run: |
           missing=""
-          for name in JWT_ACCESS_SECRET JWT_REFRESH_SECRET JWT_CUSTOMER_ACCESS_SECRET JWT_CUSTOMER_REFRESH_SECRET POSTGRES_PASSWORD REDIS_PASSWORD; do
+          for name in JWT_ACCESS_SECRET JWT_CUSTOMER_ACCESS_SECRET JWT_CUSTOMER_REFRESH_SECRET POSTGRES_PASSWORD REDIS_PASSWORD; do
             eval "value=\${${name}}"
             if [ -z "$value" ]; then missing="$missing $name"; fi
           done
@@ -135,7 +145,6 @@ jobs:
           fi
         env:
           JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
           JWT_CUSTOMER_ACCESS_SECRET: ${{ secrets.JWT_CUSTOMER_ACCESS_SECRET }}
           JWT_CUSTOMER_REFRESH_SECRET: ${{ secrets.JWT_CUSTOMER_REFRESH_SECRET }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -145,7 +154,6 @@ jobs:
         run: |
           : > docker.env
           echo "JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}" >> docker.env
-          echo "JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}" >> docker.env
           echo "JWT_CUSTOMER_ACCESS_SECRET=${{ secrets.JWT_CUSTOMER_ACCESS_SECRET }}" >> docker.env
           echo "JWT_CUSTOMER_REFRESH_SECRET=${{ secrets.JWT_CUSTOMER_REFRESH_SECRET }}" >> docker.env
           echo "WEB_ORIGIN=${{ secrets.WEB_ORIGIN }}" >> docker.env
@@ -158,6 +166,12 @@ jobs:
           echo "API_ORIGIN=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker.env
           echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> docker.env
           echo "REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}" >> docker.env
+          # Optional — docker-compose.yml falls back to a no-op dev mailer (writes to disk instead
+          # of sending) when this is empty, so it's not in the required-secrets check above.
+          echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" >> docker.env
+          echo "RESEND_FROM_ADDRESS=${{ secrets.RESEND_FROM_ADDRESS }}" >> docker.env
+          echo "BULKSMSBD_API_KEY=${{ secrets.BULKSMSBD_API_KEY }}" >> docker.env
+          echo "BULKSMSBD_SENDER_ID=${{ secrets.BULKSMSBD_SENDER_ID }}" >> docker.env
 
       - name: Transfer to VPS
         run: |
@@ -169,6 +183,11 @@ jobs:
           ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
             set -e
             cd /opt/asifzone
+            # tar -x only overwrites/adds — it never deletes files an old deploy left behind that
+            # the current commit no longer has. Wipe the source trees before re-extracting so a
+            # stale/orphaned file (e.g. from a prior manual copy) cant break every build after it.
+            # docker/.env.next was scp'd separately and lives under docker/, so it survives this.
+            rm -rf apps packages
             tar -xzf deploy.tar.gz && rm deploy.tar.gz
             mv docker/.env.next docker/.env
             docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
