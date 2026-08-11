@@ -69,7 +69,8 @@ test.describe("customer account journey", () => {
     await page.getByLabel("Phone").fill("01700000000");
     await page.getByLabel("District").click();
     await page.getByRole("option", { name: "Dhaka", exact: true }).click();
-    await page.getByLabel(/Area/i).fill("Gulshan");
+    await page.getByLabel(/Area/i).click();
+    await page.getByRole("option", { name: "Gulshan", exact: true }).click();
     await page.getByLabel(/House/i).fill("House 1, Road 2");
     await page.getByRole("button", { name: /save address/i }).click();
     await expect(page.getByText("House 1, Road 2, Gulshan, Dhaka")).toBeVisible();
