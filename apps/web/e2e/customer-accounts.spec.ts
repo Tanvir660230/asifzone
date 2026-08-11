@@ -67,7 +67,8 @@ test.describe("customer account journey", () => {
     await page.getByRole("button", { name: /add address/i }).click();
     await page.getByLabel("Full name").fill("Playwright User");
     await page.getByLabel("Phone").fill("01700000000");
-    await page.getByLabel("District").selectOption("Dhaka");
+    await page.getByLabel("District").click();
+    await page.getByRole("option", { name: "Dhaka", exact: true }).click();
     await page.getByLabel(/Area/i).fill("Gulshan");
     await page.getByLabel(/House/i).fill("House 1, Road 2");
     await page.getByRole("button", { name: /save address/i }).click();
