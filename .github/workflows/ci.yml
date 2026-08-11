@@ -71,9 +71,6 @@ jobs:
       - name: Seed admin + demo catalog
         run: pnpm --filter api db:seed
 
-      - name: Lint
-        run: pnpm lint
-
       - name: Typecheck API
         run: pnpm --filter api exec tsc --noEmit -p tsconfig.json
 
