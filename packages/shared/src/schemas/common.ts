@@ -47,6 +47,39 @@ export function nullableDate() {
   return z.preprocess(blankToNull, z.coerce.date().nullable().optional());
 }
 
+export const PHONE_REGEX = /^01[3-9]\d{8}$/;
+
+/** Folds the ways a customer actually types a BD mobile number — spaces/dashes, a "+880"/"880"/
+ * "00880" country code, or a missing leading 0 — down to the one canonical "01XXXXXXXXX" form
+ * everything else (SMS sending, order-tracking lookup, courier booking) compares against. Without
+ * this, e.g. "+8801999454749" gets stored verbatim and BulkSMSBD silently rejects it later. */
+export function normalizeBdPhone(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (digits.startsWith("880")) digits = digits.slice(3);
+  if (!digits.startsWith("0")) digits = `0${digits}`;
+  return digits;
+}
+
+export function bdPhoneSchema(message = "Enter a valid Bangladeshi phone number") {
+  return z.preprocess(
+    (v) => (typeof v === "string" ? normalizeBdPhone(v) : v),
+    z.string().regex(PHONE_REGEX, message),
+  );
+}
+
+/** Same as bdPhoneSchema, but blank/omitted stays null instead of failing validation — for
+ * optional profile fields like the customer's own account phone. */
+export function nullableBdPhone() {
+  return z.preprocess(
+    (v) => {
+      const cleaned = blankToNull(v);
+      return typeof cleaned === "string" ? normalizeBdPhone(cleaned) : cleaned;
+    },
+    z.string().regex(PHONE_REGEX, "Enter a valid Bangladeshi phone number").nullable().optional(),
+  );
+}
+
 export function slugify(input: string): string {
   return input
     .trim()

@@ -1,14 +1,23 @@
 import { z } from "zod";
-import { PHONE_REGEX } from "./customer";
-import { nullableString } from "./common";
+import { normalizeBdPhone, nullableString, PHONE_REGEX } from "./common";
 
 /** Comma-separated local "01XXXXXXXXX" numbers — same shape PHONE_REGEX validates elsewhere, just
- * allowing more than one since a shop owner may want alerts on multiple phones. */
+ * allowing more than one since a shop owner may want alerts on multiple phones. Each number is
+ * normalized (spaces/dashes/+880 stripped) before the regex check, same as every other phone
+ * field, so e.g. "+8801999454749" doesn't get rejected or silently fail to send later. */
 const adminAlertPhonesField = z
   .string()
   .max(200)
+  .transform((v) =>
+    v
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p !== "")
+      .map(normalizeBdPhone)
+      .join(","),
+  )
   .refine(
-    (v) => v.trim() === "" || v.split(",").every((p) => PHONE_REGEX.test(p.trim())),
+    (v) => v === "" || v.split(",").every((p) => PHONE_REGEX.test(p)),
     "Enter valid Bangladeshi phone numbers, separated by commas",
   )
   .optional();

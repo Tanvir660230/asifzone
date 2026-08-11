@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { nullableString, paginationQuerySchema } from "./common";
+import { bdPhoneSchema, nullableBdPhone, nullableString, paginationQuerySchema } from "./common";
 import { BD_DIVISIONS } from "./order";
 
 export const customerRegisterSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email(),
   password: z.string().min(8),
-  phone: nullableString(20),
+  phone: nullableBdPhone(),
 });
 
 export const customerLoginSchema = z.object({
@@ -21,14 +21,12 @@ export const googleLoginSchema = z.object({
   idToken: z.string().min(1),
 });
 
-export const PHONE_REGEX = /^01[3-9]\d{8}$/;
-
 export const requestOtpSchema = z.object({
-  phone: z.string().regex(PHONE_REGEX, "Enter a valid Bangladeshi phone number"),
+  phone: bdPhoneSchema(),
 });
 
 export const verifyOtpSchema = z.object({
-  phone: z.string().regex(PHONE_REGEX, "Enter a valid Bangladeshi phone number"),
+  phone: bdPhoneSchema(),
   code: z.string().length(6),
   // Only required the first time a new phone number verifies — an existing customer's phone
   // logs in without them.
@@ -42,7 +40,7 @@ export const verifyEmailSchema = z.object({
 
 export const updateCustomerSchema = z.object({
   name: z.string().min(1).max(200).optional(),
-  phone: nullableString(20),
+  phone: nullableBdPhone(),
   smsMarketingOptIn: z.boolean().optional(),
   emailMarketingOptIn: z.boolean().optional(),
 });
@@ -57,7 +55,7 @@ export const unsubscribeEmailSchema = z.object({
 export const addressSchema = z.object({
   label: nullableString(50),
   fullName: z.string().min(1).max(200),
-  phone: z.string().min(6).max(20),
+  phone: bdPhoneSchema(),
   division: z.enum(BD_DIVISIONS),
   district: z.string().min(1).max(120),
   area: z.string().min(1).max(120),

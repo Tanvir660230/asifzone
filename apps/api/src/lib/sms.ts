@@ -1,3 +1,4 @@
+import { normalizeBdPhone } from "@clothing-brand/shared";
 import { env } from "../config/env";
 
 interface SmsInput {
@@ -7,10 +8,13 @@ interface SmsInput {
 
 const BULKSMSBD_ENDPOINT = "https://bulksmsbd.net/api/smsapi";
 
-// BulkSMSBD expects the international "8801XXXXXXXXX" form; phones are stored/validated locally
-// as "01XXXXXXXXX" (see PHONE_REGEX in packages/shared/src/schemas/customer.ts).
+// BulkSMSBD expects the international "8801XXXXXXXXX" form. Phones are validated/normalized to
+// local "01XXXXXXXXX" at every input (see bdPhoneSchema in packages/shared/src/schemas/common.ts),
+// but normalizeBdPhone runs again here as a defense against rows written before that validation
+// existed — otherwise a stray "+880..."/"00880..." value stored back then would silently fail to
+// send forever, since BulkSMSBD returns HTTP 200 even on a rejected number.
 function toBulkSmsBdNumber(phone: string): string {
-  return phone.startsWith("880") ? phone : `88${phone}`;
+  return `88${normalizeBdPhone(phone)}`;
 }
 
 // No BULKSMSBD_API_KEY configured yet: log instead of sending, same fallback spirit as

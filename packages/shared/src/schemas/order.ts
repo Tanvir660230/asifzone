@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { nullableEmail, nullableString, paginationQuerySchema } from "./common";
+import { bdPhoneSchema, nullableEmail, nullableString, paginationQuerySchema } from "./common";
 
 export const orderStatusEnum = z.enum([
   "PENDING",
@@ -484,7 +484,7 @@ export const checkoutSchema = z.object({
   items: z.array(checkoutItemSchema).min(1, "Cart is empty"),
   customerName: z.string().min(1).max(200),
   customerEmail: nullableEmail(),
-  customerPhone: z.string().min(6).max(20),
+  customerPhone: bdPhoneSchema(),
   shippingDivision: z.enum(BD_DIVISIONS),
   shippingDistrict: z.string().min(1).max(120),
   shippingArea: z.string().min(1).max(120),
@@ -522,7 +522,7 @@ export const validateCouponSchema = z.object({
 
 export const trackOrderSchema = z.object({
   orderNumber: z.string().min(1).max(64),
-  phone: z.string().min(6).max(20),
+  phone: bdPhoneSchema(),
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
