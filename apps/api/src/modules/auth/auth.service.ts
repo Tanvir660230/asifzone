@@ -1,10 +1,12 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import type { AdminLoginInput, CreateAdminInviteInput } from "@clothing-brand/shared";
+import type { AdminLoginInput, CreateAdminInviteInput, UpdateAdminInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { signAccessToken } from "../../lib/jwt";
 import { sendMail } from "../../lib/mailer";
+import { renderEmailLayout } from "../../lib/email-template";
+import { hashToken } from "../../lib/token-hash";
 import { env } from "../../config/env";
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -15,10 +17,6 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * account exists. Without this, the early-return-on-not-found path is measurably faster than the
  * wrong-password path, letting an attacker enumerate valid admin emails via response timing. */
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("no-account-has-this-password", 10);
-
-function hashToken(token: string): string {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
 
 function generateOpaqueToken(): string {
   return crypto.randomBytes(40).toString("hex");
@@ -121,6 +119,37 @@ export async function setAdminActive(adminId: string, requestingAdminId: string,
   return admin;
 }
 
+export async function updateAdmin(adminId: string, requestingAdminId: string, input: UpdateAdminInput) {
+  if (adminId === requestingAdminId && input.role && input.role !== "OWNER") {
+    throw AppError.badRequest("You can't change your own role away from owner");
+  }
+
+  const data: { name?: string; email?: string; role?: UpdateAdminInput["role"] } = { ...input };
+  if (input.email) {
+    const email = input.email.trim().toLowerCase();
+    const existing = await prisma.adminUser.findUnique({ where: { email } });
+    if (existing && existing.id !== adminId) {
+      throw AppError.conflict("An admin account with this email already exists");
+    }
+    data.email = email;
+  }
+
+  return prisma.adminUser.update({
+    where: { id: adminId },
+    data,
+    select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+  });
+}
+
+/** OWNER sets a teammate's password directly — no email round-trip needed, unlike the invite flow.
+ * Revokes every existing session for that account, same as any other password change: a session
+ * issued under the old password shouldn't outlive it. */
+export async function setAdminPassword(adminId: string, password: string) {
+  const passwordHash = await bcrypt.hash(password, 10);
+  await prisma.adminUser.update({ where: { id: adminId }, data: { passwordHash } });
+  await revokeAllRefreshTokens(adminId);
+}
+
 export async function listAdminInvites() {
   return prisma.adminInvite.findMany({
     where: { acceptedAt: null },
@@ -151,7 +180,14 @@ export async function createAdminInvite(input: CreateAdminInviteInput, invitedBy
   await sendMail({
     to: email,
     subject: "You've been invited to the admin console",
-    html: `<p>You've been invited as ${input.role === "OWNER" ? "an owner" : "a staff member"}. Click the link below to set your password and get started. This link expires in 7 days.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p>`,
+    html: renderEmailLayout({
+      bodyHtml: `
+        <p style="margin:0 0 8px;font-size:18px;font-weight:600;">You're invited</p>
+        <p style="margin:0;">You've been invited as ${input.role === "OWNER" ? "an owner" : "a staff member"} on the admin console. Set your password to get started — this link expires in 7 days.</p>
+      `,
+      ctaLabel: "Accept invite",
+      ctaUrl: acceptUrl,
+    }),
   });
 }
 

@@ -16,9 +16,6 @@ const ValuesGrid = nextDynamic(() => import("@/components/storefront/values-grid
 const SmartRecommendations = nextDynamic(() =>
   import("@/components/storefront/smart-recommendations").then((m) => m.SmartRecommendations),
 );
-const NewsletterSection = nextDynamic(() =>
-  import("@/components/storefront/newsletter-section").then((m) => m.NewsletterSection),
-);
 
 // Flat route with a real server-side settings fetch — without this, `next build` would try to
 // prerender it and fail (the api container isn't reachable during the Docker image build).
@@ -60,20 +57,19 @@ export default async function HomePage() {
         {settings.tagline ? ` — ${settings.tagline}` : ""}
       </h1>
       {banners.length > 0 ? <HeroCarousel banners={banners} /> : <Hero tagline={settings.tagline} />}
-      <PersonalizedLeadSection categoryTree={tree} />
       <TrustStrip />
-      {flashSale && <FlashSaleSection flashSale={flashSale} />}
-      <CategoryGrid categories={tree} />
-      <BrandStory storeName={settings.storeName} tagline={settings.tagline} />
-      <ValuesGrid storeName={settings.storeName} />
+      <PersonalizedLeadSection categoryTree={tree} />
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <h2 className="mb-8 text-center font-display text-2xl text-ink-900">
           {featured.items.length > 0 ? "Featured" : "New Arrivals"}
         </h2>
         <ProductGrid products={products.items} />
       </section>
+      {flashSale && <FlashSaleSection flashSale={flashSale} />}
+      <CategoryGrid categories={tree} />
+      <BrandStory storeName={settings.storeName} tagline={settings.tagline} />
+      <ValuesGrid storeName={settings.storeName} />
       <SmartRecommendations />
-      <NewsletterSection />
     </>
   );
 }

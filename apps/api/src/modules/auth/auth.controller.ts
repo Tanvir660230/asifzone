@@ -62,6 +62,16 @@ export const setAdminActive = asyncHandler(async (req: Request, res: Response) =
   res.json({ admin });
 });
 
+export const updateAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const admin = await authService.updateAdmin(req.params.id!, req.admin!.adminId, req.body);
+  res.json({ admin });
+});
+
+export const setAdminPassword = asyncHandler(async (req: Request, res: Response) => {
+  await authService.setAdminPassword(req.params.id!, req.body.password);
+  res.status(204).send();
+});
+
 export const listAdminInvites = asyncHandler(async (_req: Request, res: Response) => {
   res.json({ invites: await authService.listAdminInvites() });
 });

@@ -1,15 +1,18 @@
 import "dotenv/config";
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
-const isProduction = nodeEnv === "production";
+// Allowlist, not a "not production" denylist: staging/QA/a typo'd NODE_ENV value must fail
+// closed and demand a real secret, not silently inherit a hardcoded one from source control.
+// "test" stays allowed so a local/CI `vitest run` without a populated .env doesn't need secrets.
+const allowsDevFallback = nodeEnv === "development" || nodeEnv === "test";
 
 function required(name: string, devFallback?: string): string {
   const value = process.env[name];
   if (value) return value;
-  // The fallback only ever applies outside production, so a misconfigured deployment fails to
-  // start instead of silently running with a hardcoded secret that's visible in this file.
-  if (!isProduction && devFallback) return devFallback;
-  throw new Error(`Missing required env var: ${name}`);
+  if (allowsDevFallback && devFallback) return devFallback;
+  throw new Error(
+    `Missing required env var: ${name} (NODE_ENV="${nodeEnv}" does not allow the development fallback)`,
+  );
 }
 
 export const env = {
@@ -18,7 +21,6 @@ export const env = {
   databaseUrl: required("DATABASE_URL"),
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   jwtAccessSecret: required("JWT_ACCESS_SECRET", "dev-access-secret-change-me"),
-  jwtRefreshSecret: required("JWT_REFRESH_SECRET", "dev-refresh-secret-change-me"),
   // Separate secrets for customer tokens so an admin and a customer token can never cross-verify.
   jwtCustomerAccessSecret: required("JWT_CUSTOMER_ACCESS_SECRET", "dev-customer-access-secret-change-me"),
   jwtCustomerRefreshSecret: required("JWT_CUSTOMER_REFRESH_SECRET", "dev-customer-refresh-secret-change-me"),
@@ -44,11 +46,11 @@ export const env = {
     apiKey: process.env.RESEND_API_KEY ?? "",
     fromAddress: process.env.RESEND_FROM_ADDRESS ?? "onboarding@resend.dev",
   },
-  // Optional — without credentials, sendSms() logs instead of sending.
-  twilio: {
-    accountSid: process.env.TWILIO_ACCOUNT_SID ?? "",
-    authToken: process.env.TWILIO_AUTH_TOKEN ?? "",
-    fromNumber: process.env.TWILIO_FROM_NUMBER ?? "",
+  // Optional — without an API key, sendSms() logs instead of sending. Sender ID must be the
+  // masking/name approved on the BulkSMSBD account, not the API key itself.
+  bulkSmsBd: {
+    apiKey: process.env.BULKSMSBD_API_KEY ?? "",
+    senderId: process.env.BULKSMSBD_SENDER_ID ?? "",
   },
   // Optional — without VAPID keys, sendPush() logs instead of sending. Generate a pair with
   // `npx web-push generate-vapid-keys`.
@@ -61,5 +63,15 @@ export const env = {
   // returns a clear "not configured" error.
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  },
+  // Optional — without an API key, "Book with Steadfast" returns a clear "not configured" error
+  // instead of faking a booking. webhookToken is a shared secret of our own choosing (not issued
+  // by Steadfast) since their delivery-status webhook carries no signature — it must be pasted
+  // into the same URL configured as the Notify URL in the Steadfast merchant panel.
+  steadfast: {
+    apiKey: process.env.STEADFAST_API_KEY ?? "",
+    secretKey: process.env.STEADFAST_SECRET_KEY ?? "",
+    baseUrl: process.env.STEADFAST_BASE_URL ?? "https://portal.packzy.com/api/v1",
+    webhookToken: process.env.STEADFAST_WEBHOOK_TOKEN ?? "",
   },
 };

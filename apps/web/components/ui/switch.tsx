@@ -17,8 +17,8 @@ export function Switch({ checked, onChange, disabled, "aria-label": ariaLabel }:
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ease-smooth disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-brass-400" : "bg-ink-200",
+        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ring-1 ring-inset transition-colors duration-200 ease-smooth disabled:cursor-not-allowed disabled:opacity-50",
+        checked ? "bg-brass-400 ring-brass-500" : "bg-ink-300 ring-ink-400",
       )}
     >
       <span

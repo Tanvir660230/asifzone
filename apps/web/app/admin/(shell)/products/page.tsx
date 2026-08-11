@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -130,10 +131,7 @@ export default function ProductsPage() {
   const allSelected = items.length > 0 && items.every((p) => selected.has(p.id));
 
   function toggleAll() {
-    setSelected((prev) => {
-      if (allSelected) return new Set();
-      return new Set(items.map((p) => p.id));
-    });
+    setSelected(allSelected ? new Set() : new Set(items.map((p) => p.id)));
   }
 
   function toggleOne(id: string) {
@@ -257,7 +255,7 @@ export default function ProductsPage() {
       )}
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <div className="overflow-x-auto">
+        <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -323,6 +321,7 @@ export default function ProductsPage() {
                             onClick={() => restoreMutation.mutate(p.id)}
                             className="text-ink-500 hover:text-ink-900"
                             aria-label="Restore"
+                            title="Restore"
                           >
                             <RotateCcw size={16} />
                           </button>
@@ -330,19 +329,26 @@ export default function ProductsPage() {
                             onClick={() => handlePermanentDelete(p.id, p.name)}
                             className="text-ink-500 hover:text-danger-600"
                             aria-label="Delete permanently"
+                            title="Delete permanently"
                           >
                             <Trash2 size={16} />
                           </button>
                         </>
                       ) : (
                         <>
-                          <Link href={`/admin/products/${p.id}/edit`} className="text-ink-500 hover:text-ink-900" aria-label="Edit">
+                          <Link
+                            href={`/admin/products/${p.id}/edit`}
+                            className="text-ink-500 hover:text-ink-900"
+                            aria-label="Edit"
+                            title="Edit"
+                          >
                             <Pencil size={16} />
                           </Link>
                           <button
                             onClick={() => handleDelete(p.id, p.name)}
                             className="text-ink-500 hover:text-danger-600"
                             aria-label="Delete"
+                            title="Move to trash"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -355,7 +361,7 @@ export default function ProductsPage() {
             })}
           </tbody>
         </table>
-        </div>
+        </HScrollShadow>
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />

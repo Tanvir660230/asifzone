@@ -52,7 +52,7 @@ export function AttributeForm({ initial, onSubmit, onCancel }: AttributeFormProp
       <div>
         <Label>Values</Label>
         <p className="mb-2 text-xs text-ink-400">
-          The color swatch field only matters for a "Color" attribute — leave it blank for others.
+          The color swatch field only matters for a &ldquo;Color&rdquo; attribute — leave it blank for others.
         </p>
         <div className="space-y-2">
           {fields.map((field, index) => {

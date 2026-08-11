@@ -184,7 +184,10 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
         onDragLeave={() => setIsDraggingFiles(false)}
         onDrop={handleDrop}
       >
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        {/* Explicit id: dnd-kit auto-generates aria-describedby ids from a render-order counter
+            when none is given, which drifts between the server render and the client hydration
+            pass in Next.js and throws a "Prop did not match" warning — a fixed id avoids that. */}
+        <DndContext id="image-uploader-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
             {staticMode
               ? staged.map((item, index) => (

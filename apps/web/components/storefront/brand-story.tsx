@@ -7,7 +7,7 @@ const FALLBACK_TAGLINE = "Considered clothing, made to last";
 
 export function BrandStory({ storeName, tagline }: { storeName: string; tagline?: string | null }) {
   return (
-    <section className="bg-gradient-to-b from-ink-800 via-ink-900 to-ink-950 py-24 text-center text-cream-50">
+    <section className="bg-ink-950 py-24 text-center text-cream-50">
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}

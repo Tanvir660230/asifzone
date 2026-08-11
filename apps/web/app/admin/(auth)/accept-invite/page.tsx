@@ -51,11 +51,11 @@ function AcceptInviteForm() {
 
   if (!token) {
     return (
-      <div className="rounded-lg bg-cream-50 p-8 shadow-xl">
+      <div>
         <h1 className="mb-1 font-display text-2xl text-ink-900">Invalid invite link</h1>
         <p className="text-sm text-ink-500">
           This link is missing its token. Ask whoever invited you to send a new one from{" "}
-          <Link href="/admin/team" className="text-brass-600 underline hover:text-brass-500">
+          <Link href="/admin/team" className="text-ink-700 underline hover:text-ink-900">
             Team
           </Link>
           .
@@ -65,9 +65,9 @@ function AcceptInviteForm() {
   }
 
   return (
-    <div className="rounded-lg bg-cream-50 p-8 shadow-xl">
+    <div>
       <h1 className="mb-1 font-display text-2xl text-ink-900">Set your password</h1>
-      <p className="mb-6 text-sm text-ink-500">You've been invited to the store console. Choose a password to finish setting up your account.</p>
+      <p className="mb-6 text-sm text-ink-500">You&rsquo;ve been invited to the store console. Choose a password to finish setting up your account.</p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <input type="hidden" {...register("token")} />

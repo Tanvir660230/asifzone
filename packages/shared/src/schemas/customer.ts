@@ -21,7 +21,7 @@ export const googleLoginSchema = z.object({
   idToken: z.string().min(1),
 });
 
-const PHONE_REGEX = /^01[3-9]\d{8}$/;
+export const PHONE_REGEX = /^01[3-9]\d{8}$/;
 
 export const requestOtpSchema = z.object({
   phone: z.string().regex(PHONE_REGEX, "Enter a valid Bangladeshi phone number"),
@@ -44,6 +44,14 @@ export const updateCustomerSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   phone: nullableString(20),
   smsMarketingOptIn: z.boolean().optional(),
+  emailMarketingOptIn: z.boolean().optional(),
+});
+
+/** Verifies the one-click unsubscribe link sent in every marketing campaign email — see
+ * lib/token-hash.ts's signPayload, used statelessly (no DB-stored token, so it never expires). */
+export const unsubscribeEmailSchema = z.object({
+  customerId: z.string().min(1),
+  token: z.string().min(1),
 });
 
 export const addressSchema = z.object({
@@ -91,3 +99,4 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 export type AdjustRewardPointsInput = z.infer<typeof adjustRewardPointsSchema>;
+export type UnsubscribeEmailInput = z.infer<typeof unsubscribeEmailSchema>;

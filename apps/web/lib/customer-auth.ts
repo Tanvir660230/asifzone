@@ -6,6 +6,7 @@ import type {
   ForgotPasswordInput,
   ResetPasswordInput,
   VerifyEmailInput,
+  UnsubscribeEmailInput,
   GoogleLoginInput,
   RequestOtpInput,
   VerifyOtpInput,
@@ -46,6 +47,10 @@ export function verifyEmail(input: VerifyEmailInput) {
 
 export function resendVerificationEmail() {
   return apiFetch<{ message: string }>("/api/customers/resend-verification", { method: "POST" });
+}
+
+export function unsubscribeFromEmailMarketing(input: UnsubscribeEmailInput) {
+  return apiFetch<{ message: string }>("/api/customers/unsubscribe", { method: "POST", body: input });
 }
 
 export function loginWithGoogle(input: GoogleLoginInput) {

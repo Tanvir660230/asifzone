@@ -79,7 +79,10 @@ test.describe("customer account journey", () => {
     await page.goto("/");
     const firstProductLink = page.locator('a[href^="/product/"]').first();
     await firstProductLink.click();
-    await page.getByRole("button", { name: /add to wishlist/i }).click();
+    // The PDP also renders several "you might also like" carousels below the fold, each with its
+    // own per-card wishlist button sharing this same accessible name — `.first()` targets the
+    // main product's own button, which always renders above those carousels in DOM order.
+    await page.getByRole("button", { name: /add to wishlist/i }).first().click();
 
     await page.goto("/account/wishlist");
     await expect(page.locator("main")).not.toContainText(/empty wishlist/i);

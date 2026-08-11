@@ -7,6 +7,7 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
@@ -52,7 +53,7 @@ export default function CustomersPage() {
       </div>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <div className="overflow-x-auto">
+        <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -80,7 +81,7 @@ export default function CustomersPage() {
                     {customer.name}
                   </Link>
                 </td>
-                <td className="px-4 py-3">{customer.email}</td>
+                <td className="px-4 py-3">{customer.email ?? "—"}</td>
                 <td className="px-4 py-3 text-ink-500">{customer.phone ?? "—"}</td>
                 <td className="px-4 py-3">{customer._count.orders}</td>
                 <td className="px-4 py-3">{customer._count.wishlistItems}</td>
@@ -89,7 +90,7 @@ export default function CustomersPage() {
             ))}
           </tbody>
         </table>
-        </div>
+        </HScrollShadow>
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />

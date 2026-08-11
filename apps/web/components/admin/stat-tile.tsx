@@ -22,7 +22,7 @@ export function StatTile({ label, value, icon, tone = "default", trendPct }: Sta
       <div>
         <p className="text-xs uppercase tracking-wide text-ink-500">{label}</p>
         <div className="mt-0.5 flex items-baseline gap-2">
-          <p className="font-display text-2xl text-ink-900">{value}</p>
+          <p className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{value}</p>
           {hasTrend && (
             <span
               className={cn(

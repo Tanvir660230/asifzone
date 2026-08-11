@@ -183,8 +183,8 @@ export function VariantEditor({
                 <Sparkles size={14} /> Generate combinations
               </Button>
               <p className="text-xs text-ink-400">
-                Include "Size" and "Color" attributes so storefront filtering keeps working — other attributes (Fabric,
-                Pattern…) are stored per-variant but don't affect filters yet.
+                Include &ldquo;Size&rdquo; and &ldquo;Color&rdquo; attributes so storefront filtering keeps working — other attributes (Fabric,
+                Pattern…) are stored per-variant but don&rsquo;t affect filters yet.
               </p>
             </div>
           )}
@@ -193,12 +193,15 @@ export function VariantEditor({
 
       {fields.length > 1 && (
         <p className="mb-2 text-xs text-ink-400">
-          Drag <GripVertical size={11} className="inline -mt-0.5" /> to reorder — the top variant's color and size are what
+          Drag <GripVertical size={11} className="inline -mt-0.5" /> to reorder — the top variant&rsquo;s color and size are what
           customers see selected by default on the product page.
         </p>
       )}
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      {/* Explicit id: dnd-kit auto-generates aria-describedby ids from a render-order counter when
+          none is given, which drifts between the server render and the client hydration pass in
+          Next.js and throws a "Prop did not match" warning — a fixed id makes it deterministic. */}
+      <DndContext id="variant-editor-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={fields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-3">
             {fields.map((field, index) => {

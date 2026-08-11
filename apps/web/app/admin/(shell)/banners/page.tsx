@@ -118,7 +118,7 @@ export default function BannersPage() {
         {data?.banners.map((b) => (
           <div key={b.id} className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={b.imageUrl} alt={b.title ?? ""} className="h-36 w-full object-cover" />
+            <img src={b.imageUrl} alt={b.altText ?? b.title ?? ""} className="h-36 w-full object-cover" />
             <div className="p-4">
               <div className="mb-2 flex items-center justify-between">
                 <Badge>{b.placement === "HERO_CAROUSEL" ? "Hero" : "Promo strip"}</Badge>
@@ -145,6 +145,10 @@ export default function BannersPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
             <Label>Banner image</Label>
+            <p className="mb-1 text-xs text-ink-400">
+              Recommended size: 1920×640px (3:1). The homepage hero is locked to this ratio so the full image —
+              including any text baked into it — always shows edge-to-edge with no cropping, at any screen size.
+            </p>
             <input type="hidden" {...register("imageUrl")} />
             {imageUrl ? (
               <div className="relative mt-1 h-32 w-full overflow-hidden rounded-lg border border-ink-100">
@@ -182,9 +186,9 @@ export default function BannersPage() {
           <div>
             <Label>Mobile image (optional)</Label>
             <p className="mb-1 text-xs text-ink-400">
-              The image above is usually wide and landscape — on a phone screen it gets cropped down to a narrow
-              sliver, which often cuts off any text baked into the photo. Upload a tall/portrait crop of the same
-              scene here and phones will use it instead.
+              Recommended size: 1254×1254px (square, 1:1) — the hero switches to a square frame below desktop
+              width. Without this, phones fall back to a center-crop of the wide image above, which can cut off
+              text baked into it. Upload a square crop of the same scene here to avoid that.
             </p>
             <input type="hidden" {...register("mobileImageUrl")} />
             {mobileImageUrl ? (
@@ -239,6 +243,13 @@ export default function BannersPage() {
           <div>
             <Label htmlFor="linkUrl">Link URL (optional)</Label>
             <Input id="linkUrl" placeholder="/category/men" {...register("linkUrl")} />
+          </div>
+          <div>
+            <Label htmlFor="altText">Image alt text (optional)</Label>
+            <p className="mb-1 text-xs text-ink-400">
+              Describes the image for screen readers and image search — falls back to the title above if left blank.
+            </p>
+            <Input id="altText" placeholder="Model wearing a navy panjabi against a beige backdrop" {...register("altText")} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>

@@ -1,5 +1,10 @@
-import type { Category } from "@prisma/client";
-import type { CreateCategoryInput, UpdateCategoryInput, ReorderCategoriesInput } from "@clothing-brand/shared";
+import { Prisma, type Category } from "@prisma/client";
+import type {
+  CreateCategoryInput,
+  UpdateCategoryInput,
+  ReorderCategoriesInput,
+  MoveCategoryInput,
+} from "@clothing-brand/shared";
 import { slugify } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
@@ -70,9 +75,25 @@ export async function getCategoryBreadcrumb(category: { id: string; parentId: st
   return chain;
 }
 
+/** id/parentId for every category, Redis-cached — this is a hot storefront-path lookup (every
+ * category-scoped browse/facet request calls getCategoryDescendantIds), so unlike a one-off admin
+ * query it's worth caching the same way getCategoryTree already is. Invalidated by the same
+ * invalidateCache() every category mutation already calls. Cached as a flat list rather than the
+ * Map getCategoryDescendantIds/getSiblingCategoryIds build from it, since cacheSet/cacheGet
+ * round-trip through JSON and a Map doesn't survive that. */
+async function getCategoryParentPairs(): Promise<Array<{ id: string; parentId: string | null }>> {
+  const cacheKey = `${CACHE_PREFIX}parent-pairs`;
+  const cached = await cacheGet<Array<{ id: string; parentId: string | null }>>(cacheKey);
+  if (cached) return cached;
+
+  const all = await prisma.category.findMany({ select: { id: true, parentId: true } });
+  await cacheSet(cacheKey, all, CACHE_TTL_SECONDS);
+  return all;
+}
+
 /** Category id plus every descendant id (self included) — used to show a parent category's products from all its subcategories. */
 export async function getCategoryDescendantIds(categoryId: string): Promise<string[]> {
-  const all = await prisma.category.findMany({ select: { id: true, parentId: true } });
+  const all = await getCategoryParentPairs();
   const byParent = new Map<string | null, string[]>();
   for (const cat of all) {
     const key = cat.parentId;
@@ -105,6 +126,22 @@ export async function getSiblingCategoryIds(categoryId: string): Promise<string[
   return siblings.map((s) => s.id);
 }
 
+/** Rejects a reparent that would make `id` an ancestor of itself — walks newParentId's own parent
+ * chain looking for `id`. Neither updateCategory's plain parentId edit nor moveCategory guarded
+ * against this before (only "not its own direct parent" was checked), so a category could be
+ * reparented under one of its own descendants and silently create a loop. */
+async function assertNoCycle(id: string, newParentId: string | null) {
+  let current = newParentId;
+  while (current) {
+    if (current === id) throw AppError.badRequest("Cannot move a category under one of its own subcategories");
+    const parent: { parentId: string | null } | null = await prisma.category.findUnique({
+      where: { id: current },
+      select: { parentId: true },
+    });
+    current = parent?.parentId ?? null;
+  }
+}
+
 export async function createCategory(input: CreateCategoryInput) {
   if (input.parentId) {
     const parent = await prisma.category.findUnique({ where: { id: input.parentId } });
@@ -117,9 +154,15 @@ export async function createCategory(input: CreateCategoryInput) {
     return Boolean(existing);
   });
 
-  const category = await prisma.category.create({
-    data: { ...input, slug },
-  });
+  let category;
+  try {
+    category = await prisma.category.create({ data: { ...input, slug } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw AppError.conflict("A category with this slug already exists");
+    }
+    throw err;
+  }
   await invalidateCache();
   return category;
 }
@@ -130,6 +173,9 @@ export async function updateCategory(id: string, input: UpdateCategoryInput) {
   if (input.parentId === id) {
     throw AppError.badRequest("A category cannot be its own parent");
   }
+  if (input.parentId !== undefined) {
+    await assertNoCycle(id, input.parentId);
+  }
 
   const data: Record<string, unknown> = { ...input };
   if (input.name && !input.slug) {
@@ -139,7 +185,15 @@ export async function updateCategory(id: string, input: UpdateCategoryInput) {
     });
   }
 
-  const category = await prisma.category.update({ where: { id }, data });
+  let category;
+  try {
+    category = await prisma.category.update({ where: { id }, data });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw AppError.conflict("A category with this slug already exists");
+    }
+    throw err;
+  }
   await invalidateCache();
   return category;
 }
@@ -162,6 +216,38 @@ export async function reorderCategories(input: ReorderCategoriesInput) {
     input.items.map((item) => prisma.category.update({ where: { id: item.id }, data: { sortOrder: item.sortOrder } })),
   );
   await invalidateCache();
+}
+
+/** Drag-and-drop reparent: moves a category into a different parent's sibling group and places it
+ * at `sortOrder`, shifting the destination siblings that come after it. Unlike reorderCategories
+ * (same-parent only), this is the one path that actually changes `parentId` via drag. */
+export async function moveCategory(id: string, input: MoveCategoryInput) {
+  const category = await getCategoryById(id);
+  if (input.newParentId === id) throw AppError.badRequest("A category cannot be its own parent");
+  await assertNoCycle(id, input.newParentId);
+
+  if (input.newParentId) {
+    const parent = await prisma.category.findUnique({ where: { id: input.newParentId } });
+    if (!parent) throw AppError.badRequest("Parent category does not exist");
+  }
+
+  const destinationSiblings = await prisma.category.findMany({
+    where: { parentId: input.newParentId, id: { not: id } },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true },
+  });
+
+  const siblingIds = destinationSiblings.map((s) => s.id);
+  siblingIds.splice(Math.min(input.sortOrder, siblingIds.length), 0, id);
+
+  await prisma.$transaction([
+    prisma.category.update({ where: { id }, data: { parentId: input.newParentId } }),
+    ...siblingIds.map((siblingId, index) =>
+      prisma.category.update({ where: { id: siblingId }, data: { sortOrder: index } }),
+    ),
+  ]);
+  await invalidateCache();
+  return getCategoryById(category.id);
 }
 
 export async function deleteCategory(id: string) {

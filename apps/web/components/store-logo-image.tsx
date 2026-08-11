@@ -1,0 +1,23 @@
+"use client";
+
+import { useState } from "react";
+import type { ReactNode } from "react";
+
+interface StoreLogoImageProps {
+  src: string;
+  alt: string;
+  className: string;
+  /** Rendered instead of the <img> once it fails to load, e.g. a monogram or text wordmark —
+   * an admin-supplied logo URL can go stale (moved/deleted upload) without the site knowing
+   * ahead of render time, and the browser's broken-image icon reads as a real bug otherwise. */
+  fallback: ReactNode;
+}
+
+export function StoreLogoImage({ src, alt, className, fallback }: StoreLogoImageProps) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <>{fallback}</>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- admin-supplied URL, arbitrary host not worth whitelisting for next/image
+    <img src={src} alt={alt} className={className} onError={() => setFailed(true)} />
+  );
+}

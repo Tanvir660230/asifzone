@@ -1,4 +1,9 @@
-import type { AdminLoginInput, CreateAdminInviteInput, AcceptAdminInviteInput } from "@clothing-brand/shared";
+import type {
+  AdminLoginInput,
+  CreateAdminInviteInput,
+  AcceptAdminInviteInput,
+  UpdateAdminInput,
+} from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 
 export interface AdminUser {
@@ -59,6 +64,14 @@ export function listAdmins() {
 
 export function setAdminActive(id: string, isActive: boolean) {
   return apiFetch<{ admin: AdminAccount }>(`/api/auth/admins/${id}/active`, { method: "PATCH", body: { isActive } });
+}
+
+export function updateAdmin(id: string, input: UpdateAdminInput) {
+  return apiFetch<{ admin: AdminAccount }>(`/api/auth/admins/${id}`, { method: "PATCH", body: input });
+}
+
+export function setAdminPassword(id: string, password: string) {
+  return apiFetch<void>(`/api/auth/admins/${id}/password`, { method: "PATCH", body: { password } });
 }
 
 export function listAdminInvites() {

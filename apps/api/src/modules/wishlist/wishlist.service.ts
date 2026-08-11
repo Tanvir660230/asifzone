@@ -1,5 +1,6 @@
 import { prisma } from "../../config/prisma";
 import { sendMail } from "../../lib/mailer";
+import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
 
@@ -37,23 +38,48 @@ export async function removeFromWishlist(customerId: string, productId: string) 
  * real wishlister whose captured priceAtAdd is now higher than the new price, once each. */
 export async function notifyPriceDrop(productId: string, newPrice: number) {
   const items = await prisma.wishlistItem.findMany({
-    where: { productId, alertedAt: null, priceAtAdd: { gt: newPrice } },
+    // Only customers with an email on file can be notified this way — phone-only guests/customers
+    // just never get picked up here (no per-item try/catch below, so this must be filtered up front).
+    where: { productId, alertedAt: null, priceAtAdd: { gt: newPrice }, customer: { email: { not: null } } },
     include: { customer: { select: { email: true, name: true } }, product: { select: { name: true, slug: true } } },
   });
   if (items.length === 0) return;
 
+  // Per-item isolation: one bad address/transient send failure must not stop the rest of the
+  // batch, and must not block `alertedAt` from being set on the ones that *did* go out — otherwise
+  // every already-emailed customer gets re-spammed on the next price-drop trigger for this product.
+  const sentIds: string[] = [];
   for (const item of items) {
-    const productUrl = `${env.webOrigin}/product/${item.product.slug}`;
-    const oldPrice = Number(item.priceAtAdd);
-    await sendMail({
-      to: item.customer.email,
-      subject: `Price drop: ${item.product.name}`,
-      html: `<p>Hi ${escapeHtml(item.customer.name)},</p><p><strong>${item.product.name}</strong> dropped from ৳${oldPrice} to ৳${newPrice}.</p><p><a href="${productUrl}">${productUrl}</a></p>`,
-    });
+    try {
+      const productUrl = `${env.webOrigin}/product/${item.product.slug}`;
+      const oldPrice = Number(item.priceAtAdd);
+      await sendMail({
+        // Non-null by the query filter above — Prisma's include type just can't express that.
+        to: item.customer.email!,
+        subject: `Price drop: ${item.product.name}`,
+        html: renderEmailLayout({
+          bodyHtml: `
+            <p style="margin:0 0 4px;">
+              <span style="display:inline-block;background-color:#e53935;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:4px 10px;border-radius:999px;">Price drop</span>
+            </p>
+            <p style="margin:14px 0 8px;font-size:18px;font-weight:600;">${escapeHtml(item.product.name)}</p>
+            <p style="margin:0;">Hi ${escapeHtml(item.customer.name)}, an item on your wishlist just got cheaper:</p>
+            <p style="margin:10px 0 0;">
+              <span style="font-size:20px;font-weight:700;color:#111111;">৳${newPrice}</span>
+              <span style="font-size:14px;color:#999999;text-decoration:line-through;margin-left:8px;">৳${oldPrice}</span>
+            </p>
+          `,
+          ctaLabel: "View product",
+          ctaUrl: productUrl,
+        }),
+      });
+      sentIds.push(item.id);
+    } catch (err) {
+      console.error(`[price-drop] failed to notify wishlist item ${item.id}:`, err);
+    }
   }
 
-  await prisma.wishlistItem.updateMany({
-    where: { id: { in: items.map((i) => i.id) } },
-    data: { alertedAt: new Date() },
-  });
+  if (sentIds.length) {
+    await prisma.wishlistItem.updateMany({ where: { id: { in: sentIds } }, data: { alertedAt: new Date() } });
+  }
 }

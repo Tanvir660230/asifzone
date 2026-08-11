@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import type { Product, StoreSettings } from "@clothing-brand/shared";
 import { resolveImageUrl } from "./image-url";
+import { stripHtml } from "./format";
 
 export function buildProductJsonLd(product: Product, siteUrl: string, storeName: string) {
   const price = product.activeFlashSale?.flashPrice ?? product.basePrice;
@@ -9,7 +11,7 @@ export function buildProductJsonLd(product: Product, siteUrl: string, storeName:
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
-    description: product.description || undefined,
+    description: product.shortDescription || stripHtml(product.description) || undefined,
     image: product.images.map((img) => resolveImageUrl(img.url)),
     brand: { "@type": "Brand", name: storeName },
     sku: product.variants[0]?.sku,
@@ -20,6 +22,55 @@ export function buildProductJsonLd(product: Product, siteUrl: string, storeName:
       price,
       availability: totalStock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
     },
+    // Google only renders the star-rating rich result when this is present — omitted entirely
+    // (rather than sent as zero/empty) for an unreviewed product, since an AggregateRating with
+    // no ratings is invalid per schema.org and Search Console will flag it.
+    ...(product.reviewCount > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: product.avgRating,
+            reviewCount: product.reviewCount,
+          },
+        }
+      : {}),
+  };
+}
+
+/** ItemList markup for a product listing page (category/search) — tells Google what's in the grid
+ * without re-declaring full Product data per item (that's each product's own page's job); just
+ * position + name + url per schema.org's ItemList spec. */
+export function buildItemListJsonLd(products: Pick<Product, "name" | "slug">[], siteUrl: string) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: products.map((product, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: product.name,
+      url: `${siteUrl}/product/${product.slug}`,
+    })),
+  };
+}
+
+/** FAQPage rich-result markup — Google can surface these as expandable Q&A directly in search
+ * results. `groups` is the same flat list of { question, answer } the visible accordion renders,
+ * so the two can never drift out of sync. */
+export function buildFaqJsonLd(groups: { items: { question: string; answer: ReactNode }[] }[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    // JSON-LD needs plain text — an answer authored as JSX (rather than a plain string) can't be
+    // represented here, so it's left out of the rich-result markup rather than stringified wrong.
+    mainEntity: groups.flatMap((group) =>
+      group.items
+        .filter((item): item is { question: string; answer: string } => typeof item.answer === "string")
+        .map((item) => ({
+          "@type": "Question",
+          name: item.question,
+          acceptedAnswer: { "@type": "Answer", text: item.answer },
+        })),
+    ),
   };
 }
 
@@ -67,5 +118,11 @@ export function buildWebsiteJsonLd(settings: StoreSettings, siteUrl: string) {
     "@type": "WebSite",
     name: settings.storeName,
     url: siteUrl,
+    // Eligibility (not a guarantee) for Google's sitelinks searchbox under the site's search result.
+    potentialAction: {
+      "@type": "SearchAction",
+      target: { "@type": "EntryPoint", urlTemplate: `${siteUrl}/search?q={search_term_string}` },
+      "query-input": "required name=search_term_string",
+    },
   };
 }

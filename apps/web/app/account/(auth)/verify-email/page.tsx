@@ -45,7 +45,7 @@ function VerifyEmailContent() {
       <div>
         <h1 className="mb-1 font-display text-2xl text-ink-900">Email verified</h1>
         <p className="mb-6 text-sm text-ink-500">Your email address has been confirmed.</p>
-        <Link href="/account" className="text-brass-600 underline hover:text-brass-500">
+        <Link href="/account" className="text-ink-700 underline hover:text-ink-900">
           Go to your account
         </Link>
       </div>
@@ -54,9 +54,9 @@ function VerifyEmailContent() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Couldn't verify email</h1>
+      <h1 className="mb-1 font-display text-2xl text-ink-900">Couldn&rsquo;t verify email</h1>
       <p className="mb-6 text-sm text-danger-600">{message ?? "This verification link is invalid or has expired."}</p>
-      <Link href="/account" className="text-brass-600 underline hover:text-brass-500">
+      <Link href="/account" className="text-ink-700 underline hover:text-ink-900">
         Go to your account
       </Link>
     </div>

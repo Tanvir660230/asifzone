@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import type { ActiveBannersQuery } from "@clothing-brand/shared";
 import { asyncHandler } from "../../lib/async-handler";
 import { processBannerImage } from "../uploads/upload.service";
 import * as bannerService from "./banner.service";
@@ -8,7 +9,7 @@ export const list = asyncHandler(async (_req: Request, res: Response) => {
 });
 
 export const active = asyncHandler(async (req: Request, res: Response) => {
-  const placement = (req.query.placement as "HERO_CAROUSEL" | "PROMO_STRIP") ?? "HERO_CAROUSEL";
+  const { placement } = req.query as unknown as ActiveBannersQuery;
   res.json({ banners: await bannerService.getActiveBanners(placement) });
 });
 

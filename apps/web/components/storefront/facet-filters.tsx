@@ -163,7 +163,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
         </div>
       )}
 
-      {facets.maxPrice > 0 && (
+      {facets.maxPrice > 0 && facets.minPrice !== facets.maxPrice && (
         <div>
           <h3 className="mb-3 text-xs uppercase tracking-wide text-ink-500">
             Price ({facets.minPrice}–{facets.maxPrice})

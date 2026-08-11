@@ -16,6 +16,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as couponsApi from "@/lib/api/admin-coupons";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
@@ -77,7 +78,7 @@ export default function CouponsPage() {
       />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <div className="overflow-x-auto">
+        <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -123,7 +124,7 @@ export default function CouponsPage() {
             ))}
           </tbody>
         </table>
-        </div>
+        </HScrollShadow>
       </div>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add coupon">

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { syncCart } from "@/lib/api/cart";
+import { useCartDrawerStore } from "@/store/cart-drawer";
 
 export interface CartItem {
   variantId: string;
@@ -60,6 +61,9 @@ export const useCartStore = create<CartState>()(
           };
         });
         scheduleSync(get().items);
+        // Surface the drawer as visual confirmation of what was just added — this is the
+        // shopper's main feedback that the click registered, since there's no page navigation.
+        useCartDrawerStore.getState().open();
       },
 
       removeItem: (variantId) => {

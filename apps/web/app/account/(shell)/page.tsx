@@ -31,6 +31,7 @@ export default function AccountProfilePage() {
         name: data.customer.name,
         phone: data.customer.phone,
         smsMarketingOptIn: data.customer.smsMarketingOptIn,
+        emailMarketingOptIn: data.customer.emailMarketingOptIn,
       });
     }
   }, [data, reset]);
@@ -72,7 +73,7 @@ export default function AccountProfilePage() {
 
         <div>
           <Label>Email</Label>
-          <Input value={data.customer.email} disabled />
+          <Input value={data.customer.email ?? ""} placeholder="No email on file" disabled />
         </div>
 
         <div>
@@ -83,6 +84,11 @@ export default function AccountProfilePage() {
         <label className="flex items-center gap-2 text-sm text-ink-700">
           <Checkbox {...register("smsMarketingOptIn")} />
           Send me SMS updates about sales and offers
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-ink-700">
+          <Checkbox {...register("emailMarketingOptIn")} />
+          Send me email updates about sales and offers
         </label>
 
         {serverError && <p className="text-sm text-danger-600">{serverError}</p>}

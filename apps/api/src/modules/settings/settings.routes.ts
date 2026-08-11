@@ -27,3 +27,10 @@ settingsRouter.post(
   imageUpload.single("image"),
   settingsController.uploadFavicon,
 );
+settingsRouter.post(
+  "/upload-payment-methods-image",
+  requireAdmin,
+  requireRole("OWNER"),
+  imageUpload.single("image"),
+  settingsController.uploadPaymentMethodsImage,
+);

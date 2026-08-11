@@ -13,18 +13,16 @@ import {
   Gift,
   RotateCcw,
   Image as ImageIcon,
-  Share2,
   Users,
   SlidersHorizontal,
   ShieldOff,
-  ScrollText,
   Settings,
-  ArrowRightLeft,
   LogOut,
   X,
   Bot,
   Megaphone,
-  Shield,
+  MessageSquare,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
@@ -32,9 +30,11 @@ import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 
-/** Matches the backend's requireRole("OWNER") gates (settings, audit log, team) — hidden rather than
- * shown-then-403'd, since a STAFF account can never use them regardless. */
-const OWNER_ONLY_HREFS = new Set(["/admin/settings", "/admin/audit-log", "/admin/team"]);
+/** Matches the backend's requireRole("OWNER") gates (audit log, team) — hidden rather than
+ * shown-then-403'd, since a STAFF account can never use them regardless. "/admin/settings" is
+ * deliberately NOT here even though its own store-info form is owner-only: it's also the shared
+ * entry point to Payment Methods/Social Links/Redirects, which STAFF can use (see SettingsSubNav). */
+const OWNER_ONLY_HREFS = new Set(["/admin/audit-log", "/admin/team"]);
 
 const NAV_SECTIONS = [
   {
@@ -65,23 +65,25 @@ const NAV_SECTIONS = [
   },
   {
     label: "Content",
-    items: [
-      { href: "/admin/banners", label: "Banners", icon: ImageIcon },
-      { href: "/admin/social-links", label: "Social Links", icon: Share2 },
-    ],
+    items: [{ href: "/admin/banners", label: "Banners", icon: ImageIcon }],
   },
   {
     label: "Marketing",
     items: [{ href: "/admin/campaigns", label: "Campaigns", icon: Megaphone }],
   },
   {
-    label: "System",
+    label: "Support",
     items: [
-      { href: "/admin/settings", label: "Settings", icon: Settings },
-      { href: "/admin/redirects", label: "Redirects", icon: ArrowRightLeft },
-      { href: "/admin/team", label: "Team", icon: Shield },
-      { href: "/admin/audit-log", label: "Audit Log", icon: ScrollText },
+      { href: "/admin/feedback", label: "Feedback", icon: MessageSquare },
+      { href: "/admin/reviews", label: "Reviews", icon: Star },
     ],
+  },
+  {
+    label: "System",
+    // Payment Methods, Social Links, Redirects, Team, and Audit Log all live behind this one entry
+    // now via SettingsSubNav — "configure once, revisit rarely" pages no longer each get top-level
+    // sidebar real estate. See settings-subnav.tsx.
+    items: [{ href: "/admin/settings", label: "Settings", icon: Settings }],
   },
 ];
 
@@ -184,7 +186,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   return (
     <>
       {/* Desktop: static sidebar */}
-      <aside className="hidden h-screen w-60 shrink-0 flex-col border-r border-ink-800 bg-gradient-to-b from-ink-800 to-ink-950 text-cream-100 lg:flex">
+      <aside className="hidden h-screen w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-950 text-cream-100 lg:flex">
         {content}
       </aside>
 
@@ -192,7 +194,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 animate-fade-in bg-ink-950/50 backdrop-blur-sm" onClick={onCloseMobile} />
-          <aside className="relative flex h-full w-64 animate-modal-in flex-col bg-gradient-to-b from-ink-800 to-ink-950 text-cream-100 shadow-floatLg">
+          <aside className="relative flex h-full w-64 animate-modal-in flex-col bg-ink-950 text-cream-100 shadow-floatLg">
             {content}
           </aside>
         </div>

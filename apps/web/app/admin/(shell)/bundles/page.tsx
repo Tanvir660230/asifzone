@@ -12,6 +12,7 @@ import { toast } from "@/components/ui/toast";
 import { BundleForm } from "@/components/admin/bundle-form";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as bundlesApi from "@/lib/api/admin-bundles";
 import * as categoriesApi from "@/lib/api/categories";
 import { formatPrice } from "@/lib/format";
@@ -82,7 +83,7 @@ export default function BundlesPage() {
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <div className="overflow-x-auto">
+        <HScrollShadow className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
               <tr>
@@ -128,7 +129,7 @@ export default function BundlesPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </HScrollShadow>
       </div>
 
       <Modal

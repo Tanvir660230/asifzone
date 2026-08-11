@@ -27,7 +27,7 @@ export default function AccountCouponsPage() {
       {isLoading && (
         <div className="space-y-3">
           {Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="animate-pulse border border-dashed border-brass-200 bg-brass-50/50 p-4">
+            <div key={i} className="animate-pulse border border-dashed border-ink-200 bg-cream-50 p-4">
               <div className="h-4 w-28 rounded bg-ink-100" />
               <div className="mt-2 h-3 w-40 rounded bg-ink-100" />
             </div>
@@ -38,7 +38,7 @@ export default function AccountCouponsPage() {
 
       <div className="space-y-3">
         {data?.coupons.map((coupon) => (
-          <div key={coupon.id} className="flex items-center justify-between border border-dashed border-brass-300 bg-brass-50 p-4">
+          <div key={coupon.id} className="flex items-center justify-between border border-dashed border-sale-500/40 bg-sale-50 p-4">
             <div>
               <p className="font-display text-lg text-ink-900">{coupon.code}</p>
               <p className="text-sm text-ink-600">

@@ -58,3 +58,8 @@ export const reorder = asyncHandler(async (req: Request, res: Response) => {
   await categoryService.reorderCategories(req.body);
   res.status(204).send();
 });
+
+export const move = asyncHandler(async (req: Request, res: Response) => {
+  const category = await categoryService.moveCategory(req.params.id!, req.body);
+  res.json({ category });
+});

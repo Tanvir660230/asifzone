@@ -3,11 +3,12 @@ import type {
   BundleForProduct,
   Category,
   FlashSale,
-  PaginatedResult,
+  PaymentMethodOption,
   Product,
   SearchSuggestions,
   SocialLink,
   StorefrontProductQuery,
+  StorefrontProductResult,
   StoreSettings,
   UrgencySignals,
 } from "@clothing-brand/shared";
@@ -67,7 +68,7 @@ export function listStorefrontProducts(params: Partial<StorefrontProductQuery> =
   if (params.minPrice !== undefined) query.set("minPrice", String(params.minPrice));
   if (params.maxPrice !== undefined) query.set("maxPrice", String(params.maxPrice));
 
-  return storefrontFetch<PaginatedResult<Product>>(`/api/products/storefront?${query.toString()}`);
+  return storefrontFetch<StorefrontProductResult>(`/api/products/storefront?${query.toString()}`);
 }
 
 export interface StorefrontFacets {
@@ -111,6 +112,16 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   taxEnabled: false,
   defaultTaxRate: null,
   rewardPointsPerCurrency: "0",
+  whatsappMessage: null,
+  whatsappLabel: "WhatsApp",
+  callEnabled: false,
+  callLabel: "Call Us",
+  liveChatEnabled: false,
+  liveChatLabel: "Live Chat",
+  tawkPropertyId: null,
+  tawkWidgetId: null,
+  paymentMethodsImageUrl: null,
+  googleSiteVerification: null,
   updatedAt: new Date(0).toISOString(),
 };
 
@@ -124,6 +135,14 @@ export function getActiveSocialLinks() {
 
 export function getActiveSocialLinksSafe() {
   return safe(getActiveSocialLinks, { links: [] });
+}
+
+export function getActivePaymentMethods() {
+  return storefrontFetch<{ methods: PaymentMethodOption[] }>("/api/payment-methods/active", 300);
+}
+
+export function getActivePaymentMethodsSafe() {
+  return safe(getActivePaymentMethods, { methods: [] });
 }
 
 export function getSimilarProducts(productId: string) {

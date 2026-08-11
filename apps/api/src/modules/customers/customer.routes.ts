@@ -9,6 +9,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   verifyEmailSchema,
+  unsubscribeEmailSchema,
   googleLoginSchema,
   requestOtpSchema,
   verifyOtpSchema,
@@ -43,6 +44,14 @@ customerRouter.post(
 );
 customerRouter.post("/verify-email", loginRateLimit, validate(verifyEmailSchema), customerController.verifyEmail);
 customerRouter.post("/resend-verification", requireCustomer, customerController.resendVerification);
+// Public — clicked from a marketing email, no session required. Its own HMAC token (not the CSRF
+// cookie) is what proves the caller holds a real unsubscribe link (see generateEmailUnsubscribeToken).
+customerRouter.post(
+  "/unsubscribe",
+  loginRateLimit,
+  validate(unsubscribeEmailSchema),
+  customerController.unsubscribeEmail,
+);
 
 customerRouter.post("/google", loginRateLimit, validate(googleLoginSchema), customerController.googleLogin);
 customerRouter.post("/otp/request", otpRequestRateLimit, validate(requestOtpSchema), customerController.requestOtp);

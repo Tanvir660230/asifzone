@@ -37,7 +37,6 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/clothing_brand?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_CUSTOMER_ACCESS_SECRET: ${JWT_CUSTOMER_ACCESS_SECRET}
       JWT_CUSTOMER_REFRESH_SECRET: ${JWT_CUSTOMER_REFRESH_SECRET}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
@@ -52,13 +51,16 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_ADDRESS: ${RESEND_FROM_ADDRESS:-onboarding@resend.dev}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
-      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      BULKSMSBD_API_KEY: ${BULKSMSBD_API_KEY:-}
+      BULKSMSBD_SENDER_ID: ${BULKSMSBD_SENDER_ID:-}
       WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
       WEB_PUSH_PRIVATE_KEY: ${WEB_PUSH_PRIVATE_KEY:-}
       WEB_PUSH_CONTACT_EMAIL: ${WEB_PUSH_CONTACT_EMAIL:-support@example.com}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      STEADFAST_API_KEY: ${STEADFAST_API_KEY:-}
+      STEADFAST_SECRET_KEY: ${STEADFAST_SECRET_KEY:-}
+      STEADFAST_BASE_URL: ${STEADFAST_BASE_URL:-https://portal.packzy.com/api/v1}
+      STEADFAST_WEBHOOK_TOKEN: ${STEADFAST_WEBHOOK_TOKEN:-}
     volumes:
       - uploads_data:/repo/apps/api/uploads
     ports:
@@ -70,10 +72,20 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        # NEXT_PUBLIC_* vars are inlined into the compiled output at `next build` time, not read
+        # from the container's runtime environment — without this here, the `environment:` entry
+        # below has zero effect and canonical URLs/og:url/sitemap.xml/robots.txt silently keep
+        # whatever this fell back to at image-build time (http://localhost:3000), no matter what's
+        # actually configured for the running container.
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
         NEXT_PUBLIC_CLARITY_ID: ${NEXT_PUBLIC_CLARITY_ID:-}
         NEXT_PUBLIC_TAWKTO_PROPERTY_ID: ${NEXT_PUBLIC_TAWKTO_PROPERTY_ID:-}
         NEXT_PUBLIC_TAWKTO_WIDGET_ID: ${NEXT_PUBLIC_TAWKTO_WIDGET_ID:-}
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+        # Must be the public half of the same pair as the api service's WEB_PUSH_PUBLIC_KEY below
+        # (see apps/web/.env.example) — reusing that var here instead of a second secret keeps the
+        # two from ever drifting apart.
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
     restart: unless-stopped
     depends_on:
       - api
@@ -98,12 +110,24 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # Picks up a cert the certbot service renewed underneath it — the ro bind mount doesn't
+    # itself trigger nginx to reread the files, and nginx never reloads on its own otherwise.
+    entrypoint: "/bin/sh -c"
+    command:
+      - "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g 'daemon off;'"
 
   certbot:
     image: certbot/certbot:latest
     volumes:
       - certbot_www:/var/www/certbot
       - certbot_certs:/etc/letsencrypt
+    # No command previously — the image's default entrypoint ("certbot" with no args) tries to
+    # auto-configure a web server plugin and fails immediately in this webroot-only setup, so
+    # nothing was ever actually renewing. `certbot renew` reuses the authenticator/webroot path
+    # already recorded in /etc/letsencrypt/renewal/asifzone.com.conf from the original issuance.
+    entrypoint: "/bin/sh -c"
+    command:
+      - "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
 
 volumes:
   postgres_data:

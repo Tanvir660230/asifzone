@@ -8,14 +8,14 @@ export function FlashSaleSection({ flashSale }: { flashSale: FlashSale }) {
   if (products.length === 0) return null;
 
   return (
-    <section className="bg-gradient-to-b from-ink-800 via-ink-900 to-ink-950 py-16 text-cream-50">
+    <section className="bg-ink-950 py-16 text-cream-50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-brass-300">Limited Time</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-sale-500">Limited Time</p>
             <h2 className="font-display text-2xl">{flashSale.name}</h2>
           </div>
-          <div className="flex items-center gap-2 border border-brass-400 px-4 py-2 text-brass-300">
+          <div className="flex items-center gap-2 rounded-full border border-sale-500 px-4 py-2 text-sale-500">
             <span className="text-xs uppercase tracking-wide">Ends in</span>
             <CountdownTimer endsAt={flashSale.endsAt} className="font-display text-lg" />
           </div>
@@ -26,7 +26,7 @@ export function FlashSaleSection({ flashSale }: { flashSale: FlashSale }) {
         </div>
 
         <div className="mt-8 text-center">
-          <Link href="/search" className="text-sm uppercase tracking-wide text-brass-300 underline hover:text-brass-200">
+          <Link href="/search" className="text-sm uppercase tracking-wide text-cream-100 underline hover:text-white">
             View all deals
           </Link>
         </div>

@@ -108,7 +108,7 @@ function LoginForm() {
           <div>
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
-              <Link href="/account/forgot-password" className="text-xs text-brass-600 underline hover:text-brass-500">
+              <Link href="/account/forgot-password" className="text-xs text-ink-700 underline hover:text-ink-900">
                 Forgot password?
               </Link>
             </div>
@@ -129,7 +129,7 @@ function LoginForm() {
 
       <p className="mt-6 text-center text-sm text-ink-500">
         New here?{" "}
-        <Link href="/account/register" className="text-brass-600 underline hover:text-brass-500">
+        <Link href="/account/register" className="text-ink-700 underline hover:text-ink-900">
           Create an account
         </Link>
       </p>

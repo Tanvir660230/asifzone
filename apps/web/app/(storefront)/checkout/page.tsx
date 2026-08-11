@@ -10,6 +10,7 @@ import {
   checkoutSchema,
   BD_DIVISIONS,
   BD_DISTRICTS_BY_DIVISION,
+  BD_AREAS_BY_DISTRICT,
   SHIPPING_FEE_DHAKA_FALLBACK,
   SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK,
   estimateDelivery,
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
@@ -30,6 +32,7 @@ import { validateCoupon, getBestCoupon, type CouponPreview } from "@/lib/api/cou
 import { previewBundle } from "@/lib/api/bundles";
 import { listAddresses } from "@/lib/api/customers";
 import { getSettings } from "@/lib/api/settings";
+import { getActivePaymentMethods } from "@/lib/api/payment-methods";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -80,6 +83,12 @@ export default function CheckoutPage() {
   }, [mounted, items.length]);
 
   const { data: settingsData } = useQuery({ queryKey: ["settings"], queryFn: getSettings, staleTime: 5 * 60 * 1000 });
+  const { data: paymentMethodsData } = useQuery({
+    queryKey: ["payment-methods-active"],
+    queryFn: getActivePaymentMethods,
+    staleTime: 5 * 60 * 1000,
+  });
+  const paymentMethods = paymentMethodsData?.methods ?? [];
 
   const { data: customerData } = useOptionalCustomer();
   const customer = customerData?.customer;
@@ -102,12 +111,15 @@ export default function CheckoutPage() {
       paymentMethod: "COD",
       shippingDivision: BD_DIVISIONS[0],
       shippingDistrict: BD_DISTRICTS_BY_DIVISION[BD_DIVISIONS[0]][0],
+      shippingArea: BD_AREAS_BY_DISTRICT[BD_DISTRICTS_BY_DIVISION[BD_DIVISIONS[0]][0]]?.[0] ?? "",
     },
   });
 
   const shippingDivision = watch("shippingDivision") || BD_DIVISIONS[0];
   const shippingDistrict = watch("shippingDistrict");
+  const shippingArea = watch("shippingArea");
   const districtOptions: readonly string[] = BD_DISTRICTS_BY_DIVISION[shippingDivision] ?? [];
+  const areaOptions: readonly string[] = BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [];
 
   // Courier-style cascading picker: the district list narrows to the selected division, so if the
   // shopper (or a saved address) switches division, drop any district that no longer belongs to it.
@@ -118,6 +130,15 @@ export default function CheckoutPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDivision]);
+
+  // Same cascade one level down: the area/thana list narrows to the selected district.
+  useEffect(() => {
+    const firstArea = areaOptions[0];
+    if (firstArea && !areaOptions.includes(shippingArea)) {
+      setValue("shippingArea", firstArea);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shippingDistrict]);
 
   const shippingFee = settingsData
     ? Number(
@@ -171,7 +192,6 @@ export default function CheckoutPage() {
     getBestCoupon(subtotal)
       .then(({ result }) => setBestCoupon(result))
       .catch(() => setBestCoupon(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, items.length, subtotal, coupon]);
 
   function handleApplySuggestedCoupon() {
@@ -273,11 +293,11 @@ export default function CheckoutPage() {
               </div>
 
               {bestCoupon && (
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-brass-300 bg-brass-50 p-3 text-xs text-ink-800">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-sale-500/30 bg-sale-50 p-3 text-xs text-ink-800">
                   <span>
                     Use <span className="font-medium">{bestCoupon.code}</span> — save {formatPrice(bestCoupon.discount)}
                   </span>
-                  <Button type="button" variant="brass" size="sm" onClick={handleApplySuggestedCoupon}>
+                  <Button type="button" variant="sale" size="sm" onClick={handleApplySuggestedCoupon}>
                     Apply
                   </Button>
                 </div>
@@ -416,29 +436,27 @@ export default function CheckoutPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="shippingDivision">Division</Label>
-                <Select id="shippingDivision" autoComplete="address-level1" {...register("shippingDivision")}>
-                  {BD_DIVISIONS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </Select>
+                <SearchableSelect
+                  id="shippingDivision"
+                  autoComplete="address-level1"
+                  value={shippingDivision}
+                  onChange={(v) => setValue("shippingDivision", v as CheckoutFormValues["shippingDivision"], { shouldValidate: true })}
+                  options={BD_DIVISIONS}
+                  placeholder="Search division..."
+                />
               </div>
               <div>
                 <Label htmlFor="shippingDistrict">District</Label>
-                <Select
+                <SearchableSelect
                   id="shippingDistrict"
                   autoComplete="address-level2"
                   aria-invalid={!!errors.shippingDistrict}
                   aria-describedby={errors.shippingDistrict ? "shippingDistrict-error" : undefined}
-                  {...register("shippingDistrict")}
-                >
-                  {districtOptions.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </Select>
+                  value={shippingDistrict}
+                  onChange={(v) => setValue("shippingDistrict", v, { shouldValidate: true })}
+                  options={districtOptions}
+                  placeholder="Search district..."
+                />
                 {errors.shippingDistrict && (
                   <p id="shippingDistrict-error" className="mt-1 text-xs text-danger-600">
                     {errors.shippingDistrict.message}
@@ -447,13 +465,15 @@ export default function CheckoutPage() {
               </div>
               <div>
                 <Label htmlFor="shippingArea">Area / Thana</Label>
-                <Input
+                <SearchableSelect
                   id="shippingArea"
-                  placeholder="e.g. Gulshan, Dhanmondi"
                   autoComplete="address-level3"
                   aria-invalid={!!errors.shippingArea}
                   aria-describedby={errors.shippingArea ? "shippingArea-error" : undefined}
-                  {...register("shippingArea")}
+                  value={shippingArea}
+                  onChange={(v) => setValue("shippingArea", v, { shouldValidate: true })}
+                  options={areaOptions}
+                  placeholder="Search area/thana..."
                 />
                 {errors.shippingArea && (
                   <p id="shippingArea-error" className="mt-1 text-xs text-danger-600">
@@ -493,13 +513,13 @@ export default function CheckoutPage() {
               <h2 className="font-display text-lg text-ink-900">Payment method</h2>
             </div>
             <div className="space-y-2">
-              <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-brass-500 has-[:checked]:bg-brass-50/50">
-                <input type="radio" value="COD" className="accent-brass-500" {...register("paymentMethod")} defaultChecked />
+              <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
+                <input type="radio" value="COD" className="accent-ink-900" {...register("paymentMethod")} defaultChecked />
                 <Banknote size={16} className="text-ink-400" />
                 Cash on Delivery
               </label>
-              <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-brass-500 has-[:checked]:bg-brass-50/50">
-                <input type="radio" value="SSLCOMMERZ" className="accent-brass-500" {...register("paymentMethod")} />
+              <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
+                <input type="radio" value="SSLCOMMERZ" className="accent-ink-900" {...register("paymentMethod")} />
                 <Smartphone size={16} className="text-ink-400" />
                 <span>
                   Digital Payment
@@ -507,6 +527,38 @@ export default function CheckoutPage() {
                 </span>
               </label>
             </div>
+            {(settingsData?.settings.paymentMethodsImageUrl ?? paymentMethods.length > 0) && (
+              <div className="mt-4 border-t border-ink-100 pt-4">
+                <p className="mb-2 text-[11px] uppercase tracking-wide text-ink-400">Secure Payment Methods</p>
+                {settingsData?.settings.paymentMethodsImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={settingsData.settings.paymentMethodsImageUrl}
+                    alt="Accepted payment methods"
+                    className="h-auto w-full max-w-[220px] rounded-lg object-contain"
+                  />
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {paymentMethods.map((method) =>
+                      method.logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={method.id}
+                          src={method.logoUrl}
+                          alt={method.name}
+                          title={method.name}
+                          className="h-6 w-auto object-contain"
+                        />
+                      ) : (
+                        <span key={method.id} className="text-[11px] uppercase tracking-wide text-ink-400">
+                          {method.name}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}

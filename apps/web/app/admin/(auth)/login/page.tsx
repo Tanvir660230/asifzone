@@ -41,7 +41,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="rounded-lg bg-cream-50 p-8 shadow-xl">
+    <div>
       <h1 className="mb-1 font-display text-2xl text-ink-900">Store Console</h1>
       <p className="mb-6 text-sm text-ink-500">Sign in to manage your store</p>
 

@@ -84,6 +84,26 @@ export default function CategoriesPage() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
   });
 
+  // Drag-and-drop reparent — optimistically flips the moved category's parentId so the tree jumps
+  // to its new spot immediately; onSettled always refetches for the authoritative sortOrder.
+  const moveMutation = useMutation({
+    mutationFn: ({ id, newParentId, sortOrder }: { id: string; newParentId: string; sortOrder: number }) =>
+      categoriesApi.moveCategory(id, { newParentId, sortOrder }),
+    onMutate: async ({ id, newParentId }) => {
+      await queryClient.cancelQueries({ queryKey: CATEGORIES_KEY });
+      const previous = queryClient.getQueryData<{ categories: Category[] }>(CATEGORIES_KEY);
+      queryClient.setQueryData<{ categories: Category[] } | undefined>(CATEGORIES_KEY, (old) =>
+        old ? { categories: old.categories.map((c) => (c.id === id ? { ...c, parentId: newParentId } : c)) } : old,
+      );
+      return { previous };
+    },
+    onError: (err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(CATEGORIES_KEY, context.previous);
+      toast.error(err instanceof ApiError ? err.message : "Failed to move category");
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+  });
+
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   async function handleSubmit(values: CreateCategoryInput) {
@@ -146,6 +166,7 @@ export default function CategoriesPage() {
           onReorder={(parentId, orderedIds) =>
             reorderMutation.mutate({ items: orderedIds.map((id, index) => ({ id, sortOrder: index })) })
           }
+          onMove={(id, newParentId, sortOrder) => moveMutation.mutate({ id, newParentId, sortOrder })}
         />
       )}
 

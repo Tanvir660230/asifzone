@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Send, CalendarClock, XCircle, Pencil, Trash2 } from "lucide-react";
+import { Plus, Send, XCircle, Pencil, Trash2 } from "lucide-react";
 import { createCampaignSchema, type Campaign, type CreateCampaignInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
 import { ApiError } from "@/lib/api-client";
 
@@ -143,7 +144,7 @@ export default function CampaignsPage() {
       />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <div className="overflow-x-auto">
+        <HScrollShadow className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
               <tr>
@@ -213,7 +214,7 @@ export default function CampaignsPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </HScrollShadow>
       </div>
 
       <Modal open={showCompose} onClose={() => setShowCompose(false)} title={editing ? "Edit campaign" : "New campaign"}>

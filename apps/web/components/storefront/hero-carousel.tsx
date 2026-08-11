@@ -20,13 +20,19 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
 
   const banner = banners[index];
   if (!banner) return null;
+  const altText = banner.altText || banner.title || "";
 
   function goTo(delta: 1 | -1) {
     setIndex((i) => (i + delta + banners.length) % banners.length);
   }
 
   const slide = (
-    <div className="relative h-[58vh] min-h-[400px] touch-pan-y overflow-hidden bg-ink-900 sm:h-[70vh] sm:min-h-[420px]">
+    // Height comes from `aspect-*`, not a viewport-height guess, and is locked to match the
+    // recommended upload size (1:1 mobile crop, 3:1 desktop — see the banners admin page): with
+    // the container's ratio equal to the image's own ratio, `object-cover` needs zero crop and
+    // zero letterboxing at *any* window width, so nothing baked into the banner (headline text,
+    // icons) is ever cut off or surrounded by dead space as the page is resized.
+    <div className="relative aspect-square touch-pan-y overflow-hidden bg-ink-900 lg:aspect-[3/1]">
       <AnimatePresence mode="sync" initial={false}>
         <motion.div
           key={banner.id}
@@ -53,42 +59,32 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
             className="absolute inset-0"
           >
             {banner.mobileImageUrl ? (
-              // Art direction, not just a resize: a wide desktop banner and a phone screen have
-              // completely different aspect ratios, so `object-cover` alone has to crop most of
-              // the image's width away — on a banner with text baked into the photo (common for
-              // these), that crop is as likely to cut the headline as the product shot. Two
-              // separate images, swapped by breakpoint, let the mobile one be framed on purpose
-              // instead of whatever a center-crop of the desktop image happens to land on.
               <>
                 <Image
                   src={banner.mobileImageUrl}
-                  alt={banner.title ?? ""}
+                  alt={altText}
                   fill
                   priority={index === 0}
                   sizes="100vw"
-                  className="object-cover sm:hidden"
+                  className="object-cover lg:hidden"
                 />
                 <Image
                   src={banner.imageUrl}
-                  alt={banner.title ?? ""}
+                  alt={altText}
                   fill
                   priority={index === 0}
                   sizes="100vw"
-                  className="hidden object-cover sm:block"
+                  className="hidden object-cover lg:block"
                 />
               </>
             ) : (
-              // No dedicated mobile crop uploaded yet — fall back to the desktop image, but bias
-              // the crop toward the left on small screens instead of dead-center. Most banners of
-              // this shape put their headline in the left third, so this at least keeps the
-              // message in frame on a phone rather than showing only whatever's in the middle.
               <Image
                 src={banner.imageUrl}
-                alt={banner.title ?? ""}
+                alt={altText}
                 fill
                 priority={index === 0}
                 sizes="100vw"
-                className="object-cover object-[20%_50%] sm:object-[50%_50%]"
+                className="object-cover"
               />
             )}
           </motion.div>

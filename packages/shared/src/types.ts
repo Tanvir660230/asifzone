@@ -83,6 +83,8 @@ export interface Product {
   name: string;
   slug: string;
   description: string;
+  shortDescription: string | null;
+  sortOrder: number;
   categoryId: string;
   category: Category;
   brand: string | null;
@@ -102,16 +104,38 @@ export interface Product {
   variants: ProductVariant[];
   images: ProductImage[];
   activeFlashSale?: ActiveFlashSale | null;
+  avgRating: number;
+  reviewCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProductReview {
+  id: string;
+  productId: string;
+  customerId: string;
+  customerName: string;
+  rating: number;
+  title: string | null;
+  body: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  isVerifiedPurchase: boolean;
+  createdAt: string;
+  updatedAt: string;
+  product?: { id: string; name: string; slug: string };
+}
+
+export interface RatingBreakdown {
+  average: number;
+  count: number;
+  counts: Record<"5" | "4" | "3" | "2" | "1", number>;
 }
 
 /** Real, aggregate signals for a single product's PDP — never fabricated. Every field is a
  * genuine count (or null/0/false) derived from real orders, views, and stock. */
 export interface UrgencySignals {
-  viewsToday: number;
+  totalViews: number;
   recentPurchaseCount: number;
-  lastPurchasedAt: string | null;
   unitsSoldLast7Days: number;
   isFastSelling: boolean;
 }
@@ -121,6 +145,14 @@ export interface PaginatedResult<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+/** listStorefrontProducts's result — a plain PaginatedResult plus a spelling-correction guess,
+ * populated only when a text search came back completely empty (see product.service.ts). Kept as
+ * its own type rather than widening the generic PaginatedResult, which every other paginated list
+ * in the app (orders, customers, coupons, ...) also uses and has no business knowing about search. */
+export interface StorefrontProductResult extends PaginatedResult<Product> {
+  didYouMean?: string;
 }
 
 /** Lightweight product shape for the search typeahead dropdown — not the full `Product`. */
@@ -135,6 +167,7 @@ export interface SearchSuggestionProduct {
 export interface SearchSuggestions {
   products: SearchSuggestionProduct[];
   predictions: string[];
+  didYouMean?: string;
 }
 
 /** Live product/stock info for this line item, joined in only by the customer-scoped order-detail
@@ -173,7 +206,7 @@ export interface ReturnRequest {
   createdAt: string;
   updatedAt: string;
   order?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt">;
-  customer?: { name: string; email: string };
+  customer?: { name: string; email: string | null };
 }
 
 export interface OrderStatusHistoryEntry {
@@ -220,9 +253,13 @@ export interface Order {
   adminNotes: string | null;
   trackingNumber: string | null;
   carrier: string | null;
+  courierConsignmentId: string | null;
+  courierStatus: string | null;
+  courierBookedAt: string | null;
   statusHistory: OrderStatusHistoryEntry[];
   items: OrderItem[];
   returnRequests?: ReturnRequest[];
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -337,10 +374,12 @@ export interface Address {
 export interface Customer {
   id: string;
   name: string;
-  email: string;
+  // Nullable — a guest checkout with only a phone number still creates a Customer row.
+  email: string | null;
   emailVerifiedAt: string | null;
   phone: string | null;
   smsMarketingOptIn: boolean;
+  emailMarketingOptIn: boolean;
   rewardPoints: number;
   createdAt: string;
   updatedAt: string;
@@ -390,6 +429,45 @@ export interface StoreSettings {
   taxEnabled: boolean;
   defaultTaxRate: string | null;
   rewardPointsPerCurrency: string;
+  whatsappMessage: string | null;
+  whatsappLabel: string;
+  callEnabled: boolean;
+  callLabel: string;
+  liveChatEnabled: boolean;
+  liveChatLabel: string;
+  tawkPropertyId: string | null;
+  tawkWidgetId: string | null;
+  paymentMethodsImageUrl: string | null;
+  googleSiteVerification: string | null;
+  updatedAt: string;
+}
+
+export interface SmsNotificationSettings {
+  id: string;
+  adminAlertPhones: string;
+  adminOrderAlertEnabled: boolean;
+  customerOrderPlacedEnabled: boolean;
+  customerOrderConfirmedEnabled: boolean;
+  customerOrderShippedEnabled: boolean;
+  customerOrderDeliveredEnabled: boolean;
+  customerOrderCancelledEnabled: boolean;
+  customerOrderPlacedTemplate: string | null;
+  customerOrderConfirmedTemplate: string | null;
+  customerOrderShippedTemplate: string | null;
+  customerOrderDeliveredTemplate: string | null;
+  customerOrderCancelledTemplate: string | null;
+  updatedAt: string;
+}
+
+/** Named "...Option" since "PaymentMethod" is already the COD/SSLCOMMERZ enum type exported from
+ * schemas/order.ts. */
+export interface PaymentMethodOption {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -434,6 +512,7 @@ export interface Banner {
   linkUrl: string | null;
   title: string | null;
   subtitle: string | null;
+  altText: string | null;
   sortOrder: number;
   isActive: boolean;
   startsAt: string | null;
@@ -480,4 +559,15 @@ export interface Campaign {
 
 export interface CampaignDetail extends Campaign {
   recipientCounts: CampaignRecipientCounts;
+}
+
+export interface Feedback {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  subject: string;
+  message: string;
+  readAt: string | null;
+  createdAt: string;
 }

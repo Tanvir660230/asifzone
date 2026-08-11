@@ -9,11 +9,7 @@ export function Breadcrumb({ trail }: { trail: Array<{ name: string; href?: stri
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <nav className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-400">
         <Link href="/" className="hover:text-ink-900">Home</Link>
         {trail.map((item, i) => (

@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/admin/page-header";
+import { SettingsSubNav } from "@/components/admin/settings-subnav";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { SOCIAL_PLATFORM_META, SocialIcon } from "@/components/social-icon";
@@ -90,6 +91,7 @@ export default function SocialLinksPage() {
           </Button>
         }
       />
+      <SettingsSubNav />
       <p className="mb-4 text-sm text-ink-500">
         Shown as icons in the storefront footer, in the order below. Only active links appear on the site.
       </p>
@@ -118,6 +120,7 @@ export default function SocialLinksPage() {
                       disabled={index === 0}
                       className="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-900 disabled:pointer-events-none disabled:opacity-30"
                       aria-label="Move up"
+                      title="Move up"
                     >
                       <ArrowUp size={14} />
                     </button>
@@ -126,6 +129,7 @@ export default function SocialLinksPage() {
                       disabled={index === links.length - 1}
                       className="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-900 disabled:pointer-events-none disabled:opacity-30"
                       aria-label="Move down"
+                      title="Move down"
                     >
                       <ArrowDown size={14} />
                     </button>

@@ -30,6 +30,8 @@ export const createProductSchema = z.object({
   name: z.string().min(1).max(200),
   slug: z.preprocess((v) => (v === "" ? undefined : v), slugSchema.optional()),
   description: z.string().max(20_000).default(""),
+  shortDescription: nullableString(300),
+  sortOrder: z.number().int().default(0),
   categoryId: z.string().cuid(),
   brand: nullableString(120),
   brandTier: brandTierEnum.default("PREMIUM"),
@@ -72,7 +74,7 @@ export type BulkProductIdsInput = z.infer<typeof bulkProductIdsSchema>;
 export type BulkProductStatusInput = z.infer<typeof bulkProductStatusSchema>;
 export type BulkProductCategoryInput = z.infer<typeof bulkProductCategorySchema>;
 
-export const productSortEnum = z.enum(["newest", "price_asc", "price_desc"]);
+export const productSortEnum = z.enum(["newest", "price_asc", "price_desc", "relevance"]);
 
 function csvToArray(value: unknown) {
   if (typeof value === "string" && value.length > 0) return value.split(",");

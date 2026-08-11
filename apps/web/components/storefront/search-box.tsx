@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
 
 export function SearchBox({ initialValue = "" }: { initialValue?: string }) {
   const router = useRouter();
@@ -15,15 +14,20 @@ export function SearchBox({ initialValue = "" }: { initialValue?: string }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="relative mx-auto max-w-xl">
-      <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-      <Input
+    <form onSubmit={handleSubmit} className="relative mx-auto flex max-w-xl items-center">
+      <Search size={18} className="pointer-events-none absolute left-5 shrink-0 text-ink-400" />
+      <input
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="Search products…"
-        className="h-12 pl-10"
-        autoFocus
+        placeholder="Search for products, categories, styles…"
+        className="h-14 w-full rounded-full border border-ink-200 bg-cream-50 pl-12 pr-[6.5rem] text-sm text-ink-900 shadow-sm outline-none transition-all duration-200 ease-smooth placeholder:text-ink-400 focus:border-brass-400 focus:shadow-glow sm:pr-28 sm:text-base"
       />
+      <button
+        type="submit"
+        className="glossy absolute right-1.5 flex h-11 shrink-0 items-center rounded-full bg-brass-400 px-5 text-xs font-medium uppercase tracking-wide text-ink-900 shadow-sm transition-all duration-200 ease-smooth hover:bg-brass-500 active:scale-95"
+      >
+        Search
+      </button>
     </form>
   );
 }

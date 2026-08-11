@@ -57,6 +57,12 @@ enum ReturnRequestStatus {
   REJECTED
 }
 
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum StockMovementReason {
   ORDER
   RESTOCK
@@ -82,6 +88,7 @@ model AdminUser {
   statusChanges          OrderStatusHistory[]
   reviewedReturnRequests ReturnRequest[]
   sentInvites            AdminInvite[]
+  deletedOrders          Order[]              @relation("OrderDeletedBy")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -200,6 +207,8 @@ model Product {
   name              String
   slug              String           @unique
   description       String           @default("")
+  shortDescription  String?
+  sortOrder         Int              @default(0)
   categoryId        String
   category          Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   brand             String?
@@ -221,6 +230,12 @@ model Product {
   flashSaleItems    FlashSaleItem[]
   wishlistItems     WishlistItem[]
   viewLogs          ProductViewLog[]
+  reviews           ProductReview[]
+  /// Denormalized from ProductReview (APPROVED only) so every product listing can show a rating
+  /// without an aggregate join on every request — recomputed whenever a review is approved,
+  /// rejected (after having been approved), or deleted.
+  avgRating         Float            @default(0)
+  reviewCount       Int              @default(0)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -357,37 +372,49 @@ model ProductImage {
 }
 
 model Customer {
-  id                     String                  @id @default(cuid())
-  name                   String
-  email                  String                  @unique
+  id                      String                   @id @default(cuid())
+  name                    String
+  /// Nullable because a guest checkout with only a phone number (very common for COD orders) still
+  /// creates a Customer row — see findOrCreateGuestCustomer in customer.service.ts. Postgres allows
+  /// multiple NULLs under a unique constraint, so uniqueness among real emails still holds.
+  email                   String?                  @unique
   /// Set once the email-verification link is clicked, or immediately for Google/phone-OTP signups
   /// (Google verifies email ownership itself; phone-OTP accounts skip email verification entirely).
-  emailVerifiedAt        DateTime?
-  phone                  String?
-  passwordHash           String?
+  emailVerifiedAt         DateTime?
+  phone                   String?
+  passwordHash            String?
   /// Google "sub" claim — set for accounts created or linked via Google sign-in. Null for
   /// email/password-only or phone-OTP-only accounts.
-  googleId               String?                 @unique
-  rewardPoints           Int                     @default(0)
+  googleId                String?                  @unique
+  rewardPoints            Int                      @default(0)
   /// Bumped on password reset so every refresh token issued before the reset is rejected —
   /// refresh tokens are stateless JWTs, so this is what lets a reset actually revoke a stolen one.
-  tokenVersion           Int                     @default(0)
+  tokenVersion            Int                      @default(0)
   /// Explicit consent for SMS marketing sends (Campaign channel SMS) — separate from `phone` itself,
   /// since phone is collected for account/contact purposes and isn't consent on its own.
-  smsMarketingOptIn      Boolean                 @default(false)
-  addresses              Address[]
-  orders                 Order[]
-  wishlistItems          WishlistItem[]
-  passwordResetTokens    PasswordResetToken[]
+  smsMarketingOptIn       Boolean                  @default(false)
+  /// Consent for email marketing sends (Campaign channel EMAIL). Defaults to true — unlike SMS,
+  /// which is opt-in from zero, existing/new customers already expect order and account emails,
+  /// and marketing email was already going out to everyone before this flag existed. Every
+  /// marketing send carries a one-click unsubscribe link (see lib/token-hash.ts's signPayload)
+  /// that flips this to false, so the opt-out is real even though the default is opt-in.
+  emailMarketingOptIn     Boolean                  @default(true)
+  addresses               Address[]
+  orders                  Order[]
+  wishlistItems           WishlistItem[]
+  passwordResetTokens     PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
-  pointsLedger           RewardPointsEntry[]
-  cart                   Cart?
-  stockAlerts            StockAlert[]
-  returnRequests         ReturnRequest[]
-  campaignRecipients     CampaignRecipient[]
-  pushSubscriptions      PushSubscription[]
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
+  pointsLedger            RewardPointsEntry[]
+  cart                    Cart?
+  stockAlerts             StockAlert[]
+  returnRequests          ReturnRequest[]
+  reviews                 ProductReview[]
+  campaignRecipients      CampaignRecipient[]
+  pushSubscriptions       PushSubscription[]
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  @@index([phone])
 }
 
 /// Append-only ledger backing Customer.rewardPoints — every earn/redeem/manual adjustment is a row,
@@ -455,11 +482,11 @@ model Address {
   addressLine String
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
-
-  @@index([customerId])
   // At most one isDefault=true row per customer is also enforced at the DB level by a raw partial
   // unique index (see migration add_address_one_default_per_customer) — Prisma's schema DSL can't
   // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
+
+  @@index([customerId])
 }
 
 model Coupon {
@@ -555,6 +582,22 @@ model Order {
   paymentSessionKey    String?
   paymentTransactionId String?
 
+  /// Steadfast's internal id for the booked consignment — the key used to poll status and to
+  /// match incoming webhooks back to this order. Null until "Book with Steadfast" is used.
+  courierConsignmentId String?
+  /// Raw delivery_status string from Steadfast (e.g. "in_review", "delivered", "cancelled"),
+  /// shown to the admin as-is; see mapSteadfastStatusToOrderStatus for how it affects `status`.
+  courierStatus        String?
+  courierBookedAt      DateTime?
+
+  /// Soft delete — an OWNER-only admin action (see deleteOrder in order.service.ts). Restocks the
+  /// order's items and hides it from every default query, but never physically removes the row
+  /// (financial/audit record). restoreOrder clears both fields but deliberately does not re-decrement
+  /// stock, since that inventory may already have been resold in the meantime.
+  deletedAt        DateTime?
+  deletedByAdminId String?
+  deletedByAdmin   AdminUser? @relation("OrderDeletedBy", fields: [deletedByAdminId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -562,6 +605,10 @@ model Order {
   @@index([customerId])
   @@index([createdAt, status])
   @@index([sessionId])
+  @@index([customerEmail])
+  @@index([customerPhone])
+  @@index([deletedAt])
+  @@index([courierConsignmentId])
 }
 
 /// Append-only timeline of status transitions for an order — powers the admin timeline view.
@@ -590,6 +637,9 @@ model ReturnRequest {
   customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   reason            String
   note              String?
+  // At most one PENDING request per order is also enforced at the DB level by a raw partial unique
+  // index (see migrations/..._return_request_one_pending_per_order) — Prisma's schema DSL can't
+  // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
   status            ReturnRequestStatus @default(PENDING)
   adminNote         String?
   reviewedAt        DateTime?
@@ -600,6 +650,31 @@ model ReturnRequest {
 
   @@index([orderId])
   @@index([customerId])
+  @@index([status])
+}
+
+/// A customer-submitted star rating + write-up for a product. Starts PENDING and only counts
+/// toward Product.avgRating/reviewCount once an admin approves it — unmoderated reviews never
+/// reach the storefront. `customerName` is a display-name snapshot (survives a later name change);
+/// `isVerifiedPurchase` is computed once at submission from real DELIVERED-order history.
+model ProductReview {
+  id                 String       @id @default(cuid())
+  productId          String
+  product            Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerId         String
+  customer           Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customerName       String
+  rating             Int
+  title              String?
+  body               String
+  status             ReviewStatus @default(PENDING)
+  isVerifiedPurchase Boolean      @default(false)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  // One review per customer per product — resubmitting means editing, not stacking duplicates.
+  @@unique([productId, customerId])
+  @@index([productId, status])
   @@index([status])
 }
 
@@ -667,6 +742,10 @@ model Banner {
   linkUrl        String?
   title          String?
   subtitle       String?
+  /// Image alt text, independent of `title` — a banner can be purely visual (no title/subtitle
+  /// copy shown on top of it) yet still needs a real description for accessibility/image search;
+  /// falls back to `title` on the frontend when left blank.
+  altText        String?
   sortOrder      Int             @default(0)
   isActive       Boolean         @default(true)
   startsAt       DateTime?
@@ -681,6 +760,23 @@ model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
   createdAt DateTime @default(now())
+}
+
+// Submitted from the storefront's floating contact widget. Public/anonymous like
+// NewsletterSubscriber (no customer/order relation) — readAt follows the same "null = unread"
+// convention as Notification instead of a status enum.
+model Feedback {
+  id        String    @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  subject   String
+  message   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([readAt])
+  @@index([createdAt])
 }
 
 model WishlistItem {
@@ -730,7 +826,72 @@ model StoreSetting {
   taxEnabled              Boolean  @default(false)
   defaultTaxRate          Decimal? @db.Decimal(5, 2)
   rewardPointsPerCurrency Decimal  @default(0) @db.Decimal(10, 4)
+  /// Prefill text appended to the active WHATSAPP SocialLink's URL as a `text` query param — the
+  /// number/enable-state itself stays sourced from SocialLink (see comment above SocialLink) so
+  /// there's exactly one place admins manage the WhatsApp destination.
+  whatsappMessage         String?
+  whatsappLabel           String   @default("WhatsApp")
+  callEnabled             Boolean  @default(false)
+  callLabel               String   @default("Call Us")
+  /// Live Chat: Tawk.to. Kept DB-driven (unlike the old NEXT_PUBLIC_TAWKTO_* env vars) so it can be
+  /// toggled without a rebuild; see apps/web/components/storefront/live-chat-widget.tsx.
+  liveChatEnabled         Boolean  @default(false)
+  liveChatLabel           String   @default("Live Chat")
+  tawkPropertyId          String?
+  tawkWidgetId            String?
+  /// A single combined "we accept" graphic (all payment logos already laid out in one image) as an
+  /// alternative to managing individual PaymentMethodOption rows — when set, the footer/checkout
+  /// show this instead of the per-method list, since some admins would rather upload one banner
+  /// than add each logo separately.
+  paymentMethodsImageUrl  String?
+  /// The content= value Google Search Console gives you for the HTML-tag verification method —
+  /// pasted here and rendered as a <meta name="google-site-verification"> tag on every page,
+  /// rather than requiring a file upload or DNS change to prove domain ownership.
+  googleSiteVerification  String?
   updatedAt               DateTime @updatedAt
+}
+
+/// Admin-only SMS notification config — kept separate from StoreSetting because settingsRouter's
+/// GET / is public (the storefront reads it directly) and adminAlertPhones must never be exposed
+/// through that endpoint. Same lazy-create singleton pattern as StoreSetting.
+model SmsNotificationSetting {
+  id                             String   @id @default("singleton")
+  /// Comma-separated local "01XXXXXXXXX" numbers — a shop owner may want alerts on more than one
+  /// phone, so this stays one column rather than a related table (same simplicity level as other
+  /// single-purpose fields on StoreSetting).
+  adminAlertPhones               String   @default("")
+  adminOrderAlertEnabled         Boolean  @default(true)
+  customerOrderPlacedEnabled     Boolean  @default(true)
+  customerOrderConfirmedEnabled  Boolean  @default(true)
+  customerOrderShippedEnabled    Boolean  @default(true)
+  customerOrderDeliveredEnabled  Boolean  @default(true)
+  customerOrderCancelledEnabled  Boolean  @default(true)
+  /// Admin-editable message text, with {customerName}/{orderNumber}/{total}/{storeName}
+  /// placeholders — null means "use the built-in default" (packages/shared/src/sms-templates.ts),
+  /// not "send nothing" (that's what the matching *Enabled toggle above is for).
+  customerOrderPlacedTemplate    String?
+  customerOrderConfirmedTemplate String?
+  customerOrderShippedTemplate   String?
+  customerOrderDeliveredTemplate String?
+  customerOrderCancelledTemplate String?
+  updatedAt                      DateTime @updatedAt
+}
+
+/// Admin-managed payment method badges (bKash, Nagad, Visa, ...) shown in the footer and at
+/// checkout. Logo images are uploaded via processPaymentMethodLogo, same pattern as
+/// Category.imageUrl / StoreSetting.logoUrl (plain URL string, no separate media table). Named
+/// "...Option" (not just "PaymentMethod") since that name is already taken by the COD/SSLCOMMERZ
+/// enum used on Order.paymentMethod.
+model PaymentMethodOption {
+  id        String   @id @default(cuid())
+  name      String
+  logoUrl   String?
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
 }
 
 enum SocialPlatform {

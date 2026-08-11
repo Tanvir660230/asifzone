@@ -8,12 +8,12 @@ import {
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin } from "../../middlewares/require-admin";
-import { checkoutRateLimit } from "../../middlewares/rate-limit";
+import { couponValidateRateLimit } from "../../middlewares/rate-limit";
 import * as couponController from "./coupon.controller";
 
 export const couponRouter = Router();
 
-couponRouter.post("/validate", checkoutRateLimit, validate(validateCouponSchema), couponController.validate);
+couponRouter.post("/validate", couponValidateRateLimit, validate(validateCouponSchema), couponController.validate);
 couponRouter.get("/best", validate(bestCouponQuerySchema, "query"), couponController.best);
 couponRouter.get("/active", couponController.active);
 

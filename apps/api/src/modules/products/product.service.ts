@@ -7,10 +7,11 @@ import type {
   StorefrontProductQuery,
   StorefrontFacetsQuery,
 } from "@clothing-brand/shared";
-import { slugify, expandSearchTerms } from "@clothing-brand/shared";
+import { slugify, expandSearchTerms, findClosestVocabularyTerm } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
+import { paginate } from "../../lib/paginate";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteProductImageFiles } from "../uploads/upload.service";
 import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
@@ -28,6 +29,46 @@ const include = {
   images: { orderBy: { sortOrder: "asc" as const } },
   category: true,
 };
+
+/** Used in place of `include` on every storefront-facing (unauthenticated) product read — every
+ * Product scalar except `costPrice`/`taxRate`, which are internal-only figures (margin, tax
+ * remittance) with no storefront UI consumer. Unlike `lowStockThreshold`/`restockDate`, which the
+ * storefront genuinely renders ("only 2 left", "back in stock on ..."), those two stay excluded.
+ * Admin reads (listProducts/getProductById/create/update) keep using plain `include` — the
+ * dashboard needs the real figures. (Prisma's `omit` API would be a lighter-weight way to express
+ * this exclusion, but it requires an unstable/preview client feature this project doesn't enable;
+ * an explicit `select` has the same effect with zero extra risk.) */
+const PUBLIC_PRODUCT_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  shortDescription: true,
+  sortOrder: true,
+  categoryId: true,
+  brand: true,
+  brandTier: true,
+  basePrice: true,
+  compareAtPrice: true,
+  trackInventory: true,
+  lowStockThreshold: true,
+  restockDate: true,
+  isActive: true,
+  isFeatured: true,
+  seoTitle: true,
+  seoDescription: true,
+  deletedAt: true,
+  avgRating: true,
+  reviewCount: true,
+  createdAt: true,
+  updatedAt: true,
+  ...include,
+} as const;
+
+/** The shape returned by every query above that uses PUBLIC_PRODUCT_SELECT — distinct from (and
+ * narrower than) the admin `include`-based Product type, so cache typing for storefront reads
+ * needs this instead of `Awaited<ReturnType<typeof getProductById>>`. */
+type PublicProduct = Prisma.ProductGetPayload<{ select: typeof PUBLIC_PRODUCT_SELECT }>;
 
 /** Nested-create shape for a variant's attribute links — `attributeValueIds` isn't a real column, it drives this join table instead.
  * `sortOrder` comes from the variant's position in the submitted array: the storefront shows `variants[0]`'s color/size as the
@@ -61,7 +102,7 @@ async function withFlashSaleInfo<T extends { id: string; basePrice: unknown }>(p
   });
 }
 
-async function invalidateCache() {
+export async function invalidateCache() {
   await cacheDelByPrefix(CACHE_PREFIX);
 }
 
@@ -85,6 +126,58 @@ function buildFieldSearchOr(terms: string[]) {
       { category: { name: { contains: term, mode: "insensitive" as const } } },
     ]),
   };
+}
+
+/** How many search-matching candidates get pulled in (unpaginated) to be scored and ranked by
+ * relevance in JS before slicing out the requested page — bounded rather than the whole matching
+ * set so a very broad query on a large catalog can't turn a search into an unbounded fetch. Every
+ * real search result set is inherently a filtered slice of the catalog already (see the `where`
+ * clause this runs against), so this cap only ever engages for pathologically broad single-word
+ * queries; ranking quality for the page(s) a shopper actually looks at is unaffected. */
+const RELEVANCE_CANDIDATE_CAP = 300;
+
+type RelevanceCandidate = {
+  id: string;
+  name: string;
+  description: string;
+  brand: string | null;
+  category: { name: string };
+  createdAt: Date;
+};
+
+/** Textual relevance score for one candidate against the search — direct matches on the original
+ * query outrank matches that only exist via a synonym expansion, and name matches outrank matches
+ * only found in the description, so e.g. a product literally named "Cap" ranks above one that only
+ * mentions "cap" once in a paragraph of care instructions. Purely additive/comparative — the exact
+ * numbers only matter relative to each other, not as an absolute "quality" score. */
+function computeRelevanceScore(candidate: RelevanceCandidate, rawQuery: string, expandedTerms: string[]): number {
+  const query = rawQuery.trim().toLowerCase();
+  const name = candidate.name.toLowerCase();
+  const description = candidate.description.toLowerCase();
+  const brand = candidate.brand?.toLowerCase() ?? "";
+  const categoryName = candidate.category.name.toLowerCase();
+
+  let score = 0;
+  if (name === query) score += 1000;
+  else if (name.startsWith(query)) score += 700;
+  else if (name.includes(query)) score += 500;
+
+  const originalWords = new Set(query.split(/\s+/).filter(Boolean));
+
+  for (const term of expandedTerms) {
+    // A term that's literally one of the shopper's own words counts for more than one that only
+    // matched because it's a synonym of a word they typed — a search for "cap" ranking a product
+    // that says "cap" above one that only says its Bangla synonym "টুপি" (or vice versa) reads as
+    // more relevant, even though both are legitimate matches.
+    const isDirect = originalWords.has(term) || term === query;
+    const weight = isDirect ? 1 : 0.4;
+    if (name.includes(term)) score += 80 * weight;
+    if (categoryName.includes(term)) score += 50 * weight;
+    if (brand.includes(term)) score += 40 * weight;
+    if (description.includes(term)) score += 15 * weight;
+  }
+
+  return score;
 }
 
 /** "Did you mean" typo tolerance via pg_trgm's word_similarity, for when exact/synonym
@@ -112,6 +205,38 @@ async function findTypoTolerantProductIds(query: string, categoryIds: string[] |
   return rows.map((r) => r.id);
 }
 
+const DID_YOU_MEAN_NAME_THRESHOLD = 0.25;
+
+/** Best single spelling-corrected guess drawn from real catalog data (product and category
+ * names), for when the curated vocabulary (findClosestVocabularyTerm) doesn't recognize the query
+ * at all — catches a misspelled brand or product name that was never going to be in a generic
+ * "cap/shirt/panjabi" style dictionary. Lower threshold than the typo-tolerant result fallback
+ * above since this only ever surfaces as a suggestion the shopper opts into, never as silently
+ * injected results. */
+async function findBestNameSuggestion(query: string): Promise<string | null> {
+  const rows = await prisma.$queryRaw<Array<{ term: string; sim: number }>>`
+    SELECT name AS term, word_similarity(${query}, name) AS sim
+    FROM "Product"
+    WHERE "isActive" = true AND "deletedAt" IS NULL
+    UNION ALL
+    SELECT name AS term, word_similarity(${query}, name) AS sim
+    FROM "Category"
+    WHERE "isActive" = true
+    ORDER BY sim DESC
+    LIMIT 1
+  `;
+  const best = rows[0];
+  return best && best.sim > DID_YOU_MEAN_NAME_THRESHOLD ? best.term : null;
+}
+
+/** Zero real results even after the typo-tolerant fallback — the curated catalog vocabulary
+ * (Bangla/English/transliteration aware) gets first say since a hit there is a "canonical" term
+ * the shopper can actually search again; a raw product/category name is the fallback for whatever
+ * that dictionary doesn't cover. */
+async function findDidYouMean(query: string): Promise<string | undefined> {
+  return (findClosestVocabularyTerm(query) ?? (await findBestNameSuggestion(query))) ?? undefined;
+}
+
 /** Fire-and-forget — a real search-page visit, not typeahead. Never allowed to break search. */
 async function logSearch(query: string, resultCount: number) {
   try {
@@ -130,18 +255,11 @@ export async function listProducts(query: ProductListQuery) {
       : {}),
   };
 
-  const [items, total] = await Promise.all([
-    prisma.product.findMany({
-      where,
-      include,
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.product.count({ where }),
-  ]);
-
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) => prisma.product.findMany({ where, include, orderBy: { createdAt: "desc" }, ...p }),
+    () => prisma.product.count({ where }),
+  );
 }
 
 export async function getProductById(id: string) {
@@ -153,10 +271,10 @@ export async function getProductById(id: string) {
 /** Public lookup: only returns active products, matching what the storefront should link to. */
 export async function getProductBySlug(slug: string) {
   const cacheKey = `${CACHE_PREFIX}slug:${slug}`;
-  let product = await cacheGet<Awaited<ReturnType<typeof getProductById>>>(cacheKey);
+  let product = await cacheGet<PublicProduct>(cacheKey);
 
   if (!product) {
-    product = await prisma.product.findUnique({ where: { slug }, include });
+    product = await prisma.product.findUnique({ where: { slug }, select: PUBLIC_PRODUCT_SELECT });
     if (!product || !product.isActive || product.deletedAt) throw AppError.notFound("Product not found");
     await cacheSet(cacheKey, product, CACHE_TTL_SECONDS);
   }
@@ -174,6 +292,10 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
   }
 
   const searchTerms = query.search ? expandSearchTerms(query.search) : [];
+  // "Relevance" only means something when there's actually a query to be relevant *to* — sort
+  // falls back to the normal DB-ordered path otherwise (e.g. a bare category browse with no
+  // search, which is the overwhelmingly common case and stays exactly as fast/cheap as before).
+  const useRelevanceRanking = query.sort === "relevance" && searchTerms.length > 0;
 
   const where = {
     isActive: true,
@@ -194,17 +316,39 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
   };
 
   const [rawItems, total] = await Promise.all([
-    prisma.product.findMany({
-      where,
-      include,
-      orderBy: SORT_ORDER_BY[query.sort],
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
+    // Relevance mode pulls a bounded, unpaginated candidate pool and ranks it in application code
+    // (see computeRelevanceScore) rather than paginating straight from the DB — Postgres has no
+    // idea which of these matches is the "best" one, only that they all matched *something*.
+    // Every other sort keeps the original single paginated query, completely unchanged.
+    useRelevanceRanking
+      ? prisma.product.findMany({
+          where,
+          select: PUBLIC_PRODUCT_SELECT,
+          orderBy: { createdAt: "desc" },
+          take: RELEVANCE_CANDIDATE_CAP,
+        })
+      : prisma.product.findMany({
+          where,
+          select: PUBLIC_PRODUCT_SELECT,
+          orderBy: SORT_ORDER_BY[query.sort] ?? SORT_ORDER_BY.newest,
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+        }),
     prisma.product.count({ where }),
   ]);
 
-  let items = await withFlashSaleInfo(rawItems);
+  let pageRaw = rawItems;
+  if (useRelevanceRanking) {
+    const scored = rawItems
+      // Array.prototype.sort is stable, and rawItems already arrived newest-first, so equal
+      // scores keep that relative order — a free, sensible tie-break with no extra comparator.
+      .map((item) => ({ item, score: query.search ? computeRelevanceScore(item, query.search, searchTerms) : 0 }))
+      .sort((a, b) => b.score - a.score);
+    const start = (query.page - 1) * query.pageSize;
+    pageRaw = scored.slice(start, start + query.pageSize).map((s) => s.item);
+  }
+
+  let items = await withFlashSaleInfo(pageRaw);
   let resultTotal = total;
 
   // Typo-tolerant fallback — only worth trying on page 1 of an actual search that came up short.
@@ -215,7 +359,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     if (newIds.length > 0) {
       const fallbackRaw = await prisma.product.findMany({
         where: { id: { in: newIds }, isActive: true, deletedAt: null },
-        include,
+        select: PUBLIC_PRODUCT_SELECT,
       });
       const fallbackItems = await withFlashSaleInfo(fallbackRaw);
       const byId = new Map(fallbackItems.map((p) => [p.id, p]));
@@ -226,11 +370,13 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     }
   }
 
+  const didYouMean = query.search && resultTotal === 0 ? await findDidYouMean(query.search) : undefined;
+
   if (query.search) {
     void logSearch(query.search, resultTotal);
   }
 
-  return { items, total: resultTotal, page: query.page, pageSize: query.pageSize };
+  return { items, total: resultTotal, page: query.page, pageSize: query.pageSize, didYouMean };
 }
 
 /** Available filter options (sizes/colors/price range) for the storefront's currently-scoped product set — recomputed per category/search so the panel never offers a facet with zero results. */
@@ -277,8 +423,16 @@ const SUGGEST_SELECT = {
   name: true,
   slug: true,
   basePrice: true,
+  // description/brand/category/createdAt exist only to feed computeRelevanceScore below — never
+  // sent to the client, see toSuggestionProduct's much narrower return shape.
+  description: true,
+  brand: true,
+  category: { select: { name: true } },
+  createdAt: true,
   images: { orderBy: { sortOrder: "asc" as const }, take: 1, select: { url: true } },
 };
+
+const SUGGEST_CANDIDATE_CAP = 40;
 
 function toSuggestionProduct(p: {
   id: string;
@@ -297,12 +451,21 @@ export async function suggestSearch(query: string, limit = 6) {
   const searchTerms = expandSearchTerms(query);
   if (searchTerms.length === 0) return { products: [], predictions: [] };
 
-  let productRows = await prisma.product.findMany({
+  // Same relevance-ranking approach as listStorefrontProducts: pull a bounded candidate pool and
+  // rank in application code, rather than trusting "whichever `limit` rows the DB happened to
+  // return newest-first" to also be the `limit` most relevant ones — the dropdown is exactly where
+  // a shopper judges whether this search "understands" what they typed.
+  const candidateRows = await prisma.product.findMany({
     where: { isActive: true, deletedAt: null, ...buildFieldSearchOr(searchTerms) },
     select: SUGGEST_SELECT,
     orderBy: { createdAt: "desc" },
-    take: limit,
+    take: SUGGEST_CANDIDATE_CAP,
   });
+  let productRows = candidateRows
+    .map((item) => ({ item, score: computeRelevanceScore(item, query, searchTerms) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((s) => s.item);
 
   if (productRows.length < TYPO_FALLBACK_THRESHOLD) {
     const fallbackIds = await findTypoTolerantProductIds(query, undefined, limit);
@@ -350,7 +513,9 @@ export async function suggestSearch(query: string, limit = 6) {
     ]),
   ].slice(0, limit);
 
-  return { products: productRows.map(toSuggestionProduct), predictions };
+  const didYouMean = productRows.length === 0 && predictions.length === 0 ? await findDidYouMean(query) : undefined;
+
+  return { products: productRows.map(toSuggestionProduct), predictions, didYouMean };
 }
 
 const POPULAR_SEARCHES_CACHE_KEY = `${CACHE_PREFIX}popular-searches`;
@@ -384,7 +549,7 @@ export async function getProductsByIds(ids: string[]) {
   if (!ids.length) return [];
   const products = await prisma.product.findMany({
     where: { id: { in: ids }, isActive: true, deletedAt: null },
-    include,
+    select: PUBLIC_PRODUCT_SELECT,
   });
   const byId = new Map(products.map((p) => [p.id, p]));
   const ordered = ids.map((id) => byId.get(id)).filter((p): p is (typeof products)[number] => Boolean(p));
@@ -392,18 +557,33 @@ export async function getProductsByIds(ids: string[]) {
 }
 
 /** Same category, ranked by price-proximity to the target product — a lightweight stand-in for a
- * real similarity model that still gives a sensibly ordered result from data we actually have. */
+ * real similarity model that still gives a sensibly ordered result from data we actually have.
+ * Pulls a bounded candidate pool (price-sorted both directions from the target) rather than every
+ * active product in the category, so a large category doesn't turn this into a full-table scan. */
 export async function getSimilarProducts(productId: string, limit = 8) {
   const target = await prisma.product.findUnique({ where: { id: productId }, select: { categoryId: true, basePrice: true } });
   if (!target) return [];
 
-  const candidates = await prisma.product.findMany({
-    where: { categoryId: target.categoryId, isActive: true, deletedAt: null, id: { not: productId } },
-    include,
-  });
+  const candidatePoolSize = limit * 4;
+  const baseWhere = { categoryId: target.categoryId, isActive: true, deletedAt: null, id: { not: productId } };
+
+  const [cheaperOrEqual, pricier] = await Promise.all([
+    prisma.product.findMany({
+      where: { ...baseWhere, basePrice: { lte: target.basePrice } },
+      select: PUBLIC_PRODUCT_SELECT,
+      orderBy: { basePrice: "desc" },
+      take: candidatePoolSize,
+    }),
+    prisma.product.findMany({
+      where: { ...baseWhere, basePrice: { gt: target.basePrice } },
+      select: PUBLIC_PRODUCT_SELECT,
+      orderBy: { basePrice: "asc" },
+      take: candidatePoolSize,
+    }),
+  ]);
 
   const targetPrice = Number(target.basePrice);
-  candidates.sort(
+  const candidates = [...cheaperOrEqual, ...pricier].sort(
     (a, b) => Math.abs(Number(a.basePrice) - targetPrice) - Math.abs(Number(b.basePrice) - targetPrice),
   );
 
@@ -415,7 +595,7 @@ export async function getSimilarProducts(productId: string, limit = 8) {
  * containing the product. */
 export async function getFrequentlyBoughtTogether(productId: string, limit = 4) {
   const cacheKey = `${CACHE_PREFIX}fbt:${productId}`;
-  let ranked = await cacheGet<Awaited<ReturnType<typeof prisma.product.findMany>>>(cacheKey);
+  let ranked = await cacheGet<PublicProduct[]>(cacheKey);
 
   if (!ranked) {
     const variantIds = (await prisma.productVariant.findMany({ where: { productId }, select: { id: true } })).map(
@@ -462,7 +642,7 @@ export async function getFrequentlyBoughtTogether(productId: string, limit = 4) 
       const rankedIds = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
       const products = await prisma.product.findMany({
         where: { id: { in: rankedIds }, isActive: true, deletedAt: null },
-        include,
+        select: PUBLIC_PRODUCT_SELECT,
       });
       const byId = new Map(products.map((p) => [p.id, p]));
       ranked = rankedIds.map((id) => byId.get(id)).filter((p): p is (typeof products)[number] => Boolean(p));
@@ -489,7 +669,7 @@ export async function getTrendingProducts({
   maxPrice?: number;
   limit?: number;
 }) {
-  let pool = await cacheGet<Awaited<ReturnType<typeof prisma.product.findMany>>>(TRENDING_CACHE_KEY);
+  let pool = await cacheGet<PublicProduct[]>(TRENDING_CACHE_KEY);
 
   if (!pool) {
     const since = new Date(Date.now() - TRENDING_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
@@ -521,7 +701,7 @@ export async function getTrendingProducts({
         .slice(0, TRENDING_POOL_SIZE);
       const products = await prisma.product.findMany({
         where: { id: { in: rankedIds }, isActive: true, deletedAt: null },
-        include,
+        select: PUBLIC_PRODUCT_SELECT,
       });
       const byId = new Map(products.map((p) => [p.id, p]));
       pool = rankedIds.map((id) => byId.get(id)).filter((p): p is (typeof products)[number] => Boolean(p));
@@ -553,7 +733,7 @@ export async function getRecommendedByCategories(
       deletedAt: null,
       ...(exclude ? { id: { not: exclude } } : {}),
     },
-    include,
+    select: PUBLIC_PRODUCT_SELECT,
     orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
     take: limit,
   });
@@ -595,7 +775,7 @@ export async function getBudgetAlternatives(productId: string, limit = 8) {
       id: { not: productId },
       basePrice: { lt: target.basePrice },
     },
-    include,
+    select: PUBLIC_PRODUCT_SELECT,
     orderBy: { basePrice: "desc" },
     take: limit,
   });
@@ -616,7 +796,7 @@ export async function getUpgradeOptions(productId: string, limit = 8) {
       id: { not: productId },
       basePrice: { gt: target.basePrice },
     },
-    include,
+    select: PUBLIC_PRODUCT_SELECT,
     orderBy: { basePrice: "asc" },
     take: limit,
   });
@@ -644,7 +824,7 @@ export async function getPremiumAlternatives(productId: string, limit = 8) {
       id: { not: productId },
       brandTier: { in: higherTiers },
     },
-    include,
+    select: PUBLIC_PRODUCT_SELECT,
     orderBy: { basePrice: "desc" },
     take: limit,
   });
@@ -669,9 +849,8 @@ const URGENCY_CACHE_TTL_SECONDS = 60;
 export async function getUrgencySignals(productId: string) {
   const cacheKey = `${CACHE_PREFIX}urgency:${productId}`;
   const cached = await cacheGet<{
-    viewsToday: number;
+    totalViews: number;
     recentPurchaseCount: number;
-    lastPurchasedAt: string | null;
     unitsSoldLast7Days: number;
     isFastSelling: boolean;
   }>(cacheKey);
@@ -684,8 +863,11 @@ export async function getUrgencySignals(productId: string) {
     (v) => v.id,
   );
 
-  const [viewsToday, weekOrderItems, stockAgg] = await Promise.all([
-    prisma.productViewLog.count({ where: { productId, createdAt: { gte: since24h } } }),
+  // Lifetime count rather than "today" — a per-day count resets to a small, unimpressive number
+  // every midnight and reads as "nobody's looking at this" on a slow morning; the running total
+  // only ever goes up.
+  const [totalViews, weekOrderItems, stockAgg] = await Promise.all([
+    prisma.productViewLog.count({ where: { productId } }),
     variantIds.length
       ? prisma.orderItem.findMany({
           where: {
@@ -702,19 +884,12 @@ export async function getUrgencySignals(productId: string) {
   const recentPurchaseCount = weekOrderItems
     .filter((i) => i.order.createdAt >= since24h)
     .reduce((sum, i) => sum + i.quantity, 0);
-  const lastPurchasedAt = weekOrderItems.length
-    ? weekOrderItems.reduce(
-        (latest, i) => (i.order.createdAt > latest ? i.order.createdAt : latest),
-        weekOrderItems[0]!.order.createdAt,
-      )
-    : null;
   const stock = stockAgg._sum.stock ?? 0;
   const isFastSelling = stock > 0 && unitsSoldLast7Days >= stock;
 
   const signals = {
-    viewsToday,
+    totalViews,
     recentPurchaseCount,
-    lastPurchasedAt: lastPurchasedAt?.toISOString() ?? null,
     unitsSoldLast7Days,
     isFastSelling,
   };
@@ -737,14 +912,27 @@ export async function createProduct(input: CreateProductInput) {
 
   const { variants, ...productData } = input;
 
-  const product = await prisma.product.create({
-    data: {
-      ...productData,
-      slug,
-      variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
-    },
-    include,
-  });
+  let product;
+  try {
+    product = await prisma.product.create({
+      data: {
+        ...productData,
+        slug,
+        variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
+      },
+      include,
+    });
+  } catch (err) {
+    // ensureUniqueSlug's check-then-create can still race on a concurrent request picking the
+    // same candidate slug; SKUs have no equivalent pre-check at all. Both are unique-constrained
+    // at the DB level, so this is the real backstop for either.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const target = err.meta?.target;
+      const field = Array.isArray(target) ? target.join(", ") : "slug or SKU";
+      throw AppError.conflict(`A product with this ${field} already exists`);
+    }
+    throw err;
+  }
 
   await invalidateCache();
   return product;
@@ -762,52 +950,62 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
     });
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.product.update({ where: { id }, data });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.product.update({ where: { id }, data });
 
-    if (input.variants) {
-      const incomingIds = new Set(input.variants.filter((v) => v.id).map((v) => v.id!));
-      const toDelete = existing.variants.filter((v) => !incomingIds.has(v.id));
+      if (input.variants) {
+        const incomingIds = new Set(input.variants.filter((v) => v.id).map((v) => v.id!));
+        const toDelete = existing.variants.filter((v) => !incomingIds.has(v.id));
 
-      if (toDelete.length) {
-        const deletableIds = toDelete.map((v) => v.id);
-        const referenced = await tx.orderItem.findMany({
-          where: { variantId: { in: deletableIds } },
-          select: { variantId: true },
-          distinct: ["variantId"],
-        });
-        const referencedIds = new Set(referenced.map((r) => r.variantId));
-        const safeToDelete = deletableIds.filter((vid) => !referencedIds.has(vid));
-        const mustKeep = deletableIds.filter((vid) => referencedIds.has(vid));
+        if (toDelete.length) {
+          const deletableIds = toDelete.map((v) => v.id);
+          const referenced = await tx.orderItem.findMany({
+            where: { variantId: { in: deletableIds } },
+            select: { variantId: true },
+            distinct: ["variantId"],
+          });
+          const referencedIds = new Set(referenced.map((r) => r.variantId));
+          const safeToDelete = deletableIds.filter((vid) => !referencedIds.has(vid));
+          const mustKeep = deletableIds.filter((vid) => referencedIds.has(vid));
 
-        if (safeToDelete.length) {
-          await tx.productVariant.deleteMany({ where: { id: { in: safeToDelete } } });
-        }
-        // A variant with real order history can't be hard-deleted — StockMovement cascades on
-        // variant delete, and OrderItem.variantId has no FK to fall back on, so deleting it would
-        // silently erase that order's stock audit trail. Zero its stock instead: it drops out of
-        // checkout the same as a delete would, without destroying history.
-        if (mustKeep.length) {
-          await tx.productVariant.updateMany({ where: { id: { in: mustKeep } }, data: { stock: 0 } });
-        }
-      }
-
-      for (const [index, variant] of input.variants.entries()) {
-        if (variant.id) {
-          const { id: variantId, attributeValueIds = [], ...updateData } = variant;
-          await tx.productVariant.update({ where: { id: variantId }, data: { ...updateData, sortOrder: index } });
-          await tx.variantAttributeValue.deleteMany({ where: { variantId } });
-          if (attributeValueIds.length) {
-            await tx.variantAttributeValue.createMany({
-              data: attributeValueIds.map((attributeValueId) => ({ variantId, attributeValueId })),
-            });
+          if (safeToDelete.length) {
+            await tx.productVariant.deleteMany({ where: { id: { in: safeToDelete } } });
           }
-        } else {
-          await tx.productVariant.create({ data: { ...toVariantCreateData(variant, index), productId: id } });
+          // A variant with real order history can't be hard-deleted — StockMovement cascades on
+          // variant delete, and OrderItem.variantId has no FK to fall back on, so deleting it would
+          // silently erase that order's stock audit trail. Zero its stock instead: it drops out of
+          // checkout the same as a delete would, without destroying history.
+          if (mustKeep.length) {
+            await tx.productVariant.updateMany({ where: { id: { in: mustKeep } }, data: { stock: 0 } });
+          }
+        }
+
+        for (const [index, variant] of input.variants.entries()) {
+          if (variant.id) {
+            const { id: variantId, attributeValueIds = [], ...updateData } = variant;
+            await tx.productVariant.update({ where: { id: variantId }, data: { ...updateData, sortOrder: index } });
+            await tx.variantAttributeValue.deleteMany({ where: { variantId } });
+            if (attributeValueIds.length) {
+              await tx.variantAttributeValue.createMany({
+                data: attributeValueIds.map((attributeValueId) => ({ variantId, attributeValueId })),
+              });
+            }
+          } else {
+            await tx.productVariant.create({ data: { ...toVariantCreateData(variant, index), productId: id } });
+          }
         }
       }
+    });
+  } catch (err) {
+    // Same race as createProduct — the ensureUniqueSlug check above isn't atomic with the write.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const target = err.meta?.target;
+      const field = Array.isArray(target) ? target.join(", ") : "slug or SKU";
+      throw AppError.conflict(`A product with this ${field} already exists`);
     }
-  });
+    throw err;
+  }
 
   await invalidateCache();
 

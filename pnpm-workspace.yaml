@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Forces every transitive resolution (including nested inside next's own dependency tree) to a
+# patched version — postcss/sharp had known-vulnerable transitive copies bundled via next@15.
+overrides:
+  postcss: ^8.5.18
+  sharp: ^0.35.0
+  next>sharp: ^0.35.0
+  next>postcss: ^8.5.18

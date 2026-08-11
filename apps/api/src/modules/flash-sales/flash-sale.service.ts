@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { AddFlashSaleItemInput, CreateFlashSaleInput, UpdateFlashSaleInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix } from "../../config/redis";
@@ -8,12 +9,43 @@ const include = {
   items: { include: { product: { include: { images: { orderBy: { sortOrder: "asc" as const }, take: 1 } } } } },
 };
 
+// Public homepage feed only — excludes the same internal-only Product fields as
+// product.service.ts's PUBLIC_PRODUCT_SELECT (costPrice/taxRate have no storefront consumer and
+// shouldn't reach anonymous visitors). An explicit `select` rather than Prisma's lighter-weight
+// `omit` API, since `omit` needs a preview client feature this project doesn't enable.
+const PUBLIC_PRODUCT_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  shortDescription: true,
+  sortOrder: true,
+  categoryId: true,
+  brand: true,
+  brandTier: true,
+  basePrice: true,
+  compareAtPrice: true,
+  trackInventory: true,
+  lowStockThreshold: true,
+  restockDate: true,
+  isActive: true,
+  isFeatured: true,
+  seoTitle: true,
+  seoDescription: true,
+  deletedAt: true,
+  avgRating: true,
+  reviewCount: true,
+  createdAt: true,
+  updatedAt: true,
+  category: true,
+  variants: true,
+  images: { orderBy: { sortOrder: "asc" as const } },
+} as const;
+
 const fullProductInclude = {
   items: {
     include: {
-      product: {
-        include: { category: true, variants: true, images: { orderBy: { sortOrder: "asc" as const } } },
-      },
+      product: { select: PUBLIC_PRODUCT_SELECT },
     },
   },
 };
@@ -66,6 +98,7 @@ export async function getFlashSaleById(id: string) {
 
 export async function createFlashSale(input: CreateFlashSaleInput) {
   const flashSale = await prisma.flashSale.create({ data: input, include });
+  await invalidateProductCache();
   return flashSale;
 }
 
@@ -93,7 +126,14 @@ export async function addFlashSaleItem(flashSaleId: string, input: AddFlashSaleI
   });
   if (existing) throw AppError.conflict("This product is already in the flash sale");
 
-  await prisma.flashSaleItem.create({ data: { ...input, flashSaleId } });
+  try {
+    await prisma.flashSaleItem.create({ data: { ...input, flashSaleId } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw AppError.conflict("This product is already in the flash sale");
+    }
+    throw err;
+  }
   await invalidateProductCache();
   return getFlashSaleById(flashSaleId);
 }

@@ -51,7 +51,7 @@ function ResetPasswordForm() {
         <h1 className="mb-1 font-display text-2xl text-ink-900">Invalid link</h1>
         <p className="text-sm text-ink-500">
           This reset link is missing its token. Please request a new one from the{" "}
-          <Link href="/account/forgot-password" className="text-brass-600 underline hover:text-brass-500">
+          <Link href="/account/forgot-password" className="text-ink-700 underline hover:text-ink-900">
             forgot password
           </Link>{" "}
           page.

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { X, ShoppingBag } from "lucide-react";
 import { useCartStore } from "@/store/cart";
+import { useCartDrawerStore } from "@/store/cart-drawer";
 
 const REMINDER_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes of inactivity
 const DISMISSED_KEY = "cart-reminder-dismissed";
@@ -13,6 +13,7 @@ const DISMISSED_KEY = "cart-reminder-dismissed";
 export function CartReminderBanner() {
   const items = useCartStore((s) => s.items);
   const lastActivityAt = useCartStore((s) => s.lastActivityAt);
+  const openCartDrawer = useCartDrawerStore((s) => s.open);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -30,6 +31,11 @@ export function CartReminderBanner() {
     window.sessionStorage.setItem(DISMISSED_KEY, "1");
   }
 
+  function viewCart() {
+    dismiss();
+    openCartDrawer();
+  }
+
   if (!visible) return null;
 
   return (
@@ -41,9 +47,9 @@ export function CartReminderBanner() {
       <ShoppingBag size={18} className="shrink-0 text-brass-500" />
       <p className="flex-1 text-sm text-ink-700">
         Still interested?{" "}
-        <Link href="/cart" onClick={dismiss} className="font-medium underline hover:text-brass-600">
+        <button type="button" onClick={viewCart} className="font-medium underline hover:text-brass-600">
           Your cart is waiting
-        </Link>
+        </button>
       </p>
       <button onClick={dismiss} aria-label="Dismiss" className="shrink-0 text-ink-400 hover:text-ink-700">
         <X size={16} />

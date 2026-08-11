@@ -2,10 +2,19 @@
 
 import { useState, type FormEvent } from "react";
 import { subscribeNewsletter } from "@/lib/api/newsletter";
-import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
-export function NewsletterForm({ variant = "dark" }: { variant?: "dark" | "light" }) {
+interface NewsletterFormProps {
+  variant?: "dark" | "light";
+  /** Stack the input above the button instead of side-by-side — for narrow containers (e.g. one
+   * column of a multi-column footer grid) where a side-by-side row has no room to breathe and
+   * would otherwise overflow its container (a flex/grid item's default min-width is its content's
+   * min-content size, not 0, so a row this wide doesn't just shrink to fit on its own). */
+  stacked?: boolean;
+  className?: string;
+}
+
+export function NewsletterForm({ variant = "dark", stacked = false, className }: NewsletterFormProps) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
 
@@ -31,8 +40,8 @@ export function NewsletterForm({ variant = "dark" }: { variant?: "dark" | "light
   }
 
   return (
-    <div className="max-w-sm">
-      <form onSubmit={onSubmit} className="flex min-w-0 gap-2">
+    <div className={cn("min-w-0 max-w-sm", className)}>
+      <form onSubmit={onSubmit} className={cn("flex min-w-0 gap-2", stacked && "flex-col")}>
         <input
           type="email"
           required
@@ -50,7 +59,8 @@ export function NewsletterForm({ variant = "dark" }: { variant?: "dark" | "light
           type="submit"
           disabled={status === "loading"}
           className={cn(
-            "glossy h-10 shrink-0 rounded-full px-4 text-xs uppercase tracking-wide shadow-sm transition-all duration-200 ease-smooth active:scale-95 disabled:opacity-50 disabled:active:scale-100",
+            "glossy h-10 rounded-full px-4 text-xs uppercase tracking-wide shadow-sm transition-all duration-200 ease-smooth active:scale-95 disabled:opacity-50 disabled:active:scale-100",
+            stacked ? "w-full" : "shrink-0",
             variant === "dark" ? "bg-brass-400 text-ink-900 hover:bg-brass-500" : "bg-ink-900 text-cream-50 hover:bg-ink-800",
           )}
         >

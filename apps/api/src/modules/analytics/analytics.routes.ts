@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { trackPageViewSchema } from "@clothing-brand/shared";
+import { trackPageViewSchema, analyticsQuerySchema } from "@clothing-brand/shared";
 import { requireAdmin } from "../../middlewares/require-admin";
 import { validate } from "../../middlewares/validate";
 import { trackingRateLimit } from "../../middlewares/rate-limit";
@@ -16,7 +16,7 @@ analyticsRouter.post(
   analyticsController.trackPageView,
 );
 
-analyticsRouter.use(requireAdmin);
+analyticsRouter.use(requireAdmin, validate(analyticsQuerySchema, "query"));
 analyticsRouter.get("/summary", analyticsController.summary);
 analyticsRouter.get("/revenue", analyticsController.revenueSeries);
 analyticsRouter.get("/order-status", analyticsController.orderStatusCounts);

@@ -15,3 +15,14 @@ export const trackPageViewSchema = z.object({
 });
 
 export type TrackPageViewInput = z.infer<typeof trackPageViewSchema>;
+
+/** Shared by every admin analytics GET endpoint that takes a lookback window and/or a result cap
+ * — bounded so an admin session (compromised or otherwise) can't force an unbounded SQL LIMIT or
+ * an absurdly wide date-range aggregation. Both optional since not every endpoint uses both, and
+ * each controller applies its own default when omitted. */
+export const analyticsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export type AnalyticsQuery = z.infer<typeof analyticsQuerySchema>;

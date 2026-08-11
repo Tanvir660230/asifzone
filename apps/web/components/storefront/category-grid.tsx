@@ -22,15 +22,19 @@ export function CategoryGrid({ categories }: { categories: CategoryTreeNode[] })
   return (
     <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
       <h2 className="mb-8 text-center font-display text-2xl text-ink-900">Shop by Category</h2>
+      {/* flex-wrap + fixed-fraction card widths instead of a CSS grid — a grid with only a
+          handful of categories leaves the unused columns as dead empty space pinned to one side;
+          flex-wrap collapses and centers the same row instead, so a small catalog still reads as
+          a deliberate, finished layout rather than an unfinished one. */}
       <motion.div
         variants={container}
         initial="hidden"
         whileInView="show"
         viewport={{ once: true, margin: "-60px" }}
-        className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4"
+        className="flex flex-wrap justify-center gap-4"
       >
         {categories.map((cat) => (
-          <motion.div key={cat.id} variants={item}>
+          <motion.div key={cat.id} variants={item} className="w-[calc(50%-8px)] sm:w-[calc(33.333%-11px)] lg:w-[calc(25%-12px)]">
             <Link href={`/category/${cat.slug}`} className="group relative block aspect-[4/5] overflow-hidden rounded bg-ink-100">
               {cat.imageUrl ? (
                 <Image
@@ -41,10 +45,10 @@ export function CategoryGrid({ categories }: { categories: CategoryTreeNode[] })
                   className="object-cover transition-transform duration-500 group-hover:scale-105"
                 />
               ) : (
-                // No category photo uploaded yet — a branded ink/brass gradient reads as a
-                // deliberate placeholder rather than a broken image. Name isn't repeated here
-                // since the bottom label already shows it.
-                <div className="h-full bg-gradient-to-br from-ink-700 via-ink-800 to-ink-950 transition-transform duration-500 group-hover:scale-105" />
+                // No category photo uploaded yet — a flat ink tile reads as a deliberate
+                // placeholder rather than a broken image. Name isn't repeated here since the
+                // bottom label already shows it.
+                <div className="h-full bg-ink-950 transition-transform duration-500 group-hover:scale-105" />
               )}
               <div className="absolute inset-0 flex items-end bg-gradient-to-t from-ink-950/60 to-transparent p-4">
                 <span className="text-sm uppercase tracking-wide text-cream-50">{cat.name}</span>

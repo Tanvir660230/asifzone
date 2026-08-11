@@ -28,3 +28,13 @@ export function uploadFavicon(file: File) {
     isFormData: true,
   });
 }
+
+export function uploadPaymentMethodsImage(file: File) {
+  const formData = new FormData();
+  formData.append("image", file);
+  return apiFetch<{ url: string }>("/api/settings/upload-payment-methods-image", {
+    method: "POST",
+    body: formData,
+    isFormData: true,
+  });
+}

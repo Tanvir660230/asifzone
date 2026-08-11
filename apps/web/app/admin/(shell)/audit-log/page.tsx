@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/admin/page-header";
+import { SettingsSubNav } from "@/components/admin/settings-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Pagination } from "@/components/admin/pagination";
 import * as auditApi from "@/lib/api/audit";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
@@ -38,6 +40,7 @@ export default function AuditLogPage() {
     return (
       <div>
         <PageHeader title="Audit Log" />
+        <SettingsSubNav />
         <p className="text-sm text-ink-500">Only store owners can review the audit log.</p>
       </div>
     );
@@ -46,12 +49,13 @@ export default function AuditLogPage() {
   return (
     <div>
       <PageHeader title="Audit Log" />
+      <SettingsSubNav />
       <p className="-mt-3 mb-4 text-sm text-ink-500">
         Every create, update, delete, restore, and bulk action taken in this admin panel, with who did it and when.
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <div className="overflow-x-auto">
+        <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
@@ -87,7 +91,7 @@ export default function AuditLogPage() {
             ))}
           </tbody>
         </table>
-        </div>
+        </HScrollShadow>
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />

@@ -18,6 +18,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile } from "@/components/admin/stat-tile";
 import { PageHeader } from "@/components/admin/page-header";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { RevenueChart } from "@/components/admin/revenue-chart";
 import { TopProductsChart } from "@/components/admin/top-products-chart";
 import { OrderStatusBreakdown } from "@/components/admin/order-status-breakdown";
@@ -26,7 +27,12 @@ import { RankedBarList } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { computeTrendPct, formatPrice } from "@/lib/format";
 
+function firstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] ?? fullName;
+}
+
 export default function DashboardPage() {
+  const { data: currentAdmin } = useCurrentAdmin();
   const { data: summary } = useQuery({ queryKey: ["analytics-summary"], queryFn: analyticsApi.getSummary });
   const { data: revenue } = useQuery({ queryKey: ["analytics-revenue"], queryFn: () => analyticsApi.getRevenueSeries(30) });
   const { data: statusCounts } = useQuery({ queryKey: ["analytics-status"], queryFn: analyticsApi.getOrderStatusCounts });
@@ -50,7 +56,10 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Dashboard" />
+      <PageHeader
+        title="Dashboard"
+        description={currentAdmin ? `Welcome back, ${firstName(currentAdmin.admin.name)}.` : undefined}
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile

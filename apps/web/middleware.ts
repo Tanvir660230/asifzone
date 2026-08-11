@@ -42,7 +42,10 @@ export async function middleware(req: NextRequest) {
     }
 
     const isLoginPage = pathname === "/admin/login";
-    const hasSession = req.cookies.has("access_token");
+    // refresh_token outlives access_token (7d vs 15m) — treating either as "has a session" avoids
+    // bouncing to login on navigation right after the access token's short expiry, before the
+    // client gets a chance to silently refresh it (see apiFetch in lib/api-client.ts).
+    const hasSession = req.cookies.has("access_token") || req.cookies.has("refresh_token");
 
     if (!isLoginPage && !hasSession) {
       const loginUrl = new URL("/admin/login", req.url);
@@ -70,7 +73,8 @@ export async function middleware(req: NextRequest) {
       pathname === "/account/register" ||
       pathname === "/account/forgot-password" ||
       pathname === "/account/reset-password";
-    const hasSession = req.cookies.has("customer_access_token");
+    const hasSession =
+      req.cookies.has("customer_access_token") || req.cookies.has("customer_refresh_token");
 
     if (!isAuthPage && !hasSession) {
       const loginUrl = new URL("/account/login", req.url);

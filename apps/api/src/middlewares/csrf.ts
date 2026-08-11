@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError } from "../lib/app-error";
 import { CUSTOMER_ACCESS_COOKIE } from "../lib/cookies";
+import { constantTimeEqual } from "../lib/token-hash";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -18,7 +19,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   const cookieToken = req.cookies?.csrf_token as string | undefined;
   const headerToken = req.headers["x-csrf-token"] as string | undefined;
 
-  if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+  if (!cookieToken || !headerToken || !constantTimeEqual(cookieToken, headerToken)) {
     return next(AppError.forbidden("Invalid or missing CSRF token"));
   }
   next();

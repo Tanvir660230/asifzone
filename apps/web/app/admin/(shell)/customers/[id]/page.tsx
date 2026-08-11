@@ -47,7 +47,7 @@ export default function CustomerDetailPage() {
         <div>
           <h1 className="font-display text-2xl text-ink-900">{customer.name}</h1>
           <p className="text-sm text-ink-500">
-            {customer.email} · Joined {new Date(customer.createdAt).toLocaleDateString()}
+            {customer.email ?? "No email"} · Joined {new Date(customer.createdAt).toLocaleDateString()}
           </p>
         </div>
         <button onClick={() => router.push("/admin/customers")} className="text-sm text-ink-500 hover:text-ink-900">
@@ -62,7 +62,7 @@ export default function CustomerDetailPage() {
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-ink-700">
             <p>Name: {customer.name}</p>
-            <p>Email: {customer.email}</p>
+            <p>Email: {customer.email ?? "—"}</p>
             <p>Phone: {customer.phone ?? "—"}</p>
             <p>Total spent: <span className="font-medium text-ink-900">{formatPrice(customer.totalSpent)}</span></p>
           </CardContent>
@@ -75,7 +75,7 @@ export default function CustomerDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="text-2xl font-display text-ink-900">{customer.rewardPoints.toLocaleString()}</p>
+            <p className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{customer.rewardPoints.toLocaleString()}</p>
             <div className="flex items-center gap-2">
               <Input
                 type="number"

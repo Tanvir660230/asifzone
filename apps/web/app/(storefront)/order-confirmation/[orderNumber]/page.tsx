@@ -70,7 +70,7 @@ export default function OrderConfirmationPage() {
             <Label htmlFor="phone">Phone number</Label>
             <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" />
           </div>
-          {error && <p className="text-sm text-red-700">{error}</p>}
+          {error && <p className="text-sm text-danger-600">{error}</p>}
           <Button type="submit" variant="brass" className="w-full">
             View order
           </Button>

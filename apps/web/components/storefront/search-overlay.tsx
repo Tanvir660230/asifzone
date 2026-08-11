@@ -375,7 +375,23 @@ export function SearchOverlay() {
                 </ul>
               )}
               {suggestions.products.length === 0 && suggestions.predictions.length === 0 && (
-                <p className="px-4 py-6 text-center text-sm text-ink-400">No matches yet — try “see all results” below.</p>
+                <div className="px-4 py-6 text-center text-sm text-ink-400">
+                  {suggestions.didYouMean ? (
+                    <p>
+                      No matches — did you mean{" "}
+                      <button
+                        type="button"
+                        onClick={() => submitSearch(suggestions.didYouMean!)}
+                        className="font-medium text-ink-700 underline underline-offset-2 hover:text-brass-600"
+                      >
+                        &ldquo;{suggestions.didYouMean}&rdquo;
+                      </button>
+                      ?
+                    </p>
+                  ) : (
+                    <p>No matches yet — try &ldquo;see all results&rdquo; below.</p>
+                  )}
+                </div>
               )}
               <button
                 type="button"

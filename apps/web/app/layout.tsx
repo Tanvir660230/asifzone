@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
+import { Inter, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { getSiteSettingsSafe } from "@/lib/api/storefront";
@@ -22,14 +22,35 @@ const playfairDisplay = Playfair_Display({
   weight: ["400", "500", "600", "700", "800"],
 });
 
+// Covers Bengali text/glyphs (e.g. the ৳ sign) that Inter and Playfair Display don't,
+// so the browser falls back to it per-glyph instead of an inconsistent system font.
+const notoSansBengali = Noto_Sans_Bengali({
+  subsets: ["bengali"],
+  variable: "--font-bn",
+  display: "swap",
+  weight: "variable",
+});
+
 export async function generateMetadata(): Promise<Metadata> {
   const { settings } = await getSiteSettingsSafe();
   const siteUrl = getSiteUrl();
   return {
+    metadataBase: new URL(siteUrl),
     title: { default: settings.storeName, template: `%s | ${settings.storeName}` },
     description: settings.tagline ?? undefined,
     alternates: { canonical: siteUrl },
-    icons: settings.faviconUrl ? { icon: settings.faviconUrl } : undefined,
+    // Omit the key entirely (rather than `icon: undefined`) when no admin favicon is set, so
+    // Next.js falls back to the static app/icon.png, apple-icon.png, and favicon.ico convention
+    // files instead of resolving an empty icons object.
+    ...(settings.faviconUrl
+      ? {
+          icons: {
+            icon: [{ url: settings.faviconUrl, sizes: "512x512", type: "image/png" }],
+            apple: [{ url: settings.faviconUrl, sizes: "512x512", type: "image/png" }],
+          },
+        }
+      : {}),
+    verification: settings.googleSiteVerification ? { google: settings.googleSiteVerification } : undefined,
     ...buildOpenGraph({
       title: settings.storeName,
       description: settings.tagline ?? undefined,
@@ -47,17 +68,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const websiteJsonLd = buildWebsiteJsonLd(settings, siteUrl);
 
   return (
-    <html lang="en" className={`${inter.variable} ${playfairDisplay.variable}`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${playfairDisplay.variable} ${notoSansBengali.variable}`}
+    >
       <body>
         <link rel="preconnect" href={env.apiUrl} />
         <script
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         <script
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
         <PageViewTracker />

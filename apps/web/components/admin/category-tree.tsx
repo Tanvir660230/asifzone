@@ -8,7 +8,9 @@ import {
   KeyboardSensor,
   useSensor,
   useSensors,
+  useDroppable,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -47,16 +49,19 @@ interface CategoryTreeProps {
   onDelete: (category: Category) => void;
   onAddChild: (parentId: string) => void;
   onReorder: (parentId: string | null, orderedIds: string[]) => void;
+  onMove: (id: string, newParentId: string, sortOrder: number) => void;
 }
 
-/** Nested drag-to-reorder category tree. Dragging is scoped to one sibling group at a time —
- * dropping a category onto a row from a different parent is a no-op rather than a silent
- * reparent, since reparenting is a deliberate action that already lives in the edit form (which
- * guards against creating a cycle). */
-export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onAddChild, onReorder }: CategoryTreeProps) {
+/** Nested drag-to-reorder category tree. Dragging a row onto another row (in the same or a
+ * different sibling group) reorders it in place; dropping it onto a category's dedicated
+ * "child zone" (its own droppable region, shown only while dragging, highlighted on hover)
+ * moves it to become that category's child instead — this is how a category is reparented, e.g.
+ * moving "Cap" out of "Accessories" and into "Men" by dropping it on Men's child zone. */
+export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onAddChild, onReorder, onMove }: CategoryTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(categories.filter((c) => !c.parentId).map((c) => c.id)),
   );
+  const [activeId, setActiveId] = useState<string | null>(null);
   const byParent = groupByParent(categories);
   const topLevel = byParent.get(null) ?? [];
 
@@ -74,20 +79,38 @@ export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onA
     });
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(event.active.id as string);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    setActiveId(null);
+    if (!over) return;
+
+    const overData = over.data.current as { isChildZone?: boolean; parentId: string | null } | undefined;
+
+    if (overData?.isChildZone) {
+      if (overData.parentId === active.id) return;
+      const destination = byParent.get(overData.parentId) ?? [];
+      onMove(active.id as string, overData.parentId as string, destination.length);
+      return;
+    }
+
+    if (active.id === over.id) return;
 
     const activeParent = (active.data.current as { parentId: string | null } | undefined)?.parentId ?? null;
-    const overParent = (over.data.current as { parentId: string | null } | undefined)?.parentId ?? null;
-    if (activeParent !== overParent) return;
-
-    const group = byParent.get(activeParent) ?? [];
-    const oldIndex = group.findIndex((c) => c.id === active.id);
+    const overParent = overData?.parentId ?? null;
+    const group = byParent.get(overParent) ?? [];
     const newIndex = group.findIndex((c) => c.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
 
-    onReorder(activeParent, arrayMove(group, oldIndex, newIndex).map((c) => c.id));
+    if (activeParent === overParent) {
+      const oldIndex = group.findIndex((c) => c.id === active.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+      onReorder(activeParent, arrayMove(group, oldIndex, newIndex).map((c) => c.id));
+    } else if (overParent) {
+      onMove(active.id as string, overParent, newIndex === -1 ? group.length : newIndex);
+    }
   }
 
   if (categories.length === 0) {
@@ -99,7 +122,10 @@ export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onA
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    // Explicit id: dnd-kit auto-generates aria-describedby ids from a render-order counter when
+    // none is given, which drifts between the server render and the client hydration pass in
+    // Next.js and throws a "Prop did not match" warning — a fixed id makes it deterministic.
+    <DndContext id="category-tree-dnd" sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="space-y-2">
         <SortableContext items={topLevel.map((c) => c.id)} strategy={verticalListSortingStrategy}>
           {topLevel.map((cat) => (
@@ -109,6 +135,7 @@ export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onA
               depth={0}
               byParent={byParent}
               expanded={expanded}
+              activeId={activeId}
               onToggleExpanded={toggleExpanded}
               onToggleActive={onToggleActive}
               onEdit={onEdit}
@@ -122,11 +149,36 @@ export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onA
   );
 }
 
+/** Droppable "move into this category" target — a distinct id/region from the category's own
+ * sortable row, so hovering the row itself still means "reorder among siblings" while hovering
+ * this strip means "reparent here." Only rendered while a drag is in progress. */
+function ChildDropZone({ category, activeId }: { category: Category; activeId: string | null }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `childzone:${category.id}`,
+    data: { isChildZone: true, parentId: category.id },
+  });
+
+  if (!activeId || activeId === category.id) return null;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "ml-6 mt-2 rounded-lg border border-dashed px-3 py-2 text-center text-xs transition-colors duration-150 ease-smooth",
+        isOver ? "border-brass-400 bg-brass-50 text-brass-700" : "border-ink-200 text-ink-400",
+      )}
+    >
+      Drop here to move into {category.name}
+    </div>
+  );
+}
+
 interface CategoryNodeProps {
   category: Category;
   depth: number;
   byParent: ByParent;
   expanded: Set<string>;
+  activeId: string | null;
   onToggleExpanded: (id: string) => void;
   onToggleActive: (category: Category, next: boolean) => void;
   onEdit: (category: Category) => void;
@@ -139,6 +191,7 @@ function CategoryNode({
   depth,
   byParent,
   expanded,
+  activeId,
   onToggleExpanded,
   onToggleActive,
   onEdit,
@@ -260,6 +313,8 @@ function CategoryNode({
         </div>
       </div>
 
+      <ChildDropZone category={category} activeId={activeId} />
+
       <AnimatePresence initial={false}>
         {hasChildren && isOpen && (
           <motion.div
@@ -278,6 +333,7 @@ function CategoryNode({
                     depth={depth + 1}
                     byParent={byParent}
                     expanded={expanded}
+                    activeId={activeId}
                     onToggleExpanded={onToggleExpanded}
                     onToggleActive={onToggleActive}
                     onEdit={onEdit}

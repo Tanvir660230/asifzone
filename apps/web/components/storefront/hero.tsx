@@ -7,8 +7,7 @@ const FALLBACK_TAGLINE = "Considered clothing, made to last";
 
 export function Hero({ tagline }: { tagline?: string | null }) {
   return (
-    <section className="relative flex h-[70vh] min-h-[420px] items-center justify-center overflow-hidden bg-gradient-to-b from-ink-800 via-ink-900 to-ink-950 text-center text-cream-50">
-      <div className="absolute inset-0 bg-gradient-to-b from-ink-950/50 via-transparent to-ink-950/40" />
+    <section className="relative flex h-[70vh] min-h-[420px] items-center justify-center overflow-hidden bg-ink-950 text-center text-cream-50">
       <div className="relative z-10 px-4">
         <motion.p
           initial={{ opacity: 0, y: 8 }}

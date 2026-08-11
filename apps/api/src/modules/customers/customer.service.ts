@@ -15,9 +15,12 @@ import type {
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
+import { paginate } from "../../lib/paginate";
 import { signCustomerAccessToken, signCustomerRefreshToken, verifyCustomerRefreshToken } from "../../lib/customer-jwt";
 import { sendMail } from "../../lib/mailer";
 import { sendSms } from "../../lib/sms";
+import { renderEmailLayout } from "../../lib/email-template";
+import { hashToken, signPayload, constantTimeEqual } from "../../lib/token-hash";
 import { env } from "../../config/env";
 import { getSettings } from "../settings/settings.service";
 
@@ -26,16 +29,17 @@ const EMAIL_VERIFICATION_TTL_MS = 60 * 60 * 1000;
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_MAX_ATTEMPTS = 5;
+// Requesting a fresh code creates a new PhoneOtp row with its own attempts counter starting at 0
+// — without a phone-level ceiling on top of the per-row one, resending resets the guess budget,
+// turning a "5 wrong guesses" limit into "5 per code, and codes are nearly free to request."
+const OTP_PHONE_LOCKOUT_WINDOW_MS = 30 * 60 * 1000;
+const OTP_PHONE_MAX_TOTAL_ATTEMPTS = 5;
 
 /** See apps/api/src/modules/auth/auth.service.ts for why this exists — same timing-side-channel fix,
  * applied to customer login. */
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("no-account-has-this-password", 10);
 
 const googleClient = env.google.clientId ? new OAuth2Client(env.google.clientId) : null;
-
-function hashToken(token: string) {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
 
 const publicSelect = {
   id: true,
@@ -44,6 +48,7 @@ const publicSelect = {
   emailVerifiedAt: true,
   phone: true,
   smsMarketingOptIn: true,
+  emailMarketingOptIn: true,
   rewardPoints: true,
   createdAt: true,
   updatedAt: true,
@@ -66,16 +71,74 @@ async function issueCustomerTokens(customerId: string) {
   };
 }
 
+/** Called from checkout (order.service.ts createOrder) for a guest — every order, phone-only or
+ * not, ends up tied to a real Customer row. Matches an existing customer (guest or already-real
+ * account, by either email or phone) before creating a new one, so a returning guest — or someone
+ * who already has an account but forgot to log in — gets recognized instead of duplicated. */
+export async function findOrCreateGuestCustomer(
+  name: string,
+  email: string | null,
+  phone: string,
+): Promise<string> {
+  const normalizedEmail = email ? normalizeEmail(email) : null;
+  const or: Prisma.CustomerWhereInput[] = [{ phone }];
+  if (normalizedEmail) or.push({ email: normalizedEmail });
+
+  const existing = await prisma.customer.findFirst({ where: { OR: or } });
+  if (existing) return existing.id;
+
+  try {
+    const created = await prisma.customer.create({
+      data: { name, email: normalizedEmail, phone },
+      select: { id: true },
+    });
+    return created.id;
+  } catch (err) {
+    // Two concurrent guest checkouts with the same new email/phone raced past the findFirst above —
+    // the loser here just reuses whichever row the winner created, same as the stock-decrement race
+    // handling in order.service.ts.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const race = await prisma.customer.findFirst({ where: { OR: or } });
+      if (race) return race.id;
+    }
+    throw err;
+  }
+}
+
+/** A customer row with neither a password nor a linked Google account isn't a real, log-in-able
+ * account yet — it's either a guest placeholder (see findOrCreateGuestCustomer) or a phone-OTP-only
+ * signup. Safe to silently claim (attach new credentials to) rather than reject as a duplicate. */
+function isClaimable(customer: { passwordHash: string | null; googleId: string | null }): boolean {
+  return !customer.passwordHash && !customer.googleId;
+}
+
 export async function registerCustomer(input: CustomerRegisterInput) {
   const email = normalizeEmail(input.email);
-  const existing = await prisma.customer.findUnique({ where: { email } });
-  if (existing) throw AppError.conflict("An account with this email already exists");
+  const existingByEmail = await prisma.customer.findUnique({ where: { email } });
+  if (existingByEmail && !isClaimable(existingByEmail)) {
+    throw AppError.conflict("An account with this email already exists");
+  }
 
+  // No email match — but a guest checkout may have already created a placeholder under this same
+  // phone number, which this registration should claim rather than duplicate.
+  const existingByPhone =
+    !existingByEmail && input.phone
+      ? await prisma.customer.findFirst({ where: { phone: input.phone, passwordHash: null, googleId: null } })
+      : null;
+
+  const target = existingByEmail ?? existingByPhone;
   const passwordHash = await bcrypt.hash(input.password, 10);
-  const customer = await prisma.customer.create({
-    data: { name: input.name, email, phone: input.phone ?? null, passwordHash },
-    select: publicSelect,
-  });
+
+  const customer = target
+    ? await prisma.customer.update({
+        where: { id: target.id },
+        data: { name: input.name, email, phone: input.phone ?? target.phone, passwordHash },
+        select: publicSelect,
+      })
+    : await prisma.customer.create({
+        data: { name: input.name, email, phone: input.phone ?? null, passwordHash },
+        select: publicSelect,
+      });
 
   // Best-effort: a transient email-provider hiccup should never block account creation, unlike
   // requestPasswordReset (a flow the customer explicitly retries) where letting it throw is fine.
@@ -209,9 +272,17 @@ export async function requestPasswordReset(email: string) {
 
   const resetUrl = `${env.webOrigin}/account/reset-password?token=${token}`;
   await sendMail({
-    to: customer.email,
+    // Non-null — customer was looked up by this exact email a few lines up.
+    to: customer.email!,
     subject: "Reset your password",
-    html: `<p>Click the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
+    html: renderEmailLayout({
+      bodyHtml: `
+        <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Reset your password</p>
+        <p style="margin:0;">We got a request to reset your password. This link expires in 1 hour — if you didn't ask for this, you can safely ignore it.</p>
+      `,
+      ctaLabel: "Reset password",
+      ctaUrl: resetUrl,
+    }),
   });
 }
 
@@ -239,7 +310,8 @@ export async function resetPassword(token: string, newPassword: string) {
 
 export async function sendVerificationEmail(customerId: string) {
   const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-  if (!customer || customer.emailVerifiedAt) return;
+  // A phone-only customer (no email on file) has nothing to verify.
+  if (!customer || customer.emailVerifiedAt || !customer.email) return;
 
   const token = crypto.randomBytes(32).toString("hex");
   await prisma.emailVerificationToken.create({
@@ -254,7 +326,14 @@ export async function sendVerificationEmail(customerId: string) {
   await sendMail({
     to: customer.email,
     subject: "Verify your email",
-    html: `<p>Click the link below to verify your email address. This link expires in 1 hour.</p><p><a href="${verifyUrl}">${verifyUrl}</a></p>`,
+    html: renderEmailLayout({
+      bodyHtml: `
+        <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Verify your email</p>
+        <p style="margin:0;">Confirm this is your email address to secure your account. This link expires in 1 hour.</p>
+      `,
+      ctaLabel: "Verify email",
+      ctaUrl: verifyUrl,
+    }),
   });
 }
 
@@ -325,6 +404,17 @@ function generateOtpCode(): string {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
 }
 
+/** Total wrong guesses this phone has racked up across every code issued to it in the lockout
+ * window — the real budget, since a single code's own `attempts` column resets to 0 on resend. */
+async function getRecentOtpAttempts(phone: string): Promise<number> {
+  const windowStart = new Date(Date.now() - OTP_PHONE_LOCKOUT_WINDOW_MS);
+  const result = await prisma.phoneOtp.aggregate({
+    where: { phone, createdAt: { gte: windowStart } },
+    _sum: { attempts: true },
+  });
+  return result._sum.attempts ?? 0;
+}
+
 export async function requestOtp(phone: string) {
   const recent = await prisma.phoneOtp.findFirst({
     where: { phone, consumedAt: null, expiresAt: { gt: new Date() } },
@@ -332,6 +422,10 @@ export async function requestOtp(phone: string) {
   });
   if (recent && Date.now() - recent.createdAt.getTime() < OTP_RESEND_COOLDOWN_MS) {
     throw AppError.badRequest("Please wait a moment before requesting another code");
+  }
+
+  if ((await getRecentOtpAttempts(phone)) >= OTP_PHONE_MAX_TOTAL_ATTEMPTS) {
+    throw AppError.badRequest("Too many incorrect attempts recently — please try again later");
   }
 
   const code = generateOtpCode();
@@ -349,6 +443,12 @@ export async function verifyOtp(input: VerifyOtpInput) {
   });
   if (!otp || otp.expiresAt < new Date()) throw AppError.badRequest("This code is invalid or has expired");
   if (otp.attempts >= OTP_MAX_ATTEMPTS) throw AppError.badRequest("Too many incorrect attempts — request a new code");
+  // Phone-level ceiling on top of the per-row one above — catches the case where this particular
+  // code's own attempts count is still under OTP_MAX_ATTEMPTS but the phone as a whole (across
+  // earlier codes in the same lockout window) has already used up its guess budget.
+  if ((await getRecentOtpAttempts(input.phone)) >= OTP_PHONE_MAX_TOTAL_ATTEMPTS) {
+    throw AppError.badRequest("Too many incorrect attempts recently — please try again later");
+  }
 
   if (otp.codeHash !== hashToken(input.code)) {
     await prisma.phoneOtp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
@@ -369,13 +469,23 @@ export async function verifyOtp(input: VerifyOtpInput) {
 
   if (!customer) {
     const email = normalizeEmail(input.email!);
-    if (await prisma.customer.findUnique({ where: { email } })) {
+    const existingByEmail = await prisma.customer.findUnique({ where: { email } });
+    if (existingByEmail && !isClaimable(existingByEmail)) {
       throw AppError.conflict("An account with this email already exists — sign in with email instead");
     }
-    customer = await prisma.customer.create({
-      data: { name: input.name!, email, phone: input.phone, emailVerifiedAt: new Date() },
-      select: publicSelect,
-    });
+    // A guest checkout may have already created a placeholder under this email (different phone,
+    // or no phone at all) — this phone number just proved ownership of *a* phone, not that email,
+    // so only claim rows with no existing credential of their own (see isClaimable).
+    customer = existingByEmail
+      ? await prisma.customer.update({
+          where: { id: existingByEmail.id },
+          data: { name: input.name!, phone: input.phone, emailVerifiedAt: existingByEmail.emailVerifiedAt ?? new Date() },
+          select: publicSelect,
+        })
+      : await prisma.customer.create({
+          data: { name: input.name!, email, phone: input.phone, emailVerifiedAt: new Date() },
+          select: publicSelect,
+        });
   }
 
   return { ...(await issueCustomerTokens(customer.id)), customer };
@@ -394,17 +504,17 @@ export async function listCustomersAdmin(query: CustomerListQuery) {
       }
     : {};
 
-  const [items, total] = await Promise.all([
-    prisma.customer.findMany({
-      where,
-      select: { ...publicSelect, _count: { select: { orders: true, wishlistItems: true } } },
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.customer.count({ where }),
-  ]);
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) =>
+      prisma.customer.findMany({
+        where,
+        select: { ...publicSelect, _count: { select: { orders: true, wishlistItems: true } } },
+        orderBy: { createdAt: "desc" },
+        ...p,
+      }),
+    () => prisma.customer.count({ where }),
+  );
 }
 
 export async function getCustomerDetailAdmin(customerId: string) {
@@ -464,31 +574,20 @@ export async function adjustRewardPoints(customerId: string, points: number, rea
 
 export async function listCustomerOrders(customerId: string, query: PaginationQuery) {
   const where = { customerId };
-  const [items, total] = await Promise.all([
-    prisma.order.findMany({
-      where,
-      include: { items: true },
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.order.count({ where }),
-  ]);
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) => prisma.order.findMany({ where, include: { items: true }, orderBy: { createdAt: "desc" }, ...p }),
+    () => prisma.order.count({ where }),
+  );
 }
 
 export async function listMyPointsLedger(customerId: string, query: PaginationQuery) {
   const where = { customerId };
-  const [items, total] = await Promise.all([
-    prisma.rewardPointsEntry.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.rewardPointsEntry.count({ where }),
-  ]);
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) => prisma.rewardPointsEntry.findMany({ where, orderBy: { createdAt: "desc" }, ...p }),
+    () => prisma.rewardPointsEntry.count({ where }),
+  );
 }
 
 // --- push subscriptions ---
@@ -513,4 +612,29 @@ export async function subscribeToPush(customerId: string, input: PushSubscribeIn
 
 export async function unsubscribeFromPush(customerId: string, endpoint: string) {
   await prisma.pushSubscription.deleteMany({ where: { customerId, endpoint } });
+}
+
+// --- email marketing unsubscribe ---
+
+/** Stateless (no DB row, never expires) so a years-old campaign email's unsubscribe link still
+ * works — recomputed and compared on click rather than looked up. */
+export function generateEmailUnsubscribeToken(customerId: string): string {
+  return signPayload(customerId, env.jwtCustomerAccessSecret);
+}
+
+/** One click turns off both switches a marketing email could have come from: the account-level
+ * consent flag (gates future Campaign sends, see campaign.service.ts's dispatchToRecipient) and,
+ * if the same email is also on the separate newsletter list, that row too — a customer clicking
+ * "unsubscribe" means "stop all marketing email", not "stop exactly one of the two lists". */
+export async function unsubscribeFromEmailMarketing(customerId: string, token: string): Promise<void> {
+  const expected = generateEmailUnsubscribeToken(customerId);
+  if (!constantTimeEqual(token, expected)) throw AppError.badRequest("Invalid or expired unsubscribe link");
+
+  const customer = await prisma.customer.findUnique({ where: { id: customerId }, select: { email: true } });
+  if (!customer) throw AppError.notFound("Account not found");
+
+  await prisma.customer.update({ where: { id: customerId }, data: { emailMarketingOptIn: false } });
+  if (customer.email) {
+    await prisma.newsletterSubscriber.deleteMany({ where: { email: customer.email } });
+  }
 }

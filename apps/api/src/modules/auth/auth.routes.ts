@@ -4,6 +4,8 @@ import {
   createAdminInviteSchema,
   acceptAdminInviteSchema,
   updateAdminActiveSchema,
+  updateAdminSchema,
+  setAdminPasswordSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requireRole } from "../../middlewares/require-admin";
@@ -17,6 +19,8 @@ import {
   sessions,
   listAdmins,
   setAdminActive,
+  updateAdmin,
+  setAdminPassword,
   listAdminInvites,
   createAdminInvite,
   revokeAdminInvite,
@@ -41,6 +45,14 @@ authRouter.patch(
   requireRole("OWNER"),
   validate(updateAdminActiveSchema),
   setAdminActive,
+);
+authRouter.patch("/admins/:id", requireAdmin, requireRole("OWNER"), validate(updateAdminSchema), updateAdmin);
+authRouter.patch(
+  "/admins/:id/password",
+  requireAdmin,
+  requireRole("OWNER"),
+  validate(setAdminPasswordSchema),
+  setAdminPassword,
 );
 authRouter.get("/admin-invites", requireAdmin, requireRole("OWNER"), listAdminInvites);
 authRouter.post(

@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Playfair Display's "&" is an ornate italic swash that reads as broken/off at heading sizes.
+   This unicode-range trick pulls just that one glyph from a plain system serif instead — every
+   other character in font-display headings still renders in Playfair, untouched. */
+@font-face {
+  font-family: "Ampersand Fix";
+  src:
+    local("Georgia"),
+    local("Times New Roman"),
+    local("Noto Serif"),
+    local("Arial");
+  unicode-range: U+0026;
+}
+
 body {
   @apply bg-cream-100 text-ink-900 antialiased;
 }
@@ -25,7 +38,7 @@ body {
   /* Sitewide keyboard-focus ring — every interactive element gets a visible, on-brand outline
      instead of relying on (or suppressing) the browser default. */
   :focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-brass-400;
+    @apply outline outline-2 outline-offset-2 outline-ink-900;
   }
 
   html {
@@ -33,7 +46,7 @@ body {
   }
 
   ::selection {
-    @apply bg-brass-200 text-ink-900;
+    @apply bg-ink-200 text-ink-900;
   }
 
   /* Thin, low-contrast scrollbars read as more considered than the chunky OS default —

@@ -34,6 +34,16 @@ export const updateSettingsSchema = z.object({
     z.number().min(0).max(100).nullable().optional(),
   ),
   rewardPointsPerCurrency: optionalNonNegativeNumber(),
+  whatsappMessage: nullableString(500),
+  whatsappLabel: z.string().min(1).max(40).optional(),
+  callEnabled: z.boolean().optional(),
+  callLabel: z.string().min(1).max(40).optional(),
+  liveChatEnabled: z.boolean().optional(),
+  liveChatLabel: z.string().min(1).max(40).optional(),
+  tawkPropertyId: nullableString(60),
+  tawkWidgetId: nullableString(60),
+  paymentMethodsImageUrl: nullableUrl(),
+  googleSiteVerification: nullableString(255),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

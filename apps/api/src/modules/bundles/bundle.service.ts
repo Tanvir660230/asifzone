@@ -1,6 +1,7 @@
 import type { CreateBundleInput, UpdateBundleInput, BundleListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
+import { paginate } from "../../lib/paginate";
 import { getRecommendedByCategories } from "../products/product.service";
 
 const include = {
@@ -9,17 +10,11 @@ const include = {
 };
 
 export async function listBundles(query: BundleListQuery) {
-  const [items, total] = await Promise.all([
-    prisma.bundle.findMany({
-      include,
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.bundle.count(),
-  ]);
-
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) => prisma.bundle.findMany({ include, orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }], ...p }),
+    () => prisma.bundle.count(),
+  );
 }
 
 export async function getBundleById(id: string) {

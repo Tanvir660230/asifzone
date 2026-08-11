@@ -1,8 +1,8 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
-import { prisma } from "../../config/prisma";
 import * as orderService from "./order.service";
 import { initSslcommerzSession } from "../payments/sslcommerz.service";
+import { bookOrderWithSteadfast, refreshSteadfastStatus } from "../courier/courier.service";
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null);
@@ -21,7 +21,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
       customerAddress: order.shippingAddressLine,
     });
 
-    await prisma.order.update({ where: { id: order.id }, data: { paymentSessionKey: sessionKey } });
+    await orderService.setPaymentSessionKey(order.id, sessionKey);
     res.status(201).json({ order, gatewayUrl });
   } catch (err) {
     await orderService.cancelUnstartedOrder(order.id);
@@ -50,4 +50,20 @@ export const updateStatus = asyncHandler(async (req: Request, res: Response) => 
 
 export const updateDetails = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.updateOrderDetails(req.params.id!, req.body) });
+});
+
+export const remove = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.deleteOrder(req.params.id!, req.admin!.adminId) });
+});
+
+export const restore = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.restoreOrder(req.params.id!) });
+});
+
+export const bookCourier = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await bookOrderWithSteadfast(req.params.id!) });
+});
+
+export const refreshCourier = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await refreshSteadfastStatus(req.params.id!) });
 });

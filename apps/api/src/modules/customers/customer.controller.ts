@@ -155,6 +155,11 @@ export const resendVerification = asyncHandler(async (req: Request, res: Respons
   res.json({ message: "Verification email sent." });
 });
 
+export const unsubscribeEmail = asyncHandler(async (req: Request, res: Response) => {
+  await customerService.unsubscribeFromEmailMarketing(req.body.customerId, req.body.token);
+  res.json({ message: "You've been unsubscribed from marketing emails." });
+});
+
 // --- admin ---
 
 export const listCustomersAdmin = asyncHandler(async (req: Request, res: Response) => {

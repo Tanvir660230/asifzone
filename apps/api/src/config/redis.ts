@@ -48,10 +48,18 @@ export async function cacheDel(...keys: string[]): Promise<void> {
   }
 }
 
+/** SCAN, not KEYS — KEYS walks the entire keyspace in one blocking call, which stalls every other
+ * Redis client (this cache is shared by every module) for however long that takes; SCAN does the
+ * same walk in small non-blocking increments via a cursor. Cost is the same either way, but SCAN
+ * doesn't freeze the server while paying it. */
 export async function cacheDelByPrefix(prefix: string): Promise<void> {
   try {
-    const keys = await redis.keys(`${prefix}*`);
-    if (keys.length) await redis.del(...keys);
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
+      cursor = nextCursor;
+      if (keys.length) await redis.del(...keys);
+    } while (cursor !== "0");
   } catch {
     // best-effort
   }

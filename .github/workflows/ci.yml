@@ -169,6 +169,12 @@ jobs:
           echo "RESEND_FROM_ADDRESS=${{ secrets.RESEND_FROM_ADDRESS }}" >> docker.env
           echo "BULKSMSBD_API_KEY=${{ secrets.BULKSMSBD_API_KEY }}" >> docker.env
           echo "BULKSMSBD_SENDER_ID=${{ secrets.BULKSMSBD_SENDER_ID }}" >> docker.env
+          # Optional — the web push opt-in toggle (both sending from the api and subscribing from
+          # the web build's NEXT_PUBLIC_VAPID_PUBLIC_KEY, see docker-compose.yml) stays hidden while
+          # this is empty. Generate a pair with `npx web-push generate-vapid-keys`.
+          echo "WEB_PUSH_PUBLIC_KEY=${{ secrets.WEB_PUSH_PUBLIC_KEY }}" >> docker.env
+          echo "WEB_PUSH_PRIVATE_KEY=${{ secrets.WEB_PUSH_PRIVATE_KEY }}" >> docker.env
+          echo "WEB_PUSH_CONTACT_EMAIL=${{ secrets.WEB_PUSH_CONTACT_EMAIL }}" >> docker.env
 
       - name: Transfer to VPS
         run: |

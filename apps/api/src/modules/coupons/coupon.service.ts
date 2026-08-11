@@ -2,11 +2,18 @@ import { Prisma } from "@prisma/client";
 import type { CouponListQuery, CreateCouponInput, UpdateCouponInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
+import { paginate } from "../../lib/paginate";
 
 export interface CouponEvaluation {
   coupon: Awaited<ReturnType<typeof findActiveCoupon>>;
   discount: number;
 }
+
+// findBestCoupon/listActiveCoupons scan every active, non-expired coupon in application code (the
+// "best fit" and usage-limit checks aren't expressible as a single WHERE) — fine at realistic
+// coupon-catalog sizes, but capped so a runaway number of active coupons can't turn either into an
+// unbounded full-table load.
+const MAX_ACTIVE_COUPONS_SCANNED = 500;
 
 async function findActiveCoupon(code: string) {
   return prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
@@ -42,6 +49,8 @@ export async function findBestCoupon(subtotal: number) {
   const now = new Date();
   const candidates = await prisma.coupon.findMany({
     where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    orderBy: { createdAt: "desc" },
+    take: MAX_ACTIVE_COUPONS_SCANNED,
   });
 
   let best: { coupon: (typeof candidates)[number]; discount: number } | null = null;
@@ -79,6 +88,7 @@ export async function listActiveCoupons() {
   const candidates = await prisma.coupon.findMany({
     where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
     orderBy: { createdAt: "desc" },
+    take: MAX_ACTIVE_COUPONS_SCANNED,
   });
   return candidates.filter((c) => c.usageLimit === null || c.usedCount < c.usageLimit);
 }
@@ -90,17 +100,11 @@ export async function listCoupons(query: CouponListQuery) {
     ? { code: { contains: query.search, mode: "insensitive" as const } }
     : {};
 
-  const [items, total] = await Promise.all([
-    prisma.coupon.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.coupon.count({ where }),
-  ]);
-
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) => prisma.coupon.findMany({ where, orderBy: { createdAt: "desc" }, ...p }),
+    () => prisma.coupon.count({ where }),
+  );
 }
 
 export async function getCouponById(id: string) {

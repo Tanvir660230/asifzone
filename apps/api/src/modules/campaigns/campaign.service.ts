@@ -2,15 +2,37 @@ import { Queue } from "bullmq";
 import type { Customer, Campaign } from "@prisma/client";
 import type { CampaignListQuery, CreateCampaignInput, SegmentType, UpdateCampaignInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
+import { paginate } from "../../lib/paginate";
 import { queueConnection } from "../../lib/queue";
 import { sendMail } from "../../lib/mailer";
 import { sendSms } from "../../lib/sms";
 import { sendPush } from "../../lib/push";
+import { renderEmailLayout, emailLink } from "../../lib/email-template";
+import { generateEmailUnsubscribeToken } from "../customers/customer.service";
 
 export const CAMPAIGN_SEND_QUEUE = "campaign-send";
 
 const NO_ORDER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+// How many recipients are dispatched concurrently per campaign — bounded so a large campaign
+// doesn't open thousands of simultaneous outbound connections to the mail/SMS/push provider, but
+// high enough that sends aren't effectively serial like the old one-at-a-time loop was.
+const SEND_CONCURRENCY = 10;
+
+/** Runs `fn` over `items` with at most `concurrency` in flight at once — a plain `Promise.all`
+ * would fire every recipient's send simultaneously; a `for` loop would run them fully serially.
+ * Each item's outcome is independent (see the try/catch in the caller), so ordering doesn't matter. */
+async function mapWithConcurrency<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const item = items[cursor++];
+      await fn(item as T);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+}
 
 /** Human-readable label per SegmentType, used to name the Segment row a campaign creates. */
 const SEGMENT_LABELS: Record<SegmentType, string> = {
@@ -43,9 +65,20 @@ async function resolveSegmentCustomers(type: SegmentType): Promise<Customer[]> {
 async function dispatchToRecipient(campaign: Campaign, customer: Customer): Promise<void> {
   const title = campaign.subject ?? campaign.name;
   switch (campaign.channel) {
-    case "EMAIL":
-      await sendMail({ to: customer.email, subject: title, html: campaign.body });
+    case "EMAIL": {
+      if (!customer.email) throw new Error("Customer has no email on file");
+      if (!customer.emailMarketingOptIn) throw new Error("Customer has not opted in to email marketing");
+      const unsubscribeUrl = `${env.webOrigin}/account/unsubscribe?customerId=${customer.id}&token=${generateEmailUnsubscribeToken(customer.id)}`;
+      await sendMail({
+        to: customer.email,
+        subject: title,
+        html: renderEmailLayout({
+          bodyHtml: campaign.body,
+          footerHtml: `Don't want these emails? ${emailLink(unsubscribeUrl, "Unsubscribe")}`,
+        }),
+      });
       return;
+    }
     case "SMS":
       if (!customer.phone) throw new Error("Customer has no phone number on file");
       if (!customer.smsMarketingOptIn) throw new Error("Customer has not opted in to SMS marketing");
@@ -67,22 +100,21 @@ async function dispatchToRecipient(campaign: Campaign, customer: Customer): Prom
 export async function listCampaigns(query: CampaignListQuery) {
   const where = query.status ? { status: query.status } : {};
 
-  const [items, total] = await Promise.all([
-    prisma.campaign.findMany({
-      where,
-      include: { segment: true, _count: { select: { recipients: true } } },
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.campaign.count({ where }),
-  ]);
+  const { items, ...rest } = await paginate(
+    query,
+    (p) =>
+      prisma.campaign.findMany({
+        where,
+        include: { segment: true, _count: { select: { recipients: true } } },
+        orderBy: { createdAt: "desc" },
+        ...p,
+      }),
+    () => prisma.campaign.count({ where }),
+  );
 
   return {
     items: items.map(({ _count, ...campaign }) => ({ ...campaign, recipientCount: _count.recipients })),
-    total,
-    page: query.page,
-    pageSize: query.pageSize,
+    ...rest,
   };
 }
 
@@ -137,6 +169,7 @@ async function getEditableCampaign(id: string) {
 export async function updateCampaign(id: string, input: UpdateCampaignInput) {
   const campaign = await getEditableCampaign(id);
 
+  let newSegmentId: string | undefined;
   if (input.segmentType) {
     const segment = await prisma.segment.create({
       data: {
@@ -144,19 +177,36 @@ export async function updateCampaign(id: string, input: UpdateCampaignInput) {
         filter: { type: input.segmentType },
       },
     });
-    await prisma.campaign.update({ where: { id }, data: { segmentId: segment.id } });
+    newSegmentId = segment.id;
   }
 
-  return prisma.campaign.update({
+  // One write, not two — the campaign never sits in a state where its content and its segment
+  // were changed by two separate, non-transactional updates (a crash between them used to be able
+  // to leave a new segment attached to stale content, or vice versa).
+  const updated = await prisma.campaign.update({
     where: { id },
     data: {
       name: input.name,
       channel: input.channel,
       subject: input.subject,
       body: input.body,
+      ...(newSegmentId ? { segmentId: newSegmentId } : {}),
     },
     include: { segment: true },
   });
+
+  // The old Segment row is now orphaned — every campaign gets its own dedicated Segment (see
+  // createCampaign and above), nothing else ever attaches an existing one, so once this campaign
+  // stops pointing at it, it's unreachable. Clean it up rather than letting Segment rows
+  // accumulate forever; the reference-count check is just defensive in case that ever changes.
+  if (newSegmentId && campaign.segmentId && campaign.segmentId !== newSegmentId) {
+    const stillReferenced = await prisma.campaign.count({ where: { segmentId: campaign.segmentId } });
+    if (stillReferenced === 0) {
+      await prisma.segment.delete({ where: { id: campaign.segmentId } }).catch(() => {});
+    }
+  }
+
+  return updated;
 }
 
 export async function deleteCampaign(id: string) {
@@ -167,7 +217,7 @@ export async function deleteCampaign(id: string) {
 // --- scheduling & sending ---
 
 export async function scheduleCampaign(id: string, scheduledAt: Date) {
-  const campaign = await getEditableCampaign(id);
+  await getEditableCampaign(id);
   if (scheduledAt.getTime() <= Date.now()) throw AppError.badRequest("Scheduled time must be in the future");
   return prisma.campaign.update({ where: { id }, data: { status: "SCHEDULED", scheduledAt } });
 }
@@ -217,7 +267,7 @@ export async function processCampaignSend(campaignId: string): Promise<void> {
     include: { customer: true },
   });
 
-  for (const recipient of recipients) {
+  await mapWithConcurrency(recipients, SEND_CONCURRENCY, async (recipient) => {
     try {
       await dispatchToRecipient(campaign, recipient.customer);
       await prisma.campaignRecipient.update({
@@ -230,7 +280,7 @@ export async function processCampaignSend(campaignId: string): Promise<void> {
         data: { status: "FAILED", error: err instanceof Error ? err.message : "Unknown error" },
       });
     }
-  }
+  });
 
   const [pending, sent] = await Promise.all([
     prisma.campaignRecipient.count({ where: { campaignId, status: "PENDING" } }),

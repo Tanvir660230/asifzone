@@ -25,8 +25,42 @@ function readCsrfCookie(): string | undefined {
   return match?.[1];
 }
 
-/** Runs client-side (credentials: "include" carries the httpOnly admin cookies to the API). */
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+// A 401 from any of these means "credentials were wrong" or "not logged in yet", never "session
+// expired" — retrying them through a refresh would just waste a round trip on every failed login.
+const SKIP_REFRESH_PATHS = [
+  "/api/auth/refresh",
+  "/api/auth/login",
+  "/api/customers/refresh",
+  "/api/customers/login",
+  "/api/customers/register",
+  "/api/customers/verify-otp",
+  "/api/customers/google",
+];
+
+// Shared across every apiFetch call so several requests failing at once don't each fire their own
+// refresh — the API rotates+invalidates the refresh token on each use, so concurrent refreshes would
+// cause the second one to look like token reuse and log the session out for real.
+let refreshPromise: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  if (!refreshPromise) {
+    const isAdminRealm = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
+    const refreshPath = isAdminRealm ? "/api/auth/refresh" : "/api/customers/refresh";
+    refreshPromise = fetch(`${env.apiUrl}${refreshPath}`, { method: "POST", credentials: "include" })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+/** Runs client-side (credentials: "include" carries the httpOnly admin/customer cookies to the API).
+ * A 401 triggers one silent refresh-and-retry before giving up — the access-token cookie is short-lived
+ * (15 min) by design, and callers (useCurrentAdmin/useCurrentCustomer) should only redirect to login
+ * once this has already failed. */
+export async function apiFetch<T>(path: string, options: RequestOptions = {}, _retried = false): Promise<T> {
   const { method = "GET", body, isFormData = false } = options;
   const csrfToken = method === "GET" ? undefined : readCsrfCookie();
 
@@ -39,6 +73,11 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     },
     body: body === undefined ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
   });
+
+  if (res.status === 401 && !_retried && !SKIP_REFRESH_PATHS.some((p) => path.startsWith(p))) {
+    const refreshed = await refreshSession();
+    if (refreshed) return apiFetch<T>(path, options, true);
+  }
 
   if (res.status === 204) return undefined as T;
 

@@ -12,6 +12,17 @@ interface GoogleCredentialResponse {
   credential: string;
 }
 
+// Minimal shape for the two Google Identity Services calls actually used below — the full API
+// surface has no first-party types available without pulling in a whole extra dependency for it.
+interface GoogleIdentityServices {
+  accounts: {
+    id: {
+      initialize: (config: { client_id: string; callback: (response: GoogleCredentialResponse) => void }) => void;
+      renderButton: (parent: HTMLElement, options: { theme: string; size: string; width: number }) => void;
+    };
+  };
+}
+
 /** Loads Google Identity Services directly (no @react-oauth/google dependency — this is the only
  * thing we need it for) and owns the sign-in API call itself, so both the login and register pages
  * can drop this in without duplicating fetch/error handling. Renders nothing at all when
@@ -39,7 +50,7 @@ export function GoogleButton({
     }
 
     function render() {
-      const google = (window as unknown as { google?: any }).google;
+      const google = (window as unknown as { google?: GoogleIdentityServices }).google;
       if (!google || !containerRef.current) return;
 
       google.accounts.id.initialize({ client_id: env.googleClientId, callback: handleCredential });

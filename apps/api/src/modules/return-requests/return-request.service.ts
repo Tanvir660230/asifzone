@@ -1,6 +1,8 @@
+import { Prisma } from "@prisma/client";
 import type { CreateReturnRequestInput, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
+import { paginate } from "../../lib/paginate";
 import { updateOrderStatus } from "../orders/order.service";
 
 const include = {
@@ -19,42 +21,46 @@ export async function createReturnRequest(customerId: string, input: CreateRetur
   });
   if (existingPending) throw AppError.conflict("A return request for this order is already pending review");
 
-  return prisma.returnRequest.create({
-    data: { orderId: input.orderId, customerId, reason: input.reason, note: input.note ?? null },
-    include,
-  });
+  try {
+    return await prisma.returnRequest.create({
+      data: { orderId: input.orderId, customerId, reason: input.reason, note: input.note ?? null },
+      include,
+    });
+  } catch (err) {
+    // Backstopped by a partial unique index (one PENDING request per order — see the migration
+    // and the comment on ReturnRequest.status in schema.prisma) for the race the check above can't
+    // fully close on its own.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw AppError.conflict("A return request for this order is already pending review");
+    }
+    throw err;
+  }
 }
 
 export async function listMyReturnRequests(customerId: string, query: ReturnRequestListQuery) {
   const where = { customerId, ...(query.status ? { status: query.status } : {}) };
-  const [items, total] = await Promise.all([
-    prisma.returnRequest.findMany({
-      where,
-      include,
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.returnRequest.count({ where }),
-  ]);
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) => prisma.returnRequest.findMany({ where, include, orderBy: { createdAt: "desc" }, ...p }),
+    () => prisma.returnRequest.count({ where }),
+  );
 }
 
 // --- admin ---
 
 export async function listReturnRequestsAdmin(query: ReturnRequestListQuery) {
   const where = query.status ? { status: query.status } : {};
-  const [items, total] = await Promise.all([
-    prisma.returnRequest.findMany({
-      where,
-      include: { ...include, customer: { select: { name: true, email: true } } },
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.returnRequest.count({ where }),
-  ]);
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) =>
+      prisma.returnRequest.findMany({
+        where,
+        include: { ...include, customer: { select: { name: true, email: true } } },
+        orderBy: { createdAt: "desc" },
+        ...p,
+      }),
+    () => prisma.returnRequest.count({ where }),
+  );
 }
 
 async function getReturnRequestById(id: string) {
@@ -70,10 +76,15 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
   const request = await getReturnRequestById(id);
   if (request.status !== "PENDING") throw AppError.conflict("This return request has already been reviewed");
 
-  await prisma.returnRequest.update({
-    where: { id },
+  // Conditional on status still being PENDING (not a plain update) — closes the race where two
+  // admins review the same request at once: only the update that actually flips PENDING wins,
+  // the loser's count is 0 and gets a clean conflict instead of both silently "succeeding" and
+  // potentially double-triggering the order-status transition below.
+  const result = await prisma.returnRequest.updateMany({
+    where: { id, status: "PENDING" },
     data: { status: input.status, adminNote: input.adminNote ?? null, reviewedAt: new Date(), reviewedByAdminId: adminId },
   });
+  if (result.count === 0) throw AppError.conflict("This return request has already been reviewed");
 
   if (input.status === "APPROVED") {
     await updateOrderStatus(

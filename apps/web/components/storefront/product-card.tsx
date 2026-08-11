@@ -12,11 +12,14 @@ import { useCartStore } from "@/store/cart";
 import { useQuickViewStore } from "@/store/quick-view";
 import { useCompareStore } from "@/store/compare";
 import { WishlistButton } from "./wishlist-button";
+import { PromoBadge, getProductBadge } from "./promo-badge";
+import { StarRating } from "./star-rating";
 
 export function ProductCard({ product }: { product: Product }) {
   const [primaryImage, secondaryImage] = product.images;
   const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
   const flash = product.activeFlashSale;
+  const badge = getProductBadge(product, totalStock);
   const addItem = useCartStore((s) => s.addItem);
   const [justAdded, setJustAdded] = useState(false);
   const openQuickView = useQuickViewStore((s) => s.open);
@@ -63,8 +66,8 @@ export function ProductCard({ product }: { product: Product }) {
   }
 
   return (
-    <div className="group block">
-      <div className="relative aspect-square overflow-hidden rounded-xl bg-ink-100 shadow-sm transition-shadow duration-300 ease-smooth group-hover:shadow-float">
+    <div className="group block transition-transform duration-300 ease-smooth hover:-translate-y-1">
+      <div className="relative aspect-square overflow-hidden rounded-xl border border-ink-100 bg-ink-100 shadow-sm transition-shadow duration-300 ease-smooth group-hover:shadow-float">
         <Link href={`/product/${product.slug}`} className="absolute inset-0" aria-label={product.name}>
           {primaryImage ? (
             <>
@@ -92,9 +95,9 @@ export function ProductCard({ product }: { product: Product }) {
             <div className="flex h-full items-center justify-center text-ink-300">No image</div>
           )}
         </Link>
-        {flash && (
-          <span className="absolute left-3 top-3 rounded-full bg-brass-400 px-2 py-1 text-xs uppercase tracking-wide text-ink-900">
-            Flash Sale
+        {badge && (
+          <span className="absolute left-3 top-3">
+            <PromoBadge>{badge}</PromoBadge>
           </span>
         )}
         {totalStock === 0 && (
@@ -102,7 +105,11 @@ export function ProductCard({ product }: { product: Product }) {
             Sold out
           </span>
         )}
-        <div className="absolute left-3 top-3 z-10 flex flex-col gap-1.5 transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100">
+        {/* Desktop-only: quick view + compare need hover to gate them, and on a small mobile
+            card they just add clutter on top of an already-busy image (badge, wishlist heart,
+            quick-add). Mobile keeps the two actions that matter — wishlist and quick-add — and
+            reaches product/compare details via the product page instead. */}
+        <div className="absolute left-3 top-14 z-10 hidden flex-col gap-1.5 transition-opacity duration-200 ease-smooth lg:flex lg:opacity-0 lg:group-hover:opacity-100">
           <button
             onClick={handleQuickView}
             aria-label="Quick view"
@@ -140,16 +147,22 @@ export function ProductCard({ product }: { product: Product }) {
       </div>
       <Link href={`/product/${product.slug}`} className="mt-3 block space-y-1.5">
         <p className="text-xs uppercase tracking-wide text-ink-400">{product.brandTier}</p>
-        <h3 className="text-sm text-ink-900">{product.name}</h3>
+        <h3 className="text-sm font-medium tracking-wide text-ink-900">{product.name}</h3>
+        {product.reviewCount > 0 && (
+          <div className="flex items-center gap-1.5">
+            <StarRating value={product.avgRating} size={11} />
+            <span className="text-xs text-ink-400">({product.reviewCount})</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           {flash ? (
             <>
-              <span className="text-sm text-danger-600">{formatPrice(flash.flashPrice)}</span>
+              <span className="text-sm font-bold text-ink-900">{formatPrice(flash.flashPrice)}</span>
               <span className="text-xs text-ink-400 line-through">{formatPrice(product.basePrice)}</span>
             </>
           ) : (
             <>
-              <span className="text-sm text-ink-900">{formatPrice(product.basePrice)}</span>
+              <span className="text-sm font-semibold text-ink-900">{formatPrice(product.basePrice)}</span>
               {product.compareAtPrice && (
                 <span className="text-xs text-ink-400 line-through">{formatPrice(product.compareAtPrice)}</span>
               )}

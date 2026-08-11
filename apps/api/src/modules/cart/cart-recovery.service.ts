@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "../../config/prisma";
 import { sendMail } from "../../lib/mailer";
+import { renderEmailLayout, emailLink } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
 import { getSimilarProducts } from "../products/product.service";
@@ -51,9 +52,14 @@ async function buildAlternativesHtml(cart: AbandonedCart): Promise<string> {
     if (alternatives.length === 0) continue;
 
     const links = alternatives
-      .map((alt) => `<li><a href="${env.webOrigin}/product/${alt.slug}">${alt.name}</a> — ${formatPrice(alt.basePrice)}</li>`)
+      .map(
+        (alt) =>
+          `<li style="margin:0 0 4px;">${emailLink(`${env.webOrigin}/product/${alt.slug}`, escapeHtml(alt.name))} — ${formatPrice(alt.basePrice)}</li>`,
+      )
       .join("");
-    sections.push(`<p>${product.name} is running low — you might also like:</p><ul>${links}</ul>`);
+    sections.push(
+      `<p style="margin:20px 0 6px;font-size:13px;color:#666666;">${escapeHtml(product.name)} is running low — you might also like:</p><ul style="margin:0;padding-left:18px;">${links}</ul>`,
+    );
   }
   return sections.join("");
 }
@@ -63,7 +69,7 @@ async function sendCartRecoveryEmail(cart: AbandonedCart): Promise<void> {
     .map((item) => {
       const product = item.variant.product;
       const price = Number(item.variant.price ?? product.basePrice);
-      return `<li>${product.name} (${item.variant.size}/${item.variant.color}) × ${item.quantity} — ${formatPrice(price * item.quantity)}</li>`;
+      return `<li style="margin:0 0 4px;">${escapeHtml(product.name)} (${escapeHtml(item.variant.size)}/${escapeHtml(item.variant.color)}) &times; ${item.quantity} — ${formatPrice(price * item.quantity)}</li>`;
     })
     .join("");
 
@@ -73,16 +79,24 @@ async function sendCartRecoveryEmail(cart: AbandonedCart): Promise<void> {
 
   try {
     await sendMail({
-      to: cart.customer.email,
+      // Non-null by findAbandonedCarts's query filter — Prisma's include type just can't express that.
+      to: cart.customer.email!,
       subject: "You left something in your cart",
-      html: `
-        <p>Hi ${escapeHtml(cart.customer.name)},</p>
-        <p>You left these items in your cart:</p>
-        <ul>${itemsHtml}</ul>
-        <p>Use code <strong>${couponCode}</strong> for ${COUPON_VALUE_PERCENT}% off if you check out within 7 days.</p>
-        ${alternativesHtml}
-        <p><a href="${cartUrl}">${cartUrl}</a></p>
-      `,
+      html: renderEmailLayout({
+        bodyHtml: `
+          <p style="margin:0 0 8px;font-size:18px;font-weight:600;">You left something behind</p>
+          <p style="margin:0 0 14px;">Hi ${escapeHtml(cart.customer.name)}, these are still waiting in your cart:</p>
+          <ul style="margin:0 0 18px;padding-left:18px;">${itemsHtml}</ul>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="border:1px dashed #e53935;border-radius:8px;padding:12px 16px;margin:0 0 4px;">
+            <tr><td style="font-size:13px;">
+              Use code <strong style="letter-spacing:1px;">${couponCode}</strong> for <strong>${COUPON_VALUE_PERCENT}% off</strong> if you check out within 7 days.
+            </td></tr>
+          </table>
+          ${alternativesHtml}
+        `,
+        ctaLabel: "Return to cart",
+        ctaUrl: cartUrl,
+      }),
     });
   } catch (err) {
     // The coupon had to be minted before we knew the send would work (its code goes in the body).

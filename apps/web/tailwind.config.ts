@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const tokens = require("@clothing-brand/ui-tokens");
+import typography from "@tailwindcss/typography";
+import tokens from "@clothing-brand/ui-tokens";
 
 const config: Config = {
   darkMode: "class",
@@ -30,15 +30,30 @@ const config: Config = {
           from: { opacity: "0", transform: "translateX(-50%) scale(0.96) translateY(8px)" },
           to: { opacity: "1", transform: "translateX(-50%) scale(1) translateY(0)" },
         },
+        // Nudges a required-but-empty selector (e.g. size/color) left-right a few times — used to
+        // draw the eye when someone tries to Add to Cart/Buy Now before finishing their selection.
+        shake: {
+          "0%, 100%": { transform: "translateX(0)" },
+          "20%": { transform: "translateX(-6px)" },
+          "40%": { transform: "translateX(5px)" },
+          "60%": { transform: "translateX(-4px)" },
+          "80%": { transform: "translateX(3px)" },
+        },
+        "slide-in-right": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
       },
       animation: {
         "modal-in": "modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
         "fade-in": "fade-in 0.2s ease-out",
         "dropdown-in": "dropdown-in 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+        shake: "shake 0.4s ease-in-out",
+        "slide-in-right": "slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
       },
     },
   },
-  plugins: [],
+  plugins: [typography],
 };
 
 export default config;

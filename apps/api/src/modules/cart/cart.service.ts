@@ -49,7 +49,14 @@ const cartInclude = {
 export async function findAbandonedCarts() {
   const cutoff = new Date(Date.now() - ABANDONMENT_THRESHOLD_MS);
   return prisma.cart.findMany({
-    where: { updatedAt: { lte: cutoff }, reminderSentAt: null, items: { some: {} } },
+    // Only customers with an email on file can get a recovery email — phone-only guests/customers
+    // are excluded up front rather than skipped per-cart in the sweep.
+    where: {
+      updatedAt: { lte: cutoff },
+      reminderSentAt: null,
+      items: { some: {} },
+      customer: { email: { not: null } },
+    },
     include: cartInclude,
   });
 }

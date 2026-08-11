@@ -1,5 +1,6 @@
 import { prisma } from "../../config/prisma";
 import { sendMail } from "../../lib/mailer";
+import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
 
@@ -20,7 +21,9 @@ export async function unsubscribe(customerId: string, variantId: string) {
  * same restock (re-subscribing after it sells out again resets `notifiedAt` via `subscribe`). */
 export async function notifyBackInStock(variantId: string) {
   const alerts = await prisma.stockAlert.findMany({
-    where: { variantId, notifiedAt: null },
+    // Only customers with an email on file can be notified this way — phone-only guests/customers
+    // just never get picked up here (no per-item try/catch below, so this must be filtered up front).
+    where: { variantId, notifiedAt: null, customer: { email: { not: null } } },
     include: {
       customer: { select: { email: true, name: true } },
       variant: { include: { product: true } },
@@ -28,17 +31,32 @@ export async function notifyBackInStock(variantId: string) {
   });
   if (alerts.length === 0) return;
 
+  // Per-item isolation — see the identical comment in wishlist.service.ts's notifyPriceDrop: a
+  // failed send must not block `notifiedAt` on alerts that already succeeded.
+  const notifiedIds: string[] = [];
   for (const alert of alerts) {
-    const productUrl = `${env.webOrigin}/product/${alert.variant.product.slug}`;
-    await sendMail({
-      to: alert.customer.email,
-      subject: `Back in stock: ${alert.variant.product.name}`,
-      html: `<p>Hi ${escapeHtml(alert.customer.name)},</p><p><strong>${alert.variant.product.name}</strong> (${alert.variant.size}/${alert.variant.color}) is back in stock.</p><p><a href="${productUrl}">${productUrl}</a></p>`,
-    });
+    try {
+      const productUrl = `${env.webOrigin}/product/${alert.variant.product.slug}`;
+      await sendMail({
+        // Non-null by the query filter above — Prisma's include type just can't express that.
+        to: alert.customer.email!,
+        subject: `Back in stock: ${alert.variant.product.name}`,
+        html: renderEmailLayout({
+          bodyHtml: `
+            <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Back in stock</p>
+            <p style="margin:0;">Hi ${escapeHtml(alert.customer.name)}, good news — <strong>${escapeHtml(alert.variant.product.name)}</strong> (${escapeHtml(alert.variant.size)}/${escapeHtml(alert.variant.color)}) is available again.</p>
+          `,
+          ctaLabel: "Shop now",
+          ctaUrl: productUrl,
+        }),
+      });
+      notifiedIds.push(alert.id);
+    } catch (err) {
+      console.error(`[stock-alert] failed to notify alert ${alert.id}:`, err);
+    }
   }
 
-  await prisma.stockAlert.updateMany({
-    where: { id: { in: alerts.map((a) => a.id) } },
-    data: { notifiedAt: new Date() },
-  });
+  if (notifiedIds.length) {
+    await prisma.stockAlert.updateMany({ where: { id: { in: notifiedIds } }, data: { notifiedAt: new Date() } });
+  }
 }

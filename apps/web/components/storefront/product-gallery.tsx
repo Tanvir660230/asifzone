@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
@@ -17,11 +17,16 @@ interface ProductGalleryProps {
   focusImageId?: string | null;
 }
 
+const SWIPE_THRESHOLD = 50;
+
 export function ProductGallery({ images, productName, focusImageId }: ProductGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [zoomOrigin, setZoomOrigin] = useState("50% 50%");
+  const pointerStartX = useRef<number | null>(null);
+  const didSwipe = useRef(false);
   const active = images[activeIndex];
+  const hasMultiple = images.length > 1;
 
   useEffect(() => {
     if (!focusImageId) return;
@@ -40,12 +45,66 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
     setActiveIndex((i) => (i + delta + images.length) % images.length);
   }
 
+  // Swipe-to-navigate on the main image (mouse drag or touch) — distinct from the plain click
+  // that opens the lightbox, so dragging across the image doesn't also pop it open.
+  function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
+    pointerStartX.current = e.clientX;
+    didSwipe.current = false;
+  }
+
+  function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (pointerStartX.current === null) return;
+    const delta = e.clientX - pointerStartX.current;
+    pointerStartX.current = null;
+    if (hasMultiple && Math.abs(delta) > SWIPE_THRESHOLD) {
+      didSwipe.current = true;
+      step(delta > 0 ? -1 : 1);
+    }
+  }
+
+  function handleImageClick() {
+    if (didSwipe.current) {
+      didSwipe.current = false;
+      return;
+    }
+    if (active) setLightboxOpen(true);
+  }
+
   return (
-    <div>
+    <div className="flex flex-col-reverse gap-3 lg:flex-row">
+      {/* Thumbnails: a fixed small size regardless of how many photos exist (never stretched to
+          fill the row) — a horizontal strip below the main image on mobile, a vertical rail
+          beside it on desktop, scrollable once there are more than fit. */}
+      {hasMultiple && (
+        <div className="flex gap-2 overflow-x-auto pb-1 lg:max-h-[34rem] lg:w-20 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0">
+          {images.map((img, i) => (
+            <button
+              key={img.id}
+              onClick={() => setActiveIndex(i)}
+              aria-label={`View image ${i + 1} of ${productName}`}
+              aria-current={i === activeIndex}
+              className={cn(
+                "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition-colors duration-150 ease-smooth lg:h-20 lg:w-20",
+                i === activeIndex ? "border-brass-400" : "border-transparent hover:border-ink-200",
+              )}
+            >
+              <Image src={resolveImageUrl(img.url)} alt="" fill sizes="80px" className="object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+
       <div
-        className="group relative aspect-square cursor-zoom-in overflow-hidden rounded-xl bg-ink-100"
+        // Capped to a share of the viewport height in addition to the usual aspect-square sizing
+        // — width-driven aspect-square alone let this grow taller than the screen on shorter
+        // desktop windows (laptop, browser zoom), pushing price/Add to Cart off-screen with no
+        // hint anything was below. The cap only ever engages when that would happen; a normal
+        // window never hits it.
+        className="group relative aspect-square max-h-[70vh] flex-1 cursor-zoom-in touch-pan-y select-none overflow-hidden rounded-xl bg-ink-100"
         onMouseMove={handleMouseMove}
-        onClick={() => active && setLightboxOpen(true)}
+        onClick={handleImageClick}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
       >
         {active ? (
           <>
@@ -61,28 +120,41 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
             <span className="glass glossy absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full text-ink-900 opacity-0 shadow-float transition-opacity duration-200 ease-smooth group-hover:opacity-100">
               <ZoomIn size={16} />
             </span>
+            {hasMultiple && (
+              <span className="glass absolute bottom-3 left-3 rounded-full px-2.5 py-1 text-xs text-ink-900">
+                {activeIndex + 1} / {images.length}
+              </span>
+            )}
           </>
         ) : (
           <div className="flex h-full items-center justify-center text-ink-300">No image</div>
         )}
-      </div>
 
-      {images.length > 1 && (
-        <div className="mt-3 grid grid-cols-5 gap-2">
-          {images.map((img, i) => (
+        {hasMultiple && (
+          <>
             <button
-              key={img.id}
-              onClick={() => setActiveIndex(i)}
-              className={cn(
-                "relative aspect-square overflow-hidden rounded border",
-                i === activeIndex ? "border-brass-400" : "border-transparent",
-              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                step(-1);
+              }}
+              aria-label="Previous image"
+              className="glass glossy absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
             >
-              <Image src={resolveImageUrl(img.url)} alt="" fill sizes="10vw" className="object-cover" />
+              <ChevronLeft size={18} />
             </button>
-          ))}
-        </div>
-      )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                step(1);
+              }}
+              aria-label="Next image"
+              className="glass glossy absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </>
+        )}
+      </div>
 
       {lightboxOpen &&
         active &&
@@ -103,7 +175,7 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
                 <X size={28} />
               </button>
 
-              {images.length > 1 && (
+              {hasMultiple && (
                 <>
                   <button
                     onClick={(e) => {

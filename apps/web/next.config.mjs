@@ -12,6 +12,12 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "@tanstack/react-query", "framer-motion"],
   },
+  // jsdom (isomorphic-dompurify's server-side implementation, used to sanitize product
+  // descriptions) reads assets like its default stylesheet relative to its own module directory
+  // at runtime — webpack bundling that into the server chunk breaks that lookup (ENOENT). Keeping
+  // it external makes Next.js `require()` it normally from node_modules instead. Promoted from
+  // experimental.serverComponentsExternalPackages (Next 14) to this stable top-level option in 15.
+  serverExternalPackages: ["isomorphic-dompurify", "jsdom"],
   images: {
     remotePatterns: [
       { protocol: "http", hostname: "localhost" },

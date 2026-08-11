@@ -17,9 +17,43 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/admin/form-section";
 import { VariantEditor } from "./variant-editor";
 import type { StagedImage } from "./image-uploader";
+import { cn } from "@/lib/utils";
+
+const TABS = [
+  { value: "basic", label: "Basic Info" },
+  { value: "pricing", label: "Pricing & Inventory" },
+  { value: "variants", label: "Variants" },
+  { value: "seo", label: "SEO" },
+] as const;
+type ProductFormTab = (typeof TABS)[number]["value"];
+
+/** Flattens the category tree into a top-level-first, indented option list (e.g. "— Cap" under
+ * "Accessories") so the admin can see hierarchy in a single-select dropdown without a second field. */
+function buildCategoryOptions(categories: Category[]) {
+  const byParent = new Map<string | null, Category[]>();
+  for (const c of categories) {
+    const key = c.parentId;
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key)!.push(c);
+  }
+  for (const group of byParent.values()) {
+    group.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  }
+
+  const options: { id: string; label: string }[] = [];
+  function walk(parentId: string | null, depth: number) {
+    for (const c of byParent.get(parentId) ?? []) {
+      options.push({ id: c.id, label: `${"— ".repeat(depth)}${c.name}` });
+      walk(c.id, depth + 1);
+    }
+  }
+  walk(null, 0);
+  return options;
+}
 
 // Tiptap + its ~9 sub-packages are large and admin-only — split out of the main bundle and
 // only fetched once this form actually renders.
@@ -80,8 +114,10 @@ export function ProductForm({
   variantImageKeys,
   onVariantImageKeyChange,
 }: ProductFormProps) {
+  const [tab, setTab] = useState<ProductFormTab>("basic");
   const { data: attributesData } = useQuery({ queryKey: ["attributes"], queryFn: attributesApi.listAttributes });
   const attributes = attributesData?.attributes ?? [];
+  const categoryOptions = buildCategoryOptions(categories);
 
   const { data: aiStatus } = useQuery({ queryKey: ["ai-status"], queryFn: aiApi.getAiStatus });
   // AI generation is OWNER-only on the backend (it bills real API usage) — hide the entry points
@@ -103,6 +139,8 @@ export function ProductForm({
           name: initial.name,
           slug: initial.slug,
           description: initial.description,
+          shortDescription: initial.shortDescription,
+          sortOrder: initial.sortOrder,
           categoryId: initial.categoryId,
           brand: initial.brand,
           brandTier: initial.brandTier,
@@ -138,6 +176,7 @@ export function ProductForm({
           isFeatured: false,
           trackInventory: true,
           lowStockThreshold: 5,
+          sortOrder: 0,
           variants: [{ sku: "", size: "", color: "", stock: 0, attributeValueIds: [] }],
         },
   });
@@ -152,8 +191,34 @@ export function ProductForm({
   const brandName = watch("brand");
   const aiProductContext = { productName: productName || undefined, category: categoryName, brand: brandName ?? undefined };
 
+  const TAB_FIELDS: Record<ProductFormTab, string[]> = {
+    basic: ["name", "categoryId", "brand", "brandTier", "sortOrder", "shortDescription", "description"],
+    pricing: ["basePrice", "compareAtPrice", "costPrice", "taxRate", "trackInventory", "lowStockThreshold", "restockDate"],
+    variants: ["variants"],
+    seo: ["seoTitle", "seoDescription"],
+  };
+  const tabHasError = (t: ProductFormTab) => TAB_FIELDS[t].some((f) => f in errors);
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <div className="mb-2 flex flex-wrap gap-1 border-b border-ink-100">
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => setTab(t.value)}
+            className={cn(
+              "flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
+              tab === t.value ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700",
+            )}
+          >
+            {t.label}
+            {tabHasError(t.value) && <span className="h-1.5 w-1.5 rounded-full bg-danger-500" aria-label="Has errors" />}
+          </button>
+        ))}
+      </div>
+
+      {tab === "basic" && (
       <FormSection title="Basic information">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -166,9 +231,9 @@ export function ProductForm({
             <Label htmlFor="categoryId">Category</Label>
             <Select id="categoryId" {...register("categoryId")}>
               <option value="">Select a category…</option>
-              {categories.map((c) => (
+              {categoryOptions.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.label}
                 </option>
               ))}
             </Select>
@@ -189,7 +254,13 @@ export function ProductForm({
             </Select>
           </div>
 
-          <div className="flex items-end gap-6 pb-2 sm:col-span-2">
+          <div>
+            <Label htmlFor="sortOrder">Sort order</Label>
+            <Input id="sortOrder" type="number" {...register("sortOrder", { valueAsNumber: true })} />
+            <p className="mt-1 text-xs text-ink-400">Lower numbers appear first within their category.</p>
+          </div>
+
+          <div className="flex items-end gap-6 pb-2">
             <label className="flex items-center gap-2 text-sm text-ink-700">
               <Checkbox {...register("isActive")} />
               Active
@@ -198,6 +269,16 @@ export function ProductForm({
               <Checkbox {...register("isFeatured")} />
               Featured
             </label>
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor="shortDescription">Short description</Label>
+            <Textarea
+              id="shortDescription"
+              rows={2}
+              placeholder="One or two lines shown in listings and previews"
+              {...register("shortDescription")}
+            />
           </div>
         </div>
 
@@ -231,7 +312,10 @@ export function ProductForm({
           />
         </div>
       </FormSection>
+      )}
 
+      {tab === "pricing" && (
+      <>
       <FormSection title="Pricing & tax">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -286,7 +370,10 @@ export function ProductForm({
           </div>
         </div>
       </FormSection>
+      </>
+      )}
 
+      {tab === "seo" && (
       <FormSection title="SEO">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
@@ -323,7 +410,9 @@ export function ProductForm({
           </div>
         </div>
       </FormSection>
+      )}
 
+      {tab === "variants" && (
       <FormSection title="Variants" description="Size, color, SKU, price override, and stock for each purchasable option.">
         <VariantEditor
           control={control}
@@ -339,6 +428,7 @@ export function ProductForm({
         />
         {errors.variants && <p className="mt-1 text-xs text-danger-600">{errors.variants.message as string}</p>}
       </FormSection>
+      )}
 
       <div className="flex justify-end">
         <Button type="submit" variant="brass" disabled={isSubmitting}>

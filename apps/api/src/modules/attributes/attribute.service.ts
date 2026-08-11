@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { CreateAttributeInput, UpdateAttributeInput } from "@clothing-brand/shared";
 import { slugify } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
@@ -27,11 +28,17 @@ export async function createAttribute(input: CreateAttributeInput) {
 
   const { values, ...data } = input;
 
-  const attribute = await prisma.attribute.create({
-    data: { ...data, slug, values: { create: values } },
-    include,
-  });
-  return attribute;
+  try {
+    return await prisma.attribute.create({
+      data: { ...data, slug, values: { create: values } },
+      include,
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw AppError.conflict(`An attribute named "${input.name}" already exists`);
+    }
+    throw err;
+  }
 }
 
 export async function updateAttribute(id: string, input: UpdateAttributeInput) {
@@ -51,26 +58,48 @@ export async function updateAttribute(id: string, input: UpdateAttributeInput) {
     });
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.attribute.update({ where: { id }, data });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.attribute.update({ where: { id }, data });
 
-    if (input.values) {
-      const incomingIds = new Set(input.values.filter((v) => v.id).map((v) => v.id!));
-      const toDelete = existing.values.filter((v) => !incomingIds.has(v.id));
+      if (input.values) {
+        const incomingIds = new Set(input.values.filter((v) => v.id).map((v) => v.id!));
+        const toDelete = existing.values.filter((v) => !incomingIds.has(v.id));
 
-      if (toDelete.length) {
-        await tx.attributeValue.deleteMany({ where: { id: { in: toDelete.map((v) => v.id) } } });
-      }
+        if (toDelete.length) {
+          // Same guard as deleteAttribute: a value still linked to a live product variant would
+          // otherwise cascade-delete that link (VariantAttributeValue.attributeValueId is
+          // onDelete: Cascade) and silently strip the attribute off that variant.
+          const inUse = await tx.variantAttributeValue.findMany({
+            where: { attributeValueId: { in: toDelete.map((v) => v.id) } },
+            select: { attributeValueId: true },
+            distinct: ["attributeValueId"],
+          });
+          if (inUse.length) {
+            const blockedIds = new Set(inUse.map((r) => r.attributeValueId));
+            const blockedNames = toDelete.filter((v) => blockedIds.has(v.id)).map((v) => v.value);
+            throw AppError.conflict(
+              `Cannot remove value(s) still used on product variants: ${blockedNames.join(", ")}`,
+            );
+          }
+          await tx.attributeValue.deleteMany({ where: { id: { in: toDelete.map((v) => v.id) } } });
+        }
 
-      for (const value of input.values) {
-        if (value.id) {
-          await tx.attributeValue.update({ where: { id: value.id }, data: value });
-        } else {
-          await tx.attributeValue.create({ data: { ...value, attributeId: id } });
+        for (const value of input.values) {
+          if (value.id) {
+            await tx.attributeValue.update({ where: { id: value.id }, data: value });
+          } else {
+            await tx.attributeValue.create({ data: { ...value, attributeId: id } });
+          }
         }
       }
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw AppError.conflict(`An attribute named "${input.name}" already exists`);
     }
-  });
+    throw err;
+  }
 
   return getAttributeById(id);
 }

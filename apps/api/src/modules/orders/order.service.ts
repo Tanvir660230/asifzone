@@ -1,18 +1,29 @@
-import type { CheckoutInput, OrderListQuery, UpdateOrderStatusInput, UpdateOrderDetailsInput } from "@clothing-brand/shared";
+import type { CheckoutInput, OrderListQuery, OrderStatus, UpdateOrderStatusInput, UpdateOrderDetailsInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
+import { paginate } from "../../lib/paginate";
 import { notify } from "../../lib/notify";
+import { sendAdminOrderAlertSms, sendCustomerOrderSms, type CustomerTouchpoint } from "../../lib/order-sms";
 import { evaluateCoupon, incrementCouponUsage } from "../coupons/coupon.service";
 import { evaluateBundleForItems } from "../bundles/bundle.service";
 import { computeFlashPrice, getActiveFlashInfoByProduct, type ActiveFlashInfo } from "../flash-sales/flash-sale-pricing";
 import { getSettings } from "../settings/settings.service";
-import { awardDeliveryPoints } from "../customers/customer.service";
+import { awardDeliveryPoints, findOrCreateGuestCustomer } from "../customers/customer.service";
 import { clearCart } from "../cart/cart.service";
 
 const include = {
   items: true,
   statusHistory: { orderBy: { createdAt: "asc" as const }, include: { changedByAdmin: { select: { name: true } } } },
+};
+
+/** PENDING/PROCESSING/PACKED/RETURNED/REFUNDED intentionally have no SMS — only the touchpoints an
+ * admin can toggle in the dashboard trigger one. */
+const STATUS_SMS_TOUCHPOINT: Partial<Record<OrderStatus, CustomerTouchpoint>> = {
+  CONFIRMED: "CONFIRMED",
+  SHIPPED: "SHIPPED",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
 };
 
 /** A running flash sale overrides everything else — it's already the "this is the price right now" figure. */
@@ -26,6 +37,13 @@ function effectivePrice(
 }
 
 export async function createOrder(input: CheckoutInput, customerId: string | null = null) {
+  // A guest (no session cookie) still gets tied to a real Customer row, matched by email/phone —
+  // see findOrCreateGuestCustomer for why (repeat-guest recognition, and a base to merge into once
+  // they register/log in).
+  if (!customerId) {
+    customerId = await findOrCreateGuestCustomer(input.customerName, input.customerEmail ?? null, input.customerPhone);
+  }
+
   const variantIds = input.items.map((i) => i.variantId);
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: variantIds } },
@@ -77,14 +95,18 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
   const total = subtotal - discount + shippingFee;
 
   const order = await prisma.$transaction(async (tx) => {
-    for (const item of input.items) {
-      const result = await tx.productVariant.updateMany({
-        where: { id: item.variantId, stock: { gte: item.quantity } },
-        data: { stock: { decrement: item.quantity } },
-      });
-      if (result.count === 0) {
-        throw AppError.conflict("Stock changed while placing your order — please review your cart");
-      }
+    // Each item's conditional decrement is independent (distinct variantId rows) — running them
+    // concurrently instead of one-at-a-time cuts checkout latency roughly in proportion to cart size.
+    const results = await Promise.all(
+      input.items.map((item) =>
+        tx.productVariant.updateMany({
+          where: { id: item.variantId, stock: { gte: item.quantity } },
+          data: { stock: { decrement: item.quantity } },
+        }),
+      ),
+    );
+    if (results.some((r) => r.count === 0)) {
+      throw AppError.conflict("Stock changed while placing your order — please review your cart");
     }
 
     const created = await tx.order.create({
@@ -148,6 +170,9 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
     link: `/admin/orders/${order.id}`,
   });
 
+  sendCustomerOrderSms(order, "PLACED");
+  sendAdminOrderAlertSms(order);
+
   // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
   // abandonment sweep must not fire on it.
   if (customerId) {
@@ -182,7 +207,7 @@ export async function getOrderById(id: string) {
  * id column) — this is what "Reorder" checks before adding anything back to the cart. */
 export async function getOrderForCustomer(customerId: string, orderId: string) {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include });
-  if (!order || order.customerId !== customerId) throw AppError.notFound("Order not found");
+  if (!order || order.deletedAt || order.customerId !== customerId) throw AppError.notFound("Order not found");
 
   const variantIds = order.items.map((i) => i.variantId);
   const variants = await prisma.productVariant.findMany({
@@ -232,12 +257,15 @@ export async function getOrderForCustomer(customerId: string, orderId: string) {
 /** Guest order tracking — requires the phone on the order too, so an order number alone (visible in a shared link, browser history, etc.) isn't enough to see someone else's address. */
 export async function trackOrder(orderNumber: string, phone: string) {
   const order = await prisma.order.findUnique({ where: { orderNumber }, include });
-  if (!order || order.customerPhone !== phone) throw AppError.notFound("Order not found");
+  if (!order || order.deletedAt || order.customerPhone !== phone) throw AppError.notFound("Order not found");
   return order;
 }
 
 export async function listOrders(query: OrderListQuery) {
   const where = {
+    // "deleted=true" is the dedicated admin restore view (only soft-deleted orders); otherwise the
+    // normal listing never shows them.
+    deletedAt: query.deleted === "true" ? { not: null } : null,
     ...(query.status ? { status: query.status } : {}),
     ...(query.search
       ? {
@@ -250,22 +278,16 @@ export async function listOrders(query: OrderListQuery) {
       : {}),
   };
 
-  const [items, total] = await Promise.all([
-    prisma.order.findMany({
-      where,
-      include,
-      orderBy: { createdAt: "desc" },
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-    }),
-    prisma.order.count({ where }),
-  ]);
-
-  return { items, total, page: query.page, pageSize: query.pageSize };
+  return paginate(
+    query,
+    (p) => prisma.order.findMany({ where, include, orderBy: { createdAt: "desc" }, ...p }),
+    () => prisma.order.count({ where }),
+  );
 }
 
 export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
-  await getOrderById(id);
+  const existing = await getOrderById(id);
+  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
 
   const updated = await prisma.$transaction(async (tx) => {
     const order = await tx.order.update({
@@ -285,11 +307,15 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
     await awardDeliveryPoints(updated.customerId, updated.id, Number(updated.total));
   }
 
+  const touchpoint = STATUS_SMS_TOUCHPOINT[input.status];
+  if (touchpoint) sendCustomerOrderSms(updated, touchpoint);
+
   return updated;
 }
 
 export async function updateOrderDetails(id: string, input: UpdateOrderDetailsInput) {
-  await getOrderById(id);
+  const existing = await getOrderById(id);
+  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
   return prisma.order.update({ where: { id }, data: input, include });
 }
 
@@ -297,22 +323,36 @@ export async function updateOrderDetails(id: string, input: UpdateOrderDetailsIn
  * body — it's the last line of defense against a valid val_id for one order being replayed against a
  * different, more expensive order's tran_id. */
 export async function markOrderPaid(orderNumber: string, transactionId: string, verifiedAmount: number) {
-  return prisma.$transaction(async (tx) => {
+  const { order, justPaid } = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { orderNumber } });
     if (!order) throw AppError.notFound("Order not found");
-    if (order.paymentStatus === "PAID") return order;
+    if (order.paymentStatus === "PAID") return { order, justPaid: false };
     if (Math.abs(Number(order.total) - verifiedAmount) > 0.01) {
       throw AppError.badRequest("Payment amount does not match order total");
     }
-    return tx.order.update({
+    const updated = await tx.order.update({
       where: { orderNumber },
       data: { paymentStatus: "PAID", status: "CONFIRMED", paymentTransactionId: transactionId },
     });
+    return { order: updated, justPaid: true };
   });
+
+  // Only on the actual transition — a replayed gateway webhook hitting the idempotent early-return
+  // above must not re-send the "confirmed" SMS.
+  if (justPaid) sendCustomerOrderSms(order, "CONFIRMED");
+
+  return order;
 }
 
 export async function markOrderFailed(orderNumber: string) {
   return prisma.order.update({ where: { orderNumber }, data: { paymentStatus: "FAILED" } });
+}
+
+/** Records the gateway session key returned by initSslcommerzSession right after order creation —
+ * kept as a named service function (not a raw prisma call from the controller) so every order
+ * mutation goes through one place. */
+export async function setPaymentSessionKey(orderId: string, sessionKey: string) {
+  await prisma.order.update({ where: { id: orderId }, data: { paymentSessionKey: sessionKey } });
 }
 
 /** Compensates a just-created order whose payment session could never be started (e.g. gateway unreachable) — restores the stock reserved for it and marks it cancelled rather than leaving it stuck as an unpayable PENDING order. */
@@ -337,5 +377,55 @@ export async function cancelUnstartedOrder(orderId: string) {
     });
 
     await tx.order.update({ where: { id: orderId }, data: { status: "CANCELLED" } });
+  });
+}
+
+/** Soft-deletes an order (OWNER-only, see order.routes.ts) — hides it from every default query but
+ * never physically removes the row, since it's a financial/audit record. Restocks the items first,
+ * the same way cancelUnstartedOrder does, unless the order was already CANCELLED/REFUNDED (which
+ * already restocked, so doing it again would double-credit the inventory). */
+export async function deleteOrder(orderId: string, adminId: string) {
+  const order = await getOrderById(orderId);
+  if (order.deletedAt) return order;
+
+  return prisma.$transaction(async (tx) => {
+    if (order.status !== "CANCELLED" && order.status !== "REFUNDED") {
+      for (const item of order.items) {
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+      await tx.stockMovement.createMany({
+        data: order.items.map((item) => ({
+          variantId: item.variantId,
+          change: item.quantity,
+          reason: "ADJUSTMENT" as const,
+          orderId: order.id,
+        })),
+      });
+    }
+
+    return tx.order.update({
+      where: { id: orderId },
+      data: { deletedAt: new Date(), deletedByAdminId: adminId },
+      include,
+    });
+  });
+}
+
+/** Un-hides a soft-deleted order. Deliberately does not re-decrement stock — the units restored at
+ * delete time may already have been sold to someone else in the meantime, and blindly re-reserving
+ * them could take stock negative. Restoring is a correction of the record, not a re-placement of
+ * the order. */
+export async function restoreOrder(orderId: string) {
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) throw AppError.notFound("Order not found");
+  if (!order.deletedAt) return getOrderById(orderId);
+
+  return prisma.order.update({
+    where: { id: orderId },
+    data: { deletedAt: null, deletedByAdminId: null },
+    include,
   });
 }

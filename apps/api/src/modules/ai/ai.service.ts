@@ -6,6 +6,9 @@ import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 
 const MAX_TOKENS = 1024;
+// Without this, a hung upstream call holds the request (and its Express connection) open
+// indefinitely — aiRateLimit caps how often that can happen, but not how long any single one lasts.
+const AI_REQUEST_TIMEOUT_MS = 30_000;
 
 let client: Anthropic | null = null;
 
@@ -64,11 +67,14 @@ function buildPrompt(type: AiContentType, input: GenerateAiContentInput): string
 
 export async function generateContent(input: GenerateAiContentInput): Promise<string> {
   const prompt = buildPrompt(input.type, input);
-  const message = await getClient().messages.create({
-    model: env.anthropic.model,
-    max_tokens: MAX_TOKENS,
-    messages: [{ role: "user", content: prompt }],
-  });
+  const message = await getClient().messages.create(
+    {
+      model: env.anthropic.model,
+      max_tokens: MAX_TOKENS,
+      messages: [{ role: "user", content: prompt }],
+    },
+    { timeout: AI_REQUEST_TIMEOUT_MS },
+  );
 
   if (message.stop_reason === "refusal") {
     throw AppError.badRequest("The AI declined to generate this content — try rephrasing the input.");
@@ -110,25 +116,28 @@ export async function generateImageAltText(imageUrl: string): Promise<string> {
     throw AppError.notFound("Image file not found on disk");
   }
 
-  const message = await getClient().messages.create({
-    model: env.anthropic.model,
-    max_tokens: 200,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif", data: data.toString("base64") },
-          },
-          {
-            type: "text",
-            text: "Write concise, descriptive alt text for this e-commerce product photo, for accessibility and SEO. Describe what's actually visible — garment type, color, notable details. Under 125 characters. Reply with only the alt text, nothing else.",
-          },
-        ],
-      },
-    ],
-  });
+  const message = await getClient().messages.create(
+    {
+      model: env.anthropic.model,
+      max_tokens: 200,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif", data: data.toString("base64") },
+            },
+            {
+              type: "text",
+              text: "Write concise, descriptive alt text for this e-commerce product photo, for accessibility and SEO. Describe what's actually visible — garment type, color, notable details. Under 125 characters. Reply with only the alt text, nothing else.",
+            },
+          ],
+        },
+      ],
+    },
+    { timeout: AI_REQUEST_TIMEOUT_MS },
+  );
 
   if (message.stop_reason === "refusal") {
     throw AppError.badRequest("The AI declined to describe this image.");

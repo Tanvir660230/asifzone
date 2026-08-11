@@ -12,7 +12,13 @@ export const buttonVariants = cva(
         outline: "border border-ink-300 text-ink-900 hover:border-ink-400 hover:bg-ink-50",
         ghost: "text-ink-700 hover:bg-ink-50",
         destructive: "glossy bg-danger-600 text-white shadow-sm hover:bg-danger-700 hover:shadow-float",
-        brass: "glossy bg-brass-400 text-ink-900 shadow-sm hover:bg-brass-500 hover:shadow-float",
+        // Kept as a distinct variant name for the ~30 existing call sites, but now renders
+        // identically to `primary` — the brand palette allows only black/white/gray chrome plus
+        // one red accent reserved for promo labels, so there's no longer a separate "brass" look.
+        brass: "glossy bg-ink-900 text-cream-50 shadow-sm hover:bg-ink-800 hover:shadow-float",
+        // For genuinely promotional CTAs (apply a coupon, claim a deal) — the one place besides
+        // badges where the brand's single red accent belongs.
+        sale: "glossy bg-sale-500 text-white shadow-sm hover:bg-sale-600 hover:shadow-float",
       },
       size: {
         sm: "h-8 px-3",

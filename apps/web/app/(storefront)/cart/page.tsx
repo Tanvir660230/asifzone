@@ -3,16 +3,18 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Trash2, Heart, Gift } from "lucide-react";
+import { Trash2, Heart, Gift, ShoppingBag } from "lucide-react";
 import type { BundleCartPreview, Product } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
+import { ProductCarousel } from "@/components/storefront/product-carousel";
+import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
 import { useCartStore, useCartSubtotal } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { addToWishlist } from "@/lib/api/wishlist";
-import { fetchProductsByIds, getSimilarProducts } from "@/lib/api/storefront";
+import { fetchProductsByIds, fetchTrendingProducts, getSimilarProducts } from "@/lib/api/storefront";
 import { previewBundle } from "@/lib/api/bundles";
 
 export default function CartPage() {
@@ -26,6 +28,15 @@ export default function CartPage() {
   const [alternatives, setAlternatives] = useState<Record<string, Product[]>>({});
   const [savingProductId, setSavingProductId] = useState<string | null>(null);
   const [bundlePreview, setBundlePreview] = useState<BundleCartPreview | null>(null);
+  const [trending, setTrending] = useState<Product[]>([]);
+
+  // Only needed for the empty-cart state, but cheap enough (and rare enough a page) not to gate
+  // behind `items.length === 0` — avoids a flash of "no suggestions yet" right as the cart empties.
+  useEffect(() => {
+    fetchTrendingProducts({ limit: 8 })
+      .then(({ items }) => setTrending(items))
+      .catch(() => setTrending([]));
+  }, []);
 
   // Zustand's persisted state hydrates after mount — render nothing cart-specific until then to avoid a flash of "empty cart".
   const [mounted, setMounted] = useState(false);
@@ -94,11 +105,24 @@ export default function CartPage() {
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-24 text-center">
-        <h1 className="mb-3 font-display text-2xl text-ink-900">Your cart is empty</h1>
-        <Link href="/" className="text-sm text-brass-500 underline">
-          Continue shopping
-        </Link>
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+        <div className="mx-auto flex max-w-md flex-col items-center rounded-2xl border border-ink-100 bg-cream-50 px-6 py-14 text-center shadow-sm sm:px-10">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-ink-100 text-ink-400">
+            <ShoppingBag size={28} />
+          </span>
+          <h1 className="mt-5 font-display text-2xl text-ink-900">Your cart is empty</h1>
+          <p className="mt-2 text-sm text-ink-500">Looks like you haven&rsquo;t added anything yet — let&rsquo;s fix that.</p>
+          <Link href="/" className="mt-6 w-full">
+            <Button variant="primary" size="lg" className="w-full">
+              Continue shopping
+            </Button>
+          </Link>
+        </div>
+
+        <div className="mt-4">
+          <RecentlyViewedCarousel />
+          <ProductCarousel eyebrow="Popular right now" title="Trending Products" products={trending} />
+        </div>
       </div>
     );
   }
@@ -108,8 +132,8 @@ export default function CartPage() {
       <h1 className="mb-8 font-display text-2xl text-ink-900">Your Cart</h1>
 
       {bundlePreview?.eligible && (
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-brass-300 bg-brass-50 p-4 text-sm text-ink-800">
-          <Gift size={18} className="mt-0.5 shrink-0 text-brass-500" />
+        <div className="mb-6 flex items-start gap-3 rounded-lg border border-sale-500/30 bg-sale-50 p-4 text-sm text-ink-800">
+          <Gift size={18} className="mt-0.5 shrink-0 text-sale-500" />
           <p>
             <span className="font-medium">{bundlePreview.eligible.bundle.name} unlocked</span> — save{" "}
             {formatPrice(bundlePreview.eligible.discount)} at checkout.
@@ -163,7 +187,7 @@ export default function CartPage() {
                     <button
                       onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
                       disabled={item.quantity <= 1}
-                      className="h-8 w-8 text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-200 disabled:hover:bg-transparent"
+                      className="h-10 w-10 text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-200 disabled:hover:bg-transparent"
                       aria-label="Decrease quantity"
                       title={item.quantity <= 1 ? "Use the trash icon to remove this item" : undefined}
                     >
@@ -172,7 +196,7 @@ export default function CartPage() {
                     <span className="w-8 text-center text-sm">{item.quantity}</span>
                     <button
                       onClick={() => updateQuantity(item.variantId, Math.min(item.maxStock, item.quantity + 1))}
-                      className="h-8 w-8 text-ink-700 hover:bg-ink-50"
+                      className="h-10 w-10 text-ink-700 hover:bg-ink-50"
                       aria-label="Increase quantity"
                     >
                       +
@@ -194,7 +218,10 @@ export default function CartPage() {
 
               <button
                 onClick={() => removeItem(item.variantId)}
-                className="self-start text-ink-300 hover:text-red-700"
+                // Negative margin cancels the padding's footprint in the row layout, so the icon
+                // stays visually in place while the actual tappable box grows to ~40px (this app's
+                // baseline touch target, see Button's "md" size) instead of the bare 16px glyph.
+                className="-m-3 shrink-0 self-start p-3 text-ink-300 hover:text-danger-600"
                 aria-label="Remove item"
               >
                 <Trash2 size={16} />

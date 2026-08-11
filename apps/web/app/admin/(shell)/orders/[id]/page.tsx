@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Printer, Truck } from "lucide-react";
+import { Printer, Truck, Trash2, RotateCcw } from "lucide-react";
 import type { OrderStatus, UpdateOrderDetailsInput } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -13,10 +13,23 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
+
+const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
+  delivered: "bg-success-100 text-success-700",
+  partial_delivered: "bg-success-100 text-success-700",
+  cancelled: "bg-danger-100 text-danger-700",
+  hold: "bg-warning-100 text-warning-700",
+};
+
+function courierStatusBadgeClass(status: string): string {
+  return COURIER_STATUS_BADGE_CLASS[status] ?? "bg-ink-100 text-ink-700";
+}
 
 const STATUS_OPTIONS: OrderStatus[] = [
   "PENDING",
@@ -37,6 +50,10 @@ export default function OrderDetailPage() {
   const [statusNote, setStatusNote] = useState("");
   const [tracking, setTracking] = useState<{ trackingNumber: string; carrier: string } | null>(null);
   const [adminNotes, setAdminNotes] = useState<string | null>(null);
+
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const { data: currentAdmin } = useCurrentAdmin();
+  const isOwner = currentAdmin?.admin.role === "OWNER";
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-order", id],
@@ -63,6 +80,45 @@ export default function OrderDetailPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to save"),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => adminOrdersApi.deleteOrder(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      toast.success("Order deleted");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to delete order"),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: () => adminOrdersApi.restoreOrder(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      toast.success("Order restored");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to restore order"),
+  });
+
+  const bookCourierMutation = useMutation({
+    mutationFn: () => adminOrdersApi.bookCourier(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      setTracking(null);
+      toast.success("Booked with Steadfast");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to book with Steadfast"),
+  });
+
+  const refreshCourierMutation = useMutation({
+    mutationFn: () => adminOrdersApi.refreshCourierStatus(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      toast.success("Courier status refreshed");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to refresh status"),
+  });
+
   if (isLoading || !data) return <p className="text-ink-400">Loading…</p>;
 
   const { order } = data;
@@ -73,7 +129,7 @@ export default function OrderDetailPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-display text-2xl text-ink-900">{order.orderNumber}</h1>
+          <h1 className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{order.orderNumber}</h1>
           <p className="text-sm text-ink-500">Placed {new Date(order.createdAt).toLocaleString()}</p>
         </div>
         <div className="flex items-center gap-3">
@@ -82,11 +138,46 @@ export default function OrderDetailPage() {
               <Printer size={14} /> Invoice
             </Button>
           </Link>
+          {isOwner &&
+            (order.deletedAt ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={restoreMutation.isPending}
+                onClick={async () => {
+                  if (await confirm(`Restore order ${order.orderNumber}?`)) restoreMutation.mutate();
+                }}
+              >
+                <RotateCcw size={14} /> Restore
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={deleteMutation.isPending}
+                onClick={async () => {
+                  if (
+                    await confirm(
+                      `Delete order ${order.orderNumber}? Stock will be restored — this can be undone from the orders list.`,
+                    )
+                  )
+                    deleteMutation.mutate();
+                }}
+              >
+                <Trash2 size={14} /> Delete
+              </Button>
+            ))}
           <button onClick={() => router.push("/admin/orders")} className="text-sm text-ink-500 hover:text-ink-900">
             Back to orders
           </button>
         </div>
       </div>
+
+      {order.deletedAt && (
+        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          This order was deleted on {new Date(order.deletedAt).toLocaleString()}. Restore it to make further changes.
+        </div>
+      )}
 
       <Card>
         <CardHeader className="flex items-center justify-between">
@@ -98,7 +189,7 @@ export default function OrderDetailPage() {
             <Select
               value={order.status}
               onChange={(e) => statusMutation.mutate(e.target.value as OrderStatus)}
-              disabled={statusMutation.isPending}
+              disabled={statusMutation.isPending || !!order.deletedAt}
               className="w-44"
             >
               {STATUS_OPTIONS.map((s) => (
@@ -111,6 +202,7 @@ export default function OrderDetailPage() {
               placeholder="Note for this status change (optional)"
               value={statusNote}
               onChange={(e) => setStatusNote(e.target.value)}
+              disabled={!!order.deletedAt}
               className="max-w-xs"
             />
           </div>
@@ -137,37 +229,85 @@ export default function OrderDetailPage() {
             <Truck size={16} className="text-brass-500" /> Shipping & Tracking
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <div>
-            <Label htmlFor="carrier">Carrier</Label>
-            <Input
-              id="carrier"
-              placeholder="e.g. Pathao, Sundarban"
-              value={trackingValue.carrier}
-              onChange={(e) => setTracking({ ...trackingValue, carrier: e.target.value })}
-            />
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-100 bg-ink-50/50 p-3">
+            {order.courierConsignmentId ? (
+              <>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${courierStatusBadgeClass(order.courierStatus ?? "")}`}>
+                  Steadfast: {(order.courierStatus ?? "booked").replace(/_/g, " ")}
+                </span>
+                {order.trackingNumber && (
+                  <a
+                    href={`https://steadfast.com.bd/t/${order.trackingNumber}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-brass-600 underline hover:text-brass-700"
+                  >
+                    Track parcel
+                  </a>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={refreshCourierMutation.isPending || !!order.deletedAt}
+                  onClick={() => refreshCourierMutation.mutate()}
+                >
+                  Refresh status
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-ink-500">Not yet booked with a courier.</p>
+                <Button
+                  size="sm"
+                  disabled={bookCourierMutation.isPending || !!order.deletedAt}
+                  onClick={async () => {
+                    const codAmount = order.paymentMethod === "COD" ? Number(order.total) : 0;
+                    const ok = await confirm(
+                      `Book delivery with Steadfast for ${order.customerName} (${order.customerPhone})? COD to collect: ${formatPrice(codAmount)}.`,
+                      "Book",
+                    );
+                    if (ok) bookCourierMutation.mutate();
+                  }}
+                >
+                  Book with Steadfast
+                </Button>
+              </>
+            )}
           </div>
-          <div>
-            <Label htmlFor="trackingNumber">Tracking number</Label>
-            <Input
-              id="trackingNumber"
-              value={trackingValue.trackingNumber}
-              onChange={(e) => setTracking({ ...trackingValue, trackingNumber: e.target.value })}
-            />
+
+          <div className="grid grid-cols-1 gap-3 border-t border-ink-100 pt-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <div>
+              <Label htmlFor="carrier">Carrier (manual fallback)</Label>
+              <Input
+                id="carrier"
+                placeholder="e.g. Pathao, Sundarban"
+                value={trackingValue.carrier}
+                onChange={(e) => setTracking({ ...trackingValue, carrier: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="trackingNumber">Tracking number</Label>
+              <Input
+                id="trackingNumber"
+                value={trackingValue.trackingNumber}
+                onChange={(e) => setTracking({ ...trackingValue, trackingNumber: e.target.value })}
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={detailsMutation.isPending}
+              onClick={() =>
+                detailsMutation.mutate({
+                  trackingNumber: trackingValue.trackingNumber || null,
+                  carrier: trackingValue.carrier || null,
+                })
+              }
+            >
+              Save
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={detailsMutation.isPending}
-            onClick={() =>
-              detailsMutation.mutate({
-                trackingNumber: trackingValue.trackingNumber || null,
-                carrier: trackingValue.carrier || null,
-              })
-            }
-          >
-            Save
-          </Button>
         </CardContent>
       </Card>
 
@@ -281,6 +421,7 @@ export default function OrderDetailPage() {
           </div>
         </CardContent>
       </Card>
+      {confirmDialog}
     </div>
   );
 }
