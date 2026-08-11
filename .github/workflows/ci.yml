@@ -107,25 +107,14 @@ jobs:
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    # Runs directly on the VPS via a self-hosted runner instead of SSHing in from a hosted
+    # runner — Hostinger's network-level DDoS protection was silently dropping connections from
+    # GitHub's hosted-runner (Azure) IP ranges, so ssh-keyscan timed out on every deploy. Running
+    # on-box removes that network hop entirely. Only the push-to-main-gated `deploy` job uses this
+    # label; `test` stays on a hosted runner so PRs (including from forks) never execute on it.
+    runs-on: [self-hosted, vps]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Package deploy archive
-        run: |
-          tar -czf /tmp/deploy.tar.gz \
-            --exclude='node_modules' --exclude='.git' --exclude='.next' --exclude='dist' \
-            --exclude='.turbo' --exclude='coverage' --exclude='apps/api/.devmail' \
-            --exclude='apps/api/uploads' --exclude='apps/api/.env' --exclude='apps/web/.env.local' \
-            --exclude='*.tsbuildinfo' --exclude='test-results' --exclude='playwright-report' \
-            .
-
-      - name: Set up deploy key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
       - name: Verify required secrets are set
         run: |
@@ -147,54 +136,39 @@ jobs:
 
       - name: Write docker/.env
         run: |
-          : > docker.env
-          echo "JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}" >> docker.env
-          echo "JWT_CUSTOMER_ACCESS_SECRET=${{ secrets.JWT_CUSTOMER_ACCESS_SECRET }}" >> docker.env
-          echo "JWT_CUSTOMER_REFRESH_SECRET=${{ secrets.JWT_CUSTOMER_REFRESH_SECRET }}" >> docker.env
-          echo "WEB_ORIGIN=${{ secrets.WEB_ORIGIN }}" >> docker.env
-          echo "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> docker.env
-          echo "NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker.env
+          : > docker/.env
+          echo "JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}" >> docker/.env
+          echo "JWT_CUSTOMER_ACCESS_SECRET=${{ secrets.JWT_CUSTOMER_ACCESS_SECRET }}" >> docker/.env
+          echo "JWT_CUSTOMER_REFRESH_SECRET=${{ secrets.JWT_CUSTOMER_REFRESH_SECRET }}" >> docker/.env
+          echo "WEB_ORIGIN=${{ secrets.WEB_ORIGIN }}" >> docker/.env
+          echo "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> docker/.env
+          echo "NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker/.env
           # Same public domain as NEXT_PUBLIC_SITE_URL — everything lives behind one nginx host in
           # this deploy, and this is what the API embeds into category/banner/logo/editor image
           # URLs. No separate secret to maintain; reusing NEXT_PUBLIC_SITE_URL keeps it from ever
           # drifting out of sync with the domain the site actually runs on.
-          echo "API_ORIGIN=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker.env
-          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> docker.env
-          echo "REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}" >> docker.env
+          echo "API_ORIGIN=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker/.env
+          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> docker/.env
+          echo "REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}" >> docker/.env
           # Optional — docker-compose.yml falls back to a no-op dev mailer (writes to disk instead
           # of sending) when this is empty, so it's not in the required-secrets check above.
-          echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" >> docker.env
-          echo "RESEND_FROM_ADDRESS=${{ secrets.RESEND_FROM_ADDRESS }}" >> docker.env
-          echo "BULKSMSBD_API_KEY=${{ secrets.BULKSMSBD_API_KEY }}" >> docker.env
-          echo "BULKSMSBD_SENDER_ID=${{ secrets.BULKSMSBD_SENDER_ID }}" >> docker.env
+          echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" >> docker/.env
+          echo "RESEND_FROM_ADDRESS=${{ secrets.RESEND_FROM_ADDRESS }}" >> docker/.env
+          echo "BULKSMSBD_API_KEY=${{ secrets.BULKSMSBD_API_KEY }}" >> docker/.env
+          echo "BULKSMSBD_SENDER_ID=${{ secrets.BULKSMSBD_SENDER_ID }}" >> docker/.env
           # Optional — the web push opt-in toggle (both sending from the api and subscribing from
           # the web build's NEXT_PUBLIC_VAPID_PUBLIC_KEY, see docker-compose.yml) stays hidden while
           # this is empty. Generate a pair with `npx web-push generate-vapid-keys`.
-          echo "WEB_PUSH_PUBLIC_KEY=${{ secrets.WEB_PUSH_PUBLIC_KEY }}" >> docker.env
-          echo "WEB_PUSH_PRIVATE_KEY=${{ secrets.WEB_PUSH_PRIVATE_KEY }}" >> docker.env
-          echo "WEB_PUSH_CONTACT_EMAIL=${{ secrets.WEB_PUSH_CONTACT_EMAIL }}" >> docker.env
-
-      - name: Transfer to VPS
-        run: |
-          scp -i ~/.ssh/deploy_key /tmp/deploy.tar.gz root@${{ secrets.VPS_HOST }}:/opt/asifzone/deploy.tar.gz
-          scp -i ~/.ssh/deploy_key docker.env root@${{ secrets.VPS_HOST }}:/opt/asifzone/docker/.env.next
+          echo "WEB_PUSH_PUBLIC_KEY=${{ secrets.WEB_PUSH_PUBLIC_KEY }}" >> docker/.env
+          echo "WEB_PUSH_PRIVATE_KEY=${{ secrets.WEB_PUSH_PRIVATE_KEY }}" >> docker/.env
+          echo "WEB_PUSH_CONTACT_EMAIL=${{ secrets.WEB_PUSH_CONTACT_EMAIL }}" >> docker/.env
 
       - name: Build and restart the stack
         run: |
-          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
-            set -e
-            cd /opt/asifzone
-            # tar -x only overwrites/adds — it never deletes files an old deploy left behind that
-            # the current commit no longer has. Wipe the source trees before re-extracting so a
-            # stale/orphaned file (e.g. from a prior manual copy) cant break every build after it.
-            # docker/.env.next was scp'd separately and lives under docker/, so it survives this.
-            rm -rf apps packages
-            tar -xzf deploy.tar.gz && rm deploy.tar.gz
-            mv docker/.env.next docker/.env
-            docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
-            docker compose -f docker/docker-compose.yml exec -T api npx prisma migrate deploy
-            # api/web just got recreated with fresh container IPs, and nginx.conf may have
-            # changed too (its ./nginx/nginx.conf mount does not itself trigger a reload) — always
-            # restart nginx so it never keeps proxying to a dead container.
-            docker compose -f docker/docker-compose.yml restart nginx
-          '
+          set -e
+          docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
+          docker compose -f docker/docker-compose.yml exec -T api npx prisma migrate deploy
+          # api/web just got recreated with fresh container IPs, and nginx.conf may have
+          # changed too (its ./nginx/nginx.conf mount does not itself trigger a reload) — always
+          # restart nginx so it never keeps proxying to a dead container.
+          docker compose -f docker/docker-compose.yml restart nginx
