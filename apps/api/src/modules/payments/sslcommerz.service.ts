@@ -55,7 +55,10 @@ export async function initSslcommerzSession(params: InitSessionParams): Promise<
 
   const data = (await res.json()) as SslSessionResponse;
   if (data.status !== "SUCCESS" || !data.GatewayPageURL) {
-    throw AppError.badRequest(`Payment gateway error: ${data.failedreason ?? "could not start session"}`);
+    // The gateway's failedreason is an internal/config-facing detail (e.g. bad store_id) — log it
+    // for us, but never surface it to the customer verbatim.
+    console.error(`[sslcommerz] session init failed for order ${params.orderNumber}:`, data.failedreason);
+    throw AppError.badRequest("Could not start the payment session. Please try again or choose Cash on Delivery.");
   }
 
   return { gatewayUrl: data.GatewayPageURL, sessionKey: data.sessionkey ?? "" };

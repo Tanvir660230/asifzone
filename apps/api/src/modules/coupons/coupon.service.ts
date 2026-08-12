@@ -31,7 +31,7 @@ function computeCouponDiscount(coupon: { type: string; value: unknown; maxDiscou
 /** Validates a coupon against a cart subtotal and returns the discount amount — throws with a customer-facing message if it can't be applied. */
 export async function evaluateCoupon(code: string, subtotal: number): Promise<CouponEvaluation> {
   const coupon = await findActiveCoupon(code);
-  if (!coupon || !coupon.isActive) throw AppError.badRequest("Coupon not found");
+  if (!coupon || !coupon.isActive || coupon.deletedAt) throw AppError.badRequest("Coupon not found");
   if (coupon.expiresAt && coupon.expiresAt < new Date()) throw AppError.badRequest("Coupon has expired");
   if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
     throw AppError.badRequest("Coupon usage limit reached");
@@ -48,7 +48,7 @@ export async function evaluateCoupon(code: string, subtotal: number): Promise<Co
 export async function findBestCoupon(subtotal: number) {
   const now = new Date();
   const candidates = await prisma.coupon.findMany({
-    where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    where: { isActive: true, deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
     orderBy: { createdAt: "desc" },
     take: MAX_ACTIVE_COUPONS_SCANNED,
   });
@@ -86,7 +86,7 @@ export async function incrementCouponUsage(tx: Prisma.TransactionClient, couponI
 export async function listActiveCoupons() {
   const now = new Date();
   const candidates = await prisma.coupon.findMany({
-    where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+    where: { isActive: true, deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
     orderBy: { createdAt: "desc" },
     take: MAX_ACTIVE_COUPONS_SCANNED,
   });
@@ -96,9 +96,10 @@ export async function listActiveCoupons() {
 // --- admin CRUD ---
 
 export async function listCoupons(query: CouponListQuery) {
-  const where = query.search
-    ? { code: { contains: query.search, mode: "insensitive" as const } }
-    : {};
+  const where = {
+    deletedAt: query.trashed ? { not: null } : null,
+    ...(query.search ? { code: { contains: query.search, mode: "insensitive" as const } } : {}),
+  };
 
   return paginate(
     query,
@@ -128,7 +129,32 @@ export async function updateCoupon(id: string, input: UpdateCouponInput) {
   return prisma.coupon.update({ where: { id }, data: input });
 }
 
+/** Soft delete — moves the coupon to Trash instead of destroying it. Unlike Category, there's no
+ * "must be empty first" guard: a coupon that's already been used on past orders is still safe to
+ * trash (it just stops being redeemable) — trashing it is actually strictly better than the old
+ * hard delete, which silently nulled out `Order.couponId` on every order that used it
+ * (`onDelete: SetNull`), losing which coupon those historical orders applied. */
 export async function deleteCoupon(id: string) {
   await getCouponById(id);
+  await prisma.coupon.update({ where: { id }, data: { deletedAt: new Date() } });
+}
+
+export async function restoreCoupon(id: string) {
+  await getCouponById(id);
+  return prisma.coupon.update({ where: { id }, data: { deletedAt: null } });
+}
+
+/** Irreversible — only meaningful for a coupon already in Trash. Blocked if the coupon has real
+ * order history (checked directly against Order, not the denormalized `usedCount`, which could
+ * drift) — purging it would erase which coupon those orders used. */
+export async function permanentlyDeleteCoupon(id: string) {
+  const coupon = await getCouponById(id);
+  if (!coupon.deletedAt) throw AppError.badRequest("Move the coupon to Trash before deleting it permanently");
+
+  const orderCount = await prisma.order.count({ where: { couponId: id } });
+  if (orderCount > 0) {
+    throw AppError.conflict("Cannot permanently delete a coupon used on past orders — this would erase which coupon those orders used");
+  }
+
   await prisma.coupon.delete({ where: { id } });
 }

@@ -17,7 +17,14 @@ export function StoreLogoImage({ src, alt, className, fallback }: StoreLogoImage
   const [failed, setFailed] = useState(false);
   if (failed) return <>{fallback}</>;
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- admin-supplied URL, arbitrary host not worth whitelisting for next/image
-    <img src={src} alt={alt} className={className} onError={() => setFailed(true)} />
+    // `className` fixes both dimensions of this box (e.g. "h-9 w-36") rather than leaving width
+    // auto — the logo's real aspect ratio is unknown until the admin-uploaded image loads, so an
+    // auto width leaves the browser nothing to reserve space with, and the layout (everything
+    // after the logo) jumps once it does load. object-contain on the <img> itself letterboxes
+    // whatever the true ratio turns out to be inside this fixed box instead.
+    <span className={className}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- admin-supplied URL, arbitrary host not worth whitelisting for next/image */}
+      <img src={src} alt={alt} className="h-full w-full object-contain" onError={() => setFailed(true)} />
+    </span>
   );
 }

@@ -8,8 +8,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, User, MapPin, Banknote, Smartphone } from "lucide-react";
 import {
   checkoutSchema,
-  BD_DIVISIONS,
-  BD_DISTRICTS_BY_DIVISION,
+  BD_ALL_DISTRICTS,
+  BD_DIVISION_BY_DISTRICT,
   BD_AREAS_BY_DISTRICT,
   SHIPPING_FEE_DHAKA_FALLBACK,
   SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK,
@@ -109,33 +109,43 @@ export default function CheckoutPage() {
     resolver: zodResolver(checkoutFormSchema),
     defaultValues: {
       paymentMethod: "COD",
-      shippingDivision: BD_DIVISIONS[0],
-      shippingDistrict: BD_DISTRICTS_BY_DIVISION[BD_DIVISIONS[0]][0],
-      shippingArea: BD_AREAS_BY_DISTRICT[BD_DISTRICTS_BY_DIVISION[BD_DIVISIONS[0]][0]]?.[0] ?? "",
+      shippingDivision: "" as CheckoutFormValues["shippingDivision"],
+      shippingDistrict: "",
+      shippingArea: "",
     },
   });
 
-  const shippingDivision = watch("shippingDivision") || BD_DIVISIONS[0];
+  // Both default true so the form isn't stuck showing neither option before settings load.
+  const codEnabled = settingsData?.settings.codEnabled ?? true;
+  const onlinePaymentEnabled = settingsData?.settings.onlinePaymentEnabled ?? true;
+  const paymentMethod = watch("paymentMethod");
+
+  // If the shopper's currently-selected method gets turned off (or settings load in after mount and
+  // COD wasn't actually available), fall back to whichever method is still enabled.
+  useEffect(() => {
+    if (paymentMethod === "COD" && !codEnabled && onlinePaymentEnabled) {
+      setValue("paymentMethod", "SSLCOMMERZ");
+    } else if (paymentMethod === "SSLCOMMERZ" && !onlinePaymentEnabled && codEnabled) {
+      setValue("paymentMethod", "COD");
+    }
+  }, [codEnabled, onlinePaymentEnabled, paymentMethod, setValue]);
+
+  const shippingDivision = watch("shippingDivision");
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
-  const districtOptions: readonly string[] = BD_DISTRICTS_BY_DIVISION[shippingDivision] ?? [];
   const areaOptions: readonly string[] = BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [];
 
-  // Courier-style cascading picker: the district list narrows to the selected division, so if the
-  // shopper (or a saved address) switches division, drop any district that no longer belongs to it.
+  // Division is derived from the chosen district rather than picked separately — it's only needed
+  // internally for the Dhaka/outside-Dhaka shipping-fee and delivery-estimate split.
   useEffect(() => {
-    const firstDistrict = districtOptions[0];
-    if (firstDistrict && !districtOptions.includes(shippingDistrict)) {
-      setValue("shippingDistrict", firstDistrict);
-    }
+    setValue("shippingDivision", (BD_DIVISION_BY_DISTRICT[shippingDistrict] ?? "") as CheckoutFormValues["shippingDivision"]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shippingDivision]);
+  }, [shippingDistrict]);
 
-  // Same cascade one level down: the area/thana list narrows to the selected district.
+  // The area/thana list narrows to the selected district — clear it if it no longer applies.
   useEffect(() => {
-    const firstArea = areaOptions[0];
-    if (firstArea && !areaOptions.includes(shippingArea)) {
-      setValue("shippingArea", firstArea);
+    if (shippingArea && !areaOptions.includes(shippingArea)) {
+      setValue("shippingArea", "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
@@ -166,7 +176,7 @@ export default function CheckoutPage() {
     if (!address) return;
     setValue("customerName", address.fullName);
     setValue("customerPhone", address.phone);
-    setValue("shippingDivision", address.division as CheckoutFormValues["shippingDivision"]);
+    // shippingDivision is re-derived from the district by the effect above once it changes.
     setValue("shippingDistrict", address.district);
     setValue("shippingArea", address.area);
     setValue("shippingAddressLine", address.addressLine);
@@ -435,17 +445,6 @@ export default function CheckoutPage() {
             )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <Label htmlFor="shippingDivision">Division</Label>
-                <SearchableSelect
-                  id="shippingDivision"
-                  autoComplete="address-level1"
-                  value={shippingDivision}
-                  onChange={(v) => setValue("shippingDivision", v as CheckoutFormValues["shippingDivision"], { shouldValidate: true })}
-                  options={BD_DIVISIONS}
-                  placeholder="Search division..."
-                />
-              </div>
-              <div>
                 <Label htmlFor="shippingDistrict">District</Label>
                 <SearchableSelect
                   id="shippingDistrict"
@@ -454,7 +453,7 @@ export default function CheckoutPage() {
                   aria-describedby={errors.shippingDistrict ? "shippingDistrict-error" : undefined}
                   value={shippingDistrict}
                   onChange={(v) => setValue("shippingDistrict", v, { shouldValidate: true })}
-                  options={districtOptions}
+                  options={BD_ALL_DISTRICTS}
                   placeholder="Search district..."
                 />
                 {errors.shippingDistrict && (
@@ -513,19 +512,40 @@ export default function CheckoutPage() {
               <h2 className="font-display text-lg text-ink-900">Payment method</h2>
             </div>
             <div className="space-y-2">
-              <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
-                <input type="radio" value="COD" className="accent-ink-900" {...register("paymentMethod")} defaultChecked />
-                <Banknote size={16} className="text-ink-400" />
-                Cash on Delivery
-              </label>
-              <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
-                <input type="radio" value="SSLCOMMERZ" className="accent-ink-900" {...register("paymentMethod")} />
-                <Smartphone size={16} className="text-ink-400" />
-                <span>
-                  Digital Payment
-                  <span className="block text-xs text-ink-400">bKash, Nagad &amp; Card</span>
-                </span>
-              </label>
+              {codEnabled && (
+                <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
+                  <input
+                    type="radio"
+                    value="COD"
+                    className="accent-ink-900"
+                    {...register("paymentMethod")}
+                    defaultChecked={paymentMethod === "COD"}
+                  />
+                  <Banknote size={16} className="text-ink-400" />
+                  Cash on Delivery
+                </label>
+              )}
+              {onlinePaymentEnabled && (
+                <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
+                  <input
+                    type="radio"
+                    value="SSLCOMMERZ"
+                    className="accent-ink-900"
+                    {...register("paymentMethod")}
+                    defaultChecked={paymentMethod === "SSLCOMMERZ"}
+                  />
+                  <Smartphone size={16} className="text-ink-400" />
+                  <span>
+                    Digital Payment
+                    <span className="block text-xs text-ink-400">bKash, Nagad &amp; Card</span>
+                  </span>
+                </label>
+              )}
+              {!codEnabled && !onlinePaymentEnabled && (
+                <p className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-600">
+                  Checkout is temporarily unavailable — please try again later.
+                </p>
+              )}
             </div>
             {(settingsData?.settings.paymentMethodsImageUrl ?? paymentMethods.length > 0) && (
               <div className="mt-4 border-t border-ink-100 pt-4">
@@ -563,7 +583,13 @@ export default function CheckoutPage() {
 
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
-          <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            variant="brass"
+            size="lg"
+            className="w-full"
+            disabled={isSubmitting || (!codEnabled && !onlinePaymentEnabled)}
+          >
             {isSubmitting ? "Placing order…" : `Place Order — ${formatPrice(total)}`}
           </Button>
         </form>

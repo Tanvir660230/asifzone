@@ -158,3 +158,57 @@ body {
   content: attr(data-placeholder);
   @apply pointer-events-none float-left h-0 text-ink-300;
 }
+
+/* 6-up A4 shipping-label sheet (apps/web/app/admin/(shell)/orders/print-labels) — on screen this
+   renders as a plain preview grid (see the page's own Tailwind classes); these rules only kick in
+   for the actual print, where exact mm sizing matters for the cut-and-paste label workflow. */
+.print-page {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+@media print {
+  @page {
+    size: A4;
+    /* 10mm, not 8mm — extra buffer against browsers that print their own header/footer text (URL,
+       date, page number) inside the @page margin box regardless of CSS, and against printers that
+       can't physically lay ink within a few mm of the edge even when the driver claims to. */
+    margin: 10mm;
+  }
+  .print-page {
+    /* fr units, not fixed mm columns — a fixed 194mm-wide 2-column layout left zero rounding
+       tolerance and got clipped on the right column; fr always sums to exactly the container's
+       size, so it can't overflow regardless of sub-pixel mm->px rounding. */
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 4mm;
+    /* 277mm is the exact usable height (297mm page - 2 x 10mm margin) — using that exact number
+       here reproduced the same zero-tolerance overflow bug the column width fix above was for
+       (the bottom row got clipped instead of the right column). 260mm deliberately leaves ~17mm of
+       slack so rounding differences show up as a bit of blank space at the bottom, never as lost
+       content. */
+    height: 260mm;
+    break-after: page;
+    page-break-after: always;
+  }
+  .print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .label-cell {
+    /* Grid items default to min-width/min-height: auto, which lets unbreakable content (the order
+       number, the barcode's own rendered digits) force the item wider than its track instead of
+       wrapping/clipping — min-width: 0 makes the track size actually win. */
+    min-width: 0;
+    min-height: 0;
+    padding: 2.5mm;
+    border: 1px dashed #999;
+    overflow: hidden;
+    /* Chrome/Edge only print background-color/background-image at all when the print dialog's own
+       "Background graphics" option is checked — this doesn't force that option on, but it does stop
+       the browser from further degrading colors that DO print (e.g. to grayscale) on top of it. */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

@@ -251,6 +251,8 @@ export default function SettingsPage() {
       liveChatLabel: s.liveChatLabel,
       tawkPropertyId: s.tawkPropertyId,
       tawkWidgetId: s.tawkWidgetId,
+      codEnabled: s.codEnabled,
+      onlinePaymentEnabled: s.onlinePaymentEnabled,
       googleSiteVerification: s.googleSiteVerification,
     });
   }, [data, reset]);
@@ -267,6 +269,8 @@ export default function SettingsPage() {
   const taxEnabled = watch("taxEnabled");
   const callEnabled = watch("callEnabled");
   const liveChatEnabled = watch("liveChatEnabled");
+  const codEnabled = watch("codEnabled");
+  const onlinePaymentEnabled = watch("onlinePaymentEnabled");
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
@@ -463,6 +467,7 @@ export default function SettingsPage() {
         )}
 
         {tab === "shipping" && (
+        <>
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
@@ -512,6 +517,32 @@ export default function SettingsPage() {
             </div>
           </div>
         </FormSection>
+
+        <FormSection
+          title="Payment methods at checkout"
+          description="Turn Cash on Delivery or online payment off whenever needed — at least one must stay on."
+        >
+          <div className="space-y-3">
+            <label className="flex items-center justify-between rounded-lg border border-ink-100 p-4">
+              <div>
+                <p className="text-sm font-medium text-ink-900">Cash on Delivery</p>
+                <p className="mt-0.5 text-xs text-ink-400">Pay in cash when the order arrives.</p>
+              </div>
+              <Checkbox {...register("codEnabled")} disabled={!onlinePaymentEnabled && codEnabled} />
+            </label>
+            <label className="flex items-center justify-between rounded-lg border border-ink-100 p-4">
+              <div>
+                <p className="text-sm font-medium text-ink-900">Online Payment</p>
+                <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via SSLCommerz.</p>
+              </div>
+              <Checkbox {...register("onlinePaymentEnabled")} disabled={!codEnabled && onlinePaymentEnabled} />
+            </label>
+            {!codEnabled && !onlinePaymentEnabled && (
+              <p className="text-xs text-danger-600">At least one payment method must stay enabled.</p>
+            )}
+          </div>
+        </FormSection>
+        </>
         )}
 
         <div className="flex justify-end">

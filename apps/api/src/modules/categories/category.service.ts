@@ -10,6 +10,7 @@ import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
+import { deleteSiteImageFile } from "../uploads/upload.service";
 
 const CACHE_PREFIX = "categories:";
 const CACHE_TTL_SECONDS = 300;
@@ -18,10 +19,11 @@ async function invalidateCache() {
   await cacheDelByPrefix(CACHE_PREFIX);
 }
 
-export async function listCategories() {
+export async function listCategories(query: { trashed?: boolean } = {}) {
   return prisma.category.findMany({
+    where: { deletedAt: query.trashed ? { not: null } : null },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    include: { children: { orderBy: { sortOrder: "asc" } } },
+    include: { children: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" } } },
   });
 }
 
@@ -34,7 +36,10 @@ export async function getCategoryTree() {
   const cached = await cacheGet<unknown[]>(cacheKey);
   if (cached) return cached;
 
-  const all = await prisma.category.findMany({ where: { isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  const all = await prisma.category.findMany({
+    where: { isActive: true, deletedAt: null },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  });
   const byParent = new Map<string | null, typeof all>();
   for (const cat of all) {
     const key = cat.parentId ?? null;
@@ -58,7 +63,7 @@ export async function getCategoryById(id: string) {
 /** Public lookup: only returns active categories, matching what the storefront should link to. */
 export async function getCategoryBySlug(slug: string) {
   const category = await prisma.category.findUnique({ where: { slug } });
-  if (!category || !category.isActive) throw AppError.notFound("Category not found");
+  if (!category || !category.isActive || category.deletedAt) throw AppError.notFound("Category not found");
   return category;
 }
 
@@ -86,7 +91,7 @@ async function getCategoryParentPairs(): Promise<Array<{ id: string; parentId: s
   const cached = await cacheGet<Array<{ id: string; parentId: string | null }>>(cacheKey);
   if (cached) return cached;
 
-  const all = await prisma.category.findMany({ select: { id: true, parentId: true } });
+  const all = await prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, parentId: true } });
   await cacheSet(cacheKey, all, CACHE_TTL_SECONDS);
   return all;
 }
@@ -145,7 +150,7 @@ async function assertNoCycle(id: string, newParentId: string | null) {
 export async function createCategory(input: CreateCategoryInput) {
   if (input.parentId) {
     const parent = await prisma.category.findUnique({ where: { id: input.parentId } });
-    if (!parent) throw AppError.badRequest("Parent category does not exist");
+    if (!parent || parent.deletedAt) throw AppError.badRequest("Parent category does not exist");
   }
 
   const baseSlug = slugify(input.slug || input.name);
@@ -175,6 +180,10 @@ export async function updateCategory(id: string, input: UpdateCategoryInput) {
   }
   if (input.parentId !== undefined) {
     await assertNoCycle(id, input.parentId);
+    if (input.parentId) {
+      const parent = await prisma.category.findUnique({ where: { id: input.parentId } });
+      if (!parent || parent.deletedAt) throw AppError.badRequest("Parent category does not exist");
+    }
   }
 
   const data: Record<string, unknown> = { ...input };
@@ -228,7 +237,7 @@ export async function moveCategory(id: string, input: MoveCategoryInput) {
 
   if (input.newParentId) {
     const parent = await prisma.category.findUnique({ where: { id: input.newParentId } });
-    if (!parent) throw AppError.badRequest("Parent category does not exist");
+    if (!parent || parent.deletedAt) throw AppError.badRequest("Parent category does not exist");
   }
 
   const destinationSiblings = await prisma.category.findMany({
@@ -250,17 +259,51 @@ export async function moveCategory(id: string, input: MoveCategoryInput) {
   return getCategoryById(category.id);
 }
 
+/** Soft delete — moves the category to Trash instead of destroying it. Still requires the category
+ * be empty first (no live products/subcategories) so it never disappears from admin pickers while
+ * something live still points at it — only categories whose products/children are themselves
+ * already trashed count as "empty" here. Use `permanentlyDeleteCategory` to purge from Trash. */
 export async function deleteCategory(id: string) {
   await getCategoryById(id);
 
   const [productCount, childCount] = await Promise.all([
-    prisma.product.count({ where: { categoryId: id } }),
-    prisma.category.count({ where: { parentId: id } }),
+    prisma.product.count({ where: { categoryId: id, deletedAt: null } }),
+    prisma.category.count({ where: { parentId: id, deletedAt: null } }),
   ]);
 
   if (productCount > 0) throw AppError.conflict("Cannot delete a category that still has products");
   if (childCount > 0) throw AppError.conflict("Cannot delete a category that still has subcategories");
 
+  await prisma.category.update({ where: { id }, data: { deletedAt: new Date() } });
+  await invalidateCache();
+}
+
+export async function restoreCategory(id: string) {
+  await getCategoryById(id);
+  await prisma.category.update({ where: { id }, data: { deletedAt: null } });
+  await invalidateCache();
+  return getCategoryById(id);
+}
+
+/** Irreversible — only meaningful for a category already in Trash. Blocks on the same
+ * products/subcategories guard as the soft delete (defense in depth), plus one Category-specific
+ * check Product's trash pattern doesn't need: Bundle.anchorCategory cascades on a real category
+ * delete, so purging a category that still anchors a Bundle would silently take the Bundle with it. */
+export async function permanentlyDeleteCategory(id: string) {
+  const category = await getCategoryById(id);
+  if (!category.deletedAt) throw AppError.badRequest("Move the category to Trash before deleting it permanently");
+
+  const [productCount, childCount, bundleCount] = await Promise.all([
+    prisma.product.count({ where: { categoryId: id, deletedAt: null } }),
+    prisma.category.count({ where: { parentId: id, deletedAt: null } }),
+    prisma.bundle.count({ where: { anchorCategoryId: id } }),
+  ]);
+  if (productCount > 0) throw AppError.conflict("Cannot delete a category that still has products");
+  if (childCount > 0) throw AppError.conflict("Cannot delete a category that still has subcategories");
+  if (bundleCount > 0) throw AppError.conflict("Cannot permanently delete a category that anchors a Bundle — delete or reassign the Bundle first");
+
   await prisma.category.delete({ where: { id } });
+  if (category.imageUrl) await deleteSiteImageFile(category.imageUrl);
+  if (category.bannerImageUrl) await deleteSiteImageFile(category.bannerImageUrl);
   await invalidateCache();
 }

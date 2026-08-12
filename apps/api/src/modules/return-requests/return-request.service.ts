@@ -3,7 +3,7 @@ import type { CreateReturnRequestInput, ReviewReturnRequestInput, ReturnRequestL
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
-import { updateOrderStatus } from "../orders/order.service";
+import { updateOrderStatus, restockReturnedOrderItems } from "../orders/order.service";
 
 const include = {
   order: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
@@ -87,11 +87,12 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
   if (result.count === 0) throw AppError.conflict("This return request has already been reviewed");
 
   if (input.status === "APPROVED") {
-    await updateOrderStatus(
+    const order = await updateOrderStatus(
       request.orderId,
       { status: "RETURNED", note: `Return approved: ${request.reason}` },
       adminId,
     );
+    await restockReturnedOrderItems(order.id, order.items, adminId);
   }
 
   return prisma.returnRequest.findUnique({ where: { id }, include });

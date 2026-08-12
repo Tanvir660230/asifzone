@@ -40,7 +40,12 @@ export const moveCategorySchema = z.object({
   sortOrder: z.number().int().min(0),
 });
 
+export const categoryListQuerySchema = z.object({
+  trashed: z.coerce.boolean().optional(),
+});
+
 export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 export type ReorderCategoriesInput = z.infer<typeof reorderCategoriesSchema>;
 export type MoveCategoryInput = z.infer<typeof moveCategorySchema>;
+export type CategoryListQuery = z.infer<typeof categoryListQuerySchema>;

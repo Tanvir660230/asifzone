@@ -21,7 +21,7 @@ import { ApiError } from "@/lib/api-client";
 export default function BundlesPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["admin-bundles"], queryFn: () => bundlesApi.listBundles() });
-  const { data: categoryData } = useQuery({ queryKey: ["categories"], queryFn: categoriesApi.listCategories });
+  const { data: categoryData } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesApi.listCategories() });
   const [editing, setEditing] = useState<Bundle | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
 

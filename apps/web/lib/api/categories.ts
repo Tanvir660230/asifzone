@@ -7,8 +7,11 @@ import type {
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
-export function listCategories() {
-  return apiFetch<{ categories: Category[] }>("/api/categories");
+export function listCategories(params: { trashed?: boolean } = {}) {
+  const query = new URLSearchParams();
+  if (params.trashed) query.set("trashed", "true");
+  const qs = query.toString();
+  return apiFetch<{ categories: Category[] }>(`/api/categories${qs ? `?${qs}` : ""}`);
 }
 
 export function createCategory(input: CreateCategoryInput) {
@@ -41,6 +44,14 @@ export function updateCategory(id: string, input: UpdateCategoryInput) {
 
 export function deleteCategory(id: string) {
   return apiFetch<void>(`/api/categories/${id}`, { method: "DELETE" });
+}
+
+export function restoreCategory(id: string) {
+  return apiFetch<{ category: Category }>(`/api/categories/${id}/restore`, { method: "POST" });
+}
+
+export function permanentlyDeleteCategory(id: string) {
+  return apiFetch<void>(`/api/categories/${id}/permanent`, { method: "DELETE" });
 }
 
 export function reorderCategories(input: ReorderCategoriesInput) {

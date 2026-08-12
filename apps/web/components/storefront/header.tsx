@@ -39,7 +39,7 @@ export function Header({ categories, settings }: HeaderProps) {
     <StoreLogoImage
       src={settings.logoUrl}
       alt={settings.storeName}
-      className="h-9 w-auto object-contain"
+      className="h-9 w-36 object-contain"
       fallback={monogram}
     />
   ) : (

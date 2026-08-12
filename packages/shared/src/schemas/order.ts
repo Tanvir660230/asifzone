@@ -16,6 +16,23 @@ export const orderStatusEnum = z.enum([
 export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ"]);
 export const paymentStatusEnum = z.enum(["UNPAID", "PAID", "FAILED", "REFUNDED"]);
 
+/** Every raw `delivery_status` value Steadfast's API can return (courier.service.ts's
+ * mapSteadfastStatusToOrderStatus only understands a subset of these) — shared so the admin
+ * courier-status filter offers exactly the values Order.courierStatus can actually hold. */
+export const COURIER_DELIVERY_STATUSES = [
+  "in_review",
+  "pending",
+  "hold",
+  "delivered_approval_pending",
+  "partial_delivered_approval_pending",
+  "cancelled_approval_pending",
+  "unknown_approval_pending",
+  "delivered",
+  "partial_delivered",
+  "cancelled",
+  "unknown",
+] as const;
+
 /** Client-side fallback shown only before real settings have loaded — the authoritative fee is
  * always looked up from StoreSetting (Dhaka vs. outside-Dhaka) at order-creation time. */
 export const SHIPPING_FEE_DHAKA_FALLBACK = 60;
@@ -72,14 +89,31 @@ export const BD_DISTRICTS_BY_DIVISION = {
   Mymensingh: ["Jamalpur", "Mymensingh", "Netrokona", "Sherpur"],
 } as const satisfies Record<(typeof BD_DIVISIONS)[number], readonly string[]>;
 
+/** Every district, alphabetically, regardless of division — lets an address form ask for District
+ * directly (skipping the Division step entirely) since Division only matters internally for the
+ * Dhaka/outside-Dhaka shipping-fee split, not as something a shopper needs to pick. */
+export const BD_ALL_DISTRICTS: readonly string[] = Object.values(BD_DISTRICTS_BY_DIVISION)
+  .flat()
+  .sort((a, b) => a.localeCompare(b));
+
+/** Reverse lookup of BD_DISTRICTS_BY_DIVISION — given a district, which division it's in. Powers
+ * the Dhaka/outside-Dhaka shipping-fee and delivery-estimate logic once Division is no longer a
+ * field the shopper fills in directly. */
+export const BD_DIVISION_BY_DISTRICT: Record<string, (typeof BD_DIVISIONS)[number]> = Object.fromEntries(
+  Object.entries(BD_DISTRICTS_BY_DIVISION).flatMap(([division, districts]) =>
+    districts.map((district) => [district, division as (typeof BD_DIVISIONS)[number]]),
+  ),
+);
+
 /** Upazilas/thanas for every district (plus Dhaka Metropolitan Police thanas for Dhaka district,
  * since that's how the vast majority of Dhaka-city addresses are actually written — "Gulshan",
  * "Dhanmondi", "Mirpur" etc. are DMP thana names, not upazilas). Lets the Area/Thana field cascade
  * the same way District cascades off Division, instead of taking free text that couriers then have
  * to re-key against their own zone list.
  *
- * This is compiled from the standard public list of Bangladesh's ~495 upazilas; there may be a
- * handful of very recently created upazilas or hyper-local naming variants missing. */
+ * Cross-checked against Bangladesh's official upazila list (all 64 districts) and the current DMP
+ * thana roster; excludes a handful of upazilas gazetted in 2026 that are too new to have propagated
+ * to courier zone lists yet. */
 export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   // Dhaka division
   Dhaka: [
@@ -88,6 +122,7 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Badda",
     "Bangshal",
     "Banani",
+    "Bhashantek",
     "Bimanbandar",
     "Cantonment",
     "Chackbazar",
@@ -99,6 +134,7 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Dohar",
     "Gendaria",
     "Gulshan",
+    "Hatirjheel",
     "Hazaribagh",
     "Jatrabari",
     "Kadamtali",
@@ -243,7 +279,7 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Sitakunda",
   ],
   Cumilla: [
-    "Cumilla Sadar",
+    "Cumilla Adarsha Sadar",
     "Barura",
     "Brahmanpara",
     "Burichang",
@@ -261,11 +297,12 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Nangalkot",
     "Titas",
   ],
-  "Cox's Bazar": ["Cox's Bazar Sadar", "Chakaria", "Kutubdia", "Maheshkhali", "Pekua", "Ramu", "Teknaf", "Ukhia"],
+  "Cox's Bazar": ["Cox's Bazar Sadar", "Chakaria", "Eidgaon", "Kutubdia", "Maheshkhali", "Pekua", "Ramu", "Teknaf", "Ukhia"],
   Feni: ["Feni Sadar", "Chhagalnaiya", "Daganbhuiyan", "Fulgazi", "Parshuram", "Sonagazi"],
   Khagrachhari: [
     "Khagrachhari Sadar",
     "Dighinala",
+    "Guimara",
     "Lakshmichhari",
     "Mahalchhari",
     "Manikchhari",
@@ -392,7 +429,8 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Dowarabazar",
     "Jagannathpur",
     "Jamalganj",
-    "South Sunamganj",
+    "Madhyanagar",
+    "Shantiganj",
     "Sulla",
     "Tahirpur",
   ],
@@ -451,13 +489,14 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Bhaluka",
     "Dhobaura",
     "Fulbaria",
-    "Gaffargaon",
+    "Gafargaon",
     "Gauripur",
     "Haluaghat",
     "Ishwarganj",
     "Muktagachha",
     "Nandail",
     "Phulpur",
+    "Tarakanda",
     "Trishal",
   ],
   Netrokona: [
@@ -497,12 +536,64 @@ export const checkoutSchema = z.object({
   sessionId: z.string().max(64).optional(),
 });
 
+/** Powers the admin "Create order" page (phone/Facebook orders entered by staff) — reuses the same
+ * item/customer/shipping shape as checkoutSchema (so it goes through the exact same createOrder
+ * pipeline: atomic stock decrement, flash-sale/coupon pricing, product/price snapshotting) but
+ * swaps the online-gateway payment path for one that doesn't make sense with no admin at a
+ * keyboard on the other end: paymentMethod is COD-only, and `markPaid` lets staff record a sale
+ * already settled outside the system (cash in hand, bKash/Nagad) without faking a gateway
+ * transaction. `customerId` lets staff attach the order to an existing customer they looked up
+ * instead of falling back to checkoutSchema's guest phone/email matching. */
+export const adminCreateOrderSchema = z.object({
+  items: z.array(checkoutItemSchema).min(1, "Add at least one item"),
+  customerId: z.string().cuid().optional(),
+  customerName: z.string().min(1).max(200),
+  customerEmail: nullableEmail(),
+  customerPhone: bdPhoneSchema(),
+  shippingDivision: z.enum(BD_DIVISIONS),
+  shippingDistrict: z.string().min(1).max(120),
+  shippingArea: z.string().min(1).max(120),
+  shippingAddressLine: z.string().min(1).max(500),
+  paymentMethod: z.literal("COD"),
+  markPaid: z.boolean().optional(),
+  couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
+  notes: nullableString(500),
+});
+
+function csvToStatusArray(value: unknown) {
+  if (typeof value === "string" && value.length > 0) return value.split(",");
+  return undefined;
+}
+
 export const orderListQuerySchema = paginationQuerySchema.extend({
   status: orderStatusEnum.optional(),
+  // Comma-separated alternative to `status` for quick filters that mean "one of several statuses"
+  // (e.g. Cancelled/Returned) — kept as a separate param so every existing single-status caller is unaffected.
+  statusIn: z.preprocess(csvToStatusArray, z.array(orderStatusEnum).optional()),
+  paymentStatus: paymentStatusEnum.optional(),
+  paymentMethod: paymentMethodEnum.optional(),
   search: z.string().min(1).max(200).optional(),
   // "true" = only soft-deleted orders (the admin restore view); omitted/"false" = normal listing.
   deleted: z.enum(["true", "false"]).optional(),
+  // "true"/"false" filters on whether courierConsignmentId is set — lets an admin isolate orders
+  // that still need to be handed to a courier (the bulk-booking workflow's main use case).
+  courierBooked: z.enum(["true", "false"]).optional(),
+  // Raw Steadfast delivery_status string (e.g. "in_review", "delivered", "cancelled") — stored as-is
+  // on Order.courierStatus, so filtered as-is rather than through our own OrderStatus enum.
+  courierStatus: z.string().min(1).max(50).optional(),
+  shippingDivision: z.enum(BD_DIVISIONS).optional(),
+  shippingDistrict: z.string().min(1).max(120).optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+  // Powers the sortable column headers on the admin orders table — restricted to plain scalar
+  // columns Prisma can order by directly (no relations/joins).
+  sortBy: z.enum(["orderNumber", "customerName", "paymentStatus", "total", "status", "createdAt"]).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
 });
+
+export const bulkOrderIdsSchema = z.object({ ids: z.array(z.string().cuid()).min(1).max(500) });
+export const bulkOrderStatusSchema = bulkOrderIdsSchema.extend({ status: orderStatusEnum });
+export const bulkCourierBookSchema = bulkOrderIdsSchema;
 
 export const updateOrderStatusSchema = z.object({
   status: orderStatusEnum,
@@ -526,9 +617,13 @@ export const trackOrderSchema = z.object({
 });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
+export type AdminCreateOrderInput = z.infer<typeof adminCreateOrderSchema>;
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
+export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
+export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
+export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;
 export type ValidateCouponInput = z.infer<typeof validateCouponSchema>;
 export type TrackOrderInput = z.infer<typeof trackOrderSchema>;
 export type OrderStatus = z.infer<typeof orderStatusEnum>;

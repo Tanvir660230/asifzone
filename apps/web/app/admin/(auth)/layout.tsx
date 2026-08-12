@@ -17,7 +17,7 @@ export default async function AdminAuthLayout({ children }: { children: ReactNod
           <StoreLogoImage
             src={logoUrl}
             alt={settings.storeName}
-            className="h-10 w-auto object-contain"
+            className="h-10 w-36 object-contain"
             fallback={
               <span className="font-display text-2xl font-semibold tracking-[0.2em] text-cream-50">
                 {settings.storeName.toUpperCase()}

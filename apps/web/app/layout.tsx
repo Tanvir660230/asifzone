@@ -39,17 +39,20 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { default: settings.storeName, template: `%s | ${settings.storeName}` },
     description: settings.tagline ?? undefined,
     alternates: { canonical: siteUrl },
-    // Omit the key entirely (rather than `icon: undefined`) when no admin favicon is set, so
-    // Next.js falls back to the static app/icon.png, apple-icon.png, and favicon.ico convention
-    // files instead of resolving an empty icons object.
-    ...(settings.faviconUrl
+    // Next.js does not merge the app/icon.png + apple-icon.png convention files into a segment
+    // that also defines generateMetadata, so the fallback below is spelled out explicitly rather
+    // than left to that (non-)merge — otherwise an unconfigured favicon would render no <link
+    // rel="icon"> at all.
+    icons: settings.faviconUrl
       ? {
-          icons: {
-            icon: [{ url: settings.faviconUrl, sizes: "512x512", type: "image/png" }],
-            apple: [{ url: settings.faviconUrl, sizes: "512x512", type: "image/png" }],
-          },
+          icon: [{ url: settings.faviconUrl, sizes: "512x512", type: "image/png" }],
+          apple: [{ url: settings.faviconUrl, sizes: "512x512", type: "image/png" }],
         }
-      : {}),
+      : {
+          icon: [{ url: "/icon.png", sizes: "512x512", type: "image/png" }],
+          apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
+          shortcut: ["/favicon.ico"],
+        },
     verification: settings.googleSiteVerification ? { google: settings.googleSiteVerification } : undefined,
     ...buildOpenGraph({
       title: settings.storeName,

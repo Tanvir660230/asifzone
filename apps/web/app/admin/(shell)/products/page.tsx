@@ -19,7 +19,7 @@ import { toast } from "@/components/ui/toast";
 import * as productsApi from "@/lib/api/products";
 import * as categoriesApi from "@/lib/api/categories";
 import { resolveImageUrl } from "@/lib/image-url";
-import { cn } from "@/lib/utils";
+import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 
 export default function ProductsPage() {
@@ -35,7 +35,7 @@ export default function ProductsPage() {
     queryKey: ["products", { page, pageSize, search, tab }],
     queryFn: () => productsApi.listProducts({ page, pageSize, search: search || undefined, trashed: tab === "trash" }),
   });
-  const { data: categoriesData } = useQuery({ queryKey: ["categories"], queryFn: categoriesApi.listCategories });
+  const { data: categoriesData } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesApi.listCategories() });
   const categories = categoriesData?.categories ?? [];
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -248,7 +248,11 @@ export default function ProductsPage() {
               <RotateCcw size={14} /> Restore selected
             </Button>
           )}
-          <button onClick={() => setSelected(new Set())} className="ml-auto text-ink-400 hover:text-ink-700" aria-label="Clear selection">
+          <button
+            onClick={() => setSelected(new Set())}
+            className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
+            aria-label="Clear selection"
+          >
             <XCircle size={16} />
           </button>
         </div>
@@ -262,8 +266,8 @@ export default function ProductsPage() {
               <th className="w-10 px-4 py-3">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="px-4 py-3">Product</th>
-              <th className="px-4 py-3">Category</th>
+              <th className="sticky left-0 z-[1] bg-ink-50 px-4 py-3">Product</th>
+              <th className="hidden px-4 py-3 sm:table-cell">Category</th>
               <th className="px-4 py-3">Price</th>
               <th className="px-4 py-3">Stock</th>
               <th className="px-4 py-3">Status</th>
@@ -290,11 +294,11 @@ export default function ProductsPage() {
               const totalStock = p.variants.reduce((sum, v) => sum + v.stock, 0);
               const thumb = p.images[0];
               return (
-                <tr key={p.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
+                <tr key={p.id} className="group border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
                   <td className="px-4 py-3">
                     <Checkbox checked={selected.has(p.id)} onChange={() => toggleOne(p.id)} aria-label={`Select ${p.name}`} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3 group-hover:bg-ink-50">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 shrink-0 overflow-hidden rounded bg-ink-100">
                         {thumb && (
@@ -305,7 +309,7 @@ export default function ProductsPage() {
                       <span>{p.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-500">{p.category.name}</td>
+                  <td className="hidden px-4 py-3 text-ink-500 sm:table-cell">{p.category.name}</td>
                   <td className="px-4 py-3">৳{Number(p.basePrice).toLocaleString()}</td>
                   <td className="px-4 py-3">{totalStock}</td>
                   <td className="px-4 py-3">
@@ -319,7 +323,7 @@ export default function ProductsPage() {
                         <>
                           <button
                             onClick={() => restoreMutation.mutate(p.id)}
-                            className="text-ink-500 hover:text-ink-900"
+                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
                             aria-label="Restore"
                             title="Restore"
                           >
@@ -327,7 +331,7 @@ export default function ProductsPage() {
                           </button>
                           <button
                             onClick={() => handlePermanentDelete(p.id, p.name)}
-                            className="text-ink-500 hover:text-danger-600"
+                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
                             aria-label="Delete permanently"
                             title="Delete permanently"
                           >
@@ -338,7 +342,7 @@ export default function ProductsPage() {
                         <>
                           <Link
                             href={`/admin/products/${p.id}/edit`}
-                            className="text-ink-500 hover:text-ink-900"
+                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
                             aria-label="Edit"
                             title="Edit"
                           >
@@ -346,7 +350,7 @@ export default function ProductsPage() {
                           </Link>
                           <button
                             onClick={() => handleDelete(p.id, p.name)}
-                            className="text-ink-500 hover:text-danger-600"
+                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
                             aria-label="Delete"
                             title="Move to trash"
                           >

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, RotateCcw, ArchiveX } from "lucide-react";
 import { createCouponSchema, type Coupon, type CreateCouponInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,22 +20,45 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as couponsApi from "@/lib/api/admin-coupons";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
 export default function CouponsPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["admin-coupons"], queryFn: () => couponsApi.listCoupons() });
+  const [tab, setTab] = useState<"active" | "trash">("active");
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-coupons", tab],
+    queryFn: () => couponsApi.listCoupons({ trashed: tab === "trash" }),
+  });
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function invalidateAll() {
+    queryClient.invalidateQueries({ queryKey: ["admin-coupons"] });
+  }
+
   const createMutation = useMutation({
     mutationFn: couponsApi.createCoupon,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-coupons"] }),
+    onSuccess: invalidateAll,
   });
   const deleteMutation = useMutation({
     mutationFn: couponsApi.deleteCoupon,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-coupons"] });
-      toast.success("Coupon deleted");
+      invalidateAll();
+      toast.success("Moved to Trash");
+    },
+  });
+  const restoreMutation = useMutation({
+    mutationFn: couponsApi.restoreCoupon,
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Coupon restored");
+    },
+  });
+  const permanentDeleteMutation = useMutation({
+    mutationFn: couponsApi.permanentlyDeleteCoupon,
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Coupon permanently deleted");
     },
   });
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -62,8 +85,17 @@ export default function CouponsPage() {
   }
 
   async function handleDelete(coupon: Coupon) {
-    if (!(await confirm(`Delete coupon "${coupon.code}"?`))) return;
+    if (!(await confirm(`Move coupon "${coupon.code}" to Trash?`))) return;
     await deleteMutation.mutateAsync(coupon.id);
+  }
+
+  async function handlePermanentDelete(coupon: Coupon) {
+    if (!(await confirm(`Permanently delete coupon "${coupon.code}"? This cannot be undone.`))) return;
+    try {
+      await permanentDeleteMutation.mutateAsync(coupon.id);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to permanently delete coupon");
+    }
   }
 
   return (
@@ -71,11 +103,28 @@ export default function CouponsPage() {
       <PageHeader
         title="Coupons"
         action={
-          <Button variant="brass" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> Add coupon
-          </Button>
+          tab === "active" && (
+            <Button variant="brass" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> Add coupon
+            </Button>
+          )
         }
       />
+
+      <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
+        {(["active", "trash"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
+              tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
+            )}
+          >
+            {t === "trash" ? "Trash" : "Active"}
+          </button>
+        ))}
+      </div>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
@@ -96,7 +145,14 @@ export default function CouponsPage() {
             {!isLoading && data?.items.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
-                  No coupons yet.
+                  {tab === "trash" ? (
+                    <span className="flex flex-col items-center gap-2">
+                      <ArchiveX size={24} className="text-ink-300" />
+                      Trash is empty.
+                    </span>
+                  ) : (
+                    "No coupons yet."
+                  )}
                 </td>
               </tr>
             )}
@@ -114,10 +170,31 @@ export default function CouponsPage() {
                   <Badge className={c.isActive ? "bg-success-100 text-success-700" : ""}>{c.isActive ? "Active" : "Inactive"}</Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex justify-end">
-                    <button onClick={() => handleDelete(c)} className="text-ink-400 hover:text-danger-600">
-                      <Trash2 size={16} />
-                    </button>
+                  <div className="flex justify-end gap-3">
+                    {tab === "trash" ? (
+                      <>
+                        <button
+                          onClick={() => restoreMutation.mutate(c.id)}
+                          className="text-ink-500 hover:text-ink-900"
+                          aria-label="Restore"
+                          title="Restore"
+                        >
+                          <RotateCcw size={16} />
+                        </button>
+                        <button
+                          onClick={() => handlePermanentDelete(c)}
+                          className="text-ink-500 hover:text-danger-600"
+                          aria-label="Delete permanently"
+                          title="Delete permanently"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => handleDelete(c)} className="text-ink-400 hover:text-danger-600" aria-label="Move to trash" title="Move to trash">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

@@ -6,6 +6,7 @@ export * from "./schemas/product";
 export * from "./schemas/order";
 export * from "./schemas/flash-sale";
 export * from "./schemas/coupon";
+export * from "./schemas/inventory";
 export * from "./schemas/bundle";
 export * from "./schemas/return-request";
 export * from "./schemas/review";

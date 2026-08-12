@@ -13,7 +13,7 @@ export function StickySearchBar() {
     <button
       type="button"
       onClick={open}
-      className="hidden w-48 items-center gap-2 rounded-full border border-ink-200 bg-cream-50/70 px-4 py-2 text-sm text-ink-400 transition-all duration-200 ease-smooth hover:border-ink-400 hover:text-ink-600 lg:flex xl:w-64"
+      className="hidden w-48 items-center gap-2 rounded-full border border-ink-200 bg-cream-50/70 px-4 py-2 text-sm text-ink-500 transition-all duration-200 ease-smooth hover:border-ink-400 hover:text-ink-600 lg:flex xl:w-64"
     >
       <Search size={15} className="shrink-0" />
       <span className="truncate">Search products…</span>

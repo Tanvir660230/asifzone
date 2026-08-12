@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useFieldArray, type Control, type UseFormRegister, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 import {
   DndContext,
@@ -18,7 +19,7 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, GripVertical, Sparkles, Star, Trash2 } from "lucide-react";
+import { ChevronDown, GripVertical, History, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Attribute, AttributeValue, CreateProductInput, ProductImage } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -289,7 +290,19 @@ export function VariantEditor({
                       <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.costPrice`, { valueAsNumber: true })} />
                     </div>
                     <div>
-                      <Label className="text-[11px]">Stock</Label>
+                      <Label className="flex items-center justify-between text-[11px]">
+                        Stock
+                        {watch(`variants.${index}.id`) && (
+                          <Link
+                            href={`/admin/inventory?variantId=${watch(`variants.${index}.id`)}`}
+                            target="_blank"
+                            className="flex items-center gap-0.5 font-normal normal-case text-ink-400 hover:text-brass-600"
+                            title="View stock history"
+                          >
+                            <History size={11} /> History
+                          </Link>
+                        )}
+                      </Label>
                       <Input type="number" {...register(`variants.${index}.stock`, { valueAsNumber: true })} />
                     </div>
                     <div>

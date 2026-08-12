@@ -14,7 +14,7 @@ import { toast } from "@/components/ui/toast";
 
 export default function NewProductPage() {
   const router = useRouter();
-  const { data } = useQuery({ queryKey: ["categories"], queryFn: categoriesApi.listCategories });
+  const { data } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesApi.listCategories() });
   const [error, setError] = useState<string | null>(null);
   const [stagedImages, setStagedImages] = useState<StagedImage[]>([]);
   const [variantImageKeys, setVariantImageKeys] = useState<Record<number, string>>({});

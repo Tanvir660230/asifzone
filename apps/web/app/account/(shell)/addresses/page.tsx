@@ -7,8 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Star, Trash2 } from "lucide-react";
 import {
   createAddressSchema,
-  BD_DIVISIONS,
-  BD_DISTRICTS_BY_DIVISION,
+  BD_ALL_DISTRICTS,
+  BD_DIVISION_BY_DISTRICT,
   BD_AREAS_BY_DISTRICT,
   type Address,
   type CreateAddressInput,
@@ -174,34 +174,28 @@ function AddressForm({
           isDefault: initial.isDefault,
         }
       : {
-          division: BD_DIVISIONS[0],
-          district: BD_DISTRICTS_BY_DIVISION[BD_DIVISIONS[0]][0],
-          area: BD_AREAS_BY_DISTRICT[BD_DISTRICTS_BY_DIVISION[BD_DIVISIONS[0]][0]]?.[0] ?? "",
+          division: "" as CreateAddressInput["division"],
+          district: "",
+          area: "",
           isDefault: false,
         },
   });
 
-  const division = watch("division") || BD_DIVISIONS[0];
   const district = watch("district");
   const area = watch("area");
-  const districtOptions: readonly string[] = BD_DISTRICTS_BY_DIVISION[division] ?? [];
   const areaOptions: readonly string[] = BD_AREAS_BY_DISTRICT[district] ?? [];
 
-  // Courier-style cascading picker, matching the checkout form: narrow the district list to the
-  // selected division and drop any district that no longer belongs to it.
+  // Division is derived from the chosen district rather than picked separately — it's only needed
+  // internally for the Dhaka/outside-Dhaka shipping-fee split, matching the checkout form.
   useEffect(() => {
-    const firstDistrict = districtOptions[0];
-    if (firstDistrict && !districtOptions.includes(district)) {
-      setValue("district", firstDistrict);
-    }
+    setValue("division", (BD_DIVISION_BY_DISTRICT[district] ?? "") as CreateAddressInput["division"]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [division]);
+  }, [district]);
 
-  // Same cascade one level down: the area/thana list narrows to the selected district.
+  // The area/thana list narrows to the selected district — clear it if it no longer applies.
   useEffect(() => {
-    const firstArea = areaOptions[0];
-    if (firstArea && !areaOptions.includes(area)) {
-      setValue("area", firstArea);
+    if (area && !areaOptions.includes(area)) {
+      setValue("area", "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [district]);
@@ -224,28 +218,16 @@ function AddressForm({
           {errors.phone && <p className="mt-1 text-xs text-danger-600">{errors.phone.message}</p>}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="division">Division</Label>
-          <SearchableSelect
-            id="division"
-            value={division}
-            onChange={(v) => setValue("division", v as CreateAddressInput["division"], { shouldValidate: true })}
-            options={BD_DIVISIONS}
-            placeholder="Search division..."
-          />
-        </div>
-        <div>
-          <Label htmlFor="district">District</Label>
-          <SearchableSelect
-            id="district"
-            value={district}
-            onChange={(v) => setValue("district", v, { shouldValidate: true })}
-            options={districtOptions}
-            placeholder="Search district..."
-          />
-          {errors.district && <p className="mt-1 text-xs text-danger-600">{errors.district.message}</p>}
-        </div>
+      <div>
+        <Label htmlFor="district">District</Label>
+        <SearchableSelect
+          id="district"
+          value={district}
+          onChange={(v) => setValue("district", v, { shouldValidate: true })}
+          options={BD_ALL_DISTRICTS}
+          placeholder="Search district..."
+        />
+        {errors.district && <p className="mt-1 text-xs text-danger-600">{errors.district.message}</p>}
       </div>
       <div>
         <Label htmlFor="area">Area / Thana</Label>

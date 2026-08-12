@@ -23,6 +23,7 @@ import {
   Megaphone,
   MessageSquare,
   Star,
+  Boxes,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
@@ -49,6 +50,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/admin/categories", label: "Categories", icon: FolderTree },
       { href: "/admin/products", label: "Products", icon: Shirt },
+      { href: "/admin/inventory", label: "Inventory", icon: Boxes },
       { href: "/admin/attributes", label: "Attributes", icon: SlidersHorizontal },
     ],
   },
@@ -147,7 +149,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                     href={href}
                     onClick={onCloseMobile}
                     className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200 ease-smooth",
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-smooth",
                       active
                         ? "bg-brass-400 text-ink-900 shadow-sm"
                         : "text-cream-200 hover:translate-x-0.5 hover:bg-ink-800",
@@ -166,7 +168,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
       <div className="mx-3 mb-4 space-y-0.5">
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-cream-200 transition-colors duration-200 ease-smooth hover:bg-ink-800"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-cream-200 transition-colors duration-200 ease-smooth hover:bg-ink-800"
         >
           <LogOut size={18} />
           Log out
@@ -174,7 +176,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
         <button
           onClick={handleLogoutEverywhere}
           disabled={signingOutEverywhere}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-ink-400 transition-colors duration-200 ease-smooth hover:bg-ink-800 hover:text-cream-200 disabled:opacity-50"
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs text-ink-400 transition-colors duration-200 ease-smooth hover:bg-ink-800 hover:text-cream-200 disabled:opacity-50"
         >
           <ShieldOff size={15} />
           {signingOutEverywhere ? "Signing out everywhere…" : "Log out of all devices"}

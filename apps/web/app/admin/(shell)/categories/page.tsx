@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, RotateCcw, Trash2, ArchiveX } from "lucide-react";
 import type { Category, CreateCategoryInput, ReorderCategoriesInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -13,32 +13,54 @@ import { CategoryTree } from "@/components/admin/category-tree";
 import { PageHeader } from "@/components/admin/page-header";
 import * as categoriesApi from "@/lib/api/categories";
 import { ApiError } from "@/lib/api-client";
-
-const CATEGORIES_KEY = ["categories"] as const;
+import { cn } from "@/lib/utils";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: CATEGORIES_KEY, queryFn: categoriesApi.listCategories });
+  const [tab, setTab] = useState<"active" | "trash">("active");
+  const CATEGORIES_KEY = ["categories", tab] as const;
+  const { data, isLoading } = useQuery({
+    queryKey: CATEGORIES_KEY,
+    queryFn: () => categoriesApi.listCategories({ trashed: tab === "trash" }),
+  });
   const [editing, setEditing] = useState<Category | "new" | null>(null);
   const [newParentId, setNewParentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const categories = data?.categories ?? [];
 
+  function invalidateAll() {
+    queryClient.invalidateQueries({ queryKey: ["categories"] });
+  }
+
   const createMutation = useMutation({
     mutationFn: categoriesApi.createCategory,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+    onSuccess: invalidateAll,
   });
   const updateMutation = useMutation({
     mutationFn: ({ id, input }: { id: string; input: CreateCategoryInput }) =>
       categoriesApi.updateCategory(id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY }),
+    onSuccess: invalidateAll,
   });
   const deleteMutation = useMutation({
     mutationFn: categoriesApi.deleteCategory,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: CATEGORIES_KEY });
-      toast.success("Category deleted");
+      invalidateAll();
+      toast.success("Moved to Trash");
+    },
+  });
+  const restoreMutation = useMutation({
+    mutationFn: categoriesApi.restoreCategory,
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Category restored");
+    },
+  });
+  const permanentDeleteMutation = useMutation({
+    mutationFn: categoriesApi.permanentlyDeleteCategory,
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Category permanently deleted");
     },
   });
 
@@ -121,11 +143,20 @@ export default function CategoriesPage() {
   }
 
   async function handleDelete(category: Category) {
-    if (!(await confirm(`Delete "${category.name}"? This cannot be undone.`))) return;
+    if (!(await confirm(`Move "${category.name}" to Trash?`))) return;
     try {
       await deleteMutation.mutateAsync(category.id);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to delete category");
+    }
+  }
+
+  async function handlePermanentDelete(category: Category) {
+    if (!(await confirm(`Permanently delete "${category.name}"? This cannot be undone.`))) return;
+    try {
+      await permanentDeleteMutation.mutateAsync(category.id);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to permanently delete category");
     }
   }
 
@@ -144,17 +175,84 @@ export default function CategoriesPage() {
       <PageHeader
         title="Categories"
         action={
-          <Button variant="brass" onClick={() => openNew(null)}>
-            <Plus size={16} /> Add category
-          </Button>
+          tab === "active" && (
+            <Button variant="brass" onClick={() => openNew(null)}>
+              <Plus size={16} /> Add category
+            </Button>
+          )
         }
       />
+
+      <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
+        {(["active", "trash"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={cn(
+              "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
+              tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
+            )}
+          >
+            {t === "trash" ? "Trash" : "Active"}
+          </button>
+        ))}
+      </div>
 
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-16 animate-pulse rounded-xl border border-ink-100 bg-cream-50" />
           ))}
+        </div>
+      ) : tab === "trash" ? (
+        <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+          <table className="w-full text-sm">
+            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <tr>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Slug</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {categories.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-10 text-center text-ink-400">
+                    <span className="flex flex-col items-center gap-2">
+                      <ArchiveX size={24} className="text-ink-300" />
+                      Trash is empty.
+                    </span>
+                  </td>
+                </tr>
+              )}
+              {categories.map((c) => (
+                <tr key={c.id} className="border-t border-ink-100">
+                  <td className="px-4 py-3">{c.name}</td>
+                  <td className="px-4 py-3 text-ink-500">{c.slug}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-3">
+                      <button
+                        onClick={() => restoreMutation.mutate(c.id)}
+                        className="text-ink-500 hover:text-ink-900"
+                        aria-label="Restore"
+                        title="Restore"
+                      >
+                        <RotateCcw size={16} />
+                      </button>
+                      <button
+                        onClick={() => handlePermanentDelete(c)}
+                        className="text-ink-500 hover:text-danger-600"
+                        aria-label="Delete permanently"
+                        title="Delete permanently"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
         <CategoryTree

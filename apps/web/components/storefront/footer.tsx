@@ -87,7 +87,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             {darkBgLogoUrl ? (
-              <StoreLogoImage src={darkBgLogoUrl} alt={settings.storeName} className="h-8 w-auto object-contain" fallback={wordmark} />
+              <StoreLogoImage src={darkBgLogoUrl} alt={settings.storeName} className="h-8 w-32 object-contain" fallback={wordmark} />
             ) : (
               wordmark
             )}
@@ -228,7 +228,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             <StoreLogoImage
               src={darkBgLogoUrl}
               alt={settings.storeName}
-              className="h-11 w-auto object-contain sm:h-14"
+              className="h-11 w-40 object-contain sm:h-14 sm:w-48"
               fallback={<span className="font-display text-3xl tracking-wide text-cream-50 sm:text-4xl">{settings.storeName}</span>}
             />
           ) : (

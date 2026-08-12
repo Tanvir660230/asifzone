@@ -2,11 +2,16 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { env } from "../../config/env";
 import { constantTimeEqual } from "../../lib/token-hash";
+import { getSteadfastBalance } from "../../lib/steadfast";
 import { handleSteadfastWebhook } from "./courier.service";
 
 interface SteadfastWebhookBody {
   consignment_id?: number | string;
 }
+
+export const balance = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ balance: await getSteadfastBalance() });
+});
 
 /** Steadfast's Notify URL callback. No signature — authenticated only by a shared secret of our
  * own choosing in the query string (see env.steadfast.webhookToken / .env.example). Always

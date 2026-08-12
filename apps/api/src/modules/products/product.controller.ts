@@ -91,12 +91,12 @@ export const urgencySignals = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const product = await productService.createProduct(req.body);
+  const product = await productService.createProduct(req.body, req.admin!.adminId);
   res.status(201).json({ product });
 });
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const product = await productService.updateProduct(req.params.id!, req.body);
+  const product = await productService.updateProduct(req.params.id!, req.body, req.admin!.adminId);
   res.json({ product });
 });
 

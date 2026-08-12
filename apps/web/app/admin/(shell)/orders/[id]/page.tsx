@@ -17,19 +17,8 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, courierStatusBadgeClass } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
-
-const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
-  delivered: "bg-success-100 text-success-700",
-  partial_delivered: "bg-success-100 text-success-700",
-  cancelled: "bg-danger-100 text-danger-700",
-  hold: "bg-warning-100 text-warning-700",
-};
-
-function courierStatusBadgeClass(status: string): string {
-  return COURIER_STATUS_BADGE_CLASS[status] ?? "bg-ink-100 text-ink-700";
-}
 
 const STATUS_OPTIONS: OrderStatus[] = [
   "PENDING",
@@ -100,6 +89,15 @@ export default function OrderDetailPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to restore order"),
   });
 
+  const permanentDeleteMutation = useMutation({
+    mutationFn: () => adminOrdersApi.permanentlyDeleteOrder(id),
+    onSuccess: () => {
+      toast.success("Order permanently deleted");
+      router.push("/admin/orders");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to permanently delete order"),
+  });
+
   const bookCourierMutation = useMutation({
     mutationFn: () => adminOrdersApi.bookCourier(id),
     onSuccess: () => {
@@ -140,16 +138,34 @@ export default function OrderDetailPage() {
           </Link>
           {isOwner &&
             (order.deletedAt ? (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={restoreMutation.isPending}
-                onClick={async () => {
-                  if (await confirm(`Restore order ${order.orderNumber}?`)) restoreMutation.mutate();
-                }}
-              >
-                <RotateCcw size={14} /> Restore
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={restoreMutation.isPending}
+                  onClick={async () => {
+                    if (await confirm(`Restore order ${order.orderNumber}?`)) restoreMutation.mutate();
+                  }}
+                >
+                  <RotateCcw size={14} /> Restore
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={permanentDeleteMutation.isPending}
+                  onClick={async () => {
+                    if (
+                      await confirm(
+                        `Permanently delete order ${order.orderNumber}? This removes it and its line items/history forever — it cannot be undone.`,
+                        { confirmLabel: "Delete forever", requireText: order.orderNumber },
+                      )
+                    )
+                      permanentDeleteMutation.mutate();
+                  }}
+                >
+                  <Trash2 size={14} /> Delete permanently
+                </Button>
+              </>
             ) : (
               <Button
                 variant="outline"
@@ -230,33 +246,39 @@ export default function OrderDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-100 bg-ink-50/50 p-3">
+          <div className="rounded-lg border border-ink-100 bg-ink-50/50 p-3">
             {order.courierConsignmentId ? (
               <>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${courierStatusBadgeClass(order.courierStatus ?? "")}`}>
-                  Steadfast: {(order.courierStatus ?? "booked").replace(/_/g, " ")}
-                </span>
-                {order.trackingNumber && (
-                  <a
-                    href={`https://steadfast.com.bd/t/${order.trackingNumber}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-brass-600 underline hover:text-brass-700"
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${courierStatusBadgeClass(order.courierStatus ?? "")}`}>
+                    Steadfast: {(order.courierStatus ?? "booked").replace(/_/g, " ")}
+                  </span>
+                  {order.courierTrackingLink && (
+                    <a
+                      href={order.courierTrackingLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-brass-600 underline hover:text-brass-700"
+                    >
+                      Track parcel
+                    </a>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={refreshCourierMutation.isPending || !!order.deletedAt}
+                    onClick={() => refreshCourierMutation.mutate()}
                   >
-                    Track parcel
-                  </a>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={refreshCourierMutation.isPending || !!order.deletedAt}
-                  onClick={() => refreshCourierMutation.mutate()}
-                >
-                  Refresh status
-                </Button>
+                    Refresh status
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-ink-400">
+                  Parcel ID: {order.courierConsignmentId}
+                  {order.trackingNumber && <> · Tracking code: {order.trackingNumber}</>}
+                </p>
               </>
             ) : (
-              <>
+              <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm text-ink-500">Not yet booked with a courier.</p>
                 <Button
                   size="sm"
@@ -272,7 +294,7 @@ export default function OrderDetailPage() {
                 >
                   Book with Steadfast
                 </Button>
-              </>
+              </div>
             )}
           </div>
 

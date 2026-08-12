@@ -3,8 +3,8 @@ import { asyncHandler } from "../../lib/async-handler";
 import { processCategoryImage, processCategoryBannerImage } from "../uploads/upload.service";
 import * as categoryService from "./category.service";
 
-export const list = asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ categories: await categoryService.listCategories() });
+export const list = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ categories: await categoryService.listCategories(req.query as never) });
 });
 
 export const tree = asyncHandler(async (_req: Request, res: Response) => {
@@ -51,6 +51,16 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   await categoryService.deleteCategory(req.params.id!);
+  res.status(204).send();
+});
+
+export const restore = asyncHandler(async (req: Request, res: Response) => {
+  const category = await categoryService.restoreCategory(req.params.id!);
+  res.json({ category });
+});
+
+export const permanentlyRemove = asyncHandler(async (req: Request, res: Response) => {
+  await categoryService.permanentlyDeleteCategory(req.params.id!);
   res.status(204).send();
 });
 

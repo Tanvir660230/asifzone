@@ -43,6 +43,8 @@ export const updateSettingsSchema = z.object({
   tawkPropertyId: nullableString(60),
   tawkWidgetId: nullableString(60),
   paymentMethodsImageUrl: nullableUrl(),
+  codEnabled: z.boolean().optional(),
+  onlinePaymentEnabled: z.boolean().optional(),
   googleSiteVerification: nullableString(255),
 });
 

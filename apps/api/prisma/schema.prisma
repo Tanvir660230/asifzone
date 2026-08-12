@@ -67,6 +67,7 @@ enum StockMovementReason {
   ORDER
   RESTOCK
   ADJUSTMENT
+  RETURN
 }
 
 enum BannerPlacement {
@@ -89,6 +90,7 @@ model AdminUser {
   reviewedReturnRequests ReturnRequest[]
   sentInvites            AdminInvite[]
   deletedOrders          Order[]              @relation("OrderDeletedBy")
+  stockMovements         StockMovement[]
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -171,10 +173,12 @@ model Category {
   products          Product[]
   bundleAnchors     Bundle[]           @relation("BundleAnchor")
   bundleSuggestions BundleSuggestion[] @relation("BundleSuggestionCategory")
+  deletedAt         DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
   @@index([parentId])
+  @@index([deletedAt])
 }
 
 /// Admin-defined attribute type (e.g. "Color", "Fabric", "Pattern") used to build variant matrices.
@@ -501,8 +505,11 @@ model Coupon {
   expiresAt         DateTime?
   isActive          Boolean    @default(true)
   orders            Order[]
+  deletedAt         DateTime?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
+
+  @@index([deletedAt])
 }
 
 /// A category-driven cross-sell rule: buying from `anchorCategory` (e.g. Panjabi) unlocks a
@@ -589,6 +596,10 @@ model Order {
   /// shown to the admin as-is; see mapSteadfastStatusToOrderStatus for how it affects `status`.
   courierStatus        String?
   courierBookedAt      DateTime?
+  /// Steadfast's own trackable URL (https://steadfast.com.bd/tl/{opaque-token}) — only present in
+  /// the create_order/bulk-order response body, not derivable from tracking_code and not returned
+  /// by status_by_cid, so bookings made before this field existed will have it null forever.
+  courierTrackingLink  String?
 
   /// Soft delete — an OWNER-only admin action (see deleteOrder in order.service.ts). Restocks the
   /// order's items and hides it from every default query, but never physically removes the row
@@ -700,9 +711,13 @@ model StockMovement {
   change    Int
   reason    StockMovementReason
   orderId   String?
+  adminId   String?
+  admin     AdminUser?          @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  note      String?
   createdAt DateTime            @default(now())
 
   @@index([variantId])
+  @@index([reason])
 }
 
 model FlashSale {
@@ -844,6 +859,12 @@ model StoreSetting {
   /// show this instead of the per-method list, since some admins would rather upload one banner
   /// than add each logo separately.
   paymentMethodsImageUrl  String?
+  /// Per-method checkout toggles — lets the store owner turn Cash on Delivery or the online gateway
+  /// off entirely (e.g. during a COD abuse spike, or while SSLCommerz credentials are being rotated)
+  /// without touching code. Both default on; enforced both in the checkout UI and server-side in
+  /// order.service.ts so a stale page can't submit a disabled method.
+  codEnabled              Boolean  @default(true)
+  onlinePaymentEnabled    Boolean  @default(true)
   /// The content= value Google Search Console gives you for the HTML-tag verification method —
   /// pasted here and rendered as a <meta name="google-site-verification"> tag on every page,
   /// rather than requiring a file upload or DNS change to prove domain ownership.

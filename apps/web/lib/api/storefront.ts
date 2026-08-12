@@ -121,6 +121,8 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   tawkPropertyId: null,
   tawkWidgetId: null,
   paymentMethodsImageUrl: null,
+  codEnabled: true,
+  onlinePaymentEnabled: true,
   googleSiteVerification: null,
   updatedAt: new Date(0).toISOString(),
 };

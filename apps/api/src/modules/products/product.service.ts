@@ -898,9 +898,9 @@ export async function getUrgencySignals(productId: string) {
   return signals;
 }
 
-export async function createProduct(input: CreateProductInput) {
+export async function createProduct(input: CreateProductInput, adminId: string) {
   const category = await prisma.category.findUnique({ where: { id: input.categoryId } });
-  if (!category) throw AppError.badRequest("Category does not exist");
+  if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
 
   const skus = input.variants.map((v) => v.sku);
   if (new Set(skus).size !== skus.length) throw AppError.badRequest("Duplicate SKU in variants");
@@ -914,13 +914,32 @@ export async function createProduct(input: CreateProductInput) {
 
   let product;
   try {
-    product = await prisma.product.create({
-      data: {
-        ...productData,
-        slug,
-        variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
-      },
-      include,
+    product = await prisma.$transaction(async (tx) => {
+      const created = await tx.product.create({
+        data: {
+          ...productData,
+          slug,
+          variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
+        },
+        include,
+      });
+
+      // Every variant starts life with a real stock number but no history explaining it — log it
+      // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
+      const stocked = created.variants.filter((v) => v.stock > 0);
+      if (stocked.length) {
+        await tx.stockMovement.createMany({
+          data: stocked.map((v) => ({
+            variantId: v.id,
+            change: v.stock,
+            reason: "RESTOCK" as const,
+            adminId,
+            note: "Initial stock on product creation",
+          })),
+        });
+      }
+
+      return created;
     });
   } catch (err) {
     // ensureUniqueSlug's check-then-create can still race on a concurrent request picking the
@@ -938,8 +957,13 @@ export async function createProduct(input: CreateProductInput) {
   return product;
 }
 
-export async function updateProduct(id: string, input: UpdateProductInput) {
+export async function updateProduct(id: string, input: UpdateProductInput, adminId: string) {
   const existing = await getProductById(id);
+
+  if (input.categoryId) {
+    const category = await prisma.category.findUnique({ where: { id: input.categoryId } });
+    if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
+  }
 
   const data: Record<string, unknown> = { ...input };
   delete data.variants;
@@ -977,7 +1001,23 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
           // silently erase that order's stock audit trail. Zero its stock instead: it drops out of
           // checkout the same as a delete would, without destroying history.
           if (mustKeep.length) {
+            const keptVariants = await tx.productVariant.findMany({
+              where: { id: { in: mustKeep } },
+              select: { id: true, stock: true },
+            });
             await tx.productVariant.updateMany({ where: { id: { in: mustKeep } }, data: { stock: 0 } });
+            const nonZero = keptVariants.filter((v) => v.stock !== 0);
+            if (nonZero.length) {
+              await tx.stockMovement.createMany({
+                data: nonZero.map((v) => ({
+                  variantId: v.id,
+                  change: -v.stock,
+                  reason: "ADJUSTMENT" as const,
+                  adminId,
+                  note: "Variant removed from product — had order history, stock zeroed instead of deleted",
+                })),
+              });
+            }
           }
         }
 
@@ -991,8 +1031,25 @@ export async function updateProduct(id: string, input: UpdateProductInput) {
                 data: attributeValueIds.map((attributeValueId) => ({ variantId, attributeValueId })),
               });
             }
+            // The plain Stock field on the product-edit form is the primary way admins change
+            // stock day-to-day — diff it against the pre-update value so every save stays
+            // ledger-complete without the form itself needing a reason/note prompt.
+            if (updateData.stock !== undefined) {
+              const before = existing.variants.find((v) => v.id === variantId);
+              const delta = before ? updateData.stock - before.stock : 0;
+              if (delta !== 0) {
+                await tx.stockMovement.create({
+                  data: { variantId, change: delta, reason: "ADJUSTMENT", adminId, note: "Manual edit via product form" },
+                });
+              }
+            }
           } else {
-            await tx.productVariant.create({ data: { ...toVariantCreateData(variant, index), productId: id } });
+            const created = await tx.productVariant.create({ data: { ...toVariantCreateData(variant, index), productId: id } });
+            if (created.stock > 0) {
+              await tx.stockMovement.create({
+                data: { variantId: created.id, change: created.stock, reason: "RESTOCK", adminId, note: "Initial stock on variant creation" },
+              });
+            }
           }
         }
       }
@@ -1063,7 +1120,7 @@ export async function bulkUpdateProductStatus(ids: string[], isActive: boolean) 
 
 export async function bulkUpdateProductCategory(ids: string[], categoryId: string) {
   const category = await prisma.category.findUnique({ where: { id: categoryId } });
-  if (!category) throw AppError.badRequest("Category does not exist");
+  if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
   await prisma.product.updateMany({ where: { id: { in: ids } }, data: { categoryId } });
   await invalidateCache();
 }

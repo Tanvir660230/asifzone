@@ -20,7 +20,7 @@ export default async function AccountAuthLayout({ children }: { children: ReactN
           <StoreLogoImage
             src={settings.logoUrl}
             alt={settings.storeName}
-            className="h-10 w-auto object-contain"
+            className="h-10 w-36 object-contain"
             fallback={
               <span className="font-display text-2xl font-semibold tracking-[0.2em] text-ink-900">
                 {settings.storeName.toUpperCase()}

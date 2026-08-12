@@ -21,6 +21,7 @@ export const updateCouponSchema = createCouponSchema.partial();
 
 export const couponListQuerySchema = paginationQuerySchema.extend({
   search: z.string().min(1).max(200).optional(),
+  trashed: z.coerce.boolean().optional(),
 });
 
 export const bestCouponQuerySchema = z.object({

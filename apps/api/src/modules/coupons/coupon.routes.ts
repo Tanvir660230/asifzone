@@ -22,3 +22,5 @@ couponRouter.get("/:id", requireAdmin, couponController.getOne);
 couponRouter.post("/", requireAdmin, validate(createCouponSchema), couponController.create);
 couponRouter.patch("/:id", requireAdmin, validate(updateCouponSchema), couponController.update);
 couponRouter.delete("/:id", requireAdmin, couponController.remove);
+couponRouter.post("/:id/restore", requireAdmin, couponController.restore);
+couponRouter.delete("/:id/permanent", requireAdmin, couponController.permanentlyRemove);

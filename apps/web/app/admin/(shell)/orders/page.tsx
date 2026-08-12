@@ -1,14 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Trash2, RotateCcw } from "lucide-react";
-import type { OrderStatus } from "@clothing-brand/shared";
+import {
+  Search,
+  Trash2,
+  RotateCcw,
+  Eye,
+  Download,
+  XCircle,
+  ArchiveX,
+  ShoppingBag,
+  Wallet,
+  Clock,
+  AlertTriangle,
+  Truck,
+  SlidersHorizontal,
+  ExternalLink,
+  Printer,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  Plus,
+} from "lucide-react";
+import type { OrderStatus, PaymentStatus, PaymentMethod, BdDivision } from "@clothing-brand/shared";
+import { BD_DIVISIONS, BD_DISTRICTS_BY_DIVISION, COURIER_DELIVERY_STATUSES } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
@@ -16,10 +41,15 @@ import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
+import { StatTile } from "@/components/admin/stat-tile";
+import { OrderQuickViewModal } from "@/components/admin/order-quick-view-modal";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
-import { formatPrice } from "@/lib/format";
+import type { BulkCourierBookResult, AdminOrderListParams } from "@/lib/api/admin-orders";
+import { formatPrice, courierStatusBadgeClass } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
+import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -46,34 +76,176 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   REFUNDED: "bg-ink-200 text-ink-700",
 };
 
+const STATUS_BORDER_COLORS: Record<OrderStatus, string> = {
+  PENDING: "border-l-warning-400",
+  CONFIRMED: "border-l-info-400",
+  PROCESSING: "border-l-info-400",
+  PACKED: "border-l-info-400",
+  SHIPPED: "border-l-info-400",
+  DELIVERED: "border-l-success-400",
+  CANCELLED: "border-l-danger-400",
+  RETURNED: "border-l-warning-400",
+  REFUNDED: "border-l-ink-400",
+};
+
+const ALL_DISTRICTS = Array.from(new Set(Object.values(BD_DISTRICTS_BY_DIVISION).flat())).sort();
+
+type QuickFilter = "needsAction" | "unpaid" | "cod" | "cancelledReturned" | null;
+
+const QUICK_FILTERS: Array<{ id: Exclude<QuickFilter, null>; label: string }> = [
+  { id: "needsAction", label: "Needs action" },
+  { id: "unpaid", label: "Unpaid" },
+  { id: "cod", label: "COD" },
+  { id: "cancelledReturned", label: "Cancelled / Returned" },
+];
+
+function quickFilterParams(filter: QuickFilter, status: OrderStatus | "") {
+  switch (filter) {
+    case "needsAction":
+      return { status: "PENDING" as OrderStatus };
+    case "unpaid":
+      return { paymentStatus: "UNPAID" as PaymentStatus };
+    case "cod":
+      return { paymentMethod: "COD" as PaymentMethod };
+    case "cancelledReturned":
+      return { statusIn: ["CANCELLED", "RETURNED"] as OrderStatus[] };
+    default:
+      return { status: status || undefined };
+  }
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "")).toUpperCase();
+}
+
+type SortColumn = NonNullable<AdminOrderListParams["sortBy"]>;
+
+function SortableHeader({
+  column,
+  sortBy,
+  sortDir,
+  onSort,
+  children,
+}: {
+  column: SortColumn;
+  sortBy: AdminOrderListParams["sortBy"];
+  sortDir: "asc" | "desc";
+  onSort: (column: SortColumn) => void;
+  children: ReactNode;
+}) {
+  const active = sortBy === column;
+  const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <button
+      onClick={() => onSort(column)}
+      className={cn(
+        "flex items-center gap-1 whitespace-nowrap font-medium uppercase tracking-wide transition-colors",
+        active ? "text-ink-900" : "text-ink-500 hover:text-ink-700",
+      )}
+    >
+      {children}
+      <Icon size={12} className={active ? "text-ink-900" : "text-ink-300"} />
+    </button>
+  );
+}
+
 export default function OrdersPage() {
+  const [tab, setTab] = useState<"active" | "trash">("active");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<OrderStatus | "">("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const [showDeleted, setShowDeleted] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStatusValue, setBulkStatusValue] = useState<OrderStatus | "">("");
+  const [quickViewId, setQuickViewId] = useState<string | null>(null);
+
+  // Advanced filters — combinable with each other and with the quick filters/status dropdown above,
+  // so an admin can e.g. isolate "not yet booked, Dhaka division, placed this week" for a courier run.
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [courierBooked, setCourierBooked] = useState<"" | "true" | "false">("");
+  const [courierStatusFilter, setCourierStatusFilter] = useState("");
+  const [division, setDivision] = useState<BdDivision | "">("");
+  const [district, setDistrict] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [bulkCourierResult, setBulkCourierResult] = useState<BulkCourierBookResult | null>(null);
+
+  // Column-header sort — undefined sortBy means the default (newest first) from the API.
+  const [sortBy, setSortBy] = useState<AdminOrderListParams["sortBy"]>(undefined);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(column: NonNullable<AdminOrderListParams["sortBy"]>) {
+    if (sortBy === column) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(column);
+      setSortDir("asc");
+    }
+    setPage(1);
+  }
+
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
   const isOwner = currentAdmin?.admin.role === "OWNER";
+  const debouncedSearch = useDebouncedValue(search, 350);
+
+  const filterParams = {
+    ...quickFilterParams(quickFilter, status),
+    courierBooked: courierBooked || undefined,
+    courierStatus: courierStatusFilter || undefined,
+    shippingDivision: division || undefined,
+    shippingDistrict: district || undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    sortBy,
+    sortDir: sortBy ? sortDir : undefined,
+  };
+  const activeMoreFiltersCount = [courierBooked, courierStatusFilter, division, district, dateFrom, dateTo].filter(
+    Boolean,
+  ).length;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-orders", { page, pageSize, search, status, showDeleted }],
+    queryKey: ["admin-orders", { page, pageSize, search: debouncedSearch, tab, filterParams }],
     queryFn: () =>
       adminOrdersApi.listOrders({
         page,
         pageSize,
-        search: search || undefined,
-        status: status || undefined,
-        deleted: showDeleted,
+        search: debouncedSearch || undefined,
+        deleted: tab === "trash",
+        ...filterParams,
       }),
+    placeholderData: (prev) => prev,
   });
+
+  const { data: stats } = useQuery({
+    queryKey: ["admin-order-stats"],
+    queryFn: adminOrdersApi.getOrderStats,
+  });
+
+  // Hidden (not shown as an error toast) whenever Steadfast isn't configured for this store —
+  // getSteadfastBalance throws in that case, and a missing balance tile is a perfectly normal state.
+  const { data: balanceData } = useQuery({
+    queryKey: ["steadfast-balance"],
+    queryFn: adminOrdersApi.getSteadfastBalance,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
+    setSelected(new Set());
+  }
 
   const deleteMutation = useMutation({
     mutationFn: adminOrdersApi.deleteOrder,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-      toast.success("Order deleted");
+      invalidate();
+      toast.success("Order moved to Trash");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to delete order"),
   });
@@ -81,14 +253,60 @@ export default function OrdersPage() {
   const restoreMutation = useMutation({
     mutationFn: adminOrdersApi.restoreOrder,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      invalidate();
       toast.success("Order restored");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to restore order"),
   });
 
+  const permanentDeleteMutation = useMutation({
+    mutationFn: adminOrdersApi.permanentlyDeleteOrder,
+    onSuccess: () => {
+      invalidate();
+      toast.success("Order permanently deleted");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to permanently delete order"),
+  });
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ ids, status: s }: { ids: string[]; status: OrderStatus }) =>
+      adminOrdersApi.bulkUpdateOrderStatus(ids, s),
+    onSuccess: invalidate,
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status: s }: { id: string; status: OrderStatus }) => adminOrdersApi.updateOrderStatus(id, s),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Order status updated");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to update order status"),
+  });
+
+  const bulkBookCourierMutation = useMutation({
+    mutationFn: adminOrdersApi.bulkBookCourier,
+    onSuccess: (result) => {
+      invalidate();
+      setBulkCourierResult(result);
+      if (result.failed.length === 0) {
+        toast.success(`${result.booked.length} order(s) booked with Steadfast`);
+      } else if (result.booked.length === 0) {
+        toast.error(`Booking failed for all ${result.failed.length} order(s)`);
+      } else {
+        toast.success(`${result.booked.length} booked, ${result.failed.length} failed — see details`);
+      }
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk courier booking failed"),
+  });
+
+  const bulkDeleteMutation = useMutation({ mutationFn: adminOrdersApi.bulkDeleteOrders, onSuccess: invalidate });
+  const bulkPermanentDeleteMutation = useMutation({
+    mutationFn: adminOrdersApi.bulkPermanentlyDeleteOrders,
+    onSuccess: invalidate,
+  });
+
   async function handleDelete(orderNumber: string, id: string) {
-    if (!(await confirm(`Delete order ${orderNumber}? Stock will be restored — you can undo this from "Show deleted".`)))
+    if (!(await confirm(`Move order ${orderNumber} to Trash? Stock will be restored — you can undo this from the Trash tab.`)))
       return;
     deleteMutation.mutate(id);
   }
@@ -98,11 +316,253 @@ export default function OrdersPage() {
     restoreMutation.mutate(id);
   }
 
+  async function handlePermanentDelete(orderNumber: string, id: string) {
+    if (
+      !(await confirm(
+        `Permanently delete order ${orderNumber}? This removes it and its line items/history forever — it cannot be undone.`,
+        { confirmLabel: "Delete forever", requireText: orderNumber },
+      ))
+    )
+      return;
+    try {
+      await permanentDeleteMutation.mutateAsync(id);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to permanently delete order");
+    }
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selected);
+    if (!(await confirm(`Move ${ids.length} order(s) to Trash?`))) return;
+    try {
+      await bulkDeleteMutation.mutateAsync(ids);
+      toast.success(`${ids.length} order(s) moved to Trash`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Bulk delete failed");
+    }
+  }
+
+  async function handleStatusChange(orderNumber: string, id: string, from: OrderStatus, to: OrderStatus) {
+    if (to === from) return;
+    if (!(await confirm(`Change order ${orderNumber} status from ${from} to ${to}?`, "Change status"))) return;
+    statusMutation.mutate({ id, status: to });
+  }
+
+  async function handleBulkStatus() {
+    const ids = Array.from(selected);
+    if (!bulkStatusValue) return;
+    try {
+      await bulkStatusMutation.mutateAsync({ ids, status: bulkStatusValue });
+      toast.success(`${ids.length} order(s) set to ${bulkStatusValue}`);
+      setBulkStatusValue("");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Bulk status update failed");
+    }
+  }
+
+  async function handleBulkBookCourier() {
+    const ids = Array.from(selected);
+    if (
+      !(await confirm(
+        `Book ${ids.length} order(s) with Steadfast? Orders already booked or in Trash are skipped automatically.`,
+        "Book",
+      ))
+    )
+      return;
+    bulkBookCourierMutation.mutate(ids);
+  }
+
+  function handlePrintLabels() {
+    sessionStorage.setItem(adminOrdersApi.PRINT_LABEL_ORDER_IDS_KEY, JSON.stringify(Array.from(selected)));
+    router.push("/admin/orders/print-labels");
+  }
+
+  async function handleBulkRestore() {
+    const ids = Array.from(selected);
+    if (!(await confirm(`Restore ${ids.length} order(s)?`))) return;
+    await Promise.all(ids.map((id) => restoreMutation.mutateAsync(id)));
+    invalidate();
+  }
+
+  async function handleBulkPermanentDelete() {
+    const ids = Array.from(selected);
+    if (
+      !(await confirm(
+        `Permanently delete ${ids.length} order(s)? This removes them and their line items/history forever — it cannot be undone.`,
+        { confirmLabel: "Delete forever", requireText: "DELETE" },
+      ))
+    )
+      return;
+    try {
+      await bulkPermanentDeleteMutation.mutateAsync(ids);
+      toast.success(`${ids.length} order(s) permanently deleted`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Bulk permanent delete failed");
+    }
+  }
+
+  const items = data?.items ?? [];
+  const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(items.map((o) => o.id)));
+  }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectQuickFilter(filter: Exclude<QuickFilter, null>) {
+    setQuickFilter((prev) => (prev === filter ? null : filter));
+    setStatus("");
+    setPage(1);
+  }
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+  const csvUrl = useMemo(
+    () =>
+      adminOrdersApi.downloadOrdersCsvUrl({
+        search: debouncedSearch || undefined,
+        deleted: tab === "trash",
+        ...filterParams,
+      }),
+    // filterParams is a fresh object every render, so depend on its actual filter values instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      debouncedSearch,
+      tab,
+      quickFilter,
+      status,
+      courierBooked,
+      courierStatusFilter,
+      division,
+      district,
+      dateFrom,
+      dateTo,
+      sortBy,
+      sortDir,
+    ],
+  );
 
   return (
     <div>
-      <PageHeader title="Orders" />
+      <PageHeader
+        title="Orders"
+        action={
+          <div className="flex items-center gap-2">
+            <a href={csvUrl}>
+              <Button variant="outline">
+                <Download size={16} /> Export CSV
+              </Button>
+            </a>
+            <Link href="/admin/orders/new">
+              <Button variant="brass">
+                <Plus size={16} /> Create Order
+              </Button>
+            </Link>
+          </div>
+        }
+      />
+
+      {stats && (
+        <div className={cn("mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4", balanceData && "xl:grid-cols-5")}>
+          <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={20} />} />
+          <StatTile label="Today's revenue" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={20} />} />
+          <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={20} />} />
+          <StatTile
+            label="Needs attention"
+            value={String(stats.needsAttention)}
+            icon={<AlertTriangle size={20} />}
+            tone={stats.needsAttention > 0 ? "warning" : "default"}
+          />
+          {balanceData && (
+            <StatTile label="Steadfast balance" value={formatPrice(balanceData.balance)} icon={<Truck size={20} />} />
+          )}
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
+          {(["active", "trash"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => {
+                setTab(t);
+                setPage(1);
+                setSelected(new Set());
+              }}
+              className={cn(
+                "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
+                tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
+              )}
+            >
+              {t === "trash" ? "Trash" : "Active"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "active" && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {QUICK_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => selectQuickFilter(f.id)}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
+                quickFilter === f.id
+                  ? "border-ink-900 bg-ink-900 text-cream-50"
+                  : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "active" && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-100 bg-cream-50 p-2.5">
+          <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
+          <button
+            onClick={() => {
+              setStatus("");
+              setQuickFilter(null);
+              setPage(1);
+            }}
+            className={cn(
+              "rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ease-smooth",
+              !status
+                ? "border-ink-900 bg-ink-900 text-cream-50"
+                : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
+            )}
+          >
+            All
+          </button>
+          {STATUS_OPTIONS.map((s) => (
+            <button
+              key={s}
+              onClick={() => {
+                setStatus((prev) => (prev === s ? "" : s));
+                setQuickFilter(null);
+                setPage(1);
+              }}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150 ease-smooth",
+                STATUS_COLORS[s],
+                status === s ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-55 hover:opacity-100",
+              )}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -118,34 +578,23 @@ export default function OrdersPage() {
               className="w-full sm:w-64"
             />
           </div>
-          <Select
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value as OrderStatus | "");
-              setPage(1);
-            }}
-            className="w-44"
+          <button
+            onClick={() => setShowMoreFilters((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
+              showMoreFilters || activeMoreFiltersCount > 0
+                ? "border-ink-900 bg-ink-900 text-cream-50"
+                : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+            )}
           >
-            <option value="">All statuses</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </Select>
-          {isOwner && (
-            <label className="flex items-center gap-2 text-sm text-ink-600">
-              <input
-                type="checkbox"
-                checked={showDeleted}
-                onChange={(e) => {
-                  setShowDeleted(e.target.checked);
-                  setPage(1);
-                }}
-              />
-              Show deleted
-            </label>
-          )}
+            <SlidersHorizontal size={14} />
+            More filters
+            {activeMoreFiltersCount > 0 && (
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-[10px] font-semibold text-ink-900">
+                {activeMoreFiltersCount}
+              </span>
+            )}
+          </button>
         </div>
         <PageSizeSelect
           value={pageSize}
@@ -156,72 +605,362 @@ export default function OrdersPage() {
         />
       </div>
 
+      {showMoreFilters && (
+        <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-ink-100 bg-cream-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Courier</label>
+            <Select
+              value={courierBooked}
+              onChange={(e) => {
+                setCourierBooked(e.target.value as "" | "true" | "false");
+                setPage(1);
+              }}
+            >
+              <option value="">Any</option>
+              <option value="false">Not booked</option>
+              <option value="true">Booked</option>
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Delivery status</label>
+            <Select
+              value={courierStatusFilter}
+              onChange={(e) => {
+                setCourierStatusFilter(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Any</option>
+              {COURIER_DELIVERY_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s.replace(/_/g, " ")}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Division</label>
+            <Select
+              value={division}
+              onChange={(e) => {
+                setDivision(e.target.value as BdDivision | "");
+                setDistrict("");
+                setPage(1);
+              }}
+            >
+              <option value="">Any</option>
+              {BD_DIVISIONS.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">District</label>
+            <SearchableSelect
+              value={district}
+              onChange={(v) => {
+                setDistrict(v);
+                setPage(1);
+              }}
+              options={division ? BD_DISTRICTS_BY_DIVISION[division] : ALL_DISTRICTS}
+              placeholder="Any district"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Placed from</label>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Placed to</label>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          {activeMoreFiltersCount > 0 && (
+            <div className="flex items-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCourierBooked("");
+                  setCourierStatusFilter("");
+                  setDivision("");
+                  setDistrict("");
+                  setDateFrom("");
+                  setDateTo("");
+                  setPage(1);
+                }}
+              >
+                <XCircle size={14} /> Clear filters
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brass-300 bg-brass-50/60 px-3 py-2 text-sm">
+          <span className="font-medium text-ink-800">{selected.size} selected</span>
+          {tab === "active" ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <Select
+                  className="h-8 w-40"
+                  value={bulkStatusValue}
+                  onChange={(e) => setBulkStatusValue(e.target.value as OrderStatus | "")}
+                >
+                  <option value="">Set status…</option>
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </Select>
+                <Button variant="outline" size="sm" disabled={!bulkStatusValue} onClick={handleBulkStatus}>
+                  Apply
+                </Button>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={bulkBookCourierMutation.isPending}
+                onClick={handleBulkBookCourier}
+              >
+                <Truck size={14} /> Book with Steadfast
+              </Button>
+              <Button variant="outline" size="sm" onClick={handlePrintLabels}>
+                <Printer size={14} /> Print Labels
+              </Button>
+              {isOwner && (
+                <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                  <Trash2 size={14} /> Move to Trash
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={handleBulkRestore}>
+                <RotateCcw size={14} /> Restore selected
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleBulkPermanentDelete}>
+                <Trash2 size={14} /> Delete forever
+              </Button>
+            </>
+          )}
+          <button
+            onClick={() => setSelected(new Set())}
+            className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
+            aria-label="Clear selection"
+          >
+            <XCircle size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <thead className="sticky top-0 z-10 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
-              <th className="px-4 py-3">Order</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Payment</th>
-              <th className="px-4 py-3">Total</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Placed</th>
-              {isOwner && <th className="px-4 py-3" />}
+              <th className="w-10 px-4 py-3">
+                <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
+              </th>
+              <th className="sticky left-0 z-20 bg-ink-50 px-4 py-3">
+                <SortableHeader column="orderNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                  Order
+                </SortableHeader>
+              </th>
+              <th className="px-4 py-3">
+                <SortableHeader column="customerName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                  Customer
+                </SortableHeader>
+              </th>
+              <th className="px-4 py-3">
+                <SortableHeader column="paymentStatus" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                  Payment
+                </SortableHeader>
+              </th>
+              <th className="px-4 py-3">
+                <SortableHeader column="total" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                  Total
+                </SortableHeader>
+              </th>
+              <th className="px-4 py-3">
+                <SortableHeader column="status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                  Status
+                </SortableHeader>
+              </th>
+              <th className="px-4 py-3">Courier</th>
+              <th className="hidden px-4 py-3 sm:table-cell">
+                <SortableHeader column="createdAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                  Placed
+                </SortableHeader>
+              </th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {isLoading && <TableSkeleton rows={6} cols={isOwner ? 7 : 6} />}
-            {!isLoading && data?.items.length === 0 && (
+            {isLoading && <TableSkeleton rows={6} cols={9} />}
+            {!isLoading && items.length === 0 && (
               <tr>
-                <td colSpan={isOwner ? 7 : 6} className="px-4 py-6 text-center text-ink-400">
-                  {showDeleted ? "No deleted orders." : "No orders yet."}
+                <td colSpan={9} className="px-4 py-10 text-center text-ink-400">
+                  {tab === "trash" ? (
+                    <span className="flex flex-col items-center gap-2">
+                      <ArchiveX size={24} className="text-ink-300" />
+                      Trash is empty.
+                    </span>
+                  ) : (
+                    "No orders yet."
+                  )}
                 </td>
               </tr>
             )}
-            {data?.items.map((order) => (
-              <tr key={order.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                <td className="px-4 py-3">
+            {items.map((order) => (
+              <tr
+                key={order.id}
+                className={cn(
+                  "group border-t border-ink-100 border-l-4 transition-colors duration-150 ease-smooth hover:bg-ink-50/60",
+                  STATUS_BORDER_COLORS[order.status],
+                )}
+              >
+                <td className="px-4 py-3.5">
+                  <Checkbox checked={selected.has(order.id)} onChange={() => toggleOne(order.id)} aria-label={`Select ${order.orderNumber}`} />
+                </td>
+                <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3.5 group-hover:bg-ink-50">
                   <Link href={`/admin/orders/${order.id}`} className="text-brass-600 hover:underline">
                     {order.orderNumber}
                   </Link>
                 </td>
-                <td className="px-4 py-3">
-                  <div>{order.customerName}</div>
-                  <div className="text-xs text-ink-400">{order.customerPhone}</div>
+                <td className="px-4 py-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brass-100 text-xs font-semibold text-brass-700">
+                      {initials(order.customerName)}
+                    </span>
+                    <div>
+                      <div>{order.customerName}</div>
+                      <div className="text-xs text-ink-400">{order.customerPhone}</div>
+                    </div>
+                  </div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3.5">
                   {order.paymentMethod === "COD" ? "COD" : "Online"}
                   {order.paymentStatus === "PAID" && <span className="ml-1 text-xs text-success-600">(paid)</span>}
                 </td>
-                <td className="px-4 py-3">{formatPrice(order.total)}</td>
-                <td className="px-4 py-3">
-                  <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
+                <td className="px-4 py-3.5">{formatPrice(order.total)}</td>
+                <td className="px-4 py-3.5">
+                  {order.deletedAt ? (
+                    <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
+                  ) : (
+                    <Select
+                      value={order.status}
+                      disabled={statusMutation.isPending}
+                      onChange={(e) =>
+                        handleStatusChange(order.orderNumber, order.id, order.status, e.target.value as OrderStatus)
+                      }
+                      className={cn(
+                        "h-auto w-auto rounded-full border-0 py-1 pl-2.5 pr-6 text-xs font-medium",
+                        STATUS_COLORS[order.status],
+                      )}
+                      aria-label={`Change status for ${order.orderNumber}`}
+                    >
+                      {STATUS_OPTIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
                 </td>
-                <td className="px-4 py-3 text-ink-500">{new Date(order.createdAt).toLocaleDateString()}</td>
-                {isOwner && (
-                  <td className="px-4 py-3 text-right">
-                    {order.deletedAt ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={restoreMutation.isPending}
-                        onClick={() => handleRestore(order.orderNumber, order.id)}
+                <td className="px-4 py-3.5">
+                  {order.courierConsignmentId ? (
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                          courierStatusBadgeClass(order.courierStatus ?? ""),
+                        )}
                       >
-                        <RotateCcw size={14} /> Restore
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={deleteMutation.isPending}
-                        onClick={() => handleDelete(order.orderNumber, order.id)}
-                      >
-                        <Trash2 size={14} /> Delete
-                      </Button>
-                    )}
-                  </td>
-                )}
+                        {(order.courierStatus ?? "booked").replace(/_/g, " ")}
+                      </span>
+                      {order.courierTrackingLink && (
+                        <a
+                          href={order.courierTrackingLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-ink-400 hover:text-brass-600"
+                          aria-label="Track parcel"
+                          title="Track parcel"
+                        >
+                          <ExternalLink size={13} />
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-ink-400">Not booked</span>
+                  )}
+                </td>
+                <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
+                  <div>{new Date(order.createdAt).toLocaleDateString()}</div>
+                  <div className="text-xs text-ink-400">
+                    {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                </td>
+                <td className="px-4 py-3.5">
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => setQuickViewId(order.id)}
+                      className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+                      aria-label="Quick view"
+                      title="Quick view"
+                    >
+                      <Eye size={16} />
+                    </button>
+                    {isOwner &&
+                      (order.deletedAt ? (
+                        <>
+                          <button
+                            onClick={() => handleRestore(order.orderNumber, order.id)}
+                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+                            aria-label="Restore"
+                            title="Restore"
+                          >
+                            <RotateCcw size={16} />
+                          </button>
+                          <button
+                            onClick={() => handlePermanentDelete(order.orderNumber, order.id)}
+                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
+                            aria-label="Delete permanently"
+                            title="Delete permanently"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleDelete(order.orderNumber, order.id)}
+                          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
+                          aria-label="Delete"
+                          title="Move to Trash"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      ))}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -231,6 +970,56 @@ export default function OrdersPage() {
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       {confirmDialog}
+      <OrderQuickViewModal orderId={quickViewId} onClose={() => setQuickViewId(null)} />
+
+      <Modal
+        open={Boolean(bulkCourierResult)}
+        onClose={() => setBulkCourierResult(null)}
+        title="Steadfast bulk booking results"
+      >
+        {bulkCourierResult && (
+          <div className="space-y-4">
+            <p className="text-sm text-ink-600">
+              {bulkCourierResult.booked.length} booked, {bulkCourierResult.failed.length} failed.
+            </p>
+            {bulkCourierResult.booked.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-success-600">Booked</h3>
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                  {bulkCourierResult.booked.map((b) => (
+                    <li key={b.orderId} className="flex items-center justify-between gap-3">
+                      <Link href={`/admin/orders/${b.orderId}`} className="text-brass-600 hover:underline">
+                        {b.orderNumber}
+                      </Link>
+                      <span className="text-ink-400">{b.trackingNumber}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {bulkCourierResult.failed.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-danger-600">Failed</h3>
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                  {bulkCourierResult.failed.map((f) => (
+                    <li key={f.orderId} className="flex items-center justify-between gap-3">
+                      <Link href={`/admin/orders/${f.orderId}`} className="text-brass-600 hover:underline">
+                        {f.orderNumber}
+                      </Link>
+                      <span className="text-ink-400">{f.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setBulkCourierResult(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

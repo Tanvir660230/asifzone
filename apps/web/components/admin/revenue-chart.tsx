@@ -33,26 +33,36 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
   const labelEvery = Math.ceil(points.length / 6);
   const innerH = HEIGHT - PADDING.top - PADDING.bottom;
 
+  function pickNearestPoint(clientX: number, rect: DOMRect) {
+    const relX = ((clientX - rect.left) / rect.width) * WIDTH;
+    let closest = 0;
+    let closestDist = Infinity;
+    points.forEach((p, i) => {
+      const dist = Math.abs(p.x - relX);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = i;
+      }
+    });
+    return closest;
+  }
+
   return (
     <div className="relative">
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="w-full"
+        className="w-full touch-none"
         onMouseLeave={() => setHoverIndex(null)}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const relX = ((e.clientX - rect.left) / rect.width) * WIDTH;
-          let closest = 0;
-          let closestDist = Infinity;
-          points.forEach((p, i) => {
-            const dist = Math.abs(p.x - relX);
-            if (dist < closestDist) {
-              closestDist = dist;
-              closest = i;
-            }
-          });
-          setHoverIndex(closest);
+        onMouseMove={(e) => setHoverIndex(pickNearestPoint(e.clientX, e.currentTarget.getBoundingClientRect()))}
+        onTouchStart={(e) => {
+          const touch = e.touches[0];
+          if (touch) setHoverIndex(pickNearestPoint(touch.clientX, e.currentTarget.getBoundingClientRect()));
         }}
+        onTouchMove={(e) => {
+          const touch = e.touches[0];
+          if (touch) setHoverIndex(pickNearestPoint(touch.clientX, e.currentTarget.getBoundingClientRect()));
+        }}
+        onTouchEnd={() => setHoverIndex(null)}
       >
         {/* recessive gridlines + y-axis labels */}
         {[0, 0.5, 1].map((frac) => {

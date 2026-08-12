@@ -29,6 +29,16 @@ export function getRecentSearches(): string[] {
   return readAll();
 }
 
+export function removeRecentSearch(query: string): void {
+  if (typeof window === "undefined") return;
+  const next = readAll().filter((q) => q.toLowerCase() !== query.trim().toLowerCase());
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // no-op
+  }
+}
+
 export function clearRecentSearches(): void {
   if (typeof window === "undefined") return;
   try {

@@ -1,6 +1,7 @@
 import type { UpdateSettingsInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDel, cacheGet, cacheSet } from "../../config/redis";
+import { AppError } from "../../lib/app-error";
 import { deleteSiteImageFile } from "../uploads/upload.service";
 
 const CACHE_KEY = "settings:singleton";
@@ -28,6 +29,13 @@ async function fetchOrCreate() {
 
 export async function updateSettings(input: UpdateSettingsInput) {
   const previous = await fetchOrCreate();
+
+  const codEnabled = input.codEnabled ?? previous.codEnabled;
+  const onlinePaymentEnabled = input.onlinePaymentEnabled ?? previous.onlinePaymentEnabled;
+  if (!codEnabled && !onlinePaymentEnabled) {
+    throw AppError.badRequest("At least one payment method (Cash on Delivery or Online Payment) must stay enabled");
+  }
+
   const settings = await prisma.storeSetting.update({ where: { id: SINGLETON_ID }, data: input });
   await cacheDel(CACHE_KEY);
 

@@ -1,4 +1,11 @@
-import type { CheckoutInput, OrderListQuery, OrderStatus, UpdateOrderStatusInput, UpdateOrderDetailsInput } from "@clothing-brand/shared";
+import type {
+  CheckoutInput,
+  AdminCreateOrderInput,
+  OrderListQuery,
+  OrderStatus,
+  UpdateOrderStatusInput,
+  UpdateOrderDetailsInput,
+} from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
@@ -36,7 +43,15 @@ function effectivePrice(
   return flash ? computeFlashPrice(regularPrice, flash) : regularPrice;
 }
 
-export async function createOrder(input: CheckoutInput, customerId: string | null = null) {
+export async function createOrder(
+  input: CheckoutInput,
+  customerId: string | null = null,
+  // Only the admin "Create order" path sets these — attributes the order's opening PENDING
+  // statusHistory entry to the staff member who entered it, so the order-detail timeline reads
+  // "PENDING · <time> · <admin name> — Order manually entered..." for free, same as any other
+  // admin-driven status change.
+  opts: { changedByAdminId?: string; statusNote?: string } = {},
+) {
   // A guest (no session cookie) still gets tied to a real Customer row, matched by email/phone —
   // see findOrCreateGuestCustomer for why (repeat-guest recognition, and a base to merge into once
   // they register/log in).
@@ -90,6 +105,12 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
   }
 
   const settings = await getSettings();
+  if (input.paymentMethod === "COD" && !settings.codEnabled) {
+    throw AppError.badRequest("Cash on Delivery is currently unavailable — please pay online instead");
+  }
+  if (input.paymentMethod === "SSLCOMMERZ" && !settings.onlinePaymentEnabled) {
+    throw AppError.badRequest("Online payment is currently unavailable — please choose Cash on Delivery instead");
+  }
   const shippingFee =
     input.shippingDivision === "Dhaka" ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
   const total = subtotal - discount + shippingFee;
@@ -144,7 +165,13 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
             };
           }),
         },
-        statusHistory: { create: { status: "PENDING" } },
+        statusHistory: {
+          create: {
+            status: "PENDING",
+            changedByAdminId: opts.changedByAdminId ?? null,
+            note: opts.statusNote ?? null,
+          },
+        },
       },
       include,
     });
@@ -195,10 +222,40 @@ export async function createOrder(input: CheckoutInput, customerId: string | nul
   return order;
 }
 
+/** The admin "Create order" page's entrypoint — for phone/Facebook orders a staff member types in
+ * themselves. Deliberately a thin wrapper around createOrder rather than a parallel implementation:
+ * routing through the exact same stock-decrement/pricing/snapshot transaction is what guarantees a
+ * manually-entered order can never drift out of sync with real stock or the catalog's current
+ * price — there is only one order-creation code path, admin or storefront. `markPaid` is applied
+ * as a separate, explicit follow-up write (never silently folded into createOrder) so a manual
+ * order defaults to the same UNPAID-until-collected state as any other COD order unless staff
+ * tick the box themselves. */
+export async function createManualOrder(input: AdminCreateOrderInput, adminId: string) {
+  const order = await createOrder(input, input.customerId ?? null, {
+    changedByAdminId: adminId,
+    statusNote: "Order manually entered from the admin panel",
+  });
+
+  if (input.markPaid) {
+    await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "PAID" } });
+  }
+
+  return getOrderById(order.id);
+}
+
 export async function getOrderById(id: string) {
   const order = await prisma.order.findUnique({ where: { id }, include });
   if (!order) throw AppError.notFound("Order not found");
   return order;
+}
+
+/** Powers bulk label printing — fetches many orders in one round-trip instead of N single-order
+ * GETs. Re-sorts to match the caller's id order and silently drops any id no longer found (e.g. an
+ * order permanently deleted between selection and print) rather than failing the whole batch. */
+export async function getOrdersByIds(ids: string[]) {
+  const orders = await prisma.order.findMany({ where: { id: { in: ids } }, include });
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  return ids.map((id) => byId.get(id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
 }
 
 /** Ownership-checked order detail for a logged-in customer's own order page. Attaches live
@@ -261,12 +318,33 @@ export async function trackOrder(orderNumber: string, phone: string) {
   return order;
 }
 
-export async function listOrders(query: OrderListQuery) {
-  const where = {
+/** Shared by listOrders and exportOrdersCsv so the two never drift on what a given filter set matches. */
+function buildOrderWhere(query: OrderListQuery) {
+  return {
     // "deleted=true" is the dedicated admin restore view (only soft-deleted orders); otherwise the
     // normal listing never shows them.
     deletedAt: query.deleted === "true" ? { not: null } : null,
-    ...(query.status ? { status: query.status } : {}),
+    // `statusIn` (a quick-filter preset like "Cancelled/Returned") takes priority over the plain
+    // single-value `status` filter when both are somehow present.
+    ...(query.statusIn?.length ? { status: { in: query.statusIn } } : query.status ? { status: query.status } : {}),
+    ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
+    ...(query.paymentMethod ? { paymentMethod: query.paymentMethod } : {}),
+    ...(query.courierBooked === "true"
+      ? { courierConsignmentId: { not: null } }
+      : query.courierBooked === "false"
+        ? { courierConsignmentId: null }
+        : {}),
+    ...(query.courierStatus ? { courierStatus: query.courierStatus } : {}),
+    ...(query.shippingDivision ? { shippingDivision: query.shippingDivision } : {}),
+    ...(query.shippingDistrict ? { shippingDistrict: query.shippingDistrict } : {}),
+    ...(query.dateFrom || query.dateTo
+      ? {
+          createdAt: {
+            ...(query.dateFrom ? { gte: query.dateFrom } : {}),
+            ...(query.dateTo ? { lte: query.dateTo } : {}),
+          },
+        }
+      : {}),
     ...(query.search
       ? {
           OR: [
@@ -277,19 +355,162 @@ export async function listOrders(query: OrderListQuery) {
         }
       : {}),
   };
+}
 
-  return paginate(
+/** Shared by listOrders and exportOrdersCsv — defaults to newest-first when the admin hasn't
+ * clicked a sortable column header. */
+function buildOrderOrderBy(query: OrderListQuery) {
+  return { [query.sortBy ?? "createdAt"]: query.sortDir ?? "desc" };
+}
+
+export async function listOrders(query: OrderListQuery) {
+  const where = buildOrderWhere(query);
+  const orderBy = buildOrderOrderBy(query);
+
+  // The list table only ever shows order-level fields (number, customer, total, status, date) —
+  // it never touches line items or the status timeline. Those are exactly what the shared `include`
+  // pulls in (a join per row for items, plus statusHistory joined to changedByAdmin), so skipping
+  // them here is what keeps this endpoint fast as order history grows. `items`/`statusHistory` are
+  // filled in as empty arrays purely to satisfy the shared `Order` type — the list page never reads them.
+  const result = await paginate(
     query,
-    (p) => prisma.order.findMany({ where, include, orderBy: { createdAt: "desc" }, ...p }),
+    (p) => prisma.order.findMany({ where, orderBy, ...p }),
     () => prisma.order.count({ where }),
   );
+
+  return {
+    ...result,
+    items: result.items.map((order) => ({ ...order, items: [], statusHistory: [] })),
+  };
+}
+
+/** Powers the orders-page KPI strip — a handful of parallel count/aggregate queries (no per-row
+ * joins) rather than pulling every order into Node to tally, so it stays cheap as order history grows. */
+export async function getOrderStats() {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  const [todayOrders, todayRevenue, pending, needsAttention] = await Promise.all([
+    prisma.order.count({ where: { deletedAt: null, createdAt: { gte: startOfToday } } }),
+    prisma.order.aggregate({
+      where: { deletedAt: null, createdAt: { gte: startOfToday } },
+      _sum: { total: true },
+    }),
+    prisma.order.count({ where: { deletedAt: null, status: { in: ["PENDING", "CONFIRMED"] } } }),
+    // A fresh PENDING order isn't "stuck" yet — only one sitting unconfirmed for a day, one whose
+    // payment gateway callback actually failed, or one Steadfast has put "on hold" (couldn't reach
+    // the recipient, address issue, etc.) is something an admin needs to go look at.
+    prisma.order.count({
+      where: {
+        deletedAt: null,
+        OR: [
+          { status: "PENDING", createdAt: { lt: attentionCutoff } },
+          { paymentStatus: "FAILED" },
+          { courierStatus: "hold" },
+        ],
+      },
+    }),
+  ]);
+
+  return {
+    todayOrders,
+    todayRevenue: Number(todayRevenue._sum.total ?? 0),
+    pending,
+    needsAttention,
+  };
+}
+
+function csvCell(value: unknown): string {
+  const str = value === null || value === undefined ? "" : String(value);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+/** Same filters as listOrders (via buildOrderWhere) but unpaginated — admins export a whole filtered
+ * range at once (e.g. a month, for courier/accounting handoff), not just the current page. */
+export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
+  const where = buildOrderWhere(query);
+  const orders = await prisma.order.findMany({ where, orderBy: buildOrderOrderBy(query) });
+
+  const header = [
+    "orderNumber",
+    "customerName",
+    "customerPhone",
+    "customerEmail",
+    "status",
+    "paymentMethod",
+    "paymentStatus",
+    "subtotal",
+    "discount",
+    "shippingFee",
+    "total",
+    "shippingDivision",
+    "shippingDistrict",
+    "shippingArea",
+    "shippingAddressLine",
+    "trackingNumber",
+    "carrier",
+    "createdAt",
+  ];
+
+  const rows = orders.map((o) => [
+    o.orderNumber,
+    o.customerName,
+    o.customerPhone,
+    o.customerEmail ?? "",
+    o.status,
+    o.paymentMethod,
+    o.paymentStatus,
+    o.subtotal,
+    o.discount,
+    o.shippingFee,
+    o.total,
+    o.shippingDivision,
+    o.shippingDistrict,
+    o.shippingArea,
+    o.shippingAddressLine,
+    o.trackingNumber ?? "",
+    o.carrier ?? "",
+    o.createdAt.toISOString(),
+  ]);
+
+  return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
 export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
   const existing = await getOrderById(id);
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
 
+  // CANCELLED/REFUNDED are treated everywhere else (deleteOrder, cancelUnstartedOrder) as "this
+  // order's reserved stock has already been put back" — but until now this was the one path that
+  // could land an order on either status (an admin picking it from the dropdown, a bulk update, or
+  // Steadfast reporting a parcel as cancelled) without actually restocking it, silently leaving the
+  // units stuck as "sold". Guarded on the *previous* status so re-saving an already-cancelled/
+  // refunded order (or the reverse transition never happening twice) can't double-credit inventory.
+  const restockNeeded =
+    (input.status === "CANCELLED" || input.status === "REFUNDED") &&
+    existing.status !== "CANCELLED" &&
+    existing.status !== "REFUNDED";
+
   const updated = await prisma.$transaction(async (tx) => {
+    if (restockNeeded) {
+      for (const item of existing.items) {
+        await tx.productVariant.update({
+          where: { id: item.variantId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+      await tx.stockMovement.createMany({
+        data: existing.items.map((item) => ({
+          variantId: item.variantId,
+          change: item.quantity,
+          reason: "ADJUSTMENT" as const,
+          orderId: id,
+          adminId: changedByAdminId ?? null,
+        })),
+      });
+    }
+
     const order = await tx.order.update({
       where: { id },
       data: {
@@ -402,6 +623,7 @@ export async function deleteOrder(orderId: string, adminId: string) {
           change: item.quantity,
           reason: "ADJUSTMENT" as const,
           orderId: order.id,
+          adminId,
         })),
       });
     }
@@ -411,6 +633,38 @@ export async function deleteOrder(orderId: string, adminId: string) {
       data: { deletedAt: new Date(), deletedByAdminId: adminId },
       include,
     });
+  });
+}
+
+/** Restores stock for a RETURNED order's items and logs a matching RETURN-reason StockMovement —
+ * called right after a return request is approved. Uses `updateMany` (not `update`) per item since
+ * a variant referenced only by OrderItem has no FK guarantee it still exists (its Product could
+ * have been permanently deleted, cascading the variant away with it) — silently skips restock+
+ * logging for any variant that's actually gone rather than throwing mid-loop and leaving some
+ * items restocked and others not. */
+export async function restockReturnedOrderItems(
+  orderId: string,
+  items: Array<{ variantId: string; quantity: number }>,
+  adminId: string,
+) {
+  await prisma.$transaction(async (tx) => {
+    for (const item of items) {
+      const result = await tx.productVariant.updateMany({
+        where: { id: item.variantId },
+        data: { stock: { increment: item.quantity } },
+      });
+      if (result.count === 0) continue;
+      await tx.stockMovement.create({
+        data: {
+          variantId: item.variantId,
+          change: item.quantity,
+          reason: "RETURN",
+          orderId,
+          adminId,
+          note: "Stock restored — return approved",
+        },
+      });
+    }
   });
 }
 
@@ -428,4 +682,31 @@ export async function restoreOrder(orderId: string) {
     data: { deletedAt: null, deletedByAdminId: null },
     include,
   });
+}
+
+/** Irreversible — only meaningful for an order already in Trash (mirrors permanentlyDeleteCategory).
+ * OrderItem/OrderStatusHistory/ReturnRequest all cascade-delete with the order. StockMovement.orderId
+ * is a plain historical column with no FK relation to Order (it's an append-only ledger, see
+ * restockReturnedOrderItems), so it's untouched and simply keeps a now-orphaned reference — by design,
+ * an audit ledger is meant to outlive the order it references. */
+export async function permanentlyDeleteOrder(orderId: string) {
+  const order = await getOrderById(orderId);
+  if (!order.deletedAt) throw AppError.badRequest("Move the order to Trash before deleting it permanently");
+
+  await prisma.order.delete({ where: { id: orderId } });
+}
+
+/** Bulk actions run each order through the same single-order function used elsewhere (not a raw
+ * `updateMany`), so every side effect a normal status change carries — status-history row, delivery
+ * points on DELIVERED, the customer SMS touchpoint — still fires for each order in the batch. */
+export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, adminId: string) {
+  await Promise.all(ids.map((id) => updateOrderStatus(id, { status }, adminId)));
+}
+
+export async function bulkDeleteOrders(ids: string[], adminId: string) {
+  await Promise.all(ids.map((id) => deleteOrder(id, adminId)));
+}
+
+export async function bulkPermanentlyDeleteOrders(ids: string[]) {
+  await Promise.all(ids.map((id) => permanentlyDeleteOrder(id)));
 }

@@ -26,3 +26,16 @@ export function formatDate(iso: string): string {
 export function formatDateShort(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+
+const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
+  delivered: "bg-success-100 text-success-700",
+  partial_delivered: "bg-success-100 text-success-700",
+  cancelled: "bg-danger-100 text-danger-700",
+  hold: "bg-warning-100 text-warning-700",
+};
+
+/** Shared by the orders list and order detail pages so a given Steadfast `delivery_status` always
+ * renders with the same color, whichever screen it's shown on. */
+export function courierStatusBadgeClass(status: string): string {
+  return COURIER_STATUS_BADGE_CLASS[status] ?? "bg-ink-100 text-ink-700";
+}

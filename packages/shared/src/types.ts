@@ -1,5 +1,31 @@
 // Shapes returned by the API (JSON-serialized: Decimal/Date become strings).
 
+export interface StockMovement {
+  id: string;
+  variantId: string;
+  change: number;
+  reason: "ORDER" | "RESTOCK" | "ADJUSTMENT" | "RETURN";
+  orderId: string | null;
+  adminId: string | null;
+  note: string | null;
+  createdAt: string;
+  variant?: {
+    sku: string;
+    size: string;
+    color: string;
+    product: { id: string; name: string; slug: string };
+  };
+  admin?: { name: string } | null;
+}
+
+export interface StockDiscrepancy {
+  variantId: string;
+  sku: string;
+  productName: string;
+  currentStock: number;
+  ledgerSum: number;
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -13,6 +39,7 @@ export interface Category {
   seoTitle: string | null;
   seoDescription: string | null;
   parentId: string | null;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   children?: Category[];
@@ -255,6 +282,7 @@ export interface Order {
   carrier: string | null;
   courierConsignmentId: string | null;
   courierStatus: string | null;
+  courierTrackingLink: string | null;
   courierBookedAt: string | null;
   statusHistory: OrderStatusHistoryEntry[];
   items: OrderItem[];
@@ -297,6 +325,7 @@ export interface Coupon {
   usedCount: number;
   expiresAt: string | null;
   isActive: boolean;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -438,6 +467,8 @@ export interface StoreSettings {
   tawkPropertyId: string | null;
   tawkWidgetId: string | null;
   paymentMethodsImageUrl: string | null;
+  codEnabled: boolean;
+  onlinePaymentEnabled: boolean;
   googleSiteVerification: string | null;
   updatedAt: string;
 }

@@ -18,7 +18,7 @@ export default function EditProductPage() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
-  const { data: categoriesData } = useQuery({ queryKey: ["categories"], queryFn: categoriesApi.listCategories });
+  const { data: categoriesData } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesApi.listCategories() });
   const { data: productData, isLoading } = useQuery({
     queryKey: ["product", id],
     queryFn: () => productsApi.getProduct(id),

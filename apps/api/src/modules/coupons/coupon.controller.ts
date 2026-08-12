@@ -43,3 +43,12 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   await couponService.deleteCoupon(req.params.id!);
   res.status(204).send();
 });
+
+export const restore = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ coupon: await couponService.restoreCoupon(req.params.id!) });
+});
+
+export const permanentlyRemove = asyncHandler(async (req: Request, res: Response) => {
+  await couponService.permanentlyDeleteCoupon(req.params.id!);
+  res.status(204).send();
+});

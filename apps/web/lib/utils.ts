@@ -5,6 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Bare icon-only buttons (row actions in admin tables — view/edit/delete) render just a 16-20px
+ * lucide icon with no padding, well under the ~44px touch-target guideline on mobile. Negative
+ * margin keeps the visual icon size and row spacing unchanged while padding expands the actual
+ * hit area; apply directly to the button's className alongside `cn`. */
+export const ICON_BUTTON_HIT = "p-2 -m-2 rounded-md transition-colors duration-150 ease-smooth hover:bg-ink-100";
+
 /** Near-white swatches (e.g. #ffffff, #f8f8f8) have almost no contrast against the cream-50 card
  * background, so callers rendering a color swatch should darken the border for these instead of
  * relying on the default light border. Uses perceptual luminance, not a flat whitelist, so it

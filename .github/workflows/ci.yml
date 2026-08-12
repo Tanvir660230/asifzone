@@ -162,6 +162,14 @@ jobs:
           echo "WEB_PUSH_PUBLIC_KEY=${{ secrets.WEB_PUSH_PUBLIC_KEY }}" >> docker/.env
           echo "WEB_PUSH_PRIVATE_KEY=${{ secrets.WEB_PUSH_PRIVATE_KEY }}" >> docker/.env
           echo "WEB_PUSH_CONTACT_EMAIL=${{ secrets.WEB_PUSH_CONTACT_EMAIL }}" >> docker/.env
+          # Optional — docker-compose.yml already defaults STEADFAST_BASE_URL and falls back to a
+          # clear "not configured" error on the other two when empty, so none of these are in the
+          # required-secrets check above. Without them, "Book with Steadfast" would silently never
+          # work in production even though docker-compose.yml has always been wired to accept them.
+          echo "STEADFAST_API_KEY=${{ secrets.STEADFAST_API_KEY }}" >> docker/.env
+          echo "STEADFAST_SECRET_KEY=${{ secrets.STEADFAST_SECRET_KEY }}" >> docker/.env
+          echo "STEADFAST_BASE_URL=${{ secrets.STEADFAST_BASE_URL }}" >> docker/.env
+          echo "STEADFAST_WEBHOOK_TOKEN=${{ secrets.STEADFAST_WEBHOOK_TOKEN }}" >> docker/.env
 
       - name: Build and restart the stack
         run: |
