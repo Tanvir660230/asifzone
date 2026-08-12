@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { href: "/account/orders", label: "Orders", icon: Package },
   { href: "/account/returns", label: "Returns", icon: RotateCcw },
   { href: "/account/addresses", label: "Addresses", icon: MapPin },
-  { href: "/account/wishlist", label: "Wishlist", icon: Heart },
+  { href: "/wishlist", label: "Wishlist", icon: Heart },
   { href: "/account/reward-points", label: "Reward Points", icon: Gift },
   { href: "/account/coupons", label: "Coupons", icon: Tag },
   { href: "/account/browsing-history", label: "Browsing History", icon: History },

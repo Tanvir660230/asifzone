@@ -24,6 +24,8 @@ import {
   ArrowDown,
   ArrowUpDown,
   Plus,
+  ChevronDown,
+  SearchX,
 } from "lucide-react";
 import type { OrderStatus, PaymentStatus, PaymentMethod, BdDivision } from "@clothing-brand/shared";
 import { BD_DIVISIONS, BD_DISTRICTS_BY_DIVISION, COURIER_DELIVERY_STATUSES } from "@clothing-brand/shared";
@@ -34,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
+import { Drawer } from "@/components/ui/drawer";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
@@ -41,8 +44,9 @@ import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
-import { StatTile } from "@/components/admin/stat-tile";
-import { OrderQuickViewModal } from "@/components/admin/order-quick-view-modal";
+import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
+import { EmptyState } from "@/components/admin/empty-state";
+import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
@@ -159,7 +163,7 @@ export default function OrdersPage() {
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatusValue, setBulkStatusValue] = useState<OrderStatus | "">("");
-  const [quickViewId, setQuickViewId] = useState<string | null>(null);
+  const [drawerOrderId, setDrawerOrderId] = useState<string | null>(null);
 
   // Advanced filters — combinable with each other and with the quick filters/status dropdown above,
   // so an admin can e.g. isolate "not yet booked, Dhaka division, placed this week" for a courier run.
@@ -207,6 +211,20 @@ export default function OrdersPage() {
   const activeMoreFiltersCount = [courierBooked, courierStatusFilter, division, district, dateFrom, dateTo].filter(
     Boolean,
   ).length;
+  const hasActiveFilters = Boolean(debouncedSearch || quickFilter || status || activeMoreFiltersCount > 0);
+
+  function clearAllFilters() {
+    setSearch("");
+    setStatus("");
+    setQuickFilter(null);
+    setCourierBooked("");
+    setCourierStatusFilter("");
+    setDivision("");
+    setDistrict("");
+    setDateFrom("");
+    setDateTo("");
+    setPage(1);
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-orders", { page, pageSize, search: debouncedSearch, tab, filterParams }],
@@ -453,6 +471,7 @@ export default function OrdersPage() {
     <div>
       <PageHeader
         title="Orders"
+        description="Manage, fulfill, and track customer orders."
         action={
           <div className="flex items-center gap-2">
             <a href={csvUrl}>
@@ -469,362 +488,423 @@ export default function OrdersPage() {
         }
       />
 
-      {stats && (
-        <div className={cn("mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4", balanceData && "xl:grid-cols-5")}>
-          <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={20} />} />
-          <StatTile label="Today's revenue" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={20} />} />
-          <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={20} />} />
-          <StatTile
-            label="Needs attention"
-            value={String(stats.needsAttention)}
-            icon={<AlertTriangle size={20} />}
-            tone={stats.needsAttention > 0 ? "warning" : "default"}
-          />
-          {balanceData && (
-            <StatTile label="Steadfast balance" value={formatPrice(balanceData.balance)} icon={<Truck size={20} />} />
-          )}
-        </div>
-      )}
+      <div className={cn("mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4", stats && balanceData && "xl:grid-cols-5")}>
+        {stats ? (
+          <>
+            <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={18} />} />
+            <StatTile
+              label="Today's revenue"
+              value={formatPrice(stats.todayRevenue)}
+              icon={<Wallet size={18} />}
+              tone="accent"
+            />
+            <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={18} />} />
+            <StatTile
+              label="Needs attention"
+              value={String(stats.needsAttention)}
+              icon={<AlertTriangle size={18} />}
+              tone={stats.needsAttention > 0 ? "warning" : "default"}
+            />
+            {balanceData && (
+              <StatTile
+                label="Steadfast balance"
+                value={formatPrice(balanceData.balance)}
+                icon={<Truck size={18} />}
+                tone="accent"
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+          </>
+        )}
+      </div>
 
-      {isOwner && (
-        <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
-          {(["active", "trash"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => {
-                setTab(t);
-                setPage(1);
-                setSelected(new Set());
-              }}
-              className={cn(
-                "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
-                tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
+      {/* Sticky control zone: anchored just below the app shell's h-14 top bar, so filters and bulk
+          actions stay reachable while scrolling — the table below has its own bounded internal
+          scroll (see max-h-[65vh] further down) so its header can stick correctly too, without the
+          two sticky regions having to know each other's height. */}
+      <div className="sticky top-14 z-10 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
+        {isOwner && (
+          <div className="flex items-center gap-1">
+            {(["active", "trash"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setTab(t);
+                  setPage(1);
+                  setSelected(new Set());
+                }}
+                className={cn(
+                  "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
+                  tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
+                )}
+              >
+                {t === "trash" ? "Trash" : "Active"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === "active" && (
+          <div className="space-y-2.5 rounded-lg border border-ink-100 bg-cream-50 p-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Quick</span>
+              {QUICK_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => selectQuickFilter(f.id)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
+                    quickFilter === f.id
+                      ? "border-ink-900 bg-ink-900 text-cream-50"
+                      : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
+              <button
+                onClick={() => {
+                  setStatus("");
+                  setQuickFilter(null);
+                  setPage(1);
+                }}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ease-smooth",
+                  !status
+                    ? "border-ink-900 bg-ink-900 text-cream-50"
+                    : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
+                )}
+              >
+                All
+              </button>
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => {
+                    setStatus((prev) => (prev === s ? "" : s));
+                    setQuickFilter(null);
+                    setPage(1);
+                  }}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150 ease-smooth",
+                    STATUS_COLORS[s],
+                    status === s ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-55 hover:opacity-100",
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-full sm:w-72">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+              <Input
+                placeholder="Search order #, name, phone…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className="pl-9 pr-8"
+              />
+              {search && (
+                <button
+                  onClick={() => {
+                    setSearch("");
+                    setPage(1);
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-300 transition-colors hover:text-ink-600"
+                  aria-label="Clear search"
+                >
+                  <XCircle size={14} />
+                </button>
               )}
-            >
-              {t === "trash" ? "Trash" : "Active"}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {tab === "active" && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {QUICK_FILTERS.map((f) => (
+            </div>
             <button
-              key={f.id}
-              onClick={() => selectQuickFilter(f.id)}
+              onClick={() => setShowMoreFilters((v) => !v)}
               className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                quickFilter === f.id
+                "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
+                showMoreFilters || activeMoreFiltersCount > 0
                   ? "border-ink-900 bg-ink-900 text-cream-50"
                   : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
               )}
             >
-              {f.label}
+              <SlidersHorizontal size={14} />
+              More filters
+              {activeMoreFiltersCount > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-[10px] font-semibold text-ink-900">
+                  {activeMoreFiltersCount}
+                </span>
+              )}
             </button>
-          ))}
-        </div>
-      )}
-
-      {tab === "active" && (
-        <div className="mb-4 flex flex-wrap items-center gap-1.5 rounded-lg border border-ink-100 bg-cream-50 p-2.5">
-          <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
-          <button
-            onClick={() => {
-              setStatus("");
-              setQuickFilter(null);
+          </div>
+          <PageSizeSelect
+            value={pageSize}
+            onChange={(size) => {
+              setPageSize(size);
               setPage(1);
             }}
-            className={cn(
-              "rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ease-smooth",
-              !status
-                ? "border-ink-900 bg-ink-900 text-cream-50"
-                : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
-            )}
-          >
-            All
-          </button>
-          {STATUS_OPTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => {
-                setStatus((prev) => (prev === s ? "" : s));
-                setQuickFilter(null);
-                setPage(1);
-              }}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150 ease-smooth",
-                STATUS_COLORS[s],
-                status === s ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-55 hover:opacity-100",
-              )}
-            >
-              {s}
-            </button>
-          ))}
+          />
         </div>
-      )}
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Search size={16} className="shrink-0 text-ink-400" />
-            <Input
-              placeholder="Search order #, name, phone…"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="w-full sm:w-64"
-            />
-          </div>
-          <button
-            onClick={() => setShowMoreFilters((v) => !v)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-              showMoreFilters || activeMoreFiltersCount > 0
-                ? "border-ink-900 bg-ink-900 text-cream-50"
-                : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
-            )}
-          >
-            <SlidersHorizontal size={14} />
-            More filters
-            {activeMoreFiltersCount > 0 && (
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-[10px] font-semibold text-ink-900">
-                {activeMoreFiltersCount}
-              </span>
-            )}
-          </button>
-        </div>
-        <PageSizeSelect
-          value={pageSize}
-          onChange={(size) => {
-            setPageSize(size);
-            setPage(1);
-          }}
-        />
-      </div>
-
-      {showMoreFilters && (
-        <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border border-ink-100 bg-cream-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-500">Courier</label>
-            <Select
-              value={courierBooked}
-              onChange={(e) => {
-                setCourierBooked(e.target.value as "" | "true" | "false");
-                setPage(1);
-              }}
-            >
-              <option value="">Any</option>
-              <option value="false">Not booked</option>
-              <option value="true">Booked</option>
-            </Select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-500">Delivery status</label>
-            <Select
-              value={courierStatusFilter}
-              onChange={(e) => {
-                setCourierStatusFilter(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="">Any</option>
-              {COURIER_DELIVERY_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace(/_/g, " ")}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-500">Division</label>
-            <Select
-              value={division}
-              onChange={(e) => {
-                setDivision(e.target.value as BdDivision | "");
-                setDistrict("");
-                setPage(1);
-              }}
-            >
-              <option value="">Any</option>
-              {BD_DIVISIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-500">District</label>
-            <SearchableSelect
-              value={district}
-              onChange={(v) => {
-                setDistrict(v);
-                setPage(1);
-              }}
-              options={division ? BD_DISTRICTS_BY_DIVISION[division] : ALL_DISTRICTS}
-              placeholder="Any district"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-500">Placed from</label>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-500">Placed to</label>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          {activeMoreFiltersCount > 0 && (
-            <div className="flex items-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setCourierBooked("");
-                  setCourierStatusFilter("");
-                  setDivision("");
-                  setDistrict("");
-                  setDateFrom("");
-                  setDateTo("");
+        {showMoreFilters && (
+          <div className="grid grid-cols-1 gap-3 rounded-lg border border-ink-100 bg-cream-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-500">Courier</label>
+              <Select
+                value={courierBooked}
+                onChange={(e) => {
+                  setCourierBooked(e.target.value as "" | "true" | "false");
                   setPage(1);
                 }}
               >
-                <XCircle size={14} /> Clear filters
-              </Button>
+                <option value="">Any</option>
+                <option value="false">Not booked</option>
+                <option value="true">Booked</option>
+              </Select>
             </div>
-          )}
-        </div>
-      )}
-
-      {selected.size > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brass-300 bg-brass-50/60 px-3 py-2 text-sm">
-          <span className="font-medium text-ink-800">{selected.size} selected</span>
-          {tab === "active" ? (
-            <>
-              <div className="flex items-center gap-1.5">
-                <Select
-                  className="h-8 w-40"
-                  value={bulkStatusValue}
-                  onChange={(e) => setBulkStatusValue(e.target.value as OrderStatus | "")}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-500">Delivery status</label>
+              <Select
+                value={courierStatusFilter}
+                onChange={(e) => {
+                  setCourierStatusFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">Any</option>
+                {COURIER_DELIVERY_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-500">Division</label>
+              <Select
+                value={division}
+                onChange={(e) => {
+                  setDivision(e.target.value as BdDivision | "");
+                  setDistrict("");
+                  setPage(1);
+                }}
+              >
+                <option value="">Any</option>
+                {BD_DIVISIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-500">District</label>
+              <SearchableSelect
+                value={district}
+                onChange={(v) => {
+                  setDistrict(v);
+                  setPage(1);
+                }}
+                options={division ? BD_DISTRICTS_BY_DIVISION[division] : ALL_DISTRICTS}
+                placeholder="Any district"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-500">Placed from</label>
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-ink-500">Placed to</label>
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            {activeMoreFiltersCount > 0 && (
+              <div className="flex items-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setCourierBooked("");
+                    setCourierStatusFilter("");
+                    setDivision("");
+                    setDistrict("");
+                    setDateFrom("");
+                    setDateTo("");
+                    setPage(1);
+                  }}
                 >
-                  <option value="">Set status…</option>
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </Select>
-                <Button variant="outline" size="sm" disabled={!bulkStatusValue} onClick={handleBulkStatus}>
-                  Apply
+                  <XCircle size={14} /> Clear filters
                 </Button>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={bulkBookCourierMutation.isPending}
-                onClick={handleBulkBookCourier}
-              >
-                <Truck size={14} /> Book with Steadfast
-              </Button>
-              <Button variant="outline" size="sm" onClick={handlePrintLabels}>
-                <Printer size={14} /> Print Labels
-              </Button>
-              {isOwner && (
-                <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
-                  <Trash2 size={14} /> Move to Trash
-                </Button>
-              )}
-            </>
-          ) : (
-            <>
-              <Button variant="outline" size="sm" onClick={handleBulkRestore}>
-                <RotateCcw size={14} /> Restore selected
-              </Button>
-              <Button variant="destructive" size="sm" onClick={handleBulkPermanentDelete}>
-                <Trash2 size={14} /> Delete forever
-              </Button>
-            </>
-          )}
-          <button
-            onClick={() => setSelected(new Set())}
-            className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
-            aria-label="Clear selection"
-          >
-            <XCircle size={16} />
-          </button>
-        </div>
-      )}
+            )}
+          </div>
+        )}
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
+        {selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-200 bg-cream-50 px-3.5 py-2.5 text-sm shadow-float animate-fade-in">
+            <span className="flex items-center gap-1.5 font-medium text-ink-800">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-900 px-1.5 text-xs font-semibold text-cream-50">
+                {selected.size}
+              </span>
+              selected
+            </span>
+            {tab === "active" ? (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <Select
+                    className="h-8 w-40"
+                    value={bulkStatusValue}
+                    onChange={(e) => setBulkStatusValue(e.target.value as OrderStatus | "")}
+                  >
+                    <option value="">Set status…</option>
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button variant="outline" size="sm" disabled={!bulkStatusValue} onClick={handleBulkStatus}>
+                    Apply
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkBookCourierMutation.isPending}
+                  onClick={handleBulkBookCourier}
+                >
+                  <Truck size={14} /> Book with Steadfast
+                </Button>
+                <Button variant="outline" size="sm" onClick={handlePrintLabels}>
+                  <Printer size={14} /> Print Labels
+                </Button>
+                {isOwner && (
+                  <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                    <Trash2 size={14} /> Move to Trash
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={handleBulkRestore}>
+                  <RotateCcw size={14} /> Restore selected
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleBulkPermanentDelete}>
+                  <Trash2 size={14} /> Delete forever
+                </Button>
+              </>
+            )}
+            <button
+              onClick={() => setSelected(new Set())}
+              className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
+              aria-label="Clear selection"
+            >
+              <XCircle size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+        <HScrollShadow className="max-h-[65vh] overflow-x-auto overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
-              <th className="w-10 px-4 py-3">
+              <th className="w-10 px-4 py-2.5">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="sticky left-0 z-20 bg-ink-50 px-4 py-3">
+              <th className="sticky left-0 z-20 bg-ink-50 px-4 py-2.5">
                 <SortableHeader column="orderNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Order
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">
+              <th className="px-4 py-2.5">
                 <SortableHeader column="customerName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Customer
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">
+              <th className="px-4 py-2.5">
                 <SortableHeader column="paymentStatus" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Payment
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">
+              <th className="px-4 py-2.5">
                 <SortableHeader column="total" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Total
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">
+              <th className="px-4 py-2.5">
                 <SortableHeader column="status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Status
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">Courier</th>
-              <th className="hidden px-4 py-3 sm:table-cell">
+              <th className="px-4 py-2.5">Courier</th>
+              <th className="hidden px-4 py-2.5 sm:table-cell">
                 <SortableHeader column="createdAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Placed
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3 text-right">Actions</th>
+              <th className="px-4 py-2.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && <TableSkeleton rows={6} cols={9} />}
             {!isLoading && items.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-ink-400">
+                <td colSpan={9} className="p-0">
                   {tab === "trash" ? (
-                    <span className="flex flex-col items-center gap-2">
-                      <ArchiveX size={24} className="text-ink-300" />
-                      Trash is empty.
-                    </span>
+                    <EmptyState icon={ArchiveX} title="Trash is empty" description="Deleted orders will appear here." />
+                  ) : hasActiveFilters ? (
+                    <EmptyState
+                      icon={SearchX}
+                      title="No orders match your filters"
+                      description="Try adjusting or clearing your search and filters."
+                      action={
+                        <Button variant="outline" size="sm" onClick={clearAllFilters}>
+                          Clear all filters
+                        </Button>
+                      }
+                    />
                   ) : (
-                    "No orders yet."
+                    <EmptyState
+                      icon={ShoppingBag}
+                      title="No orders yet"
+                      description="Orders will show up here as customers check out."
+                      action={
+                        <Link href="/admin/orders/new">
+                          <Button size="sm">
+                            <Plus size={14} /> Create order
+                          </Button>
+                        </Link>
+                      }
+                    />
                   )}
                 </td>
               </tr>
@@ -837,17 +917,20 @@ export default function OrdersPage() {
                   STATUS_BORDER_COLORS[order.status],
                 )}
               >
-                <td className="px-4 py-3.5">
+                <td className="px-4 py-3">
                   <Checkbox checked={selected.has(order.id)} onChange={() => toggleOne(order.id)} aria-label={`Select ${order.orderNumber}`} />
                 </td>
-                <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3.5 group-hover:bg-ink-50">
-                  <Link href={`/admin/orders/${order.id}`} className="text-brass-600 hover:underline">
+                <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3 group-hover:bg-ink-50">
+                  <button
+                    onClick={() => setDrawerOrderId(order.id)}
+                    className="font-medium text-ink-900 transition-colors hover:text-info-600 hover:underline"
+                  >
                     {order.orderNumber}
-                  </Link>
+                  </button>
                 </td>
-                <td className="px-4 py-3.5">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brass-100 text-xs font-semibold text-brass-700">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
                       {initials(order.customerName)}
                     </span>
                     <div>
@@ -856,36 +939,42 @@ export default function OrdersPage() {
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-4 py-3">
                   {order.paymentMethod === "COD" ? "COD" : "Online"}
                   {order.paymentStatus === "PAID" && <span className="ml-1 text-xs text-success-600">(paid)</span>}
                 </td>
-                <td className="px-4 py-3.5">{formatPrice(order.total)}</td>
-                <td className="px-4 py-3.5">
+                <td className="px-4 py-3 font-medium text-ink-900">{formatPrice(order.total)}</td>
+                <td className="px-4 py-3">
                   {order.deletedAt ? (
                     <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
                   ) : (
-                    <Select
-                      value={order.status}
-                      disabled={statusMutation.isPending}
-                      onChange={(e) =>
-                        handleStatusChange(order.orderNumber, order.id, order.status, e.target.value as OrderStatus)
-                      }
-                      className={cn(
-                        "h-auto w-auto rounded-full border-0 py-1 pl-2.5 pr-6 text-xs font-medium",
-                        STATUS_COLORS[order.status],
-                      )}
-                      aria-label={`Change status for ${order.orderNumber}`}
-                    >
-                      {STATUS_OPTIONS.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </Select>
+                    <div className="relative inline-block">
+                      <Select
+                        value={order.status}
+                        disabled={statusMutation.isPending}
+                        onChange={(e) =>
+                          handleStatusChange(order.orderNumber, order.id, order.status, e.target.value as OrderStatus)
+                        }
+                        className={cn(
+                          "h-auto w-auto appearance-none rounded-full border-0 py-1 pl-2.5 pr-6 text-xs font-semibold",
+                          STATUS_COLORS[order.status],
+                        )}
+                        aria-label={`Change status for ${order.orderNumber}`}
+                      >
+                        {STATUS_OPTIONS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </Select>
+                      <ChevronDown
+                        size={12}
+                        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-60"
+                      />
+                    </div>
                   )}
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-4 py-3">
                   {order.courierConsignmentId ? (
                     <div className="flex items-center gap-1.5">
                       <span
@@ -901,7 +990,7 @@ export default function OrdersPage() {
                           href={order.courierTrackingLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-ink-400 hover:text-brass-600"
+                          className="text-ink-400 hover:text-info-600"
                           aria-label="Track parcel"
                           title="Track parcel"
                         >
@@ -913,19 +1002,19 @@ export default function OrdersPage() {
                     <span className="text-xs text-ink-400">Not booked</span>
                   )}
                 </td>
-                <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
+                <td className="hidden px-4 py-3 text-ink-500 sm:table-cell">
                   <div>{new Date(order.createdAt).toLocaleDateString()}</div>
                   <div className="text-xs text-ink-400">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-4 py-3">
                   <div className="flex justify-end gap-3">
                     <button
-                      onClick={() => setQuickViewId(order.id)}
+                      onClick={() => setDrawerOrderId(order.id)}
                       className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                      aria-label="Quick view"
-                      title="Quick view"
+                      aria-label="View order"
+                      title="View order"
                     >
                       <Eye size={16} />
                     </button>
@@ -970,7 +1059,12 @@ export default function OrdersPage() {
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       {confirmDialog}
-      <OrderQuickViewModal orderId={quickViewId} onClose={() => setQuickViewId(null)} />
+
+      <Drawer open={Boolean(drawerOrderId)} onClose={() => setDrawerOrderId(null)} title="Order details" widthClassName="max-w-2xl">
+        {drawerOrderId && (
+          <OrderDetailPanel orderId={drawerOrderId} onClose={() => setDrawerOrderId(null)} variant="drawer" />
+        )}
+      </Drawer>
 
       <Modal
         open={Boolean(bulkCourierResult)}
@@ -988,9 +1082,15 @@ export default function OrdersPage() {
                 <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
                   {bulkCourierResult.booked.map((b) => (
                     <li key={b.orderId} className="flex items-center justify-between gap-3">
-                      <Link href={`/admin/orders/${b.orderId}`} className="text-brass-600 hover:underline">
+                      <button
+                        onClick={() => {
+                          setBulkCourierResult(null);
+                          setDrawerOrderId(b.orderId);
+                        }}
+                        className="text-info-600 hover:underline"
+                      >
                         {b.orderNumber}
-                      </Link>
+                      </button>
                       <span className="text-ink-400">{b.trackingNumber}</span>
                     </li>
                   ))}
@@ -1003,9 +1103,15 @@ export default function OrdersPage() {
                 <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
                   {bulkCourierResult.failed.map((f) => (
                     <li key={f.orderId} className="flex items-center justify-between gap-3">
-                      <Link href={`/admin/orders/${f.orderId}`} className="text-brass-600 hover:underline">
+                      <button
+                        onClick={() => {
+                          setBulkCourierResult(null);
+                          setDrawerOrderId(f.orderId);
+                        }}
+                        className="text-info-600 hover:underline"
+                      >
                         {f.orderNumber}
-                      </Link>
+                      </button>
                       <span className="text-ink-400">{f.reason}</span>
                     </li>
                   ))}

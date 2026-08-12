@@ -11,6 +11,8 @@ import {
   BD_ALL_DISTRICTS,
   BD_DIVISION_BY_DISTRICT,
   BD_AREAS_BY_DISTRICT,
+  BD_ALL_AREA_OPTIONS,
+  parseAreaDistrictOption,
   type AdminCreateOrderInput,
   type Product,
   type ProductVariant,
@@ -91,7 +93,21 @@ export default function NewOrderPage() {
 
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
-  const areaOptions: readonly string[] = BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [];
+  // Until a district is chosen, offer every area/thana in the country (as "Area — District") so
+  // staff can find a customer's thana directly without knowing which district it's in.
+  const areaOptions: readonly string[] = shippingDistrict
+    ? (BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [])
+    : BD_ALL_AREA_OPTIONS;
+
+  function handleAreaChange(value: string) {
+    const parsed = parseAreaDistrictOption(value);
+    if (parsed) {
+      setValue("shippingDistrict", parsed.district, { shouldValidate: true });
+      setValue("shippingArea", parsed.area, { shouldValidate: true });
+    } else {
+      setValue("shippingArea", value, { shouldValidate: true });
+    }
+  }
 
   // Division is derived from the chosen district rather than picked separately — it's only needed
   // internally for the Dhaka/outside-Dhaka shipping-fee split, matching the storefront checkout.
@@ -99,7 +115,10 @@ export default function NewOrderPage() {
     setValue("shippingDivision", (BD_DIVISION_BY_DISTRICT[shippingDistrict] ?? "") as FormValues["shippingDivision"]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
+  // Only relevant once a district is actually picked: with no district, areaOptions is the
+  // country-wide combo list, which a plain area value would never match.
   useEffect(() => {
+    if (!shippingDistrict) return;
     if (shippingArea && !areaOptions.includes(shippingArea)) setValue("shippingArea", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
@@ -346,9 +365,9 @@ export default function NewOrderPage() {
                   id="shippingArea"
                   aria-invalid={!!errors.shippingArea}
                   value={shippingArea}
-                  onChange={(v) => setValue("shippingArea", v, { shouldValidate: true })}
+                  onChange={handleAreaChange}
                   options={areaOptions}
-                  placeholder="Search area/thana..."
+                  placeholder={shippingDistrict ? "Search area/thana..." : "Search area/thana (any district)..."}
                 />
                 {errors.shippingArea && <p className="mt-1 text-xs text-danger-600">{errors.shippingArea.message}</p>}
               </div>

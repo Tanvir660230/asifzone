@@ -86,9 +86,10 @@ test.describe("customer account journey", () => {
     // main product's own button, which always renders above those carousels in DOM order.
     await page.getByRole("button", { name: /add to wishlist/i }).first().click();
 
-    await page.goto("/account/wishlist");
-    await expect(page.locator("main")).not.toContainText(/empty wishlist/i);
+    await page.goto("/wishlist");
+    await expect(page.getByText(/nothing saved yet/i)).not.toBeVisible();
 
+    await page.goto("/account");
     await page.getByRole("button", { name: /log out/i }).click();
     await expect(page).toHaveURL(/\/account\/login/);
 

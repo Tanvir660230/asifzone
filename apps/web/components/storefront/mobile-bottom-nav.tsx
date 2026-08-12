@@ -10,7 +10,7 @@ import { useCartDrawerStore } from "@/store/cart-drawer";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
-  { href: "/account/wishlist", label: "Wishlist", icon: Heart },
+  { href: "/wishlist", label: "Wishlist", icon: Heart },
   { href: "/cart", label: "Bag", icon: ShoppingBag },
   { href: "/account", label: "Account", icon: User },
 ] as const;

@@ -5,7 +5,16 @@ import { motion } from "framer-motion";
 
 const FALLBACK_TAGLINE = "Considered clothing, made to last";
 
-export function BrandStory({ storeName, tagline }: { storeName: string; tagline?: string | null }) {
+interface BrandStoryProps {
+  storeName: string;
+  tagline?: string | null;
+  heading?: string | null;
+  bodyText?: string | null;
+  ctaLabel?: string | null;
+  ctaHref?: string | null;
+}
+
+export function BrandStory({ storeName, tagline, heading, bodyText, ctaLabel, ctaHref }: BrandStoryProps) {
   return (
     <section className="bg-ink-950 py-24 text-center text-cream-50">
       <motion.div
@@ -16,16 +25,16 @@ export function BrandStory({ storeName, tagline }: { storeName: string; tagline?
         className="mx-auto max-w-xl px-4"
       >
         <p className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300">Our Philosophy</p>
-        <h2 className="font-display text-3xl leading-snug sm:text-4xl">{tagline ?? FALLBACK_TAGLINE}</h2>
+        <h2 className="font-display text-3xl leading-snug sm:text-4xl">{heading || tagline || FALLBACK_TAGLINE}</h2>
         <p className="mt-6 text-sm leading-relaxed text-ink-300">
-          Every {storeName} piece is chosen for fabric, fit, and finish first — fewer, better garments built
-          to outlast a season.
+          {bodyText ||
+            `Every ${storeName} piece is chosen for fabric, fit, and finish first — fewer, better garments built to outlast a season.`}
         </p>
         <Link
-          href="/search"
+          href={ctaHref || "/search"}
           className="mt-8 inline-block border border-cream-50 px-8 py-3 text-sm uppercase tracking-wide transition-colors hover:bg-cream-50 hover:text-ink-900"
         >
-          Explore the collection
+          {ctaLabel || "Explore the collection"}
         </Link>
       </motion.div>
     </section>

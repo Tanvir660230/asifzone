@@ -1,11 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter, usePathname } from "next/navigation";
 import { Heart } from "lucide-react";
 import { listWishlist, addToWishlist, removeFromWishlist } from "@/lib/api/wishlist";
+import { useWishlistStore } from "@/store/wishlist";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
-import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 interface WishlistButtonProps {
@@ -15,37 +14,39 @@ interface WishlistButtonProps {
 
 export function WishlistButton({ productId, className }: WishlistButtonProps) {
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const pathname = usePathname();
 
-  // Skip the wishlist fetch entirely for guests — it would just 401, and this hook's query is
-  // already shared/cached across the page (checkout etc. call it too), so it's rarely a new request.
+  // Guests get a fully working wishlist that never leaves the browser (mirrors the cart store) —
+  // no login prompt on tap. It's pushed up to the account automatically right after they do log in
+  // (see mergeGuestWishlist, called from the login/register pages), at which point this switches to
+  // the server-backed path below like it always has for a signed-in customer.
   const { data: customerData } = useOptionalCustomer();
+  const isLoggedIn = Boolean(customerData?.customer);
+
+  const localIds = useWishlistStore((s) => s.productIds);
+  const toggleLocal = useWishlistStore((s) => s.toggle);
+
   const { data } = useQuery({
     queryKey: ["wishlist"],
     queryFn: listWishlist,
-    enabled: Boolean(customerData?.customer),
+    enabled: isLoggedIn,
     retry: false,
   });
-  const isSaved = data?.items.some((item) => item.productId === productId) ?? false;
+  const serverSaved = data?.items.some((item) => item.productId === productId) ?? false;
+  const isSaved = isLoggedIn ? serverSaved : localIds.includes(productId);
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (isSaved) await removeFromWishlist(productId);
+      if (serverSaved) await removeFromWishlist(productId);
       else await addToWishlist(productId);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["wishlist"] }),
-    onError: (err) => {
-      if (err instanceof ApiError && err.status === 401) {
-        router.push(`/account/login?next=${encodeURIComponent(pathname)}`);
-      }
-    },
   });
 
   function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    mutation.mutate();
+    if (isLoggedIn) mutation.mutate();
+    else toggleLocal(productId);
   }
 
   return (

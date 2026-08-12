@@ -11,6 +11,8 @@ import {
   BD_ALL_DISTRICTS,
   BD_DIVISION_BY_DISTRICT,
   BD_AREAS_BY_DISTRICT,
+  BD_ALL_AREA_OPTIONS,
+  parseAreaDistrictOption,
   SHIPPING_FEE_DHAKA_FALLBACK,
   SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK,
   estimateDelivery,
@@ -133,7 +135,22 @@ export default function CheckoutPage() {
   const shippingDivision = watch("shippingDivision");
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
-  const areaOptions: readonly string[] = BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [];
+  // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a
+  // shopper who knows their thana but not its district can find it directly — picking one fills in
+  // both fields. Once a district is set, the list narrows to just that district as before.
+  const areaOptions: readonly string[] = shippingDistrict
+    ? (BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [])
+    : BD_ALL_AREA_OPTIONS;
+
+  function handleAreaChange(value: string) {
+    const parsed = parseAreaDistrictOption(value);
+    if (parsed) {
+      setValue("shippingDistrict", parsed.district, { shouldValidate: true });
+      setValue("shippingArea", parsed.area, { shouldValidate: true });
+    } else {
+      setValue("shippingArea", value, { shouldValidate: true });
+    }
+  }
 
   // Division is derived from the chosen district rather than picked separately — it's only needed
   // internally for the Dhaka/outside-Dhaka shipping-fee and delivery-estimate split.
@@ -142,8 +159,11 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
 
-  // The area/thana list narrows to the selected district — clear it if it no longer applies.
+  // The area/thana list narrows to the selected district — clear it if it no longer applies. Only
+  // relevant once a district is actually picked: with no district, areaOptions is the country-wide
+  // combo list (formatted "Area — District"), which a plain area value would never match.
   useEffect(() => {
+    if (!shippingDistrict) return;
     if (shippingArea && !areaOptions.includes(shippingArea)) {
       setValue("shippingArea", "");
     }
@@ -470,9 +490,9 @@ export default function CheckoutPage() {
                   aria-invalid={!!errors.shippingArea}
                   aria-describedby={errors.shippingArea ? "shippingArea-error" : undefined}
                   value={shippingArea}
-                  onChange={(v) => setValue("shippingArea", v, { shouldValidate: true })}
+                  onChange={handleAreaChange}
                   options={areaOptions}
-                  placeholder="Search area/thana..."
+                  placeholder={shippingDistrict ? "Search area/thana..." : "Search area/thana (any district)..."}
                 />
                 {errors.shippingArea && (
                   <p id="shippingArea-error" className="mt-1 text-xs text-danger-600">

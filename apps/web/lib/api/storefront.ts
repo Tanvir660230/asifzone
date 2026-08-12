@@ -3,6 +3,7 @@ import type {
   BundleForProduct,
   Category,
   FlashSale,
+  HomepageSection,
   PaymentMethodOption,
   Product,
   SearchSuggestions,
@@ -91,6 +92,14 @@ export function getActiveFlashSale() {
 
 export function getActiveBanners(placement: "HERO_CAROUSEL" | "PROMO_STRIP" = "HERO_CAROUSEL") {
   return storefrontFetch<{ banners: Banner[] }>(`/api/banners/active?placement=${placement}`, 60);
+}
+
+export function getActiveHomepageSections() {
+  return storefrontFetch<{ sections: HomepageSection[] }>("/api/homepage-sections/active", 60);
+}
+
+export function getActiveHomepageSectionsSafe() {
+  return safe(getActiveHomepageSections, { sections: [] });
 }
 
 export function getSiteSettings() {

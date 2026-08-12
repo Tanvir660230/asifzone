@@ -16,12 +16,18 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
 };
 
-export function CategoryGrid({ categories }: { categories: CategoryTreeNode[] }) {
+export function CategoryGrid({
+  categories,
+  heading = "Shop by Category",
+}: {
+  categories: CategoryTreeNode[];
+  heading?: string | null;
+}) {
   if (categories.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-      <h2 className="mb-8 text-center font-display text-2xl text-ink-900">Shop by Category</h2>
+      <h2 className="mb-8 text-center font-display text-2xl text-ink-900">{heading || "Shop by Category"}</h2>
       {/* flex-wrap + fixed-fraction card widths instead of a CSS grid — a grid with only a
           handful of categories leaves the unused columns as dead empty space pinned to one side;
           flex-wrap collapses and centers the same row instead, so a small catalog still reads as

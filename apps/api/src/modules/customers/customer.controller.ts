@@ -166,6 +166,10 @@ export const listCustomersAdmin = asyncHandler(async (req: Request, res: Respons
   res.json(await customerService.listCustomersAdmin(req.query as never));
 });
 
+export const getCustomerStatsAdmin = asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await customerService.getCustomerStatsAdmin());
+});
+
 export const getCustomerDetailAdmin = asyncHandler(async (req: Request, res: Response) => {
   res.json({ customer: await customerService.getCustomerDetailAdmin(req.params.id!) });
 });
@@ -173,4 +177,19 @@ export const getCustomerDetailAdmin = asyncHandler(async (req: Request, res: Res
 export const adjustPoints = asyncHandler(async (req: Request, res: Response) => {
   const customer = await customerService.adjustRewardPoints(req.params.id!, req.body.points, req.body.reason);
   res.json({ customer });
+});
+
+export const updateCustomerAdminFields = asyncHandler(async (req: Request, res: Response) => {
+  const customer = await customerService.updateCustomerAdminFields(req.params.id!, req.body);
+  res.json({ customer });
+});
+
+export const sendAdHocSms = asyncHandler(async (req: Request, res: Response) => {
+  const result = await customerService.sendAdHocSmsToCustomer(req.params.id!, req.body.body);
+  res.json(result);
+});
+
+export const sendBulkSms = asyncHandler(async (req: Request, res: Response) => {
+  const result = await customerService.sendBulkSmsToCustomers(req.body.customerIds, req.body.body);
+  res.json(result);
 });

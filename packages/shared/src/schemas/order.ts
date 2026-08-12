@@ -105,15 +105,18 @@ export const BD_DIVISION_BY_DISTRICT: Record<string, (typeof BD_DIVISIONS)[numbe
   ),
 );
 
-/** Upazilas/thanas for every district (plus Dhaka Metropolitan Police thanas for Dhaka district,
- * since that's how the vast majority of Dhaka-city addresses are actually written — "Gulshan",
- * "Dhanmondi", "Mirpur" etc. are DMP thana names, not upazilas). Lets the Area/Thana field cascade
- * the same way District cascades off Division, instead of taking free text that couriers then have
- * to re-key against their own zone list.
+/** Upazilas/thanas for every district, plus the metropolitan-police thanas for every district that
+ * has a City Corporation (Dhaka, Chattogram, Gazipur, Narayanganj, Rajshahi, Khulna, Barishal,
+ * Sylhet, Mymensingh, Rangpur) — since a metro city's own police thanas ("Gulshan", "Boalia",
+ * "Kotwali" etc.) are how the vast majority of its addresses are actually written, not the single
+ * "X Sadar" upazila name that nominally contains the city. Lets the Area/Thana field cascade the
+ * same way District cascades off Division, instead of taking free text that couriers then have to
+ * re-key against their own zone list.
  *
- * Cross-checked against Bangladesh's official upazila list (all 64 districts) and the current DMP
- * thana roster; excludes a handful of upazilas gazetted in 2026 that are too new to have propagated
- * to courier zone lists yet. */
+ * Cross-checked against Bangladesh's official upazila list (all 64 districts) and each metropolitan
+ * police force's current thana roster, including upazilas gazetted as late as July 2026 (Bangra,
+ * Fatikchhari North, South Gafargaon, Mokamtola, Ruhia, Bhully, Chandraganj). Matamuhuri (Cox's
+ * Bazar) is left out — as of this writing it's still a proposed split of Chakaria, not yet gazetted. */
 export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   // Dhaka division
   Dhaka: [
@@ -185,7 +188,22 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Sadarpur",
     "Saltha",
   ],
-  Gazipur: ["Gazipur Sadar", "Kaliakair", "Kaliganj", "Kapasia", "Sreepur"],
+  // Gazipur Sadar upazila itself is split into 8 Gazipur Metropolitan Police thanas (Gazipur City
+  // Corporation is large enough to need its own metro police force) plus the 4 outlying upazilas.
+  Gazipur: [
+    "Bason",
+    "Gacha",
+    "Gazipur Sadar",
+    "Kaliakair",
+    "Kaliganj",
+    "Kapasia",
+    "Kashimpur",
+    "Konabari",
+    "Pubail",
+    "Sreepur",
+    "Tongi East",
+    "Tongi West",
+  ],
   Gopalganj: ["Gopalganj Sadar", "Kashiani", "Kotalipara", "Muksudpur", "Tungipara"],
   Kishoreganj: [
     "Kishoreganj Sadar",
@@ -205,7 +223,9 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   Madaripur: ["Madaripur Sadar", "Dasar", "Kalkini", "Rajoir", "Shibchar"],
   Manikganj: ["Manikganj Sadar", "Daulatpur", "Ghior", "Harirampur", "Saturia", "Shibalaya", "Singair"],
   Munshiganj: ["Munshiganj Sadar", "Gazaria", "Lohajang", "Sirajdikhan", "Sreenagar", "Tongibari"],
-  Narayanganj: ["Narayanganj Sadar", "Araihazar", "Bandar", "Rupganj", "Sonargaon"],
+  // Fatullah and Siddhirganj are separate police-station-level thanas within Narayanganj Sadar
+  // upazila/City Corporation, not just a sub-area of "Narayanganj Sadar".
+  Narayanganj: ["Araihazar", "Bandar", "Fatullah", "Narayanganj Sadar", "Rupganj", "Siddhirganj", "Sonargaon"],
   Narsingdi: ["Narsingdi Sadar", "Belabo", "Monohardi", "Palash", "Raipura", "Shibpur"],
   Rajbari: ["Rajbari Sadar", "Baliakandi", "Goalandaghat", "Kalukhali", "Pangsha"],
   Shariatpur: ["Shariatpur Sadar", "Bhedarganj", "Damudya", "Gosairhat", "Naria", "Zajira"],
@@ -260,6 +280,7 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Double Mooring",
     "EPZ",
     "Fatikchhari",
+    "Fatikchhari North",
     "Halishahar",
     "Hathazari",
     "Karnaphuli",
@@ -279,6 +300,7 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Sitakunda",
   ],
   Cumilla: [
+    "Bangra",
     "Cumilla Adarsha Sadar",
     "Barura",
     "Brahmanpara",
@@ -310,7 +332,7 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Panchhari",
     "Ramgarh",
   ],
-  Lakshmipur: ["Lakshmipur Sadar", "Kamalnagar", "Raipur", "Ramganj", "Ramgati"],
+  Lakshmipur: ["Lakshmipur Sadar", "Chandraganj", "Kamalnagar", "Raipur", "Ramganj", "Ramgati"],
   Noakhali: [
     "Noakhali Sadar",
     "Begumganj",
@@ -342,6 +364,7 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Dhupchanchia",
     "Gabtali",
     "Kahaloo",
+    "Mokamtola",
     "Nandigram",
     "Sariakandi",
     "Shajahanpur",
@@ -366,7 +389,30 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   Natore: ["Natore Sadar", "Bagatipara", "Baraigram", "Gurudaspur", "Lalpur", "Naldanga", "Singra"],
   Chapainawabganj: ["Chapainawabganj Sadar", "Bholahat", "Gomastapur", "Nachole", "Shibganj"],
   Pabna: ["Pabna Sadar", "Atgharia", "Bera", "Bhangura", "Chatmohar", "Faridpur", "Ishwardi", "Santhia", "Sujanagar"],
-  Rajshahi: ["Rajshahi Sadar", "Bagha", "Bagmara", "Charghat", "Durgapur", "Godagari", "Mohanpur", "Paba", "Puthia", "Tanore"],
+  // "Rajshahi Sadar" isn't itself an upazila — Rajshahi city is covered by 12 Rajshahi Metropolitan
+  // Police thanas (expanded from the original 4 in 2018), listed here alongside the 9 outlying upazilas.
+  Rajshahi: [
+    "Airport",
+    "Bagha",
+    "Bagmara",
+    "Belpukur",
+    "Boalia",
+    "Chandrima",
+    "Charghat",
+    "Damkura",
+    "Durgapur",
+    "Godagari",
+    "Karnahar",
+    "Kashiadanga",
+    "Katakhali",
+    "Mohanpur",
+    "Motihar",
+    "Paba",
+    "Puthia",
+    "Rajpara",
+    "Shah Makhdum",
+    "Tanore",
+  ],
   Sirajganj: [
     "Sirajganj Sadar",
     "Belkuchi",
@@ -383,7 +429,26 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   Chuadanga: ["Chuadanga Sadar", "Alamdanga", "Damurhuda", "Jibannagar"],
   Jashore: ["Jashore Sadar", "Abhaynagar", "Bagherpara", "Chaugachha", "Jhikargachha", "Keshabpur", "Manirampur", "Sharsha"],
   Jhenaidah: ["Jhenaidah Sadar", "Harinakunda", "Kaliganj", "Kotchandpur", "Maheshpur", "Shailkupa"],
-  Khulna: ["Khulna Sadar", "Batiaghata", "Dacope", "Dighalia", "Dumuria", "Koyra", "Paikgachha", "Phultala", "Rupsa", "Terokhada"],
+  // Khulna Metropolitan Police's 8 thanas cover Khulna city; Khulna Sadar itself isn't an upazila.
+  Khulna: [
+    "Aranghata",
+    "Batiaghata",
+    "Dacope",
+    "Daulatpur",
+    "Dighalia",
+    "Dumuria",
+    "Harintana",
+    "Khalishpur",
+    "Khan Jahan Ali",
+    "Koyra",
+    "Kotwali",
+    "Labanchora",
+    "Paikgachha",
+    "Phultala",
+    "Rupsa",
+    "Sonadanga",
+    "Terokhada",
+  ],
   Kushtia: ["Kushtia Sadar", "Bheramara", "Daulatpur", "Khoksa", "Kumarkhali", "Mirpur"],
   Magura: ["Magura Sadar", "Mohammadpur", "Shalikha", "Sreepur"],
   Meherpur: ["Meherpur Sadar", "Gangni", "Mujibnagar"],
@@ -391,14 +456,18 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   Satkhira: ["Satkhira Sadar", "Assasuni", "Debhata", "Kalaroa", "Kaliganj", "Shyamnagar", "Tala"],
   // Barishal division
   Barguna: ["Barguna Sadar", "Amtali", "Bamna", "Betagi", "Patharghata", "Taltali"],
+  // Barishal Metropolitan Police's 4 thanas cover Barishal city; Barishal Sadar itself isn't an upazila.
   Barishal: [
-    "Barishal Sadar",
     "Agailjhara",
+    "Airport",
     "Babuganj",
     "Bakerganj",
     "Banaripara",
+    "Bandar",
     "Gaurnadi",
     "Hizla",
+    "Kawnia",
+    "Kotwali",
     "Mehendiganj",
     "Muladi",
     "Wazirpur",
@@ -434,8 +503,9 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Sulla",
     "Tahirpur",
   ],
+  // Sylhet Metropolitan Police's 6 thanas cover Sylhet city; Sylhet Sadar itself isn't an upazila.
   Sylhet: [
-    "Sylhet Sadar",
+    "Airport",
     "Balaganj",
     "Beanibazar",
     "Bishwanath",
@@ -445,8 +515,13 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Golapganj",
     "Gowainghat",
     "Jaintiapur",
+    "Jalalabad",
     "Kanaighat",
+    "Kotwali",
+    "Moglabazar",
     "Osmani Nagar",
+    "Shahparan",
+    "South Surma",
     "Zakiganj",
   ],
   // Rangpur division
@@ -480,12 +555,27 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   Lalmonirhat: ["Lalmonirhat Sadar", "Aditmari", "Hatibandha", "Kaliganj", "Patgram"],
   Nilphamari: ["Nilphamari Sadar", "Dimla", "Domar", "Jaldhaka", "Kishoreganj", "Saidpur"],
   Panchagarh: ["Panchagarh Sadar", "Atwari", "Boda", "Debiganj", "Tetulia"],
-  Rangpur: ["Rangpur Sadar", "Badarganj", "Gangachara", "Kaunia", "Mithapukur", "Pirgachha", "Pirganj", "Taraganj"],
-  Thakurgaon: ["Thakurgaon Sadar", "Baliadangi", "Haripur", "Pirganj", "Ranisankail"],
+  // Rangpur Metropolitan Police's 6 thanas cover Rangpur city; Rangpur Sadar itself isn't an upazila.
+  Rangpur: [
+    "Badarganj",
+    "Gangachara",
+    "Hajirhat",
+    "Haragach",
+    "Kaunia",
+    "Kotwali",
+    "Mahiganj",
+    "Mithapukur",
+    "Parshuram",
+    "Pirgachha",
+    "Pirganj",
+    "Tajhat",
+    "Taraganj",
+  ],
+  Thakurgaon: ["Thakurgaon Sadar", "Baliadangi", "Bhully", "Haripur", "Pirganj", "Ranisankail", "Ruhia"],
   // Mymensingh division
   Jamalpur: ["Jamalpur Sadar", "Bakshiganj", "Dewanganj", "Islampur", "Madarganj", "Melandaha", "Sarishabari"],
+  // Kotwali and Pagla are the 2 metro thanas covering Mymensingh city; Mymensingh Sadar itself isn't an upazila.
   Mymensingh: [
-    "Mymensingh Sadar",
     "Bhaluka",
     "Dhobaura",
     "Fulbaria",
@@ -493,9 +583,12 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
     "Gauripur",
     "Haluaghat",
     "Ishwarganj",
+    "Kotwali",
     "Muktagachha",
     "Nandail",
+    "Pagla",
     "Phulpur",
+    "South Gafargaon",
     "Tarakanda",
     "Trishal",
   ],
@@ -513,6 +606,33 @@ export const BD_AREAS_BY_DISTRICT: Record<string, readonly string[]> = {
   ],
   Sherpur: ["Sherpur Sadar", "Jhenaigati", "Nakla", "Nalitabari", "Sreebardi"],
 } as const;
+
+const AREA_DISTRICT_SEPARATOR = " — ";
+
+/** Every area/thana across the whole country, paired with its district. */
+export const BD_AREA_DISTRICT_PAIRS: readonly { area: string; district: string }[] = Object.entries(
+  BD_AREAS_BY_DISTRICT,
+)
+  .flatMap(([district, areas]) => areas.map((area) => ({ area, district })))
+  .sort((a, b) => a.area.localeCompare(b.area) || a.district.localeCompare(b.district));
+
+/** Same data as BD_AREA_DISTRICT_PAIRS, formatted as "Area — District" combo strings. Lets the
+ * Area/Thana field offer a single country-wide search before District has been picked — most
+ * shoppers know their thana by name but not which of the 64 districts it falls under, so requiring
+ * District first was pure friction. Area names are already district-prefixed where they'd otherwise
+ * collide (e.g. "Bagerhat Sadar"), so the combined string is effectively unique. */
+export const BD_ALL_AREA_OPTIONS: readonly string[] = BD_AREA_DISTRICT_PAIRS.map(
+  ({ area, district }) => `${area}${AREA_DISTRICT_SEPARATOR}${district}`,
+);
+
+/** Splits a "Area — District" combo string (as produced by BD_ALL_AREA_OPTIONS) back into its
+ * parts. Returns null for a plain area name, e.g. one picked after District was already narrowed —
+ * callers use that to tell the two cases apart. */
+export function parseAreaDistrictOption(value: string): { area: string; district: string } | null {
+  const idx = value.lastIndexOf(AREA_DISTRICT_SEPARATOR);
+  if (idx === -1) return null;
+  return { area: value.slice(0, idx), district: value.slice(idx + AREA_DISTRICT_SEPARATOR.length) };
+}
 
 export const checkoutItemSchema = z.object({
   variantId: z.string().cuid(),

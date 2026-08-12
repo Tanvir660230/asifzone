@@ -75,6 +75,24 @@ enum BannerPlacement {
   PROMO_STRIP
 }
 
+/// HERO/PERSONALIZED_LEAD/FLASH_SALE/CATEGORY_GRID/SMART_RECOMMENDATIONS carry no editable copy of
+/// their own — they draw from Banner/FlashSale/Category or are purely behavioral — so their
+/// HomepageSection row exists only to control position and visibility. PRODUCT_CAROUSEL and
+/// PROMO_BANNER are the only repeatable types (multiple instances allowed); every other type is a
+/// singleton enforced in homepage-section.service.ts, not by the schema.
+enum HomepageSectionType {
+  HERO
+  TRUST_STRIP
+  PERSONALIZED_LEAD
+  PRODUCT_CAROUSEL
+  FLASH_SALE
+  CATEGORY_GRID
+  BRAND_STORY
+  VALUES_GRID
+  SMART_RECOMMENDATIONS
+  PROMO_BANNER
+}
+
 model AdminUser {
   id                     String               @id @default(cuid())
   name                   String
@@ -403,6 +421,12 @@ model Customer {
   /// marketing send carries a one-click unsubscribe link (see lib/token-hash.ts's signPayload)
   /// that flips this to false, so the opt-out is real even though the default is opt-in.
   emailMarketingOptIn     Boolean                  @default(true)
+  /// Admin-only freeform notes (never shown to the customer) — same convention as Order.adminNotes.
+  adminNotes              String?
+  /// Manually set by an admin from the customer drawer — not derived from any order/payment data.
+  isBlocked               Boolean                  @default(false)
+  /// Manually flagged by an admin (e.g. repeated COD refusals) — informational only, doesn't block checkout.
+  codRisk                 Boolean                  @default(false)
   addresses               Address[]
   orders                  Order[]
   wishlistItems           WishlistItem[]
@@ -771,6 +795,22 @@ model Banner {
   @@index([placement, isActive])
 }
 
+/// Ordered list of blocks rendered on the storefront homepage — lets the admin builder reorder,
+/// toggle, and configure sections without a code change. `config` shape depends on `type`; validated
+/// in packages/shared/src/schemas/homepage-section.ts, not by Prisma. See HomepageSectionType for
+/// which types are singletons vs repeatable.
+model HomepageSection {
+  id        String              @id @default(cuid())
+  type      HomepageSectionType
+  sortOrder Int                 @default(0)
+  isActive  Boolean             @default(true)
+  config    Json                @default("{}")
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
 model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -898,6 +938,19 @@ model SmsNotificationSetting {
   updatedAt                      DateTime @updatedAt
 }
 
+/// Reusable marketing SMS templates (Welcome, Eid Offer, ...) an admin picks from when messaging a
+/// customer individually or in bulk (see customer.service.ts's sendAdHocSmsToCustomer /
+/// sendBulkSmsToCustomers). Uses {{variable}} placeholders (packages/shared/src/customer-sms-templates.ts)
+/// — a different vocabulary/syntax from SmsNotificationSetting's {placeholder} order-touchpoint
+/// templates above, since these are customer-level (name/spend/last order), not order-level.
+model SmsTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// Admin-managed payment method badges (bKash, Nagad, Visa, ...) shown in the footer and at
 /// checkout. Logo images are uploaded via processPaymentMethodLogo, same pattern as
 /// Category.imageUrl / StoreSetting.logoUrl (plain URL string, no separate media table). Named
@@ -1019,6 +1072,10 @@ model CampaignRecipient {
   status     CampaignRecipientStatus @default(PENDING)
   sentAt     DateTime?
   error      String?
+  /// The actual per-recipient text sent, after {{variable}} substitution (see
+  /// customer-sms-templates.ts) — null for real Campaign sends, whose body has no per-customer
+  /// variables yet. Falls back to campaign.body when absent (see getCustomerDetailAdmin's smsHistory).
+  renderedBody String?
   createdAt  DateTime                @default(now())
 
   @@unique([campaignId, customerId])

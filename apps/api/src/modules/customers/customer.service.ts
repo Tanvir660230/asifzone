@@ -2,20 +2,26 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { OAuth2Client } from "google-auth-library";
-import type {
-  CustomerRegisterInput,
-  CustomerLoginInput,
-  VerifyOtpInput,
-  UpdateCustomerInput,
-  CreateAddressInput,
-  UpdateAddressInput,
-  PaginationQuery,
-  CustomerListQuery,
-  PushSubscribeInput,
+import {
+  renderCustomerSmsTemplate,
+  looksLikeFakePhone,
+  type CustomerRegisterInput,
+  type CustomerLoginInput,
+  type VerifyOtpInput,
+  type UpdateCustomerInput,
+  type CreateAddressInput,
+  type UpdateAddressInput,
+  type PaginationQuery,
+  type CustomerListQuery,
+  type PushSubscribeInput,
+  type CustomerTag,
+  type UpdateCustomerAdminFieldsInput,
+  type CustomerSmsVars,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
+import { mapWithConcurrency } from "../../lib/concurrency";
 import { signCustomerAccessToken, signCustomerRefreshToken, verifyCustomerRefreshToken } from "../../lib/customer-jwt";
 import { sendMail } from "../../lib/mailer";
 import { sendSms } from "../../lib/sms";
@@ -23,6 +29,10 @@ import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken, signPayload, constantTimeEqual } from "../../lib/token-hash";
 import { env } from "../../config/env";
 import { getSettings } from "../settings/settings.service";
+
+// Bulk sends dispatch this many recipients concurrently — same bound as campaign.service.ts's
+// SEND_CONCURRENCY, for the same reason (bounded outbound connections to the SMS provider).
+const SMS_SEND_CONCURRENCY = 10;
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const EMAIL_VERIFICATION_TTL_MS = 60 * 60 * 1000;
@@ -493,35 +503,217 @@ export async function verifyOtp(input: VerifyOtpInput) {
 
 // --- admin ---
 
+/** Lifetime-spend cutoffs (BDT) shared by the VIP/High Spender tags and (later) the loyalty-tier
+ * display — Bronze is implicitly "below Silver". Suggested defaults; not yet exposed as an editable
+ * setting (Phase 3 of the CRM build), so change here if the store wants different thresholds. */
+const LOYALTY_THRESHOLDS = { silver: 10_000, gold: 30_000, platinum: 75_000 };
+const NEW_CUSTOMER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const INACTIVE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
+// A customer this cancel-prone is either a serial fake-orderer or has a real recurring problem
+// either way, worth a human look. Only counted once there's enough history to mean something —
+// one cancelled order out of one is normal buyer's remorse, not a pattern.
+const CANCEL_RATE_REVIEW_THRESHOLD = 0.5;
+const CANCEL_RATE_MIN_ORDERS = 3;
+const HOLD_COUNT_REVIEW_THRESHOLD = 2;
+
+/** Signals a human should look at, not proof of anything — a real customer can have a fake-looking
+ * number (rare vanity/sequential numbers exist) or a bad delivery run for reasons that aren't their
+ * fault. Returned as explainable strings (shown in the drawer) rather than a bare score, so an admin
+ * can judge "why" instead of trusting an opaque flag. */
+function computeRiskSignals(input: {
+  phone: string | null;
+  totalOrders: number;
+  cancelledOrders: number;
+  holdOrders: number;
+}): string[] {
+  const signals: string[] = [];
+  if (input.phone && looksLikeFakePhone(input.phone)) {
+    signals.push("Phone number matches a common fake/dummy pattern");
+  }
+  if (input.totalOrders >= CANCEL_RATE_MIN_ORDERS && input.cancelledOrders / input.totalOrders >= CANCEL_RATE_REVIEW_THRESHOLD) {
+    signals.push(`${input.cancelledOrders} of ${input.totalOrders} orders were cancelled`);
+  }
+  if (input.holdOrders >= HOLD_COUNT_REVIEW_THRESHOLD) {
+    signals.push(`Courier marked ${input.holdOrders} order(s) as hold/undeliverable`);
+  }
+  return signals;
+}
+
+function computeCustomerTags(input: {
+  createdAt: Date;
+  totalOrders: number;
+  totalSpent: number;
+  lastOrderAt: Date | null;
+  isBlocked: boolean;
+  codRisk: boolean;
+  riskSignals: string[];
+}): CustomerTag[] {
+  const tags: CustomerTag[] = [];
+  const now = Date.now();
+
+  if (input.isBlocked) tags.push("BLOCKED");
+  if (input.riskSignals.length > 0) tags.push("SUSPICIOUS");
+  if (input.codRisk) tags.push("COD_RISK");
+  if (input.totalSpent >= LOYALTY_THRESHOLDS.platinum) tags.push("VIP");
+  else if (input.totalSpent >= LOYALTY_THRESHOLDS.gold) tags.push("HIGH_SPENDER");
+  if (input.totalOrders >= 2) tags.push("REPEAT");
+  if (now - input.createdAt.getTime() < NEW_CUSTOMER_WINDOW_MS) tags.push("NEW");
+
+  const staleSince = input.lastOrderAt ? now - input.lastOrderAt.getTime() : now - input.createdAt.getTime();
+  if (staleSince >= INACTIVE_WINDOW_MS) tags.push("INACTIVE");
+
+  return tags;
+}
+
+const adminSelect = {
+  ...publicSelect,
+  adminNotes: true,
+  isBlocked: true,
+  codRisk: true,
+} as const;
+
+/** One shared query + tag/stat computation behind both listCustomersAdmin and getCustomerStatsAdmin
+ * — fetches every customer matching `where` with just enough order/address data to derive
+ * totalOrders/totalSpent/lastOrderAt/district/tags in JS. Fine at this store's customer volumes
+ * (computed once per request, not per row); a raw aggregate query would be the next step if the
+ * customer base grows into the tens of thousands. */
+async function loadCustomersWithComputedFields(where: Prisma.CustomerWhereInput) {
+  const customers = await prisma.customer.findMany({
+    where,
+    select: {
+      ...adminSelect,
+      addresses: { where: { isDefault: true }, take: 1, select: { district: true } },
+      orders: {
+        where: { deletedAt: null },
+        select: { total: true, status: true, createdAt: true, shippingDistrict: true, courierStatus: true },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+
+  return customers.map(({ addresses, orders, ...customer }) => {
+    const totalOrders = orders.length;
+    const totalSpent = orders
+      .filter((o) => o.status !== "CANCELLED")
+      .reduce((sum, o) => sum + Number(o.total), 0);
+    const cancelledOrders = orders.filter((o) => o.status === "CANCELLED").length;
+    const holdOrders = orders.filter((o) => o.courierStatus === "hold").length;
+    const lastOrderAt = orders[0]?.createdAt ?? null;
+    const district = addresses[0]?.district ?? orders[0]?.shippingDistrict ?? null;
+    const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders, cancelledOrders, holdOrders });
+    const tags = computeCustomerTags({
+      createdAt: customer.createdAt,
+      totalOrders,
+      totalSpent,
+      lastOrderAt,
+      isBlocked: customer.isBlocked,
+      codRisk: customer.codRisk,
+      riskSignals,
+    });
+    return { ...customer, totalOrders, totalSpent, lastOrderAt, district, tags };
+  });
+}
+
+type ComputedCustomer = Awaited<ReturnType<typeof loadCustomersWithComputedFields>>[number];
+
+function compareComputed(a: ComputedCustomer, b: ComputedCustomer, sortBy: NonNullable<CustomerListQuery["sortBy"]>) {
+  switch (sortBy) {
+    case "name":
+      return a.name.localeCompare(b.name);
+    case "totalSpent":
+      return a.totalSpent - b.totalSpent;
+    case "totalOrders":
+      return a.totalOrders - b.totalOrders;
+    case "lastOrderAt":
+      return (a.lastOrderAt?.getTime() ?? 0) - (b.lastOrderAt?.getTime() ?? 0);
+    case "createdAt":
+    default:
+      return a.createdAt.getTime() - b.createdAt.getTime();
+  }
+}
+
 export async function listCustomersAdmin(query: CustomerListQuery) {
-  const where = query.search
+  const where: Prisma.CustomerWhereInput = query.search
     ? {
         OR: [
           { name: { contains: query.search, mode: "insensitive" as const } },
           { email: { contains: query.search, mode: "insensitive" as const } },
           { phone: { contains: query.search } },
+          // Lets an admin land on a customer straight from an order number (e.g. from a support chat)
+          // without a separate trip through the Orders page.
+          { orders: { some: { orderNumber: { contains: query.search, mode: "insensitive" as const } } } },
         ],
       }
     : {};
 
-  return paginate(
-    query,
-    (p) =>
-      prisma.customer.findMany({
-        where,
-        select: { ...publicSelect, _count: { select: { orders: true, wishlistItems: true } } },
-        orderBy: { createdAt: "desc" },
-        ...p,
-      }),
-    () => prisma.customer.count({ where }),
-  );
+  let computed = await loadCustomersWithComputedFields(where);
+
+  if (query.tag) computed = computed.filter((c) => c.tags.includes(query.tag!));
+  if (query.district) computed = computed.filter((c) => c.district === query.district);
+  if (query.noOrders === "true") computed = computed.filter((c) => c.totalOrders === 0);
+  if (query.lastOrderDays) {
+    const cutoff = Date.now() - query.lastOrderDays * 24 * 60 * 60 * 1000;
+    computed = computed.filter((c) => (c.lastOrderAt?.getTime() ?? 0) >= cutoff);
+  }
+  if (query.minSpend !== undefined) computed = computed.filter((c) => c.totalSpent >= query.minSpend!);
+  if (query.minOrders !== undefined) computed = computed.filter((c) => c.totalOrders >= query.minOrders!);
+
+  const sortBy = query.sortBy ?? "createdAt";
+  const sortDir = query.sortDir ?? "desc";
+  computed.sort((a, b) => (sortDir === "asc" ? 1 : -1) * compareComputed(a, b, sortBy));
+
+  const total = computed.length;
+  const start = (query.page - 1) * query.pageSize;
+  const page = computed.slice(start, start + query.pageSize);
+
+  // "Last SMS sent" per row — cheap to look up in one grouped query against just this page's ids
+  // rather than folding it into loadCustomersWithComputedFields for every customer up front.
+  const lastSmsByCustomer = await prisma.campaignRecipient.groupBy({
+    by: ["customerId"],
+    where: { customerId: { in: page.map((c) => c.id) }, sentAt: { not: null } },
+    _max: { sentAt: true },
+  });
+  const lastSmsMap = new Map(lastSmsByCustomer.map((r) => [r.customerId, r._max.sentAt]));
+
+  return {
+    items: page.map((c) => ({ ...c, lastSmsSentAt: lastSmsMap.get(c.id) ?? null })),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  };
+}
+
+export async function getCustomerStatsAdmin() {
+  const computed = await loadCustomersWithComputedFields({});
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  function inactiveSince(days: number) {
+    const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000;
+    return computed.filter((c) => (c.lastOrderAt ? c.lastOrderAt.getTime() < cutoff : c.createdAt.getTime() < cutoff))
+      .length;
+  }
+
+  return {
+    totalCustomers: computed.length,
+    newToday: computed.filter((c) => c.createdAt >= startOfToday).length,
+    newThisMonth: computed.filter((c) => c.createdAt >= startOfMonth).length,
+    repeatCustomers: computed.filter((c) => c.totalOrders >= 2).length,
+    lifetimeRevenue: computed.reduce((sum, c) => sum + c.totalSpent, 0),
+    vipCustomers: computed.filter((c) => c.tags.includes("VIP")).length,
+    inactive30: inactiveSince(30),
+    inactive60: inactiveSince(60),
+    inactive90: inactiveSince(90),
+  };
 }
 
 export async function getCustomerDetailAdmin(customerId: string) {
   const customer = await prisma.customer.findUnique({
     where: { id: customerId },
     select: {
-      ...publicSelect,
+      ...adminSelect,
       addresses: { orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }] },
       orders: { orderBy: { createdAt: "desc" }, take: 20, include: { items: true } },
       wishlistItems: { include: { product: { select: { id: true, name: true, slug: true } } } },
@@ -530,12 +722,198 @@ export async function getCustomerDetailAdmin(customerId: string) {
   });
   if (!customer) throw AppError.notFound("Customer not found");
 
-  const spendAggregate = await prisma.order.aggregate({
-    where: { customerId, status: { not: "CANCELLED" } },
-    _sum: { total: true },
+  const [spendAggregate, orderCounts, holdOrders, smsRecipients] = await Promise.all([
+    prisma.order.aggregate({ where: { customerId, status: { not: "CANCELLED" } }, _sum: { total: true } }),
+    prisma.order.groupBy({ by: ["status"], where: { customerId, deletedAt: null }, _count: true }),
+    prisma.order.count({ where: { customerId, deletedAt: null, courierStatus: "hold" } }),
+    prisma.campaignRecipient.findMany({
+      where: { customerId },
+      include: { campaign: { select: { id: true, name: true, body: true, channel: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    }),
+  ]);
+
+  const totalSpent = Number(spendAggregate._sum.total ?? 0);
+  const countsByStatus = new Map(orderCounts.map((r) => [r.status, r._count]));
+  const totalOrders = orderCounts.reduce((sum, r) => sum + r._count, 0);
+  const deliveredOrders = countsByStatus.get("DELIVERED") ?? 0;
+  const cancelledOrders = countsByStatus.get("CANCELLED") ?? 0;
+  const returnedOrders = countsByStatus.get("RETURNED") ?? 0;
+
+  const lastOrderAt = customer.orders[0]?.createdAt ?? null;
+  const district = customer.addresses.find((a) => a.isDefault)?.district ?? customer.orders[0]?.shippingDistrict ?? null;
+  const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders, cancelledOrders, holdOrders });
+  const tags = computeCustomerTags({
+    createdAt: customer.createdAt,
+    totalOrders,
+    totalSpent,
+    lastOrderAt,
+    isBlocked: customer.isBlocked,
+    codRisk: customer.codRisk,
+    riskSignals,
   });
 
-  return { ...customer, totalSpent: Number(spendAggregate._sum.total ?? 0) };
+  // Favorite products — aggregated from the recently-fetched orders (capped at 20 above) rather
+  // than a full unpaginated item scan; fine at this store's order volumes, revisit if that changes.
+  const productTotals = new Map<string, { name: string; quantity: number }>();
+  for (const order of customer.orders) {
+    for (const item of order.items) {
+      const existing = productTotals.get(item.skuSnapshot);
+      if (existing) existing.quantity += item.quantity;
+      else productTotals.set(item.skuSnapshot, { name: item.productNameSnapshot, quantity: item.quantity });
+    }
+  }
+  const favoriteProducts = [...productTotals.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+
+  const smsHistory = smsRecipients.map((r) => ({
+    id: r.id,
+    campaignId: r.campaignId,
+    campaignName: r.campaign.name,
+    body: r.renderedBody ?? r.campaign.body,
+    status: r.status,
+    sentAt: r.sentAt,
+    error: r.error,
+    createdAt: r.createdAt,
+  }));
+
+  const timeline = [
+    ...customer.orders.map((o) => ({
+      type: "ORDER" as const,
+      date: o.createdAt,
+      label: `Order ${o.orderNumber} placed`,
+      detail: o.status,
+    })),
+    ...customer.pointsLedger.map((p) => ({
+      type: "POINTS" as const,
+      date: p.createdAt,
+      label: p.reason,
+      detail: `${p.points >= 0 ? "+" : ""}${p.points} pts`,
+    })),
+    ...smsRecipients
+      .filter((r) => r.sentAt)
+      .map((r) => ({
+        type: "SMS" as const,
+        date: r.sentAt!,
+        label: `SMS sent — ${r.campaign.name}`,
+        detail: (r.renderedBody ?? r.campaign.body).slice(0, 80),
+      })),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  return {
+    ...customer,
+    totalSpent,
+    totalOrders,
+    lastOrderAt,
+    district,
+    tags,
+    riskSignals,
+    favoriteProducts,
+    purchaseAnalytics: {
+      totalOrders,
+      deliveredOrders,
+      cancelledOrders,
+      returnRate: totalOrders > 0 ? (returnedOrders / totalOrders) * 100 : 0,
+      averageOrderValue: totalOrders > 0 ? totalSpent / totalOrders : 0,
+      lifetimeSpend: totalSpent,
+    },
+    smsHistory,
+    timeline,
+  };
+}
+
+export async function updateCustomerAdminFields(customerId: string, input: UpdateCustomerAdminFieldsInput) {
+  const exists = await prisma.customer.findUnique({ where: { id: customerId }, select: { id: true } });
+  if (!exists) throw AppError.notFound("Customer not found");
+  return prisma.customer.update({ where: { id: customerId }, data: input, select: adminSelect });
+}
+
+/** {{variable}} context for a given computed customer — shared by the individual and bulk send
+ * paths below so a template renders identically regardless of which one sent it. */
+function customerSmsVars(c: { name: string; phone: string; totalSpent: number; lastOrderAt: Date | null }): CustomerSmsVars {
+  return {
+    customerName: c.name,
+    firstName: c.name.split(" ")[0] || c.name,
+    phone: c.phone,
+    totalSpent: `৳${Math.round(c.totalSpent).toLocaleString("en-BD")}`,
+    lastOrder: c.lastOrderAt
+      ? c.lastOrderAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+      : "no orders yet",
+    website: env.webOrigin,
+  };
+}
+
+/** Sends one already-rendered SMS and records it as a CampaignRecipient under the given campaign
+ * — the shared unit both sendAdHocSmsToCustomer (its own one-off Campaign) and
+ * sendBulkSmsToCustomers (many recipients sharing one Campaign) build on. */
+async function dispatchAndLogSms(campaignId: string, customerId: string, phone: string, renderedBody: string) {
+  const recipient = await prisma.campaignRecipient.create({
+    data: { campaignId, customerId, renderedBody },
+  });
+  try {
+    await sendSms({ to: phone, body: renderedBody });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to send SMS";
+    await prisma.campaignRecipient.update({ where: { id: recipient.id }, data: { status: "FAILED", error: message } });
+    return { status: "FAILED" as const, error: message };
+  }
+  await prisma.campaignRecipient.update({ where: { id: recipient.id }, data: { status: "SENT", sentAt: new Date() } });
+  return { status: "SENT" as const };
+}
+
+/** A direct 1:1 admin message — unlike Campaign sends, this is NOT gated by smsMarketingOptIn (that
+ * flag is specifically marketing consent; this is the same trust level as an admin manually texting
+ * a customer, e.g. "call before delivery"). Logged as a one-recipient Campaign/CampaignRecipient pair
+ * purely so it shows up in this customer's SMS history/"last SMS sent" alongside real campaign sends
+ * — see the module doc comment in campaign.service.ts for why that's the shared history model. */
+export async function sendAdHocSmsToCustomer(customerId: string, body: string) {
+  const [customer] = await loadCustomersWithComputedFields({ id: customerId });
+  if (!customer) throw AppError.notFound("Customer not found");
+  if (!customer.phone) throw AppError.badRequest("This customer has no phone number on file");
+
+  const rendered = renderCustomerSmsTemplate(body, customerSmsVars({ ...customer, phone: customer.phone }));
+  const campaign = await prisma.campaign.create({
+    data: { name: "Direct message", channel: "SMS", body, status: "SENDING" },
+  });
+  const result = await dispatchAndLogSms(campaign.id, customerId, customer.phone, rendered);
+  await prisma.campaign.update({
+    where: { id: campaign.id },
+    data: result.status === "SENT" ? { status: "SENT", sentAt: new Date() } : { status: "FAILED" },
+  });
+
+  if (result.status === "FAILED") throw AppError.badRequest(result.error ?? "Failed to send SMS");
+  return { ok: true as const, sentAt: new Date() };
+}
+
+/** Bulk send — every recipient rolls up under one shared Campaign row (unlike N separate ad-hoc
+ * sends) so a batch reads as a single grouped item rather than N unrelated "Direct message" rows.
+ * Not gated by smsMarketingOptIn, for the same reason as sendAdHocSmsToCustomer: the admin is
+ * manually curating an exact recipient list here — 1 or 50 customers makes no difference to that —
+ * not targeting a broad algorithmic segment the way a real Campaign send does. */
+export async function sendBulkSmsToCustomers(customerIds: string[], body: string) {
+  const customers = await loadCustomersWithComputedFields({ id: { in: customerIds } });
+  const withPhone = customers.filter((c) => Boolean(c.phone)) as Array<ComputedCustomer & { phone: string }>;
+  if (withPhone.length === 0) throw AppError.badRequest("None of the selected customers have a phone number on file");
+
+  const campaign = await prisma.campaign.create({
+    data: { name: `Bulk message (${withPhone.length} recipients)`, channel: "SMS", body, status: "SENDING" },
+  });
+
+  let sent = 0;
+  let failed = 0;
+  await mapWithConcurrency(withPhone, SMS_SEND_CONCURRENCY, async (c) => {
+    const rendered = renderCustomerSmsTemplate(body, customerSmsVars(c));
+    const result = await dispatchAndLogSms(campaign.id, c.id, c.phone, rendered);
+    if (result.status === "SENT") sent++;
+    else failed++;
+  });
+
+  await prisma.campaign.update({
+    where: { id: campaign.id },
+    data: { status: sent > 0 ? "SENT" : "FAILED", sentAt: new Date() },
+  });
+
+  return { sent, failed, skipped: customers.length - withPhone.length };
 }
 
 /** Awards points for a delivered order — idempotent per order, so re-marking DELIVERED (e.g. after an

@@ -17,6 +17,9 @@ import {
   adjustRewardPointsSchema,
   pushSubscribeSchema,
   pushUnsubscribeQuerySchema,
+  updateCustomerAdminFieldsSchema,
+  sendAdHocSmsSchema,
+  bulkSendSmsSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireCustomer } from "../../middlewares/require-customer";
@@ -110,10 +113,31 @@ customerRouter.get(
   validate(customerListQuerySchema, "query"),
   customerController.listCustomersAdmin,
 );
+// Must come before "/admin/:id" — otherwise Express matches "stats" as the :id param.
+customerRouter.get("/admin/stats", requireAdmin, customerController.getCustomerStatsAdmin);
+// Same reason: "/admin/:id/sms" below would otherwise match "/admin/bulk/sms" with id="bulk".
+customerRouter.post(
+  "/admin/bulk/sms",
+  requireAdmin,
+  validate(bulkSendSmsSchema),
+  customerController.sendBulkSms,
+);
 customerRouter.get("/admin/:id", requireAdmin, customerController.getCustomerDetailAdmin);
 customerRouter.post(
   "/admin/:id/points",
   requireAdmin,
   validate(adjustRewardPointsSchema),
   customerController.adjustPoints,
+);
+customerRouter.patch(
+  "/admin/:id",
+  requireAdmin,
+  validate(updateCustomerAdminFieldsSchema),
+  customerController.updateCustomerAdminFields,
+);
+customerRouter.post(
+  "/admin/:id/sms",
+  requireAdmin,
+  validate(sendAdHocSmsSchema),
+  customerController.sendAdHocSms,
 );

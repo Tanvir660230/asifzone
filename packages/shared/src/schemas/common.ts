@@ -80,6 +80,25 @@ export function nullableBdPhone() {
   );
 }
 
+/** Catches well-formed-but-not-real numbers — the kind typed to get through a required field
+ * without giving a real one (01111111111, 01712345678, 01700000000, 01717171717, ...). Doesn't
+ * catch every fake number (a fake-but-random one is indistinguishable from a real one by shape
+ * alone), just the common dummy patterns; treat it as a signal to review, not proof either way. */
+export function looksLikeFakePhone(raw: string): boolean {
+  const normalized = normalizeBdPhone(raw);
+  if (!PHONE_REGEX.test(normalized)) return false;
+  const suffix = normalized.slice(3); // digits after the "01X" prefix — 8 of them
+
+  // All one digit (01711111111) or a short cycle repeated across the whole suffix (01712121212).
+  if (/^(\d{1,2})\1{3,}$/.test(suffix)) return true;
+
+  // Strictly ascending or descending run (01712345678, 01787654321).
+  const digits = suffix.split("").map(Number);
+  const ascending = digits.every((d, i) => i === 0 || d === digits[i - 1]! + 1);
+  const descending = digits.every((d, i) => i === 0 || d === digits[i - 1]! - 1);
+  return ascending || descending;
+}
+
 export function slugify(input: string): string {
   return input
     .trim()

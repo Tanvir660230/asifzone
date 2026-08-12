@@ -1,5 +1,10 @@
 // Shapes returned by the API (JSON-serialized: Decimal/Date become strings).
 
+// CustomerTag is exported from schemas/customer.ts (derived from customerTagEnum) — imported here
+// rather than redeclared, to avoid a duplicate-export collision via the package's barrel index.ts.
+import type { CustomerTag } from "./schemas/customer";
+import type { HomepageSectionType } from "./schemas/homepage-section";
+
 export interface StockMovement {
   id: string;
   variantId: string;
@@ -431,16 +436,88 @@ export interface WishlistItem {
   createdAt: string;
 }
 
-export interface AdminCustomerListItem extends Customer {
-  _count: { orders: number; wishlistItems: number };
+export interface FavoriteProduct {
+  name: string;
+  quantity: number;
 }
 
-export interface AdminCustomerDetail extends Customer {
+export interface CustomerPurchaseAnalytics {
+  totalOrders: number;
+  deliveredOrders: number;
+  cancelledOrders: number;
+  /** Percent of orders (0-100) that ended up RETURNED. */
+  returnRate: number;
+  averageOrderValue: number;
+  lifetimeSpend: number;
+}
+
+export interface CustomerSmsHistoryEntry {
+  id: string;
+  campaignId: string;
+  campaignName: string;
+  body: string;
+  status: "PENDING" | "SENT" | "FAILED";
+  sentAt: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface CustomerTimelineEntry {
+  type: "ORDER" | "POINTS" | "SMS";
+  date: string;
+  label: string;
+  detail?: string;
+}
+
+/** Admin-only fields layered on top of the public Customer shape — never returned from
+ * customer-facing endpoints (me/register/login), only from the /admin/* routes below. */
+interface AdminCustomerFields {
+  adminNotes: string | null;
+  isBlocked: boolean;
+  codRisk: boolean;
+  totalOrders: number;
+  totalSpent: number;
+  lastOrderAt: string | null;
+  district: string | null;
+  tags: CustomerTag[];
+}
+
+export interface AdminCustomerListItem extends Customer, AdminCustomerFields {
+  lastSmsSentAt: string | null;
+}
+
+export interface AdminCustomerDetail extends Customer, AdminCustomerFields {
   addresses: Address[];
   orders: Order[];
   wishlistItems: (Omit<WishlistItem, "product"> & { product: Pick<Product, "id" | "name" | "slug"> })[];
   pointsLedger: RewardPointsEntry[];
-  totalSpent: number;
+  /** Explainable reasons the SUSPICIOUS tag fired (fake-looking phone, high cancel rate, repeated
+   * courier holds) — empty when clean. See computeRiskSignals in the API's customer.service.ts. */
+  riskSignals: string[];
+  favoriteProducts: FavoriteProduct[];
+  purchaseAnalytics: CustomerPurchaseAnalytics;
+  smsHistory: CustomerSmsHistoryEntry[];
+  timeline: CustomerTimelineEntry[];
+}
+
+export interface SmsTemplate {
+  id: string;
+  name: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerStats {
+  totalCustomers: number;
+  newToday: number;
+  newThisMonth: number;
+  repeatCustomers: number;
+  lifetimeRevenue: number;
+  vipCustomers: number;
+  inactive30: number;
+  inactive60: number;
+  inactive90: number;
 }
 
 export interface StoreSettings {
@@ -548,6 +625,16 @@ export interface Banner {
   isActive: boolean;
   startsAt: string | null;
   endsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HomepageSection {
+  id: string;
+  type: HomepageSectionType;
+  sortOrder: number;
+  isActive: boolean;
+  config: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }

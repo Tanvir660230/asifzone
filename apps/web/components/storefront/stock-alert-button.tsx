@@ -12,8 +12,8 @@ interface StockAlertButtonProps {
 }
 
 /** "Notify me when back in stock" — only rendered when the selected variant is out of stock.
- * Guests get redirected to log in first, same pattern as WishlistButton, since the alert has
- * to be tied to a real, emailable account. */
+ * Guests get redirected to log in first (unlike WishlistButton, which now works without an
+ * account) since the alert has to be tied to a real, emailable account. */
 export function StockAlertButton({ variantId }: StockAlertButtonProps) {
   const router = useRouter();
   const pathname = usePathname();

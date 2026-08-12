@@ -75,13 +75,48 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(8),
 });
 
+export const customerTagEnum = z.enum([
+  "NEW",
+  "REPEAT",
+  "VIP",
+  "HIGH_SPENDER",
+  "INACTIVE",
+  "SUSPICIOUS",
+  "COD_RISK",
+  "BLOCKED",
+]);
+
 export const customerListQuerySchema = paginationQuerySchema.extend({
+  // Also matches against the customer's order numbers (see listCustomersAdmin) — an admin searching
+  // an order ID from a support chat should land on the customer, not have to go via the Orders page.
   search: z.string().min(1).max(200).optional(),
+  tag: customerTagEnum.optional(),
+  district: z.string().min(1).max(120).optional(),
+  noOrders: z.enum(["true", "false"]).optional(),
+  // "Last order within N days" — powers the Last 30/90 Days smart filters.
+  lastOrderDays: z.coerce.number().int().positive().optional(),
+  minSpend: z.coerce.number().nonnegative().optional(),
+  minOrders: z.coerce.number().int().nonnegative().optional(),
+  // Computed columns (totalSpent/totalOrders/lastOrderAt), not plain Customer columns — sorted
+  // in-memory by listCustomersAdmin rather than via Prisma orderBy. Fine at this store's customer
+  // volumes; revisit with a raw aggregate query if that stops being true.
+  sortBy: z.enum(["name", "createdAt", "totalSpent", "totalOrders", "lastOrderAt"]).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
 export const adjustRewardPointsSchema = z.object({
   points: z.number().int().refine((v) => v !== 0, "Point adjustment cannot be zero"),
   reason: z.string().max(200).optional(),
+});
+
+export const updateCustomerAdminFieldsSchema = z.object({
+  adminNotes: nullableString(2000),
+  isBlocked: z.boolean().optional(),
+  codRisk: z.boolean().optional(),
+});
+
+export const sendAdHocSmsSchema = z.object({
+  body: z.string().min(1).max(1000),
 });
 
 export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
@@ -96,5 +131,8 @@ export type UpdateAddressInput = z.infer<typeof updateAddressSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
+export type CustomerTag = z.infer<typeof customerTagEnum>;
 export type AdjustRewardPointsInput = z.infer<typeof adjustRewardPointsSchema>;
 export type UnsubscribeEmailInput = z.infer<typeof unsubscribeEmailSchema>;
+export type UpdateCustomerAdminFieldsInput = z.infer<typeof updateCustomerAdminFieldsSchema>;
+export type SendAdHocSmsInput = z.infer<typeof sendAdHocSmsSchema>;

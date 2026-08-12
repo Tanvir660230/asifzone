@@ -7,22 +7,31 @@ interface StatTileProps {
   label: string;
   value: string;
   icon: ReactNode;
-  tone?: "default" | "warning";
+  /** "accent" is the one blue highlight — reserve it for money/courier figures, not every tile. */
+  tone?: "default" | "warning" | "accent";
   /** Percent change vs. the prior period, e.g. from computeTrend() — omit when no baseline exists (e.g. pending orders). */
   trendPct?: number | null;
 }
+
+const TONE_CHIP: Record<NonNullable<StatTileProps["tone"]>, string> = {
+  default: "bg-ink-50 text-ink-500",
+  warning: "bg-warning-50 text-warning-600",
+  accent: "bg-info-50 text-info-600",
+};
 
 export function StatTile({ label, value, icon, tone = "default", trendPct }: StatTileProps) {
   const hasTrend = trendPct !== null && trendPct !== undefined && Number.isFinite(trendPct);
   const isUp = hasTrend && trendPct! >= 0;
 
   return (
-    <Card className="flex items-center gap-4 p-5">
-      <div className={tone === "warning" ? "text-warning-600" : "text-brass-500"}>{icon}</div>
-      <div>
-        <p className="text-xs uppercase tracking-wide text-ink-500">{label}</p>
-        <div className="mt-0.5 flex items-baseline gap-2">
-          <p className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{value}</p>
+    <Card className="flex items-center gap-4 p-4 transition-shadow duration-200 ease-smooth hover:shadow-float sm:p-5">
+      <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", TONE_CHIP[tone])}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium uppercase leading-tight tracking-wide text-ink-400">{label}</p>
+        <div className="mt-1 flex items-baseline gap-2">
+          <p className="font-sans text-2xl font-semibold tabular-nums tracking-tight text-ink-900">{value}</p>
           {hasTrend && (
             <span
               className={cn(
@@ -35,6 +44,19 @@ export function StatTile({ label, value, icon, tone = "default", trendPct }: Sta
             </span>
           )}
         </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Matches StatTile's exact shape so the KPI grid doesn't reflow/pop when the query resolves. */
+export function StatTileSkeleton() {
+  return (
+    <Card className="flex items-center gap-4 p-5">
+      <div className="h-11 w-11 shrink-0 animate-pulse rounded-xl bg-ink-100" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3 w-16 animate-pulse rounded bg-ink-100" />
+        <div className="h-6 w-20 animate-pulse rounded bg-ink-100" />
       </div>
     </Card>
   );

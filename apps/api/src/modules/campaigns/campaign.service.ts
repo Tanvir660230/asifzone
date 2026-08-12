@@ -6,12 +6,17 @@ import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { queueConnection } from "../../lib/queue";
+import { mapWithConcurrency } from "../../lib/concurrency";
 import { sendMail } from "../../lib/mailer";
 import { sendSms } from "../../lib/sms";
 import { sendPush } from "../../lib/push";
 import { renderEmailLayout, emailLink } from "../../lib/email-template";
 import { generateEmailUnsubscribeToken } from "../customers/customer.service";
 
+/** Every SMS a customer receives — bulk campaign or a one-off admin message (see
+ * customer.service.ts's sendAdHocSmsToCustomer) — is recorded as a Campaign + CampaignRecipient
+ * pair. That's what lets a customer's SMS history/"last SMS sent" be a plain CampaignRecipient
+ * query instead of needing a separate log model. */
 export const CAMPAIGN_SEND_QUEUE = "campaign-send";
 
 const NO_ORDER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -19,20 +24,6 @@ const NO_ORDER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 // doesn't open thousands of simultaneous outbound connections to the mail/SMS/push provider, but
 // high enough that sends aren't effectively serial like the old one-at-a-time loop was.
 const SEND_CONCURRENCY = 10;
-
-/** Runs `fn` over `items` with at most `concurrency` in flight at once — a plain `Promise.all`
- * would fire every recipient's send simultaneously; a `for` loop would run them fully serially.
- * Each item's outcome is independent (see the try/catch in the caller), so ordering doesn't matter. */
-async function mapWithConcurrency<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
-  let cursor = 0;
-  async function worker() {
-    while (cursor < items.length) {
-      const item = items[cursor++];
-      await fn(item as T);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-}
 
 /** Human-readable label per SegmentType, used to name the Segment row a campaign creates. */
 const SEGMENT_LABELS: Record<SegmentType, string> = {

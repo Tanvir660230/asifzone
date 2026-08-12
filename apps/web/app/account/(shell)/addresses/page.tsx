@@ -10,6 +10,8 @@ import {
   BD_ALL_DISTRICTS,
   BD_DIVISION_BY_DISTRICT,
   BD_AREAS_BY_DISTRICT,
+  BD_ALL_AREA_OPTIONS,
+  parseAreaDistrictOption,
   type Address,
   type CreateAddressInput,
 } from "@clothing-brand/shared";
@@ -183,7 +185,19 @@ function AddressForm({
 
   const district = watch("district");
   const area = watch("area");
-  const areaOptions: readonly string[] = BD_AREAS_BY_DISTRICT[district] ?? [];
+  // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a
+  // shopper who knows their thana but not its district can find it directly.
+  const areaOptions: readonly string[] = district ? (BD_AREAS_BY_DISTRICT[district] ?? []) : BD_ALL_AREA_OPTIONS;
+
+  function handleAreaChange(value: string) {
+    const parsed = parseAreaDistrictOption(value);
+    if (parsed) {
+      setValue("district", parsed.district, { shouldValidate: true });
+      setValue("area", parsed.area, { shouldValidate: true });
+    } else {
+      setValue("area", value, { shouldValidate: true });
+    }
+  }
 
   // Division is derived from the chosen district rather than picked separately — it's only needed
   // internally for the Dhaka/outside-Dhaka shipping-fee split, matching the checkout form.
@@ -192,8 +206,11 @@ function AddressForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [district]);
 
-  // The area/thana list narrows to the selected district — clear it if it no longer applies.
+  // The area/thana list narrows to the selected district — clear it if it no longer applies. Only
+  // relevant once a district is actually picked: with no district, areaOptions is the country-wide
+  // combo list, which a plain area value would never match.
   useEffect(() => {
+    if (!district) return;
     if (area && !areaOptions.includes(area)) {
       setValue("area", "");
     }
@@ -234,9 +251,9 @@ function AddressForm({
         <SearchableSelect
           id="area"
           value={area}
-          onChange={(v) => setValue("area", v, { shouldValidate: true })}
+          onChange={handleAreaChange}
           options={areaOptions}
-          placeholder="Search area/thana..."
+          placeholder={district ? "Search area/thana..." : "Search area/thana (any district)..."}
         />
         {errors.area && <p className="mt-1 text-xs text-danger-600">{errors.area.message}</p>}
       </div>

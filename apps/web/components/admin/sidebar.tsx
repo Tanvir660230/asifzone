@@ -13,6 +13,7 @@ import {
   Gift,
   RotateCcw,
   Image as ImageIcon,
+  LayoutTemplate,
   Users,
   SlidersHorizontal,
   ShieldOff,
@@ -67,7 +68,10 @@ const NAV_SECTIONS = [
   },
   {
     label: "Content",
-    items: [{ href: "/admin/banners", label: "Banners", icon: ImageIcon }],
+    items: [
+      { href: "/admin/homepage", label: "Homepage", icon: LayoutTemplate },
+      { href: "/admin/banners", label: "Banners", icon: ImageIcon },
+    ],
   },
   {
     label: "Marketing",
