@@ -34,6 +34,8 @@ test.describe("admin customer management", () => {
   test("search narrows the customer list", async ({ page }) => {
     await page.goto("/admin/customers");
     await page.getByPlaceholder(/search name, phone, email, order/i).fill("zzz_no_such_customer_zzz");
-    await expect(page.getByText(/no customers yet/i)).toBeVisible();
+    // An active search shows the "no results for your filter" empty state, distinct from the
+    // plain "No customers yet" shown when the whole list is empty.
+    await expect(page.getByText(/no customers match your filters/i)).toBeVisible();
   });
 });
