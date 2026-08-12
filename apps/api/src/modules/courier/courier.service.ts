@@ -12,13 +12,21 @@ import { getOrderById, updateOrderStatus } from "../orders/order.service";
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "CANCELLED", "REFUNDED"];
 const TERMINAL_COURIER_STATUSES = ["delivered", "partial_delivered", "cancelled"];
 
+// Booking a Steadfast consignment only means a courier *record* now exists — the box still has to
+// actually be packed and handed over, which in practice happens after the admin prints the label
+// (apps/web/app/admin/(shell)/orders/print-labels). Advancing straight to SHIPPED at booking time
+// used to fire the SHIPPED customer SMS before the parcel had physically left the building, which
+// is worse than just being an inaccurate status. So booking only nudges pre-fulfillment orders up
+// to PACKED; SHIPPED stays a deliberate, manual admin action once the parcel is actually handed
+// off. Orders already at PACKED or later are left alone — booking never rewinds or re-nudges
+// anything an admin has already progressed by hand.
+const PRE_PACKED_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING"];
+
 // Steadfast's status_by_cid API never reports a distinct "picked up / in transit" state — it only
 // ever returns in_review/pending/hold until the parcel resolves to delivered/partial_delivered/
-// cancelled. So there is no courier signal to poll for "shipped": the courier handoff itself (a
-// consignment successfully created) *is* the shipping event, which is why bookOrderWithSteadfast
-// and bookOrdersWithSteadfastBulk advance the order to SHIPPED right there instead of waiting on
-// applyCourierStatus. Only orders still earlier in the manual workflow get bumped, so booking never
-// rewinds an order an admin already pushed further (or past) SHIPPED by hand.
+// cancelled. Used below to word a "cancelled" report correctly: if our own status hasn't been
+// manually advanced past PACKED yet, Steadfast most likely voided the booking before ever picking
+// it up; if it has, this is a genuine "shipped, then returned" case.
 const PRE_SHIP_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"];
 
 // An order in one of these has already been voided, fulfilled, or restocked — booking a real
@@ -107,8 +115,8 @@ export async function bookOrderWithSteadfast(orderId: string) {
     },
   });
 
-  if (PRE_SHIP_ORDER_STATUSES.includes(order.status)) {
-    await updateOrderStatus(orderId, { status: "SHIPPED", note: "Booked with Steadfast — handed to courier" });
+  if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
+    await updateOrderStatus(orderId, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
   }
 
   notify({
@@ -164,12 +172,17 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
   const booked: BulkCourierBookResult["booked"] = [];
   for (const order of eligible) {
     const result = byInvoice.get(order.orderNumber);
-    if (!result || result.status !== "success" || !result.consignment_id || !result.tracking_code) {
-      failed.push({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        reason: result?.message ?? (result ? `Steadfast status: ${result.status}` : "No result returned by Steadfast"),
-      });
+    // Success is judged by "did Steadfast actually give us a consignment_id + tracking_code", not
+    // by matching a specific `status` value — Steadfast's own bulk response format for a *successful*
+    // item was never confirmed (see steadfast.ts's RawSteadfastBulkResultItem comment), so gating on
+    // an assumed status string/code risked marking real bookings as failed if that assumption was
+    // wrong. This was the actual bug behind bulk booking silently failing entirely.
+    if (!result || !result.consignment_id || !result.tracking_code) {
+      const reason = result?.message ?? "No result returned by Steadfast";
+      if (!result?.message) {
+        console.error(`[steadfast] bulk item for ${order.orderNumber} had no usable result:`, JSON.stringify(result));
+      }
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason });
       continue;
     }
 
@@ -184,8 +197,8 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         courierBookedAt: new Date(),
       },
     });
-    if (PRE_SHIP_ORDER_STATUSES.includes(order.status)) {
-      await updateOrderStatus(order.id, { status: "SHIPPED", note: "Booked with Steadfast — handed to courier" });
+    if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
+      await updateOrderStatus(order.id, { status: "PACKED", note: "Booked with Steadfast — ready for handover" });
     }
     booked.push({ orderId: order.id, orderNumber: order.orderNumber, trackingNumber: result.tracking_code });
   }
@@ -208,6 +221,39 @@ export async function refreshSteadfastStatus(orderId: string) {
 
   const status = await getSteadfastStatusByConsignmentId(order.courierConsignmentId);
   await applyCourierStatus(order, status);
+  return getOrderById(orderId);
+}
+
+/** Clears a stuck courier booking so the order can be re-booked. Exists for the case where the
+ * consignment was voided/deleted from the Steadfast merchant panel directly — status_by_cid then
+ * has nothing to report for that consignment_id, refreshSteadfastStatus just keeps failing, and
+ * without this there was no way back into a bookable state (bookOrderWithSteadfast refuses to
+ * re-book while courierConsignmentId is still set). Deliberately leaves the order's own `status`
+ * untouched — unlinking is about the courier record, not a claim about fulfillment state, and an
+ * admin who already manually marked it Shipped/Packed shouldn't have that silently reverted. */
+export async function unlinkCourierBooking(orderId: string) {
+  const order = await getOrderById(orderId);
+  if (!order.courierConsignmentId) throw AppError.badRequest("This order has no courier booking to unlink");
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      carrier: null,
+      trackingNumber: null,
+      courierConsignmentId: null,
+      courierStatus: null,
+      courierTrackingLink: null,
+      courierBookedAt: null,
+    },
+  });
+
+  notify({
+    type: "order.courier_update",
+    title: `Order ${order.orderNumber}'s courier booking was unlinked`,
+    body: "It can be booked with Steadfast again.",
+    link: `/admin/orders/${orderId}`,
+  });
+
   return getOrderById(orderId);
 }
 

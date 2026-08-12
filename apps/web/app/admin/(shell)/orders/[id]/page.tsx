@@ -117,6 +117,15 @@ export default function OrderDetailPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to refresh status"),
   });
 
+  const unlinkCourierMutation = useMutation({
+    mutationFn: () => adminOrdersApi.unlinkCourier(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      toast.success("Courier booking unlinked — you can book again");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to unlink courier booking"),
+  });
+
   if (isLoading || !data) return <p className="text-ink-400">Loading…</p>;
 
   const { order } = data;
@@ -270,6 +279,20 @@ export default function OrderDetailPage() {
                     onClick={() => refreshCourierMutation.mutate()}
                   >
                     Refresh status
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={unlinkCourierMutation.isPending || !!order.deletedAt}
+                    onClick={async () => {
+                      const ok = await confirm(
+                        "Unlink this Steadfast booking? Only do this if the consignment was cancelled or deleted directly in the Steadfast panel — this doesn't cancel anything on Steadfast's side, it just clears the link here so you can book again.",
+                        "Unlink",
+                      );
+                      if (ok) unlinkCourierMutation.mutate();
+                    }}
+                  >
+                    Unlink
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-ink-400">

@@ -53,6 +53,7 @@ orderRouter.patch("/:id/status", requireAdmin, validate(updateOrderStatusSchema)
 orderRouter.patch("/:id/details", requireAdmin, validate(updateOrderDetailsSchema), orderController.updateDetails);
 orderRouter.post("/:id/courier/book", requireAdmin, orderController.bookCourier);
 orderRouter.post("/:id/courier/refresh", requireAdmin, orderController.refreshCourier);
+orderRouter.post("/:id/courier/unlink", requireAdmin, orderController.unlinkCourier);
 orderRouter.delete("/:id", requireAdmin, requireRole("OWNER"), orderController.remove);
 orderRouter.post("/:id/restore", requireAdmin, requireRole("OWNER"), orderController.restore);
 orderRouter.delete("/:id/permanent", requireAdmin, requireRole("OWNER"), orderController.permanentlyRemove);

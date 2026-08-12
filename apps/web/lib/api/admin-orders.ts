@@ -130,6 +130,10 @@ export function refreshCourierStatus(id: string) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/refresh`, { method: "POST" });
 }
 
+export function unlinkCourier(id: string) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/courier/unlink`, { method: "POST" });
+}
+
 export interface BulkCourierBookResult {
   booked: Array<{ orderId: string; orderNumber: string; trackingNumber: string }>;
   failed: Array<{ orderId: string; orderNumber: string; reason: string }>;

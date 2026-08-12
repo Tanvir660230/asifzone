@@ -2,7 +2,12 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import * as orderService from "./order.service";
 import { initSslcommerzSession } from "../payments/sslcommerz.service";
-import { bookOrderWithSteadfast, bookOrdersWithSteadfastBulk, refreshSteadfastStatus } from "../courier/courier.service";
+import {
+  bookOrderWithSteadfast,
+  bookOrdersWithSteadfastBulk,
+  refreshSteadfastStatus,
+  unlinkCourierBooking,
+} from "../courier/courier.service";
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null);
@@ -110,4 +115,8 @@ export const bulkBookCourier = asyncHandler(async (req: Request, res: Response) 
 
 export const refreshCourier = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await refreshSteadfastStatus(req.params.id!) });
+});
+
+export const unlinkCourier = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await unlinkCourierBooking(req.params.id!) });
 });

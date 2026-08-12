@@ -28,11 +28,46 @@ interface SteadfastEnvelope<T> {
 
 interface SteadfastBulkResultItem {
   invoice: string;
-  status: string;
+  status?: string | number;
   consignment_id?: number;
   tracking_code?: string;
   tracking_link?: string;
   message?: string;
+}
+
+/** The shape of one raw item in Steadfast's bulk response — kept separate from
+ * SteadfastBulkResultItem because it's genuinely unconfirmed. Unlike the single-order envelope
+ * (verified against a real successful booking), this bulk shape was only ever confirmed against a
+ * *rejected* batch, which carries no per-item payload either way. Two things are uncertain: whether
+ * `status` comes back as the string "success" or a numeric HTTP-style code like the single-order
+ * envelope's `status: 200`, and whether the booking fields sit flat on the item or nested under a
+ * `consignment` object the same way the single-order envelope nests them. Bulk booking silently
+ * marking every order as "failed" despite Steadfast actually creating the consignments is exactly
+ * the symptom either mismatch would produce, so normalizeBulkResultItem below stays defensive to
+ * both possibilities instead of asserting one. */
+interface RawSteadfastBulkResultItem {
+  invoice: string;
+  status?: string | number;
+  message?: string;
+  consignment_id?: number;
+  tracking_code?: string;
+  tracking_link?: string;
+  consignment?: {
+    consignment_id?: number;
+    tracking_code?: string;
+    tracking_link?: string;
+  };
+}
+
+function normalizeBulkResultItem(item: RawSteadfastBulkResultItem): SteadfastBulkResultItem {
+  return {
+    invoice: item.invoice,
+    status: item.status,
+    message: item.message,
+    consignment_id: item.consignment_id ?? item.consignment?.consignment_id,
+    tracking_code: item.tracking_code ?? item.consignment?.tracking_code,
+    tracking_link: item.tracking_link ?? item.consignment?.tracking_link,
+  };
 }
 
 function authHeaders(): Record<string, string> {
@@ -139,13 +174,13 @@ export async function createBulkSteadfastConsignments(
   // live API) rather than the single-order envelope's { consignment } shape — fall back to a raw
   // top-level array too, in case that ever changes. Either way, no results means the whole batch
   // was rejected up front (e.g. malformed payload) rather than order-by-order.
-  const results: SteadfastBulkResultItem[] = Array.isArray(data)
+  const rawResults: RawSteadfastBulkResultItem[] = Array.isArray(data)
     ? data
     : Array.isArray((data as { data?: unknown }).data)
-      ? (data as { data: SteadfastBulkResultItem[] }).data
+      ? (data as { data: RawSteadfastBulkResultItem[] }).data
       : [];
 
-  if (!results.length) {
+  if (!rawResults.length) {
     console.error("[steadfast] bulk booking returned no results:", rawText.slice(0, 2000));
     throw AppError.badRequest(
       `Steadfast bulk booking failed: ${(data as { message?: string }).message ?? "no results returned"}`,
@@ -153,7 +188,7 @@ export async function createBulkSteadfastConsignments(
     );
   }
 
-  return results;
+  return rawResults.map(normalizeBulkResultItem);
 }
 
 export async function getSteadfastBalance(): Promise<number> {
