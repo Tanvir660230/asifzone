@@ -12,7 +12,7 @@ test.describe("admin customer management", () => {
     await expect(page).toHaveURL(/\/admin\/dashboard/);
   });
 
-  test("lists customers and opens a detail page", async ({ page }) => {
+  test("lists customers and opens a detail panel", async ({ page }) => {
     const openMenu = page.getByRole("button", { name: /open menu/i });
     if (await openMenu.isVisible()) await openMenu.click();
 
@@ -23,18 +23,17 @@ test.describe("admin customer management", () => {
     const firstRow = page.locator("tbody tr").first();
     await expect(firstRow).toBeVisible();
 
-    const customerLink = firstRow.locator("a").first();
-    await customerLink.click();
-    await expect(page).toHaveURL(/\/admin\/customers\/[a-z0-9]+/);
-    await expect(page.getByText("Profile")).toBeVisible();
+    // Rows open an in-place drawer (CustomerDetailPanel) rather than navigating to a detail
+    // page, so the URL stays on /admin/customers — assert on the drawer's content instead.
+    await firstRow.getByRole("button").first().click();
+    await expect(page.getByText("Customer details")).toBeVisible();
     await expect(page.getByText(/Addresses \(/)).toBeVisible();
-    await expect(page.getByText(/Orders \(/)).toBeVisible();
-    await expect(page.getByText(/Wishlist \(/)).toBeVisible();
+    await expect(page.getByText(/Order History \(/)).toBeVisible();
   });
 
   test("search narrows the customer list", async ({ page }) => {
     await page.goto("/admin/customers");
-    await page.getByPlaceholder(/search name, email, phone/i).fill("zzz_no_such_customer_zzz");
+    await page.getByPlaceholder(/search name, phone, email, order/i).fill("zzz_no_such_customer_zzz");
     await expect(page.getByText(/no customers yet/i)).toBeVisible();
   });
 });
