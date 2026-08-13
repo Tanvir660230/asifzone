@@ -12,14 +12,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import * as homepageSectionsApi from "@/lib/api/admin-homepage-sections";
 import { ApiError } from "@/lib/api-client";
+import { useFormPreviewSync } from "@/hooks/use-form-preview-sync";
 
 interface FormProps {
   initialConfig: Record<string, unknown>;
   onSubmit: (config: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
+  onValuesChange?: (values: Record<string, unknown>) => void;
 }
 
-export function PromoBannerForm({ initialConfig, onSubmit, onCancel }: FormProps) {
+export function PromoBannerForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const uploadMutation = useMutation({ mutationFn: homepageSectionsApi.uploadHomepageSectionImage });
@@ -35,6 +37,7 @@ export function PromoBannerForm({ initialConfig, onSubmit, onCancel }: FormProps
     defaultValues: { imageUrl: "", ...(initialConfig as Partial<PromoBannerConfig>) },
   });
   const imageUrl = watch("imageUrl");
+  useFormPreviewSync(watch, onValuesChange);
 
   async function handleImageSelected(file: File | null) {
     if (!file) return;

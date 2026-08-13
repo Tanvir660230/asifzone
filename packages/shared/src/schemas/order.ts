@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { bdPhoneSchema, nullableEmail, nullableString, paginationQuerySchema } from "./common";
+import { couponCartItemSchema } from "./coupon";
 
 export const orderStatusEnum = z.enum([
   "PENDING",
@@ -729,6 +730,7 @@ export const updateOrderDetailsSchema = z.object({
 export const validateCouponSchema = z.object({
   code: z.string().min(1).max(64),
   subtotal: z.number().positive(),
+  items: z.array(couponCartItemSchema).max(50).optional(),
 });
 
 export const trackOrderSchema = z.object({

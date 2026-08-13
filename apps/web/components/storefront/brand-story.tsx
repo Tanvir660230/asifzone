@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
@@ -12,9 +13,10 @@ interface BrandStoryProps {
   bodyText?: string | null;
   ctaLabel?: string | null;
   ctaHref?: string | null;
+  imageUrl?: string | null;
 }
 
-export function BrandStory({ storeName, tagline, heading, bodyText, ctaLabel, ctaHref }: BrandStoryProps) {
+export function BrandStory({ storeName, tagline, heading, bodyText, ctaLabel, ctaHref, imageUrl }: BrandStoryProps) {
   return (
     <section className="bg-ink-950 py-24 text-center text-cream-50">
       <motion.div
@@ -24,6 +26,11 @@ export function BrandStory({ storeName, tagline, heading, bodyText, ctaLabel, ct
         transition={{ duration: 0.7 }}
         className="mx-auto max-w-xl px-4"
       >
+        {imageUrl && (
+          <div className="relative mx-auto mb-8 h-56 w-full max-w-md overflow-hidden rounded-lg sm:h-72">
+            <Image src={imageUrl} alt={heading || storeName} fill sizes="(min-width: 640px) 448px, 100vw" className="object-cover" />
+          </div>
+        )}
         <p className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300">Our Philosophy</p>
         <h2 className="font-display text-3xl leading-snug sm:text-4xl">{heading || tagline || FALLBACK_TAGLINE}</h2>
         <p className="mt-6 text-sm leading-relaxed text-ink-300">

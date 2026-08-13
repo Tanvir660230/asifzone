@@ -3,9 +3,12 @@ import nextDynamic from "next/dynamic";
 import type {
   BrandStoryConfig,
   CategoryGridConfig,
+  HeroConfig,
+  PersonalizedLeadConfig,
   Product,
   ProductCarouselConfig,
   PromoBannerConfig,
+  SmartRecommendationsConfig,
   TrustStripConfig,
   ValuesGridConfig,
 } from "@clothing-brand/shared";
@@ -102,18 +105,35 @@ export default async function HomePage() {
       </h1>
       {sections.map((section) => {
         switch (section.type) {
-          case "HERO":
-            return banners.length > 0 ? (
-              <HeroCarousel key={section.id} banners={banners} />
-            ) : (
-              <Hero key={section.id} tagline={settings.tagline} />
+          case "HERO": {
+            if (banners.length > 0) return <HeroCarousel key={section.id} banners={banners} />;
+            const config = section.config as unknown as HeroConfig;
+            return (
+              <Hero
+                key={section.id}
+                tagline={settings.tagline}
+                headline={config.headline}
+                subtext={config.subtext}
+                ctaLabel={config.ctaLabel}
+                ctaHref={config.ctaHref}
+              />
             );
+          }
           case "TRUST_STRIP": {
             const config = section.config as unknown as TrustStripConfig;
             return <TrustStrip key={section.id} items={config.items} />;
           }
-          case "PERSONALIZED_LEAD":
-            return <PersonalizedLeadSection key={section.id} categoryTree={tree} />;
+          case "PERSONALIZED_LEAD": {
+            const config = section.config as unknown as PersonalizedLeadConfig;
+            return (
+              <PersonalizedLeadSection
+                key={section.id}
+                categoryTree={tree}
+                eyebrow={config.eyebrow}
+                titleTemplate={config.titleTemplate}
+              />
+            );
+          }
           case "PRODUCT_CAROUSEL": {
             const config = section.config as unknown as ProductCarouselConfig;
             return (
@@ -142,6 +162,7 @@ export default async function HomePage() {
                 bodyText={config.bodyText}
                 ctaLabel={config.ctaLabel}
                 ctaHref={config.ctaHref}
+                imageUrl={config.imageUrl}
               />
             );
           }
@@ -149,8 +170,10 @@ export default async function HomePage() {
             const config = section.config as unknown as ValuesGridConfig;
             return <ValuesGrid key={section.id} storeName={settings.storeName} items={config.items} />;
           }
-          case "SMART_RECOMMENDATIONS":
-            return <SmartRecommendations key={section.id} />;
+          case "SMART_RECOMMENDATIONS": {
+            const config = section.config as unknown as SmartRecommendationsConfig;
+            return <SmartRecommendations key={section.id} title={config.title} />;
+          }
           case "PROMO_BANNER": {
             const config = section.config as unknown as PromoBannerConfig;
             return (

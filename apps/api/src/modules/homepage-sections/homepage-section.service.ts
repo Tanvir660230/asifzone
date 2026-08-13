@@ -94,8 +94,13 @@ export async function getActiveHomepageSections() {
   if (cached) return cached;
 
   await ensureSeeded();
+  const now = new Date();
   const sections = await prisma.homepageSection.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+      AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+    },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
 
@@ -124,7 +129,7 @@ export async function createHomepageSection(input: CreateHomepageSectionInput) {
   }
   const config = parseConfig(input.type, input.config);
   const section = await prisma.homepageSection.create({
-    data: { type: input.type, config, isActive: input.isActive },
+    data: { type: input.type, config, isActive: input.isActive, startsAt: input.startsAt, endsAt: input.endsAt },
   });
   await invalidateCache();
   return section;
@@ -139,6 +144,8 @@ export async function updateHomepageSection(id: string, input: UpdateHomepageSec
     data: {
       ...(config !== undefined && { config }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
+      ...(input.startsAt !== undefined && { startsAt: input.startsAt }),
+      ...(input.endsAt !== undefined && { endsAt: input.endsAt }),
     },
   });
   await invalidateCache();

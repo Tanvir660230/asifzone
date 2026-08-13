@@ -78,10 +78,12 @@ export async function getActiveFlashSaleForHomepage() {
           flashSaleId: flashSale.id,
           flashSaleName: flashSale.name,
           endsAt: flashSale.endsAt,
-          discountType: item.discountType,
+          // FlashSaleItem.discountType shares its Prisma enum with Coupon.type (which also allows
+          // FREE_SHIPPING), but addFlashSaleItemSchema restricts flash-sale items to PERCENTAGE/FIXED only.
+          discountType: item.discountType as "PERCENTAGE" | "FIXED",
           discountValue: Number(item.discountValue),
           flashPrice: computeFlashPrice(Number(item.product.basePrice), {
-            discountType: item.discountType,
+            discountType: item.discountType as "PERCENTAGE" | "FIXED",
             discountValue: Number(item.discountValue),
           }),
         },

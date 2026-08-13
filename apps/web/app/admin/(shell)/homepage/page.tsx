@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { HomepageSection, HomepageSectionType } from "@clothing-brand/shared";
+import type { HomepageSection, HomepageSectionType, UpdateHomepageSectionInput } from "@clothing-brand/shared";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionList } from "@/components/admin/homepage/section-list";
 import { AddSectionMenu } from "@/components/admin/homepage/add-section-menu";
-import { SectionConfigPanel } from "@/components/admin/homepage/section-config-panel";
+import { SectionConfigPanel, type SectionSavePayload } from "@/components/admin/homepage/section-config-panel";
 import { SECTION_META } from "@/components/admin/homepage/section-meta";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -48,8 +48,8 @@ export default function HomepageBuilderPage() {
   });
   const createMutation = useMutation({ mutationFn: homepageSectionsApi.createHomepageSection });
   const updateMutation = useMutation({
-    mutationFn: ({ id, config }: { id: string; config: Record<string, unknown> }) =>
-      homepageSectionsApi.updateHomepageSection(id, { config }),
+    mutationFn: ({ id, input }: { id: string; input: UpdateHomepageSectionInput }) =>
+      homepageSectionsApi.updateHomepageSection(id, input),
   });
 
   const sections = data?.sections ?? [];
@@ -59,13 +59,17 @@ export default function HomepageBuilderPage() {
     deleteMutation.mutate(section.id);
   }
 
-  async function handleConfigSubmit(config: Record<string, unknown>) {
+  async function handleConfigSubmit(payload: SectionSavePayload) {
+    // `payload.startsAt`/`endsAt` are datetime-local strings, not Date objects — the API validates
+    // and coerces them with zod's `coerce.date()` server-side, same as the coupon admin form's
+    // date inputs do, so the cast here is just satisfying the client's Zod-inferred input type.
+    const schedule = { startsAt: payload.startsAt as unknown as Date | null, endsAt: payload.endsAt as unknown as Date | null };
     try {
       if (editingSection) {
-        await updateMutation.mutateAsync({ id: editingSection.id, config });
+        await updateMutation.mutateAsync({ id: editingSection.id, input: { config: payload.config, ...schedule } });
         setEditingSection(null);
       } else if (creatingType) {
-        await createMutation.mutateAsync({ type: creatingType, config, isActive: true });
+        await createMutation.mutateAsync({ type: creatingType, config: payload.config, isActive: true, ...schedule });
         setCreatingType(null);
       }
       await invalidate();
@@ -101,6 +105,8 @@ export default function HomepageBuilderPage() {
         <SectionConfigPanel
           type={editingSection.type}
           initialConfig={editingSection.config}
+          initialStartsAt={editingSection.startsAt}
+          initialEndsAt={editingSection.endsAt}
           onSubmit={handleConfigSubmit}
           onClose={() => setEditingSection(null)}
         />

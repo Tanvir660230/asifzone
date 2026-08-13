@@ -1,26 +1,28 @@
 "use client";
 
-import { useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
 import { trustStripConfigSchema, type TrustStripConfig } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
-import { HOMEPAGE_ICON_NAMES } from "@/lib/homepage-icons";
+import { IconPicker } from "@/components/ui/icon-picker";
+import { useFormPreviewSync } from "@/hooks/use-form-preview-sync";
 
 interface FormProps {
   initialConfig: Record<string, unknown>;
   onSubmit: (config: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
+  onValuesChange?: (values: Record<string, unknown>) => void;
 }
 
-export function TrustStripForm({ initialConfig, onSubmit, onCancel }: FormProps) {
+export function TrustStripForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
   const {
     register,
     control,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<TrustStripConfig>({
     resolver: zodResolver(trustStripConfigSchema),
@@ -29,21 +31,20 @@ export function TrustStripForm({ initialConfig, onSubmit, onCancel }: FormProps)
       : { items: [{ icon: "Star", label: "" }] },
   });
   const { fields, append, remove } = useFieldArray({ control, name: "items" });
+  useFormPreviewSync(watch, onValuesChange);
 
   return (
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="space-y-4">
       <div className="space-y-3">
         {fields.map((field, index) => (
           <div key={field.id} className="flex items-end gap-2 rounded-lg border border-ink-100 p-3">
-            <div className="w-32">
+            <div className="w-40">
               <Label htmlFor={`items.${index}.icon`}>Icon</Label>
-              <Select id={`items.${index}.icon`} {...register(`items.${index}.icon` as const)}>
-                {HOMEPAGE_ICON_NAMES.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </Select>
+              <Controller
+                name={`items.${index}.icon` as const}
+                control={control}
+                render={({ field }) => <IconPicker id={`items.${index}.icon`} value={field.value} onChange={field.onChange} />}
+              />
             </div>
             <div className="flex-1">
               <Label htmlFor={`items.${index}.label`}>Label</Label>

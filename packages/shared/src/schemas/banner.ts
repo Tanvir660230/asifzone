@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { nullableString, nullableUrl } from "./common";
+import { nullableDate, nullableString, nullableUrl } from "./common";
 
 export const bannerPlacementEnum = z.enum(["HERO_CAROUSEL", "PROMO_STRIP"]);
 
@@ -13,6 +13,8 @@ export const createBannerSchema = z.object({
   altText: nullableString(200),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
+  startsAt: nullableDate(),
+  endsAt: nullableDate(),
 });
 
 export const updateBannerSchema = createBannerSchema.partial();
@@ -21,7 +23,12 @@ export const activeBannersQuerySchema = z.object({
   placement: bannerPlacementEnum.default("HERO_CAROUSEL"),
 });
 
+export const reorderBannersSchema = z.object({
+  ids: z.array(z.string().cuid()).min(1),
+});
+
 export type CreateBannerInput = z.infer<typeof createBannerSchema>;
 export type UpdateBannerInput = z.infer<typeof updateBannerSchema>;
 export type BannerPlacement = z.infer<typeof bannerPlacementEnum>;
 export type ActiveBannersQuery = z.infer<typeof activeBannersQuerySchema>;
+export type ReorderBannersInput = z.infer<typeof reorderBannersSchema>;

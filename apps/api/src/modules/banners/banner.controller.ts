@@ -35,3 +35,7 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   await bannerService.deleteBanner(req.params.id!);
   res.status(204).send();
 });
+
+export const reorder = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ banners: await bannerService.reorderBanners(req.body.ids) });
+});

@@ -1,11 +1,16 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
+import { resolveCartLines } from "../orders/cart-lines";
 import * as couponService from "./coupon.service";
 
 export const validate = asyncHandler(async (req: Request, res: Response) => {
-  const { code, subtotal } = req.body;
-  const { coupon, discount } = await couponService.evaluateCoupon(code, subtotal);
-  res.json({ code: coupon!.code, type: coupon!.type, value: coupon!.value, discount });
+  const { code, subtotal, items } = req.body;
+  const cartLines = items?.length ? (await resolveCartLines(items)).lines : undefined;
+  const { coupon, discount, freeShipping, eligibleProductIds } = await couponService.evaluateCoupon(code, subtotal, {
+    cartLines,
+    customerId: req.customer?.customerId,
+  });
+  res.json({ code: coupon.code, type: coupon.type, value: coupon.value, discount, freeShipping, eligibleProductIds });
 });
 
 export const active = asyncHandler(async (_req: Request, res: Response) => {
@@ -13,11 +18,18 @@ export const active = asyncHandler(async (_req: Request, res: Response) => {
 });
 
 export const best = asyncHandler(async (req: Request, res: Response) => {
-  const { subtotal } = req.query as unknown as { subtotal: number };
-  const match = await couponService.findBestCoupon(subtotal);
+  const { subtotal, items } = req.body;
+  const cartLines = items?.length ? (await resolveCartLines(items)).lines : undefined;
+  const match = await couponService.findBestCoupon(subtotal, cartLines);
   res.json({
     result: match
-      ? { code: match.coupon.code, type: match.coupon.type, value: match.coupon.value, discount: match.discount }
+      ? {
+          code: match.coupon.code,
+          type: match.coupon.type,
+          value: match.coupon.value,
+          discount: match.discount,
+          freeShipping: match.freeShipping,
+        }
       : null,
   });
 });

@@ -1,7 +1,10 @@
+import { orderStatusEnum } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
   OrderListQuery,
+  OrderListItemSummary,
+  OrderItemLiveInfo,
   OrderStatus,
   UpdateOrderStatusInput,
   UpdateOrderDetailsInput,
@@ -14,7 +17,7 @@ import { notify } from "../../lib/notify";
 import { sendAdminOrderAlertSms, sendCustomerOrderSms, type CustomerTouchpoint } from "../../lib/order-sms";
 import { evaluateCoupon, incrementCouponUsage } from "../coupons/coupon.service";
 import { evaluateBundleForItems } from "../bundles/bundle.service";
-import { computeFlashPrice, getActiveFlashInfoByProduct, type ActiveFlashInfo } from "../flash-sales/flash-sale-pricing";
+import { resolveCartLines, effectivePrice } from "./cart-lines";
 import { getSettings } from "../settings/settings.service";
 import { awardDeliveryPoints, findOrCreateGuestCustomer } from "../customers/customer.service";
 import { clearCart } from "../cart/cart.service";
@@ -33,16 +36,6 @@ const STATUS_SMS_TOUCHPOINT: Partial<Record<OrderStatus, CustomerTouchpoint>> = 
   CANCELLED: "CANCELLED",
 };
 
-/** A running flash sale overrides everything else — it's already the "this is the price right now" figure. */
-function effectivePrice(
-  variant: { productId: string; price: unknown; product: { basePrice: unknown } },
-  flashByProduct: Map<string, ActiveFlashInfo>,
-): number {
-  const regularPrice = variant.price !== null ? Number(variant.price) : Number(variant.product.basePrice);
-  const flash = flashByProduct.get(variant.productId);
-  return flash ? computeFlashPrice(regularPrice, flash) : regularPrice;
-}
-
 export async function createOrder(
   input: CheckoutInput,
   customerId: string | null = null,
@@ -59,17 +52,8 @@ export async function createOrder(
     customerId = await findOrCreateGuestCustomer(input.customerName, input.customerEmail ?? null, input.customerPhone);
   }
 
-  const variantIds = input.items.map((i) => i.variantId);
-  const variants = await prisma.productVariant.findMany({
-    where: { id: { in: variantIds } },
-    include: { product: true },
-  });
+  const { subtotal, lines: cartLines, variantById, flashByProduct } = await resolveCartLines(input.items);
 
-  if (variants.length !== new Set(variantIds).size) {
-    throw AppError.badRequest("One or more items in your cart are no longer available");
-  }
-
-  const variantById = new Map(variants.map((v) => [v.id, v]));
   for (const item of input.items) {
     const variant = variantById.get(item.variantId)!;
     if (!variant.product.isActive) throw AppError.badRequest(`${variant.product.name} is no longer available`);
@@ -78,19 +62,14 @@ export async function createOrder(
     }
   }
 
-  const flashByProduct = await getActiveFlashInfoByProduct(variants.map((v) => v.productId));
-
-  const subtotal = input.items.reduce((sum, item) => {
-    const variant = variantById.get(item.variantId)!;
-    return sum + effectivePrice(variant, flashByProduct) * item.quantity;
-  }, 0);
-
   let discount = 0;
   let couponId: string | null = null;
+  let couponFreeShipping = false;
   if (input.couponCode) {
-    const evaluation = await evaluateCoupon(input.couponCode, subtotal);
+    const evaluation = await evaluateCoupon(input.couponCode, subtotal, { cartLines, customerId });
     discount = evaluation.discount;
-    couponId = evaluation.coupon!.id;
+    couponFreeShipping = evaluation.freeShipping;
+    couponId = evaluation.coupon.id;
   }
 
   // Bundle discounts are detected automatically from cart contents, not opted into like a coupon —
@@ -113,7 +92,7 @@ export async function createOrder(
   }
   const shippingFee =
     input.shippingDivision === "Dhaka" ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
-  const total = subtotal - discount + shippingFee;
+  const total = subtotal - discount + (couponFreeShipping ? 0 : shippingFee);
 
   const order = await prisma.$transaction(async (tx) => {
     // Each item's conditional decrement is independent (distinct variantId rows) — running them
@@ -243,30 +222,16 @@ export async function createManualOrder(input: AdminCreateOrderInput, adminId: s
   return getOrderById(order.id);
 }
 
-export async function getOrderById(id: string) {
-  const order = await prisma.order.findUnique({ where: { id }, include });
-  if (!order) throw AppError.notFound("Order not found");
-  return order;
-}
-
-/** Powers bulk label printing — fetches many orders in one round-trip instead of N single-order
- * GETs. Re-sorts to match the caller's id order and silently drops any id no longer found (e.g. an
- * order permanently deleted between selection and print) rather than failing the whole batch. */
-export async function getOrdersByIds(ids: string[]) {
-  const orders = await prisma.order.findMany({ where: { id: { in: ids } }, include });
-  const byId = new Map(orders.map((o) => [o.id, o]));
-  return ids.map((id) => byId.get(id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
-}
-
-/** Ownership-checked order detail for a logged-in customer's own order page. Attaches live
- * per-item availability (current price/stock/image) via the same manual variantId -> Product join
- * used elsewhere in this file (OrderItem has no Prisma relation to ProductVariant, only a plain
- * id column) — this is what "Reorder" checks before adding anything back to the cart. */
-export async function getOrderForCustomer(customerId: string, orderId: string) {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, include });
-  if (!order || order.deletedAt || order.customerId !== customerId) throw AppError.notFound("Order not found");
-
-  const variantIds = order.items.map((i) => i.variantId);
+/** Manual variantId -> Product join shared by getOrderById (admin) and getOrderForCustomer —
+ * OrderItem has no Prisma relation to ProductVariant, only a plain id column, so this is the one
+ * place that resolves it. `requireAvailable: true` (customer "Reorder") hides the product/thumbnail
+ * link the moment it's not currently purchasable; admin never needs that gate — a staff member
+ * should be able to open a product from an order regardless of its current stock/active state. */
+async function attachLiveItemInfo<T extends { variantId: string }>(
+  items: T[],
+  opts: { requireAvailable: boolean },
+): Promise<(T & { live: OrderItemLiveInfo | null })[]> {
+  const variantIds = items.map((i) => i.variantId);
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: variantIds } },
     select: {
@@ -288,23 +253,52 @@ export async function getOrderForCustomer(customerId: string, orderId: string) {
   });
   const variantById = new Map(variants.map((v) => [v.id, v]));
 
-  const items = order.items.map((item) => {
+  return items.map((item) => {
     const variant = variantById.get(item.variantId);
     const available = variant && variant.product.isActive && !variant.product.deletedAt && variant.stock > 0;
+    const usable = opts.requireAvailable ? available : Boolean(variant);
     return {
       ...item,
-      live: available
-        ? {
-            productId: variant.product.id,
-            productSlug: variant.product.slug,
-            productName: variant.product.name,
-            imageUrl: variant.product.images[0]?.url ?? null,
-            price: Number(variant.price ?? variant.product.basePrice),
-            maxStock: variant.stock,
-          }
-        : null,
+      live:
+        usable && variant
+          ? {
+              productId: variant.product.id,
+              productSlug: variant.product.slug,
+              productName: variant.product.name,
+              imageUrl: variant.product.images[0]?.url ?? null,
+              price: Number(variant.price ?? variant.product.basePrice),
+              maxStock: variant.stock,
+            }
+          : null,
     };
   });
+}
+
+export async function getOrderById(id: string) {
+  const order = await prisma.order.findUnique({ where: { id }, include });
+  if (!order) throw AppError.notFound("Order not found");
+  const items = await attachLiveItemInfo(order.items, { requireAvailable: false });
+  return { ...order, items };
+}
+
+/** Powers bulk label printing — fetches many orders in one round-trip instead of N single-order
+ * GETs. Re-sorts to match the caller's id order and silently drops any id no longer found (e.g. an
+ * order permanently deleted between selection and print) rather than failing the whole batch. */
+export async function getOrdersByIds(ids: string[]) {
+  const orders = await prisma.order.findMany({ where: { id: { in: ids } }, include });
+  const byId = new Map(orders.map((o) => [o.id, o]));
+  return ids.map((id) => byId.get(id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
+}
+
+/** Ownership-checked order detail for a logged-in customer's own order page. Attaches live
+ * per-item availability (current price/stock/image) via the same manual variantId -> Product join
+ * used elsewhere in this file (OrderItem has no Prisma relation to ProductVariant, only a plain
+ * id column) — this is what "Reorder" checks before adding anything back to the cart. */
+export async function getOrderForCustomer(customerId: string, orderId: string) {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include });
+  if (!order || order.deletedAt || order.customerId !== customerId) throw AppError.notFound("Order not found");
+
+  const items = await attachLiveItemInfo(order.items, { requireAvailable: true });
 
   const returnRequests = await prisma.returnRequest.findMany({ where: { orderId }, orderBy: { createdAt: "desc" } });
 
@@ -368,20 +362,90 @@ export async function listOrders(query: OrderListQuery) {
   const orderBy = buildOrderOrderBy(query);
 
   // The list table only ever shows order-level fields (number, customer, total, status, date) —
-  // it never touches line items or the status timeline. Those are exactly what the shared `include`
-  // pulls in (a join per row for items, plus statusHistory joined to changedByAdmin), so skipping
-  // them here is what keeps this endpoint fast as order history grows. `items`/`statusHistory` are
-  // filled in as empty arrays purely to satisfy the shared `Order` type — the list page never reads them.
+  // it never touches the full line items or the status timeline. Those are exactly what the shared
+  // `include` pulls in (a join per row for items, plus statusHistory joined to changedByAdmin), so
+  // skipping them here is what keeps this endpoint fast as order history grows. `items`/`statusHistory`
+  // are filled in as empty arrays purely to satisfy the shared `Order` type — the list page never
+  // reads them; it reads `itemsSummary` instead (see below), which is deliberately cheap: bounded by
+  // one page of orders, not the whole table.
   const result = await paginate(
     query,
     (p) => prisma.order.findMany({ where, orderBy, ...p }),
     () => prisma.order.count({ where }),
   );
 
+  const itemsSummaryByOrderId = await buildItemsSummary(result.items.map((o) => o.id));
+
   return {
     ...result,
-    items: result.items.map((order) => ({ ...order, items: [], statusHistory: [] })),
+    items: result.items.map((order) => ({
+      ...order,
+      items: [],
+      statusHistory: [],
+      itemsSummary: itemsSummaryByOrderId.get(order.id) ?? { totalItems: 0, firstItem: null },
+    })),
   };
+}
+
+/** Batched "what's in this order" summary for the admin orders list's Product column — one row of
+ * line items per order id, plus a single follow-up ProductVariant/Product join for the first item
+ * of each order (for its name/thumbnail/link). Bounded by one page of orders (≈20-100), so it stays
+ * cheap even though OrderItem has no Prisma relation to ProductVariant to include directly.
+ * `totalItems` counts distinct line items (products), not summed quantity — "+2 more" should read
+ * as two more products, not two more units of the first one. */
+async function buildItemsSummary(orderIds: string[]) {
+  const summaries = new Map<string, { totalItems: number; firstItem: OrderListItemSummary["firstItem"] | null }>();
+  if (orderIds.length === 0) return summaries;
+
+  const items = await prisma.orderItem.findMany({
+    where: { orderId: { in: orderIds } },
+    select: {
+      orderId: true,
+      variantId: true,
+      productNameSnapshot: true,
+      sizeSnapshot: true,
+      colorSnapshot: true,
+      quantity: true,
+    },
+  });
+
+  const firstItemByOrderId = new Map<string, (typeof items)[number]>();
+  for (const item of items) {
+    const count = (summaries.get(item.orderId)?.totalItems ?? 0) + 1;
+    summaries.set(item.orderId, { totalItems: count, firstItem: null });
+    if (!firstItemByOrderId.has(item.orderId)) firstItemByOrderId.set(item.orderId, item);
+  }
+
+  const variantIds = Array.from(new Set(Array.from(firstItemByOrderId.values(), (i) => i.variantId)));
+  const variants = await prisma.productVariant.findMany({
+    where: { id: { in: variantIds } },
+    select: {
+      id: true,
+      product: {
+        select: { id: true, slug: true, images: { take: 1, orderBy: { sortOrder: "asc" }, select: { url: true } } },
+      },
+    },
+  });
+  const variantById = new Map(variants.map((v) => [v.id, v]));
+
+  for (const [orderId, item] of firstItemByOrderId) {
+    const variant = variantById.get(item.variantId);
+    const existing = summaries.get(orderId)!;
+    summaries.set(orderId, {
+      ...existing,
+      firstItem: {
+        name: item.productNameSnapshot,
+        size: item.sizeSnapshot,
+        color: item.colorSnapshot,
+        quantity: item.quantity,
+        productId: variant?.product.id ?? null,
+        productSlug: variant?.product.slug ?? null,
+        imageUrl: variant?.product.images[0]?.url ?? null,
+      },
+    });
+  }
+
+  return summaries;
 }
 
 /** Powers the orders-page KPI strip — a handful of parallel count/aggregate queries (no per-row
@@ -391,7 +455,7 @@ export async function getOrderStats() {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const [todayOrders, todayRevenue, pending, needsAttention] = await Promise.all([
+  const [todayOrders, todayRevenue, pending, needsAttention, statusGroups] = await Promise.all([
     prisma.order.count({ where: { deletedAt: null, createdAt: { gte: startOfToday } } }),
     prisma.order.aggregate({
       where: { deletedAt: null, createdAt: { gte: startOfToday } },
@@ -411,13 +475,20 @@ export async function getOrderStats() {
         ],
       },
     }),
+    // Powers the status-filter pills' "(N)" counts — one row per status that has at least one
+    // order, zero-filled below for the rest so every pill always shows a count.
+    prisma.order.groupBy({ by: ["status"], where: { deletedAt: null }, _count: true }),
   ]);
+
+  const statusCounts = Object.fromEntries(orderStatusEnum.options.map((s) => [s, 0])) as Record<OrderStatus, number>;
+  for (const group of statusGroups) statusCounts[group.status] = group._count;
 
   return {
     todayOrders,
     todayRevenue: Number(todayRevenue._sum.total ?? 0),
     pending,
     needsAttention,
+    statusCounts,
   };
 }
 

@@ -5,6 +5,7 @@ import { SearchOverlay } from "@/components/storefront/search-overlay";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
 import { CartReminderBanner } from "@/components/storefront/cart-reminder-banner";
 import { StickyCartBar } from "@/components/storefront/sticky-cart-bar";
+import { StickyBottomBarSpacer } from "@/components/storefront/sticky-bottom-bar-spacer";
 import { ContactWidget } from "@/components/storefront/contact-widget";
 import { MobileBottomNav } from "@/components/storefront/mobile-bottom-nav";
 import { LiveChatWidget } from "@/components/storefront/live-chat-widget";
@@ -32,13 +33,14 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
   ]);
 
   return (
-    <div className="flex min-h-screen flex-col pb-16 lg:pb-0">
+    <div className="flex min-h-screen flex-col">
       <SkipToContentLink />
       <Header categories={tree} settings={settings} />
       <main id="main-content" className="flex-1">
         <PageTransition>{children}</PageTransition>
       </main>
       <Footer categories={tree} settings={settings} socialLinks={links} paymentMethods={methods} />
+      <StickyBottomBarSpacer />
       <SearchOverlay />
       <CartDrawer />
       <CartReminderBanner />

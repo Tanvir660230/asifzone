@@ -9,14 +9,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import * as categoriesApi from "@/lib/api/categories";
+import { useFormPreviewSync } from "@/hooks/use-form-preview-sync";
 
 interface FormProps {
   initialConfig: Record<string, unknown>;
   onSubmit: (config: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
+  onValuesChange?: (values: Record<string, unknown>) => void;
 }
 
-export function ProductCarouselForm({ initialConfig, onSubmit, onCancel }: FormProps) {
+export function ProductCarouselForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
   const { data } = useQuery({ queryKey: ["admin-categories"], queryFn: () => categoriesApi.listCategories() });
   const categories = data?.categories ?? [];
 
@@ -35,6 +37,7 @@ export function ProductCarouselForm({ initialConfig, onSubmit, onCancel }: FormP
     },
   });
   const source = watch("source");
+  useFormPreviewSync(watch, onValuesChange);
 
   return (
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="space-y-4">

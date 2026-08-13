@@ -25,9 +25,9 @@ interface SectionMeta {
 export const SECTION_META: Record<HomepageSectionType, SectionMeta> = {
   HERO: {
     label: "Hero banner",
-    description: "Managed in Banners — this row only controls its position on the page.",
+    description: "Main banners are managed in Banners — edit here to set the fallback text shown when none are active.",
     icon: ImageIcon,
-    editable: false,
+    editable: true,
   },
   TRUST_STRIP: {
     label: "Trust strip",
@@ -37,9 +37,9 @@ export const SECTION_META: Record<HomepageSectionType, SectionMeta> = {
   },
   PERSONALIZED_LEAD: {
     label: "Personalized lead",
-    description: "Shown only to returning visitors with browsing history — no editable content.",
+    description: "Shown only to returning visitors with browsing history — edit the eyebrow and title text.",
     icon: UserCheck,
-    editable: false,
+    editable: true,
   },
   PRODUCT_CAROUSEL: {
     label: "Product carousel",
@@ -61,7 +61,7 @@ export const SECTION_META: Record<HomepageSectionType, SectionMeta> = {
   },
   BRAND_STORY: {
     label: "Brand story",
-    description: "The full-width dark philosophy block.",
+    description: "The full-width dark philosophy block — text and an optional image.",
     icon: BookOpen,
     editable: true,
   },
@@ -73,9 +73,9 @@ export const SECTION_META: Record<HomepageSectionType, SectionMeta> = {
   },
   SMART_RECOMMENDATIONS: {
     label: "Smart recommendations",
-    description: "Trending + recently viewed products — no editable content.",
+    description: "Trending + recently viewed products — edit the title text.",
     icon: Sparkles,
-    editable: false,
+    editable: true,
   },
   PROMO_BANNER: {
     label: "Promo banner",

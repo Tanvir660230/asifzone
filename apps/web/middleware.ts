@@ -25,9 +25,31 @@ async function findActiveRedirect(pathname: string): Promise<ActiveRedirect | nu
   }
 }
 
+/** Browsers/crawlers request this well-known path directly, regardless of the <link rel="icon">
+ * tags generateMetadata renders in layout.tsx — so once an admin uploads a custom favicon, this is
+ * what keeps the literal /favicon.ico URL in sync with it instead of serving the bundled default
+ * forever. (Next's app-router file conventions don't support a route handler at app/favicon.ico —
+ * that path is always treated as the static icon file — so this has to live in middleware instead.)
+ * Falls through to the static app/favicon.ico file whenever no custom favicon is configured, or the
+ * API call fails. */
+async function faviconRedirect(): Promise<NextResponse | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/settings`, { next: { revalidate: REDIRECT_REVALIDATE_SECONDS } });
+    if (!res.ok) return null;
+    const { settings } = (await res.json()) as { settings: { faviconUrl: string | null } };
+    return settings.faviconUrl ? NextResponse.redirect(settings.faviconUrl) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Cheap presence check only — the API independently verifies the JWT signature on every request via requireAdmin/requireCustomer. This just keeps signed-out users off gated pages without a round trip. */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  if (pathname === "/favicon.ico") {
+    return (await faviconRedirect()) ?? NextResponse.next();
+  }
 
   const redirect = await findActiveRedirect(pathname);
   if (redirect) {
@@ -95,5 +117,6 @@ export async function middleware(req: NextRequest) {
 export const config = {
   // Runs on every page request (not just /admin and /account) so admin-managed redirects can
   // apply anywhere on the site — excludes static assets/Next internals, which never have redirects.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // favicon.ico is deliberately included (unlike the others) so faviconRedirect above can intercept it.
+  matcher: ["/((?!_next/static|_next/image).*)"],
 };

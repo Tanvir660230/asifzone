@@ -2,7 +2,7 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { categoryGridConfigSchema, type CategoryGridConfig } from "@clothing-brand/shared";
+import { smartRecommendationsConfigSchema, type SmartRecommendationsConfig } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,26 +15,28 @@ interface FormProps {
   onValuesChange?: (values: Record<string, unknown>) => void;
 }
 
-/** Reused for any section whose only editable field is a heading override (currently just
- * CATEGORY_GRID) — its config shape (`{ heading? }`) matches `categoryGridConfigSchema`. */
-export function HeadingOnlyForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
+export function SmartRecommendationsForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
   const {
     register,
     handleSubmit,
     watch,
     formState: { isSubmitting },
-  } = useForm<CategoryGridConfig>({
-    resolver: zodResolver(categoryGridConfigSchema),
-    defaultValues: initialConfig as Partial<CategoryGridConfig>,
+  } = useForm<SmartRecommendationsConfig>({
+    resolver: zodResolver(smartRecommendationsConfigSchema),
+    defaultValues: initialConfig as Partial<SmartRecommendationsConfig>,
   });
   useFormPreviewSync(watch, onValuesChange);
 
   return (
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="space-y-4">
+      <p className="rounded-lg bg-cream-200 px-3 py-2 text-xs text-ink-600">
+        Shows recently-viewed products plus trending items in the visitor&rsquo;s price range — only the title below is
+        editable, the products themselves are picked automatically.
+      </p>
       <div>
-        <Label htmlFor="heading">Heading (optional)</Label>
-        <p className="mb-1 text-xs text-ink-400">Falls back to &quot;Shop by Category&quot; if left blank.</p>
-        <Input id="heading" {...register("heading")} />
+        <Label htmlFor="title">Title (optional)</Label>
+        <p className="mb-1 text-xs text-ink-400">Falls back to &quot;Trending In Your Budget&quot; if left blank.</p>
+        <Input id="title" {...register("title")} />
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel}>

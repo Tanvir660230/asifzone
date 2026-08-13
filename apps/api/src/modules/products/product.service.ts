@@ -250,8 +250,16 @@ export async function listProducts(query: ProductListQuery) {
   const where = {
     deletedAt: query.trashed ? { not: null } : null,
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+    // Matches by product name OR any variant's SKU — the admin product list and the "Create
+    // order" product picker both advertise "search by name or SKU", so a staff member typing in
+    // a barcode/SKU (which never appears in the name) must still find the exact product.
     ...(query.search
-      ? { name: { contains: query.search, mode: "insensitive" as const } }
+      ? {
+          OR: [
+            { name: { contains: query.search, mode: "insensitive" as const } },
+            { variants: { some: { sku: { contains: query.search, mode: "insensitive" as const } } } },
+          ],
+        }
       : {}),
   };
 

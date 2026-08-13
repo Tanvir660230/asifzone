@@ -17,8 +17,13 @@ import { env } from "../env";
 
 const REVALIDATE_SECONDS = 60;
 
-async function storefrontFetch<T>(path: string, revalidate = REVALIDATE_SECONDS): Promise<T> {
-  const res = await fetch(`${env.apiUrl}${path}`, { next: { revalidate } });
+/** `revalidate: false` opts out of Next's fetch cache entirely (`cache: "no-store"`) — for the
+ * handful of endpoints that already sit behind their own short-lived Redis cache on the API side,
+ * so this second layer only adds staleness (up to `revalidate` seconds) without buying anything;
+ * the homepage route is already `force-dynamic`, so this doesn't change when the page itself
+ * renders, just removes a redundant cache in front of the real one. */
+async function storefrontFetch<T>(path: string, revalidate: number | false = REVALIDATE_SECONDS): Promise<T> {
+  const res = await fetch(`${env.apiUrl}${path}`, revalidate === false ? { cache: "no-store" } : { next: { revalidate } });
   if (!res.ok) throw new Error(`Storefront fetch failed (${res.status}): ${path}`);
   return res.json();
 }
@@ -91,11 +96,11 @@ export function getActiveFlashSale() {
 }
 
 export function getActiveBanners(placement: "HERO_CAROUSEL" | "PROMO_STRIP" = "HERO_CAROUSEL") {
-  return storefrontFetch<{ banners: Banner[] }>(`/api/banners/active?placement=${placement}`, 60);
+  return storefrontFetch<{ banners: Banner[] }>(`/api/banners/active?placement=${placement}`, false);
 }
 
 export function getActiveHomepageSections() {
-  return storefrontFetch<{ sections: HomepageSection[] }>("/api/homepage-sections/active", 60);
+  return storefrontFetch<{ sections: HomepageSection[] }>("/api/homepage-sections/active", false);
 }
 
 export function getActiveHomepageSectionsSafe() {

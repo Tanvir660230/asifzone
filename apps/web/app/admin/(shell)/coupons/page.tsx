@@ -1,26 +1,60 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, RotateCcw, ArchiveX } from "lucide-react";
-import { createCouponSchema, type Coupon, type CreateCouponInput } from "@clothing-brand/shared";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import { Plus, Trash2, RotateCcw, ArchiveX, Pencil, Copy, CopyPlus } from "lucide-react";
+import type { Coupon, CreateCouponInput } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { CouponForm } from "@/components/admin/coupon-form";
 import * as couponsApi from "@/lib/api/admin-coupons";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+
+function statusOf(c: Coupon): { label: string; className: string } {
+  if (!c.isActive) return { label: "Inactive", className: "bg-ink-200 text-ink-700" };
+  const now = Date.now();
+  if (c.startsAt && new Date(c.startsAt).getTime() > now) return { label: "Scheduled", className: "bg-info-100 text-info-700" };
+  if (c.expiresAt && new Date(c.expiresAt).getTime() < now) return { label: "Expired", className: "bg-ink-200 text-ink-700" };
+  if (c.usageLimit !== null && c.usedCount >= c.usageLimit) return { label: "Exhausted", className: "bg-danger-100 text-danger-700" };
+  return { label: "Active", className: "bg-success-100 text-success-700" };
+}
+
+function discountLabel(c: Coupon): string {
+  if (c.type === "FREE_SHIPPING") return "Free shipping";
+  if (c.type === "PERCENTAGE") return `${c.value}%`;
+  return formatPrice(c.value ?? 0);
+}
+
+function targetLabel(c: Coupon): string {
+  if (c.scope === "SPECIFIC_PRODUCTS") return `${c.products.length} product${c.products.length === 1 ? "" : "s"}`;
+  if (c.scope === "SPECIFIC_CATEGORIES") return `${c.categories.length} categor${c.categories.length === 1 ? "y" : "ies"}`;
+  return "All products";
+}
+
+function UsageCell({ used, limit }: { used: number; limit: number | null }) {
+  if (limit === null) return <span className="text-ink-500">{used}</span>;
+  const pct = Math.min(100, Math.round((used / limit) * 100));
+  const barColor = pct >= 100 ? "bg-danger-500" : pct >= 75 ? "bg-brass-500" : "bg-success-500";
+  return (
+    <div className="w-24">
+      <span className="text-xs text-ink-500">
+        {used}/{limit}
+      </span>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-ink-100">
+        <div className={cn("h-full rounded-full", barColor)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+type FormMode = "create" | "edit";
 
 export default function CouponsPage() {
   const queryClient = useQueryClient();
@@ -29,8 +63,11 @@ export default function CouponsPage() {
     queryKey: ["admin-coupons", tab],
     queryFn: () => couponsApi.listCoupons({ trashed: tab === "trash" }),
   });
-  const [showCreate, setShowCreate] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [formMode, setFormMode] = useState<FormMode>("create");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formSeed, setFormSeed] = useState<Coupon | null>(null);
 
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: ["admin-coupons"] });
@@ -38,7 +75,17 @@ export default function CouponsPage() {
 
   const createMutation = useMutation({
     mutationFn: couponsApi.createCoupon,
-    onSuccess: invalidateAll,
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Coupon created");
+    },
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: CreateCouponInput }) => couponsApi.updateCoupon(id, input),
+    onSuccess: () => {
+      invalidateAll();
+      toast.success("Coupon updated");
+    },
   });
   const deleteMutation = useMutation({
     mutationFn: couponsApi.deleteCoupon,
@@ -63,25 +110,39 @@ export default function CouponsPage() {
   });
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<CreateCouponInput>({
-    resolver: zodResolver(createCouponSchema),
-    defaultValues: { type: "PERCENTAGE", isActive: true },
-  });
+  function openCreate() {
+    setFormMode("create");
+    setEditingId(null);
+    setFormSeed(null);
+    setFormOpen(true);
+  }
 
-  async function onSubmit(values: CreateCouponInput) {
-    setError(null);
-    try {
+  function openEdit(coupon: Coupon) {
+    setFormMode("edit");
+    setEditingId(coupon.id);
+    setFormSeed(coupon);
+    setFormOpen(true);
+  }
+
+  function openDuplicate(coupon: Coupon) {
+    setFormMode("create");
+    setEditingId(null);
+    setFormSeed({ ...coupon, code: `${coupon.code}-COPY`, usedCount: 0 });
+    setFormOpen(true);
+  }
+
+  async function handleFormSubmit(values: CreateCouponInput) {
+    if (formMode === "edit" && editingId) {
+      await updateMutation.mutateAsync({ id: editingId, input: values });
+    } else {
       await createMutation.mutateAsync(values);
-      setShowCreate(false);
-      reset();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create coupon");
     }
+    setFormOpen(false);
+  }
+
+  async function handleCopyCode(code: string) {
+    await navigator.clipboard.writeText(code);
+    toast.success(`Copied "${code}"`);
   }
 
   async function handleDelete(coupon: Coupon) {
@@ -104,7 +165,7 @@ export default function CouponsPage() {
         title="Coupons"
         action={
           tab === "active" && (
-            <Button variant="brass" onClick={() => setShowCreate(true)}>
+            <Button variant="brass" onClick={openCreate}>
               <Plus size={16} /> Add coupon
             </Button>
           )
@@ -128,138 +189,119 @@ export default function CouponsPage() {
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
-            <tr>
-              <th className="px-4 py-3">Code</th>
-              <th className="px-4 py-3">Discount</th>
-              <th className="px-4 py-3">Min order</th>
-              <th className="px-4 py-3">Usage</th>
-              <th className="px-4 py-3">Expires</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && <TableSkeleton rows={5} cols={7} />}
-            {!isLoading && data?.items.length === 0 && (
+          <table className="w-full text-sm">
+            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
-                  {tab === "trash" ? (
-                    <span className="flex flex-col items-center gap-2">
-                      <ArchiveX size={24} className="text-ink-300" />
-                      Trash is empty.
-                    </span>
-                  ) : (
-                    "No coupons yet."
-                  )}
-                </td>
+                <th className="px-4 py-3">Code</th>
+                <th className="px-4 py-3">Discount</th>
+                <th className="px-4 py-3">Applies to</th>
+                <th className="px-4 py-3">Usage</th>
+                <th className="px-4 py-3">Expires</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
-            )}
-            {data?.items.map((c) => (
-              <tr key={c.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                <td className="px-4 py-3 font-medium">{c.code}</td>
-                <td className="px-4 py-3">{c.type === "PERCENTAGE" ? `${c.value}%` : formatPrice(c.value)}</td>
-                <td className="px-4 py-3 text-ink-500">{c.minOrderAmount ? formatPrice(c.minOrderAmount) : "—"}</td>
-                <td className="px-4 py-3 text-ink-500">
-                  {c.usedCount}
-                  {c.usageLimit ? ` / ${c.usageLimit}` : ""}
-                </td>
-                <td className="px-4 py-3 text-ink-500">{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}</td>
-                <td className="px-4 py-3">
-                  <Badge className={c.isActive ? "bg-success-100 text-success-700" : ""}>{c.isActive ? "Active" : "Inactive"}</Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex justify-end gap-3">
+            </thead>
+            <tbody>
+              {isLoading && <TableSkeleton rows={5} cols={7} />}
+              {!isLoading && data?.items.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
                     {tab === "trash" ? (
-                      <>
-                        <button
-                          onClick={() => restoreMutation.mutate(c.id)}
-                          className="text-ink-500 hover:text-ink-900"
-                          aria-label="Restore"
-                          title="Restore"
-                        >
-                          <RotateCcw size={16} />
-                        </button>
-                        <button
-                          onClick={() => handlePermanentDelete(c)}
-                          className="text-ink-500 hover:text-danger-600"
-                          aria-label="Delete permanently"
-                          title="Delete permanently"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </>
+                      <span className="flex flex-col items-center gap-2">
+                        <ArchiveX size={24} className="text-ink-300" />
+                        Trash is empty.
+                      </span>
                     ) : (
-                      <button onClick={() => handleDelete(c)} className="text-ink-400 hover:text-danger-600" aria-label="Move to trash" title="Move to trash">
-                        <Trash2 size={16} />
-                      </button>
+                      "No coupons yet."
                     )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  </td>
+                </tr>
+              )}
+              {data?.items.map((c) => {
+                const status = statusOf(c);
+                return (
+                  <tr key={c.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
+                    <td className="px-4 py-3 font-medium">
+                      <button
+                        onClick={() => handleCopyCode(c.code)}
+                        className="inline-flex items-center gap-1.5 hover:text-brass-600"
+                        title="Copy code"
+                      >
+                        {c.code}
+                        <Copy size={12} className="text-ink-300" />
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">{discountLabel(c)}</td>
+                    <td className="px-4 py-3 text-ink-500">{targetLabel(c)}</td>
+                    <td className="px-4 py-3">
+                      <UsageCell used={c.usedCount} limit={c.usageLimit} />
+                    </td>
+                    <td className="px-4 py-3 text-ink-500">{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}</td>
+                    <td className="px-4 py-3">
+                      <Badge className={status.className}>{status.label}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-3">
+                        {tab === "trash" ? (
+                          <>
+                            <button
+                              onClick={() => restoreMutation.mutate(c.id)}
+                              className="text-ink-500 hover:text-ink-900"
+                              aria-label="Restore"
+                              title="Restore"
+                            >
+                              <RotateCcw size={16} />
+                            </button>
+                            <button
+                              onClick={() => handlePermanentDelete(c)}
+                              className="text-ink-500 hover:text-danger-600"
+                              aria-label="Delete permanently"
+                              title="Delete permanently"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => openEdit(c)} className="text-ink-400 hover:text-ink-900" aria-label="Edit" title="Edit">
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              onClick={() => openDuplicate(c)}
+                              className="text-ink-400 hover:text-ink-900"
+                              aria-label="Duplicate"
+                              title="Duplicate"
+                            >
+                              <CopyPlus size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(c)}
+                              className="text-ink-400 hover:text-danger-600"
+                              aria-label="Move to trash"
+                              title="Move to trash"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </HScrollShadow>
       </div>
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Add coupon">
-        {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <Label htmlFor="code">Code</Label>
-            <Input id="code" placeholder="EID2026" {...register("code")} />
-            {errors.code && <p className="mt-1 text-xs text-danger-600">{errors.code.message}</p>}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="type">Type</Label>
-              <Select id="type" {...register("type")}>
-                <option value="PERCENTAGE">Percentage</option>
-                <option value="FIXED">Fixed amount</option>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="value">Value</Label>
-              <Input id="value" type="number" step="0.01" {...register("value", { valueAsNumber: true })} />
-              {errors.value && <p className="mt-1 text-xs text-danger-600">{errors.value.message}</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="minOrderAmount">Min order (optional)</Label>
-              <Input id="minOrderAmount" type="number" step="0.01" {...register("minOrderAmount", { valueAsNumber: true })} />
-            </div>
-            <div>
-              <Label htmlFor="maxDiscountAmount">Max discount cap (optional)</Label>
-              <Input id="maxDiscountAmount" type="number" step="0.01" {...register("maxDiscountAmount", { valueAsNumber: true })} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="usageLimit">Usage limit (optional)</Label>
-              <Input id="usageLimit" type="number" {...register("usageLimit", { valueAsNumber: true })} />
-            </div>
-            <div>
-              <Label htmlFor="expiresAt">Expires (optional)</Label>
-              <Input id="expiresAt" type="date" {...register("expiresAt")} />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="brass" disabled={isSubmitting}>
-              {isSubmitting ? "Saving…" : "Create coupon"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+      <CouponForm
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={formMode === "edit" ? "Edit coupon" : "Add coupon"}
+        submitLabel={formMode === "edit" ? "Save changes" : "Create coupon"}
+        seed={formSeed}
+        onSubmit={handleFormSubmit}
+      />
       {confirmDialog}
     </div>
   );

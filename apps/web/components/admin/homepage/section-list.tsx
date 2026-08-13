@@ -19,8 +19,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Pencil, Trash2 } from "lucide-react";
 import { REPEATABLE_SECTION_TYPES, type HomepageSection } from "@clothing-brand/shared";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { scheduleStatus } from "@/lib/datetime-local";
 import { SECTION_META } from "./section-meta";
 
 interface SectionListProps {
@@ -76,6 +78,7 @@ function SortableRow({ section, onToggle, onEdit, onDelete }: RowProps) {
   const meta = SECTION_META[section.type];
   const Icon = meta.icon;
   const isRepeatable = REPEATABLE_SECTION_TYPES.includes(section.type);
+  const status = scheduleStatus(section);
 
   return (
     <div
@@ -98,7 +101,10 @@ function SortableRow({ section, onToggle, onEdit, onDelete }: RowProps) {
       </button>
       <Icon size={18} className="shrink-0 text-brass-500" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-ink-900">{meta.label}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-ink-900">{meta.label}</p>
+          {status && <Badge className={status.className}>{status.label}</Badge>}
+        </div>
         <p className="truncate text-xs text-ink-500">{meta.description}</p>
       </div>
       <Switch

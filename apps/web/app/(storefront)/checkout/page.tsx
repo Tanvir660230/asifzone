@@ -219,9 +219,13 @@ export default function CheckoutPage() {
       setBestCoupon(null);
       return;
     }
-    getBestCoupon(subtotal)
+    getBestCoupon(
+      subtotal,
+      items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+    )
       .then(({ result }) => setBestCoupon(result))
       .catch(() => setBestCoupon(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, items.length, subtotal, coupon]);
 
   function handleApplySuggestedCoupon() {
@@ -236,7 +240,11 @@ export default function CheckoutPage() {
     setCouponChecking(true);
     setCouponError(null);
     try {
-      const result = await validateCoupon(couponInput.trim(), subtotal);
+      const result = await validateCoupon(
+        couponInput.trim(),
+        subtotal,
+        items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      );
       setCoupon(result);
     } catch (err) {
       setCoupon(null);
@@ -283,7 +291,8 @@ export default function CheckoutPage() {
   const couponDiscount = coupon?.discount ?? 0;
   const bundleDiscount = bundlePreview?.eligible?.discount ?? 0;
   const discount = couponDiscount + bundleDiscount;
-  const total = Math.max(0, subtotal - discount) + shippingFee;
+  const freeShipping = coupon?.freeShipping ?? false;
+  const total = Math.max(0, subtotal - discount) + (freeShipping ? 0 : shippingFee);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
@@ -312,20 +321,29 @@ export default function CheckoutPage() {
 
             <div className={cn("space-y-4 px-5 pb-5", summaryOpen ? "block" : "hidden", "lg:block")}>
               <div className="space-y-2 text-sm">
-                {items.map((item) => (
-                  <div key={item.variantId} className="flex justify-between text-ink-600">
-                    <span>
-                      {item.productName} × {item.quantity}
-                    </span>
-                    <span>{formatPrice(item.price * item.quantity)}</span>
-                  </div>
-                ))}
+                {items.map((item) => {
+                  const isEligible = Boolean(coupon) && coupon!.eligibleProductIds.length > 0 && coupon!.eligibleProductIds.includes(item.productId);
+                  return (
+                    <div key={item.variantId} className="flex justify-between text-ink-600">
+                      <span>
+                        {item.productName} × {item.quantity}
+                        {isEligible && (
+                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success-700">
+                            Coupon
+                          </span>
+                        )}
+                      </span>
+                      <span>{formatPrice(item.price * item.quantity)}</span>
+                    </div>
+                  );
+                })}
               </div>
 
               {bestCoupon && (
                 <div className="flex items-center justify-between gap-2 rounded-lg border border-sale-500/30 bg-sale-50 p-3 text-xs text-ink-800">
                   <span>
-                    Use <span className="font-medium">{bestCoupon.code}</span> — save {formatPrice(bestCoupon.discount)}
+                    Use <span className="font-medium">{bestCoupon.code}</span> —{" "}
+                    {bestCoupon.freeShipping ? "get free shipping" : `save ${formatPrice(bestCoupon.discount)}`}
                   </span>
                   <Button type="button" variant="sale" size="sm" onClick={handleApplySuggestedCoupon}>
                     Apply
@@ -346,7 +364,11 @@ export default function CheckoutPage() {
                   </Button>
                 </div>
                 {couponError && <p className="mt-1 text-xs text-danger-600">{couponError}</p>}
-                {coupon && <p className="mt-1 text-xs text-success-600">Coupon &ldquo;{coupon.code}&rdquo; applied</p>}
+                {coupon && (
+                  <p className="mt-1 text-xs text-success-600">
+                    Coupon &ldquo;{coupon.code}&rdquo; applied{coupon.freeShipping ? " — free shipping" : ""}
+                  </p>
+                )}
                 {bundlePreview?.eligible && (
                   <p className="mt-1 text-xs text-success-600">
                     {bundlePreview.eligible.bundle.name} bundle discount applied
@@ -373,7 +395,14 @@ export default function CheckoutPage() {
                 )}
                 <div className="flex justify-between text-ink-600">
                   <span>Shipping ({shippingDivision === "Dhaka" ? "Dhaka" : "Outside Dhaka"})</span>
-                  <span>{formatPrice(shippingFee)}</span>
+                  {freeShipping ? (
+                    <span>
+                      <span className="mr-1.5 text-ink-400 line-through">{formatPrice(shippingFee)}</span>
+                      <span className="font-medium text-success-600">Free</span>
+                    </span>
+                  ) : (
+                    <span>{formatPrice(shippingFee)}</span>
+                  )}
                 </div>
                 <p className="text-xs text-ink-400">
                   Estimated delivery: {formatDateShort(deliveryEstimate.minDate)} – {formatDateShort(deliveryEstimate.maxDate)}

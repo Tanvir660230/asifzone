@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createBannerSchema, updateBannerSchema, activeBannersQuerySchema } from "@clothing-brand/shared";
+import { createBannerSchema, updateBannerSchema, activeBannersQuerySchema, reorderBannersSchema } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin } from "../../middlewares/require-admin";
 import { imageUpload } from "../uploads/upload.middleware";
@@ -12,5 +12,6 @@ bannerRouter.get("/active", validate(activeBannersQuerySchema, "query"), bannerC
 bannerRouter.get("/", requireAdmin, bannerController.list);
 bannerRouter.post("/upload-image", requireAdmin, imageUpload.single("image"), bannerController.uploadImage);
 bannerRouter.post("/", requireAdmin, validate(createBannerSchema), bannerController.create);
+bannerRouter.patch("/reorder", requireAdmin, validate(reorderBannersSchema), bannerController.reorder);
 bannerRouter.patch("/:id", requireAdmin, validate(updateBannerSchema), bannerController.update);
 bannerRouter.delete("/:id", requireAdmin, bannerController.remove);

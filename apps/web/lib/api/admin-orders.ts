@@ -1,5 +1,6 @@
 import type {
   Order,
+  AdminOrderListItem,
   OrderStatus,
   PaymentStatus,
   PaymentMethod,
@@ -34,6 +35,7 @@ export interface OrderStats {
   todayRevenue: number;
   pending: number;
   needsAttention: number;
+  statusCounts: Record<OrderStatus, number>;
 }
 
 function buildOrderListQuery(params: AdminOrderListParams) {
@@ -58,7 +60,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
 }
 
 export function listOrders(params: AdminOrderListParams = {}) {
-  return apiFetch<PaginatedResult<Order>>(`/api/orders?${buildOrderListQuery(params).toString()}`);
+  return apiFetch<PaginatedResult<AdminOrderListItem>>(`/api/orders?${buildOrderListQuery(params).toString()}`);
 }
 
 export function getOrderStats() {

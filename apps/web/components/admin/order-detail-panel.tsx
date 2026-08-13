@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Printer, Truck, Trash2, RotateCcw } from "lucide-react";
+import { Printer, Truck, Trash2, RotateCcw, Package } from "lucide-react";
 import type { OrderStatus, UpdateOrderDetailsInput } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -17,6 +17,7 @@ import { toast } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import { formatPrice, courierStatusBadgeClass } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -421,8 +422,30 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               {order.items.map((item) => (
                 <tr key={item.id} className="border-t border-ink-100">
                   <td className="py-2">
-                    {item.productNameSnapshot}
-                    <span className="text-ink-400"> ({item.sizeSnapshot}/{item.colorSnapshot})</span>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-ink-100 bg-ink-50">
+                        {item.live?.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={resolveImageUrl(item.live.imageUrl)} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <Package size={14} className="text-ink-300" />
+                        )}
+                      </span>
+                      <div>
+                        {item.live?.productSlug ? (
+                          <Link
+                            href={`/product/${item.live.productSlug}`}
+                            target="_blank"
+                            className="font-medium text-ink-900 transition-colors hover:text-info-600 hover:underline"
+                          >
+                            {item.productNameSnapshot}
+                          </Link>
+                        ) : (
+                          item.productNameSnapshot
+                        )}
+                        <span className="text-ink-400"> ({item.sizeSnapshot}/{item.colorSnapshot})</span>
+                      </div>
+                    </div>
                   </td>
                   <td className="py-2 text-ink-500">{item.skuSnapshot}</td>
                   <td className="py-2">{item.quantity}</td>

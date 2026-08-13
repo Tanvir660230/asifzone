@@ -297,6 +297,28 @@ export interface Order {
   updatedAt: string;
 }
 
+/** What the admin orders list table shows in its Product column — the first line item plus how
+ * many more, so the table can name/link the product without paying for a full items+images join
+ * on every row. `productId`/`productSlug`/`imageUrl` are null when the underlying variant or
+ * product no longer exists (e.g. deleted since the order was placed). */
+export interface OrderListItemSummary {
+  totalItems: number;
+  /** Null only if the order somehow has zero line items. */
+  firstItem: {
+    name: string;
+    size: string;
+    color: string;
+    quantity: number;
+    productId: string | null;
+    productSlug: string | null;
+    imageUrl: string | null;
+  } | null;
+}
+
+export interface AdminOrderListItem extends Order {
+  itemsSummary: OrderListItemSummary;
+}
+
 export interface FlashSaleItem {
   id: string;
   flashSaleId: string;
@@ -319,16 +341,38 @@ export interface FlashSale {
   updatedAt: string;
 }
 
+export interface CouponProduct {
+  id: string;
+  couponId: string;
+  productId: string;
+  product?: Product;
+}
+
+export interface CouponCategory {
+  id: string;
+  couponId: string;
+  categoryId: string;
+  category?: Category;
+}
+
 export interface Coupon {
   id: string;
   code: string;
-  type: "PERCENTAGE" | "FIXED";
-  value: string;
+  type: "PERCENTAGE" | "FIXED" | "FREE_SHIPPING";
+  value: string | null;
+  scope: "ALL_PRODUCTS" | "SPECIFIC_PRODUCTS" | "SPECIFIC_CATEGORIES";
+  products: CouponProduct[];
+  categories: CouponCategory[];
   minOrderAmount: string | null;
   maxDiscountAmount: string | null;
+  minQuantity: number | null;
   usageLimit: number | null;
   usedCount: number;
+  perCustomerLimit: number | null;
+  firstOrderOnly: boolean;
+  startsAt: string | null;
   expiresAt: string | null;
+  description: string | null;
   isActive: boolean;
   deletedAt: string | null;
   createdAt: string;
@@ -635,6 +679,8 @@ export interface HomepageSection {
   sortOrder: number;
   isActive: boolean;
   config: Record<string, unknown>;
+  startsAt: string | null;
+  endsAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -26,8 +26,9 @@ import {
   Plus,
   ChevronDown,
   SearchX,
+  Package,
 } from "lucide-react";
-import type { OrderStatus, PaymentStatus, PaymentMethod, BdDivision } from "@clothing-brand/shared";
+import type { OrderStatus, PaymentStatus, PaymentMethod, BdDivision, OrderListItemSummary } from "@clothing-brand/shared";
 import { BD_DIVISIONS, BD_DISTRICTS_BY_DIVISION, COURIER_DELIVERY_STATUSES } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -52,6 +53,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import type { BulkCourierBookResult, AdminOrderListParams } from "@/lib/api/admin-orders";
 import { formatPrice, courierStatusBadgeClass } from "@/lib/format";
+import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 
@@ -154,6 +156,55 @@ function SortableHeader({
   );
 }
 
+/** "Which product is this order for" at a glance — the first line item's thumbnail/name/variant,
+ * plus a "+N more" count when the order has other items. Clicking goes straight to the live
+ * storefront product page (the actual product, not its admin edit form) in a new tab — to see the
+ * order itself, click the order number or the row's Eye icon instead. Plain (non-clickable) text
+ * when the underlying variant/product no longer exists. */
+function ProductCell({ summary }: { summary: OrderListItemSummary }) {
+  if (!summary.firstItem) return <span className="text-xs text-ink-400">—</span>;
+
+  const { name, size, color, imageUrl, productSlug } = summary.firstItem;
+  const extra = summary.totalItems - 1;
+  const variant = [size, color].filter(Boolean).join(" / ");
+  const subtitle = extra > 0 ? `${variant ? `${variant} · ` : ""}+${extra} more item${extra > 1 ? "s" : ""}` : variant;
+
+  const thumb = (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-ink-100 bg-ink-50">
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={resolveImageUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <Package size={14} className="text-ink-300" />
+      )}
+    </span>
+  );
+  const label = (
+    <div className="min-w-0">
+      <div className="max-w-[170px] truncate text-ink-800 transition-colors group-hover/product:text-info-600 group-hover/product:underline">
+        {name}
+      </div>
+      {subtitle && <div className="max-w-[170px] truncate text-xs text-ink-400">{subtitle}</div>}
+    </div>
+  );
+
+  if (!productSlug) {
+    return (
+      <div className="flex items-center gap-2.5 opacity-70" title={`${name} — product no longer available`}>
+        {thumb}
+        {label}
+      </div>
+    );
+  }
+
+  return (
+    <Link href={`/product/${productSlug}`} target="_blank" className="group/product flex items-center gap-2.5" title={`View ${name}`}>
+      {thumb}
+      {label}
+    </Link>
+  );
+}
+
 export default function OrdersPage() {
   const [tab, setTab] = useState<"active" | "trash">("active");
   const [search, setSearch] = useState("");
@@ -243,6 +294,7 @@ export default function OrdersPage() {
     queryKey: ["admin-order-stats"],
     queryFn: adminOrdersApi.getOrderStats,
   });
+  const statusTotal = stats && Object.values(stats.statusCounts).reduce((sum, n) => sum + n, 0);
 
   // Hidden (not shown as an error toast) whenever Steadfast isn't configured for this store —
   // getSteadfastBalance throws in that case, and a missing balance tile is a perfectly normal state.
@@ -528,7 +580,7 @@ export default function OrdersPage() {
           actions stay reachable while scrolling — the table below has its own bounded internal
           scroll (see max-h-[65vh] further down) so its header can stick correctly too, without the
           two sticky regions having to know each other's height. */}
-      <div className="sticky top-14 z-10 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
+      <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
         {isOwner && (
           <div className="flex items-center gap-1">
             {(["active", "trash"] as const).map((t) => (
@@ -540,7 +592,7 @@ export default function OrdersPage() {
                   setSelected(new Set());
                 }}
                 className={cn(
-                  "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors",
+                  "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors duration-150 ease-smooth",
                   tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
                 )}
               >
@@ -551,7 +603,7 @@ export default function OrdersPage() {
         )}
 
         {tab === "active" && (
-          <div className="space-y-2.5 rounded-lg border border-ink-100 bg-cream-50 p-3">
+          <div className="space-y-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Quick</span>
               {QUICK_FILTERS.map((f) => (
@@ -569,7 +621,7 @@ export default function OrdersPage() {
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
               <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
               <button
                 onClick={() => {
@@ -578,37 +630,56 @@ export default function OrdersPage() {
                   setPage(1);
                 }}
                 className={cn(
-                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ease-smooth",
+                  "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
                   !status
                     ? "border-ink-900 bg-ink-900 text-cream-50"
                     : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
                 )}
               >
                 All
+                {statusTotal !== undefined && (
+                  <span
+                    className={cn(
+                      "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
+                      !status ? "bg-cream-50/25 text-cream-50" : "bg-ink-900/10 text-ink-600",
+                    )}
+                  >
+                    {statusTotal}
+                  </span>
+                )}
               </button>
-              {STATUS_OPTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => {
-                    setStatus((prev) => (prev === s ? "" : s));
-                    setQuickFilter(null);
-                    setPage(1);
-                  }}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150 ease-smooth",
-                    STATUS_COLORS[s],
-                    status === s ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-55 hover:opacity-100",
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
+              {STATUS_OPTIONS.map((s) => {
+                const count = stats?.statusCounts[s];
+                const active = status === s;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => {
+                      setStatus((prev) => (prev === s ? "" : s));
+                      setQuickFilter(null);
+                      setPage(1);
+                    }}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth",
+                      STATUS_COLORS[s],
+                      active ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-60 hover:opacity-100",
+                    )}
+                  >
+                    {s}
+                    {typeof count === "number" && (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-900/10 px-1 text-[10px] font-semibold tabular-nums">
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2.5">
             <div className="relative w-full sm:w-72">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
               <Input
@@ -661,7 +732,7 @@ export default function OrdersPage() {
         </div>
 
         {showMoreFilters && (
-          <div className="grid grid-cols-1 gap-3 rounded-lg border border-ink-100 bg-cream-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-500">Courier</label>
               <Select
@@ -768,7 +839,7 @@ export default function OrdersPage() {
         )}
 
         {selected.size > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-200 bg-cream-50 px-3.5 py-2.5 text-sm shadow-float animate-fade-in">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink-200 bg-cream-50 px-3.5 py-2.5 text-sm shadow-float animate-fade-in">
             <span className="flex items-center gap-1.5 font-medium text-ink-800">
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-900 px-1.5 text-xs font-semibold text-cream-50">
                 {selected.size}
@@ -832,53 +903,56 @@ export default function OrdersPage() {
         )}
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+      <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm">
         <HScrollShadow className="max-h-[65vh] overflow-x-auto overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <thead className="sticky top-0 z-10 bg-ink-50/95 text-left text-xs uppercase tracking-wide text-ink-500 backdrop-blur-sm">
             <tr>
-              <th className="w-10 px-4 py-2.5">
+              <th className="w-10 px-4 py-3">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="sticky left-0 z-20 bg-ink-50 px-4 py-2.5">
+              <th className="sticky left-0 z-20 bg-ink-50 px-4 py-3">
                 <SortableHeader column="orderNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Order
                 </SortableHeader>
               </th>
-              <th className="px-4 py-2.5">
+              <th className="px-4 py-3">Product</th>
+              <th className="px-4 py-3">
                 <SortableHeader column="customerName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Customer
                 </SortableHeader>
               </th>
-              <th className="px-4 py-2.5">
+              <th className="px-4 py-3">
                 <SortableHeader column="paymentStatus" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Payment
                 </SortableHeader>
               </th>
-              <th className="px-4 py-2.5">
-                <SortableHeader column="total" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
-                  Total
-                </SortableHeader>
+              <th className="px-4 py-3">
+                <div className="flex justify-end">
+                  <SortableHeader column="total" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                    Total
+                  </SortableHeader>
+                </div>
               </th>
-              <th className="px-4 py-2.5">
+              <th className="px-4 py-3">
                 <SortableHeader column="status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Status
                 </SortableHeader>
               </th>
-              <th className="px-4 py-2.5">Courier</th>
-              <th className="hidden px-4 py-2.5 sm:table-cell">
+              <th className="px-4 py-3">Courier</th>
+              <th className="hidden px-4 py-3 sm:table-cell">
                 <SortableHeader column="createdAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Placed
                 </SortableHeader>
               </th>
-              <th className="px-4 py-2.5 text-right">Actions</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {isLoading && <TableSkeleton rows={6} cols={9} />}
+            {isLoading && <TableSkeleton rows={6} cols={10} />}
             {!isLoading && items.length === 0 && (
               <tr>
-                <td colSpan={9} className="p-0">
+                <td colSpan={10} className="p-0">
                   {tab === "trash" ? (
                     <EmptyState icon={ArchiveX} title="Trash is empty" description="Deleted orders will appear here." />
                   ) : hasActiveFilters ? (
@@ -917,10 +991,10 @@ export default function OrdersPage() {
                   STATUS_BORDER_COLORS[order.status],
                 )}
               >
-                <td className="px-4 py-3">
+                <td className="px-4 py-3.5">
                   <Checkbox checked={selected.has(order.id)} onChange={() => toggleOne(order.id)} aria-label={`Select ${order.orderNumber}`} />
                 </td>
-                <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3 group-hover:bg-ink-50">
+                <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3.5 group-hover:bg-ink-50">
                   <button
                     onClick={() => setDrawerOrderId(order.id)}
                     className="font-medium text-ink-900 transition-colors hover:text-info-600 hover:underline"
@@ -928,23 +1002,41 @@ export default function OrdersPage() {
                     {order.orderNumber}
                   </button>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3.5">
+                  <ProductCell summary={order.itemsSummary} />
+                </td>
+                <td className="px-4 py-3.5">
                   <div className="flex items-center gap-3">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
                       {initials(order.customerName)}
                     </span>
-                    <div>
-                      <div>{order.customerName}</div>
+                    <div className="min-w-0">
+                      <div className="truncate">{order.customerName}</div>
                       <div className="text-xs text-ink-400">{order.customerPhone}</div>
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3">
-                  {order.paymentMethod === "COD" ? "COD" : "Online"}
-                  {order.paymentStatus === "PAID" && <span className="ml-1 text-xs text-success-600">(paid)</span>}
+                <td className="px-4 py-3.5">
+                  <div className="flex flex-col items-start gap-1">
+                    <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
+                      {order.paymentMethod === "COD" ? "COD" : "Online"}
+                    </Badge>
+                    <span
+                      className={cn(
+                        "text-[11px] font-medium",
+                        order.paymentStatus === "PAID"
+                          ? "text-success-600"
+                          : order.paymentStatus === "FAILED"
+                            ? "text-danger-600"
+                            : "text-warning-600",
+                      )}
+                    >
+                      {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+                    </span>
+                  </div>
                 </td>
-                <td className="px-4 py-3 font-medium text-ink-900">{formatPrice(order.total)}</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
+                <td className="px-4 py-3.5">
                   {order.deletedAt ? (
                     <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
                   ) : (
@@ -974,7 +1066,7 @@ export default function OrdersPage() {
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3.5">
                   {order.courierConsignmentId ? (
                     <div className="flex items-center gap-1.5">
                       <span
@@ -1002,13 +1094,13 @@ export default function OrdersPage() {
                     <span className="text-xs text-ink-400">Not booked</span>
                   )}
                 </td>
-                <td className="hidden px-4 py-3 text-ink-500 sm:table-cell">
+                <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
                   <div>{new Date(order.createdAt).toLocaleDateString()}</div>
                   <div className="text-xs text-ink-400">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3.5">
                   <div className="flex justify-end gap-3">
                     <button
                       onClick={() => setDrawerOrderId(order.id)}

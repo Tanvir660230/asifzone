@@ -73,7 +73,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
   // Prefer a logo made for dark backgrounds; fall back to the light-background one (better than
   // nothing) and finally to a plain text wordmark if no logo has been uploaded at all.
   const darkBgLogoUrl = settings.logoOnDarkUrl ?? settings.logoUrl;
-  const wordmark = <span className="font-display text-lg text-cream-50">{settings.storeName.toUpperCase()}</span>;
+  const wordmark = <span className="font-display text-sm text-cream-50">{settings.storeName.toUpperCase()}</span>;
 
   return (
     // A hard cut into solid black, not a gradient melt — the page content ends and the footer
@@ -84,10 +84,10 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         {/* Four content categories: who we are (+ how to reach us), what we sell, how to get
             help, and company/legal — each a clearly labeled, visually bounded group rather than
             one long undifferentiated link dump. */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 items-start gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             {darkBgLogoUrl ? (
-              <StoreLogoImage src={darkBgLogoUrl} alt={settings.storeName} className="h-8 w-32 object-contain" fallback={wordmark} />
+              <StoreLogoImage src={darkBgLogoUrl} alt={settings.storeName} className="h-5 w-20 object-contain object-left" fallback={wordmark} />
             ) : (
               wordmark
             )}
@@ -228,8 +228,8 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             <StoreLogoImage
               src={darkBgLogoUrl}
               alt={settings.storeName}
-              className="h-11 w-40 object-contain sm:h-14 sm:w-48"
-              fallback={<span className="font-display text-3xl tracking-wide text-cream-50 sm:text-4xl">{settings.storeName}</span>}
+              className="h-16 w-64 object-contain sm:h-24 sm:w-96"
+              fallback={<span className="font-display text-4xl tracking-wide text-cream-50 sm:text-5xl">{settings.storeName}</span>}
             />
           ) : (
             <span className="font-display text-3xl tracking-wide text-cream-50 sm:text-4xl">{settings.storeName}</span>

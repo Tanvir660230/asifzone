@@ -1,5 +1,5 @@
 import { z, type ZodTypeAny } from "zod";
-import { nullableString, nullableUrl } from "./common";
+import { nullableDate, nullableString, nullableUrl } from "./common";
 
 export const homepageSectionTypeEnum = z.enum([
   "HERO",
@@ -44,6 +44,24 @@ export const brandStoryConfigSchema = z.object({
   bodyText: nullableString(1000),
   ctaLabel: nullableString(60),
   ctaHref: nullableString(300),
+  imageUrl: nullableUrl(),
+});
+
+export const heroConfigSchema = z.object({
+  headline: nullableString(200),
+  subtext: nullableString(300),
+  ctaLabel: nullableString(60),
+  ctaHref: nullableString(300),
+});
+
+export const personalizedLeadConfigSchema = z.object({
+  eyebrow: nullableString(60),
+  // `{category}` is replaced with the visitor's most-recently-viewed category name at render time.
+  titleTemplate: nullableString(200),
+});
+
+export const smartRecommendationsConfigSchema = z.object({
+  title: nullableString(200),
 });
 
 export const categoryGridConfigSchema = z.object({
@@ -81,15 +99,15 @@ export const promoBannerConfigSchema = z.object({
  * and the backend service validate against, since a real discriminated union doesn't fit a flat
  * Prisma row where `type` and `config` are separate columns. */
 export const configSchemaByType: Record<HomepageSectionType, ZodTypeAny> = {
-  HERO: emptyConfigSchema,
+  HERO: heroConfigSchema,
   TRUST_STRIP: trustStripConfigSchema,
-  PERSONALIZED_LEAD: emptyConfigSchema,
+  PERSONALIZED_LEAD: personalizedLeadConfigSchema,
   PRODUCT_CAROUSEL: productCarouselConfigSchema,
   FLASH_SALE: emptyConfigSchema,
   CATEGORY_GRID: categoryGridConfigSchema,
   BRAND_STORY: brandStoryConfigSchema,
   VALUES_GRID: valuesGridConfigSchema,
-  SMART_RECOMMENDATIONS: emptyConfigSchema,
+  SMART_RECOMMENDATIONS: smartRecommendationsConfigSchema,
   PROMO_BANNER: promoBannerConfigSchema,
 };
 
@@ -97,6 +115,8 @@ export const createHomepageSectionSchema = z.object({
   type: homepageSectionTypeEnum,
   config: z.unknown().optional(),
   isActive: z.boolean().default(true),
+  startsAt: nullableDate(),
+  endsAt: nullableDate(),
 });
 
 /** No `type` here — a section's type never changes after creation, and PATCH targets an existing
@@ -104,6 +124,8 @@ export const createHomepageSectionSchema = z.object({
 export const updateHomepageSectionSchema = z.object({
   config: z.unknown().optional(),
   isActive: z.boolean().optional(),
+  startsAt: nullableDate(),
+  endsAt: nullableDate(),
 });
 
 export const reorderHomepageSectionsSchema = z.object({
@@ -119,3 +141,6 @@ export type BrandStoryConfig = z.infer<typeof brandStoryConfigSchema>;
 export type CategoryGridConfig = z.infer<typeof categoryGridConfigSchema>;
 export type ProductCarouselConfig = z.infer<typeof productCarouselConfigSchema>;
 export type PromoBannerConfig = z.infer<typeof promoBannerConfigSchema>;
+export type HeroConfig = z.infer<typeof heroConfigSchema>;
+export type PersonalizedLeadConfig = z.infer<typeof personalizedLeadConfigSchema>;
+export type SmartRecommendationsConfig = z.infer<typeof smartRecommendationsConfigSchema>;

@@ -11,10 +11,17 @@ function flattenCategories(tree: CategoryTreeNode[]): CategoryTreeNode[] {
   return tree.flatMap((node) => [node, ...flattenCategories(node.children)]);
 }
 
+interface PersonalizedLeadSectionProps {
+  categoryTree: CategoryTreeNode[];
+  eyebrow?: string | null;
+  /** `{category}` is replaced with the visitor's most-recently-viewed category name. */
+  titleTemplate?: string | null;
+}
+
 /** The very first personalized thing a returning visitor sees, right after the hero — keyed to
  * whichever category they looked at most recently. Renders nothing for a first-time visitor (no
  * "recently viewed" signal yet), so the homepage stays generic until there's real signal to act on. */
-export function PersonalizedLeadSection({ categoryTree }: { categoryTree: CategoryTreeNode[] }) {
+export function PersonalizedLeadSection({ categoryTree, eyebrow, titleTemplate }: PersonalizedLeadSectionProps) {
   const [category, setCategory] = useState<CategoryTreeNode | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
 
@@ -33,5 +40,7 @@ export function PersonalizedLeadSection({ categoryTree }: { categoryTree: Catego
 
   if (!category || products.length === 0) return null;
 
-  return <ProductCarousel eyebrow="Welcome back" title={`More ${category.name}, picked for you`} products={products} />;
+  const title = (titleTemplate || "More {category}, picked for you").replace("{category}", category.name);
+
+  return <ProductCarousel eyebrow={eyebrow || "Welcome back"} title={title} products={products} />;
 }

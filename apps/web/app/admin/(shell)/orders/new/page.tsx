@@ -215,7 +215,11 @@ export default function NewOrderPage() {
     setCouponChecking(true);
     setCouponError(null);
     try {
-      const result = await validateCoupon(couponInput.trim(), subtotal);
+      const result = await validateCoupon(
+        couponInput.trim(),
+        subtotal,
+        items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      );
       setCoupon(result);
     } catch (err) {
       setCoupon(null);

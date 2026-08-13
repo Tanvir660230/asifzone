@@ -7,7 +7,7 @@ import { getBudgetRange } from "@/lib/recently-viewed";
 import { ProductCarousel } from "./product-carousel";
 import { RecentlyViewedCarousel } from "./recently-viewed-carousel";
 
-export function SmartRecommendations() {
+export function SmartRecommendations({ title }: { title?: string | null }) {
   const [trendingInBudget, setTrendingInBudget] = useState<Product[]>([]);
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export function SmartRecommendations() {
     <>
       <RecentlyViewedCarousel />
       {trendingInBudget.length > 0 && (
-        <ProductCarousel title="Trending In Your Budget" products={trendingInBudget} />
+        <ProductCarousel title={title || "Trending In Your Budget"} products={trendingInBudget} />
       )}
     </>
   );

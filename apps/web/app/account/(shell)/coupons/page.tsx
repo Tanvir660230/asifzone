@@ -3,8 +3,26 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Copy, Check } from "lucide-react";
+import type { Coupon } from "@clothing-brand/shared";
 import { listActiveCoupons } from "@/lib/api/coupons";
 import { formatPrice } from "@/lib/format";
+
+function discountLine(coupon: Coupon): string {
+  if (coupon.type === "FREE_SHIPPING") return "Free shipping";
+  return coupon.type === "PERCENTAGE" ? `${coupon.value}% off` : `${formatPrice(coupon.value ?? 0)} off`;
+}
+
+function targetLine(coupon: Coupon): string | null {
+  if (coupon.scope === "SPECIFIC_PRODUCTS") {
+    const names = coupon.products.map((p) => p.product?.name).filter(Boolean);
+    return names.length ? `On: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}` : null;
+  }
+  if (coupon.scope === "SPECIFIC_CATEGORIES") {
+    const names = coupon.categories.map((c) => c.category?.name).filter(Boolean);
+    return names.length ? `On: ${names.join(", ")}` : null;
+  }
+  return null;
+}
 
 export default function AccountCouponsPage() {
   const { data, isLoading } = useQuery({ queryKey: ["active-coupons"], queryFn: () => listActiveCoupons() });
@@ -42,9 +60,10 @@ export default function AccountCouponsPage() {
             <div>
               <p className="font-display text-lg text-ink-900">{coupon.code}</p>
               <p className="text-sm text-ink-600">
-                {coupon.type === "PERCENTAGE" ? `${coupon.value}% off` : `${formatPrice(coupon.value)} off`}
+                {discountLine(coupon)}
                 {coupon.minOrderAmount ? ` orders over ${formatPrice(coupon.minOrderAmount)}` : ""}
               </p>
+              {targetLine(coupon) && <p className="text-xs text-ink-500">{targetLine(coupon)}</p>}
               {coupon.expiresAt && (
                 <p className="text-xs text-ink-400">Expires {new Date(coupon.expiresAt).toLocaleDateString()}</p>
               )}

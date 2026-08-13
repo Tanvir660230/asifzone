@@ -49,6 +49,13 @@ enum PaymentStatus {
 enum CouponType {
   PERCENTAGE
   FIXED
+  FREE_SHIPPING
+}
+
+enum CouponScope {
+  ALL_PRODUCTS
+  SPECIFIC_PRODUCTS
+  SPECIFIC_CATEGORIES
 }
 
 enum ReturnRequestStatus {
@@ -191,6 +198,7 @@ model Category {
   products          Product[]
   bundleAnchors     Bundle[]           @relation("BundleAnchor")
   bundleSuggestions BundleSuggestion[] @relation("BundleSuggestionCategory")
+  couponCategories  CouponCategory[]
   deletedAt         DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
@@ -250,6 +258,7 @@ model Product {
   variants          ProductVariant[]
   images            ProductImage[]
   flashSaleItems    FlashSaleItem[]
+  couponProducts    CouponProduct[]
   wishlistItems     WishlistItem[]
   viewLogs          ProductViewLog[]
   reviews           ProductReview[]
@@ -518,22 +527,61 @@ model Address {
 }
 
 model Coupon {
-  id                String     @id @default(cuid())
-  code              String     @unique
+  id                String           @id @default(cuid())
+  code              String           @unique
   type              CouponType
-  value             Decimal    @db.Decimal(10, 2)
-  minOrderAmount    Decimal?   @db.Decimal(10, 2)
-  maxDiscountAmount Decimal?   @db.Decimal(10, 2)
+  /// Nullable because FREE_SHIPPING coupons have no amount/percentage of their own.
+  value             Decimal?         @db.Decimal(10, 2)
+  scope             CouponScope      @default(ALL_PRODUCTS)
+  minOrderAmount    Decimal?         @db.Decimal(10, 2)
+  maxDiscountAmount Decimal?         @db.Decimal(10, 2)
+  /// Minimum combined quantity of eligible items (all items, if scope is ALL_PRODUCTS) required to redeem.
+  minQuantity       Int?
   usageLimit        Int?
-  usedCount         Int        @default(0)
+  usedCount         Int              @default(0)
+  /// Caps how many times a single customer (guest or account) may redeem this coupon, counted
+  /// against Order.customerId — every order, guest included, resolves to a real Customer row.
+  perCustomerLimit  Int?
+  /// Restricts redemption to a customer's very first order.
+  firstOrderOnly    Boolean          @default(false)
+  /// Optional scheduled activation, paired with expiresAt for a redemption window.
+  startsAt          DateTime?
   expiresAt         DateTime?
-  isActive          Boolean    @default(true)
+  isActive          Boolean          @default(true)
+  /// Admin-only internal note — never shown to customers.
+  description       String?
+  products          CouponProduct[]
+  categories        CouponCategory[]
   orders            Order[]
   deletedAt         DateTime?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([deletedAt])
+}
+
+/// Links a coupon to one of the specific products it discounts, when scope is SPECIFIC_PRODUCTS.
+model CouponProduct {
+  id        String  @id @default(cuid())
+  couponId  String
+  coupon    Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, productId])
+  @@index([productId])
+}
+
+/// Links a coupon to one of the specific categories it discounts, when scope is SPECIFIC_CATEGORIES.
+model CouponCategory {
+  id         String   @id @default(cuid())
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, categoryId])
+  @@index([categoryId])
 }
 
 /// A category-driven cross-sell rule: buying from `anchorCategory` (e.g. Panjabi) unlocks a
@@ -805,6 +853,8 @@ model HomepageSection {
   sortOrder Int                 @default(0)
   isActive  Boolean             @default(true)
   config    Json                @default("{}")
+  startsAt  DateTime?
+  endsAt    DateTime?
   createdAt DateTime            @default(now())
   updatedAt DateTime            @updatedAt
 
@@ -1064,19 +1114,19 @@ model Campaign {
 }
 
 model CampaignRecipient {
-  id         String                  @id @default(cuid())
-  campaignId String
-  campaign   Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  customerId String
-  customer   Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  status     CampaignRecipientStatus @default(PENDING)
-  sentAt     DateTime?
-  error      String?
+  id           String                  @id @default(cuid())
+  campaignId   String
+  campaign     Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId   String
+  customer     Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  status       CampaignRecipientStatus @default(PENDING)
+  sentAt       DateTime?
+  error        String?
   /// The actual per-recipient text sent, after {{variable}} substitution (see
   /// customer-sms-templates.ts) — null for real Campaign sends, whose body has no per-customer
   /// variables yet. Falls back to campaign.body when absent (see getCustomerDetailAdmin's smsHistory).
   renderedBody String?
-  createdAt  DateTime                @default(now())
+  createdAt    DateTime                @default(now())
 
   @@unique([campaignId, customerId])
   @@index([customerId])

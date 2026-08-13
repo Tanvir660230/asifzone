@@ -39,6 +39,18 @@ export async function deleteBanner(id: string) {
   await invalidateCache();
 }
 
+export async function reorderBanners(ids: string[]) {
+  const banners = await prisma.banner.findMany({ select: { id: true } });
+  const existingIds = new Set(banners.map((b) => b.id));
+  if (ids.length !== existingIds.size || ids.some((id) => !existingIds.has(id))) {
+    throw AppError.badRequest("ids must match the existing banners exactly");
+  }
+
+  await prisma.$transaction(ids.map((id, sortOrder) => prisma.banner.update({ where: { id }, data: { sortOrder } })));
+  await invalidateCache();
+  return listBanners();
+}
+
 /** Public homepage feed: active banners for a placement, scoped to any schedule window set on them. */
 export async function getActiveBanners(placement: "HERO_CAROUSEL" | "PROMO_STRIP") {
   const cacheKey = `${CACHE_PREFIX}${placement}`;

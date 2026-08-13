@@ -27,7 +27,9 @@ export async function getActiveFlashInfoByProduct(productIds: string[]): Promise
       flashSaleId: item.flashSaleId,
       flashSaleName: item.flashSale.name,
       endsAt: item.flashSale.endsAt,
-      discountType: item.discountType,
+      // FlashSaleItem.discountType shares its Prisma enum with Coupon.type (which also allows
+      // FREE_SHIPPING), but addFlashSaleItemSchema restricts flash-sale items to PERCENTAGE/FIXED only.
+      discountType: item.discountType as "PERCENTAGE" | "FIXED",
       discountValue: Number(item.discountValue),
     });
   }

@@ -26,3 +26,7 @@ export function updateBanner(id: string, input: UpdateBannerInput) {
 export function deleteBanner(id: string) {
   return apiFetch<void>(`/api/banners/${id}`, { method: "DELETE" });
 }
+
+export function reorderBanners(ids: string[]) {
+  return apiFetch<{ banners: Banner[] }>("/api/banners/reorder", { method: "PATCH", body: { ids } });
+}
