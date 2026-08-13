@@ -263,8 +263,8 @@ export default function CustomersPage() {
         )}
       </div>
 
-      <div className="sticky top-14 z-10 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
-        <div className="space-y-2.5 rounded-lg border border-ink-100 bg-cream-50 p-3">
+      <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
+        <div className="space-y-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Tag</span>
             <button
@@ -273,7 +273,7 @@ export default function CustomersPage() {
                 setPage(1);
               }}
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ease-smooth",
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
                 !tag
                   ? "border-ink-900 bg-ink-900 text-cream-50"
                   : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
@@ -292,7 +292,7 @@ export default function CustomersPage() {
                     setPage(1);
                   }}
                   className={cn(
-                    "flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150 ease-smooth",
+                    "flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth",
                     meta.className,
                     tag === t ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-55 hover:opacity-100",
                   )}
@@ -302,7 +302,7 @@ export default function CustomersPage() {
               );
             })}
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
             <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Quick</span>
             {QUICK_FILTERS.map((f) => (
               <button
@@ -321,8 +321,8 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2.5">
             <div className="relative w-full sm:w-72">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
               <Input
@@ -375,7 +375,7 @@ export default function CustomersPage() {
         </div>
 
         {showMoreFilters && (
-          <div className="grid grid-cols-1 gap-3 rounded-lg border border-ink-100 bg-cream-50 p-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-500">District</label>
               <Select
@@ -421,24 +421,25 @@ export default function CustomersPage() {
             </div>
             {activeMoreFiltersCount > 0 && (
               <div className="flex items-end sm:col-span-3">
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => {
                     setDistrict("");
                     setMinSpend("");
                     setMinOrders("");
                     setPage(1);
                   }}
-                  className="flex items-center gap-1.5 text-sm text-ink-500 hover:text-ink-900"
                 >
                   <XCircle size={14} /> Clear filters
-                </button>
+                </Button>
               </div>
             )}
           </div>
         )}
 
         {selected.size > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ink-200 bg-cream-50 px-3.5 py-2.5 text-sm shadow-float animate-fade-in">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink-200 bg-cream-50 px-3.5 py-2.5 text-sm shadow-float animate-fade-in">
             <span className="flex items-center gap-1.5 font-medium text-ink-800">
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-900 px-1.5 text-xs font-semibold text-cream-50">
                 {selected.size}
@@ -459,39 +460,46 @@ export default function CustomersPage() {
         )}
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="max-h-[65vh] overflow-x-auto overflow-y-auto">
+      {/* No bounded inner scroll box here — nesting a second vertical-scroll region inside the
+          already-scrolling page made the mouse wheel scroll this small box first before the page
+          would move, which read as broken/janky (see the same fix on the Orders page). */}
+      <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm">
+        <HScrollShadow className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+            <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
               <tr>
-                <th className="w-10 px-4 py-2.5">
+                <th className="w-10 px-4 py-3">
                   <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
                 </th>
-                <th className="sticky left-0 z-20 bg-ink-50 px-4 py-2.5">
+                <th className="sticky left-0 z-20 bg-ink-50 px-4 py-3">
                   <SortableHeader column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Customer
                   </SortableHeader>
                 </th>
-                <th className="px-4 py-2.5">Phone</th>
-                <th className="px-4 py-2.5">Email</th>
-                <th className="px-4 py-2.5">
-                  <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
-                    Orders
-                  </SortableHeader>
+                <th className="px-4 py-3">Phone</th>
+                <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">
+                  <div className="flex justify-end">
+                    <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                      Orders
+                    </SortableHeader>
+                  </div>
                 </th>
-                <th className="px-4 py-2.5">
-                  <SortableHeader column="totalSpent" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
-                    Spent
-                  </SortableHeader>
+                <th className="px-4 py-3">
+                  <div className="flex justify-end">
+                    <SortableHeader column="totalSpent" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
+                      Spent
+                    </SortableHeader>
+                  </div>
                 </th>
-                <th className="px-4 py-2.5">
+                <th className="px-4 py-3">
                   <SortableHeader column="lastOrderAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Last Order
                   </SortableHeader>
                 </th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="hidden px-4 py-2.5 sm:table-cell">Last SMS</th>
-                <th className="px-4 py-2.5 text-right">Actions</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="hidden px-4 py-3 sm:table-cell">Last SMS</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -521,14 +529,14 @@ export default function CustomersPage() {
                 const toneMeta = tone ? TAG_META[tone] : null;
                 return (
                   <tr key={customer.id} className="group border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <Checkbox
                         checked={selected.has(customer.id)}
                         onChange={() => toggleOne(customer.id)}
                         aria-label={`Select ${customer.name}`}
                       />
                     </td>
-                    <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3 group-hover:bg-ink-50">
+                    <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3.5 group-hover:bg-ink-50">
                       <button
                         onClick={() => setDrawer({ id: customer.id })}
                         className="flex items-center gap-3 text-left"
@@ -539,14 +547,14 @@ export default function CustomersPage() {
                         <span className="font-medium text-ink-900 hover:text-info-600 hover:underline">{customer.name}</span>
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-ink-500">{customer.phone ?? "—"}</td>
-                    <td className="px-4 py-3 text-ink-500">{customer.email ?? "—"}</td>
-                    <td className="px-4 py-3">{customer.totalOrders}</td>
-                    <td className="px-4 py-3 font-medium text-ink-900">{formatPrice(customer.totalSpent)}</td>
-                    <td className="px-4 py-3 text-ink-500">
+                    <td className="px-4 py-3.5 text-ink-500">{customer.phone ?? "—"}</td>
+                    <td className="px-4 py-3.5 text-ink-500">{customer.email ?? "—"}</td>
+                    <td className="px-4 py-3.5 text-right tabular-nums text-ink-700">{customer.totalOrders}</td>
+                    <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</td>
+                    <td className="px-4 py-3.5 text-ink-500">
                       {customer.lastOrderAt ? new Date(customer.lastOrderAt).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       {toneMeta ? (
                         <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", toneMeta.className)}>
                           <toneMeta.icon size={11} /> {toneMeta.label}
@@ -555,10 +563,10 @@ export default function CustomersPage() {
                         <span className="text-xs text-ink-400">—</span>
                       )}
                     </td>
-                    <td className="hidden px-4 py-3 text-ink-500 sm:table-cell">
+                    <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
                       {customer.lastSmsSentAt ? new Date(customer.lastSmsSentAt).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
                       <div className="flex justify-end gap-3">
                         <button
                           onClick={() => setDrawer({ id: customer.id })}

@@ -577,9 +577,10 @@ export default function OrdersPage() {
       </div>
 
       {/* Sticky control zone: anchored just below the app shell's h-14 top bar, so filters and bulk
-          actions stay reachable while scrolling — the table below has its own bounded internal
-          scroll (see max-h-[65vh] further down) so its header can stick correctly too, without the
-          two sticky regions having to know each other's height. */}
+          actions stay reachable while scrolling. The table below scrolls with the page (no bounded
+          inner scroll box) — nesting a second vertical-scroll region inside an already-scrolling
+          page made the mouse wheel scroll the tiny table box first before the page would move,
+          which read as broken/janky. Horizontal scroll (for narrow viewports) is unaffected. */}
       <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
         {isOwner && (
           <div className="flex items-center gap-1">
@@ -904,9 +905,9 @@ export default function OrdersPage() {
       </div>
 
       <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm">
-        <HScrollShadow className="max-h-[65vh] overflow-x-auto overflow-y-auto">
+        <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-ink-50/95 text-left text-xs uppercase tracking-wide text-ink-500 backdrop-blur-sm">
+          <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
             <tr>
               <th className="w-10 px-4 py-3">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
