@@ -8,6 +8,7 @@ import type {
   OrderStatus,
   UpdateOrderStatusInput,
   UpdateOrderDetailsInput,
+  HoldOrderInput,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -331,6 +332,10 @@ function buildOrderWhere(query: OrderListQuery) {
     ...(query.courierStatus ? { courierStatus: query.courierStatus } : {}),
     ...(query.shippingDivision ? { shippingDivision: query.shippingDivision } : {}),
     ...(query.shippingDistrict ? { shippingDistrict: query.shippingDistrict } : {}),
+    // The confirmation-call callback queue — implies status PENDING regardless of what `status`/
+    // `statusIn` above resolved to, since the frontend only ever sends this on its own (same
+    // mutually-exclusive pattern as the other quick filters).
+    ...(query.followUpDue === "true" ? { status: "PENDING" as const, followUpAt: { lte: new Date() } } : {}),
     ...(query.dateFrom || query.dateTo
       ? {
           createdAt: {
@@ -455,7 +460,7 @@ export async function getOrderStats() {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const [todayOrders, todayRevenue, pending, needsAttention, statusGroups] = await Promise.all([
+  const [todayOrders, todayRevenue, pending, needsAttention, followUpDue, statusGroups] = await Promise.all([
     prisma.order.count({ where: { deletedAt: null, createdAt: { gte: startOfToday } } }),
     prisma.order.aggregate({
       where: { deletedAt: null, createdAt: { gte: startOfToday } },
@@ -463,8 +468,9 @@ export async function getOrderStats() {
     }),
     prisma.order.count({ where: { deletedAt: null, status: { in: ["PENDING", "CONFIRMED"] } } }),
     // A fresh PENDING order isn't "stuck" yet — only one sitting unconfirmed for a day, one whose
-    // payment gateway callback actually failed, or one Steadfast has put "on hold" (couldn't reach
-    // the recipient, address issue, etc.) is something an admin needs to go look at.
+    // payment gateway callback actually failed, one Steadfast has put "on hold" (couldn't reach the
+    // recipient, address issue, etc.), or one whose confirmation-call follow-up is due, is something
+    // an admin needs to go look at.
     prisma.order.count({
       where: {
         deletedAt: null,
@@ -472,9 +478,14 @@ export async function getOrderStats() {
           { status: "PENDING", createdAt: { lt: attentionCutoff } },
           { paymentStatus: "FAILED" },
           { courierStatus: "hold" },
+          { status: "PENDING", followUpAt: { lte: now } },
         ],
       },
     }),
+    // Same predicate as the follow-up arm above, exposed as its own number so the KPI strip and the
+    // "Follow-up due" quick-filter pill can both show the exact callback-queue count, not just "how
+    // many of several different things need attention" folded into one bucket.
+    prisma.order.count({ where: { deletedAt: null, status: "PENDING", followUpAt: { lte: now } } }),
     // Powers the status-filter pills' "(N)" counts — one row per status that has at least one
     // order, zero-filled below for the rest so every pill always shows a count.
     prisma.order.groupBy({ by: ["status"], where: { deletedAt: null }, _count: true }),
@@ -488,6 +499,7 @@ export async function getOrderStats() {
     todayRevenue: Number(todayRevenue._sum.total ?? 0),
     pending,
     needsAttention,
+    followUpDue,
     statusCounts,
   };
 }
@@ -586,6 +598,11 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
       where: { id },
       data: {
         status: input.status,
+        // Leaving PENDING means the confirmation call finally resolved (confirmed, cancelled, or
+        // otherwise moved on — including Steadfast auto-resolving it) — any outstanding follow-up
+        // hold is now stale. Moving *to* PENDING leaves followUpAt untouched (undefined = no-op in
+        // Prisma); only the explicit hold action (holdOrderForFollowUp) ever sets it.
+        followUpAt: input.status === "PENDING" ? undefined : null,
         statusHistory: {
           create: { status: input.status, note: input.note ?? null, changedByAdminId: changedByAdminId ?? null },
         },
@@ -605,10 +622,104 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
   return updated;
 }
 
-export async function updateOrderDetails(id: string, input: UpdateOrderDetailsInput) {
+const ORDER_DETAIL_FIELD_LABELS = {
+  customerName: "Name",
+  customerPhone: "Phone",
+  shippingDivision: "Division",
+  shippingDistrict: "District",
+  shippingArea: "Area",
+  shippingAddressLine: "Address",
+} satisfies Partial<Record<keyof UpdateOrderDetailsInput, string>>;
+
+/** Builds a single human-readable diff string ("Name: "X" -> "Y"; Phone: ...") for whichever
+ * customer/shipping fields this particular updateOrderDetails call actually changed, or null if
+ * none of those six fields were part of the request (e.g. a tracking-number- or admin-notes-only
+ * save). Who made the change is already captured by OrderStatusHistory.changedByAdmin — no need to
+ * repeat it in the text. */
+function buildOrderDetailsDiffNote(
+  existing: Pick<
+    Awaited<ReturnType<typeof getOrderById>>,
+    "customerName" | "customerPhone" | "shippingDivision" | "shippingDistrict" | "shippingArea" | "shippingAddressLine"
+  >,
+  input: UpdateOrderDetailsInput,
+): string | null {
+  const changes: string[] = [];
+  for (const key of Object.keys(ORDER_DETAIL_FIELD_LABELS) as Array<keyof typeof ORDER_DETAIL_FIELD_LABELS>) {
+    const nextValue = input[key];
+    if (nextValue !== undefined && nextValue !== existing[key]) {
+      changes.push(`${ORDER_DETAIL_FIELD_LABELS[key]}: "${existing[key]}" -> "${nextValue}"`);
+    }
+  }
+  return changes.length ? `Order details updated — ${changes.join("; ")}` : null;
+}
+
+export async function updateOrderDetails(id: string, input: UpdateOrderDetailsInput, changedByAdminId?: string) {
   const existing = await getOrderById(id);
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
-  return prisma.order.update({ where: { id }, data: input, include });
+
+  const diffNote = buildOrderDetailsDiffNote(existing, input);
+
+  return prisma.order.update({
+    where: { id },
+    data: {
+      ...input,
+      ...(diffNote
+        ? { statusHistory: { create: { status: existing.status, note: diffNote, changedByAdminId: changedByAdminId ?? null } } }
+        : {}),
+    },
+    include,
+  });
+}
+
+/** Node ships with full ICU by default, so Intl can format directly into Asia/Dhaka regardless of
+ * the server process's own timezone — Bangladesh has one fixed UTC+6 offset with no DST, so this is
+ * a pure display concern; followUpAt itself is always stored/compared as an absolute UTC instant. */
+function formatBdDateTime(date: Date): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dhaka", dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+/** Records the outcome of a confirmation call that was neither a clear yes nor a clear no — sets a
+ * follow-up time and bumps the lifetime call-attempt counter, but deliberately does NOT touch
+ * `status` (stays PENDING); only orders currently PENDING are eligible, so an order that's already
+ * CONFIRMED/CANCELLED/etc. can't accidentally be shoved back into the callback queue. */
+export async function holdOrderForFollowUp(id: string, input: HoldOrderInput, changedByAdminId?: string) {
+  const existing = await getOrderById(id);
+  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+  if (existing.status !== "PENDING") {
+    throw AppError.badRequest("Only pending orders can be put on a follow-up hold");
+  }
+
+  const note = input.note
+    ? `On hold — follow up ${formatBdDateTime(input.followUpAt)}: ${input.note}`
+    : `On hold — follow up ${formatBdDateTime(input.followUpAt)}`;
+
+  return prisma.order.update({
+    where: { id },
+    data: {
+      followUpAt: input.followUpAt,
+      callAttempts: { increment: 1 },
+      statusHistory: { create: { status: existing.status, note, changedByAdminId: changedByAdminId ?? null } },
+    },
+    include,
+  });
+}
+
+/** Undoes an accidental/stale hold without touching status or callAttempts — e.g. an admin picked
+ * the wrong follow-up time, or the call actually happened right after clicking Hold. No-ops
+ * (returns the order unchanged) if there's no hold to clear. */
+export async function clearOrderHold(id: string, changedByAdminId?: string) {
+  const existing = await getOrderById(id);
+  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+  if (!existing.followUpAt) return existing;
+
+  return prisma.order.update({
+    where: { id },
+    data: {
+      followUpAt: null,
+      statusHistory: { create: { status: existing.status, note: "Follow-up hold cleared", changedByAdminId: changedByAdminId ?? null } },
+    },
+    include,
+  });
 }
 
 /** verifiedAmount must come from the payment gateway's own validation record, never from the callback

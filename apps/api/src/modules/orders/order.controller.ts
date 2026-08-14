@@ -63,7 +63,15 @@ export const updateStatus = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const updateDetails = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ order: await orderService.updateOrderDetails(req.params.id!, req.body) });
+  res.json({ order: await orderService.updateOrderDetails(req.params.id!, req.body, req.admin!.adminId) });
+});
+
+export const hold = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.holdOrderForFollowUp(req.params.id!, req.body, req.admin!.adminId) });
+});
+
+export const clearHold = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.clearOrderHold(req.params.id!, req.admin!.adminId) });
 });
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {

@@ -52,6 +52,28 @@ function buildRecipientAddress(order: {
     .join(", ");
 }
 
+/** Cheap defense-in-depth guard, not a replacement for UI-level validation — updateOrderDetailsSchema
+ * already rejects blank shipping/customer fields going forward, but this catches rows written before
+ * those columns were admin-editable/validated, so a Steadfast booking never goes out with an
+ * unusable address. */
+function hasUsableAddress(order: {
+  customerName: string;
+  customerPhone: string;
+  shippingAddressLine: string;
+  shippingArea: string;
+  shippingDistrict: string;
+  shippingDivision: string;
+}): boolean {
+  return [
+    order.customerName,
+    order.customerPhone,
+    order.shippingAddressLine,
+    order.shippingArea,
+    order.shippingDistrict,
+    order.shippingDivision,
+  ].every((f) => f.trim().length > 0);
+}
+
 /** Records the raw Steadfast status and, if it maps onto one of our own order statuses and the
  * order isn't already in a terminal state, drives it through the normal updateOrderStatus path
  * (order.service.ts) so the status-history timeline and delivery-points award stay authoritative —
@@ -87,6 +109,9 @@ export async function bookOrderWithSteadfast(orderId: string) {
   if (order.courierConsignmentId) throw AppError.conflict("This order is already booked with a courier");
   if (NOT_BOOKABLE_STATUSES.includes(order.status)) {
     throw AppError.badRequest(`Cannot book a courier for an order that is ${order.status.toLowerCase()}`);
+  }
+  if (!hasUsableAddress(order)) {
+    throw AppError.badRequest("This order is missing customer/address details — edit the order before booking a courier");
   }
 
   const codAmount = order.paymentMethod === "COD" ? Number(order.total) : 0;
@@ -150,6 +175,8 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Already booked with a courier" });
     } else if (NOT_BOOKABLE_STATUSES.includes(order.status)) {
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: `Order is ${order.status.toLowerCase()}` });
+    } else if (!hasUsableAddress(order)) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Missing address details" });
     } else {
       eligible.push(order);
     }

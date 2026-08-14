@@ -289,6 +289,8 @@ export interface Order {
   courierStatus: string | null;
   courierTrackingLink: string | null;
   courierBookedAt: string | null;
+  followUpAt: string | null;
+  callAttempts: number;
   statusHistory: OrderStatusHistoryEntry[];
   items: OrderItem[];
   returnRequests?: ReturnRequest[];

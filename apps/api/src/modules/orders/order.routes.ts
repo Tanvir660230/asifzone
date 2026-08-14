@@ -5,6 +5,7 @@ import {
   orderListQuerySchema,
   updateOrderStatusSchema,
   updateOrderDetailsSchema,
+  holdOrderSchema,
   trackOrderSchema,
   bulkOrderIdsSchema,
   bulkOrderStatusSchema,
@@ -51,6 +52,8 @@ orderRouter.post("/bulk/get", requireAdmin, validate(bulkOrderIdsSchema), orderC
 orderRouter.get("/:id", requireAdmin, orderController.getOne);
 orderRouter.patch("/:id/status", requireAdmin, validate(updateOrderStatusSchema), orderController.updateStatus);
 orderRouter.patch("/:id/details", requireAdmin, validate(updateOrderDetailsSchema), orderController.updateDetails);
+orderRouter.post("/:id/hold", requireAdmin, validate(holdOrderSchema), orderController.hold);
+orderRouter.post("/:id/hold/clear", requireAdmin, orderController.clearHold);
 orderRouter.post("/:id/courier/book", requireAdmin, orderController.bookCourier);
 orderRouter.post("/:id/courier/refresh", requireAdmin, orderController.refreshCourier);
 orderRouter.post("/:id/courier/unlink", requireAdmin, orderController.unlinkCourier);

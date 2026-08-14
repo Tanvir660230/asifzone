@@ -30,12 +30,58 @@ export function formatDateShort(date: Date): string {
 const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
   delivered: "bg-success-100 text-success-700",
   partial_delivered: "bg-success-100 text-success-700",
+  delivered_approval_pending: "bg-success-100 text-success-700",
+  partial_delivered_approval_pending: "bg-success-100 text-success-700",
   cancelled: "bg-danger-100 text-danger-700",
+  cancelled_approval_pending: "bg-danger-100 text-danger-700",
   hold: "bg-warning-100 text-warning-700",
+  pending: "bg-warning-100 text-warning-700",
+  in_review: "bg-info-100 text-info-700",
 };
 
 /** Shared by the orders list and order detail pages so a given Steadfast `delivery_status` always
  * renders with the same color, whichever screen it's shown on. */
 export function courierStatusBadgeClass(status: string): string {
   return COURIER_STATUS_BADGE_CLASS[status] ?? "bg-ink-100 text-ink-700";
+}
+
+/** Steadfast's own status vocabulary (in_review, *_approval_pending, etc.) is internal jargon —
+ * these are the plain-language labels shown in the admin UI instead. */
+const COURIER_STATUS_LABELS: Record<string, string> = {
+  in_review: "In review",
+  pending: "Awaiting pickup",
+  hold: "On hold",
+  delivered_approval_pending: "Delivered (confirming)",
+  partial_delivered_approval_pending: "Partly delivered (confirming)",
+  cancelled_approval_pending: "Cancelled (confirming)",
+  unknown_approval_pending: "Confirming with courier",
+  delivered: "Delivered",
+  partial_delivered: "Partly delivered",
+  cancelled: "Cancelled / returned",
+  unknown: "Unclear",
+};
+
+export function courierStatusLabel(status: string): string {
+  return COURIER_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+}
+
+/** Longer, plain-language explanation of what a Steadfast delivery_status actually means — shown as
+ * a hover title on the status badge so an admin doesn't have to guess what "in_review" or
+ * "*_approval_pending" implies for the parcel. */
+const COURIER_STATUS_DESCRIPTIONS: Record<string, string> = {
+  in_review: "Steadfast has the booking and is reviewing it before assigning a rider.",
+  pending: "Booked with Steadfast — waiting for a rider to pick up the parcel.",
+  hold: "Steadfast has paused this delivery, often an address or phone issue — check the Steadfast panel or call support.",
+  delivered_approval_pending: "The rider marked it delivered; Steadfast confirms this before it's final.",
+  partial_delivered_approval_pending: "The rider marked it partly delivered; Steadfast confirms this before it's final.",
+  cancelled_approval_pending: "The delivery attempt failed or was cancelled; Steadfast confirms this before it's final.",
+  unknown_approval_pending: "Steadfast reported a result it hasn't classified yet — confirmation pending.",
+  delivered: "Delivered to the customer and confirmed by Steadfast.",
+  partial_delivered: "The customer received part of the order; the rest was returned to you.",
+  cancelled: "Delivery failed or was cancelled — the parcel is coming back to you.",
+  unknown: "Steadfast hasn't reported a recognized status for this parcel yet.",
+};
+
+export function courierStatusDescription(status: string): string {
+  return COURIER_STATUS_DESCRIPTIONS[status] ?? "Status reported by Steadfast.";
 }

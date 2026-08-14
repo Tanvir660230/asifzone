@@ -24,6 +24,8 @@ export interface AdminOrderListParams {
   courierStatus?: string;
   shippingDivision?: string;
   shippingDistrict?: string;
+  // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue.
+  followUpDue?: "true";
   dateFrom?: string;
   dateTo?: string;
   sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt";
@@ -35,6 +37,7 @@ export interface OrderStats {
   todayRevenue: number;
   pending: number;
   needsAttention: number;
+  followUpDue: number;
   statusCounts: Record<OrderStatus, number>;
 }
 
@@ -52,6 +55,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.courierStatus) query.set("courierStatus", params.courierStatus);
   if (params.shippingDivision) query.set("shippingDivision", params.shippingDivision);
   if (params.shippingDistrict) query.set("shippingDistrict", params.shippingDistrict);
+  if (params.followUpDue) query.set("followUpDue", params.followUpDue);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params.dateTo) query.set("dateTo", params.dateTo);
   if (params.sortBy) query.set("sortBy", params.sortBy);
@@ -98,6 +102,19 @@ export function updateOrderStatus(id: string, status: OrderStatus, note?: string
 
 export function updateOrderDetails(id: string, input: UpdateOrderDetailsInput) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/details`, { method: "PATCH", body: input });
+}
+
+/** "Hold — call back later": records a confirmation-call attempt that was neither a clear yes nor
+ * no, without changing the order's status. `followUpAt` is an ISO datetime string. */
+export function holdOrder(id: string, followUpAt: string, note?: string) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/hold`, {
+    method: "POST",
+    body: { followUpAt, note: note || undefined },
+  });
+}
+
+export function clearOrderHold(id: string) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/hold/clear`, { method: "POST" });
 }
 
 export function deleteOrder(id: string) {

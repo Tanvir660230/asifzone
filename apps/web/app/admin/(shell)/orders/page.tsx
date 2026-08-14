@@ -13,9 +13,6 @@ import {
   XCircle,
   ArchiveX,
   ShoppingBag,
-  Wallet,
-  Clock,
-  AlertTriangle,
   Truck,
   SlidersHorizontal,
   ExternalLink,
@@ -45,14 +42,13 @@ import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
-import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { EmptyState } from "@/components/admin/empty-state";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import type { BulkCourierBookResult, AdminOrderListParams } from "@/lib/api/admin-orders";
-import { formatPrice, courierStatusBadgeClass } from "@/lib/format";
+import { formatPrice, courierStatusBadgeClass, courierStatusLabel, courierStatusDescription } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
@@ -96,25 +92,25 @@ const STATUS_BORDER_COLORS: Record<OrderStatus, string> = {
 
 const ALL_DISTRICTS = Array.from(new Set(Object.values(BD_DISTRICTS_BY_DIVISION).flat())).sort();
 
-type QuickFilter = "needsAction" | "unpaid" | "cod" | "cancelledReturned" | null;
+type QuickFilter = "unpaid" | "cod" | "cancelledReturned" | "followUpDue" | null;
 
 const QUICK_FILTERS: Array<{ id: Exclude<QuickFilter, null>; label: string }> = [
-  { id: "needsAction", label: "Needs action" },
   { id: "unpaid", label: "Unpaid" },
   { id: "cod", label: "COD" },
   { id: "cancelledReturned", label: "Cancelled / Returned" },
+  { id: "followUpDue", label: "Follow-up due" },
 ];
 
 function quickFilterParams(filter: QuickFilter, status: OrderStatus | "") {
   switch (filter) {
-    case "needsAction":
-      return { status: "PENDING" as OrderStatus };
     case "unpaid":
       return { paymentStatus: "UNPAID" as PaymentStatus };
     case "cod":
       return { paymentMethod: "COD" as PaymentMethod };
     case "cancelledReturned":
       return { statusIn: ["CANCELLED", "RETURNED"] as OrderStatus[] };
+    case "followUpDue":
+      return { followUpDue: "true" as const };
     default:
       return { status: status || undefined };
   }
@@ -295,15 +291,6 @@ export default function OrdersPage() {
     queryFn: adminOrdersApi.getOrderStats,
   });
   const statusTotal = stats && Object.values(stats.statusCounts).reduce((sum, n) => sum + n, 0);
-
-  // Hidden (not shown as an error toast) whenever Steadfast isn't configured for this store —
-  // getSteadfastBalance throws in that case, and a missing balance tile is a perfectly normal state.
-  const { data: balanceData } = useQuery({
-    queryKey: ["steadfast-balance"],
-    queryFn: adminOrdersApi.getSteadfastBalance,
-    retry: false,
-    staleTime: 60_000,
-  });
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
@@ -540,42 +527,6 @@ export default function OrdersPage() {
         }
       />
 
-      <div className={cn("mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4", stats && balanceData && "xl:grid-cols-5")}>
-        {stats ? (
-          <>
-            <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={18} />} />
-            <StatTile
-              label="Today's revenue"
-              value={formatPrice(stats.todayRevenue)}
-              icon={<Wallet size={18} />}
-              tone="accent"
-            />
-            <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={18} />} />
-            <StatTile
-              label="Needs attention"
-              value={String(stats.needsAttention)}
-              icon={<AlertTriangle size={18} />}
-              tone={stats.needsAttention > 0 ? "warning" : "default"}
-            />
-            {balanceData && (
-              <StatTile
-                label="Steadfast balance"
-                value={formatPrice(balanceData.balance)}
-                icon={<Truck size={18} />}
-                tone="accent"
-              />
-            )}
-          </>
-        ) : (
-          <>
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-            <StatTileSkeleton />
-          </>
-        )}
-      </div>
-
       {/* Sticky control zone: anchored just below the app shell's h-14 top bar, so filters and bulk
           actions stay reachable while scrolling. The table below scrolls with the page (no bounded
           inner scroll box) — nesting a second vertical-scroll region inside an already-scrolling
@@ -604,25 +555,8 @@ export default function OrdersPage() {
         )}
 
         {tab === "active" && (
-          <div className="space-y-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
+          <div className="rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Quick</span>
-              {QUICK_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => selectQuickFilter(f.id)}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                    quickFilter === f.id
-                      ? "border-ink-900 bg-ink-900 text-cream-50"
-                      : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
-                  )}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
               <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
               <button
                 onClick={() => {
@@ -675,6 +609,21 @@ export default function OrdersPage() {
                   </button>
                 );
               })}
+              <span className="mx-1 hidden h-4 w-px bg-ink-200 sm:block" aria-hidden />
+              {QUICK_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => selectQuickFilter(f.id)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
+                    quickFilter === f.id
+                      ? "border-ink-900 bg-ink-900 text-cream-50"
+                      : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+                  )}
+                >
+                  {f.label}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -760,7 +709,7 @@ export default function OrdersPage() {
                 <option value="">Any</option>
                 {COURIER_DELIVERY_STATUSES.map((s) => (
                   <option key={s} value={s}>
-                    {s.replace(/_/g, " ")}
+                    {courierStatusLabel(s)}
                   </option>
                 ))}
               </Select>
@@ -1075,8 +1024,9 @@ export default function OrdersPage() {
                           "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
                           courierStatusBadgeClass(order.courierStatus ?? ""),
                         )}
+                        title={order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported"}
                       >
-                        {(order.courierStatus ?? "booked").replace(/_/g, " ")}
+                        {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
                       </span>
                       {order.courierTrackingLink && (
                         <a

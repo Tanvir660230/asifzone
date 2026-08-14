@@ -3,8 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Printer, Truck, Trash2, RotateCcw, Package } from "lucide-react";
+import { Printer, Truck, Trash2, RotateCcw, Package, Pencil, X } from "lucide-react";
 import type { OrderStatus, UpdateOrderDetailsInput } from "@clothing-brand/shared";
+import {
+  updateOrderDetailsSchema,
+  BD_ALL_DISTRICTS,
+  BD_AREAS_BY_DISTRICT,
+  BD_ALL_AREA_OPTIONS,
+  BD_DIVISION_BY_DISTRICT,
+  parseAreaDistrictOption,
+} from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -12,13 +20,43 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
-import { formatPrice, courierStatusBadgeClass } from "@/lib/format";
+import { formatPrice, courierStatusBadgeClass, courierStatusLabel, courierStatusDescription } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
+
+const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
+
+interface DetailsDraft {
+  customerName: string;
+  customerPhone: string;
+  shippingDistrict: string;
+  shippingArea: string;
+  shippingAddressLine: string;
+}
+
+const HOLD_QUICK_PICKS = [
+  { label: "+1h", ms: 60 * 60 * 1000 },
+  { label: "+2h", ms: 2 * 60 * 60 * 1000 },
+  { label: "+4h", ms: 4 * 60 * 60 * 1000 },
+];
+
+/** "Tomorrow" quick-pick target: 10:00 next-day Bangladesh time, computed via an explicit +6h
+ * offset rather than the browser's local timezone — admin staff are assumed to be in Bangladesh,
+ * but this keeps the button correct even if someone's OS clock/timezone is misconfigured. */
+function nextBdMorning(): Date {
+  const bdNow = new Date(Date.now() + 6 * 60 * 60 * 1000); // "now" shifted into BD wall-clock
+  const nextDayBdAsUtc = Date.UTC(bdNow.getUTCFullYear(), bdNow.getUTCMonth(), bdNow.getUTCDate() + 1, 10, 0, 0);
+  return new Date(nextDayBdAsUtc - 6 * 60 * 60 * 1000); // shift back to the real UTC instant
+}
+
+function formatBdDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dhaka", dateStyle: "medium", timeStyle: "short" });
+}
 
 const STATUS_OPTIONS: OrderStatus[] = [
   "PENDING",
@@ -49,6 +87,10 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const [statusNote, setStatusNote] = useState("");
   const [tracking, setTracking] = useState<{ trackingNumber: string; carrier: string } | null>(null);
   const [adminNotes, setAdminNotes] = useState<string | null>(null);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [detailsDraft, setDetailsDraft] = useState<DetailsDraft | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [holdNote, setHoldNote] = useState("");
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
@@ -74,9 +116,33 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     mutationFn: (input: UpdateOrderDetailsInput) => adminOrdersApi.updateOrderDetails(id, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       toast.success("Order updated");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to save"),
+  });
+
+  const holdMutation = useMutation({
+    mutationFn: (followUpAt: Date) => adminOrdersApi.holdOrder(id, followUpAt.toISOString(), holdNote || undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
+      setHoldNote("");
+      toast.success("Order put on hold — follow-up scheduled");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to set follow-up"),
+  });
+
+  const clearHoldMutation = useMutation({
+    mutationFn: () => adminOrdersApi.clearOrderHold(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
+      toast.success("Follow-up hold cleared");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to clear hold"),
   });
 
   const deleteMutation = useMutation({
@@ -150,6 +216,57 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const { order } = data;
   const trackingValue = tracking ?? { trackingNumber: order.trackingNumber ?? "", carrier: order.carrier ?? "" };
   const notesValue = adminNotes ?? order.adminNotes ?? "";
+
+  const areaOptions: readonly string[] = detailsDraft?.shippingDistrict
+    ? (BD_AREAS_BY_DISTRICT[detailsDraft.shippingDistrict] ?? [])
+    : BD_ALL_AREA_OPTIONS;
+
+  function startEditingDetails() {
+    setDetailsError(null);
+    setDetailsDraft({
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      shippingDistrict: order.shippingDistrict,
+      shippingArea: order.shippingArea,
+      shippingAddressLine: order.shippingAddressLine,
+    });
+    setEditingDetails(true);
+  }
+
+  function cancelEditingDetails() {
+    setEditingDetails(false);
+    setDetailsDraft(null);
+    setDetailsError(null);
+  }
+
+  function handleAreaChange(value: string) {
+    if (!detailsDraft) return;
+    const parsed = parseAreaDistrictOption(value);
+    setDetailsDraft(
+      parsed ? { ...detailsDraft, shippingDistrict: parsed.district, shippingArea: parsed.area } : { ...detailsDraft, shippingArea: value },
+    );
+  }
+
+  function saveDetails() {
+    if (!detailsDraft) return;
+    const shippingDivision = BD_DIVISION_BY_DISTRICT[detailsDraft.shippingDistrict];
+    const parsed = updateOrderDetailsSchema
+      .pick({
+        customerName: true,
+        customerPhone: true,
+        shippingDivision: true,
+        shippingDistrict: true,
+        shippingArea: true,
+        shippingAddressLine: true,
+      })
+      .safeParse({ ...detailsDraft, shippingDivision });
+    if (!parsed.success) {
+      setDetailsError(parsed.error.issues[0]?.message ?? "Please check the highlighted fields");
+      return;
+    }
+    setDetailsError(null);
+    detailsMutation.mutate(parsed.data, { onSuccess: () => cancelEditingDetails() });
+  }
 
   return (
     <div className={outerClassName}>
@@ -253,6 +370,50 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
             />
           </div>
 
+          {order.status === "PENDING" && !order.deletedAt && (
+            <div className="rounded-lg border border-warning-200 bg-warning-50 p-3">
+              {order.followUpAt ? (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-warning-800">
+                    On hold — follow up by {formatBdDateTime(order.followUpAt)}
+                    {order.callAttempts > 0 && (
+                      <> · {order.callAttempts} call attempt{order.callAttempts > 1 ? "s" : ""}</>
+                    )}
+                  </p>
+                  <Button variant="outline" size="sm" disabled={clearHoldMutation.isPending} onClick={() => clearHoldMutation.mutate()}>
+                    Clear hold
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-ink-700">Hold — call back later</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {HOLD_QUICK_PICKS.map((p) => (
+                      <Button
+                        key={p.label}
+                        variant="outline"
+                        size="sm"
+                        disabled={holdMutation.isPending}
+                        onClick={() => holdMutation.mutate(new Date(Date.now() + p.ms))}
+                      >
+                        {p.label}
+                      </Button>
+                    ))}
+                    <Button variant="outline" size="sm" disabled={holdMutation.isPending} onClick={() => holdMutation.mutate(nextBdMorning())}>
+                      Tomorrow
+                    </Button>
+                    <Input
+                      placeholder="Note (e.g. asked to call after 6pm)"
+                      value={holdNote}
+                      onChange={(e) => setHoldNote(e.target.value)}
+                      className="max-w-xs"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <ol className="mt-4 space-y-3 border-l border-ink-100 pl-4">
             {order.statusHistory.map((entry) => (
               <li key={entry.id} className="relative text-sm">
@@ -281,7 +442,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               <>
                 <div className="flex flex-wrap items-center gap-3">
                   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${courierStatusBadgeClass(order.courierStatus ?? "")}`}>
-                    Steadfast: {(order.courierStatus ?? "booked").replace(/_/g, " ")}
+                    Steadfast: {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
                   </span>
                   {order.courierTrackingLink && (
                     <a
@@ -316,6 +477,16 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                     Unlink
                   </Button>
                 </div>
+                <p className="mt-1.5 text-xs text-ink-400">
+                  {order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported."}
+                </p>
+                {!TERMINAL_ORDER_STATUSES.includes(order.status) && (
+                  <p className="mt-1.5 text-xs text-ink-400">
+                    Order status will automatically move to <span className="font-medium">Delivered</span> or{" "}
+                    <span className="font-medium">Cancelled</span> once Steadfast reports a final outcome — it&apos;s expected to
+                    stay <span className="font-medium">{order.status}</span> until then.
+                  </p>
+                )}
                 <p className="mt-2 text-xs text-ink-400">
                   Parcel ID: {order.courierConsignmentId}
                   {order.trackingNumber && <> · Tracking code: {order.trackingNumber}</>}
@@ -379,13 +550,46 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
 
       <div className={variant === "page" ? "grid grid-cols-1 gap-6 sm:grid-cols-2" : "grid grid-cols-1 gap-4"}>
         <Card>
-          <CardHeader>
+          <CardHeader className="flex items-center justify-between">
             <CardTitle>Customer</CardTitle>
+            {!order.deletedAt &&
+              (editingDetails ? (
+                <button onClick={cancelEditingDetails} className="text-ink-400 hover:text-ink-700" aria-label="Cancel editing">
+                  <X size={16} />
+                </button>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={startEditingDetails}>
+                  <Pencil size={13} /> Edit
+                </Button>
+              ))}
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-ink-700">
-            <p>{order.customerName}</p>
-            <p>{order.customerPhone}</p>
-            {order.customerEmail && <p>{order.customerEmail}</p>}
+            {editingDetails && detailsDraft ? (
+              <div className="space-y-2">
+                <div>
+                  <Label htmlFor="customerName">Name</Label>
+                  <Input
+                    id="customerName"
+                    value={detailsDraft.customerName}
+                    onChange={(e) => setDetailsDraft({ ...detailsDraft, customerName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="customerPhone">Phone</Label>
+                  <Input
+                    id="customerPhone"
+                    value={detailsDraft.customerPhone}
+                    onChange={(e) => setDetailsDraft({ ...detailsDraft, customerPhone: e.target.value })}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <p>{order.customerName}</p>
+                <p>{order.customerPhone}</p>
+                {order.customerEmail && <p>{order.customerEmail}</p>}
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -394,13 +598,63 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
             <CardTitle>Shipping Address</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-ink-700">
-            <p>{order.shippingAddressLine}</p>
-            <p>
-              {order.shippingArea}, {order.shippingDistrict}
-            </p>
-            <p>{order.shippingDivision}</p>
+            {editingDetails && detailsDraft ? (
+              <div className="space-y-2">
+                <div>
+                  <Label htmlFor="shippingDistrict">District</Label>
+                  <SearchableSelect
+                    id="shippingDistrict"
+                    value={detailsDraft.shippingDistrict}
+                    onChange={(v) => setDetailsDraft({ ...detailsDraft, shippingDistrict: v })}
+                    options={BD_ALL_DISTRICTS}
+                    placeholder="Search district..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="shippingArea">Area / Thana</Label>
+                  <SearchableSelect
+                    id="shippingArea"
+                    value={detailsDraft.shippingArea}
+                    onChange={handleAreaChange}
+                    options={areaOptions}
+                    placeholder="Search area/thana..."
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="shippingAddressLine">House / Road / Details</Label>
+                  <Textarea
+                    id="shippingAddressLine"
+                    rows={2}
+                    value={detailsDraft.shippingAddressLine}
+                    onChange={(e) => setDetailsDraft({ ...detailsDraft, shippingAddressLine: e.target.value })}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <p>{order.shippingAddressLine}</p>
+                <p>
+                  {order.shippingArea}, {order.shippingDistrict}
+                </p>
+                <p>{order.shippingDivision}</p>
+              </>
+            )}
           </CardContent>
         </Card>
+
+        {editingDetails && (
+          <div className="flex items-center gap-2 sm:col-span-2">
+            {detailsError && <p className="text-sm text-danger-600">{detailsError}</p>}
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={cancelEditingDetails}>
+                Cancel
+              </Button>
+              <Button size="sm" disabled={detailsMutation.isPending} onClick={saveDetails}>
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <Card>

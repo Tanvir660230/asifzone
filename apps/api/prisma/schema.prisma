@@ -673,6 +673,16 @@ model Order {
   /// by status_by_cid, so bookings made before this field existed will have it null forever.
   courierTrackingLink  String?
 
+  /// When set, this order is "on hold" pending a follow-up phone call (no-answer/undecided outcome
+  /// of the pre-shipping confirmation call) — `status` stays PENDING throughout; this is a separate
+  /// callback-queue signal, not a status. Cleared automatically by updateOrderStatus the moment the
+  /// order moves off PENDING, and set/refreshed by the "Hold — call back later" admin action.
+  followUpAt   DateTime?
+  /// Lifetime count of "Hold — call back later" placements on this order — a rough measure of how
+  /// many confirmation-call attempts it has taken. Never reset or decremented, and doesn't gate any
+  /// auto-cancel behavior.
+  callAttempts Int       @default(0)
+
   /// Soft delete — an OWNER-only admin action (see deleteOrder in order.service.ts). Restocks the
   /// order's items and hides it from every default query, but never physically removes the row
   /// (financial/audit record). restoreOrder clears both fields but deliberately does not re-decrement
@@ -692,6 +702,7 @@ model Order {
   @@index([customerPhone])
   @@index([deletedAt])
   @@index([courierConsignmentId])
+  @@index([followUpAt])
 }
 
 /// Append-only timeline of status transitions for an order — powers the admin timeline view.

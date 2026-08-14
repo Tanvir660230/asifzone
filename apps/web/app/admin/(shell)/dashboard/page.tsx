@@ -15,9 +15,12 @@ import {
   Search as SearchIcon,
   Target,
   Flame,
+  Wallet,
+  Truck,
+  PhoneCall,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatTile } from "@/components/admin/stat-tile";
+import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { RevenueChart } from "@/components/admin/revenue-chart";
@@ -26,6 +29,7 @@ import { OrderStatusBreakdown } from "@/components/admin/order-status-breakdown"
 import { LowStockTable } from "@/components/admin/low-stock-table";
 import { RankedBarList } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
+import * as adminOrdersApi from "@/lib/api/admin-orders";
 import { computeTrendPct, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +49,18 @@ function firstName(fullName: string): string {
 export default function DashboardPage() {
   const { data: currentAdmin } = useCurrentAdmin();
   const [tab, setTab] = useState<AnalyticsTab>("sales");
+
+  // Today's order-ops snapshot — moved here from the Orders page so that page stays focused on
+  // the order table itself instead of losing its top third of scroll space to KPI tiles.
+  const { data: orderStats } = useQuery({ queryKey: ["admin-order-stats"], queryFn: adminOrdersApi.getOrderStats });
+  // Hidden (not shown as an error toast) whenever Steadfast isn't configured for this store —
+  // getSteadfastBalance throws in that case, and a missing balance tile is a perfectly normal state.
+  const { data: balanceData } = useQuery({
+    queryKey: ["steadfast-balance"],
+    queryFn: adminOrdersApi.getSteadfastBalance,
+    retry: false,
+    staleTime: 60_000,
+  });
 
   // Hero — the "what needs my attention right now" set, always fetched on mount.
   const { data: summary } = useQuery({ queryKey: ["analytics-summary"], queryFn: analyticsApi.getSummary });
@@ -121,6 +137,54 @@ export default function DashboardPage() {
         title="Dashboard"
         description={currentAdmin ? `Welcome back, ${firstName(currentAdmin.admin.name)}.` : undefined}
       />
+
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-4 lg:grid-cols-5",
+          orderStats && balanceData && "xl:grid-cols-6",
+        )}
+      >
+        {orderStats ? (
+          <>
+            <StatTile label="Today's orders" value={String(orderStats.todayOrders)} icon={<ShoppingBag size={18} />} />
+            <StatTile
+              label="Today's revenue"
+              value={formatPrice(orderStats.todayRevenue)}
+              icon={<Wallet size={18} />}
+              tone="accent"
+            />
+            <StatTile label="Pending" value={String(orderStats.pending)} icon={<Clock size={18} />} />
+            <StatTile
+              label="Needs attention"
+              value={String(orderStats.needsAttention)}
+              icon={<AlertTriangle size={18} />}
+              tone={orderStats.needsAttention > 0 ? "warning" : "default"}
+            />
+            <StatTile
+              label="Follow-up due"
+              value={String(orderStats.followUpDue)}
+              icon={<PhoneCall size={18} />}
+              tone={orderStats.followUpDue > 0 ? "warning" : "default"}
+            />
+            {balanceData && (
+              <StatTile
+                label="Steadfast balance"
+                value={formatPrice(balanceData.balance)}
+                icon={<Truck size={18} />}
+                tone="accent"
+              />
+            )}
+          </>
+        ) : (
+          <>
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+            <StatTileSkeleton />
+          </>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile

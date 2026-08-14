@@ -704,6 +704,9 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   courierStatus: z.string().min(1).max(50).optional(),
   shippingDivision: z.enum(BD_DIVISIONS).optional(),
   shippingDistrict: z.string().min(1).max(120).optional(),
+  // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue
+  // (followUpAt <= now) — the callback queue. No "false" variant; omit the param for the normal listing.
+  followUpDue: z.enum(["true"]).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   // Powers the sortable column headers on the admin orders table — restricted to plain scalar
@@ -725,6 +728,23 @@ export const updateOrderDetailsSchema = z.object({
   trackingNumber: nullableString(120),
   carrier: nullableString(80),
   adminNotes: nullableString(2000),
+  // Lets an admin correct a customer/shipping mistake caught during the pre-shipping confirmation
+  // call — optional (not nullable) because these columns are required strings on Order; there's no
+  // valid "clear it" operation, only "replace it". Same validators as adminCreateOrderSchema so a
+  // corrected value has to meet the same bar a fresh order would.
+  customerName: z.string().min(1).max(200).optional(),
+  customerPhone: bdPhoneSchema().optional(),
+  shippingDivision: z.enum(BD_DIVISIONS).optional(),
+  shippingDistrict: z.string().min(1).max(120).optional(),
+  shippingArea: z.string().min(1).max(120).optional(),
+  shippingAddressLine: z.string().min(1).max(500).optional(),
+});
+
+/** "Hold — call back later": the outcome of a confirmation call that was neither a clear yes
+ * (→ CONFIRMED) nor a clear no (→ CANCELLED) — order.status is deliberately left untouched. */
+export const holdOrderSchema = z.object({
+  followUpAt: z.coerce.date(),
+  note: nullableString(500),
 });
 
 export const validateCouponSchema = z.object({
@@ -743,6 +763,7 @@ export type AdminCreateOrderInput = z.infer<typeof adminCreateOrderSchema>;
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
+export type HoldOrderInput = z.infer<typeof holdOrderSchema>;
 export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
 export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
 export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;
