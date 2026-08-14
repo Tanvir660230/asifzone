@@ -644,6 +644,13 @@ model Order {
   shippingFee Decimal @default(0) @db.Decimal(10, 2)
   total       Decimal @db.Decimal(10, 2)
 
+  /// Signed manual nudge to the total an admin applies during the confirmation call — negative for
+  /// a goodwill/negotiated discount, positive for a surcharge (e.g. a remote-area delivery add-on) —
+  /// separate from `discount` (coupon/bundle, set at checkout and never hand-edited). Folded into
+  /// `total` by adjustOrderPrice in order.service.ts; blocked once a courier is booked, since
+  /// Steadfast's COD amount is fixed at that point.
+  priceAdjustment Decimal @default(0) @db.Decimal(10, 2)
+
   couponId String?
   coupon   Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
 

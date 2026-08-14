@@ -9,6 +9,7 @@ import type {
   UpdateOrderStatusInput,
   UpdateOrderDetailsInput,
   HoldOrderInput,
+  AdjustOrderPriceInput,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -526,6 +527,7 @@ export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
     "subtotal",
     "discount",
     "shippingFee",
+    "priceAdjustment",
     "total",
     "shippingDivision",
     "shippingDistrict",
@@ -547,6 +549,7 @@ export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
     o.subtotal,
     o.discount,
     o.shippingFee,
+    o.priceAdjustment,
     o.total,
     o.shippingDivision,
     o.shippingDistrict,
@@ -717,6 +720,48 @@ export async function clearOrderHold(id: string, changedByAdminId?: string) {
     data: {
       followUpAt: null,
       statusHistory: { create: { status: existing.status, note: "Follow-up hold cleared", changedByAdminId: changedByAdminId ?? null } },
+    },
+    include,
+  });
+}
+
+const PRICE_ADJUSTMENT_LOCKED_STATUSES: OrderStatus[] = ["CANCELLED", "REFUNDED", "RETURNED", "DELIVERED"];
+
+function formatBdt(amount: number): string {
+  return `৳${Math.round(amount).toLocaleString("en-BD")}`;
+}
+
+/** Lets an admin nudge the order total up or down during the confirmation call (a negotiated
+ * discount, a remote-area surcharge) — replaces whatever priceAdjustment was already set, it isn't
+ * additive, so re-saving the same value is a no-op. Blocked once a courier is booked, since
+ * Steadfast's COD amount is fixed to `total` at that point (see hasUsableAddress's neighbor in
+ * courier.service.ts), and on terminal orders where the sale is already settled. */
+export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput, changedByAdminId?: string) {
+  const existing = await getOrderById(id);
+  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+  if (PRICE_ADJUSTMENT_LOCKED_STATUSES.includes(existing.status)) {
+    throw AppError.badRequest(`Cannot adjust price on an order that is ${existing.status.toLowerCase()}`);
+  }
+  if (existing.courierConsignmentId) {
+    throw AppError.badRequest("Cannot adjust price after a courier has been booked — unlink the booking first");
+  }
+
+  const previousAdjustment = Number(existing.priceAdjustment);
+  if (previousAdjustment === input.priceAdjustment) return existing;
+
+  const newTotal = Number(existing.subtotal) - Number(existing.discount) + Number(existing.shippingFee) + input.priceAdjustment;
+  if (newTotal < 0) throw AppError.badRequest("Total cannot be negative");
+
+  const note =
+    `Price adjustment: ${formatBdt(previousAdjustment)} -> ${formatBdt(input.priceAdjustment)} (total ${formatBdt(Number(existing.total))} -> ${formatBdt(newTotal)})` +
+    (input.note ? ` — ${input.note}` : "");
+
+  return prisma.order.update({
+    where: { id },
+    data: {
+      priceAdjustment: input.priceAdjustment,
+      total: newTotal,
+      statusHistory: { create: { status: existing.status, note, changedByAdminId: changedByAdminId ?? null } },
     },
     include,
   });

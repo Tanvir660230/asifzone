@@ -4,9 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer, Truck, Trash2, RotateCcw, Package, Pencil, X } from "lucide-react";
-import type { OrderStatus, UpdateOrderDetailsInput } from "@clothing-brand/shared";
+import type { OrderStatus, UpdateOrderDetailsInput, AdjustOrderPriceInput } from "@clothing-brand/shared";
 import {
   updateOrderDetailsSchema,
+  adjustOrderPriceSchema,
   BD_ALL_DISTRICTS,
   BD_AREAS_BY_DISTRICT,
   BD_ALL_AREA_OPTIONS,
@@ -37,6 +38,11 @@ interface DetailsDraft {
   shippingDistrict: string;
   shippingArea: string;
   shippingAddressLine: string;
+}
+
+interface PriceDraft {
+  amount: string;
+  note: string;
 }
 
 const HOLD_QUICK_PICKS = [
@@ -91,6 +97,9 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const [detailsDraft, setDetailsDraft] = useState<DetailsDraft | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [holdNote, setHoldNote] = useState("");
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceDraft, setPriceDraft] = useState<PriceDraft | null>(null);
+  const [priceError, setPriceError] = useState<string | null>(null);
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
@@ -143,6 +152,16 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
       toast.success("Follow-up hold cleared");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to clear hold"),
+  });
+
+  const priceMutation = useMutation({
+    mutationFn: (input: AdjustOrderPriceInput) => adminOrdersApi.adjustOrderPrice(id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      toast.success("Price adjusted");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to adjust price"),
   });
 
   const deleteMutation = useMutation({
@@ -266,6 +285,36 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     }
     setDetailsError(null);
     detailsMutation.mutate(parsed.data, { onSuccess: () => cancelEditingDetails() });
+  }
+
+  const canAdjustPrice = !order.deletedAt && !TERMINAL_ORDER_STATUSES.includes(order.status) && !order.courierConsignmentId;
+
+  function startEditingPrice() {
+    setPriceError(null);
+    setPriceDraft({ amount: String(Number(order.priceAdjustment)), note: "" });
+    setEditingPrice(true);
+  }
+
+  function cancelEditingPrice() {
+    setEditingPrice(false);
+    setPriceDraft(null);
+    setPriceError(null);
+  }
+
+  function savePrice() {
+    if (!priceDraft) return;
+    const amount = priceDraft.amount.trim() === "" ? 0 : Number(priceDraft.amount);
+    if (!Number.isFinite(amount)) {
+      setPriceError("Enter a valid amount");
+      return;
+    }
+    const parsed = adjustOrderPriceSchema.safeParse({ priceAdjustment: amount, note: priceDraft.note || null });
+    if (!parsed.success) {
+      setPriceError(parsed.error.issues[0]?.message ?? "Please check the amount");
+      return;
+    }
+    setPriceError(null);
+    priceMutation.mutate(parsed.data, { onSuccess: () => cancelEditingPrice() });
   }
 
   return (
@@ -725,6 +774,56 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               <span>Shipping</span>
               <span>{formatPrice(order.shippingFee)}</span>
             </div>
+            {!editingPrice && Number(order.priceAdjustment) !== 0 && (
+              <div className={`flex justify-between ${Number(order.priceAdjustment) < 0 ? "text-success-600" : "text-ink-600"}`}>
+                <span>Price adjustment</span>
+                <span>
+                  {Number(order.priceAdjustment) > 0 ? "+" : "−"}
+                  {formatPrice(Math.abs(Number(order.priceAdjustment)))}
+                </span>
+              </div>
+            )}
+
+            {editingPrice && priceDraft ? (
+              <div className="space-y-2 border-t border-ink-100 pt-2">
+                <div>
+                  <Label htmlFor="priceAdjustment">Price adjustment (৳, negative = discount)</Label>
+                  <Input
+                    id="priceAdjustment"
+                    type="number"
+                    step="1"
+                    value={priceDraft.amount}
+                    onChange={(e) => setPriceDraft({ ...priceDraft, amount: e.target.value })}
+                    placeholder="e.g. -100"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="priceAdjustmentNote">Reason (optional)</Label>
+                  <Input
+                    id="priceAdjustmentNote"
+                    value={priceDraft.note}
+                    onChange={(e) => setPriceDraft({ ...priceDraft, note: e.target.value })}
+                    placeholder="e.g. loyal customer discount"
+                  />
+                </div>
+                {priceError && <p className="text-danger-600">{priceError}</p>}
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={cancelEditingPrice}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" disabled={priceMutation.isPending} onClick={savePrice}>
+                    Save
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              canAdjustPrice && (
+                <button onClick={startEditingPrice} className="text-xs text-info-600 hover:underline">
+                  {Number(order.priceAdjustment) !== 0 ? "Edit adjustment" : "Adjust price"}
+                </button>
+              )
+            )}
+
             <div className="flex justify-between border-t border-ink-100 pt-1 text-base text-ink-900">
               <span>Total</span>
               <span>{formatPrice(order.total)}</span>

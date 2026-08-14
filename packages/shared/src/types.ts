@@ -277,6 +277,7 @@ export interface Order {
   subtotal: string;
   discount: string;
   shippingFee: string;
+  priceAdjustment: string;
   total: string;
   couponId: string | null;
   bundleId: string | null;

@@ -747,6 +747,14 @@ export const holdOrderSchema = z.object({
   note: nullableString(500),
 });
 
+/** A manual nudge to the order total an admin applies during the confirmation call — negative for
+ * a negotiated/goodwill discount, positive for a surcharge. Replaces whatever priceAdjustment was
+ * already on the order (not additive), so the UI always sends the new total adjustment, not a delta. */
+export const adjustOrderPriceSchema = z.object({
+  priceAdjustment: z.coerce.number().min(-100000).max(100000),
+  note: nullableString(500),
+});
+
 export const validateCouponSchema = z.object({
   code: z.string().min(1).max(64),
   subtotal: z.number().positive(),
@@ -764,6 +772,7 @@ export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
 export type HoldOrderInput = z.infer<typeof holdOrderSchema>;
+export type AdjustOrderPriceInput = z.infer<typeof adjustOrderPriceSchema>;
 export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
 export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
 export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;

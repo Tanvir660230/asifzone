@@ -7,6 +7,7 @@ import type {
   PaginatedResult,
   UpdateOrderDetailsInput,
   AdminCreateOrderInput,
+  AdjustOrderPriceInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 import { env } from "../env";
@@ -115,6 +116,12 @@ export function holdOrder(id: string, followUpAt: string, note?: string) {
 
 export function clearOrderHold(id: string) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/hold/clear`, { method: "POST" });
+}
+
+/** Manual total nudge (negotiated discount/surcharge) applied during the confirmation call —
+ * replaces whatever adjustment was already on the order, it isn't additive. */
+export function adjustOrderPrice(id: string, input: AdjustOrderPriceInput) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/price`, { method: "PATCH", body: input });
 }
 
 export function deleteOrder(id: string) {
