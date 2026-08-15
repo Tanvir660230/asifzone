@@ -1,4 +1,21 @@
-import "dotenv/config";
+import path from "node:path";
+import dotenv from "dotenv";
+
+// Load env files without overriding vars already present in the real environment (so injected
+// Vercel/production env vars always win). In this monorepo the api is started by `turbo run dev`
+// from the repo root, so the integration-provided vars (PGHOST, AWS_ROLE_ARN, VERCEL_OIDC_TOKEN,
+// …) live in the repo-root .env files rather than in apps/api. We load a local apps/api/.env first
+// (if present), then fall back to the repo-root files. On a real deploy none of these files exist
+// and the platform-injected env vars are used directly.
+const repoRoot = path.resolve(__dirname, "../../../..");
+dotenv.config({
+  path: [
+    path.join(process.cwd(), ".env"),
+    path.join(repoRoot, ".env.development.local"),
+    path.join(repoRoot, ".env.local"),
+    path.join(repoRoot, ".env"),
+  ],
+});
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
 // Allowlist, not a "not production" denylist: staging/QA/a typo'd NODE_ENV value must fail
@@ -18,7 +35,10 @@ function required(name: string, devFallback?: string): string {
 export const env = {
   nodeEnv,
   port: Number(process.env.PORT ?? 4000),
-  databaseUrl: required("DATABASE_URL"),
+  // Optional: Aurora PostgreSQL on Vercel authenticates via short-lived AWS IAM tokens (see
+  // config/prisma.ts), so no static connection string is needed. When DATABASE_URL *is* set (e.g.
+  // a local Postgres, or `prisma migrate`), config/prisma.ts uses it directly.
+  databaseUrl: process.env.DATABASE_URL ?? "",
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   jwtAccessSecret: required("JWT_ACCESS_SECRET", "dev-access-secret-change-me"),
   // Separate secrets for customer tokens so an admin and a customer token can never cross-verify.

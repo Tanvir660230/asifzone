@@ -1,9 +1,12 @@
 generator client {
-  provider      = "prisma-client-js"
+  provider = "prisma-client-js"
   // "native" for local dev (whatever the host is); the musl target is what the node:20-alpine
   // Docker image actually runs on, and its Alpine base ships OpenSSL 3.x, not the 1.1 the
   // default musl engine binary needs.
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+  // driverAdapters lets us hand Prisma a `pg` Pool whose password is a short-lived AWS IAM auth
+  // token (Aurora on Vercel uses OIDC/IAM auth, not a static password), instead of a DATABASE_URL.
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -263,7 +266,7 @@ model Product {
   viewLogs          ProductViewLog[]
   reviews           ProductReview[]
   /// Denormalized from ProductReview (APPROVED only) so every product listing can show a rating
-  /// without an aggregate join on every request — recomputed whenever a review is approved,
+  /// without an aggregate join on every request �� recomputed whenever a review is approved,
   /// rejected (after having been approved), or deleted.
   avgRating         Float            @default(0)
   reviewCount       Int              @default(0)
