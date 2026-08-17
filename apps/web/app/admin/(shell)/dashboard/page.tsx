@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   DollarSign,
@@ -15,7 +16,6 @@ import {
   Search as SearchIcon,
   Target,
   Flame,
-  Wallet,
   Truck,
   PhoneCall,
   Users,
@@ -25,12 +25,18 @@ import {
   Radio,
   Smartphone,
   Chrome,
+  Package,
+  CalendarDays,
+  Plus,
+  ArrowUpRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
-import { PageHeader } from "@/components/admin/page-header";
+import { ConversionMetricCard } from "@/components/admin/conversion-metric-card";
+import { HeroRevenueCard } from "@/components/admin/hero-revenue-card";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { RevenueChart } from "@/components/admin/revenue-chart";
+import { RevenueChartCard, type RevenueRangeDays } from "@/components/admin/revenue-chart-card";
 import { VisitorChart } from "@/components/admin/visitor-chart";
 import { TrafficHeatmap } from "@/components/admin/traffic-heatmap";
 import { TopProductsChart } from "@/components/admin/top-products-chart";
@@ -42,6 +48,7 @@ import { CohortRetentionGrid } from "@/components/admin/cohort-retention-grid";
 import { RankedBarList } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
+import * as categoriesApi from "@/lib/api/categories";
 import { computeTrendPct, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +69,18 @@ export default function DashboardPage() {
   const { data: currentAdmin } = useCurrentAdmin();
   const [tab, setTab] = useState<AnalyticsTab>("sales");
 
+  // Computed client-side after mount (not during render) so the server-rendered markup and the
+  // first client paint match exactly — `new Date()` depends on the reader's clock/timezone, and
+  // evaluating it during render risks a hydration mismatch between server and browser.
+  const [greeting, setGreeting] = useState("Welcome back");
+  const [dateLabel, setDateLabel] = useState("");
+  useEffect(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    setGreeting(hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening");
+    setDateLabel(now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }));
+  }, []);
+
   // Today's order-ops snapshot — moved here from the Orders page so that page stays focused on
   // the order table itself instead of losing its top third of scroll space to KPI tiles.
   const { data: orderStats } = useQuery({ queryKey: ["admin-order-stats"], queryFn: adminOrdersApi.getOrderStats });
@@ -77,6 +96,13 @@ export default function DashboardPage() {
   // Hero — the "what needs my attention right now" set, always fetched on mount.
   const { data: summary } = useQuery({ queryKey: ["analytics-summary"], queryFn: analyticsApi.getSummary });
   const { data: revenue } = useQuery({ queryKey: ["analytics-revenue"], queryFn: () => analyticsApi.getRevenueSeries(30) });
+  // Independent of the 30-day `revenue` query above (which the hero revenue card's sparkline
+  // relies on) — this one drives only the Revenue chart card's own 7D/30D/90D filter.
+  const [chartRange, setChartRange] = useState<RevenueRangeDays>(30);
+  const { data: chartRevenue, isFetching: chartRevenueFetching } = useQuery({
+    queryKey: ["analytics-revenue-chart", chartRange],
+    queryFn: () => analyticsApi.getRevenueSeries(chartRange),
+  });
   const { data: lowStock } = useQuery({ queryKey: ["analytics-low-stock"], queryFn: analyticsApi.getLowStock });
   // Polled every 30s so "on the site right now" actually stays current — the endpoint itself is
   // only cached 15s server-side, so this doesn't just keep re-reading a stale number.
@@ -140,6 +166,16 @@ export default function DashboardPage() {
     queryFn: () => analyticsApi.getDemandForecast(14, 8),
     enabled: tab === "catalog",
   });
+  const { data: categoriesData } = useQuery({
+    queryKey: ["categories", "active"],
+    queryFn: () => categoriesApi.listCategories(),
+    enabled: tab === "catalog",
+  });
+  const { data: categoryStock } = useQuery({
+    queryKey: ["categories", "stock-map"],
+    queryFn: categoriesApi.getCategoryStockMap,
+    enabled: tab === "catalog",
+  });
 
   const { data: visitors } = useQuery({
     queryKey: ["analytics-visitors"],
@@ -197,71 +233,118 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Dashboard"
-        description={currentAdmin ? `Welcome back, ${firstName(currentAdmin.admin.name)}.` : undefined}
-      />
+      <div className="relative overflow-hidden rounded-3xl border border-ink-100 bg-cream-50 px-6 py-8 shadow-sm sm:px-10 sm:py-10">
+        {/* Faint corner glow — restrained enough to read as texture, not decoration, at 100% zoom. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-ink-900/[0.03] blur-3xl"
+        />
+        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-xl space-y-3">
+            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-ink-400">
+              <CalendarDays size={13} strokeWidth={2.5} />
+              {dateLabel || " "}
+            </p>
+            <h1 className="font-display text-4xl leading-[1.1] tracking-tight text-ink-900 sm:text-[2.75rem]">
+              {greeting}
+              {currentAdmin ? `, ${firstName(currentAdmin.admin.name)}` : ""}
+            </h1>
+            <p className="text-[15px] text-ink-500">Here&apos;s how your store is performing today.</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {activeVisitors && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-ink-200 bg-cream-50 px-3.5 py-2 text-xs font-medium text-ink-600 shadow-sm">
+                <span className="relative flex h-2 w-2 shrink-0">
+                  {activeVisitors.count > 0 && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-500 opacity-75" />
+                  )}
+                  <span
+                    className={cn(
+                      "relative inline-flex h-2 w-2 rounded-full",
+                      activeVisitors.count > 0 ? "bg-success-500" : "bg-ink-300",
+                    )}
+                  />
+                </span>
+                {activeVisitors.count} live on site
+              </div>
+            )}
+            <Link href="/admin/orders">
+              <Button variant="outline">
+                View orders <ArrowUpRight size={15} />
+              </Button>
+            </Link>
+            <Link href="/admin/orders/new">
+              <Button variant="primary">
+                <Plus size={16} /> Create order
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
 
       <div className="space-y-3.5">
         <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Today — needs action</p>
-        <div
-          className={cn(
-            "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6",
-            orderStats && balanceData && "2xl:grid-cols-7",
-          )}
-        >
-          <StatTile
-            label="On site right now"
-            value={activeVisitors ? String(activeVisitors.count) : "—"}
-            icon={<Radio size={22} />}
-            tone={activeVisitors && activeVisitors.count > 0 ? "accent" : "default"}
-          />
-          {orderStats ? (
-            <>
-              <StatTile label="Today's orders" value={String(orderStats.todayOrders)} icon={<ShoppingBag size={22} />} />
-              <StatTile
-                label="Today's revenue"
-                value={formatPrice(orderStats.todayRevenue)}
-                icon={<Wallet size={22} />}
-                tone="accent"
-              />
-              <StatTile label="Pending" value={String(orderStats.pending)} icon={<Clock size={22} />} />
-              <StatTile
-                label="Needs attention"
-                value={String(orderStats.needsAttention)}
-                icon={<AlertTriangle size={22} />}
-                tone={orderStats.needsAttention > 0 ? "warning" : "default"}
-              />
-              <StatTile
-                label="Follow-up due"
-                value={String(orderStats.followUpDue)}
-                icon={<PhoneCall size={22} />}
-                tone={orderStats.followUpDue > 0 ? "warning" : "default"}
-              />
-              {balanceData && (
-                <StatTile
-                  label="Steadfast balance"
-                  value={formatPrice(balanceData.balance)}
-                  icon={<Truck size={22} />}
-                  tone="accent"
-                />
-              )}
-            </>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          {orderStats && revenue ? (
+            <HeroRevenueCard
+              className="lg:col-span-2"
+              value={formatPrice(orderStats.todayRevenue)}
+              todayOrders={orderStats.todayOrders}
+              trendPct={summary ? computeTrendPct(summary.revenue30d, summary.revenuePrev30d) : undefined}
+              series={revenue.series.slice(-14).map((p) => p.revenue)}
+            />
           ) : (
-            <>
-              <StatTileSkeleton />
-              <StatTileSkeleton />
-              <StatTileSkeleton />
-              <StatTileSkeleton />
-              <StatTileSkeleton />
-            </>
+            <div className="h-[15.5rem] animate-pulse rounded-3xl bg-ink-100 lg:col-span-2" />
           )}
+
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:col-span-3 lg:grid-cols-3">
+            <StatTile
+              label="On site right now"
+              value={activeVisitors ? String(activeVisitors.count) : "—"}
+              icon={<Radio size={22} />}
+              tone={activeVisitors && activeVisitors.count > 0 ? "accent" : "default"}
+            />
+            {orderStats ? (
+              <>
+                <StatTile label="Today's orders" value={String(orderStats.todayOrders)} icon={<ShoppingBag size={22} />} />
+                <StatTile label="Pending" value={String(orderStats.pending)} icon={<Clock size={22} />} />
+                <StatTile
+                  label="Needs attention"
+                  value={String(orderStats.needsAttention)}
+                  icon={<AlertTriangle size={22} />}
+                  tone={orderStats.needsAttention > 0 ? "warning" : "default"}
+                />
+                <StatTile
+                  label="Follow-up due"
+                  value={String(orderStats.followUpDue)}
+                  icon={<PhoneCall size={22} />}
+                  tone={orderStats.followUpDue > 0 ? "warning" : "default"}
+                />
+                {balanceData && (
+                  <StatTile
+                    label="Steadfast balance"
+                    value={formatPrice(balanceData.balance)}
+                    icon={<Truck size={22} />}
+                    tone="accent"
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <StatTileSkeleton />
+                <StatTileSkeleton />
+                <StatTileSkeleton />
+                <StatTileSkeleton />
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="space-y-3.5">
         <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Last 30 days</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatTile
             label="Revenue (30d)"
             value={summary ? formatPrice(summary.revenue30d) : "—"}
@@ -295,16 +378,29 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Revenue — last 30 days</CardTitle>
-        </CardHeader>
-        <CardContent>{revenue && <RevenueChart data={revenue.series} />}</CardContent>
-      </Card>
+      <RevenueChartCard
+        series={chartRevenue?.series}
+        range={chartRange}
+        onRangeChange={setChartRange}
+        loading={chartRevenueFetching}
+      />
 
       <Card>
-        <CardHeader>
-          <CardTitle>Low stock</CardTitle>
+        <CardHeader className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <CardTitle>Low stock</CardTitle>
+            {lowStock && lowStock.variants.length > 0 && (
+              <span className="rounded-full bg-warning-50 px-2 py-0.5 text-xs font-semibold text-warning-600">
+                {lowStock.variants.length}
+              </span>
+            )}
+          </div>
+          <Link
+            href="/admin/inventory"
+            className="flex shrink-0 items-center gap-1 text-sm font-medium text-ink-500 transition-colors duration-150 ease-smooth hover:text-ink-900"
+          >
+            View inventory <ArrowUpRight size={14} />
+          </Link>
         </CardHeader>
         <CardContent>{lowStock && <LowStockTable variants={lowStock.variants} />}</CardContent>
       </Card>
@@ -328,18 +424,28 @@ export default function DashboardPage() {
         {tab === "sales" && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <StatTile
+              <ConversionMetricCard
                 label="Avg order value (30d)"
-                value={summary ? formatPrice(summary.aov30d) : "—"}
-                icon={<DollarSign size={22} />}
+                value={summary ? formatPrice(Math.round(summary.aov30d)) : "—"}
+                icon={<DollarSign size={20} />}
+                tone="accent"
                 trendPct={summary ? computeTrendPct(summary.aov30d, summary.aovPrev30d) : undefined}
               />
-              <StatTile
+              <ConversionMetricCard
                 label="Conversion rate (30d)"
                 value={funnel ? `${funnel.conversionRate.toFixed(1)}%` : "—"}
-                icon={<Percent size={22} />}
+                caption={funnel ? `${funnel.convertedSessions} of ${funnel.totalSessions} sessions converted` : undefined}
+                icon={<Percent size={20} />}
+                pct={funnel?.conversionRate}
               />
-              <StatTile label="Bounce rate (30d)" value={funnel ? `${funnel.bounceRate.toFixed(1)}%` : "—"} icon={<LogOut size={22} />} />
+              <ConversionMetricCard
+                label="Bounce rate (30d)"
+                value={funnel ? `${funnel.bounceRate.toFixed(1)}%` : "—"}
+                caption={funnel ? `${funnel.bouncedSessions} of ${funnel.totalSessions} sessions bounced` : undefined}
+                icon={<LogOut size={20} />}
+                tone={funnel && funnel.bounceRate > 50 ? "warning" : "default"}
+                pct={funnel?.bounceRate}
+              />
             </div>
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <Card>
@@ -393,6 +499,33 @@ export default function DashboardPage() {
                       valueLabel: formatPrice(c.revenue),
                       subLabel: `${c.quantitySold} sold`,
                     }))}
+                  />
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package size={16} className="text-ink-400" /> Stock by category
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {categoriesData && categoryStock && (
+                  <RankedBarList
+                    emptyLabel="No categories yet."
+                    items={categoriesData.categories
+                      .filter((c) => !c.parentId)
+                      .map((c) => {
+                        const stat = categoryStock.stock[c.id];
+                        return {
+                          key: c.id,
+                          label: c.name,
+                          value: stat?.totalStock ?? 0,
+                          valueLabel: `${stat?.totalStock ?? 0} units`,
+                          subLabel: stat ? `${stat.inStockProducts} of ${stat.totalProducts} products in stock` : undefined,
+                        };
+                      })
+                      .sort((a, b) => b.value - a.value)}
                   />
                 )}
               </CardContent>

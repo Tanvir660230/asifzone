@@ -30,6 +30,8 @@ export interface TopProduct {
   name: string;
   quantitySold: number;
   revenue: number;
+  productId: string | null;
+  imageUrl: string | null;
 }
 
 export interface LowStockVariant {
@@ -37,8 +39,10 @@ export interface LowStockVariant {
   sku: string;
   size: string;
   color: string;
+  colorHex: string | null;
   stock: number;
-  product: { name: string; slug: string };
+  image: { url: string } | null;
+  product: { id: string; name: string; slug: string; images: { url: string }[] };
 }
 
 export function getSummary() {

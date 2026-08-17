@@ -64,25 +64,52 @@ export async function getOrderStatusCounts() {
 
 export async function getTopProducts(days = 30, limit = 5) {
   const cacheKey = `analytics:top-products:${days}:${limit}`;
-  const cached = await cacheGet<Array<{ name: string; quantitySold: number; revenue: number }>>(cacheKey);
+  const cached =
+    await cacheGet<Array<{ name: string; quantitySold: number; revenue: number; productId: string | null; imageUrl: string | null }>>(
+      cacheKey,
+    );
   if (cached) return cached;
 
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  const rows = await prisma.$queryRaw<Array<{ name: string; quantitySold: bigint; revenue: number }>>`
+  // OrderItem deliberately snapshots name/sku/price instead of foreign-keying the live Product —
+  // history has to stay accurate even after a product is renamed or deleted. `variantId` is still
+  // a real column though (just not a Prisma relation), so it's usable here to resolve a *current*
+  // thumbnail for products that are still live — grouped separately below, not joined into the
+  // aggregate query, since ProductImage is one-to-many and would multiply the SUM() rows.
+  const rows = await prisma.$queryRaw<Array<{ name: string; quantitySold: bigint; revenue: number; productId: string | null }>>`
     SELECT oi."productNameSnapshot" AS name,
            SUM(oi.quantity)::bigint AS "quantitySold",
-           SUM(oi.quantity * oi."priceSnapshot")::float AS revenue
+           SUM(oi.quantity * oi."priceSnapshot")::float AS revenue,
+           (ARRAY_AGG(pv."productId") FILTER (WHERE pv."productId" IS NOT NULL))[1] AS "productId"
     FROM "OrderItem" oi
     JOIN "Order" o ON o.id = oi."orderId"
+    LEFT JOIN "ProductVariant" pv ON pv.id = oi."variantId"
     WHERE o."createdAt" >= ${since} AND o.status != 'CANCELLED'
     GROUP BY oi."productNameSnapshot"
     ORDER BY revenue DESC
     LIMIT ${limit}
   `;
 
-  const result = rows.map((r) => ({ name: r.name, quantitySold: Number(r.quantitySold), revenue: r.revenue }));
+  const productIds = rows.map((r) => r.productId).filter((id): id is string => Boolean(id));
+  const images = productIds.length
+    ? await prisma.productImage.findMany({
+        where: { productId: { in: productIds } },
+        orderBy: { sortOrder: "asc" },
+        select: { productId: true, url: true },
+      })
+    : [];
+  const imageByProduct = new Map<string, string>();
+  for (const img of images) if (!imageByProduct.has(img.productId)) imageByProduct.set(img.productId, img.url);
+
+  const result = rows.map((r) => ({
+    name: r.name,
+    quantitySold: Number(r.quantitySold),
+    revenue: r.revenue,
+    productId: r.productId,
+    imageUrl: r.productId ? (imageByProduct.get(r.productId) ?? null) : null,
+  }));
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
   return result;
 }
@@ -90,7 +117,12 @@ export async function getTopProducts(days = 30, limit = 5) {
 export async function getLowStockVariants(threshold = 5, limit = 20) {
   return prisma.productVariant.findMany({
     where: { stock: { lte: threshold }, product: { isActive: true } },
-    include: { product: { select: { name: true, slug: true } } },
+    include: {
+      // `image` is this variant's own photo (e.g. the black colorway shot); falls back to the
+      // product's first gallery image when the variant has none of its own.
+      image: { select: { url: true } },
+      product: { select: { id: true, name: true, slug: true, images: { take: 1, orderBy: { sortOrder: "asc" }, select: { url: true } } } },
+    },
     orderBy: { stock: "asc" },
     take: limit,
   });

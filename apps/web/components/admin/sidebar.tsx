@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -25,6 +25,8 @@ import {
   MessageSquare,
   Star,
   Boxes,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
@@ -94,6 +96,8 @@ const NAV_SECTIONS = [
   },
 ];
 
+const COLLAPSE_STORAGE_KEY = "admin-sidebar-collapsed";
+
 interface SidebarProps {
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
@@ -110,6 +114,17 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
     active: mobileOpen,
     onEscape: () => onCloseMobile?.(),
   });
+
+  // Desktop-only compact mode — read from storage after mount (localStorage isn't available
+  // during SSR, so starting expanded and correcting client-side avoids a hydration mismatch, at
+  // the cost of a brief flash back to expanded for a returning admin who'd collapsed it before).
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem(COLLAPSE_STORAGE_KEY) === "true") setCollapsed(true);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem(COLLAPSE_STORAGE_KEY, String(collapsed));
+  }, [collapsed]);
 
   const visibleSections = NAV_SECTIONS.map((section) => ({
     ...section,
@@ -134,75 +149,109 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
     }
   }
 
-  const content = (
-    <>
-      <div className="flex items-center justify-between border-b border-ink-800 px-6 py-5">
-        <span className="font-display text-lg tracking-wide text-cream-50">Store Console</span>
-        {onCloseMobile && (
-          <button onClick={onCloseMobile} className="text-cream-200 lg:hidden" aria-label="Close menu">
-            <X size={20} />
-          </button>
-        )}
-      </div>
+  /** Rendered twice — once for the persistent desktop rail (which may be collapsed) and once for
+   * the mobile drawer (always full width, never collapsed, regardless of the desktop preference). */
+  function renderNav({ collapse, mobileDrawer }: { collapse: boolean; mobileDrawer: boolean }) {
+    return (
+      <>
+        <div className={cn("flex h-[68px] shrink-0 items-center border-b border-ink-800/70", collapse ? "justify-center px-2" : "justify-between px-6")}>
+          <span className="font-display text-lg tracking-wide text-cream-50">{collapse ? "SC" : "Store Console"}</span>
+          {mobileDrawer && (
+            <button onClick={onCloseMobile} className="text-cream-200" aria-label="Close menu">
+              <X size={20} />
+            </button>
+          )}
+        </div>
 
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        {visibleSections.map((section) => (
-          <div key={section.label}>
-            <p className="mb-1 px-3 text-xs uppercase tracking-wide text-ink-500">{section.label}</p>
-            <div className="space-y-1">
-              {section.items.map(({ href, label, icon: Icon }) => {
-                const active = pathname.startsWith(href);
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={onCloseMobile}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-smooth",
-                      active
-                        ? "bg-brass-400 text-ink-900 shadow-sm"
-                        : "text-cream-200 hover:translate-x-0.5 hover:bg-ink-800",
-                    )}
-                  >
-                    <Icon size={18} />
-                    {label}
-                  </Link>
-                );
-              })}
+        <nav className={cn("flex-1 space-y-6 overflow-y-auto overflow-x-hidden py-4", collapse ? "px-2.5" : "px-3")}>
+          {visibleSections.map((section) => (
+            <div key={section.label}>
+              {!collapse && (
+                <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{section.label}</p>
+              )}
+              <div className="space-y-0.5">
+                {section.items.map(({ href, label, icon: Icon }) => {
+                  const active = pathname.startsWith(href);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      onClick={onCloseMobile}
+                      title={collapse ? label : undefined}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "relative flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-all duration-200 ease-smooth",
+                        collapse ? "justify-center px-0" : "px-3",
+                        active ? "bg-white/[0.08] text-cream-50" : "text-cream-300/90 hover:translate-x-0.5 hover:bg-ink-800 hover:text-cream-50",
+                      )}
+                    >
+                      {active && (
+                        <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-cream-50" aria-hidden />
+                      )}
+                      <Icon size={18} className="shrink-0" />
+                      {!collapse && <span className="truncate">{label}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </nav>
+          ))}
+        </nav>
 
-      <div className="mx-3 mb-4 space-y-0.5">
-        <button
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-cream-200 transition-colors duration-200 ease-smooth hover:bg-ink-800"
-        >
-          <LogOut size={18} />
-          Log out
-        </button>
-        <button
-          onClick={handleLogoutEverywhere}
-          disabled={signingOutEverywhere}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-xs text-ink-400 transition-colors duration-200 ease-smooth hover:bg-ink-800 hover:text-cream-200 disabled:opacity-50"
-        >
-          <ShieldOff size={15} />
-          {signingOutEverywhere ? "Signing out everywhere…" : "Log out of all devices"}
-        </button>
-      </div>
-    </>
-  );
+        <div className={cn("mb-3 mt-1 space-y-0.5 border-t border-ink-800/70 pt-3", collapse ? "mx-2.5" : "mx-3")}>
+          <button
+            onClick={handleLogout}
+            title={collapse ? "Log out" : undefined}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-lg py-2.5 text-sm text-cream-300/90 transition-colors duration-200 ease-smooth hover:bg-ink-800 hover:text-cream-50",
+              collapse ? "justify-center px-0" : "px-3",
+            )}
+          >
+            <LogOut size={18} className="shrink-0" />
+            {!collapse && "Log out"}
+          </button>
+          <button
+            onClick={handleLogoutEverywhere}
+            disabled={signingOutEverywhere}
+            title={collapse ? "Log out of all devices" : undefined}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-lg py-2.5 text-xs text-ink-500 transition-colors duration-200 ease-smooth hover:bg-ink-800 hover:text-cream-200 disabled:opacity-50",
+              collapse ? "justify-center px-0" : "px-3",
+            )}
+          >
+            <ShieldOff size={15} className="shrink-0" />
+            {!collapse && (signingOutEverywhere ? "Signing out everywhere…" : "Log out of all devices")}
+          </button>
+          {!mobileDrawer && (
+            <button
+              onClick={() => setCollapsed((c) => !c)}
+              className={cn(
+                "mt-1 flex w-full items-center gap-3 rounded-lg py-2.5 text-xs text-ink-500 transition-colors duration-200 ease-smooth hover:bg-ink-800 hover:text-cream-200",
+                collapse ? "justify-center px-0" : "px-3",
+              )}
+            >
+              {collapse ? <PanelLeftOpen size={16} className="shrink-0" /> : <PanelLeftClose size={16} className="shrink-0" />}
+              {!collapse && "Collapse"}
+            </button>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
-      {/* Desktop: static sidebar */}
-      <aside className="hidden h-screen w-60 shrink-0 flex-col border-r border-ink-800 bg-ink-950 text-cream-100 lg:flex">
-        {content}
+      {/* Desktop: static, collapsible sidebar */}
+      <aside
+        className={cn(
+          "hidden h-screen shrink-0 flex-col border-r border-ink-800 bg-ink-950 text-cream-100 transition-[width] duration-300 ease-smooth lg:flex",
+          collapsed ? "w-[76px]" : "w-60",
+        )}
+      >
+        {renderNav({ collapse: collapsed, mobileDrawer: false })}
       </aside>
 
-      {/* Mobile: off-canvas drawer */}
+      {/* Mobile: off-canvas drawer — always full width/labels, independent of the desktop preference */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 animate-fade-in bg-ink-950/50 backdrop-blur-sm" onClick={onCloseMobile} />
@@ -214,7 +263,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
             tabIndex={-1}
             className="relative flex h-full w-64 animate-modal-in flex-col bg-ink-950 text-cream-100 shadow-floatLg"
           >
-            {content}
+            {renderNav({ collapse: false, mobileDrawer: true })}
           </aside>
         </div>
       )}
