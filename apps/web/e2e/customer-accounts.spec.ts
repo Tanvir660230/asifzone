@@ -42,7 +42,8 @@ test.describe("customer account journey", () => {
     await page.getByLabel("Password", { exact: true }).fill(originalPassword);
     await page.getByRole("button", { name: /create account/i }).click();
     await expect(page).toHaveURL(/\/account$/);
-    await expect(page.getByText(/Hi, Playwright/i)).toBeVisible();
+    // AccountOverview shows the full name next to an avatar, not a "Hi, {firstName}" greeting.
+    await expect(page.getByText("Playwright User", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: /log out/i }).click();
     await expect(page).toHaveURL(/\/account\/login/);
