@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Star, Trash2 } from "lucide-react";
+import { MapPin, Plus, Star, Trash2 } from "lucide-react";
 import {
   createAddressSchema,
   BD_ALL_DISTRICTS,
@@ -24,6 +24,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountEmptyState } from "@/components/account/account-empty-state";
 import * as customersApi from "@/lib/api/customers";
 import { ApiError } from "@/lib/api-client";
 
@@ -77,12 +79,15 @@ export default function AccountAddressesPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display text-2xl text-ink-900">Saved addresses</h1>
-        <Button variant="brass" onClick={() => setEditing("new")}>
-          <Plus size={16} /> Add address
-        </Button>
-      </div>
+      <AccountPageHeader
+        title="Saved addresses"
+        description="Manage the addresses you ship orders to."
+        action={
+          <Button variant="brass" onClick={() => setEditing("new")}>
+            <Plus size={16} /> Add address
+          </Button>
+        }
+      />
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -96,11 +101,25 @@ export default function AccountAddressesPage() {
           ))}
         </div>
       )}
-      {!isLoading && data?.addresses.length === 0 && <p className="text-ink-400">No saved addresses yet.</p>}
+      {!isLoading && data?.addresses.length === 0 && (
+        <AccountEmptyState
+          icon={MapPin}
+          title="No saved addresses yet"
+          description="Add an address to speed through checkout next time."
+          action={
+            <Button size="sm" onClick={() => setEditing("new")}>
+              <Plus size={16} /> Add address
+            </Button>
+          }
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {data?.addresses.map((address) => (
-          <div key={address.id} className="rounded-lg border border-ink-100 bg-cream-50 p-4">
+          <div
+            key={address.id}
+            className="rounded-lg border border-ink-100 bg-cream-50 p-4 shadow-sm transition-shadow duration-150 ease-smooth hover:shadow-float"
+          >
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-ink-900">{address.label || "Address"}</span>

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
+import { AccountPageHeader } from "@/components/account/account-page-header";
 
 export default function AccountBrowsingHistoryPage() {
   return (
     <div>
-      <h1 className="mb-6 font-display text-2xl text-ink-900">Browsing History</h1>
+      <AccountPageHeader title="Browsing History" description="Products you've recently looked at." />
       <RecentlyViewedCarousel
         title="Recently Viewed"
         emptyState={

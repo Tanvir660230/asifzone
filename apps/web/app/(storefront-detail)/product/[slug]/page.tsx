@@ -136,7 +136,12 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <>
-      <TrackProductView productId={product.id} categoryId={product.categoryId} price={Number(product.basePrice)} />
+      <TrackProductView
+        productId={product.id}
+        productName={product.name}
+        categoryId={product.categoryId}
+        price={Number(product.basePrice)}
+      />
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <script
           type="application/ld+json"

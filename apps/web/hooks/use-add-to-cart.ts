@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ProductVariant } from "@clothing-brand/shared";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
+import { pixelAddToCart } from "@/lib/meta-pixel";
 
 interface UseAddToCartParams {
   selectedVariant: ProductVariant | undefined;
@@ -44,6 +45,7 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     const item = buildCartItem();
     if (!item) return;
     addItem(item, quantity);
+    pixelAddToCart({ contentId: item.productId, contentName: productName, value: item.price, quantity });
     setJustAdded(true);
     setTimeout(() => setJustAdded(false), 2500);
   }
@@ -52,6 +54,7 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     const item = buildCartItem();
     if (!item) return;
     setExpressItem({ ...item, quantity });
+    pixelAddToCart({ contentId: item.productId, contentName: productName, value: item.price, quantity });
     router.push("/checkout");
   }
 

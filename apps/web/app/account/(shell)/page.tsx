@@ -13,7 +13,7 @@ import { updateCustomerProfile } from "@/lib/customer-auth";
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api-client";
 import { PushNotificationToggle } from "@/components/account/push-notification-toggle";
-import { AccountDashboardSummary } from "@/components/account/dashboard-summary";
+import { AccountPageHeader } from "@/components/account/account-page-header";
 
 export default function AccountProfilePage() {
   const { data, isLoading, refetch } = useCurrentCustomer();
@@ -63,9 +63,7 @@ export default function AccountProfilePage() {
 
   return (
     <div>
-      <AccountDashboardSummary />
-
-      <h1 className="mb-6 font-display text-2xl text-ink-900">Profile</h1>
+      <AccountPageHeader title="Profile" description="Manage your personal details and communication preferences." />
 
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
         <div>

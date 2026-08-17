@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,6 +30,7 @@ import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
 import { createOrder } from "@/lib/api/orders";
 import { getSessionId } from "@/lib/analytics";
+import { pixelInitiateCheckout } from "@/lib/meta-pixel";
 import { validateCoupon, getBestCoupon, type CouponPreview } from "@/lib/api/coupons";
 import { previewBundle } from "@/lib/api/bundles";
 import { listAddresses } from "@/lib/api/customers";
@@ -59,6 +60,20 @@ export default function CheckoutPage() {
   // item out right after "Buy Now" set it, making checkout look like an empty cart every time.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Fires once per page load, not once per render — items/subtotal change as coupons/bundles
+  // are applied, but that's still the same checkout attempt, not a new one.
+  const initiateCheckoutFired = useRef(false);
+  useEffect(() => {
+    if (!mounted || items.length === 0 || initiateCheckoutFired.current) return;
+    initiateCheckoutFired.current = true;
+    pixelInitiateCheckout({
+      contentIds: items.map((i) => i.productId),
+      value: subtotal,
+      numItems: items.reduce((sum, i) => sum + i.quantity, 0),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, items.length]);
 
   const [couponInput, setCouponInput] = useState("");
   const [coupon, setCoupon] = useState<CouponPreview | null>(null);
@@ -117,20 +132,23 @@ export default function CheckoutPage() {
     },
   });
 
-  // Both default true so the form isn't stuck showing neither option before settings load.
+  // COD/SSLCommerz default true so the form isn't stuck showing neither option before settings
+  // load; EPS-PG defaults false to match its own server-side default (off until an admin configures
+  // credentials and flips epsPaymentEnabled on).
   const codEnabled = settingsData?.settings.codEnabled ?? true;
   const onlinePaymentEnabled = settingsData?.settings.onlinePaymentEnabled ?? true;
+  const epsPaymentEnabled = settingsData?.settings.epsPaymentEnabled ?? false;
+  const anyPaymentMethodEnabled = codEnabled || onlinePaymentEnabled || epsPaymentEnabled;
   const paymentMethod = watch("paymentMethod");
 
   // If the shopper's currently-selected method gets turned off (or settings load in after mount and
   // COD wasn't actually available), fall back to whichever method is still enabled.
   useEffect(() => {
-    if (paymentMethod === "COD" && !codEnabled && onlinePaymentEnabled) {
-      setValue("paymentMethod", "SSLCOMMERZ");
-    } else if (paymentMethod === "SSLCOMMERZ" && !onlinePaymentEnabled && codEnabled) {
-      setValue("paymentMethod", "COD");
-    }
-  }, [codEnabled, onlinePaymentEnabled, paymentMethod, setValue]);
+    const enabledByMethod = { COD: codEnabled, SSLCOMMERZ: onlinePaymentEnabled, EPS_PG: epsPaymentEnabled } as const;
+    if (enabledByMethod[paymentMethod]) return;
+    const fallback = (Object.keys(enabledByMethod) as Array<keyof typeof enabledByMethod>).find((m) => enabledByMethod[m]);
+    if (fallback) setValue("paymentMethod", fallback);
+  }, [codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
   const shippingDivision = watch("shippingDivision");
   const shippingDistrict = watch("shippingDistrict");
@@ -586,11 +604,27 @@ export default function CheckoutPage() {
                   <Smartphone size={16} className="text-ink-400" />
                   <span>
                     Digital Payment
-                    <span className="block text-xs text-ink-400">bKash, Nagad &amp; Card</span>
+                    <span className="block text-xs text-ink-400">bKash, Nagad &amp; Card via SSLCommerz</span>
                   </span>
                 </label>
               )}
-              {!codEnabled && !onlinePaymentEnabled && (
+              {epsPaymentEnabled && (
+                <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
+                  <input
+                    type="radio"
+                    value="EPS_PG"
+                    className="accent-ink-900"
+                    {...register("paymentMethod")}
+                    defaultChecked={paymentMethod === "EPS_PG"}
+                  />
+                  <Smartphone size={16} className="text-ink-400" />
+                  <span>
+                    Digital Payment
+                    <span className="block text-xs text-ink-400">bKash, Nagad &amp; Card via EPS</span>
+                  </span>
+                </label>
+              )}
+              {!anyPaymentMethodEnabled && (
                 <p className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-600">
                   Checkout is temporarily unavailable — please try again later.
                 </p>
@@ -637,7 +671,7 @@ export default function CheckoutPage() {
             variant="brass"
             size="lg"
             className="w-full"
-            disabled={isSubmitting || (!codEnabled && !onlinePaymentEnabled)}
+            disabled={isSubmitting || !anyPaymentMethodEnabled}
           >
             {isSubmitting ? "Placing order…" : `Place Order — ${formatPrice(total)}`}
           </Button>

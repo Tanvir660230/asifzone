@@ -6,7 +6,7 @@ Monorepo: `apps/web` (Next.js storefront + admin), `apps/api` (Express backend),
 
 **Not yet set up (all blocked on an external account/access this repo can't create for you):**
 - **Production deployment** — no VPS/domain configured yet. Steps are below once you have Hostinger + Cloudflare access.
-- **Online payments** — no SSLCommerz store ID/password configured. COD works end-to-end regardless; add real credentials to `apps/api/.env` (`SSLCOMMERZ_STORE_ID`/`SSLCOMMERZ_STORE_PASSWORD`) once you have a sandbox or live merchant account.
+- **Online payments** — no SSLCommerz or EPS-PG credentials configured. COD works end-to-end regardless; add real credentials to `apps/api/.env` (`SSLCOMMERZ_STORE_ID`/`SSLCOMMERZ_STORE_PASSWORD`, or `EPS_USERNAME`/`EPS_PASSWORD`/`EPS_HASH_KEY`/`EPS_MERCHANT_ID`/`EPS_STORE_ID` — get these from EPS support at info@eps.com.bd) once you have a sandbox or live merchant account, then flip the matching toggle on in the admin Settings page (both start off there too).
 - **Transactional email** — no provider configured, so password-reset emails currently only write to `apps/api/.devmail/*.html` and the server console instead of actually sending (see `apps/api/src/lib/mailer.ts`). Once you have a Resend/SendGrid/SES API key, replace the body of `sendMail()` with a real provider call — every caller stays unchanged.
 - **Nightly backups** — `docker/backup.sh` exists but needs to be added to the VPS's crontab after deployment (see below); it can't run until there's a VPS.
 

@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Tag } from "lucide-react";
 import type { Coupon } from "@clothing-brand/shared";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { listActiveCoupons } from "@/lib/api/coupons";
 import { formatPrice } from "@/lib/format";
 
@@ -40,23 +42,28 @@ export default function AccountCouponsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-display text-2xl text-ink-900">Coupons</h1>
+      <AccountPageHeader title="Coupons" description="Active discount codes you can use at checkout." />
 
       {isLoading && (
         <div className="space-y-3">
           {Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="animate-pulse border border-dashed border-ink-200 bg-cream-50 p-4">
+            <div key={i} className="animate-pulse rounded-lg border border-dashed border-ink-200 bg-cream-50 p-4">
               <div className="h-4 w-28 rounded bg-ink-100" />
               <div className="mt-2 h-3 w-40 rounded bg-ink-100" />
             </div>
           ))}
         </div>
       )}
-      {!isLoading && data?.coupons.length === 0 && <p className="text-ink-400">No active coupons right now.</p>}
+      {!isLoading && data?.coupons.length === 0 && (
+        <AccountEmptyState icon={Tag} title="No active coupons right now" description="Check back later for new offers." />
+      )}
 
       <div className="space-y-3">
         {data?.coupons.map((coupon) => (
-          <div key={coupon.id} className="flex items-center justify-between border border-dashed border-sale-500/40 bg-sale-50 p-4">
+          <div
+            key={coupon.id}
+            className="flex items-center justify-between rounded-lg border border-dashed border-sale-500/40 bg-sale-50 p-4 shadow-sm"
+          >
             <div>
               <p className="font-display text-lg text-ink-900">{coupon.code}</p>
               <p className="text-sm text-ink-600">

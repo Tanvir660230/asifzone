@@ -139,6 +139,7 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   paymentMethodsImageUrl: null,
   codEnabled: true,
   onlinePaymentEnabled: true,
+  epsPaymentEnabled: false,
   googleSiteVerification: null,
   updatedAt: new Date(0).toISOString(),
 };

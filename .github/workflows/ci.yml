@@ -143,6 +143,9 @@ jobs:
           echo "WEB_ORIGIN=${{ secrets.WEB_ORIGIN }}" >> docker/.env
           echo "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> docker/.env
           echo "NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker/.env
+          # Optional — docker-compose.yml build arg falls back to empty, which keeps
+          # MetaPixelScript inert, so this isn't in the required-secrets check above.
+          echo "NEXT_PUBLIC_META_PIXEL_ID=${{ secrets.NEXT_PUBLIC_META_PIXEL_ID }}" >> docker/.env
           # Same public domain as NEXT_PUBLIC_SITE_URL — everything lives behind one nginx host in
           # this deploy, and this is what the API embeds into category/banner/logo/editor image
           # URLs. No separate secret to maintain; reusing NEXT_PUBLIC_SITE_URL keeps it from ever
@@ -170,6 +173,19 @@ jobs:
           echo "STEADFAST_SECRET_KEY=${{ secrets.STEADFAST_SECRET_KEY }}" >> docker/.env
           echo "STEADFAST_BASE_URL=${{ secrets.STEADFAST_BASE_URL }}" >> docker/.env
           echo "STEADFAST_WEBHOOK_TOKEN=${{ secrets.STEADFAST_WEBHOOK_TOKEN }}" >> docker/.env
+          # Optional — docker-compose.yml already defaults these to empty/false, and the checkout
+          # option stays hidden until the admin flips it on in Settings, so neither gateway is in
+          # the required-secrets check above. Without them, enabling the toggle would fail every
+          # checkout with "could not start the payment session" instead of actually working.
+          echo "SSLCOMMERZ_STORE_ID=${{ secrets.SSLCOMMERZ_STORE_ID }}" >> docker/.env
+          echo "SSLCOMMERZ_STORE_PASSWORD=${{ secrets.SSLCOMMERZ_STORE_PASSWORD }}" >> docker/.env
+          echo "SSLCOMMERZ_IS_LIVE=${{ secrets.SSLCOMMERZ_IS_LIVE }}" >> docker/.env
+          echo "EPS_USERNAME=${{ secrets.EPS_USERNAME }}" >> docker/.env
+          echo "EPS_PASSWORD=${{ secrets.EPS_PASSWORD }}" >> docker/.env
+          echo "EPS_HASH_KEY=${{ secrets.EPS_HASH_KEY }}" >> docker/.env
+          echo "EPS_MERCHANT_ID=${{ secrets.EPS_MERCHANT_ID }}" >> docker/.env
+          echo "EPS_STORE_ID=${{ secrets.EPS_STORE_ID }}" >> docker/.env
+          echo "EPS_SANDBOX=${{ secrets.EPS_SANDBOX }}" >> docker/.env
 
       - name: Build and restart the stack
         run: |

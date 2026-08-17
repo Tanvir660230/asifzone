@@ -276,7 +276,7 @@ export interface Order {
     | "CANCELLED"
     | "RETURNED"
     | "REFUNDED";
-  paymentMethod: "COD" | "SSLCOMMERZ";
+  paymentMethod: "COD" | "SSLCOMMERZ" | "EPS_PG";
   paymentStatus: "UNPAID" | "PAID" | "FAILED" | "REFUNDED";
   customerName: string;
   customerEmail: string | null;
@@ -607,6 +607,7 @@ export interface StoreSettings {
   paymentMethodsImageUrl: string | null;
   codEnabled: boolean;
   onlinePaymentEnabled: boolean;
+  epsPaymentEnabled: boolean;
   googleSiteVerification: string | null;
   updatedAt: string;
 }

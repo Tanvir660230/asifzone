@@ -4,7 +4,7 @@ import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/form
 
 export function OrderSummaryCard({ order }: { order: Order }) {
   return (
-    <div className="border border-ink-100 p-6 text-left">
+    <div className="rounded-lg border border-ink-100 bg-cream-50 p-6 text-left shadow-sm transition-shadow duration-150 ease-smooth hover:shadow-float">
       <div className="mb-4 flex items-center justify-between border-b border-ink-100 pb-4">
         <span className="text-sm text-ink-500">Status</span>
         <Badge className={orderStatusBadgeClass(order.status)}>{orderStatusLabel(order.status)}</Badge>

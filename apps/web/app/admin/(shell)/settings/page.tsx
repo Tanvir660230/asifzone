@@ -255,6 +255,7 @@ export default function SettingsPage() {
       tawkWidgetId: s.tawkWidgetId,
       codEnabled: s.codEnabled,
       onlinePaymentEnabled: s.onlinePaymentEnabled,
+      epsPaymentEnabled: s.epsPaymentEnabled,
       googleSiteVerification: s.googleSiteVerification,
     });
   }, [data, reset]);
@@ -273,6 +274,9 @@ export default function SettingsPage() {
   const liveChatEnabled = watch("liveChatEnabled");
   const codEnabled = watch("codEnabled");
   const onlinePaymentEnabled = watch("onlinePaymentEnabled");
+  const epsPaymentEnabled = watch("epsPaymentEnabled");
+  const isLastPaymentMethodEnabled =
+    (codEnabled ? 1 : 0) + (onlinePaymentEnabled ? 1 : 0) + (epsPaymentEnabled ? 1 : 0) === 1;
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
@@ -558,16 +562,23 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium text-ink-900">Cash on Delivery</p>
                 <p className="mt-0.5 text-xs text-ink-400">Pay in cash when the order arrives.</p>
               </div>
-              <Checkbox {...register("codEnabled")} disabled={!onlinePaymentEnabled && codEnabled} />
+              <Checkbox {...register("codEnabled")} disabled={codEnabled && isLastPaymentMethodEnabled} />
             </label>
             <label className="flex items-center justify-between rounded-lg border border-ink-100 p-4">
               <div>
-                <p className="text-sm font-medium text-ink-900">Online Payment</p>
+                <p className="text-sm font-medium text-ink-900">Online Payment (SSLCommerz)</p>
                 <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via SSLCommerz.</p>
               </div>
-              <Checkbox {...register("onlinePaymentEnabled")} disabled={!codEnabled && onlinePaymentEnabled} />
+              <Checkbox {...register("onlinePaymentEnabled")} disabled={onlinePaymentEnabled && isLastPaymentMethodEnabled} />
             </label>
-            {!codEnabled && !onlinePaymentEnabled && (
+            <label className="flex items-center justify-between rounded-lg border border-ink-100 p-4">
+              <div>
+                <p className="text-sm font-medium text-ink-900">Online Payment (EPS-PG)</p>
+                <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via EPS. Requires EPS_* env vars to be set.</p>
+              </div>
+              <Checkbox {...register("epsPaymentEnabled")} disabled={epsPaymentEnabled && isLastPaymentMethodEnabled} />
+            </label>
+            {!codEnabled && !onlinePaymentEnabled && !epsPaymentEnabled && (
               <p className="text-xs text-danger-600">At least one payment method must stay enabled.</p>
             )}
           </div>

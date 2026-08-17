@@ -729,7 +729,7 @@ export default function OrdersPage() {
           inner scroll box) — nesting a second vertical-scroll region inside an already-scrolling
           page made the mouse wheel scroll the tiny table box first before the page would move,
           which read as broken/janky. Horizontal scroll (for narrow viewports) is unaffected. */}
-      <div className="sticky top-14 z-10 -mx-4 space-y-2 border-b border-ink-100 bg-cream-50/95 px-4 pb-2.5 pt-2 backdrop-blur-sm sm:-mx-8 sm:px-8">
+      <div className="sticky top-14 z-30 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50/95 px-4 pb-3 pt-2.5 backdrop-blur-sm sm:-mx-8 sm:px-8">
         {isOwner && (
           <div className="flex items-center gap-1">
             {(["active", "trash"] as const).map((t) => (
@@ -751,140 +751,145 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {tab === "active" && (
-          <div className="rounded-xl border border-ink-100 bg-cream-50 px-3 py-2 shadow-sm lg:py-1.5">
-            {/* A single horizontally-scrollable row, not flex-wrap — 14 pills (All + 9 statuses + 4
-                quick filters) wrapping wastes several rows of height on any viewport, which buried
-                the actual order list below the fold. Same scroll-affordance component as the table. */}
-            <HScrollShadow className="overflow-x-auto">
-              <div className="flex flex-nowrap items-center gap-1.5">
-                <span className="mr-1 shrink-0 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
-                <button
-                  onClick={() => {
-                    setStatus("");
-                    setQuickFilter(null);
-                    setPage(1);
-                  }}
-                  className={cn(
-                    "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth lg:px-2.5 lg:py-1",
-                    !status
-                      ? "border-ink-900 bg-ink-900 text-cream-50"
-                      : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
-                  )}
-                >
-                  All
-                  {statusTotal !== undefined && (
-                    <span
-                      className={cn(
-                        "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
-                        !status ? "bg-cream-50/25 text-cream-50" : "bg-ink-900/10 text-ink-600",
-                      )}
-                    >
-                      {statusTotal}
-                    </span>
-                  )}
-                </button>
-                {STATUS_OPTIONS.map((s) => {
-                  const count = stats?.statusCounts[s];
-                  const active = status === s;
-                  return (
-                    <button
-                      key={s}
-                      onClick={() => {
-                        setStatus((prev) => (prev === s ? "" : s));
-                        setQuickFilter(null);
-                        setPage(1);
-                      }}
-                      className={cn(
-                        "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth lg:px-2.5 lg:py-1",
-                        orderStatusBadgeClass(s),
-                        active ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-60 hover:opacity-100",
-                      )}
-                    >
-                      {s}
-                      {typeof count === "number" && (
-                        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-900/10 px-1 text-[10px] font-semibold tabular-nums">
-                          {count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-                <span className="mx-1 h-4 w-px shrink-0 bg-ink-200" aria-hidden />
-                {QUICK_FILTERS.map((f) => (
+        {/* One unified elevated panel for the whole filter zone (status pills / search / advanced
+            filters), with internal dividers between sub-sections instead of each stacking its own
+            separately-bordered, separately-shadowed box — reads as one clean surface, not a pile
+            of boxes. */}
+        <div className="overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm">
+          {tab === "active" && (
+            <div className="border-b border-ink-100 px-4 py-2.5">
+              {/* A single horizontally-scrollable row, not flex-wrap — 14 pills (All + 9 statuses + 4
+                  quick filters) wrapping wastes several rows of height on any viewport, which buried
+                  the actual order list below the fold. Same scroll-affordance component as the table. */}
+              <HScrollShadow className="overflow-x-auto">
+                <div className="flex flex-nowrap items-center gap-1.5">
+                  <span className="mr-1 shrink-0 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
                   <button
-                    key={f.id}
-                    onClick={() => selectQuickFilter(f.id)}
+                    onClick={() => {
+                      setStatus("");
+                      setQuickFilter(null);
+                      setPage(1);
+                    }}
                     className={cn(
-                      "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth lg:px-2.5 lg:py-1",
-                      quickFilter === f.id
+                      "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth lg:px-2.5 lg:py-1",
+                      !status
                         ? "border-ink-900 bg-ink-900 text-cream-50"
-                        : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+                        : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
                     )}
                   >
-                    {f.label}
+                    All
+                    {statusTotal !== undefined && (
+                      <span
+                        className={cn(
+                          "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
+                          !status ? "bg-cream-50/25 text-cream-50" : "bg-ink-900/10 text-ink-600",
+                        )}
+                      >
+                        {statusTotal}
+                      </span>
+                    )}
                   </button>
-                ))}
-              </div>
-            </HScrollShadow>
-          </div>
-        )}
+                  {STATUS_OPTIONS.map((s) => {
+                    const count = stats?.statusCounts[s];
+                    const active = status === s;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => {
+                          setStatus((prev) => (prev === s ? "" : s));
+                          setQuickFilter(null);
+                          setPage(1);
+                        }}
+                        className={cn(
+                          "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth lg:px-2.5 lg:py-1",
+                          orderStatusBadgeClass(s),
+                          active ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-60 hover:opacity-100",
+                        )}
+                      >
+                        {s}
+                        {typeof count === "number" && (
+                          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-900/10 px-1 text-[10px] font-semibold tabular-nums">
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  <span className="mx-1 h-4 w-px shrink-0 bg-ink-200" aria-hidden />
+                  {QUICK_FILTERS.map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => selectQuickFilter(f.id)}
+                      className={cn(
+                        "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth lg:px-2.5 lg:py-1",
+                        quickFilter === f.id
+                          ? "border-ink-900 bg-ink-900 text-cream-50"
+                          : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </HScrollShadow>
+            </div>
+          )}
 
-        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-2 shadow-sm lg:py-1.5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative w-full sm:w-64 lg:w-56">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-              <Input
-                placeholder="Search order #, name, phone…"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                className="pl-9 pr-8"
-              />
-              {search && (
-                <button
-                  onClick={() => {
-                    setSearch("");
+          <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="relative w-full sm:w-64 lg:w-56">
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+                <Input
+                  placeholder="Search order #, name, phone…"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
                     setPage(1);
                   }}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-300 transition-colors hover:text-ink-600"
-                  aria-label="Clear search"
-                >
-                  <XCircle size={14} />
-                </button>
-              )}
+                  className="pl-9 pr-8"
+                />
+                {search && (
+                  <button
+                    onClick={() => {
+                      setSearch("");
+                      setPage(1);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-300 transition-colors hover:text-ink-600"
+                    aria-label="Clear search"
+                  >
+                    <XCircle size={14} />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => setShowMoreFilters((v) => !v)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth lg:py-1.5",
+                  showMoreFilters || activeMoreFiltersCount > 0
+                    ? "border-ink-900 bg-ink-900 text-cream-50"
+                    : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+                )}
+              >
+                <SlidersHorizontal size={14} />
+                More filters
+                {activeMoreFiltersCount > 0 && (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-[10px] font-semibold text-ink-900">
+                    {activeMoreFiltersCount}
+                  </span>
+                )}
+              </button>
             </div>
-            <button
-              onClick={() => setShowMoreFilters((v) => !v)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth lg:py-1.5",
-                showMoreFilters || activeMoreFiltersCount > 0
-                  ? "border-ink-900 bg-ink-900 text-cream-50"
-                  : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
-              )}
-            >
-              <SlidersHorizontal size={14} />
-              More filters
-              {activeMoreFiltersCount > 0 && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-[10px] font-semibold text-ink-900">
-                  {activeMoreFiltersCount}
-                </span>
-              )}
-            </button>
+            <PageSizeSelect
+              value={pageSize}
+              onChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+            />
           </div>
-          <PageSizeSelect
-            value={pageSize}
-            onChange={(size) => {
-              setPageSize(size);
-              setPage(1);
-            }}
-          />
-        </div>
 
-        {showMoreFilters && (
-          <div className="grid grid-cols-1 gap-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
+          {showMoreFilters && (
+          <div className="grid grid-cols-1 gap-3 border-t border-ink-100 p-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-500">Courier</label>
               <Select
@@ -988,10 +993,11 @@ export default function OrdersPage() {
               </div>
             )}
           </div>
-        )}
+          )}
+        </div>
 
         {selected.size > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink-200 bg-cream-50 px-3.5 py-2.5 text-sm shadow-float animate-fade-in">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink-200 bg-cream-50 px-4 py-3 text-sm shadow-float animate-fade-in">
             <span className="flex items-center gap-1.5 font-medium text-ink-800">
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-900 px-1.5 text-xs font-semibold text-cream-50">
                 {selected.size}
@@ -1056,49 +1062,49 @@ export default function OrdersPage() {
       </div>
 
       {/* sm and up: the original table, unchanged content. Below sm: a card list (below). */}
-      <div className="mt-4 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:block">
+      <div className="mt-5 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow sm:block">
         <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <thead className="border-b border-ink-100 bg-ink-50/70 text-left text-xs font-semibold uppercase tracking-wider text-ink-500">
             <tr>
-              <th className="w-10 px-4 py-3">
+              <th className="w-10 px-5 py-3.5">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="sticky left-0 z-20 bg-ink-50 px-4 py-3">
+              <th className="sticky left-0 z-20 bg-ink-50/70 px-5 py-3.5">
                 <SortableHeader column="orderNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Order
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">Product</th>
-              <th className="px-4 py-3">
+              <th className="px-5 py-3.5">Product</th>
+              <th className="px-5 py-3.5">
                 <SortableHeader column="customerName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Customer
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">
+              <th className="px-5 py-3.5">
                 <SortableHeader column="paymentStatus" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Payment
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">
+              <th className="px-5 py-3.5">
                 <div className="flex justify-end">
                   <SortableHeader column="total" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Total
                   </SortableHeader>
                 </div>
               </th>
-              <th className="px-4 py-3">
+              <th className="px-5 py-3.5">
                 <SortableHeader column="status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Status
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3">Courier</th>
-              <th className="hidden px-4 py-3 sm:table-cell">
+              <th className="px-5 py-3.5">Courier</th>
+              <th className="hidden px-5 py-3.5 sm:table-cell">
                 <SortableHeader column="createdAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Placed
                 </SortableHeader>
               </th>
-              <th className="px-4 py-3 text-right">Actions</th>
+              <th className="px-5 py-3.5 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1118,10 +1124,10 @@ export default function OrdersPage() {
                   STATUS_BORDER_COLORS[order.status],
                 )}
               >
-                <td className="px-4 py-3.5">
+                <td className="px-5 py-4">
                   <Checkbox checked={selected.has(order.id)} onChange={() => toggleOne(order.id)} aria-label={`Select ${order.orderNumber}`} />
                 </td>
-                <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3.5 group-hover:bg-ink-50">
+                <td className="sticky left-0 z-[1] bg-cream-50 px-5 py-4 group-hover:bg-ink-50/60">
                   <button
                     onClick={() => setDrawerOrderId(order.id)}
                     className="font-medium text-ink-900 transition-colors hover:text-info-600 hover:underline"
@@ -1129,10 +1135,10 @@ export default function OrdersPage() {
                     {order.orderNumber}
                   </button>
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-5 py-4">
                   <ProductCell summary={order.itemsSummary} />
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-5 py-4">
                   <div className="flex items-center gap-3">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
                       {initials(order.customerName)}
@@ -1143,7 +1149,7 @@ export default function OrdersPage() {
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-5 py-4">
                   <div className="flex flex-col items-start gap-1">
                     <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
                       {order.paymentMethod === "COD" ? "COD" : "Online"}
@@ -1162,16 +1168,16 @@ export default function OrdersPage() {
                     </span>
                   </div>
                 </td>
-                <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
-                <td className="px-4 py-3.5">{renderStatusCell(order)}</td>
-                <td className="px-4 py-3.5">{renderCourierCell(order)}</td>
-                <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
+                <td className="px-5 py-4 text-right font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
+                <td className="px-5 py-4">{renderStatusCell(order)}</td>
+                <td className="px-5 py-4">{renderCourierCell(order)}</td>
+                <td className="hidden px-5 py-4 text-ink-500 sm:table-cell">
                   <div>{new Date(order.createdAt).toLocaleDateString()}</div>
                   <div className="text-xs text-ink-400">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-5 py-4">
                   <div className="flex justify-end gap-3">{renderRowActions(order)}</div>
                 </td>
               </tr>
@@ -1188,7 +1194,7 @@ export default function OrdersPage() {
           disconnected-looking fragment behind. One shared container with border-t dividers between
           orders (same structure as the desktop table's rows) scrolls under the sticky bar exactly
           the way the table already does, with nothing looking detached. */}
-      <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:hidden">
+      <div className="mt-5 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow sm:hidden">
         {isLoading &&
           Array.from({ length: 4 }).map((_, i) => <OrderCardSkeleton key={i} first={i === 0} />)}
         {!isLoading && items.length === 0 && renderEmptyState()}

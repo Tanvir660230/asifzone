@@ -15,7 +15,7 @@ export const orderStatusEnum = z.enum([
   "REFUNDED",
 ]);
 
-export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ"]);
+export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ", "EPS_PG"]);
 export const paymentStatusEnum = z.enum(["UNPAID", "PAID", "FAILED", "REFUNDED"]);
 
 /** Every raw `delivery_status` value Steadfast's API can return (courier.service.ts's

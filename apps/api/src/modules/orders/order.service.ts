@@ -93,6 +93,9 @@ export async function createOrder(
   if (input.paymentMethod === "SSLCOMMERZ" && !settings.onlinePaymentEnabled) {
     throw AppError.badRequest("Online payment is currently unavailable — please choose Cash on Delivery instead");
   }
+  if (input.paymentMethod === "EPS_PG" && !settings.epsPaymentEnabled) {
+    throw AppError.badRequest("Online payment is currently unavailable — please choose Cash on Delivery instead");
+  }
   const shippingFee =
     input.shippingDivision === "Dhaka" ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
   const total = subtotal - discount + (couponFreeShipping ? 0 : shippingFee);

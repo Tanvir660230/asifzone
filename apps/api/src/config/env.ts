@@ -34,6 +34,18 @@ export const env = {
     storePassword: process.env.SSLCOMMERZ_STORE_PASSWORD ?? "",
     isLive: process.env.SSLCOMMERZ_IS_LIVE === "true",
   },
+  // Optional — without these, EPS_PG checkout returns a clear "could not start payment session"
+  // error (see eps.service.ts's getEpsToken). hashKey is the base64 HMAC signing key EPS issues
+  // alongside the username/password/merchantId/storeId — contact EPS support (info@eps.com.bd) for
+  // sandbox or live credentials.
+  eps: {
+    username: process.env.EPS_USERNAME ?? "",
+    password: process.env.EPS_PASSWORD ?? "",
+    hashKey: process.env.EPS_HASH_KEY ?? "",
+    merchantId: process.env.EPS_MERCHANT_ID ?? "",
+    storeId: process.env.EPS_STORE_ID ?? "",
+    sandbox: process.env.EPS_SANDBOX !== "false",
+  },
   // Optional — the AI Admin Assistant (product copy/SEO/marketing generation) stays fully inert,
   // returning a clear "not configured" error, until an admin sets this.
   anthropic: {

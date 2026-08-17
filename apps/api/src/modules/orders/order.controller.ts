@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import * as orderService from "./order.service";
 import { initSslcommerzSession } from "../payments/sslcommerz.service";
+import { initEpsSession } from "../payments/eps.service";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -12,19 +13,23 @@ import {
 export const create = asyncHandler(async (req: Request, res: Response) => {
   const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null);
 
-  if (order.paymentMethod !== "SSLCOMMERZ") {
+  if (order.paymentMethod === "COD") {
     return res.status(201).json({ order });
   }
 
   try {
-    const { gatewayUrl, sessionKey } = await initSslcommerzSession({
+    const gatewayParams = {
       orderNumber: order.orderNumber,
       amount: Number(order.total),
       customerName: order.customerName,
       customerEmail: order.customerEmail,
       customerPhone: order.customerPhone,
       customerAddress: order.shippingAddressLine,
-    });
+    };
+    const { gatewayUrl, sessionKey } =
+      order.paymentMethod === "SSLCOMMERZ"
+        ? await initSslcommerzSession(gatewayParams)
+        : await initEpsSession(gatewayParams).then(({ gatewayUrl, transactionId }) => ({ gatewayUrl, sessionKey: transactionId }));
 
     await orderService.setPaymentSessionKey(order.id, sessionKey);
     res.status(201).json({ order, gatewayUrl });

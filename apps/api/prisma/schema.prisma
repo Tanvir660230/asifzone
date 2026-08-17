@@ -56,6 +56,7 @@ enum ReturnRequestType {
 enum PaymentMethod {
   COD
   SSLCOMMERZ
+  EPS_PG
 }
 
 enum PaymentStatus {
@@ -1054,6 +1055,11 @@ model StoreSetting {
   /// order.service.ts so a stale page can't submit a disabled method.
   codEnabled              Boolean  @default(true)
   onlinePaymentEnabled    Boolean  @default(true)
+  /// Gates the EPS-PG checkout option, kept separate from onlinePaymentEnabled (which gates
+  /// SSLCommerz) so either gateway can be toggled independently — e.g. turning EPS off while its
+  /// credentials are being rotated without touching SSLCommerz or COD. Defaults off since it stays
+  /// unusable until EPS sandbox/live credentials are entered via the EPS_* env vars.
+  epsPaymentEnabled      Boolean  @default(false)
   /// The content= value Google Search Console gives you for the HTML-tag verification method —
   /// pasted here and rendered as a <meta name="google-site-verification"> tag on every page,
   /// rather than requiring a file upload or DNS change to prove domain ownership.

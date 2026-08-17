@@ -196,18 +196,18 @@ export default function DashboardPage() {
   const heatmapEnabled = Boolean(process.env.NEXT_PUBLIC_CLARITY_ID);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="Dashboard"
         description={currentAdmin ? `Welcome back, ${firstName(currentAdmin.admin.name)}.` : undefined}
       />
 
-      <div className="space-y-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-ink-400">Today — needs action</p>
+      <div className="space-y-3.5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Today — needs action</p>
         <div
           className={cn(
-            "grid grid-cols-2 gap-4 lg:grid-cols-6",
-            orderStats && balanceData && "xl:grid-cols-7",
+            "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6",
+            orderStats && balanceData && "2xl:grid-cols-7",
           )}
         >
           <StatTile
@@ -259,8 +259,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-ink-400">Last 30 days</p>
+      <div className="space-y-3.5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Last 30 days</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatTile
             label="Revenue (30d)"
@@ -310,13 +310,13 @@ export default function DashboardPage() {
       </Card>
 
       <div>
-        <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-ink-100">
+        <div className="mb-5 flex items-center gap-1 overflow-x-auto border-b border-ink-100">
           {ANALYTICS_TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                "whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors",
+                "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors duration-150 ease-smooth",
                 tab === t.id ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
               )}
             >

@@ -8,6 +8,7 @@ import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-da
 import { env } from "@/lib/env";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
+import { MetaPixelScript } from "@/components/analytics/meta-pixel-script";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -87,6 +88,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
         <PageViewTracker />
         <HeatmapScript />
+        <MetaPixelScript />
         <Providers>{children}</Providers>
       </body>
     </html>

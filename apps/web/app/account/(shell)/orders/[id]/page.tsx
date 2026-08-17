@@ -13,8 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BackLink } from "@/components/ui/back-link";
 import { toast } from "@/components/ui/toast";
+import { AccountPageHeader } from "@/components/account/account-page-header";
 import { getMyOrder } from "@/lib/api/customers";
 import { createReturnRequest } from "@/lib/api/return-requests";
+import { getProductBySlug } from "@/lib/api/storefront";
 import { useCartStore } from "@/store/cart";
 import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
@@ -27,28 +29,60 @@ const RETURN_REASONS = [
   "Other",
 ];
 
+const EXCHANGE_REASONS = ["Wrong size", "Wrong color", "Prefer a different size", "Other"];
+
 export default function AccountOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const addItem = useCartStore((s) => s.addItem);
 
-  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [formMode, setFormMode] = useState<"return" | "exchange" | null>(null);
   const [reason, setReason] = useState(RETURN_REASONS[0]!);
   const [note, setNote] = useState("");
-  const [returnError, setReturnError] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [exchangeItemId, setExchangeItemId] = useState("");
+  const [exchangeVariantId, setExchangeVariantId] = useState("");
 
   const { data, isLoading } = useQuery({ queryKey: ["my-order", id], queryFn: () => getMyOrder(id) });
 
-  const returnMutation = useMutation({
-    mutationFn: () => createReturnRequest({ orderId: id, reason, note: note || null }),
+  const exchangeItem = data?.order.items.find((item) => item.id === exchangeItemId) ?? null;
+  const exchangeProductSlug = exchangeItem?.live?.productSlug ?? null;
+  const { data: exchangeProductData, isLoading: exchangeProductLoading } = useQuery({
+    queryKey: ["product-slug", exchangeProductSlug],
+    queryFn: () => getProductBySlug(exchangeProductSlug!),
+    enabled: formMode === "exchange" && Boolean(exchangeProductSlug),
+  });
+  // Same product, a different variant, and actually in stock — anything else isn't a real option
+  // to exchange into.
+  const exchangeVariantOptions = (exchangeProductData?.product.variants ?? []).filter(
+    (v) => v.id !== exchangeItem?.variantId && v.stock > 0,
+  );
+
+  const requestMutation = useMutation({
+    mutationFn: () =>
+      createReturnRequest(
+        formMode === "exchange"
+          ? {
+              orderId: id,
+              type: "EXCHANGE",
+              reason,
+              note: note || null,
+              orderItemId: exchangeItemId,
+              requestedVariantId: exchangeVariantId,
+            }
+          : { orderId: id, type: "RETURN", reason, note: note || null },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-order", id] });
-      setShowReturnForm(false);
+      const wasExchange = formMode === "exchange";
+      setFormMode(null);
       setNote("");
-      toast.success("Return request submitted");
+      setExchangeItemId("");
+      setExchangeVariantId("");
+      toast.success(wasExchange ? "Exchange request submitted" : "Return request submitted");
     },
-    onError: (err) => setReturnError(err instanceof ApiError ? err.message : "Could not submit return request"),
+    onError: (err) => setRequestError(err instanceof ApiError ? err.message : "Could not submit request"),
   });
 
   if (isLoading || !data) {
@@ -69,8 +103,31 @@ export default function AccountOrderDetailPage() {
 
   const { order } = data;
   const latestReturnRequest = order.returnRequests?.[0];
-  const canRequestReturn =
+  const canRequestNew =
     order.status === "DELIVERED" && !order.returnRequests?.some((r) => r.status === "PENDING" || r.status === "APPROVED");
+  // Exchange needs to know the product's other sizes/colors — an item whose product/variant was
+  // since deleted (no `live` info) has nowhere to source that list from.
+  const itemsEligibleForExchange = order.items.filter((item) => item.live);
+
+  function openReturnForm() {
+    setFormMode("return");
+    setReason(RETURN_REASONS[0]!);
+    setRequestError(null);
+  }
+
+  function openExchangeForm() {
+    setFormMode("exchange");
+    setReason(EXCHANGE_REASONS[0]!);
+    setExchangeItemId(itemsEligibleForExchange[0]?.id ?? "");
+    setExchangeVariantId("");
+    setRequestError(null);
+  }
+
+  function closeForm() {
+    setFormMode(null);
+    setNote("");
+    setRequestError(null);
+  }
 
   function handleReorder() {
     const available = order.items.filter((item) => item.live);
@@ -106,22 +163,22 @@ export default function AccountOrderDetailPage() {
   return (
     <div className="space-y-6">
       <BackLink href="/account/orders" label="Back to Orders" />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl text-ink-900">{order.orderNumber}</h1>
-          <p className="text-sm text-ink-500">Placed {new Date(order.createdAt).toLocaleString()}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link href={`/account/orders/${id}/invoice`} target="_blank">
-            <Button variant="outline" size="sm">
-              <Printer size={14} /> Invoice
+      <AccountPageHeader
+        title={order.orderNumber}
+        description={`Placed ${new Date(order.createdAt).toLocaleString()}`}
+        action={
+          <div className="flex items-center gap-3">
+            <Link href={`/account/orders/${id}/invoice`} target="_blank">
+              <Button variant="outline" size="sm">
+                <Printer size={14} /> Invoice
+              </Button>
+            </Link>
+            <Button variant="brass" size="sm" onClick={handleReorder}>
+              <RotateCcw size={14} /> Reorder
             </Button>
-          </Link>
-          <Button variant="brass" size="sm" onClick={handleReorder}>
-            <RotateCcw size={14} /> Reorder
-          </Button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       <Card>
         <CardHeader className="flex items-center justify-between">
@@ -190,22 +247,47 @@ export default function AccountOrderDetailPage() {
         </CardContent>
       </Card>
 
-      {(latestReturnRequest || canRequestReturn) && (
+      {(latestReturnRequest || canRequestNew) && (
         <Card>
           <CardHeader>
-            <CardTitle>Return &amp; Refund</CardTitle>
+            <CardTitle>Returns &amp; Exchanges</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {latestReturnRequest && (
               <div className="text-sm text-ink-700">
                 <p>
-                  Return request: <span className="font-medium text-ink-900">{latestReturnRequest.status}</span>
+                  {latestReturnRequest.type === "EXCHANGE" ? "Exchange request" : "Return request"}:{" "}
+                  <span className="font-medium text-ink-900">{latestReturnRequest.status}</span>
                 </p>
+                {latestReturnRequest.type === "EXCHANGE" && latestReturnRequest.originalSizeSnapshot && (
+                  <p className="mt-0.5 text-ink-500">
+                    {latestReturnRequest.originalSizeSnapshot}/{latestReturnRequest.originalColorSnapshot} →{" "}
+                    {latestReturnRequest.requestedSizeSnapshot}/{latestReturnRequest.requestedColorSnapshot}
+                  </p>
+                )}
                 <p className="mt-0.5 text-ink-500">Reason: {latestReturnRequest.reason}</p>
-                {latestReturnRequest.status === "APPROVED" && (
+                {latestReturnRequest.status === "APPROVED" && latestReturnRequest.type === "RETURN" && (
                   <p className="mt-0.5 text-ink-500">
                     Refund status follows the order status above — currently{" "}
                     <span className="font-medium">{orderStatusLabel(order.status)}</span>.
+                  </p>
+                )}
+                {latestReturnRequest.status === "APPROVED" && latestReturnRequest.type === "EXCHANGE" && (
+                  <p className="mt-0.5 text-ink-500">
+                    {latestReturnRequest.exchangeOrder ? (
+                      <>
+                        Your replacement is on order{" "}
+                        <Link
+                          href={`/account/orders/${latestReturnRequest.exchangeOrder.id}`}
+                          className="font-medium text-brass-600 hover:underline"
+                        >
+                          {latestReturnRequest.exchangeOrder.orderNumber}
+                        </Link>
+                        .
+                      </>
+                    ) : (
+                      "Approved — your replacement order is being set up."
+                    )}
                   </p>
                 )}
                 {latestReturnRequest.status === "REJECTED" && latestReturnRequest.adminNote && (
@@ -214,13 +296,20 @@ export default function AccountOrderDetailPage() {
               </div>
             )}
 
-            {canRequestReturn && !showReturnForm && (
-              <Button variant="outline" size="sm" onClick={() => setShowReturnForm(true)}>
-                Request Return
-              </Button>
+            {canRequestNew && !formMode && (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={openReturnForm}>
+                  Request Return
+                </Button>
+                {itemsEligibleForExchange.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={openExchangeForm}>
+                    Request Exchange
+                  </Button>
+                )}
+              </div>
             )}
 
-            {canRequestReturn && showReturnForm && (
+            {canRequestNew && formMode === "return" && (
               <div className="space-y-3">
                 <div>
                   <Label htmlFor="reason">Reason</Label>
@@ -236,21 +325,96 @@ export default function AccountOrderDetailPage() {
                   <Label htmlFor="note">Note (optional)</Label>
                   <Textarea id="note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
                 </div>
-                {returnError && <p className="text-xs text-danger-600">{returnError}</p>}
+                {requestError && <p className="text-xs text-danger-600">{requestError}</p>}
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowReturnForm(false)}>
+                  <Button variant="outline" size="sm" onClick={closeForm}>
                     Cancel
                   </Button>
                   <Button
                     variant="brass"
                     size="sm"
-                    disabled={returnMutation.isPending}
+                    disabled={requestMutation.isPending}
                     onClick={() => {
-                      setReturnError(null);
-                      returnMutation.mutate();
+                      setRequestError(null);
+                      requestMutation.mutate();
                     }}
                   >
-                    {returnMutation.isPending ? "Submitting…" : "Submit request"}
+                    {requestMutation.isPending ? "Submitting…" : "Submit request"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {canRequestNew && formMode === "exchange" && (
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="exchangeItem">Item to exchange</Label>
+                  <Select
+                    id="exchangeItem"
+                    value={exchangeItemId}
+                    onChange={(e) => {
+                      setExchangeItemId(e.target.value);
+                      setExchangeVariantId("");
+                    }}
+                  >
+                    {itemsEligibleForExchange.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.productNameSnapshot} ({item.sizeSnapshot}/{item.colorSnapshot})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="exchangeVariant">Exchange for</Label>
+                  <Select
+                    id="exchangeVariant"
+                    value={exchangeVariantId}
+                    onChange={(e) => setExchangeVariantId(e.target.value)}
+                    disabled={exchangeProductLoading || exchangeVariantOptions.length === 0}
+                  >
+                    <option value="">
+                      {exchangeProductLoading
+                        ? "Loading options…"
+                        : exchangeVariantOptions.length === 0
+                          ? "No other sizes/colors currently in stock"
+                          : "Select a size/color"}
+                    </option>
+                    {exchangeVariantOptions.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.size}/{v.color}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="exchangeReason">Reason</Label>
+                  <Select id="exchangeReason" value={reason} onChange={(e) => setReason(e.target.value)}>
+                    {EXCHANGE_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="exchangeNote">Note (optional)</Label>
+                  <Textarea id="exchangeNote" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+                </div>
+                {requestError && <p className="text-xs text-danger-600">{requestError}</p>}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={closeForm}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="brass"
+                    size="sm"
+                    disabled={requestMutation.isPending || !exchangeItemId || !exchangeVariantId}
+                    onClick={() => {
+                      setRequestError(null);
+                      requestMutation.mutate();
+                    }}
+                  >
+                    {requestMutation.isPending ? "Submitting…" : "Submit request"}
                   </Button>
                 </div>
               </div>

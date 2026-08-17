@@ -12,8 +12,10 @@ import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
 import { trackOrder } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
 import { formatDateShort } from "@/lib/format";
+import { pixelPurchase } from "@/lib/meta-pixel";
 
 const SESSION_KEY = "lastOrderPhone";
+const PIXEL_PURCHASE_KEY = "pixelPurchaseTracked";
 
 export default function OrderConfirmationPage() {
   const { orderNumber } = useParams<{ orderNumber: string }>();
@@ -27,6 +29,18 @@ export default function OrderConfirmationPage() {
     try {
       const { order: found } = await trackOrder(orderNumber, candidatePhone);
       setOrder(found);
+      // Guards against double-counting the same order as a Purchase on a page refresh or a
+      // second phone-lookup submit — sessionStorage, not a ref, since a fresh mount (refresh)
+      // would otherwise re-fire it.
+      const trackedKey = `${PIXEL_PURCHASE_KEY}:${found.orderNumber}`;
+      if (!sessionStorage.getItem(trackedKey)) {
+        sessionStorage.setItem(trackedKey, "1");
+        pixelPurchase({
+          contentIds: found.items.map((i) => i.variantId),
+          value: Number(found.total),
+          numItems: found.items.reduce((sum, i) => sum + i.quantity, 0),
+        });
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not find this order");
     }

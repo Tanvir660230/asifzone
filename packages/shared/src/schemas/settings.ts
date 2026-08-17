@@ -47,6 +47,7 @@ export const updateSettingsSchema = z.object({
   paymentMethodsImageUrl: nullableUrl(),
   codEnabled: z.boolean().optional(),
   onlinePaymentEnabled: z.boolean().optional(),
+  epsPaymentEnabled: z.boolean().optional(),
   googleSiteVerification: nullableString(255),
 });
 

@@ -2,12 +2,16 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { Package } from "lucide-react";
 import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
+import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountEmptyState } from "@/components/account/account-empty-state";
+import { Button } from "@/components/ui/button";
 import { listMyOrders } from "@/lib/api/customers";
 
 function OrderSummaryCardSkeleton() {
   return (
-    <div className="animate-pulse border border-ink-100 p-6">
+    <div className="animate-pulse rounded-lg border border-ink-100 p-6">
       <div className="mb-4 flex items-center justify-between border-b border-ink-100 pb-4">
         <div className="h-3 w-14 rounded bg-ink-100" />
         <div className="h-3 w-24 rounded bg-ink-100" />
@@ -25,7 +29,7 @@ export default function AccountOrdersPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-display text-2xl text-ink-900">Order history</h1>
+      <AccountPageHeader title="Order history" description="Track and review everything you've ordered." />
 
       {isLoading && (
         <div className="space-y-6">
@@ -35,13 +39,16 @@ export default function AccountOrdersPage() {
         </div>
       )}
       {!isLoading && data?.items.length === 0 && (
-        <p className="text-ink-400">
-          No orders yet —{" "}
-          <Link href="/search" className="text-brass-600 underline hover:text-brass-500">
-            start shopping
-          </Link>
-          .
-        </p>
+        <AccountEmptyState
+          icon={Package}
+          title="No orders yet"
+          description="Once you place an order, it'll show up here."
+          action={
+            <Link href="/search">
+              <Button size="sm">Start shopping</Button>
+            </Link>
+          }
+        />
       )}
 
       <div className="space-y-6">
