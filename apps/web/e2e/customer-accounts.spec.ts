@@ -65,7 +65,9 @@ test.describe("customer account journey", () => {
     await expect(page).toHaveURL(/\/account$/);
 
     await page.getByRole("link", { name: /addresses/i }).click();
-    await page.getByRole("button", { name: /add address/i }).click();
+    // .first() — with no addresses yet, both the page header's button and the empty-state's own
+    // "Add address" button are on screen; either opens the same modal.
+    await page.getByRole("button", { name: /add address/i }).first().click();
     await page.getByLabel("Full name").fill("Playwright User");
     await page.getByLabel("Phone").fill("01700000000");
     await page.getByLabel("District").click();
@@ -76,7 +78,9 @@ test.describe("customer account journey", () => {
     await page.getByRole("button", { name: /save address/i }).click();
     await expect(page.getByText("House 1, Road 2, Gulshan, Dhaka")).toBeVisible();
 
-    await page.getByRole("link", { name: /orders/i }).click();
+    // exact: true — AccountOverview's "N orders" stat chip is also a link and also matches /orders/i,
+    // unlike the nav item whose accessible name is exactly "Orders".
+    await page.getByRole("link", { name: "Orders", exact: true }).click();
     await expect(page.getByText(/no orders yet/i)).toBeVisible();
 
     await page.goto("/");
