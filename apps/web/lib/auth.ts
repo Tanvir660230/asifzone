@@ -3,6 +3,7 @@ import type {
   CreateAdminInviteInput,
   AcceptAdminInviteInput,
   UpdateAdminInput,
+  GoogleLoginInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 
@@ -33,6 +34,10 @@ export interface AdminInvite {
 
 export function loginAdmin(input: AdminLoginInput) {
   return apiFetch<{ admin: AdminUser }>("/api/auth/login", { method: "POST", body: input });
+}
+
+export function loginAdminWithGoogle(input: GoogleLoginInput) {
+  return apiFetch<{ admin: AdminUser }>("/api/auth/google", { method: "POST", body: input });
 }
 
 export function logoutAdmin() {

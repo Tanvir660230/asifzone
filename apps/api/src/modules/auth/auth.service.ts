@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
+import { OAuth2Client } from "google-auth-library";
 import type { AdminLoginInput, CreateAdminInviteInput, UpdateAdminInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -8,6 +9,8 @@ import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken } from "../../lib/token-hash";
 import { env } from "../../config/env";
+
+const googleClient = env.google.clientId ? new OAuth2Client(env.google.clientId) : null;
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -44,6 +47,44 @@ export async function loginAdmin(input: AdminLoginInput, userAgent?: string) {
   const admin = await prisma.adminUser.findUnique({ where: { email: input.email } });
   const passwordMatches = await bcrypt.compare(input.password, admin?.passwordHash ?? DUMMY_PASSWORD_HASH);
   if (!admin || !admin.isActive || !passwordMatches) throw AppError.unauthorized("Invalid email or password");
+
+  const refreshToken = await issueRefreshToken(admin.id, userAgent);
+  return {
+    accessToken: signAccessToken({ adminId: admin.id, role: admin.role }),
+    refreshToken,
+    admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role },
+  };
+}
+
+/** Unlike the customer Google login, this never creates an AdminUser — admin accounts are
+ * invite-only, so Google can only sign in someone who already has an active, invited account with a
+ * matching email. First successful Google login links `googleId` for faster lookups next time. */
+export async function loginAdminWithGoogle(idToken: string, userAgent?: string) {
+  if (!googleClient) {
+    throw new AppError(503, "Google sign-in isn't configured — set GOOGLE_CLIENT_ID on the API to enable it.");
+  }
+
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken, audience: env.google.clientId });
+    payload = ticket.getPayload();
+  } catch {
+    throw AppError.unauthorized("Invalid Google sign-in — please try again");
+  }
+  if (!payload?.sub || !payload.email) throw AppError.unauthorized("Invalid Google sign-in — please try again");
+
+  const googleId = payload.sub;
+  const email = payload.email.trim().toLowerCase();
+
+  let admin = await prisma.adminUser.findUnique({ where: { googleId } });
+  if (!admin) {
+    const existingByEmail = await prisma.adminUser.findUnique({ where: { email } });
+    if (!existingByEmail) {
+      throw AppError.unauthorized("No admin account found for this Google email");
+    }
+    admin = await prisma.adminUser.update({ where: { id: existingByEmail.id }, data: { googleId } });
+  }
+  if (!admin.isActive) throw AppError.unauthorized("This admin account has been deactivated");
 
   const refreshToken = await issueRefreshToken(admin.id, userAgent);
   return {

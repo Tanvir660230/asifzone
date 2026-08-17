@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   adminLoginSchema,
+  googleLoginSchema,
   createAdminInviteSchema,
   acceptAdminInviteSchema,
   updateAdminActiveSchema,
@@ -12,6 +13,7 @@ import { requireAdmin, requireRole } from "../../middlewares/require-admin";
 import { loginRateLimit } from "../../middlewares/rate-limit";
 import {
   login,
+  googleLogin,
   logout,
   logoutAllDevices,
   me,
@@ -30,6 +32,7 @@ import {
 export const authRouter = Router();
 
 authRouter.post("/login", loginRateLimit, validate(adminLoginSchema), login);
+authRouter.post("/google", loginRateLimit, validate(googleLoginSchema), googleLogin);
 authRouter.post("/logout", logout);
 authRouter.post("/logout-all", requireAdmin, logoutAllDevices);
 authRouter.get("/sessions", requireAdmin, sessions);

@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Customer } from "@clothing-brand/shared";
 import { env } from "@/lib/env";
-import { loginWithGoogle } from "@/lib/customer-auth";
 import { ApiError } from "@/lib/api-client";
 
 const SCRIPT_ID = "google-identity-services";
@@ -12,27 +10,44 @@ interface GoogleCredentialResponse {
   credential: string;
 }
 
+interface GoogleNotification {
+  isNotDisplayed: () => boolean;
+  isSkippedMoment: () => boolean;
+  isDismissedMoment: () => boolean;
+  getNotDisplayedReason: () => string;
+  getSkippedReason: () => string;
+  getDismissedReason: () => string;
+}
+
 // Minimal shape for the two Google Identity Services calls actually used below — the full API
 // surface has no first-party types available without pulling in a whole extra dependency for it.
 interface GoogleIdentityServices {
   accounts: {
     id: {
-      initialize: (config: { client_id: string; callback: (response: GoogleCredentialResponse) => void }) => void;
+      initialize: (config: {
+        client_id: string;
+        callback: (response: GoogleCredentialResponse) => void;
+        auto_select?: boolean;
+        cancel_on_tap_outside?: boolean;
+        use_fedcm_for_prompt?: boolean;
+      }) => void;
       renderButton: (parent: HTMLElement, options: { theme: string; size: string; width: number }) => void;
+      prompt: (callback?: (notification: GoogleNotification) => void) => void;
     };
   };
 }
 
 /** Loads Google Identity Services directly (no @react-oauth/google dependency — this is the only
- * thing we need it for) and owns the sign-in API call itself, so both the login and register pages
- * can drop this in without duplicating fetch/error handling. Renders nothing at all when
- * NEXT_PUBLIC_GOOGLE_CLIENT_ID isn't set, same "quietly absent until configured" pattern as the AI
- * features when ANTHROPIC_API_KEY is unset. */
+ * thing we need it for). Owns nothing about what the credential means — the caller's onCredential
+ * decides whether that idToken logs in a customer or an admin — so both account and admin login
+ * pages can drop this in without duplicating the script-loading/One Tap boilerplate. Renders nothing
+ * at all when NEXT_PUBLIC_GOOGLE_CLIENT_ID isn't set, same "quietly absent until configured" pattern
+ * as the AI features when ANTHROPIC_API_KEY is unset. */
 export function GoogleButton({
-  onSuccess,
+  onCredential,
   onError,
 }: {
-  onSuccess: (customer: Customer) => void;
+  onCredential: (idToken: string) => Promise<void>;
   onError: (message: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,8 +57,7 @@ export function GoogleButton({
 
     async function handleCredential(response: GoogleCredentialResponse) {
       try {
-        const { customer } = await loginWithGoogle({ idToken: response.credential });
-        onSuccess(customer);
+        await onCredential(response.credential);
       } catch (err) {
         onError(err instanceof ApiError ? err.message : "Google sign-in failed, please try again");
       }
@@ -53,8 +67,27 @@ export function GoogleButton({
       const google = (window as unknown as { google?: GoogleIdentityServices }).google;
       if (!google || !containerRef.current) return;
 
-      google.accounts.id.initialize({ client_id: env.googleClientId, callback: handleCredential });
+      google.accounts.id.initialize({
+        client_id: env.googleClientId,
+        callback: handleCredential,
+        auto_select: true,
+        cancel_on_tap_outside: false,
+        // Chrome/Firefox now block the legacy One Tap prompt outright once third-party cookies are
+        // off unless this is set — without it, prompt() fails silently with no visible error.
+        use_fedcm_for_prompt: true,
+      });
       google.accounts.id.renderButton(containerRef.current, { theme: "outline", size: "large", width: 320 });
+      // Shows the One Tap prompt in the corner, auto-suggesting the visitor's signed-in Google
+      // account so returning users don't have to click the button at all. Logged so a silent
+      // no-show (not signed into Google, prior dismissal cooldown, browser blocking it, ...) is
+      // diagnosable from devtools instead of just "nothing happened".
+      google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed()) {
+          console.info("[Google One Tap] not displayed:", notification.getNotDisplayedReason());
+        } else if (notification.isSkippedMoment()) {
+          console.info("[Google One Tap] skipped:", notification.getSkippedReason());
+        }
+      });
     }
 
     if ((window as unknown as { google?: unknown }).google) {

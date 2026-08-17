@@ -18,6 +18,18 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     .json({ admin });
 });
 
+export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
+  const { accessToken, refreshToken, admin } = await authService.loginAdminWithGoogle(
+    req.body.idToken,
+    req.headers["user-agent"],
+  );
+  issueCsrfCookie(res);
+  res
+    .cookie("access_token", accessToken, accessTokenCookieOptions)
+    .cookie("refresh_token", refreshToken, refreshTokenCookieOptions)
+    .json({ admin });
+});
+
 export const logout = asyncHandler(async (req: Request, res: Response) => {
   const refreshToken = req.cookies?.refresh_token as string | undefined;
   if (refreshToken) await authService.revokeRefreshToken(refreshToken);

@@ -16,7 +16,7 @@ import { GoogleButton } from "@/components/account/google-button";
 import { PhoneOtpForm } from "@/components/account/phone-otp-form";
 import { OrDivider } from "@/components/account/or-divider";
 import { AuthModeToggle } from "@/components/account/auth-mode-toggle";
-import { registerCustomer } from "@/lib/customer-auth";
+import { registerCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
 import { env } from "@/lib/env";
@@ -60,6 +60,11 @@ export default function AccountRegisterPage() {
     goToAccount();
   }
 
+  async function onGoogleCredential(idToken: string) {
+    const { customer } = await loginWithGoogle({ idToken });
+    onAltSuccess(customer);
+  }
+
   return (
     <div>
       <h1 className="mb-1 font-display text-2xl text-ink-900">Create an account</h1>
@@ -67,7 +72,7 @@ export default function AccountRegisterPage() {
 
       {env.googleClientId && (
         <>
-          <GoogleButton onSuccess={onAltSuccess} onError={setServerError} />
+          <GoogleButton onCredential={onGoogleCredential} onError={setServerError} />
           <OrDivider />
         </>
       )}

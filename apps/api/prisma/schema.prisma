@@ -125,6 +125,10 @@ model AdminUser {
   name                   String
   email                  String               @unique
   passwordHash           String
+  /// Google "sub" claim, set only when this admin has signed in with Google at least once. Google
+  /// sign-in never creates an AdminUser on its own — it only links onto one that an OWNER already
+  /// invited by matching email, so this stays null for accounts that have never used it.
+  googleId               String?              @unique
   role                   AdminRole            @default(OWNER)
   isActive               Boolean              @default(true)
   createdAt              DateTime             @default(now())

@@ -146,6 +146,13 @@ jobs:
           # Optional — docker-compose.yml build arg falls back to empty, which keeps
           # MetaPixelScript inert, so this isn't in the required-secrets check above.
           echo "NEXT_PUBLIC_META_PIXEL_ID=${{ secrets.NEXT_PUBLIC_META_PIXEL_ID }}" >> docker/.env
+          # Optional — docker-compose.yml already defaults both to empty, which keeps the Google
+          # button/One Tap prompt hidden on both admin and customer login (GoogleButton renders
+          # nothing without a client ID) rather than failing, so neither is in the required-secrets
+          # check above. GOOGLE_CLIENT_ID (api) and NEXT_PUBLIC_GOOGLE_CLIENT_ID (web build arg)
+          # must be the same value — see apps/api/.env.example.
+          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> docker/.env
+          echo "NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}" >> docker/.env
           # Same public domain as NEXT_PUBLIC_SITE_URL — everything lives behind one nginx host in
           # this deploy, and this is what the API embeds into category/banner/logo/editor image
           # URLs. No separate secret to maintain; reusing NEXT_PUBLIC_SITE_URL keeps it from ever
