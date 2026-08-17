@@ -29,9 +29,28 @@ enum OrderStatus {
   PACKED
   SHIPPED
   DELIVERED
+  /// Steadfast reported "partial_delivered" — the customer accepted only some of the parcel's
+  /// items and returned the rest to the courier. Distinct from DELIVERED so an admin has to
+  /// reconcile which items actually came back (see Order.partialDeliveryReconciledAt /
+  /// OrderItem.returnedQuantity) before stock is restored — silently folding this into DELIVERED
+  /// (the old behavior) left the returned units stuck as "sold" forever.
+  PARTIALLY_DELIVERED
   CANCELLED
   RETURNED
   REFUNDED
+}
+
+enum CourierLossReason {
+  /// Order was cancelled (by Steadfast or an admin) after a consignment was already booked — the
+  /// courier's pickup+return round trip is a sunk cost with nothing collected in exchange.
+  CANCELLED_POST_BOOKING
+  /// A PARTIALLY_DELIVERED order's reconciliation found at least one returned item.
+  PARTIAL_RETURN
+}
+
+enum ReturnRequestType {
+  RETURN
+  EXCHANGE
 }
 
 enum PaymentMethod {
@@ -662,6 +681,12 @@ model Order {
   items                OrderItem[]
   statusHistory        OrderStatusHistory[]
   returnRequests       ReturnRequest[]
+  /// Reverse side of ReturnRequest.exchangeOrderId — an approved EXCHANGE request creates a new,
+  /// separate Order (the replacement shipment) and links back here; at most one element in
+  /// practice (one exchange request produces one exchange order), kept as an array only because
+  /// Prisma requires a matching relation field on both sides.
+  exchangeReturnRequests ReturnRequest[] @relation("ReturnRequestExchangeOrder")
+  courierLossEvents    CourierLossEvent[]
   notes                String?
   adminNotes           String?
   trackingNumber       String?
@@ -680,6 +705,13 @@ model Order {
   /// the create_order/bulk-order response body, not derivable from tracking_code and not returned
   /// by status_by_cid, so bookings made before this field existed will have it null forever.
   courierTrackingLink  String?
+
+  /// Set once an admin has reconciled a PARTIALLY_DELIVERED order — picked which items actually
+  /// came back (OrderItem.returnedQuantity) and had them restocked. Status stays
+  /// PARTIALLY_DELIVERED permanently after this (it never gets rewritten to DELIVERED, since the
+  /// exact amount collected on a partial delivery isn't known — see reconcilePartialDelivery in
+  /// order.service.ts); this timestamp is what the admin UI uses to know reconciliation is done.
+  partialDeliveryReconciledAt DateTime?
 
   /// When set, this order is "on hold" pending a follow-up phone call (no-answer/undecided outcome
   /// of the pre-shipping confirmation call) — `status` stays PENDING throughout; this is a separate
@@ -739,6 +771,24 @@ model ReturnRequest {
   customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
   reason            String
   note              String?
+  /// RETURN (default) is the original refund/restock flow. EXCHANGE is a same-order size/color
+  /// swap: the fields below are only populated (and only required by the Zod schema) when this is
+  /// EXCHANGE — see reviewReturnRequest in return-request.service.ts for how approval branches.
+  type              ReturnRequestType   @default(RETURN)
+  // EXCHANGE only, from here down. orderItemId/requestedVariantId are plain id columns with no FK
+  // relation (same "no FK guarantee it still exists" reasoning as OrderItem.variantId) — the
+  // Snapshot fields alongside them keep the request displayable even if the variant/product is
+  // later deleted.
+  orderItemId          String?
+  originalSizeSnapshot  String?
+  originalColorSnapshot String?
+  requestedVariantId     String?
+  requestedSizeSnapshot  String?
+  requestedColorSnapshot String?
+  /// The free replacement Order created when an EXCHANGE request is approved — see
+  /// createExchangeOrder in return-request.service.ts. Null until approved (or always, for RETURN).
+  exchangeOrderId   String?
+  exchangeOrder     Order?              @relation("ReturnRequestExchangeOrder", fields: [exchangeOrderId], references: [id], onDelete: SetNull)
   // At most one PENDING request per order is also enforced at the DB level by a raw partial unique
   // index (see migrations/..._return_request_one_pending_per_order) — Prisma's schema DSL can't
   // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
@@ -791,6 +841,11 @@ model OrderItem {
   colorSnapshot       String
   priceSnapshot       Decimal @db.Decimal(10, 2)
   quantity            Int
+  /// How many units of this line were reconciled as "came back to us" on a PARTIALLY_DELIVERED
+  /// order (see Order.partialDeliveryReconciledAt) — 0 means either not yet reconciled or the
+  /// customer kept the full quantity. Set once by reconcilePartialDelivery in order.service.ts,
+  /// which also restocks exactly this many units via a matching StockMovement.
+  returnedQuantity    Int     @default(0)
 
   @@index([orderId])
 }
@@ -809,6 +864,24 @@ model StockMovement {
 
   @@index([variantId])
   @@index([reason])
+}
+
+/// A ledger entry for money the store loses to courier round-trips it can't recover — logged
+/// automatically by updateOrderStatus (CANCELLED after a consignment was booked) and
+/// reconcilePartialDelivery (a partial-delivery return) in order.service.ts. `amount` is an
+/// admin-configured estimate (StoreSetting.courierReturnFeeDhaka/OutsideDhaka, zone-matched to
+/// the order's shippingDivision) rather than a real figure from Steadfast — their API exposes no
+/// per-order fee, only a merchant wallet balance (see lib/steadfast.ts).
+model CourierLossEvent {
+  id        String             @id @default(cuid())
+  orderId   String
+  order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount    Decimal            @db.Decimal(10, 2)
+  reason    CourierLossReason
+  createdAt DateTime           @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
 }
 
 model FlashSale {
@@ -947,6 +1020,13 @@ model StoreSetting {
   contactPhone            String?
   shippingFeeDhaka        Decimal  @default(60) @db.Decimal(10, 2)
   shippingFeeOutsideDhaka Decimal  @default(120) @db.Decimal(10, 2)
+  /// Estimated round-trip courier fee lost on a post-booking cancellation or partial-delivery
+  /// return, zone-matched the same way as shippingFeeDhaka/OutsideDhaka above — Steadfast's API
+  /// never exposes a real per-order fee (see lib/steadfast.ts), so this is an admin-entered
+  /// estimate (their actual return-fee rate) used only to total up CourierLossEvent rows for the
+  /// dashboard's "courier cancellation loss" figure, not billed or charged anywhere.
+  courierReturnFeeDhaka        Decimal  @default(60) @db.Decimal(10, 2)
+  courierReturnFeeOutsideDhaka Decimal  @default(120) @db.Decimal(10, 2)
   taxEnabled              Boolean  @default(false)
   defaultTaxRate          Decimal? @db.Decimal(5, 2)
   rewardPointsPerCurrency Decimal  @default(0) @db.Decimal(10, 4)

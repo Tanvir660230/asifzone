@@ -9,7 +9,10 @@ import {
 } from "../../lib/steadfast";
 import { getOrderById, updateOrderStatus } from "../orders/order.service";
 
-const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
+// PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
+// anything further for this consignment) even though it still needs an admin to reconcile which
+// items came back — see reconcilePartialDelivery in order.service.ts.
+const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 const TERMINAL_COURIER_STATUSES = ["delivered", "partial_delivered", "cancelled"];
 
 // Booking a Steadfast consignment only means a courier *record* now exists — the box still has to
@@ -33,10 +36,15 @@ const PRE_SHIP_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESS
 // (billable) courier consignment for one would create a live shipment/COD collection for an order
 // the store no longer intends to send, and restockNeeded's CANCELLED/REFUNDED bookkeeping in
 // order.service.ts assumes those statuses are final, not "shipped after the fact".
-const NOT_BOOKABLE_STATUSES: OrderStatus[] = ["CANCELLED", "REFUNDED", "RETURNED", "DELIVERED"];
+const NOT_BOOKABLE_STATUSES: OrderStatus[] = ["CANCELLED", "REFUNDED", "RETURNED", "DELIVERED", "PARTIALLY_DELIVERED"];
 
+// "partial_delivered" used to be folded into DELIVERED here, which silently left whatever the
+// customer refused to accept stuck as "sold" forever — nothing else in the system ever restocked
+// it, since a fully DELIVERED order has nothing left to reconcile. Mapping it to its own status
+// forces an admin through reconcilePartialDelivery (order.service.ts) before stock is trusted again.
 function mapSteadfastStatusToOrderStatus(status: string): OrderStatus | null {
-  if (status === "delivered" || status === "partial_delivered") return "DELIVERED";
+  if (status === "delivered") return "DELIVERED";
+  if (status === "partial_delivered") return "PARTIALLY_DELIVERED";
   if (status === "cancelled") return "CANCELLED";
   return null;
 }

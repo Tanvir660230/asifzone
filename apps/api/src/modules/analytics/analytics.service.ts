@@ -102,30 +102,38 @@ export async function getDashboardSummary() {
   const prevSince = new Date();
   prevSince.setDate(prevSince.getDate() - 60);
 
-  const [revenueAgg, orderCount, prevRevenueAgg, prevOrderCount, pendingCount, lowStockCount, visitorRows] = await Promise.all([
-    prisma.order.aggregate({
-      where: { createdAt: { gte: since }, status: { notIn: NON_REVENUE_STATUSES } },
-      _sum: { total: true },
-    }),
-    prisma.order.count({ where: { createdAt: { gte: since }, status: { notIn: NON_REVENUE_STATUSES } } }),
-    // Prior 30-day window (day -60 to -30) — the baseline the dashboard's trend deltas compare against.
-    prisma.order.aggregate({
-      where: { createdAt: { gte: prevSince, lt: since }, status: { notIn: NON_REVENUE_STATUSES } },
-      _sum: { total: true },
-    }),
-    prisma.order.count({ where: { createdAt: { gte: prevSince, lt: since }, status: { notIn: NON_REVENUE_STATUSES } } }),
-    prisma.order.count({ where: { status: "PENDING" } }),
-    prisma.productVariant.count({ where: { stock: { lte: 5 }, product: { isActive: true } } }),
-    // Unique visitors = distinct sessionId, current vs. prior 30-day window (same FILTER pattern as
-    // the revenue/order aggregates above).
-    prisma.$queryRaw<Array<{ current: bigint; previous: bigint }>>`
+  const [revenueAgg, orderCount, prevRevenueAgg, prevOrderCount, pendingCount, lowStockCount, visitorRows, courierLossAgg] =
+    await Promise.all([
+      prisma.order.aggregate({
+        where: { createdAt: { gte: since }, status: { notIn: NON_REVENUE_STATUSES } },
+        _sum: { total: true },
+      }),
+      prisma.order.count({ where: { createdAt: { gte: since }, status: { notIn: NON_REVENUE_STATUSES } } }),
+      // Prior 30-day window (day -60 to -30) — the baseline the dashboard's trend deltas compare against.
+      prisma.order.aggregate({
+        where: { createdAt: { gte: prevSince, lt: since }, status: { notIn: NON_REVENUE_STATUSES } },
+        _sum: { total: true },
+      }),
+      prisma.order.count({ where: { createdAt: { gte: prevSince, lt: since }, status: { notIn: NON_REVENUE_STATUSES } } }),
+      prisma.order.count({ where: { status: "PENDING" } }),
+      prisma.productVariant.count({ where: { stock: { lte: 5 }, product: { isActive: true } } }),
+      // Unique visitors = distinct sessionId, current vs. prior 30-day window (same FILTER pattern as
+      // the revenue/order aggregates above).
+      prisma.$queryRaw<Array<{ current: bigint; previous: bigint }>>`
       SELECT
         COUNT(DISTINCT "sessionId") FILTER (WHERE "createdAt" >= ${since})::bigint AS current,
         COUNT(DISTINCT "sessionId") FILTER (WHERE "createdAt" >= ${prevSince} AND "createdAt" < ${since})::bigint AS previous
       FROM "PageView"
       WHERE "createdAt" >= ${prevSince}
     `,
-  ]);
+      // Estimated money lost to courier round trips (post-booking cancellations + partial-delivery
+      // returns) — see CourierLossEvent in schema.prisma and order.service.ts's getCourierReturnFee.
+      prisma.courierLossEvent.aggregate({
+        where: { createdAt: { gte: since } },
+        _sum: { amount: true },
+        _count: true,
+      }),
+    ]);
 
   const revenue30d = Number(revenueAgg._sum?.total ?? 0);
   const revenuePrev30d = Number(prevRevenueAgg._sum?.total ?? 0);
@@ -141,6 +149,8 @@ export async function getDashboardSummary() {
     aovPrev30d: prevOrderCount > 0 ? revenuePrev30d / prevOrderCount : 0,
     uniqueVisitors30d: Number(visitorRows[0]?.current ?? 0),
     uniqueVisitorsPrev30d: Number(visitorRows[0]?.previous ?? 0),
+    courierLoss30d: Number(courierLossAgg._sum?.amount ?? 0),
+    courierLossCount30d: courierLossAgg._count,
   };
 }
 

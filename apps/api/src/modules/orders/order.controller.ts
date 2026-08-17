@@ -78,6 +78,10 @@ export const adjustPrice = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.adjustOrderPrice(req.params.id!, req.body, req.admin!.adminId) });
 });
 
+export const reconcilePartialDelivery = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ order: await orderService.reconcilePartialDelivery(req.params.id!, req.body, req.admin!.adminId) });
+});
+
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.deleteOrder(req.params.id!, req.admin!.adminId) });
 });

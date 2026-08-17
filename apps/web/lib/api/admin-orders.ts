@@ -8,6 +8,7 @@ import type {
   UpdateOrderDetailsInput,
   AdminCreateOrderInput,
   AdjustOrderPriceInput,
+  ReconcilePartialDeliveryInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 import { env } from "../env";
@@ -122,6 +123,12 @@ export function clearOrderHold(id: string) {
  * replaces whatever adjustment was already on the order, it isn't additive. */
 export function adjustOrderPrice(id: string, input: AdjustOrderPriceInput) {
   return apiFetch<{ order: Order }>(`/api/orders/${id}/price`, { method: "PATCH", body: input });
+}
+
+/** Resolves a PARTIALLY_DELIVERED order — declares how many units of each line item actually came
+ * back so they can be restocked. See OrderDetailPanel's "Partial delivery" card. */
+export function reconcilePartialDelivery(id: string, input: ReconcilePartialDeliveryInput) {
+  return apiFetch<{ order: Order }>(`/api/orders/${id}/reconcile-partial-delivery`, { method: "PATCH", body: input });
 }
 
 export function deleteOrder(id: string) {

@@ -223,6 +223,7 @@ export interface OrderItem {
   colorSnapshot: string;
   priceSnapshot: string;
   quantity: number;
+  returnedQuantity: number;
   live?: OrderItemLiveInfo | null;
 }
 
@@ -232,6 +233,14 @@ export interface ReturnRequest {
   customerId: string;
   reason: string;
   note: string | null;
+  type: "RETURN" | "EXCHANGE";
+  orderItemId: string | null;
+  originalSizeSnapshot: string | null;
+  originalColorSnapshot: string | null;
+  requestedVariantId: string | null;
+  requestedSizeSnapshot: string | null;
+  requestedColorSnapshot: string | null;
+  exchangeOrderId: string | null;
   status: "PENDING" | "APPROVED" | "REJECTED";
   adminNote: string | null;
   reviewedAt: string | null;
@@ -239,6 +248,7 @@ export interface ReturnRequest {
   updatedAt: string;
   order?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt">;
   customer?: { name: string; email: string | null };
+  exchangeOrder?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt"> | null;
 }
 
 export interface OrderStatusHistoryEntry {
@@ -262,6 +272,7 @@ export interface Order {
     | "PACKED"
     | "SHIPPED"
     | "DELIVERED"
+    | "PARTIALLY_DELIVERED"
     | "CANCELLED"
     | "RETURNED"
     | "REFUNDED";
@@ -290,6 +301,7 @@ export interface Order {
   courierStatus: string | null;
   courierTrackingLink: string | null;
   courierBookedAt: string | null;
+  partialDeliveryReconciledAt: string | null;
   followUpAt: string | null;
   callAttempts: number;
   statusHistory: OrderStatusHistoryEntry[];
@@ -579,6 +591,8 @@ export interface StoreSettings {
   contactPhone: string | null;
   shippingFeeDhaka: string;
   shippingFeeOutsideDhaka: string;
+  courierReturnFeeDhaka: string;
+  courierReturnFeeOutsideDhaka: string;
   taxEnabled: boolean;
   defaultTaxRate: string | null;
   rewardPointsPerCurrency: string;

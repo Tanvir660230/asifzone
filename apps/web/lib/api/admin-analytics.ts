@@ -11,6 +11,8 @@ export interface DashboardSummary {
   aovPrev30d: number;
   uniqueVisitors30d: number;
   uniqueVisitorsPrev30d: number;
+  courierLoss30d: number;
+  courierLossCount30d: number;
 }
 
 export interface RevenuePoint {

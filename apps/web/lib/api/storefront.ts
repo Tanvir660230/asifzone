@@ -123,6 +123,8 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   contactPhone: null,
   shippingFeeDhaka: "60",
   shippingFeeOutsideDhaka: "120",
+  courierReturnFeeDhaka: "60",
+  courierReturnFeeOutsideDhaka: "120",
   taxEnabled: false,
   defaultTaxRate: null,
   rewardPointsPerCurrency: "0",

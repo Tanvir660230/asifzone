@@ -10,6 +10,7 @@ import type {
   UpdateOrderDetailsInput,
   HoldOrderInput,
   AdjustOrderPriceInput,
+  ReconcilePartialDeliveryInput,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -302,7 +303,11 @@ export async function getOrderForCustomer(customerId: string, orderId: string) {
 
   const items = await attachLiveItemInfo(order.items, { requireAvailable: true });
 
-  const returnRequests = await prisma.returnRequest.findMany({ where: { orderId }, orderBy: { createdAt: "desc" } });
+  const returnRequests = await prisma.returnRequest.findMany({
+    where: { orderId },
+    orderBy: { createdAt: "desc" },
+    include: { exchangeOrder: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } } },
+  });
 
   return { ...order, items, returnRequests };
 }
@@ -563,9 +568,28 @@ export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
   return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
+/** Steadfast exposes no per-order fee, only a merchant wallet balance (lib/steadfast.ts) — this is
+ * an admin-entered estimate of their return-leg fee (StoreSetting.courierReturnFeeDhaka/
+ * OutsideDhaka), zone-matched the same way shippingFee is at checkout. Only called from the two
+ * places that actually log a CourierLossEvent, not on every order lookup. */
+async function getCourierReturnFee(shippingDivision: string): Promise<number> {
+  const settings = await getSettings();
+  return shippingDivision === "Dhaka" ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
+}
+
 export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
   const existing = await getOrderById(id);
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+
+  // Computed up front (doesn't depend on the row lock below) and only when it might actually be
+  // needed — a plain settings lookup on every single status change would otherwise be wasted for
+  // the overwhelming majority of updates that aren't "cancel an order that already has a courier
+  // booked". Still gated on restockNeeded inside the transaction, since that's what proves this is
+  // a genuine new transition into CANCELLED, not a re-save of an already-cancelled order.
+  const courierLossFee =
+    input.status === "CANCELLED" && existing.courierConsignmentId
+      ? await getCourierReturnFee(existing.shippingDivision)
+      : null;
 
   const updated = await prisma.$transaction(async (tx) => {
     // Row-locked re-read of status, not the pre-transaction snapshot above — two concurrent status
@@ -606,6 +630,12 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
           adminId: changedByAdminId ?? null,
         })),
       });
+
+      if (courierLossFee !== null) {
+        await tx.courierLossEvent.create({
+          data: { orderId: id, amount: courierLossFee, reason: "CANCELLED_POST_BOOKING" },
+        });
+      }
     }
 
     const order = await tx.order.update({
@@ -916,6 +946,80 @@ export async function restockReturnedOrderItems(
         },
       });
     }
+  });
+}
+
+/** Resolves a PARTIALLY_DELIVERED order (Steadfast reported "partial_delivered" — the customer
+ * accepted only some of the parcel) by having an admin declare how many units of each line item
+ * actually came back; anything not listed (or listed as 0) is assumed kept by the customer.
+ * Restocks exactly those units and logs a PARTIAL_RETURN CourierLossEvent if anything came back —
+ * the return leg cost the same courier round trip as a full cancellation. Status deliberately
+ * stays PARTIALLY_DELIVERED afterward (never rewritten to DELIVERED): the exact COD amount actually
+ * collected on a partial delivery isn't knowable from Steadfast's API, so `total`/delivery-points/
+ * the DELIVERED SMS are all intentionally left untouched rather than guessed at — this only fixes
+ * the stock-accuracy gap, not the order's financial record. */
+export async function reconcilePartialDelivery(orderId: string, input: ReconcilePartialDeliveryInput, adminId: string) {
+  const existing = await getOrderById(orderId);
+  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+  if (existing.status !== "PARTIALLY_DELIVERED") {
+    throw AppError.badRequest("Only a partially-delivered order can be reconciled");
+  }
+  if (existing.partialDeliveryReconciledAt) {
+    throw AppError.conflict("This order has already been reconciled");
+  }
+
+  const itemById = new Map(existing.items.map((item) => [item.id, item]));
+  for (const entry of input.items) {
+    const item = itemById.get(entry.orderItemId);
+    if (!item) throw AppError.badRequest(`Order item ${entry.orderItemId} does not belong to this order`);
+    if (entry.returnedQuantity > item.quantity) {
+      throw AppError.badRequest(
+        `Returned quantity for ${item.productNameSnapshot} cannot exceed the ordered quantity (${item.quantity})`,
+      );
+    }
+  }
+
+  const returnedEntries = input.items.filter((entry) => entry.returnedQuantity > 0);
+  const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDivision) : null;
+
+  return prisma.$transaction(async (tx) => {
+    for (const entry of returnedEntries) {
+      const item = itemById.get(entry.orderItemId)!;
+      const result = await tx.productVariant.updateMany({
+        where: { id: item.variantId },
+        data: { stock: { increment: entry.returnedQuantity } },
+      });
+      if (result.count > 0) {
+        await tx.stockMovement.create({
+          data: {
+            variantId: item.variantId,
+            change: entry.returnedQuantity,
+            reason: "RETURN",
+            orderId,
+            adminId,
+            note: "Stock restored — partial delivery reconciliation",
+          },
+        });
+      }
+      await tx.orderItem.update({ where: { id: entry.orderItemId }, data: { returnedQuantity: entry.returnedQuantity } });
+    }
+
+    if (courierLossFee !== null) {
+      await tx.courierLossEvent.create({ data: { orderId, amount: courierLossFee, reason: "PARTIAL_RETURN" } });
+    }
+
+    const note = returnedEntries.length
+      ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned and restocked`
+      : "Partial delivery reconciled — customer kept the full shipment";
+
+    return tx.order.update({
+      where: { id: orderId },
+      data: {
+        partialDeliveryReconciledAt: new Date(),
+        statusHistory: { create: { status: "PARTIALLY_DELIVERED", note, changedByAdminId: adminId } },
+      },
+      include,
+    });
   });
 }
 

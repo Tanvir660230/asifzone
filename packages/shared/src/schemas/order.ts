@@ -9,6 +9,7 @@ export const orderStatusEnum = z.enum([
   "PACKED",
   "SHIPPED",
   "DELIVERED",
+  "PARTIALLY_DELIVERED",
   "CANCELLED",
   "RETURNED",
   "REFUNDED",
@@ -755,6 +756,21 @@ export const adjustOrderPriceSchema = z.object({
   note: nullableString(500),
 });
 
+/** Admin resolves a PARTIALLY_DELIVERED order (Steadfast "partial_delivered") by declaring how
+ * many units of each line item actually came back — anything not listed (or listed as 0) is
+ * assumed kept by the customer. See reconcilePartialDelivery in order.service.ts. */
+export const reconcilePartialDeliverySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        orderItemId: z.string().cuid(),
+        returnedQuantity: z.number().int().min(0).max(10000),
+      }),
+    )
+    .min(1)
+    .max(100),
+});
+
 export const validateCouponSchema = z.object({
   code: z.string().min(1).max(64),
   subtotal: z.number().positive(),
@@ -773,6 +789,7 @@ export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 export type UpdateOrderDetailsInput = z.infer<typeof updateOrderDetailsSchema>;
 export type HoldOrderInput = z.infer<typeof holdOrderSchema>;
 export type AdjustOrderPriceInput = z.infer<typeof adjustOrderPriceSchema>;
+export type ReconcilePartialDeliveryInput = z.infer<typeof reconcilePartialDeliverySchema>;
 export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
 export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
 export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;

@@ -28,6 +28,8 @@ export const updateSettingsSchema = z.object({
   contactPhone: nullableString(32),
   shippingFeeDhaka: optionalNonNegativeNumber(),
   shippingFeeOutsideDhaka: optionalNonNegativeNumber(),
+  courierReturnFeeDhaka: optionalNonNegativeNumber(),
+  courierReturnFeeOutsideDhaka: optionalNonNegativeNumber(),
   taxEnabled: z.boolean().optional(),
   defaultTaxRate: z.preprocess(
     (v) => (v === "" || (typeof v === "number" && Number.isNaN(v)) ? null : v),

@@ -240,6 +240,8 @@ export default function SettingsPage() {
       contactPhone: s.contactPhone,
       shippingFeeDhaka: Number(s.shippingFeeDhaka),
       shippingFeeOutsideDhaka: Number(s.shippingFeeOutsideDhaka),
+      courierReturnFeeDhaka: Number(s.courierReturnFeeDhaka),
+      courierReturnFeeOutsideDhaka: Number(s.courierReturnFeeOutsideDhaka),
       taxEnabled: s.taxEnabled,
       defaultTaxRate: s.defaultTaxRate ? Number(s.defaultTaxRate) : undefined,
       rewardPointsPerCurrency: Number(s.rewardPointsPerCurrency),
@@ -485,6 +487,34 @@ export default function SettingsPage() {
               />
               {errors.shippingFeeOutsideDhaka && (
                 <p className="mt-1 text-xs text-danger-600">{errors.shippingFeeOutsideDhaka.message}</p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka (BDT)</Label>
+              <Input
+                id="courierReturnFeeDhaka"
+                type="number"
+                step="0.01"
+                {...register("courierReturnFeeDhaka", { valueAsNumber: true })}
+              />
+              {errors.courierReturnFeeDhaka && (
+                <p className="mt-1 text-xs text-danger-600">{errors.courierReturnFeeDhaka.message}</p>
+              )}
+              <p className="mt-1 text-xs text-ink-400">
+                Estimated round-trip cost when a booked order is cancelled or partially returned — Steadfast doesn&apos;t
+                report this per order, so it&apos;s used to total up the dashboard&apos;s cancellation-loss figure only.
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="courierReturnFeeOutsideDhaka">Courier return fee — outside Dhaka (BDT)</Label>
+              <Input
+                id="courierReturnFeeOutsideDhaka"
+                type="number"
+                step="0.01"
+                {...register("courierReturnFeeOutsideDhaka", { valueAsNumber: true })}
+              />
+              {errors.courierReturnFeeOutsideDhaka && (
+                <p className="mt-1 text-xs text-danger-600">{errors.courierReturnFeeOutsideDhaka.message}</p>
               )}
             </div>
             <div>

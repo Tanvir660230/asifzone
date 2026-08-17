@@ -286,6 +286,12 @@ export default function DashboardPage() {
             icon={<AlertTriangle size={22} />}
             tone={summary && summary.lowStockCount > 0 ? "warning" : "default"}
           />
+          <StatTile
+            label="Courier cancellation loss (30d)"
+            value={summary ? formatPrice(summary.courierLoss30d) : "—"}
+            icon={<Truck size={22} />}
+            tone={summary && summary.courierLoss30d > 0 ? "warning" : "default"}
+          />
         </div>
       </div>
 

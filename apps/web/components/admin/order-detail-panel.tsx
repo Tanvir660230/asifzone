@@ -3,8 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Printer, Truck, Trash2, RotateCcw, Package, Pencil, X } from "lucide-react";
-import type { OrderStatus, UpdateOrderDetailsInput, AdjustOrderPriceInput } from "@clothing-brand/shared";
+import { Printer, Truck, Trash2, RotateCcw, Package, PackageX, Pencil, X } from "lucide-react";
+import type {
+  OrderStatus,
+  UpdateOrderDetailsInput,
+  AdjustOrderPriceInput,
+  ReconcilePartialDeliveryInput,
+} from "@clothing-brand/shared";
 import {
   updateOrderDetailsSchema,
   adjustOrderPriceSchema,
@@ -31,7 +36,7 @@ import { formatPrice, courierStatusBadgeClass, courierStatusLabel, courierStatus
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 
-const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
+const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 
 interface DetailsDraft {
   customerName: string;
@@ -72,6 +77,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
   "PACKED",
   "SHIPPED",
   "DELIVERED",
+  "PARTIALLY_DELIVERED",
   "CANCELLED",
   "RETURNED",
   "REFUNDED",
@@ -101,6 +107,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceDraft, setPriceDraft] = useState<PriceDraft | null>(null);
   const [priceError, setPriceError] = useState<string | null>(null);
+  const [returnedQuantities, setReturnedQuantities] = useState<Record<string, number>>({});
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
@@ -120,6 +127,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     setTracking(null);
     setAdminNotes(null);
     setHoldNote("");
+    setReturnedQuantities({});
   }, [id]);
 
   const { data, isLoading } = useQuery({
@@ -181,6 +189,18 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
       toast.success("Price adjusted");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to adjust price"),
+  });
+
+  const reconcileMutation = useMutation({
+    mutationFn: (input: ReconcilePartialDeliveryInput) => adminOrdersApi.reconcilePartialDelivery(id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
+      setReturnedQuantities({});
+      toast.success("Partial delivery reconciled");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to reconcile"),
   });
 
   const deleteMutation = useMutation({
@@ -504,6 +524,84 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
         </CardContent>
       </Card>
 
+      {order.status === "PARTIALLY_DELIVERED" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <PackageX size={16} className="text-warning-500" /> Partial Delivery
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {order.partialDeliveryReconciledAt ? (
+              <p className="text-sm text-ink-600">
+                Reconciled {formatBdDateTime(order.partialDeliveryReconciledAt)} —{" "}
+                {order.items.some((item) => item.returnedQuantity > 0)
+                  ? `${order.items.reduce((sum, item) => sum + item.returnedQuantity, 0)} unit(s) restocked.`
+                  : "customer kept the full shipment, nothing restocked."}
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-warning-700">
+                  Steadfast reported this as a partial delivery — the customer refused part of the shipment. Enter how
+                  many units of each item actually came back so stock can be restored; leave 0 for anything they kept.
+                </p>
+                <div className="space-y-2">
+                  {order.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 p-2.5 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-ink-900">{item.productNameSnapshot}</p>
+                        <p className="text-xs text-ink-400">
+                          {item.sizeSnapshot}/{item.colorSnapshot} · Ordered {item.quantity}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Label htmlFor={`returned-${item.id}`} className="text-xs text-ink-400">
+                          Returned
+                        </Label>
+                        <Input
+                          id={`returned-${item.id}`}
+                          type="number"
+                          min={0}
+                          max={item.quantity}
+                          step={1}
+                          className="w-20"
+                          value={returnedQuantities[item.id] ?? 0}
+                          onChange={(e) =>
+                            setReturnedQuantities({
+                              ...returnedQuantities,
+                              [item.id]: Math.max(0, Math.min(item.quantity, Math.round(Number(e.target.value) || 0))),
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    disabled={reconcileMutation.isPending}
+                    onClick={() =>
+                      reconcileMutation.mutate({
+                        items: order.items.map((item) => ({
+                          orderItemId: item.id,
+                          returnedQuantity: returnedQuantities[item.id] ?? 0,
+                        })),
+                      })
+                    }
+                  >
+                    Restock returned items &amp; reconcile
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -556,7 +654,8 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                 </p>
                 {!TERMINAL_ORDER_STATUSES.includes(order.status) && (
                   <p className="mt-1.5 text-xs text-ink-400">
-                    Order status will automatically move to <span className="font-medium">Delivered</span> or{" "}
+                    Order status will automatically move to <span className="font-medium">Delivered</span>,{" "}
+                    <span className="font-medium">Partially Delivered</span>, or{" "}
                     <span className="font-medium">Cancelled</span> once Steadfast reports a final outcome — it&apos;s expected to
                     stay <span className="font-medium">{order.status}</span> until then.
                   </p>

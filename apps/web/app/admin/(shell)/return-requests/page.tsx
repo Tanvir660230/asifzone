@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
 import type { ReturnRequestStatus } from "@clothing-brand/shared";
@@ -34,13 +35,17 @@ export default function AdminReturnRequestsPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to update return request"),
   });
 
-  async function handleApprove(id: string, orderNumber: string) {
-    if (!(await confirm(`Approve the return for order ${orderNumber}? This marks the order as Returned.`))) return;
+  async function handleApprove(id: string, orderNumber: string, type: "RETURN" | "EXCHANGE") {
+    const message =
+      type === "EXCHANGE"
+        ? `Approve this exchange for order ${orderNumber}? This decrements stock for the requested size/color, restocks the original item, and creates a new $0 replacement order.`
+        : `Approve the return for order ${orderNumber}? This marks the order as Returned.`;
+    if (!(await confirm(message))) return;
     reviewMutation.mutate({ id, status: "APPROVED" });
   }
 
   async function handleReject(id: string, orderNumber: string) {
-    if (!(await confirm(`Reject the return request for order ${orderNumber}?`))) return;
+    if (!(await confirm(`Reject the request for order ${orderNumber}?`))) return;
     reviewMutation.mutate({ id, status: "REJECTED" });
   }
 
@@ -55,6 +60,7 @@ export default function AdminReturnRequestsPage() {
               <tr>
                 <th className="px-4 py-3">Order</th>
                 <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Reason</th>
                 <th className="px-4 py-3">Requested</th>
                 <th className="px-4 py-3">Status</th>
@@ -62,10 +68,10 @@ export default function AdminReturnRequestsPage() {
               </tr>
             </thead>
             <tbody>
-              {isLoading && <TableSkeleton rows={5} cols={6} />}
+              {isLoading && <TableSkeleton rows={5} cols={7} />}
               {!isLoading && data?.items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-ink-400">
+                  <td colSpan={7} className="px-4 py-6 text-center text-ink-400">
                     No return requests yet.
                   </td>
                 </tr>
@@ -81,6 +87,22 @@ export default function AdminReturnRequestsPage() {
                     <div className="text-xs text-ink-400">{r.customer?.email}</div>
                   </td>
                   <td className="px-4 py-3 text-ink-500">
+                    {r.type === "EXCHANGE" ? "Exchange" : "Return"}
+                    {r.type === "EXCHANGE" && r.originalSizeSnapshot && (
+                      <div className="text-xs text-ink-400">
+                        {r.originalSizeSnapshot}/{r.originalColorSnapshot} → {r.requestedSizeSnapshot}/{r.requestedColorSnapshot}
+                      </div>
+                    )}
+                    {r.type === "EXCHANGE" && r.exchangeOrder && (
+                      <Link
+                        href={`/admin/orders/${r.exchangeOrder.id}`}
+                        className="text-xs text-info-600 hover:underline"
+                      >
+                        {r.exchangeOrder.orderNumber}
+                      </Link>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-ink-500">
                     {r.reason}
                     {r.note && <div className="text-xs text-ink-400">{r.note}</div>}
                   </td>
@@ -92,7 +114,7 @@ export default function AdminReturnRequestsPage() {
                     {r.status === "PENDING" && r.order && (
                       <div className="flex justify-end gap-3">
                         <button
-                          onClick={() => handleApprove(r.id, r.order!.orderNumber)}
+                          onClick={() => handleApprove(r.id, r.order!.orderNumber, r.type)}
                           className="text-ink-400 hover:text-success-600"
                           aria-label="Approve"
                         >

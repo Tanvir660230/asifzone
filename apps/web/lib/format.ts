@@ -38,6 +38,7 @@ const ORDER_STATUS_BADGE_CLASS: Record<string, string> = {
   PACKED: "bg-info-100 text-info-700",
   SHIPPED: "bg-info-100 text-info-700",
   DELIVERED: "bg-success-100 text-success-700",
+  PARTIALLY_DELIVERED: "bg-warning-100 text-warning-700",
   CANCELLED: "bg-danger-100 text-danger-700",
   RETURNED: "bg-warning-100 text-warning-700",
   REFUNDED: "bg-ink-200 text-ink-700",
@@ -57,6 +58,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   PACKED: "Packed",
   SHIPPED: "Shipped",
   DELIVERED: "Delivered",
+  PARTIALLY_DELIVERED: "Partially delivered",
   CANCELLED: "Cancelled",
   RETURNED: "Returned",
   REFUNDED: "Refunded",
@@ -68,9 +70,12 @@ export function orderStatusLabel(status: string): string {
 
 const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
   delivered: "bg-success-100 text-success-700",
-  partial_delivered: "bg-success-100 text-success-700",
+  // Amber, not green — this now maps to the distinct PARTIALLY_DELIVERED order status (see
+  // mapSteadfastStatusToOrderStatus in courier.service.ts), which needs an admin to reconcile
+  // returned items before it's really "done", unlike a plain delivered.
+  partial_delivered: "bg-warning-100 text-warning-700",
   delivered_approval_pending: "bg-success-100 text-success-700",
-  partial_delivered_approval_pending: "bg-success-100 text-success-700",
+  partial_delivered_approval_pending: "bg-warning-100 text-warning-700",
   cancelled: "bg-danger-100 text-danger-700",
   cancelled_approval_pending: "bg-danger-100 text-danger-700",
   hold: "bg-warning-100 text-warning-700",

@@ -96,7 +96,11 @@ export default function PrintLabelsPage() {
 
   return (
     <div className="min-h-screen bg-ink-50/60 print:bg-white">
-      <div className="sticky top-0 z-10 border-b border-ink-200 bg-white/90 backdrop-blur print:hidden">
+      {/* top-14: this page lives inside the admin shell's own scroll container, whose global
+          topbar is sticky top-0 z-20 h-14 — offset below it (same fix as orders/page.tsx and
+          customers/page.tsx) so the two translucent bars don't collide and bleed through onto
+          the scrolling label content. */}
+      <div className="sticky top-14 z-10 border-b border-ink-200 bg-white/95 backdrop-blur print:hidden">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4 sm:px-10">
           <div className="flex items-center gap-3">
             <Link
