@@ -21,6 +21,10 @@ interface FormProps {
   onValuesChange?: (values: Record<string, unknown>) => void;
 }
 
+// Rejected client-side rather than left to fail slowly server-side, particularly over a weak
+// admin-on-mobile connection.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 export function BrandStoryForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -42,6 +46,11 @@ export function BrandStoryForm({ initialConfig, onSubmit, onCancel, onValuesChan
   async function handleImageSelected(file: File | null) {
     if (!file) return;
     setUploadError(null);
+    if (file.size > MAX_IMAGE_BYTES) {
+      setUploadError("Image is too large — please use a file under 5MB.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     try {
       const { url } = await uploadMutation.mutateAsync(file);
       setValue("imageUrl", url, { shouldValidate: true });
@@ -89,6 +98,10 @@ export function BrandStoryForm({ initialConfig, onSubmit, onCancel, onValuesChan
           className="hidden"
           onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
         />
+        <p className="mt-1 text-xs text-ink-400">
+          Recommended size: 900×600px or larger. Shown in a fixed, centered frame — roughly 2:1 on mobile and 14:9
+          on desktop — so keep the main subject centered rather than near the edges.
+        </p>
       </div>
       <div>
         <Label htmlFor="heading">Heading (optional)</Label>

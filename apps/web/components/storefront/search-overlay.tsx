@@ -10,6 +10,7 @@ import type { SearchSuggestionProduct, SearchSuggestions } from "@clothing-brand
 import { fetchPopularSearches, fetchSearchSuggestions } from "@/lib/api/storefront";
 import { addRecentSearch, clearRecentSearches, getRecentSearches, removeRecentSearch } from "@/lib/recent-searches";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useSearchOverlayStore } from "@/store/search-overlay";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -110,6 +111,11 @@ export function SearchOverlay() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  // Tab-trap + scroll-lock + focus-restore-on-close — this overlay previously only handled Escape
+  // itself (see the effect below); a keyboard user could Tab straight out of it into the page
+  // behind the backdrop. The input's own delayed autofocus-on-open (below) and its in-place
+  // Arrow/Enter suggestion navigation are unrelated concerns and stay exactly as they were.
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: close });
 
   const trimmedQuery = query.trim();
   const showEmptyState = trimmedQuery.length === 0;
@@ -131,16 +137,6 @@ export function SearchOverlay() {
       .catch(() => setPopularSearches([]));
     const t = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(t);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   useEffect(() => {
@@ -275,9 +271,11 @@ export function SearchOverlay() {
       onClick={close}
     >
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label="Search"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="mx-auto flex w-full max-w-2xl animate-modal-in flex-col overflow-hidden rounded-2xl bg-cream-50 shadow-floatLg"
       >

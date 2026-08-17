@@ -11,11 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { BackLink } from "@/components/ui/back-link";
 import { toast } from "@/components/ui/toast";
 import { getMyOrder } from "@/lib/api/customers";
 import { createReturnRequest } from "@/lib/api/return-requests";
 import { useCartStore } from "@/store/cart";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
 const RETURN_REASONS = [
@@ -25,18 +26,6 @@ const RETURN_REASONS = [
   "No longer needed",
   "Other",
 ];
-
-const STATUS_LABELS: Record<string, string> = {
-  PENDING: "Pending confirmation",
-  CONFIRMED: "Confirmed",
-  PROCESSING: "Processing",
-  PACKED: "Packed",
-  SHIPPED: "Shipped",
-  DELIVERED: "Delivered",
-  CANCELLED: "Cancelled",
-  RETURNED: "Returned",
-  REFUNDED: "Refunded",
-};
 
 export default function AccountOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -116,6 +105,7 @@ export default function AccountOrderDetailPage() {
 
   return (
     <div className="space-y-6">
+      <BackLink href="/account/orders" label="Back to Orders" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl text-ink-900">{order.orderNumber}</h1>
@@ -136,15 +126,19 @@ export default function AccountOrderDetailPage() {
       <Card>
         <CardHeader className="flex items-center justify-between">
           <CardTitle>Status</CardTitle>
-          <Badge>{STATUS_LABELS[order.status] ?? order.status}</Badge>
+          <Badge className={orderStatusBadgeClass(order.status)}>{orderStatusLabel(order.status)}</Badge>
         </CardHeader>
         <CardContent>
           <ol className="space-y-3 border-l border-ink-100 pl-4">
-            {order.statusHistory.map((entry) => (
-              <li key={entry.id} className="relative text-sm">
+            {order.statusHistory.map((entry, i) => (
+              <li
+                key={entry.id}
+                className="relative text-sm"
+                aria-current={i === order.statusHistory.length - 1 ? "step" : undefined}
+              >
                 <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-brass-400" />
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-ink-900">{STATUS_LABELS[entry.status] ?? entry.status}</span>
+                  <span className="font-medium text-ink-900">{orderStatusLabel(entry.status)}</span>
                   <span className="text-xs text-ink-400">{new Date(entry.createdAt).toLocaleString()}</span>
                 </div>
                 {entry.note && <p className="mt-0.5 text-ink-600">{entry.note}</p>}
@@ -211,7 +205,7 @@ export default function AccountOrderDetailPage() {
                 {latestReturnRequest.status === "APPROVED" && (
                   <p className="mt-0.5 text-ink-500">
                     Refund status follows the order status above — currently{" "}
-                    <span className="font-medium">{STATUS_LABELS[order.status] ?? order.status}</span>.
+                    <span className="font-medium">{orderStatusLabel(order.status)}</span>.
                   </p>
                 )}
                 {latestReturnRequest.status === "REJECTED" && latestReturnRequest.adminNote && (

@@ -1,58 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { StorefrontFacets } from "@/lib/api/storefront";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn, isPaleColor } from "@/lib/utils";
-
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const drawerRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!mobileOpen) return;
-
-    triggerRef.current = document.activeElement as HTMLElement | null;
-    const panel = drawerRef.current;
-    const focusable = panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
-    (focusable[0] ?? panel)?.focus();
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setMobileOpen(false);
-        return;
-      }
-      if (e.key !== "Tab" || !panel) return;
-
-      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      triggerRef.current?.focus();
-    };
-  }, [mobileOpen]);
+  const drawerRef = useFocusTrap<HTMLDivElement>({ active: mobileOpen, onEscape: () => setMobileOpen(false) });
 
   const activeSizes = searchParams.get("sizes")?.split(",").filter(Boolean) ?? [];
   const activeColors = searchParams.get("colors")?.split(",").filter(Boolean) ?? [];

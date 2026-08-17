@@ -1,24 +1,13 @@
 import type { Order } from "@clothing-brand/shared";
-import { formatPrice } from "@/lib/format";
-
-const STATUS_LABELS: Record<Order["status"], string> = {
-  PENDING: "Pending confirmation",
-  CONFIRMED: "Confirmed",
-  PROCESSING: "Processing",
-  PACKED: "Packed",
-  SHIPPED: "Shipped",
-  DELIVERED: "Delivered",
-  CANCELLED: "Cancelled",
-  RETURNED: "Returned",
-  REFUNDED: "Refunded",
-};
+import { Badge } from "@/components/ui/badge";
+import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 
 export function OrderSummaryCard({ order }: { order: Order }) {
   return (
     <div className="border border-ink-100 p-6 text-left">
       <div className="mb-4 flex items-center justify-between border-b border-ink-100 pb-4">
         <span className="text-sm text-ink-500">Status</span>
-        <span className="text-sm font-medium text-ink-900">{STATUS_LABELS[order.status]}</span>
+        <Badge className={orderStatusBadgeClass(order.status)}>{orderStatusLabel(order.status)}</Badge>
       </div>
 
       <div className="space-y-2 text-sm">

@@ -21,6 +21,10 @@ interface FormProps {
   onValuesChange?: (values: Record<string, unknown>) => void;
 }
 
+// Rejected client-side rather than left to fail slowly server-side, particularly over a weak
+// admin-on-mobile connection.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 export function PromoBannerForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -42,6 +46,11 @@ export function PromoBannerForm({ initialConfig, onSubmit, onCancel, onValuesCha
   async function handleImageSelected(file: File | null) {
     if (!file) return;
     setUploadError(null);
+    if (file.size > MAX_IMAGE_BYTES) {
+      setUploadError("Image is too large — please use a file under 5MB.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     try {
       const { url } = await uploadMutation.mutateAsync(file);
       setValue("imageUrl", url, { shouldValidate: true });
@@ -90,6 +99,10 @@ export function PromoBannerForm({ initialConfig, onSubmit, onCancel, onValuesCha
           onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
         />
         {errors.imageUrl && <p className="mt-1 text-xs text-danger-600">{errors.imageUrl.message}</p>}
+        <p className="mt-1 text-xs text-ink-400">
+          Recommended size: 1920×1080px (16:9). This section crops to 16:9 on mobile and 3:1 on desktop — keep
+          important content centered so it isn&rsquo;t cut off at either width.
+        </p>
       </div>
       <div>
         <Label htmlFor="heading">Heading (optional)</Label>

@@ -9,7 +9,7 @@ import {
 } from "../../lib/steadfast";
 import { getOrderById, updateOrderStatus } from "../orders/order.service";
 
-const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "CANCELLED", "REFUNDED"];
+const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 const TERMINAL_COURIER_STATUSES = ["delivered", "partial_delivered", "cancelled"];
 
 // Booking a Steadfast consignment only means a courier *record* now exists — the box still has to

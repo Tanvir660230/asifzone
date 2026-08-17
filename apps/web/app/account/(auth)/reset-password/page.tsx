@@ -7,8 +7,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter, useSearchParams } from "next/navigation";
 import { resetPasswordSchema, type ResetPasswordInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/account/password-input";
+import { PasswordStrengthMeter } from "@/components/account/password-strength-meter";
 import { resetPassword } from "@/lib/customer-auth";
 import { ApiError } from "@/lib/api-client";
 
@@ -29,11 +30,13 @@ function ResetPasswordForm() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ResetPasswordInput>({
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: { token },
   });
+  const password = watch("password") ?? "";
 
   async function onSubmit(values: ResetPasswordInput) {
     setServerError(null);
@@ -70,11 +73,27 @@ function ResetPasswordForm() {
 
         <div>
           <Label htmlFor="password">New password</Label>
-          <Input id="password" type="password" autoComplete="new-password" {...register("password")} />
-          {errors.password && <p className="mt-1 text-xs text-danger-600">{errors.password.message}</p>}
+          <PasswordInput
+            id="password"
+            autoComplete="new-password"
+            autoFocus
+            aria-invalid={!!errors.password}
+            aria-describedby={errors.password ? "password-error" : undefined}
+            {...register("password")}
+          />
+          <PasswordStrengthMeter password={password} />
+          {errors.password && (
+            <p id="password-error" className="mt-1 text-xs text-danger-600">
+              {errors.password.message}
+            </p>
+          )}
         </div>
 
-        {serverError && <p className="text-sm text-danger-600">{serverError}</p>}
+        {serverError && (
+          <p role="alert" aria-live="polite" className="text-sm text-danger-600">
+            {serverError}
+          </p>
+        )}
 
         <Button type="submit" variant="brass" className="w-full" disabled={isSubmitting}>
           {isSubmitting ? "Updating…" : "Update password"}

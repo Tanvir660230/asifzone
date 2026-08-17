@@ -85,8 +85,10 @@ export async function middleware(req: NextRequest) {
   if (pathname.startsWith("/account")) {
     // Works the same whether the visitor is logged in (resending from the account banner) or not
     // (clicking the email link straight from a mail client, no session yet) — never gated or
-    // bounced away either direction, unlike the auth pages below.
-    if (pathname === "/account/verify-email") {
+    // bounced away either direction, unlike the auth pages below. /account/unsubscribe needs the
+    // same treatment: it's a one-click link from a marketing email, almost always clicked while
+    // logged out, and carries its own customerId/token query params that a login-redirect would drop.
+    if (pathname === "/account/verify-email" || pathname === "/account/unsubscribe") {
       return NextResponse.next();
     }
 

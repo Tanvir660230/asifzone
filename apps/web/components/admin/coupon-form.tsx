@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
@@ -221,7 +221,18 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
 
         <section className="space-y-4 border-t border-ink-100 pt-4">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Applies to</h3>
-          <Select {...register("scope")}>
+          <Select
+            {...register("scope", {
+              // Switching away from a scoped option must drop the now-hidden picker's selection —
+              // otherwise it stays in form state invisibly and can be submitted alongside a scope
+              // that no longer shows any UI for editing it.
+              onChange: (e: ChangeEvent<HTMLSelectElement>) => {
+                const next = e.target.value;
+                if (next !== "SPECIFIC_PRODUCTS") setProducts([]);
+                if (next !== "SPECIFIC_CATEGORIES") setCategoryIds([]);
+              },
+            })}
+          >
             <option value="ALL_PRODUCTS">All products</option>
             <option value="SPECIFIC_PRODUCTS">Specific products</option>
             <option value="SPECIFIC_CATEGORIES">Specific categories</option>

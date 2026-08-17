@@ -2,8 +2,9 @@
 
 import { type ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 interface DrawerProps {
   open: boolean;
@@ -11,54 +12,61 @@ interface DrawerProps {
   title: ReactNode;
   children: ReactNode;
   widthClassName?: string;
+  /** Optional prev/next through whatever list this drawer's content was opened from (e.g. the
+   * Orders table) — nav chrome only renders when at least one of these is passed, so consumers
+   * that don't need it (Customers) are visually unaffected. */
+  onPrev?: () => void;
+  onNext?: () => void;
+  prevDisabled?: boolean;
+  nextDisabled?: boolean;
+  /** e.g. "3 of 20" — shown next to the nav buttons on sm and up. */
+  navLabel?: string;
 }
 
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function isTypingTarget(el: EventTarget | null): boolean {
+  const tag = (el as HTMLElement | null)?.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean((el as HTMLElement | null)?.isContentEditable);
+}
 
 /** Right-side slide-in panel — same portal/backdrop/focus-trap recipe as `cart-drawer.tsx`,
  * generalized with `Modal`'s title/children API so it can host arbitrary admin content. */
-export function Drawer({ open, onClose, title, children, widthClassName = "max-w-xl" }: DrawerProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
+export function Drawer({
+  open,
+  onClose,
+  title,
+  children,
+  widthClassName = "max-w-xl",
+  onPrev,
+  onNext,
+  prevDisabled,
+  nextDisabled,
+  navLabel,
+}: DrawerProps) {
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose });
+
+  // Kept as its own effect, separate from the focus-trap hook above — onPrev/onNext are fresh
+  // closures every render of the parent (e.g. the Orders list), and folding this into the trap's
+  // effect would re-run its setup (stealing focus back to the first field) on every one of those
+  // re-renders, not just when the drawer actually opens.
+  const navRef = useRef({ onPrev, onNext, prevDisabled, nextDisabled });
+  useEffect(() => {
+    navRef.current = { onPrev, onNext, prevDisabled, nextDisabled };
+  });
 
   useEffect(() => {
     if (!open) return;
 
-    triggerRef.current = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const focusable = panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
-    (focusable[0] ?? panel)?.focus();
-
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (e.key !== "Tab" || !panel) return;
-
-      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !isTypingTarget(document.activeElement)) {
+        const nav = navRef.current;
+        if (e.key === "ArrowUp" && nav.onPrev && !nav.prevDisabled) nav.onPrev();
+        if (e.key === "ArrowDown" && nav.onNext && !nav.nextDisabled) nav.onNext();
       }
     }
 
     document.addEventListener("keydown", onKeyDown);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
-      triggerRef.current?.focus();
-    };
-  }, [open, onClose]);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   if (!open) return null;
 
@@ -76,8 +84,29 @@ export function Drawer({ open, onClose, title, children, widthClassName = "max-w
           widthClassName,
         )}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-ink-100 px-5 py-4">
-          <div className="min-w-0 font-display text-lg text-ink-900">{title}</div>
+        <div className="flex shrink-0 items-center gap-3 border-b border-ink-100 px-5 py-4">
+          <div className="min-w-0 flex-1 truncate font-display text-lg text-ink-900">{title}</div>
+          {(onPrev || onNext) && (
+            <div className="flex shrink-0 items-center gap-1">
+              {navLabel && <span className="hidden text-xs tabular-nums text-ink-400 sm:inline">{navLabel}</span>}
+              <button
+                onClick={onPrev}
+                disabled={!onPrev || prevDisabled}
+                aria-label="Previous order"
+                className="rounded-full p-1.5 text-ink-500 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900 disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <ChevronUp size={18} />
+              </button>
+              <button
+                onClick={onNext}
+                disabled={!onNext || nextDisabled}
+                aria-label="Next order"
+                className="rounded-full p-1.5 text-ink-500 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900 disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <ChevronDown size={18} />
+              </button>
+            </div>
+          )}
           <button
             onClick={onClose}
             aria-label="Close"

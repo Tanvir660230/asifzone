@@ -20,7 +20,7 @@ export function TrustStrip({ items = DEFAULT_ITEMS }: { items?: TrustStripItem[]
           const Icon = resolveHomepageIcon(icon);
           return (
             <div key={label} className="flex items-center justify-center gap-3 text-center sm:justify-start">
-              <Icon size={20} className="shrink-0 text-brass-500" />
+              <Icon size={20} className="shrink-0 text-brass-500" aria-hidden="true" />
               <span className="text-xs uppercase tracking-wide text-ink-600">{label}</span>
             </div>
           );

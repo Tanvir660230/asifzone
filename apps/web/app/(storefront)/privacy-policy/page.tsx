@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
+import { Breadcrumb } from "@/components/storefront/breadcrumb";
+import { MobileTocSelect } from "@/components/storefront/mobile-toc-select";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
 // `next build` would try to statically prerender the page and fail (the api container isn't
@@ -128,9 +131,9 @@ const SECTIONS = [
     body: (
       <p>
         Questions about this policy or your data can be sent via the{" "}
-        <a href="/contact" className="text-ink-900 underline underline-offset-2 hover:text-brass-500">
+        <Link href="/contact" className="text-ink-900 underline underline-offset-2 hover:text-brass-500">
           contact page
-        </a>
+        </Link>
         .
       </p>
     ),
@@ -140,6 +143,9 @@ const SECTIONS = [
 export default function PrivacyPolicyPage() {
   return (
     <div>
+      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
+        <Breadcrumb trail={[{ name: "Privacy Policy" }]} />
+      </div>
       <PageHero
         eyebrow={`Last updated ${LAST_UPDATED}`}
         title="Privacy Policy"
@@ -147,6 +153,7 @@ export default function PrivacyPolicyPage() {
       />
 
       <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
+        <MobileTocSelect sections={SECTIONS} />
         <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-12">
           <nav aria-label="Table of contents" className="hidden lg:block">
             <div className="sticky top-28 space-y-1 border-l border-ink-100 pl-4">

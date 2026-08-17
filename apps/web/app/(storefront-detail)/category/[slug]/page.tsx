@@ -10,7 +10,7 @@ import { ComingSoon } from "@/components/storefront/coming-soon";
 import { getCategoryBySlug, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const PAGE_SIZE = 12;
 
@@ -48,9 +48,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       title,
       description,
       url,
-      images: category.imageUrl
-        ? [category.imageUrl.startsWith("http") ? category.imageUrl : `${env.apiUrl}${category.imageUrl}`]
-        : undefined,
+      images: category.imageUrl ? [resolveImageUrl(category.imageUrl)] : undefined,
     }),
   };
 }

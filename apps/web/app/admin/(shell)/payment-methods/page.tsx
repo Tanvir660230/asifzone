@@ -77,6 +77,11 @@ export default function PaymentMethodsPage() {
     },
   });
   const uploadMutation = useMutation({ mutationFn: paymentMethodsApi.uploadPaymentMethodLogo });
+  const reorderMutation = useMutation({
+    mutationFn: paymentMethodsApi.reorderPaymentMethods,
+    onSuccess: invalidate,
+    onError: () => toast.error("Couldn't reorder payment methods — try again"),
+  });
 
   const {
     register,
@@ -126,8 +131,15 @@ export default function PaymentMethodsPage() {
     const target = methods[index + direction];
     const current = methods[index];
     if (!target || !current) return;
-    updateMutation.mutate({ id: current.id, sortOrder: target.sortOrder });
-    updateMutation.mutate({ id: target.id, sortOrder: current.sortOrder });
+    // One atomic request for both swapped rows — previously two separate PATCH calls, so a
+    // failure of the second after the first succeeded could leave sort order corrupted with no
+    // rollback or error surfaced.
+    reorderMutation.mutate({
+      items: [
+        { id: current.id, sortOrder: target.sortOrder },
+        { id: target.id, sortOrder: current.sortOrder },
+      ],
+    });
   }
 
   return (
@@ -220,7 +232,7 @@ export default function PaymentMethodsPage() {
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={() => move(index, -1)}
-                    disabled={index === 0}
+                    disabled={index === 0 || reorderMutation.isPending}
                     className="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-900 disabled:pointer-events-none disabled:opacity-30"
                     aria-label="Move up"
                     title="Move up"
@@ -229,7 +241,7 @@ export default function PaymentMethodsPage() {
                   </button>
                   <button
                     onClick={() => move(index, 1)}
-                    disabled={index === methods.length - 1}
+                    disabled={index === methods.length - 1 || reorderMutation.isPending}
                     className="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-900 disabled:pointer-events-none disabled:opacity-30"
                     aria-label="Move down"
                     title="Move down"

@@ -90,7 +90,11 @@ export function SectionConfigPanel({
           {type === "PERSONALIZED_LEAD" && <PersonalizedLeadForm {...formProps} />}
           {type === "SMART_RECOMMENDATIONS" && <SmartRecommendationsForm {...formProps} />}
         </div>
-        <div className="hidden lg:block">
+        <div>
+          {/* Below lg this used to be `hidden` outright — the live-as-you-type preview is the
+              distinctive part of this builder, so it now stacks under the form instead of
+              disappearing with no indication it exists. */}
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-400 lg:hidden">Live preview</p>
           <SectionPreview type={type} values={previewValues} />
         </div>
       </div>

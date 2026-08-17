@@ -1,9 +1,51 @@
 import type { ReactNode } from "react";
-import type { Product, StoreSettings } from "@clothing-brand/shared";
+import { BD_DIVISIONS, type Product, type StoreSettings } from "@clothing-brand/shared";
 import { resolveImageUrl } from "./image-url";
 import { stripHtml } from "./format";
 
-export function buildProductJsonLd(product: Product, siteUrl: string, storeName: string) {
+const NON_DHAKA_DIVISIONS = BD_DIVISIONS.filter((d) => d !== "Dhaka");
+
+// Mirrors the 7-day unworn/tags-attached window described on the /shipping-returns page — kept
+// as one literal here since that's the only place the policy is defined; update both together.
+const MERCHANT_RETURN_POLICY = {
+  "@type": "MerchantReturnPolicy",
+  returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow",
+  merchantReturnDays: 7,
+  returnMethod: "https://schema.org/ReturnByMail",
+  returnFees: "https://schema.org/ReturnShippingFeesCustomerResponsibility",
+  applicableCountry: "BD",
+};
+
+/** Mirrors packages/shared/src/delivery.ts's estimateDelivery exactly: the fee/ETA split is by
+ * division === "Dhaka" vs. the other 7 divisions, not a "Dhaka region + country-wide fallback"
+ * approximation — listing the 7 explicitly avoids the two bands overlapping (Dhaka is itself
+ * inside "BD", so a country-wide second entry would ambiguously match Dhaka addresses too). */
+function buildShippingDetails(settings: StoreSettings) {
+  return [
+    {
+      "@type": "OfferShippingDetails",
+      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeDhaka, currency: "BDT" },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: "Dhaka" },
+      deliveryTime: {
+        "@type": "ShippingDeliveryTime",
+        handlingTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
+        transitTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
+      },
+    },
+    {
+      "@type": "OfferShippingDetails",
+      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeOutsideDhaka, currency: "BDT" },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: NON_DHAKA_DIVISIONS },
+      deliveryTime: {
+        "@type": "ShippingDeliveryTime",
+        handlingTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
+        transitTime: { "@type": "QuantitativeValue", minValue: 3, maxValue: 5, unitCode: "DAY" },
+      },
+    },
+  ];
+}
+
+export function buildProductJsonLd(product: Product, siteUrl: string, settings: StoreSettings) {
   const price = product.activeFlashSale?.flashPrice ?? product.basePrice;
   const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
 
@@ -13,7 +55,7 @@ export function buildProductJsonLd(product: Product, siteUrl: string, storeName:
     name: product.name,
     description: product.shortDescription || stripHtml(product.description) || undefined,
     image: product.images.map((img) => resolveImageUrl(img.url)),
-    brand: { "@type": "Brand", name: storeName },
+    brand: { "@type": "Brand", name: settings.storeName },
     sku: product.variants[0]?.sku,
     offers: {
       "@type": "Offer",
@@ -21,6 +63,14 @@ export function buildProductJsonLd(product: Product, siteUrl: string, storeName:
       priceCurrency: "BDT",
       price,
       availability: totalStock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      // Every product in the catalog is new stock — there's no used/refurbished concept anywhere
+      // in the data model, so this is always accurate rather than an assumed default.
+      itemCondition: "https://schema.org/NewCondition",
+      hasMerchantReturnPolicy: MERCHANT_RETURN_POLICY,
+      shippingDetails: buildShippingDetails(settings),
+      // Only set when a flash sale gives a real expiry for the current price — the regular base
+      // price has no defined validity window, so it's left open-ended rather than guessed.
+      ...(product.activeFlashSale ? { priceValidUntil: product.activeFlashSale.endsAt.slice(0, 10) } : {}),
     },
     // Google only renders the star-rating rich result when this is present — omitted entirely
     // (rather than sent as zero/empty) for an unreviewed product, since an AggregateRating with

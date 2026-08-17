@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { toast } from "@/components/ui/toast";
 
 /** Matches the backend's requireRole("OWNER") gates (audit log, team) — hidden rather than
@@ -105,6 +106,10 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const { data: currentAdmin } = useCurrentAdmin();
   const isOwner = currentAdmin?.admin.role === "OWNER";
+  const drawerRef = useFocusTrap<HTMLElement>({
+    active: mobileOpen,
+    onEscape: () => onCloseMobile?.(),
+  });
 
   const visibleSections = NAV_SECTIONS.map((section) => ({
     ...section,
@@ -152,6 +157,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                     key={href}
                     href={href}
                     onClick={onCloseMobile}
+                    aria-current={active ? "page" : undefined}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ease-smooth",
                       active
@@ -200,7 +206,14 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 animate-fade-in bg-ink-950/50 backdrop-blur-sm" onClick={onCloseMobile} />
-          <aside className="relative flex h-full w-64 animate-modal-in flex-col bg-ink-950 text-cream-100 shadow-floatLg">
+          <aside
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation"
+            tabIndex={-1}
+            className="relative flex h-full w-64 animate-modal-in flex-col bg-ink-950 text-cream-100 shadow-floatLg"
+          >
             {content}
           </aside>
         </div>

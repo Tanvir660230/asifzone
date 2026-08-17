@@ -1,31 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
 import { ShoppingBag } from "lucide-react";
-import { useCartStore, useCartCount, useCartSubtotal } from "@/store/cart";
+import { useCartCount, useCartSubtotal } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
+import { useBottomDockState } from "@/hooks/use-bottom-dock";
 import { formatPrice } from "@/lib/format";
-
-const HIDDEN_ON = ["/cart", "/checkout", "/product"];
 
 /** Persistent quick-checkout access, distinct from CartReminderBanner (which only nudges after
  * inactivity) — this shows any time the cart has items, so "go pay" is always one tap away.
  * Hidden on PDPs, where StickyAddToCart takes over the same bottom-bar slot with an action for
  * the item actually being viewed rather than a generic "view cart" link. */
 export function StickyCartBar() {
-  const pathname = usePathname();
-  const items = useCartStore((s) => s.items);
+  const { showCartBar } = useBottomDockState();
   const count = useCartCount();
   const subtotal = useCartSubtotal();
   const openCartDrawer = useCartDrawerStore((s) => s.open);
-  // Cart persists to localStorage and hydrates client-side after mount — avoids a flash where
-  // the bar briefly shows/hides before the real cart state loads.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
-  if (!mounted || items.length === 0) return null;
-  if (HIDDEN_ON.some((path) => pathname.startsWith(path))) return null;
+  if (!showCartBar) return null;
 
   return (
     <div className="glass fixed inset-x-0 bottom-16 z-40 border-t border-ink-200 shadow-floatLg animate-fade-in lg:bottom-0">

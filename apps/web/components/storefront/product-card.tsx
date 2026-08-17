@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ShoppingBag, Eye, Scale } from "lucide-react";
@@ -8,7 +8,7 @@ import type { Product } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
 import { cn, isPaleColor } from "@/lib/utils";
-import { useCartStore } from "@/store/cart";
+import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { useQuickViewStore } from "@/store/quick-view";
 import { useCompareStore } from "@/store/compare";
 import { WishlistButton } from "./wishlist-button";
@@ -20,11 +20,24 @@ export function ProductCard({ product }: { product: Product }) {
   const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
   const flash = product.activeFlashSale;
   const badge = getProductBadge(product, totalStock);
-  const addItem = useCartStore((s) => s.addItem);
-  const [justAdded, setJustAdded] = useState(false);
   const openQuickView = useQuickViewStore((s) => s.open);
   const toggleCompare = useCompareStore((s) => s.toggle);
   const isComparing = useCompareStore((s) => s.items.some((i) => i.id === product.id));
+
+  // Quick-add always targets the first in-stock variant (no size/color picker on a grid card) —
+  // routed through the same hook VariantSelector/StickyAddToCart use, rather than a separate
+  // hand-built cart item, so a future change to add-to-cart logic can't miss this path. basePrice
+  // mirrors ProductShowcase's own flash-sale fallback so a card's quick-add honors the same price
+  // the PDP would.
+  const firstInStockVariant = product.variants.find((v) => v.stock > 0);
+  const { addToCart, justAdded } = useAddToCart({
+    selectedVariant: firstInStockVariant,
+    productId: product.id,
+    productSlug: product.slug,
+    productName: product.name,
+    imageUrl: primaryImage?.url ?? null,
+    basePrice: flash?.flashPrice ?? product.basePrice,
+  });
 
   const colors = useMemo(() => {
     const seen = new Map<string, string | null>();
@@ -47,22 +60,7 @@ export function ProductCard({ product }: { product: Product }) {
   function handleQuickAdd(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const variant = product.variants.find((v) => v.stock > 0);
-    if (!variant) return;
-    addItem({
-      variantId: variant.id,
-      productId: product.id,
-      productSlug: product.slug,
-      productName: product.name,
-      sku: variant.sku,
-      size: variant.size,
-      color: variant.color,
-      price: Number(flash?.flashPrice ?? variant.price ?? product.basePrice),
-      imageUrl: primaryImage?.url ?? null,
-      maxStock: variant.stock,
-    });
-    setJustAdded(true);
-    setTimeout(() => setJustAdded(false), 2000);
+    addToCart(1);
   }
 
   return (

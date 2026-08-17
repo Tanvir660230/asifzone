@@ -10,10 +10,14 @@ import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { PageSizeSelect } from "@/components/admin/page-size-select";
+import { Pagination } from "@/components/admin/pagination";
 import { StarRating } from "@/components/storefront/star-rating";
 import { cn } from "@/lib/utils";
 import * as adminReviewsApi from "@/lib/api/admin-reviews";
 import { ApiError } from "@/lib/api-client";
+
+const PAGE_SIZE = 20;
 
 const STATUS_BADGE: Record<ReviewStatus, string> = {
   PENDING: "",
@@ -31,12 +35,15 @@ const TABS: Array<{ label: string; value: ReviewStatus | "ALL" }> = [
 export default function AdminReviewsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ReviewStatus | "ALL">("PENDING");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-reviews", tab],
-    queryFn: () => adminReviewsApi.listReviewsAdmin({ status: tab === "ALL" ? undefined : tab, pageSize: 50 }),
+    queryKey: ["admin-reviews", tab, page, pageSize],
+    queryFn: () => adminReviewsApi.listReviewsAdmin({ status: tab === "ALL" ? undefined : tab, page, pageSize }),
   });
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
 
   const moderateMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: "APPROVED" | "REJECTED" }) =>
@@ -74,19 +81,31 @@ export default function AdminReviewsPage() {
     <div>
       <PageHeader title="Reviews" description="Moderate customer product reviews before they go live." />
 
-      <div className="mb-4 flex gap-1 border-b border-ink-100">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            onClick={() => setTab(t.value)}
-            className={cn(
-              "border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-              tab === t.value ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-ink-100">
+        <div className="flex gap-1">
+          {TABS.map((t) => (
+            <button
+              key={t.value}
+              onClick={() => {
+                setTab(t.value);
+                setPage(1);
+              }}
+              className={cn(
+                "border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
+                tab === t.value ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700",
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <PageSizeSelect
+          value={pageSize}
+          onChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
       </div>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
@@ -168,6 +187,7 @@ export default function AdminReviewsPage() {
           </table>
         </HScrollShadow>
       </div>
+      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       {confirmDialog}
     </div>
   );

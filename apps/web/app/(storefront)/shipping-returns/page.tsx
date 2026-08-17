@@ -4,6 +4,7 @@ import { Truck, MapPin, Wallet, PackageCheck, Ban } from "lucide-react";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
+import { Breadcrumb } from "@/components/storefront/breadcrumb";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
 // `next build` would try to statically prerender the page and fail (the api container isn't
@@ -77,6 +78,9 @@ const RETURN_STEPS = [
 export default function ShippingReturnsPage() {
   return (
     <div>
+      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
+        <Breadcrumb trail={[{ name: "Shipping & Returns" }]} />
+      </div>
       <PageHero
         eyebrow="Delivery & aftercare"
         title="Shipping & Returns"
@@ -86,10 +90,13 @@ export default function ShippingReturnsPage() {
       <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
         <section className="mb-16">
           <h2 className="mb-6 text-xs uppercase tracking-[0.2em] text-ink-400">Shipping</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
             {SHIPPING_FACTS.map((fact) => (
               <div key={fact.title} className="rounded-2xl border border-ink-100 bg-cream-50 p-6">
-                <span className="glossy mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-brass-100 text-brass-600">
+                <span
+                  aria-hidden="true"
+                  className="glossy mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-brass-100 text-brass-600"
+                >
                   <fact.icon size={18} />
                 </span>
                 <h3 className="mb-1.5 font-display text-base text-ink-900">{fact.title}</h3>

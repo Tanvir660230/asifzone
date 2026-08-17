@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import type { CreateProductInput } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/admin/page-header";
+import { BackLink } from "@/components/ui/back-link";
 import { ProductForm } from "@/components/admin/product-form";
 import { ImageUploader, type StagedImage } from "@/components/admin/image-uploader";
 import * as categoriesApi from "@/lib/api/categories";
@@ -67,7 +69,7 @@ export default function NewProductPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-2xl text-ink-900">Add product</h1>
+      <PageHeader title="Add product" action={<BackLink href="/admin/products" label="Back to Products" />} />
 
       <Card>
         <CardHeader>

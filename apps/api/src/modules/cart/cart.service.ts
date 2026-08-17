@@ -11,7 +11,7 @@ export async function syncCart(customerId: string, input: SyncCartInput) {
     const cart = await tx.cart.upsert({
       where: { customerId },
       create: { customerId },
-      update: { reminderSentAt: null },
+      update: {},
     });
 
     await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -27,42 +27,9 @@ export async function syncCart(customerId: string, input: SyncCartInput) {
   });
 }
 
-/** Deletes the server-side cart mirror after a real purchase, so the recovery sweep can't fire
- * on a cart that was just bought. Safe to call for guests too (no-op if no Cart row exists). */
+/** Deletes the server-side cart mirror after a real purchase, so it no longer shows up as
+ * abandoned. Safe to call for guests too (no-op if no Cart row exists). */
 export async function clearCart(customerId: string) {
   await prisma.cart.deleteMany({ where: { customerId } });
 }
 
-const cartInclude = {
-  customer: { select: { id: true, name: true, email: true } },
-  items: {
-    include: {
-      variant: {
-        include: { product: { include: { images: { orderBy: { sortOrder: "asc" as const }, take: 1 } } } },
-      },
-    },
-  },
-};
-
-/** Real carts that have sat untouched past the abandonment threshold and haven't already had a
- * reminder sent for this inactivity window. */
-export async function findAbandonedCarts() {
-  const cutoff = new Date(Date.now() - ABANDONMENT_THRESHOLD_MS);
-  return prisma.cart.findMany({
-    // Only customers with an email on file can get a recovery email — phone-only guests/customers
-    // are excluded up front rather than skipped per-cart in the sweep.
-    where: {
-      updatedAt: { lte: cutoff },
-      reminderSentAt: null,
-      items: { some: {} },
-      customer: { email: { not: null } },
-    },
-    include: cartInclude,
-  });
-}
-
-export type AbandonedCart = Awaited<ReturnType<typeof findAbandonedCarts>>[number];
-
-export async function markReminderSent(cartId: string) {
-  await prisma.cart.update({ where: { id: cartId }, data: { reminderSentAt: new Date() } });
-}

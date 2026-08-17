@@ -27,6 +27,45 @@ export function formatDateShort(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// Order status → color, one source of truth for every screen that shows an order's status
+// (admin orders list/detail, account orders list/detail) — previously the admin orders list
+// defined this mapping locally and the two account pages showed status as plain uncolored
+// text/badge instead, so the same status read differently depending on which screen you were on.
+const ORDER_STATUS_BADGE_CLASS: Record<string, string> = {
+  PENDING: "bg-warning-100 text-warning-700",
+  CONFIRMED: "bg-info-100 text-info-700",
+  PROCESSING: "bg-info-100 text-info-700",
+  PACKED: "bg-info-100 text-info-700",
+  SHIPPED: "bg-info-100 text-info-700",
+  DELIVERED: "bg-success-100 text-success-700",
+  CANCELLED: "bg-danger-100 text-danger-700",
+  RETURNED: "bg-warning-100 text-warning-700",
+  REFUNDED: "bg-ink-200 text-ink-700",
+};
+
+export function orderStatusBadgeClass(status: string): string {
+  return ORDER_STATUS_BADGE_CLASS[status] ?? "bg-ink-100 text-ink-700";
+}
+
+// Plain-language order status labels — was independently defined in order-summary-card.tsx and
+// the account order-detail page (identical wording in both), same "one source of truth" reasoning
+// as ORDER_STATUS_BADGE_CLASS above.
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  PENDING: "Pending confirmation",
+  CONFIRMED: "Confirmed",
+  PROCESSING: "Processing",
+  PACKED: "Packed",
+  SHIPPED: "Shipped",
+  DELIVERED: "Delivered",
+  CANCELLED: "Cancelled",
+  RETURNED: "Returned",
+  REFUNDED: "Refunded",
+};
+
+export function orderStatusLabel(status: string): string {
+  return ORDER_STATUS_LABELS[status] ?? status;
+}
+
 const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
   delivered: "bg-success-100 text-success-700",
   partial_delivered: "bg-success-100 text-success-700",
@@ -37,6 +76,8 @@ const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
   hold: "bg-warning-100 text-warning-700",
   pending: "bg-warning-100 text-warning-700",
   in_review: "bg-info-100 text-info-700",
+  unknown_approval_pending: "bg-info-100 text-info-700",
+  unknown: "bg-ink-100 text-ink-700",
 };
 
 /** Shared by the orders list and order detail pages so a given Steadfast `delivery_status` always

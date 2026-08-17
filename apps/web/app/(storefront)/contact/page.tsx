@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Mail, MapPin, Package, Phone, HelpCircle, Truck } from "lucide-react";
 import { getSiteSettings, getActiveSocialLinksSafe } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
+import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { ContactForm } from "@/components/storefront/contact-form";
 import { SocialIcon } from "@/components/social-icon";
 
@@ -68,6 +70,9 @@ export default async function ContactPage() {
 
   return (
     <div>
+      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
+        <Breadcrumb trail={[{ name: "Contact Us" }]} />
+      </div>
       <PageHero
         eyebrow="We're here to help"
         title="Contact Us"
@@ -89,7 +94,10 @@ export default async function ContactPage() {
                 rel={method.external ? "noreferrer" : undefined}
                 className="group flex items-center gap-4 rounded-2xl border border-ink-100 bg-cream-50 p-5 transition-all duration-200 ease-smooth hover:border-ink-200 hover:shadow-float"
               >
-                <span className="glossy flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass-100 text-brass-600">
+                <span
+                  aria-hidden="true"
+                  className="glossy flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass-100 text-brass-600"
+                >
                   {method.icon ? <method.icon size={18} /> : <SocialIcon platform="WHATSAPP" size={18} />}
                 </span>
                 <span className="min-w-0">
@@ -103,15 +111,15 @@ export default async function ContactPage() {
           <div className="rounded-2xl border border-dashed border-ink-200 p-5">
             <p className="mb-3 text-xs uppercase tracking-wide text-ink-400">Quick links</p>
             <div className="space-y-2 text-sm">
-              <a href="/track-order" className="flex items-center gap-2 text-ink-700 hover:text-brass-600">
-                <Package size={15} className="text-ink-400" /> Track an existing order
-              </a>
-              <a href="/shipping-returns" className="flex items-center gap-2 text-ink-700 hover:text-brass-600">
-                <Truck size={15} className="text-ink-400" /> Shipping &amp; returns policy
-              </a>
-              <a href="/faq" className="flex items-center gap-2 text-ink-700 hover:text-brass-600">
-                <HelpCircle size={15} className="text-ink-400" /> Frequently asked questions
-              </a>
+              <Link href="/track-order" className="flex items-center gap-2 text-ink-700 hover:text-brass-600">
+                <Package size={15} className="text-ink-400" aria-hidden="true" /> Track an existing order
+              </Link>
+              <Link href="/shipping-returns" className="flex items-center gap-2 text-ink-700 hover:text-brass-600">
+                <Truck size={15} className="text-ink-400" aria-hidden="true" /> Shipping &amp; returns policy
+              </Link>
+              <Link href="/faq" className="flex items-center gap-2 text-ink-700 hover:text-brass-600">
+                <HelpCircle size={15} className="text-ink-400" aria-hidden="true" /> Frequently asked questions
+              </Link>
             </div>
           </div>
         </div>

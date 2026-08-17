@@ -73,12 +73,27 @@ export default function SocialLinksPage() {
     await deleteMutation.mutateAsync(link.id);
   }
 
-  function move(index: number, direction: -1 | 1) {
+  const [reordering, setReordering] = useState(false);
+
+  async function move(index: number, direction: -1 | 1) {
     const target = links[index + direction];
     const current = links[index];
     if (!target || !current) return;
-    updateMutation.mutate({ id: current.id, sortOrder: target.sortOrder });
-    updateMutation.mutate({ id: target.id, sortOrder: current.sortOrder });
+    // No dedicated reorder endpoint exists for social links (unlike banners/categories/payment
+    // methods) — batching these two into one Promise.all at least means a failure of either leg
+    // surfaces as a single error instead of silently leaving sort order half-swapped with no
+    // feedback, which the previous fire-and-forget two-mutation version could do.
+    setReordering(true);
+    try {
+      await Promise.all([
+        updateMutation.mutateAsync({ id: current.id, sortOrder: target.sortOrder }),
+        updateMutation.mutateAsync({ id: target.id, sortOrder: current.sortOrder }),
+      ]);
+    } catch {
+      toast.error("Couldn't reorder — try again");
+    } finally {
+      setReordering(false);
+    }
   }
 
   return (
@@ -117,7 +132,7 @@ export default function SocialLinksPage() {
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       onClick={() => move(index, -1)}
-                      disabled={index === 0}
+                      disabled={index === 0 || reordering}
                       className="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-900 disabled:pointer-events-none disabled:opacity-30"
                       aria-label="Move up"
                       title="Move up"
@@ -126,7 +141,7 @@ export default function SocialLinksPage() {
                     </button>
                     <button
                       onClick={() => move(index, 1)}
-                      disabled={index === links.length - 1}
+                      disabled={index === links.length - 1 || reordering}
                       className="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-900 disabled:pointer-events-none disabled:opacity-30"
                       aria-label="Move down"
                       title="Move down"

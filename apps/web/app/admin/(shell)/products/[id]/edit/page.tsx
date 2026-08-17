@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CreateProductInput } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/admin/page-header";
+import { BackLink } from "@/components/ui/back-link";
 import { ProductForm } from "@/components/admin/product-form";
 import { ImageUploader } from "@/components/admin/image-uploader";
 import * as categoriesApi from "@/lib/api/categories";
@@ -14,7 +16,6 @@ import { toast } from "@/components/ui/toast";
 
 export default function EditProductPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
@@ -44,12 +45,7 @@ export default function EditProductPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl text-ink-900">Edit {product.name}</h1>
-        <button onClick={() => router.push("/admin/products")} className="text-sm text-ink-500 hover:text-ink-900">
-          Back to products
-        </button>
-      </div>
+      <PageHeader title={`Edit ${product.name}`} action={<BackLink href="/admin/products" label="Back to Products" />} />
 
       <Card>
         <CardHeader>

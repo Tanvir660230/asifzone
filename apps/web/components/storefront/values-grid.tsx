@@ -53,7 +53,7 @@ export function ValuesGrid({ storeName, items = DEFAULT_VALUES }: { storeName: s
           initial="hidden"
           whileInView="show"
           viewport={{ once: true, margin: "-60px" }}
-          className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-6"
+          className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4"
         >
           {items.map(({ icon, title, description }) => {
             const Icon = resolveHomepageIcon(icon);
@@ -63,7 +63,7 @@ export function ValuesGrid({ storeName, items = DEFAULT_VALUES }: { storeName: s
                 variants={item}
                 className="rounded-lg border border-ink-100 bg-cream-50 p-6 text-center shadow-sm"
               >
-                <Icon className="mx-auto mb-4 text-brass-500" size={28} strokeWidth={1.5} />
+                <Icon className="mx-auto mb-4 text-brass-500" size={28} strokeWidth={1.5} aria-hidden="true" />
                 <h3 className="mb-2 text-sm uppercase tracking-wide text-ink-900">{title}</h3>
                 <p className="text-xs leading-relaxed text-ink-500">{description}</p>
               </motion.div>

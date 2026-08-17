@@ -33,13 +33,23 @@ export const lowStock = asyncHandler(async (_req: Request, res: Response) => {
 });
 
 export const trackPageView = asyncHandler(async (req: Request, res: Response) => {
-  await analyticsService.trackPageView(req.body as TrackPageViewInput);
+  await analyticsService.trackPageView(req.body as TrackPageViewInput, req.get("user-agent") ?? null);
   res.status(204).end();
 });
 
 export const mostViewedProducts = asyncHandler(async (req: Request, res: Response) => {
   const { days = 30, limit = 10 } = query(req);
   res.json({ products: await analyticsService.getMostViewedProducts(days, limit) });
+});
+
+export const visitorSeries = asyncHandler(async (req: Request, res: Response) => {
+  const { days = 30 } = query(req);
+  res.json({ series: await analyticsService.getVisitorSeries(days) });
+});
+
+export const trendingProducts = asyncHandler(async (req: Request, res: Response) => {
+  const { limit = 10 } = query(req);
+  res.json({ products: await analyticsService.getTrendingProducts(limit) });
 });
 
 export const searchAnalytics = asyncHandler(async (req: Request, res: Response) => {
@@ -53,6 +63,10 @@ export const cartAbandonment = asyncHandler(async (_req: Request, res: Response)
 
 export const customerInsights = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await analyticsService.getCustomerInsights());
+});
+
+export const cohortRetention = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ cohorts: await analyticsService.getCohortRetention() });
 });
 
 export const topCategories = asyncHandler(async (req: Request, res: Response) => {
@@ -78,6 +92,25 @@ export const trafficSources = asyncHandler(async (req: Request, res: Response) =
 export const campaignPerformance = asyncHandler(async (req: Request, res: Response) => {
   const { days = 30, limit = 10 } = query(req);
   res.json({ campaigns: await analyticsService.getCampaignPerformance(days, limit) });
+});
+
+export const activeVisitors = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ count: await analyticsService.getActiveVisitorCount() });
+});
+
+export const trafficHeatmap = asyncHandler(async (req: Request, res: Response) => {
+  const { days = 30 } = query(req);
+  res.json({ cells: await analyticsService.getTrafficHeatmap(days) });
+});
+
+export const deviceBreakdown = asyncHandler(async (req: Request, res: Response) => {
+  const { days = 30 } = query(req);
+  res.json({ devices: await analyticsService.getDeviceBreakdown(days) });
+});
+
+export const browserBreakdown = asyncHandler(async (req: Request, res: Response) => {
+  const { days = 30 } = query(req);
+  res.json({ browsers: await analyticsService.getBrowserBreakdown(days) });
 });
 
 export const slowMovingProducts = asyncHandler(async (req: Request, res: Response) => {

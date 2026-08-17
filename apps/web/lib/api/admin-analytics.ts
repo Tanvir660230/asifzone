@@ -9,6 +9,8 @@ export interface DashboardSummary {
   lowStockCount: number;
   aov30d: number;
   aovPrev30d: number;
+  uniqueVisitors30d: number;
+  uniqueVisitorsPrev30d: number;
 }
 
 export interface RevenuePoint {
@@ -68,6 +70,29 @@ export function getMostViewedProducts(days = 30, limit = 10) {
   return apiFetch<{ products: MostViewedProduct[] }>(`/api/analytics/most-viewed-products?days=${days}&limit=${limit}`);
 }
 
+export interface VisitorPoint {
+  date: string;
+  visitors: number;
+  pageViews: number;
+}
+
+export function getVisitorSeries(days = 30) {
+  return apiFetch<{ series: VisitorPoint[] }>(`/api/analytics/visitors?days=${days}`);
+}
+
+export interface TrendingProduct {
+  id: string;
+  name: string;
+  slug: string;
+  recentViews: number;
+  priorViews: number;
+  growthPct: number;
+}
+
+export function getTrendingProducts(limit = 10) {
+  return apiFetch<{ products: TrendingProduct[] }>(`/api/analytics/trending-products?limit=${limit}`);
+}
+
 export interface SearchAnalytics {
   topQueries: Array<{ query: string; count: number }>;
   totalSearches: number;
@@ -97,6 +122,22 @@ export interface CustomerInsights {
 
 export function getCustomerInsights() {
   return apiFetch<CustomerInsights>("/api/analytics/customer-insights");
+}
+
+export interface CohortRetentionPoint {
+  monthOffset: number;
+  activeCustomers: number;
+  retentionPct: number;
+}
+
+export interface CohortRetention {
+  cohortMonth: string;
+  cohortSize: number;
+  retention: CohortRetentionPoint[];
+}
+
+export function getCohortRetention() {
+  return apiFetch<{ cohorts: CohortRetention[] }>("/api/analytics/cohort-retention");
 }
 
 export interface CategoryOrBrandStat {
@@ -142,6 +183,38 @@ export interface CampaignStat {
 
 export function getCampaignPerformance(days = 30, limit = 10) {
   return apiFetch<{ campaigns: CampaignStat[] }>(`/api/analytics/campaigns?days=${days}&limit=${limit}`);
+}
+
+export function getActiveVisitors() {
+  return apiFetch<{ count: number }>("/api/analytics/active-visitors");
+}
+
+export interface HeatmapCell {
+  dow: number;
+  hour: number;
+  count: number;
+}
+
+export function getTrafficHeatmap(days = 30) {
+  return apiFetch<{ cells: HeatmapCell[] }>(`/api/analytics/traffic-heatmap?days=${days}`);
+}
+
+export interface DeviceStat {
+  device: string;
+  sessions: number;
+}
+
+export function getDeviceBreakdown(days = 30) {
+  return apiFetch<{ devices: DeviceStat[] }>(`/api/analytics/devices?days=${days}`);
+}
+
+export interface BrowserStat {
+  browser: string;
+  sessions: number;
+}
+
+export function getBrowserBreakdown(days = 30) {
+  return apiFetch<{ browsers: BrowserStat[] }>(`/api/analytics/browsers?days=${days}`);
 }
 
 export interface SlowMovingProduct {

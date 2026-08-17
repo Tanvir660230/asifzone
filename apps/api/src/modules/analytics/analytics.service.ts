@@ -102,7 +102,7 @@ export async function getDashboardSummary() {
   const prevSince = new Date();
   prevSince.setDate(prevSince.getDate() - 60);
 
-  const [revenueAgg, orderCount, prevRevenueAgg, prevOrderCount, pendingCount, lowStockCount] = await Promise.all([
+  const [revenueAgg, orderCount, prevRevenueAgg, prevOrderCount, pendingCount, lowStockCount, visitorRows] = await Promise.all([
     prisma.order.aggregate({
       where: { createdAt: { gte: since }, status: { notIn: NON_REVENUE_STATUSES } },
       _sum: { total: true },
@@ -116,6 +116,15 @@ export async function getDashboardSummary() {
     prisma.order.count({ where: { createdAt: { gte: prevSince, lt: since }, status: { notIn: NON_REVENUE_STATUSES } } }),
     prisma.order.count({ where: { status: "PENDING" } }),
     prisma.productVariant.count({ where: { stock: { lte: 5 }, product: { isActive: true } } }),
+    // Unique visitors = distinct sessionId, current vs. prior 30-day window (same FILTER pattern as
+    // the revenue/order aggregates above).
+    prisma.$queryRaw<Array<{ current: bigint; previous: bigint }>>`
+      SELECT
+        COUNT(DISTINCT "sessionId") FILTER (WHERE "createdAt" >= ${since})::bigint AS current,
+        COUNT(DISTINCT "sessionId") FILTER (WHERE "createdAt" >= ${prevSince} AND "createdAt" < ${since})::bigint AS previous
+      FROM "PageView"
+      WHERE "createdAt" >= ${prevSince}
+    `,
   ]);
 
   const revenue30d = Number(revenueAgg._sum?.total ?? 0);
@@ -130,11 +139,55 @@ export async function getDashboardSummary() {
     lowStockCount,
     aov30d: orderCount > 0 ? revenue30d / orderCount : 0,
     aovPrev30d: prevOrderCount > 0 ? revenuePrev30d / prevOrderCount : 0,
+    uniqueVisitors30d: Number(visitorRows[0]?.current ?? 0),
+    uniqueVisitorsPrev30d: Number(visitorRows[0]?.previous ?? 0),
   };
 }
 
-/** Records one anonymous pageview beacon — best-effort, never blocks the storefront. */
-export async function trackPageView(input: TrackPageViewInput) {
+/** Daily unique-visitor + pageview counts for the last N days, zero-filled — the visitor-side
+ * counterpart to getRevenueSeries. "Visitor" here means a distinct PageView.sessionId, the closest
+ * this anonymous, cookie-based system gets to a person. */
+export async function getVisitorSeries(days = 30) {
+  const cacheKey = `analytics:visitors:${days}`;
+  const cached = await cacheGet<Array<{ date: string; visitors: number; pageViews: number }>>(cacheKey);
+  if (cached) return cached;
+
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - (days - 1));
+  since.setUTCHours(0, 0, 0, 0);
+
+  const rows = await prisma.$queryRaw<Array<{ day: Date; visitors: bigint; pageViews: bigint }>>`
+    SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day,
+           COUNT(DISTINCT "sessionId")::bigint AS visitors,
+           COUNT(*)::bigint AS "pageViews"
+    FROM "PageView"
+    WHERE "createdAt" >= ${since}
+    GROUP BY day
+    ORDER BY day ASC
+  `;
+
+  const byDay = new Map(
+    rows.map((r) => [r.day.toISOString().slice(0, 10), { visitors: Number(r.visitors), pageViews: Number(r.pageViews) }]),
+  );
+
+  const series = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since);
+    d.setUTCDate(d.getUTCDate() + i);
+    const key = d.toISOString().slice(0, 10);
+    const point = byDay.get(key);
+    series.push({ date: key, visitors: point?.visitors ?? 0, pageViews: point?.pageViews ?? 0 });
+  }
+
+  await cacheSet(cacheKey, series, CACHE_TTL_SECONDS);
+  return series;
+}
+
+/** Records one anonymous pageview beacon — best-effort, never blocks the storefront. `userAgent`
+ * is read server-side from the request header (see the controller), never from the client body —
+ * the browser already sends it on every request, so trusting the header avoids giving a spoofable
+ * field to the public beacon endpoint. */
+export async function trackPageView(input: TrackPageViewInput, userAgent: string | null) {
   await prisma.pageView.create({
     data: {
       sessionId: input.sessionId,
@@ -143,6 +196,7 @@ export async function trackPageView(input: TrackPageViewInput) {
       utmSource: input.utmSource ?? null,
       utmMedium: input.utmMedium ?? null,
       utmCampaign: input.utmCampaign ?? null,
+      userAgent,
     },
   });
 }
@@ -166,6 +220,49 @@ export async function getMostViewedProducts(days = 30, limit = 10) {
   `;
 
   const result = rows.map((r) => ({ id: r.id, name: r.name, slug: r.slug, views: Number(r.views) }));
+  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
+  return result;
+}
+
+/** Products whose view count is accelerating — this week's ProductViewLog rows vs. the week
+ * before — the view-based counterpart to getBestSellingPrediction (which tracks sales velocity
+ * instead of interest). Surfaces items gaining attention before that shows up in sales. */
+export async function getTrendingProducts(limit = 10) {
+  const cacheKey = `analytics:trending-products:${limit}`;
+  const cached = await cacheGet<
+    Array<{ id: string; name: string; slug: string; recentViews: number; priorViews: number; growthPct: number }>
+  >(cacheKey);
+  if (cached) return cached;
+
+  const rows = await prisma.$queryRaw<
+    Array<{ id: string; name: string; slug: string; recentViews: bigint; priorViews: bigint }>
+  >`
+    WITH recent AS (
+      SELECT "productId", COUNT(*)::bigint AS views
+      FROM "ProductViewLog"
+      WHERE "createdAt" >= NOW() - INTERVAL '7 days'
+      GROUP BY "productId"
+    ),
+    prior AS (
+      SELECT "productId", COUNT(*)::bigint AS views
+      FROM "ProductViewLog"
+      WHERE "createdAt" >= NOW() - INTERVAL '14 days' AND "createdAt" < NOW() - INTERVAL '7 days'
+      GROUP BY "productId"
+    )
+    SELECT p.id, p.name, p.slug, r.views AS "recentViews", COALESCE(pr.views, 0) AS "priorViews"
+    FROM recent r
+    JOIN "Product" p ON p.id = r."productId"
+    LEFT JOIN prior pr ON pr."productId" = r."productId"
+    ORDER BY (r.views - COALESCE(pr.views, 0)) DESC
+    LIMIT ${limit}
+  `;
+
+  const result = rows.map((r) => {
+    const recentViews = Number(r.recentViews);
+    const priorViews = Number(r.priorViews);
+    const growthPct = priorViews > 0 ? ((recentViews - priorViews) / priorViews) * 100 : recentViews > 0 ? 100 : 0;
+    return { id: r.id, name: r.name, slug: r.slug, recentViews, priorViews, growthPct };
+  });
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
   return result;
 }
@@ -212,9 +309,7 @@ export async function getSearchAnalytics(days = 30, limit = 10) {
   return result;
 }
 
-/** Carts currently sitting idle past the abandonment threshold, regardless of whether a recovery
- * email has already gone out — see cart.service.findAbandonedCarts for the recovery-cron's
- * (narrower) view of the same data. */
+/** Carts currently sitting idle past the abandonment threshold. */
 export async function getCartAbandonmentSummary() {
   const cacheKey = "analytics:cart-abandonment";
   const cached = await cacheGet<{ cartCount: number; potentialRevenue: number }>(cacheKey);
@@ -270,6 +365,75 @@ export async function getCustomerInsights() {
     returningRate: totalCustomers > 0 ? (returningCustomers / totalCustomers) * 100 : 0,
     avgClv: rows[0]?.avgClv ?? 0,
   };
+  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
+  return result;
+}
+
+/** New-customer cohorts by first-order month, and what fraction of each cohort placed another
+ * order in each subsequent month — the standard cohort-retention grid. Cancelled orders don't
+ * count toward "first order" or "active", so a cancelled/refunded order can't manufacture a false
+ * first touch. Covers the last 6 cohort months, up to 5 months of retention each. */
+export async function getCohortRetention() {
+  const cacheKey = "analytics:cohort-retention";
+  const cached = await cacheGet<
+    Array<{ cohortMonth: string; cohortSize: number; retention: Array<{ monthOffset: number; activeCustomers: number; retentionPct: number }> }>
+  >(cacheKey);
+  if (cached) return cached;
+
+  const since = new Date();
+  since.setMonth(since.getMonth() - 5);
+  since.setDate(1);
+  since.setHours(0, 0, 0, 0);
+
+  const rows = await prisma.$queryRaw<Array<{ cohortMonth: Date; monthOffset: number; activeCustomers: bigint }>>`
+    WITH first_order AS (
+      SELECT "customerId", date_trunc('month', MIN("createdAt")) AS cohort_month
+      FROM "Order"
+      WHERE "customerId" IS NOT NULL AND status != 'CANCELLED'
+      GROUP BY "customerId"
+    ),
+    activity AS (
+      SELECT DISTINCT "customerId", date_trunc('month', "createdAt") AS active_month
+      FROM "Order"
+      WHERE "customerId" IS NOT NULL AND status != 'CANCELLED'
+    )
+    SELECT
+      fo.cohort_month AS "cohortMonth",
+      (
+        (EXTRACT(YEAR FROM a.active_month) - EXTRACT(YEAR FROM fo.cohort_month)) * 12
+        + (EXTRACT(MONTH FROM a.active_month) - EXTRACT(MONTH FROM fo.cohort_month))
+      )::int AS "monthOffset",
+      COUNT(DISTINCT a."customerId")::bigint AS "activeCustomers"
+    FROM first_order fo
+    JOIN activity a ON a."customerId" = fo."customerId" AND a.active_month >= fo.cohort_month
+    WHERE fo.cohort_month >= ${since}
+    GROUP BY fo.cohort_month, "monthOffset"
+    ORDER BY fo.cohort_month ASC, "monthOffset" ASC
+  `;
+
+  const byCohort = new Map<string, { cohortSize: number; points: Map<number, number> }>();
+  for (const r of rows) {
+    const key = r.cohortMonth.toISOString().slice(0, 10);
+    const entry = byCohort.get(key) ?? { cohortSize: 0, points: new Map<number, number>() };
+    const active = Number(r.activeCustomers);
+    if (r.monthOffset === 0) entry.cohortSize = active;
+    entry.points.set(r.monthOffset, active);
+    byCohort.set(key, entry);
+  }
+
+  const now = new Date();
+  const result = Array.from(byCohort.entries()).map(([cohortMonth, { cohortSize, points }]) => {
+    const cohortDate = new Date(cohortMonth);
+    const monthsElapsed = (now.getFullYear() - cohortDate.getFullYear()) * 12 + (now.getMonth() - cohortDate.getMonth());
+    const maxOffset = Math.min(5, monthsElapsed);
+    const retention = [];
+    for (let offset = 0; offset <= maxOffset; offset++) {
+      const activeCustomers = points.get(offset) ?? 0;
+      retention.push({ monthOffset: offset, activeCustomers, retentionPct: cohortSize > 0 ? (activeCustomers / cohortSize) * 100 : 0 });
+    }
+    return { cohortMonth, cohortSize, retention };
+  });
+
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
   return result;
 }
@@ -519,6 +683,127 @@ export async function getDemandForecast(days = 14, limit = 10) {
     .sort((a, b) => a.daysUntilStockout - b.daysUntilStockout)
     .slice(0, limit);
 
+  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
+  return result;
+}
+
+/** Sessions active in the last N minutes — deliberately uncached (or cached only briefly) since
+ * "how many people are on the site right now" is only useful if it's actually current. */
+export async function getActiveVisitorCount(windowMinutes = 5) {
+  const cacheKey = `analytics:active-visitors:${windowMinutes}`;
+  const cached = await cacheGet<number>(cacheKey);
+  if (cached !== null) return cached;
+
+  const since = new Date(Date.now() - windowMinutes * 60 * 1000);
+  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(DISTINCT "sessionId")::bigint AS count
+    FROM "PageView"
+    WHERE "createdAt" >= ${since}
+  `;
+
+  const result = Number(rows[0]?.count ?? 0);
+  await cacheSet(cacheKey, result, 15);
+  return result;
+}
+
+/** Pageview counts bucketed by day-of-week × hour-of-day, in Bangladesh local time (this store's
+ * market) rather than UTC — "9pm is the busiest hour" is only actionable in wall-clock time.
+ * Zero-filled across all 7×24 = 168 cells so the heatmap has no gaps. */
+export async function getTrafficHeatmap(days = 30) {
+  const cacheKey = `analytics:traffic-heatmap:${days}`;
+  const cached = await cacheGet<Array<{ dow: number; hour: number; count: number }>>(cacheKey);
+  if (cached) return cached;
+
+  const since = daysAgo(days);
+  const rows = await prisma.$queryRaw<Array<{ dow: number; hour: number; count: bigint }>>`
+    SELECT
+      EXTRACT(DOW FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')::int AS dow,
+      EXTRACT(HOUR FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')::int AS hour,
+      COUNT(*)::bigint AS count
+    FROM "PageView"
+    WHERE "createdAt" >= ${since}
+    GROUP BY dow, hour
+  `;
+
+  const byCell = new Map(rows.map((r) => [`${r.dow}:${r.hour}`, Number(r.count)]));
+  const result = [];
+  for (let dow = 0; dow < 7; dow++) {
+    for (let hour = 0; hour < 24; hour++) {
+      result.push({ dow, hour, count: byCell.get(`${dow}:${hour}`) ?? 0 });
+    }
+  }
+
+  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
+  return result;
+}
+
+/** Sessions grouped by coarse device class, sniffed from the pageview beacon's User-Agent header.
+ * Deliberately simple substring/regex matching (no UA-parsing library) — good enough for a
+ * mobile-vs-desktop split, not meant to identify exact devices. */
+export async function getDeviceBreakdown(days = 30) {
+  const cacheKey = `analytics:devices:${days}`;
+  const cached = await cacheGet<Array<{ device: string; sessions: number }>>(cacheKey);
+  if (cached) return cached;
+
+  const since = daysAgo(days);
+  const rows = await prisma.$queryRaw<Array<{ device: string; sessions: bigint }>>`
+    WITH first_touch AS (
+      SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
+      FROM "PageView"
+      WHERE "createdAt" >= ${since}
+      ORDER BY "sessionId", "createdAt" ASC
+    )
+    SELECT
+      CASE
+        WHEN "userAgent" IS NULL THEN 'Unknown'
+        WHEN "userAgent" ~* 'iPad|Tablet' THEN 'Tablet'
+        WHEN "userAgent" ~* 'Mobi|Android|iPhone' THEN 'Mobile'
+        ELSE 'Desktop'
+      END AS device,
+      COUNT(*)::bigint AS sessions
+    FROM first_touch
+    GROUP BY device
+    ORDER BY sessions DESC
+  `;
+
+  const result = rows.map((r) => ({ device: r.device, sessions: Number(r.sessions) }));
+  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
+  return result;
+}
+
+/** Sessions grouped by browser family, sniffed from the same User-Agent header as
+ * getDeviceBreakdown. Match order matters — Edge/Opera UAs also contain "Chrome/", and
+ * Chrome/Edge/Opera UAs all contain "Safari/", so the more specific tokens are checked first. */
+export async function getBrowserBreakdown(days = 30) {
+  const cacheKey = `analytics:browsers:${days}`;
+  const cached = await cacheGet<Array<{ browser: string; sessions: number }>>(cacheKey);
+  if (cached) return cached;
+
+  const since = daysAgo(days);
+  const rows = await prisma.$queryRaw<Array<{ browser: string; sessions: bigint }>>`
+    WITH first_touch AS (
+      SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
+      FROM "PageView"
+      WHERE "createdAt" >= ${since}
+      ORDER BY "sessionId", "createdAt" ASC
+    )
+    SELECT
+      CASE
+        WHEN "userAgent" IS NULL THEN 'Unknown'
+        WHEN "userAgent" ~* 'Edg/' THEN 'Edge'
+        WHEN "userAgent" ~* 'OPR/|Opera' THEN 'Opera'
+        WHEN "userAgent" ~* 'Chrome/' THEN 'Chrome'
+        WHEN "userAgent" ~* 'Firefox/' THEN 'Firefox'
+        WHEN "userAgent" ~* 'Safari/' THEN 'Safari'
+        ELSE 'Other'
+      END AS browser,
+      COUNT(*)::bigint AS sessions
+    FROM first_touch
+    GROUP BY browser
+    ORDER BY sessions DESC
+  `;
+
+  const result = rows.map((r) => ({ browser: r.browser, sessions: Number(r.sessions) }));
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
   return result;
 }

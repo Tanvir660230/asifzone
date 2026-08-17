@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Pause, Play } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Banner } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
@@ -11,12 +12,22 @@ const AUTO_ADVANCE_MS = 6000;
 
 export function HeroCarousel({ banners }: { banners: Banner[] }) {
   const [index, setIndex] = useState(0);
+  // Auto-advance is a WCAG 2.2.2 (pause/stop/hide) concern — it has to be genuinely stoppable, not
+  // just paused by accident on hover. Kept as three separate signals rather than one shared
+  // boolean: hover/focus are transient (mouse leaving the carousel shouldn't silently cancel an
+  // explicit pause), so they're combined with, not overwritten by, the manual toggle.
+  const [manuallyPaused, setManuallyPaused] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  const [hovering, setHovering] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const paused = manuallyPaused || hovering || focused;
 
   useEffect(() => {
-    if (banners.length <= 1) return;
+    if (banners.length <= 1 || paused) return;
     const timer = setInterval(() => setIndex((i) => (i + 1) % banners.length), AUTO_ADVANCE_MS);
     return () => clearInterval(timer);
-  }, [banners.length]);
+  }, [banners.length, paused]);
 
   const banner = banners[index];
   if (!banner) return null;
@@ -121,22 +132,36 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
   );
 
   return (
-    <section className="relative">
+    <section
+      className="relative"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
       {banner.linkUrl ? <Link href={banner.linkUrl}>{slide}</Link> : slide}
 
       {banners.length > 1 && (
-        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2 rounded-full px-3 py-2">
+        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-2">
           {banners.map((b, i) => (
             <button
               key={b.id}
               onClick={() => setIndex(i)}
               aria-label={`Slide ${i + 1}`}
+              aria-current={i === index}
               className={cn(
                 "h-1.5 rounded-full transition-all duration-300 ease-smooth",
                 i === index ? "w-6 bg-brass-400" : "w-1.5 bg-cream-50/60 hover:bg-cream-50",
               )}
             />
           ))}
+          <button
+            onClick={() => setManuallyPaused((v) => !v)}
+            aria-label={paused ? "Play slideshow" : "Pause slideshow"}
+            className="ml-1 flex h-4 w-4 shrink-0 items-center justify-center text-cream-50/80 transition-colors duration-150 ease-smooth hover:text-cream-50"
+          >
+            {paused ? <Play size={12} /> : <Pause size={12} />}
+          </button>
         </div>
       )}
     </section>

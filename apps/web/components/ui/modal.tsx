@@ -1,7 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useId } from "react";
 import { X } from "lucide-react";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 interface ModalProps {
   open: boolean;
@@ -11,64 +12,28 @@ interface ModalProps {
   widthClassName?: string;
 }
 
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 export function Modal({ open, onClose, title, children, widthClassName = "max-w-2xl" }: ModalProps) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    // Remember what had focus before opening, so it can be restored on close (e.g. the row's delete button).
-    triggerRef.current = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const focusable = panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
-    (focusable[0] ?? panel)?.focus();
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (e.key !== "Tab" || !panel) return;
-
-      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (items.length === 0) return;
-      const first = items[0]!;
-      const last = items[items.length - 1]!;
-
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      triggerRef.current?.focus();
-    };
-  }, [open, onClose]);
+  const titleId = useId();
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose });
 
   if (!open) return null;
 
   return (
+    // No backdrop-click-to-close here, unlike Drawer — Modal's content is almost always an
+    // unsaved form (product/coupon/category/etc.), and a stray click just outside the panel
+    // shouldn't be able to discard it. Drawer's content is read-mostly detail views, where that
+    // same click is a low-cost dismissal instead.
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/40 p-4 pt-16 backdrop-blur-sm animate-fade-in">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
         tabIndex={-1}
         className={`w-full ${widthClassName} animate-modal-in rounded-2xl bg-cream-50 shadow-floatLg`}
       >
         <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
-          <h2 id="modal-title" className="font-display text-lg text-ink-900">
+          <h2 id={titleId} className="font-display text-lg text-ink-900">
             {title}
           </h2>
           <button

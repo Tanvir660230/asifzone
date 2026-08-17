@@ -17,8 +17,8 @@ import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
+import { ProductPicker } from "@/components/admin/product-picker";
 import * as flashSalesApi from "@/lib/api/admin-flash-sales";
-import * as productsApi from "@/lib/api/products";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
@@ -41,10 +41,6 @@ function toLocalInputValue(iso?: string) {
 export default function FlashSalesPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["flash-sales"], queryFn: flashSalesApi.listFlashSales });
-  const { data: productsData } = useQuery({
-    queryKey: ["products", { pageSize: 100 }],
-    queryFn: () => productsApi.listProducts({ pageSize: 100 }),
-  });
 
   const [showCreate, setShowCreate] = useState(false);
   const [managingId, setManagingId] = useState<string | null>(null);
@@ -181,7 +177,6 @@ export default function FlashSalesPage() {
         {managing && (
           <FlashSaleItemsManager
             flashSale={managing}
-            products={productsData?.items ?? []}
             onChanged={() => queryClient.invalidateQueries({ queryKey: ["flash-sales"] })}
           />
         )}
@@ -193,31 +188,43 @@ export default function FlashSalesPage() {
 
 function FlashSaleItemsManager({
   flashSale,
-  products,
   onChanged,
 }: {
   flashSale: FlashSale;
-  products: Array<{ id: string; name: string; basePrice: string }>;
   onChanged: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const availableProducts = products.filter((p) => !flashSale.items.some((i) => i.productId === p.id));
+  // A single product "selected" via the same searchable ProductPicker used elsewhere in the admin
+  // (coupon-form) — search is real (server-side, debounced) rather than a flat <select> of every
+  // product in the catalog, and the parent no longer needs to eagerly fetch up to 100 products on
+  // every page load just in case this modal gets opened.
+  const [selectedProduct, setSelectedProduct] = useState<{ id: string; name: string } | null>(null);
 
   const {
-    register,
     handleSubmit,
+    register,
+    setValue,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<AddFlashSaleItemInput>({
     resolver: zodResolver(addFlashSaleItemSchema),
-    defaultValues: { discountType: "PERCENTAGE" },
+    defaultValues: { discountType: "PERCENTAGE", productId: "" },
   });
+
+  function pickProduct(next: Array<{ id: string; name: string }>) {
+    // ProductPicker is built for multi-select (chips); picking a second product here replaces the
+    // first rather than adding to it, since this form only ever submits one productId at a time.
+    const product = next[next.length - 1] ?? null;
+    setSelectedProduct(product);
+    setValue("productId", product?.id ?? "", { shouldValidate: true });
+  }
 
   async function onAdd(values: AddFlashSaleItemInput) {
     setError(null);
     try {
       await flashSalesApi.addFlashSaleItem(flashSale.id, values);
       reset({ discountType: "PERCENTAGE", productId: "", discountValue: undefined });
+      setSelectedProduct(null);
       onChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to add product");
@@ -251,20 +258,10 @@ function FlashSaleItemsManager({
       <form onSubmit={handleSubmit(onAdd)} className="border-t border-ink-100 pt-4">
         <p className="mb-2 text-xs uppercase tracking-wide text-ink-500">Add product</p>
         {error && <p className="mb-2 text-xs text-danger-600">{error}</p>}
-        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2">
-          <div>
-            <Select {...register("productId")} defaultValue="">
-              <option value="" disabled>
-                Select product…
-              </option>
-              {availableProducts.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({formatPrice(p.basePrice)})
-                </option>
-              ))}
-            </Select>
-            {errors.productId && <p className="mt-1 text-xs text-danger-600">Select a product</p>}
-          </div>
+        <ProductPicker selected={selectedProduct ? [selectedProduct] : []} onChange={pickProduct} />
+        {errors.productId && <p className="mt-1 text-xs text-danger-600">Select a product</p>}
+
+        <div className="mt-3 grid grid-cols-[auto_auto_auto] items-start gap-2">
           <Select {...register("discountType")} className="w-28">
             <option value="PERCENTAGE">% off</option>
             <option value="FIXED">৳ off</option>

@@ -164,7 +164,11 @@ export default function SmsNotificationsPage() {
                   </label>
                   <button
                     type="button"
-                    onClick={() => setValue(t.templateField, "", { shouldDirty: true })}
+                    onClick={() =>
+                      setValue(t.templateField, DEFAULT_CUSTOMER_SMS_TEMPLATES[t.touchpoint], {
+                        shouldDirty: true,
+                      })
+                    }
                     className="text-xs text-ink-400 underline hover:text-ink-700"
                   >
                     Reset to default

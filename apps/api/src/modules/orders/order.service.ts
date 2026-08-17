@@ -567,18 +567,29 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
   const existing = await getOrderById(id);
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
 
-  // CANCELLED/REFUNDED are treated everywhere else (deleteOrder, cancelUnstartedOrder) as "this
-  // order's reserved stock has already been put back" — but until now this was the one path that
-  // could land an order on either status (an admin picking it from the dropdown, a bulk update, or
-  // Steadfast reporting a parcel as cancelled) without actually restocking it, silently leaving the
-  // units stuck as "sold". Guarded on the *previous* status so re-saving an already-cancelled/
-  // refunded order (or the reverse transition never happening twice) can't double-credit inventory.
-  const restockNeeded =
-    (input.status === "CANCELLED" || input.status === "REFUNDED") &&
-    existing.status !== "CANCELLED" &&
-    existing.status !== "REFUNDED";
-
   const updated = await prisma.$transaction(async (tx) => {
+    // Row-locked re-read of status, not the pre-transaction snapshot above — two concurrent status
+    // changes on the same order (e.g. one to CANCELLED, one to SHIPPED) would otherwise both compute
+    // restockNeeded from the same stale `existing.status`, and whichever transaction commits last
+    // wins on `status` while restock bookkeeping reflects only whichever transaction saw it first.
+    // FOR UPDATE blocks the second transaction until the first commits, so it sees the real prior status.
+    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus }>>`
+      SELECT status FROM "Order" WHERE id = ${id} FOR UPDATE
+    `;
+    // existing (fetched moments ago, same id) already proved this row exists.
+    if (!locked) throw AppError.notFound("Order not found");
+
+    // CANCELLED/REFUNDED are treated everywhere else (deleteOrder, cancelUnstartedOrder) as "this
+    // order's reserved stock has already been put back" — but until now this was the one path that
+    // could land an order on either status (an admin picking it from the dropdown, a bulk update, or
+    // Steadfast reporting a parcel as cancelled) without actually restocking it, silently leaving the
+    // units stuck as "sold". Guarded on the *previous* status so re-saving an already-cancelled/
+    // refunded order (or the reverse transition never happening twice) can't double-credit inventory.
+    const restockNeeded =
+      (input.status === "CANCELLED" || input.status === "REFUNDED") &&
+      locked.status !== "CANCELLED" &&
+      locked.status !== "REFUNDED";
+
     if (restockNeeded) {
       for (const item of existing.items) {
         await tx.productVariant.update({
@@ -661,6 +672,12 @@ export async function updateOrderDetails(id: string, input: UpdateOrderDetailsIn
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
 
   const diffNote = buildOrderDetailsDiffNote(existing, input);
+  // Steadfast's parcel is booked with a fixed name/phone/address as of booking time — changing
+  // these here would silently desync from what the courier actually has on file (there's no
+  // Steadfast API to push a correction). Same guard/remedy as adjustOrderPrice.
+  if (diffNote && existing.courierConsignmentId) {
+    throw AppError.badRequest("Cannot change name/address after a courier has been booked — unlink the booking first");
+  }
 
   return prisma.order.update({
     where: { id },
@@ -749,7 +766,14 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   const previousAdjustment = Number(existing.priceAdjustment);
   if (previousAdjustment === input.priceAdjustment) return existing;
 
-  const newTotal = Number(existing.subtotal) - Number(existing.discount) + Number(existing.shippingFee) + input.priceAdjustment;
+  // A FREE_SHIPPING coupon waives the fee at checkout (see createOrder's `total` calc) even though
+  // `shippingFee` itself still holds the would-be fee for record-keeping — re-derive whether it
+  // actually applies here instead of assuming it's always owed.
+  const orderCoupon = existing.couponId
+    ? await prisma.coupon.findUnique({ where: { id: existing.couponId }, select: { type: true } })
+    : null;
+  const shippingOwed = orderCoupon?.type === "FREE_SHIPPING" ? 0 : Number(existing.shippingFee);
+  const newTotal = Number(existing.subtotal) - Number(existing.discount) + shippingOwed + input.priceAdjustment;
   if (newTotal < 0) throw AppError.badRequest("Total cannot be negative");
 
   const note =

@@ -24,6 +24,13 @@ export const webhook = asyncHandler(async (req: Request, res: Response) => {
     return res.status(401).json({ error: "Invalid webhook token" });
   }
 
-  await handleSteadfastWebhook(req.body as SteadfastWebhookBody);
+  try {
+    await handleSteadfastWebhook(req.body as SteadfastWebhookBody);
+  } catch (err) {
+    // Steadfast doesn't retry non-2xx responses, so letting this throw would drop the status push
+    // outright — log and still 200 as documented above; syncPendingCourierStatuses' 15-min sweep
+    // (jobs/courier-status-cron.ts) is the backstop that catches it from here.
+    console.error("[steadfast-webhook] failed to process:", err);
+  }
   res.status(200).json({ received: true });
 });

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, MessageCircleMore, MessageSquareText, Phone, X } from "lucide-react";
 import type { SocialLink, StoreSettings } from "@clothing-brand/shared";
@@ -26,7 +25,7 @@ function withWhatsAppMessage(url: string, message: string | null): string {
     return url;
   }
 }
-import { useCartCount } from "@/store/cart";
+import { useBottomDockState } from "@/hooks/use-bottom-dock";
 import { FeedbackModal } from "./feedback-modal";
 
 function WhatsAppGlyph({ size = 20 }: { size?: number }) {
@@ -63,17 +62,12 @@ interface ContactWidgetProps {
 export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   const [open, setOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const cartHasItems = useCartCount() > 0;
-  const pathname = usePathname();
   // Product pages can show StickyAddToCart at the bottom on mobile (once the inline buttons scroll
   // out of view) instead of the global StickyCartBar — reserve the same extra clearance for it
   // unconditionally on that route, since this widget can't see the sticky bar's own scroll-driven
-  // visibility state.
-  const onProductPage = pathname?.startsWith("/product") ?? false;
-  // StickyCartBar hides itself entirely on /cart and /checkout (see its HIDDEN_ON list) — without
-  // this, the widget kept reserving clearance for a bar that isn't there on those routes and ended
-  // up floating mid-form instead of tucked in the corner, overlapping the delivery-address fields.
-  const onCartOrCheckoutPage = pathname?.startsWith("/cart") || pathname?.startsWith("/checkout") || false;
+  // visibility state. showCartBar already accounts for StickyCartBar hiding itself entirely on
+  // /cart and /checkout, so this widget doesn't reserve clearance for a bar that isn't there.
+  const { showCartBar, onProductPage } = useBottomDockState();
 
   // This button is fixed to a viewport corner, and the bottom of the footer (newsletter form,
   // link columns) scrolls into that exact same corner — without this it visually sits on top of
@@ -145,7 +139,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
 
   const bottomClass = onProductPage
     ? "bottom-36 lg:bottom-6"
-    : cartHasItems && !onCartOrCheckoutPage
+    : showCartBar
       ? "bottom-36 lg:bottom-24"
       : "bottom-20 lg:bottom-6";
 

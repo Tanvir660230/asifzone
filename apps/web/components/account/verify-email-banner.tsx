@@ -26,10 +26,12 @@ export function VerifyEmailBanner() {
 
   return (
     <div className="mb-6 flex items-center justify-between gap-4 rounded-lg border border-warning-100 bg-warning-50 px-4 py-3 text-sm text-ink-800">
-      <span>
+      <span role="status" aria-live="polite">
         {status === "sent"
           ? "Verification email sent — check your inbox."
-          : "Please verify your email address to secure your account."}
+          : status === "error"
+            ? "Couldn't resend the email — please try again."
+            : "Please verify your email address to secure your account."}
       </span>
       <div className="flex shrink-0 items-center gap-3">
         {status !== "sent" && (

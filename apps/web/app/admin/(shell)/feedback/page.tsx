@@ -14,6 +14,7 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import * as adminFeedbackApi from "@/lib/api/admin-feedback";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 
@@ -32,10 +33,11 @@ export default function AdminFeedbackPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const debouncedSearch = useDebouncedValue(search, 350);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-feedback", { page, pageSize, status, search }],
-    queryFn: () => adminFeedbackApi.listFeedback({ page, pageSize, status, search: search || undefined }),
+    queryKey: ["admin-feedback", { page, pageSize, status, search: debouncedSearch }],
+    queryFn: () => adminFeedbackApi.listFeedback({ page, pageSize, status, search: debouncedSearch || undefined }),
   });
 
   const markReadMutation = useMutation({
@@ -84,8 +86,12 @@ export default function AdminFeedbackPage() {
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <Search size={16} className="shrink-0 text-ink-400" />
+            <Search size={16} className="shrink-0 text-ink-400" aria-hidden="true" />
+            <label htmlFor="feedback-search" className="sr-only">
+              Search feedback
+            </label>
             <Input
+              id="feedback-search"
               placeholder="Search name, email, subject…"
               value={search}
               onChange={(e) => {

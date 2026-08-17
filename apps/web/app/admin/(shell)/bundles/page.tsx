@@ -17,6 +17,7 @@ import * as bundlesApi from "@/lib/api/admin-bundles";
 import * as categoriesApi from "@/lib/api/categories";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
+import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 
 export default function BundlesPage() {
   const queryClient = useQueryClient();
@@ -67,6 +68,20 @@ export default function BundlesPage() {
     }
   }
 
+  // Shared between the desktop table row and the mobile card (below) so the two views can't drift.
+  function renderRowActions(b: Bundle) {
+    return (
+      <>
+        <button onClick={() => setEditing(b)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")} aria-label="Edit">
+          <Pencil size={16} />
+        </button>
+        <button onClick={() => handleDelete(b)} className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")} aria-label="Delete">
+          <Trash2 size={16} />
+        </button>
+      </>
+    );
+  }
+
   return (
     <div>
       <PageHeader
@@ -82,7 +97,9 @@ export default function BundlesPage() {
         below it and unlocks a discount once enough of them are in the cart.
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+      {/* sm and up: the table below. Below sm: a card list (below that) — same split as the other
+          admin list pages. */}
+      <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
         <HScrollShadow className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -116,20 +133,47 @@ export default function BundlesPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => setEditing(b)} className="text-ink-500 hover:text-ink-900" aria-label="Edit">
-                        <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(b)} className="text-ink-500 hover:text-danger-600" aria-label="Delete">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    <div className="flex justify-end gap-3">{renderRowActions(b)}</div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </HScrollShadow>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:hidden">
+        {isLoading &&
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className={cn("animate-pulse border-t border-ink-100 p-3.5", i === 0 && "border-t-0")}>
+              <div className="h-3.5 w-32 rounded bg-ink-100" />
+              <div className="mt-3 h-3 w-full rounded bg-ink-50" />
+            </div>
+          ))}
+        {!isLoading && data?.items.length === 0 && (
+          <p className="px-4 py-6 text-center text-ink-400">No bundles yet — add your first one.</p>
+        )}
+        {data?.items.map((b) => (
+          <div key={b.id} className="border-t border-ink-100 p-3.5 first:border-t-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-ink-900">{b.name}</p>
+                <p className="truncate text-xs text-ink-400">
+                  {b.anchorCategory.name} → {b.suggestions.map((s) => s.category.name).join(", ")}
+                </p>
+              </div>
+              <Badge className={cn("shrink-0", b.isActive ? "bg-success-100 text-success-700" : "")}>
+                {b.isActive ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+            <div className="mt-2.5 flex items-center justify-between border-t border-ink-100 pt-2.5">
+              <span className="text-sm font-medium text-ink-900">
+                {b.discountType === "PERCENTAGE" ? `${b.discountValue}%` : formatPrice(b.discountValue)} off
+              </span>
+              <div className="flex items-center gap-2">{renderRowActions(b)}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       <Modal

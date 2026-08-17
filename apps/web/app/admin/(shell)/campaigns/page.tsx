@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import dynamic from "next/dynamic";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Send, XCircle, Pencil, Trash2 } from "lucide-react";
@@ -19,7 +20,15 @@ import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
+import { uploadEditorImage } from "@/lib/api/uploads";
 import { ApiError } from "@/lib/api-client";
+
+// Tiptap + its ~9 sub-packages are large and admin-only — split out of the main bundle and only
+// fetched once an EMAIL campaign's body field actually renders it (see below).
+const RichTextEditor = dynamic(
+  () => import("@/components/admin/rich-text-editor").then((m) => m.RichTextEditor),
+  { ssr: false },
+);
 
 const STATUS_COLOR: Record<Campaign["status"], string> = {
   DRAFT: "bg-ink-100 text-ink-600",
@@ -80,11 +89,14 @@ export default function CampaignsPage() {
     register,
     handleSubmit,
     reset,
+    watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<CreateCampaignInput>({
     resolver: zodResolver(createCampaignSchema),
     defaultValues: { channel: "EMAIL", segmentType: "ALL_CUSTOMERS" },
   });
+  const channel = watch("channel");
 
   function openCreate() {
     setEditing(null);
@@ -254,7 +266,22 @@ export default function CampaignsPage() {
 
           <div>
             <Label htmlFor="body">Message</Label>
-            <Textarea id="body" rows={6} placeholder="HTML is supported for email campaigns" {...register("body")} />
+            {channel === "EMAIL" ? (
+              <Controller
+                name="body"
+                control={control}
+                render={({ field }) => (
+                  <RichTextEditor value={field.value ?? ""} onChange={field.onChange} uploadImage={uploadEditorImage} />
+                )}
+              />
+            ) : (
+              <Textarea
+                id="body"
+                rows={6}
+                placeholder={channel === "SMS" ? "Plain text — keep it short" : "Plain text"}
+                {...register("body")}
+              />
+            )}
             {errors.body && <p className="mt-1 text-xs text-danger-600">{errors.body.message}</p>}
           </div>
 

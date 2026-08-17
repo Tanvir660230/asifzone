@@ -95,6 +95,16 @@ function waLink(phone: string): string {
   return `https://wa.me/880${local.slice(1)}`;
 }
 
+function CustomerCardSkeleton({ first = false }: { first?: boolean }) {
+  return (
+    <div className={cn("animate-pulse border-t border-ink-100 p-3.5", first && "border-t-0")}>
+      <div className="h-4 w-32 rounded bg-ink-100" />
+      <div className="mt-3 h-3 w-40 rounded bg-ink-50" />
+      <div className="mt-3 h-4 w-full rounded bg-ink-50" />
+    </div>
+  );
+}
+
 type SortColumn = NonNullable<AdminCustomerListParams["sortBy"]>;
 
 function SortableHeader({
@@ -231,6 +241,65 @@ export default function CustomersPage() {
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk SMS failed"),
   });
+
+  // Shared between the desktop table row and the mobile card (below) so the two views can't drift —
+  // same reasoning as the Orders admin page's renderStatusCell/renderRowActions split.
+  function renderTagBadge(customer: (typeof items)[number]) {
+    const tone = primaryTag(customer.tags);
+    const toneMeta = tone ? TAG_META[tone] : null;
+    return toneMeta ? (
+      <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", toneMeta.className)}>
+        <toneMeta.icon size={11} /> {toneMeta.label}
+      </span>
+    ) : (
+      <span className="text-xs text-ink-400">—</span>
+    );
+  }
+
+  function renderRowActions(customer: (typeof items)[number]) {
+    return (
+      <>
+        <button
+          onClick={() => setDrawer({ id: customer.id })}
+          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+          aria-label="View customer"
+          title="View customer"
+        >
+          <Eye size={16} />
+        </button>
+        {customer.phone && (
+          <>
+            <button
+              onClick={() => setDrawer({ id: customer.id, focusSms: true })}
+              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-info-600")}
+              aria-label="Send SMS"
+              title="Send SMS"
+            >
+              <Send size={16} />
+            </button>
+            <a
+              href={waLink(customer.phone)}
+              target="_blank"
+              rel="noreferrer"
+              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-success-600")}
+              aria-label="WhatsApp"
+              title="WhatsApp"
+            >
+              <MessageCircle size={16} />
+            </a>
+            <a
+              href={`tel:${customer.phone}`}
+              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+              aria-label="Call"
+              title="Call"
+            >
+              <Phone size={16} />
+            </a>
+          </>
+        )}
+      </>
+    );
+  }
 
   return (
     <div>
@@ -462,8 +531,9 @@ export default function CustomersPage() {
 
       {/* No bounded inner scroll box here — nesting a second vertical-scroll region inside the
           already-scrolling page made the mouse wheel scroll this small box first before the page
-          would move, which read as broken/janky (see the same fix on the Orders page). */}
-      <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm">
+          would move, which read as broken/janky (see the same fix on the Orders page).
+          sm and up: the table below. Below sm: a card list (below that). */}
+      <div className="mt-4 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:block">
         <HScrollShadow className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -525,8 +595,6 @@ export default function CustomersPage() {
                 </tr>
               )}
               {items.map((customer) => {
-                const tone = primaryTag(customer.tags);
-                const toneMeta = tone ? TAG_META[tone] : null;
                 return (
                   <tr key={customer.id} className="group border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
                     <td className="px-4 py-3.5">
@@ -554,59 +622,12 @@ export default function CustomersPage() {
                     <td className="px-4 py-3.5 text-ink-500">
                       {customer.lastOrderAt ? new Date(customer.lastOrderAt).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-4 py-3.5">
-                      {toneMeta ? (
-                        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", toneMeta.className)}>
-                          <toneMeta.icon size={11} /> {toneMeta.label}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-ink-400">—</span>
-                      )}
-                    </td>
+                    <td className="px-4 py-3.5">{renderTagBadge(customer)}</td>
                     <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
                       {customer.lastSmsSentAt ? new Date(customer.lastSmsSentAt).toLocaleDateString() : "—"}
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className="flex justify-end gap-3">
-                        <button
-                          onClick={() => setDrawer({ id: customer.id })}
-                          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                          aria-label="View customer"
-                          title="View customer"
-                        >
-                          <Eye size={16} />
-                        </button>
-                        {customer.phone && (
-                          <>
-                            <button
-                              onClick={() => setDrawer({ id: customer.id, focusSms: true })}
-                              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-info-600")}
-                              aria-label="Send SMS"
-                              title="Send SMS"
-                            >
-                              <Send size={16} />
-                            </button>
-                            <a
-                              href={waLink(customer.phone)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-success-600")}
-                              aria-label="WhatsApp"
-                              title="WhatsApp"
-                            >
-                              <MessageCircle size={16} />
-                            </a>
-                            <a
-                              href={`tel:${customer.phone}`}
-                              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                              aria-label="Call"
-                              title="Call"
-                            >
-                              <Phone size={16} />
-                            </a>
-                          </>
-                        )}
-                      </div>
+                      <div className="flex justify-end gap-3">{renderRowActions(customer)}</div>
                     </td>
                   </tr>
                 );
@@ -614,6 +635,67 @@ export default function CustomersPage() {
             </tbody>
           </table>
         </HScrollShadow>
+      </div>
+
+      {/* Below sm: one continuous bordered list instead of the table above — same card-list pattern
+          (and same reasoning: the sticky filter zone scrolls over it, so no floating-card shadow
+          gets awkwardly clipped mid-scroll) as the Orders admin page. */}
+      <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:hidden">
+        {isLoading && Array.from({ length: 4 }).map((_, i) => <CustomerCardSkeleton key={i} first={i === 0} />)}
+        {!isLoading && items.length === 0 && (
+          hasActiveFilters ? (
+            <EmptyState
+              icon={UserX}
+              title="No customers match your filters"
+              description="Try adjusting or clearing your search and filters."
+              action={
+                <button onClick={clearAllFilters} className="text-sm text-info-600 hover:underline">
+                  Clear all filters
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState icon={Users} title="No customers yet" description="Accounts will show up here as people register or check out." />
+          )
+        )}
+        {!isLoading && items.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-ink-100 px-3.5 py-2 text-xs text-ink-500">
+            <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
+            Select all on this page
+          </div>
+        )}
+        {items.map((customer) => (
+          <div key={customer.id} className="border-t border-ink-100 p-3.5 first:border-t-0">
+            <div className="flex items-start gap-2.5">
+              <Checkbox
+                checked={selected.has(customer.id)}
+                onChange={() => toggleOne(customer.id)}
+                className="mt-1"
+                aria-label={`Select ${customer.name}`}
+              />
+              <button onClick={() => setDrawer({ id: customer.id })} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
+                  {initials(customer.name)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-ink-900">{customer.name}</span>
+                  <span className="block truncate text-xs text-ink-400">{customer.phone ?? customer.email ?? "—"}</span>
+                </span>
+              </button>
+              <span className="shrink-0 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</span>
+            </div>
+
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
+              <span>
+                {customer.totalOrders} order{customer.totalOrders === 1 ? "" : "s"} ·{" "}
+                {customer.lastOrderAt ? `last ${new Date(customer.lastOrderAt).toLocaleDateString()}` : "no orders yet"}
+              </span>
+              {renderTagBadge(customer)}
+            </div>
+
+            <div className="mt-2.5 flex items-center justify-end gap-3 border-t border-ink-100 pt-2.5">{renderRowActions(customer)}</div>
+          </div>
+        ))}
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />

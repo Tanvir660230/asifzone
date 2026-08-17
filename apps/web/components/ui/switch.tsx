@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
 interface SwitchProps {
@@ -7,9 +8,12 @@ interface SwitchProps {
   "aria-label"?: string;
 }
 
-export function Switch({ checked, onChange, disabled, "aria-label": ariaLabel }: SwitchProps) {
-  return (
+// forwardRef so this can sit in an RHF <Controller field.ref> slot like every other form
+// primitive in the kit — without it, RHF has no way to focus this field on a validation error.
+export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
+  ({ checked, onChange, disabled, "aria-label": ariaLabel }, ref) => (
     <button
+      ref={ref}
       type="button"
       role="switch"
       aria-checked={checked}
@@ -18,7 +22,7 @@ export function Switch({ checked, onChange, disabled, "aria-label": ariaLabel }:
       onClick={() => onChange(!checked)}
       className={cn(
         "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ring-1 ring-inset transition-colors duration-200 ease-smooth disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-brass-400 ring-brass-500" : "bg-ink-300 ring-ink-400",
+        checked ? "bg-ink-800 ring-ink-900" : "bg-ink-300 ring-ink-400",
       )}
     >
       <span
@@ -29,5 +33,6 @@ export function Switch({ checked, onChange, disabled, "aria-label": ariaLabel }:
         style={{ height: "1.125rem", width: "1.125rem" }}
       />
     </button>
-  );
-}
+  ),
+);
+Switch.displayName = "Switch";

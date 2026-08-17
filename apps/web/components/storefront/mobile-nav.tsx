@@ -6,11 +6,13 @@ import Link from "next/link";
 import { Menu, X, ChevronDown, User, PackageSearch, Search } from "lucide-react";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { useSearchOverlayStore } from "@/store/search-overlay";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const openSearch = useSearchOverlayStore((s) => s.open);
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: () => setOpen(false) });
 
   return (
     <div className="lg:hidden">
@@ -27,7 +29,14 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
           // Rendered into document.body rather than in place: the header's `backdrop-blur`
           // creates a containing block for `position: fixed` descendants, which would
           // otherwise clip this overlay to the header's own height instead of the viewport.
-          <div className="fixed inset-0 z-50 animate-fade-in bg-cream-50">
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            tabIndex={-1}
+            className="fixed inset-0 z-50 animate-fade-in bg-cream-50"
+          >
             <div className="glass flex h-14 items-center justify-between border-b border-ink-100/70 px-4">
               <span className="font-display text-lg">Menu</span>
               <button

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
-import { env } from "@/lib/env";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const container = {
   hidden: {},
@@ -44,7 +44,7 @@ export function CategoryGrid({
             <Link href={`/category/${cat.slug}`} className="group relative block aspect-[4/5] overflow-hidden rounded bg-ink-100">
               {cat.imageUrl ? (
                 <Image
-                  src={cat.imageUrl.startsWith("http") ? cat.imageUrl : `${env.apiUrl}${cat.imageUrl}`}
+                  src={resolveImageUrl(cat.imageUrl)}
                   alt={cat.imageAltText || cat.name}
                   fill
                   sizes="(min-width: 1024px) 25vw, 50vw"

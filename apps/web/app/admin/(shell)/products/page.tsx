@@ -22,6 +22,18 @@ import { resolveImageUrl } from "@/lib/image-url";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 
+function ProductRowCardSkeleton({ first = false }: { first?: boolean }) {
+  return (
+    <div className={cn("flex animate-pulse items-center gap-3 border-t border-ink-100 p-3.5", first && "border-t-0")}>
+      <div className="h-10 w-10 shrink-0 rounded bg-ink-100" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="h-3.5 w-2/3 rounded bg-ink-100" />
+        <div className="h-3 w-1/3 rounded bg-ink-50" />
+      </div>
+    </div>
+  );
+}
+
 export default function ProductsPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"active" | "trash">("active");
@@ -146,6 +158,50 @@ export default function ProductsPage() {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
   const csvUrl = useMemo(() => productsApi.downloadProductsCsvUrl(), []);
 
+  // Shared between the desktop table row and the mobile card (below) so the two views can't drift —
+  // same reasoning as the Orders/Customers admin pages' renderRowActions split.
+  function renderRowActions(p: (typeof items)[number]) {
+    return tab === "trash" ? (
+      <>
+        <button
+          onClick={() => restoreMutation.mutate(p.id)}
+          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+          aria-label="Restore"
+          title="Restore"
+        >
+          <RotateCcw size={16} />
+        </button>
+        <button
+          onClick={() => handlePermanentDelete(p.id, p.name)}
+          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
+          aria-label="Delete permanently"
+          title="Delete permanently"
+        >
+          <Trash2 size={16} />
+        </button>
+      </>
+    ) : (
+      <>
+        <Link
+          href={`/admin/products/${p.id}/edit`}
+          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+          aria-label="Edit"
+          title="Edit"
+        >
+          <Pencil size={16} />
+        </Link>
+        <button
+          onClick={() => handleDelete(p.id, p.name)}
+          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
+          aria-label="Delete"
+          title="Move to trash"
+        >
+          <Trash2 size={16} />
+        </button>
+      </>
+    );
+  }
+
   return (
     <div>
       <PageHeader
@@ -258,7 +314,9 @@ export default function ProductsPage() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+      {/* sm and up: the table below. Below sm: a card list (below that) — same split as the
+          Orders/Customers admin pages. */}
+      <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
         <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -318,47 +376,7 @@ export default function ProductsPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      {tab === "trash" ? (
-                        <>
-                          <button
-                            onClick={() => restoreMutation.mutate(p.id)}
-                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                            aria-label="Restore"
-                            title="Restore"
-                          >
-                            <RotateCcw size={16} />
-                          </button>
-                          <button
-                            onClick={() => handlePermanentDelete(p.id, p.name)}
-                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
-                            aria-label="Delete permanently"
-                            title="Delete permanently"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <Link
-                            href={`/admin/products/${p.id}/edit`}
-                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                            aria-label="Edit"
-                            title="Edit"
-                          >
-                            <Pencil size={16} />
-                          </Link>
-                          <button
-                            onClick={() => handleDelete(p.id, p.name)}
-                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
-                            aria-label="Delete"
-                            title="Move to trash"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    <div className="flex justify-end gap-3">{renderRowActions(p)}</div>
                   </td>
                 </tr>
               );
@@ -366,6 +384,59 @@ export default function ProductsPage() {
           </tbody>
         </table>
         </HScrollShadow>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:hidden">
+        {isLoading && Array.from({ length: 4 }).map((_, i) => <ProductRowCardSkeleton key={i} first={i === 0} />)}
+        {!isLoading && items.length === 0 && (
+          <div className="px-4 py-10 text-center text-ink-400">
+            {tab === "trash" ? (
+              <span className="flex flex-col items-center gap-2">
+                <ArchiveX size={24} className="text-ink-300" />
+                Trash is empty.
+              </span>
+            ) : (
+              "No products yet — add your first one."
+            )}
+          </div>
+        )}
+        {!isLoading && items.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-ink-100 px-3.5 py-2 text-xs text-ink-500">
+            <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
+            Select all on this page
+          </div>
+        )}
+        {items.map((p) => {
+          const totalStock = p.variants.reduce((sum, v) => sum + v.stock, 0);
+          const thumb = p.images[0];
+          return (
+            <div key={p.id} className="border-t border-ink-100 p-3.5 first:border-t-0">
+              <div className="flex items-start gap-2.5">
+                <Checkbox checked={selected.has(p.id)} onChange={() => toggleOne(p.id)} className="mt-1" aria-label={`Select ${p.name}`} />
+                <div className="h-10 w-10 shrink-0 overflow-hidden rounded bg-ink-100">
+                  {thumb && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={resolveImageUrl(thumb.url)} alt="" className="h-full w-full object-cover" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-ink-900">{p.name}</p>
+                  <p className="truncate text-xs text-ink-400">{p.category.name}</p>
+                </div>
+                <Badge className={cn("shrink-0", p.isActive ? "bg-success-100 text-success-700" : "")}>
+                  {p.isActive ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+
+              <div className="mt-2.5 flex items-center justify-between border-t border-ink-100 pt-2.5 text-sm">
+                <span className="font-medium text-ink-900">৳{Number(p.basePrice).toLocaleString()}</span>
+                <span className="text-ink-500">{totalStock} in stock</span>
+              </div>
+
+              <div className="mt-2.5 flex items-center justify-end gap-3 border-t border-ink-100 pt-2.5">{renderRowActions(p)}</div>
+            </div>
+          );
+        })}
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />

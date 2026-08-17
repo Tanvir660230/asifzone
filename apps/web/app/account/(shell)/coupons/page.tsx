@@ -74,6 +74,9 @@ export default function AccountCouponsPage() {
             >
               {copiedCode === coupon.code ? <Check size={14} /> : <Copy size={14} />}
               {copiedCode === coupon.code ? "Copied" : "Copy"}
+              <span className="sr-only" role="status" aria-live="polite">
+                {copiedCode === coupon.code ? `${coupon.code} copied to clipboard` : ""}
+              </span>
             </button>
           </div>
         ))}

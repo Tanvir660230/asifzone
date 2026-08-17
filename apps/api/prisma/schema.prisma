@@ -300,6 +300,7 @@ model PageView {
   utmSource   String?
   utmMedium   String?
   utmCampaign String?
+  userAgent   String?
   createdAt   DateTime @default(now())
 
   @@index([sessionId, createdAt])

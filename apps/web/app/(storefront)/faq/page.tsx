@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildFaqJsonLd } from "@/lib/structured-data";
 import { PageHero } from "@/components/storefront/page-hero";
+import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { FaqAccordion, type FaqGroup } from "@/components/storefront/faq-accordion";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
@@ -110,6 +112,9 @@ export default function FaqPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(buildFaqJsonLd(FAQ_GROUPS)) }}
       />
+      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
+        <Breadcrumb trail={[{ name: "FAQ" }]} />
+      </div>
       <PageHero
         eyebrow="Got questions?"
         title="Frequently Asked Questions"
@@ -121,9 +126,9 @@ export default function FaqPage() {
 
         <p className="mt-10 text-center text-sm text-ink-500">
           Still have a question?{" "}
-          <a href="/contact" className="text-ink-900 underline underline-offset-2 hover:text-brass-500">
+          <Link href="/contact" className="text-ink-900 underline underline-offset-2 hover:text-brass-500">
             Get in touch
-          </a>
+          </Link>
           .
         </p>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,7 +25,14 @@ import {
   SearchX,
   Package,
 } from "lucide-react";
-import type { OrderStatus, PaymentStatus, PaymentMethod, BdDivision, OrderListItemSummary } from "@clothing-brand/shared";
+import type {
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  BdDivision,
+  OrderListItemSummary,
+  AdminOrderListItem,
+} from "@clothing-brand/shared";
 import { BD_DIVISIONS, BD_DISTRICTS_BY_DIVISION, COURIER_DELIVERY_STATUSES } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -48,7 +55,13 @@ import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import type { BulkCourierBookResult, AdminOrderListParams } from "@/lib/api/admin-orders";
-import { formatPrice, courierStatusBadgeClass, courierStatusLabel, courierStatusDescription } from "@/lib/format";
+import {
+  formatPrice,
+  orderStatusBadgeClass,
+  courierStatusBadgeClass,
+  courierStatusLabel,
+  courierStatusDescription,
+} from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
@@ -65,18 +78,6 @@ const STATUS_OPTIONS: OrderStatus[] = [
   "RETURNED",
   "REFUNDED",
 ];
-
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  PENDING: "bg-warning-100 text-warning-700",
-  CONFIRMED: "bg-info-100 text-info-700",
-  PROCESSING: "bg-info-100 text-info-700",
-  PACKED: "bg-info-100 text-info-700",
-  SHIPPED: "bg-info-100 text-info-700",
-  DELIVERED: "bg-success-100 text-success-700",
-  CANCELLED: "bg-danger-100 text-danger-700",
-  RETURNED: "bg-warning-100 text-warning-700",
-  REFUNDED: "bg-ink-200 text-ink-700",
-};
 
 const STATUS_BORDER_COLORS: Record<OrderStatus, string> = {
   PENDING: "border-l-warning-400",
@@ -201,6 +202,19 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
   );
 }
 
+/** Loading placeholder for the mobile order list — TableSkeleton renders <tr>/<td> and can't back
+ * a div-based list, so this is a small standalone equivalent. Border-t/first:border-t-0 (not its
+ * own rounded/shadowed box) to match the real rows' styling inside their shared container. */
+function OrderCardSkeleton({ first = false }: { first?: boolean }) {
+  return (
+    <div className={cn("animate-pulse border-t border-ink-100 p-3.5", first && "border-t-0")}>
+      <div className="h-4 w-24 rounded bg-ink-100" />
+      <div className="mt-3 h-9 w-full rounded bg-ink-50" />
+      <div className="mt-3 h-4 w-40 rounded bg-ink-100" />
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const [tab, setTab] = useState<"active" | "trash">("active");
   const [search, setSearch] = useState("");
@@ -273,6 +287,27 @@ export default function OrdersPage() {
     setPage(1);
   }
 
+  // The row set on screen changes under the selection whenever the query params change — without
+  // this, the bulk-action bar can keep showing "N selected" for rows that have scrolled out of view
+  // (a different page/filter), and bulk actions would silently apply to that stale, invisible set.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setSelected(new Set()), [
+    page,
+    pageSize,
+    debouncedSearch,
+    tab,
+    quickFilter,
+    status,
+    courierBooked,
+    courierStatusFilter,
+    division,
+    district,
+    dateFrom,
+    dateTo,
+    sortBy,
+    sortDir,
+  ]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["admin-orders", { page, pageSize, search: debouncedSearch, tab, filterParams }],
     queryFn: () =>
@@ -328,7 +363,11 @@ export default function OrdersPage() {
   const bulkStatusMutation = useMutation({
     mutationFn: ({ ids, status: s }: { ids: string[]; status: OrderStatus }) =>
       adminOrdersApi.bulkUpdateOrderStatus(ids, s),
-    onSuccess: invalidate,
+    // The backend applies these one order at a time and stops at the first failure (e.g. one order
+    // in the batch got trashed by someone else first) — by then some orders already committed, so
+    // refetch on failure too (onSettled, not onSuccess) instead of leaving the table showing
+    // pre-update data alongside a stale "N selected" bar.
+    onSettled: invalidate,
   });
 
   const statusMutation = useMutation({
@@ -356,10 +395,11 @@ export default function OrdersPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk courier booking failed"),
   });
 
-  const bulkDeleteMutation = useMutation({ mutationFn: adminOrdersApi.bulkDeleteOrders, onSuccess: invalidate });
+  // Same reasoning as bulkStatusMutation above — refetch even on partial failure.
+  const bulkDeleteMutation = useMutation({ mutationFn: adminOrdersApi.bulkDeleteOrders, onSettled: invalidate });
   const bulkPermanentDeleteMutation = useMutation({
     mutationFn: adminOrdersApi.bulkPermanentlyDeleteOrders,
-    onSuccess: invalidate,
+    onSettled: invalidate,
   });
 
   async function handleDelete(orderNumber: string, id: string) {
@@ -461,6 +501,19 @@ export default function OrdersPage() {
   const items = data?.items ?? [];
   const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
 
+  // Drawer prev/next — relative to whatever's on the currently-loaded page/filter, not a
+  // cross-page fetch. If the open order isn't in `items` at all (e.g. a filter change dropped it),
+  // drawerIndex is -1 and both directions disable — the drawer itself keeps working via its own
+  // independent order-by-id query, it just can't navigate relative to a list it's no longer part of.
+  const drawerIndex = drawerOrderId ? items.findIndex((o) => o.id === drawerOrderId) : -1;
+  const hasPrevOrder = drawerIndex > 0;
+  const hasNextOrder = drawerIndex !== -1 && drawerIndex < items.length - 1;
+  function goToDrawerOffset(offset: number) {
+    if (drawerIndex === -1) return;
+    const next = items[drawerIndex + offset];
+    if (next) setDrawerOrderId(next.id);
+  }
+
   function toggleAll() {
     setSelected(allSelected ? new Set() : new Set(items.map((o) => o.id)));
   }
@@ -506,6 +559,148 @@ export default function OrdersPage() {
     ],
   );
 
+  // Shared between the desktop table row and the mobile card (below) so a future behavior change
+  // (e.g. a new bulk action, a new status color) can't update one view and silently miss the other
+  // — only the surrounding layout differs between the two.
+  function renderStatusCell(order: AdminOrderListItem) {
+    if (order.deletedAt) {
+      return <Badge className={orderStatusBadgeClass(order.status)}>{order.status}</Badge>;
+    }
+    return (
+      <div className="relative inline-block">
+        <Select
+          value={order.status}
+          disabled={statusMutation.isPending}
+          onChange={(e) => handleStatusChange(order.orderNumber, order.id, order.status, e.target.value as OrderStatus)}
+          className={cn(
+            "h-auto w-auto appearance-none rounded-full border-0 py-1 pl-2.5 pr-6 text-xs font-semibold",
+            orderStatusBadgeClass(order.status),
+          )}
+          aria-label={`Change status for ${order.orderNumber}`}
+        >
+          {STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </Select>
+        <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-60" />
+      </div>
+    );
+  }
+
+  function renderCourierCell(order: AdminOrderListItem) {
+    if (!order.courierConsignmentId) {
+      return <span className="text-xs text-ink-400">Not booked</span>;
+    }
+    return (
+      <div className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+            courierStatusBadgeClass(order.courierStatus ?? ""),
+          )}
+          title={
+            order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported"
+          }
+        >
+          {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
+        </span>
+        {order.courierTrackingLink && (
+          <a
+            href={order.courierTrackingLink}
+            target="_blank"
+            rel="noreferrer"
+            className="text-ink-400 hover:text-info-600"
+            aria-label="Track parcel"
+            title="Track parcel"
+          >
+            <ExternalLink size={13} />
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  function renderRowActions(order: AdminOrderListItem) {
+    return (
+      <>
+        <button
+          onClick={() => setDrawerOrderId(order.id)}
+          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+          aria-label="View order"
+          title="View order"
+        >
+          <Eye size={16} />
+        </button>
+        {isOwner &&
+          (order.deletedAt ? (
+            <>
+              <button
+                onClick={() => handleRestore(order.orderNumber, order.id)}
+                className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+                aria-label="Restore"
+                title="Restore"
+              >
+                <RotateCcw size={16} />
+              </button>
+              <button
+                onClick={() => handlePermanentDelete(order.orderNumber, order.id)}
+                className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
+                aria-label="Delete permanently"
+                title="Delete permanently"
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => handleDelete(order.orderNumber, order.id)}
+              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
+              aria-label="Delete"
+              title="Move to Trash"
+            >
+              <Trash2 size={16} />
+            </button>
+          ))}
+      </>
+    );
+  }
+
+  function renderEmptyState() {
+    if (tab === "trash") {
+      return <EmptyState icon={ArchiveX} title="Trash is empty" description="Deleted orders will appear here." />;
+    }
+    if (hasActiveFilters) {
+      return (
+        <EmptyState
+          icon={SearchX}
+          title="No orders match your filters"
+          description="Try adjusting or clearing your search and filters."
+          action={
+            <Button variant="outline" size="sm" onClick={clearAllFilters}>
+              Clear all filters
+            </Button>
+          }
+        />
+      );
+    }
+    return (
+      <EmptyState
+        icon={ShoppingBag}
+        title="No orders yet"
+        description="Orders will show up here as customers check out."
+        action={
+          <Link href="/admin/orders/new">
+            <Button size="sm">
+              <Plus size={14} /> Create order
+            </Button>
+          </Link>
+        }
+      />
+    );
+  }
+
   return (
     <div>
       <PageHeader
@@ -532,7 +727,7 @@ export default function OrdersPage() {
           inner scroll box) — nesting a second vertical-scroll region inside an already-scrolling
           page made the mouse wheel scroll the tiny table box first before the page would move,
           which read as broken/janky. Horizontal scroll (for narrow viewports) is unaffected. */}
-      <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
+      <div className="sticky top-14 z-10 -mx-4 space-y-2 border-b border-ink-100 bg-cream-50/95 px-4 pb-2.5 pt-2 backdrop-blur-sm sm:-mx-8 sm:px-8">
         {isOwner && (
           <div className="flex items-center gap-1">
             {(["active", "trash"] as const).map((t) => (
@@ -544,7 +739,7 @@ export default function OrdersPage() {
                   setSelected(new Set());
                 }}
                 className={cn(
-                  "border-b-2 px-4 py-2 text-sm font-medium capitalize transition-colors duration-150 ease-smooth",
+                  "border-b-2 px-3 py-1.5 text-sm font-medium capitalize transition-colors duration-150 ease-smooth",
                   tab === t ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-600",
                 )}
               >
@@ -555,82 +750,87 @@ export default function OrdersPage() {
         )}
 
         {tab === "active" && (
-          <div className="rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
-              <button
-                onClick={() => {
-                  setStatus("");
-                  setQuickFilter(null);
-                  setPage(1);
-                }}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                  !status
-                    ? "border-ink-900 bg-ink-900 text-cream-50"
-                    : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
-                )}
-              >
-                All
-                {statusTotal !== undefined && (
-                  <span
-                    className={cn(
-                      "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
-                      !status ? "bg-cream-50/25 text-cream-50" : "bg-ink-900/10 text-ink-600",
-                    )}
-                  >
-                    {statusTotal}
-                  </span>
-                )}
-              </button>
-              {STATUS_OPTIONS.map((s) => {
-                const count = stats?.statusCounts[s];
-                const active = status === s;
-                return (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      setStatus((prev) => (prev === s ? "" : s));
-                      setQuickFilter(null);
-                      setPage(1);
-                    }}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth",
-                      STATUS_COLORS[s],
-                      active ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-60 hover:opacity-100",
-                    )}
-                  >
-                    {s}
-                    {typeof count === "number" && (
-                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-900/10 px-1 text-[10px] font-semibold tabular-nums">
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-              <span className="mx-1 hidden h-4 w-px bg-ink-200 sm:block" aria-hidden />
-              {QUICK_FILTERS.map((f) => (
+          <div className="rounded-xl border border-ink-100 bg-cream-50 px-3 py-2 shadow-sm lg:py-1.5">
+            {/* A single horizontally-scrollable row, not flex-wrap — 14 pills (All + 9 statuses + 4
+                quick filters) wrapping wastes several rows of height on any viewport, which buried
+                the actual order list below the fold. Same scroll-affordance component as the table. */}
+            <HScrollShadow className="overflow-x-auto">
+              <div className="flex flex-nowrap items-center gap-1.5">
+                <span className="mr-1 shrink-0 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
                 <button
-                  key={f.id}
-                  onClick={() => selectQuickFilter(f.id)}
+                  onClick={() => {
+                    setStatus("");
+                    setQuickFilter(null);
+                    setPage(1);
+                  }}
                   className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                    quickFilter === f.id
+                    "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth lg:px-2.5 lg:py-1",
+                    !status
                       ? "border-ink-900 bg-ink-900 text-cream-50"
-                      : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+                      : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
                   )}
                 >
-                  {f.label}
+                  All
+                  {statusTotal !== undefined && (
+                    <span
+                      className={cn(
+                        "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
+                        !status ? "bg-cream-50/25 text-cream-50" : "bg-ink-900/10 text-ink-600",
+                      )}
+                    >
+                      {statusTotal}
+                    </span>
+                  )}
                 </button>
-              ))}
-            </div>
+                {STATUS_OPTIONS.map((s) => {
+                  const count = stats?.statusCounts[s];
+                  const active = status === s;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => {
+                        setStatus((prev) => (prev === s ? "" : s));
+                        setQuickFilter(null);
+                        setPage(1);
+                      }}
+                      className={cn(
+                        "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth lg:px-2.5 lg:py-1",
+                        orderStatusBadgeClass(s),
+                        active ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-60 hover:opacity-100",
+                      )}
+                    >
+                      {s}
+                      {typeof count === "number" && (
+                        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-900/10 px-1 text-[10px] font-semibold tabular-nums">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                <span className="mx-1 h-4 w-px shrink-0 bg-ink-200" aria-hidden />
+                {QUICK_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => selectQuickFilter(f.id)}
+                    className={cn(
+                      "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth lg:px-2.5 lg:py-1",
+                      quickFilter === f.id
+                        ? "border-ink-900 bg-ink-900 text-cream-50"
+                        : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </HScrollShadow>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-2 shadow-sm lg:py-1.5">
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative w-full sm:w-72">
+            <div className="relative w-full sm:w-64 lg:w-56">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
               <Input
                 placeholder="Search order #, name, phone…"
@@ -657,7 +857,7 @@ export default function OrdersPage() {
             <button
               onClick={() => setShowMoreFilters((v) => !v)}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
+                "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth lg:py-1.5",
                 showMoreFilters || activeMoreFiltersCount > 0
                   ? "border-ink-900 bg-ink-900 text-cream-50"
                   : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
@@ -853,7 +1053,8 @@ export default function OrdersPage() {
         )}
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm">
+      {/* sm and up: the original table, unchanged content. Below sm: a card list (below). */}
+      <div className="mt-4 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:block">
         <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -903,33 +1104,7 @@ export default function OrdersPage() {
             {!isLoading && items.length === 0 && (
               <tr>
                 <td colSpan={10} className="p-0">
-                  {tab === "trash" ? (
-                    <EmptyState icon={ArchiveX} title="Trash is empty" description="Deleted orders will appear here." />
-                  ) : hasActiveFilters ? (
-                    <EmptyState
-                      icon={SearchX}
-                      title="No orders match your filters"
-                      description="Try adjusting or clearing your search and filters."
-                      action={
-                        <Button variant="outline" size="sm" onClick={clearAllFilters}>
-                          Clear all filters
-                        </Button>
-                      }
-                    />
-                  ) : (
-                    <EmptyState
-                      icon={ShoppingBag}
-                      title="No orders yet"
-                      description="Orders will show up here as customers check out."
-                      action={
-                        <Link href="/admin/orders/new">
-                          <Button size="sm">
-                            <Plus size={14} /> Create order
-                          </Button>
-                        </Link>
-                      }
-                    />
-                  )}
+                  {renderEmptyState()}
                 </td>
               </tr>
             )}
@@ -986,65 +1161,8 @@ export default function OrdersPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
-                <td className="px-4 py-3.5">
-                  {order.deletedAt ? (
-                    <Badge className={STATUS_COLORS[order.status]}>{order.status}</Badge>
-                  ) : (
-                    <div className="relative inline-block">
-                      <Select
-                        value={order.status}
-                        disabled={statusMutation.isPending}
-                        onChange={(e) =>
-                          handleStatusChange(order.orderNumber, order.id, order.status, e.target.value as OrderStatus)
-                        }
-                        className={cn(
-                          "h-auto w-auto appearance-none rounded-full border-0 py-1 pl-2.5 pr-6 text-xs font-semibold",
-                          STATUS_COLORS[order.status],
-                        )}
-                        aria-label={`Change status for ${order.orderNumber}`}
-                      >
-                        {STATUS_OPTIONS.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </Select>
-                      <ChevronDown
-                        size={12}
-                        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-60"
-                      />
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3.5">
-                  {order.courierConsignmentId ? (
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                          courierStatusBadgeClass(order.courierStatus ?? ""),
-                        )}
-                        title={order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported"}
-                      >
-                        {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
-                      </span>
-                      {order.courierTrackingLink && (
-                        <a
-                          href={order.courierTrackingLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-ink-400 hover:text-info-600"
-                          aria-label="Track parcel"
-                          title="Track parcel"
-                        >
-                          <ExternalLink size={13} />
-                        </a>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-ink-400">Not booked</span>
-                  )}
-                </td>
+                <td className="px-4 py-3.5">{renderStatusCell(order)}</td>
+                <td className="px-4 py-3.5">{renderCourierCell(order)}</td>
                 <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
                   <div>{new Date(order.createdAt).toLocaleDateString()}</div>
                   <div className="text-xs text-ink-400">
@@ -1052,46 +1170,7 @@ export default function OrdersPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3.5">
-                  <div className="flex justify-end gap-3">
-                    <button
-                      onClick={() => setDrawerOrderId(order.id)}
-                      className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                      aria-label="View order"
-                      title="View order"
-                    >
-                      <Eye size={16} />
-                    </button>
-                    {isOwner &&
-                      (order.deletedAt ? (
-                        <>
-                          <button
-                            onClick={() => handleRestore(order.orderNumber, order.id)}
-                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                            aria-label="Restore"
-                            title="Restore"
-                          >
-                            <RotateCcw size={16} />
-                          </button>
-                          <button
-                            onClick={() => handlePermanentDelete(order.orderNumber, order.id)}
-                            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
-                            aria-label="Delete permanently"
-                            title="Delete permanently"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => handleDelete(order.orderNumber, order.id)}
-                          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
-                          aria-label="Delete"
-                          title="Move to Trash"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      ))}
-                  </div>
+                  <div className="flex justify-end gap-3">{renderRowActions(order)}</div>
                 </td>
               </tr>
             ))}
@@ -1100,10 +1179,106 @@ export default function OrdersPage() {
         </HScrollShadow>
       </div>
 
+      {/* Below sm: one continuous bordered list instead of the table above — deliberately NOT
+          separately-shadowed floating cards. The sticky filter zone above scrolls over this list
+          as the page scrolls (by design, so filters stay reachable); a floating card whose own
+          rounded top border gets covered by the sticky bar mid-scroll leaves a borderless,
+          disconnected-looking fragment behind. One shared container with border-t dividers between
+          orders (same structure as the desktop table's rows) scrolls under the sticky bar exactly
+          the way the table already does, with nothing looking detached. */}
+      <div className="mt-4 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:hidden">
+        {isLoading &&
+          Array.from({ length: 4 }).map((_, i) => <OrderCardSkeleton key={i} first={i === 0} />)}
+        {!isLoading && items.length === 0 && renderEmptyState()}
+        {!isLoading && items.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-ink-100 px-3.5 py-2 text-xs text-ink-500">
+            <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
+            Select all on this page
+          </div>
+        )}
+        {items.map((order) => (
+          <div
+            key={order.id}
+            className={cn(
+              "border-t border-ink-100 border-l-4 p-3.5 first:border-t-0",
+              STATUS_BORDER_COLORS[order.status],
+            )}
+          >
+            <div className="flex items-start gap-2.5">
+              <Checkbox
+                checked={selected.has(order.id)}
+                onChange={() => toggleOne(order.id)}
+                className="mt-1"
+                aria-label={`Select ${order.orderNumber}`}
+              />
+              <button onClick={() => setDrawerOrderId(order.id)} className="min-w-0 flex-1 text-left">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-ink-900">{order.orderNumber}</span>
+                  <span className="font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</span>
+                </div>
+                <div className="mt-0.5 text-xs text-ink-400">
+                  {new Date(order.createdAt).toLocaleDateString()} ·{" "}
+                  {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </button>
+            </div>
+
+            <div className="mt-2.5 border-t border-ink-100 pt-2.5">
+              <ProductCell summary={order.itemsSummary} />
+            </div>
+
+            <div className="mt-2.5 flex items-center gap-3 border-t border-ink-100 pt-2.5">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
+                {initials(order.customerName)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-ink-800">{order.customerName}</div>
+                <div className="text-xs text-ink-400">{order.customerPhone}</div>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
+                  {order.paymentMethod === "COD" ? "COD" : "Online"}
+                </Badge>
+                <span
+                  className={cn(
+                    "text-[11px] font-medium",
+                    order.paymentStatus === "PAID"
+                      ? "text-success-600"
+                      : order.paymentStatus === "FAILED"
+                        ? "text-danger-600"
+                        : "text-warning-600",
+                  )}
+                >
+                  {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                {renderStatusCell(order)}
+                {renderCourierCell(order)}
+              </div>
+              <div className="flex items-center gap-3">{renderRowActions(order)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       {confirmDialog}
 
-      <Drawer open={Boolean(drawerOrderId)} onClose={() => setDrawerOrderId(null)} title="Order details" widthClassName="max-w-2xl">
+      <Drawer
+        open={Boolean(drawerOrderId)}
+        onClose={() => setDrawerOrderId(null)}
+        title="Order details"
+        widthClassName="max-w-2xl"
+        onPrev={() => goToDrawerOffset(-1)}
+        onNext={() => goToDrawerOffset(1)}
+        prevDisabled={!hasPrevOrder}
+        nextDisabled={!hasNextOrder}
+        navLabel={drawerIndex !== -1 ? `${drawerIndex + 1} of ${items.length}` : undefined}
+      >
         {drawerOrderId && (
           <OrderDetailPanel orderId={drawerOrderId} onClose={() => setDrawerOrderId(null)} variant="drawer" />
         )}

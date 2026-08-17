@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { BackLink } from "@/components/ui/back-link";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { SmsComposer } from "@/components/admin/sms-composer";
@@ -136,6 +137,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
 
   return (
     <div className={outerClassName}>
+      {variant === "page" && <BackLink onClick={onClose} label="Back to Customers" />}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -193,11 +195,6 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           >
             <Ban size={14} /> {customer.isBlocked ? "Unblock" : "Block"}
           </Button>
-          {variant === "page" && (
-            <button onClick={onClose} className="text-sm text-ink-500 hover:text-ink-900">
-              Back to customers
-            </button>
-          )}
         </div>
       </div>
 
@@ -458,7 +455,11 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           <CardContent className="space-y-1 text-sm">
             {customer.wishlistItems.map((item) => (
               <p key={item.id}>
-                <Link href={`/products/${item.product.slug}`} className="text-info-600 hover:underline">
+                <Link
+                  href={`/product/${item.product.slug}`}
+                  target="_blank"
+                  className="text-info-600 hover:underline"
+                >
                   {item.product.name}
                 </Link>
               </p>

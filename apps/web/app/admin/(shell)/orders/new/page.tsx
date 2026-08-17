@@ -210,6 +210,19 @@ export default function NewOrderPage() {
   const couponDiscount = coupon?.discount ?? 0;
   const estimatedTotal = Math.max(0, subtotal - couponDiscount);
 
+  // The applied coupon's discount was computed against the cart as of the last Apply click — if
+  // items are added/removed/changed afterward, that discount goes stale (still shown, still what
+  // gets sent on submit) even though it no longer matches the current subtotal/items. Clear it and
+  // make the admin re-apply so the displayed total always matches what the server will charge.
+  useEffect(() => {
+    if (coupon) {
+      setCoupon(null);
+      setCouponError("Cart changed — re-apply the coupon to recalculate the discount");
+    }
+    // Only fire on item changes, not on the coupon-setting apply itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
   async function handleApplyCoupon() {
     if (!couponInput.trim() || subtotal <= 0) return;
     setCouponChecking(true);

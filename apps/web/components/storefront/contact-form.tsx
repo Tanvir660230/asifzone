@@ -1,38 +1,23 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import type { FormEvent } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { submitFeedback } from "@/lib/api/feedback";
-
-const EMPTY_FORM = { name: "", email: "", phone: "", subject: "", message: "" };
+import { useFeedbackForm } from "@/hooks/use-feedback-form";
 
 /** Inline (non-modal) version of the same message-us form the floating contact widget offers —
  * embedded directly on the Contact page so a visitor who lands here from search/a footer link
  * doesn't have to go hunting for the floating bubble to actually reach someone. */
 export function ContactForm() {
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const { form, setField, status, setStatus, submit, resetForm } = useFeedbackForm();
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setStatus("loading");
-    try {
-      await submitFeedback({
-        name: form.name,
-        email: form.email || null,
-        phone: form.phone || null,
-        subject: form.subject,
-        message: form.message,
-      });
-      setStatus("done");
-      setForm(EMPTY_FORM);
-    } catch {
-      setStatus("error");
-    }
+  function onSubmit(e: FormEvent) {
+    // Cleared immediately on success (unlike FeedbackModal, which defers this until its close
+    // transition finishes) — there's no transition here for an emptied form to flash through.
+    submit(e, resetForm);
   }
 
   if (status === "done") {
@@ -59,36 +44,21 @@ export function ContactForm() {
       <div className="space-y-4">
         <div>
           <Label htmlFor="contact-name">Name</Label>
-          <Input id="contact-name" required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <Input id="contact-name" required value={form.name} onChange={(e) => setField("name", e.target.value)} />
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="contact-email">Email (optional)</Label>
-            <Input
-              id="contact-email"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-            />
+            <Input id="contact-email" type="email" value={form.email} onChange={(e) => setField("email", e.target.value)} />
           </div>
           <div>
             <Label htmlFor="contact-phone">Phone (optional)</Label>
-            <Input
-              id="contact-phone"
-              type="tel"
-              value={form.phone}
-              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-            />
+            <Input id="contact-phone" type="tel" value={form.phone} onChange={(e) => setField("phone", e.target.value)} />
           </div>
         </div>
         <div>
           <Label htmlFor="contact-subject">Subject</Label>
-          <Input
-            id="contact-subject"
-            required
-            value={form.subject}
-            onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))}
-          />
+          <Input id="contact-subject" required value={form.subject} onChange={(e) => setField("subject", e.target.value)} />
         </div>
         <div>
           <Label htmlFor="contact-message">Message</Label>
@@ -97,7 +67,7 @@ export function ContactForm() {
             required
             rows={5}
             value={form.message}
-            onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
+            onChange={(e) => setField("message", e.target.value)}
           />
         </div>
         {status === "error" && <p className="text-xs text-danger-600">Something went wrong — please try again.</p>}

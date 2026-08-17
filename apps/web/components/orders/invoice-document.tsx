@@ -11,7 +11,7 @@ interface InvoiceDocumentProps {
 export function InvoiceDocument({ order, store }: InvoiceDocumentProps) {
   return (
     <div className="border border-ink-200 p-8">
-      <div className="mb-8 flex items-start justify-between border-b border-ink-100 pb-6">
+      <div className="mb-8 flex items-start justify-between border-b border-ink-100 pb-6 print:break-inside-avoid">
         <div>
           <h1 className="font-display text-2xl text-ink-900">{store?.storeName ?? "Store"}</h1>
           {store?.contactEmail && <p className="text-sm text-ink-500">{store.contactEmail}</p>}
@@ -40,32 +40,38 @@ export function InvoiceDocument({ order, store }: InvoiceDocumentProps) {
         </div>
       </div>
 
-      <table className="mb-6 w-full text-sm">
-        <thead className="border-b border-ink-200 text-left text-xs uppercase tracking-wide text-ink-500">
-          <tr>
-            <th className="pb-2">Item</th>
-            <th className="pb-2">SKU</th>
-            <th className="pb-2 text-right">Qty</th>
-            <th className="pb-2 text-right">Price</th>
-            <th className="pb-2 text-right">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {order.items.map((item) => (
-            <tr key={item.id} className="border-b border-ink-50">
-              <td className="py-2">
-                {item.productNameSnapshot} ({item.sizeSnapshot}/{item.colorSnapshot})
-              </td>
-              <td className="py-2 text-ink-500">{item.skuSnapshot}</td>
-              <td className="py-2 text-right">{item.quantity}</td>
-              <td className="py-2 text-right">{formatPrice(item.priceSnapshot)}</td>
-              <td className="py-2 text-right">{formatPrice(Number(item.priceSnapshot) * item.quantity)}</td>
+      <div className="mb-6 overflow-x-auto">
+        <table className="w-full min-w-[480px] text-sm">
+          <thead className="border-b border-ink-200 text-left text-xs uppercase tracking-wide text-ink-500">
+            <tr>
+              <th className="pb-2">Item</th>
+              <th className="pb-2">SKU</th>
+              <th className="pb-2 text-right">Qty</th>
+              <th className="pb-2 text-right">Price</th>
+              <th className="pb-2 text-right">Total</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {order.items.map((item) => (
+              // print:break-inside-avoid — a long order's item table shouldn't split a single row
+              // across a page break; the global @page A4 sizing (see globals.css, shared with the
+              // shipping-label sheet) already handles page geometry, so this is the one print
+              // concern left specific to a variable-length table.
+              <tr key={item.id} className="border-b border-ink-50 print:break-inside-avoid">
+                <td className="py-2">
+                  {item.productNameSnapshot} ({item.sizeSnapshot}/{item.colorSnapshot})
+                </td>
+                <td className="py-2 text-ink-500">{item.skuSnapshot}</td>
+                <td className="py-2 text-right">{item.quantity}</td>
+                <td className="py-2 text-right">{formatPrice(item.priceSnapshot)}</td>
+                <td className="py-2 text-right">{formatPrice(Number(item.priceSnapshot) * item.quantity)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      <div className="ml-auto max-w-xs space-y-1 text-sm">
+      <div className="ml-auto max-w-xs space-y-1 text-sm print:break-inside-avoid">
         <div className="flex justify-between text-ink-600">
           <span>Subtotal</span>
           <span>{formatPrice(order.subtotal)}</span>

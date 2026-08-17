@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/admin/page-header";
 import { SettingsSubNav } from "@/components/admin/settings-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
+import { EmptyState } from "@/components/admin/empty-state";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Pagination } from "@/components/admin/pagination";
 import * as auditApi from "@/lib/api/audit";
@@ -70,8 +72,8 @@ export default function AuditLogPage() {
             {isLoading && <TableSkeleton rows={8} cols={5} />}
             {!isLoading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-ink-400">
-                  No activity recorded yet.
+                <td colSpan={5} className="p-0">
+                  <EmptyState icon={History} title="No activity recorded yet" />
                 </td>
               </tr>
             )}

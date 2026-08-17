@@ -25,7 +25,7 @@ import { ChevronRight, GripVertical, Pencil, Trash2, FolderPlus, Star, ImageIcon
 import type { Category } from "@clothing-brand/shared";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 
 type ByParent = Map<string | null, Category[]>;
 
@@ -214,16 +214,20 @@ function CategoryNode({
     <div ref={setNodeRef} style={style}>
       <div
         className={cn(
-          "group flex items-center gap-2 rounded-xl border transition-all duration-200 ease-smooth",
+          "group flex flex-wrap items-center gap-2 rounded-xl border transition-all duration-200 ease-smooth sm:flex-nowrap",
           isMain
             ? "border-ink-100 bg-cream-50 px-4 py-3 shadow-sm hover:shadow-float"
             : "border-ink-100/70 bg-cream-100/50 px-3 py-2 hover:bg-cream-100",
           isDragging && "shadow-float ring-2 ring-brass-300",
         )}
       >
+        {/* Identity cluster: drag handle, expand chevron, thumbnail, name/slug — always its own row,
+            full-width below sm so a long name has room instead of fighting the action buttons for space. */}
         <button
           type="button"
-          className="cursor-grab touch-none rounded p-1 text-ink-300 opacity-0 transition-opacity duration-150 ease-smooth group-hover:opacity-100 active:cursor-grabbing"
+          // Hover-revealed only once there's room for a mouse-driven row (sm+); a touch device below
+          // that has no hover at all, so the handle needs to just be visible to be reachable.
+          className="cursor-grab touch-none rounded p-1 text-ink-300 opacity-100 transition-opacity duration-150 ease-smooth active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
           aria-label={`Drag to reorder ${category.name}`}
           {...attributes}
           {...listeners}
@@ -277,39 +281,50 @@ function CategoryNode({
           <p className="truncate text-xs text-ink-400">/{category.slug}</p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onAddChild(category.id)}
-          className="rounded-full p-1.5 text-ink-400 opacity-0 transition-opacity duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-700 group-hover:opacity-100"
-          aria-label={`Add sub-category under ${category.name}`}
-          title="Add sub-category"
-        >
-          <FolderPlus size={16} />
-        </button>
-
-        <Switch
-          checked={category.isActive}
-          onChange={(next) => onToggleActive(category, next)}
-          aria-label={category.isActive ? `Deactivate ${category.name}` : `Activate ${category.name}`}
-        />
-
-        <div className="flex items-center gap-1">
+        {/* Action cluster: below sm this drops to its own full-width, right-aligned row instead of
+            squeezing five controls onto the same line as the name — matches the table/card-style
+            responsive split already used on the Orders admin page. */}
+        <div className="ml-8 flex w-full items-center justify-end gap-1 sm:ml-0 sm:w-auto">
           <button
             type="button"
-            onClick={() => onEdit(category)}
-            className="rounded-full p-1.5 text-ink-400 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900"
-            aria-label={`Edit ${category.name}`}
+            onClick={() => onAddChild(category.id)}
+            className={cn(
+              ICON_BUTTON_HIT,
+              "rounded-full text-ink-400 opacity-100 hover:text-ink-700 sm:opacity-0 sm:group-hover:opacity-100",
+            )}
+            aria-label={`Add sub-category under ${category.name}`}
+            title="Add sub-category"
           >
-            <Pencil size={15} />
+            <FolderPlus size={16} />
           </button>
-          <button
-            type="button"
-            onClick={() => onDelete(category)}
-            className="rounded-full p-1.5 text-ink-400 transition-colors duration-150 ease-smooth hover:bg-danger-50 hover:text-danger-600"
-            aria-label={`Delete ${category.name}`}
-          >
-            <Trash2 size={15} />
-          </button>
+
+          <Switch
+            checked={category.isActive}
+            onChange={(next) => onToggleActive(category, next)}
+            aria-label={category.isActive ? `Deactivate ${category.name}` : `Activate ${category.name}`}
+          />
+
+          {/* Wider gap than the outer row's default — ICON_BUTTON_HIT's -m-2 gives each button an
+              extra ~8px of invisible hit area per side, which a tighter gap here would let overlap
+              between these two adjacent buttons specifically. */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onEdit(category)}
+              className={cn(ICON_BUTTON_HIT, "rounded-full text-ink-400 hover:text-ink-900")}
+              aria-label={`Edit ${category.name}`}
+            >
+              <Pencil size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(category)}
+              className={cn(ICON_BUTTON_HIT, "rounded-full text-ink-400 hover:text-danger-600")}
+              aria-label={`Delete ${category.name}`}
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
         </div>
       </div>
 

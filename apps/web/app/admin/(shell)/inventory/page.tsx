@@ -16,6 +16,7 @@ import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import { AdjustStockModal, type AdjustStockPrefill } from "@/components/admin/adjust-stock-modal";
 import * as inventoryApi from "@/lib/api/inventory";
+import { cn } from "@/lib/utils";
 
 const REASONS = ["ORDER", "RESTOCK", "ADJUSTMENT", "RETURN"] as const;
 
@@ -125,7 +126,9 @@ export default function InventoryPage() {
         />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+      {/* sm and up: the table below. Below sm: a card list (below that) — same split as the other
+          admin list pages. */}
+      <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
         <HScrollShadow className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
@@ -185,6 +188,57 @@ export default function InventoryPage() {
             </tbody>
           </table>
         </HScrollShadow>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:hidden">
+        {isLoading &&
+          Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className={cn("animate-pulse border-t border-ink-100 p-3.5", i === 0 && "border-t-0")}>
+              <div className="h-3.5 w-2/3 rounded bg-ink-100" />
+              <div className="mt-3 h-3 w-1/3 rounded bg-ink-50" />
+            </div>
+          ))}
+        {!isLoading && data?.items.length === 0 && (
+          <p className="px-4 py-10 text-center text-ink-400">No stock movements yet.</p>
+        )}
+        {data?.items.map((m) => (
+          <div key={m.id} className="border-t border-ink-100 p-3.5 first:border-t-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                {m.variant ? (
+                  <>
+                    <p className="truncate font-medium text-ink-900">{m.variant.product.name}</p>
+                    <p className="truncate text-xs text-ink-400">
+                      {m.variant.sku} · {m.variant.size}/{m.variant.color}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-ink-400">—</p>
+                )}
+              </div>
+              <span className={cn("shrink-0 font-medium", m.change > 0 ? "text-success-600" : "text-danger-600")}>
+                {m.change > 0 ? `+${m.change}` : m.change}
+              </span>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className={REASON_BADGE[m.reason]}>{m.reason}</Badge>
+                <span>{new Date(m.createdAt).toLocaleString()}</span>
+              </div>
+              {m.orderId && (
+                <Link href={`/admin/orders/${m.orderId}`} className="text-brass-600 hover:underline">
+                  View order
+                </Link>
+              )}
+            </div>
+            {(m.admin?.name || m.note) && (
+              <div className="mt-2 text-xs text-ink-500">
+                {m.admin?.name ?? "System"}
+                {m.note ? ` — ${m.note}` : ""}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
       {data && data.total > data.pageSize && (

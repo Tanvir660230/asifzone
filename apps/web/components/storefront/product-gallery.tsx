@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, X, ZoomIn } from "lucide-react";
 import type { ProductImage } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn } from "@/lib/utils";
 
 interface ProductGalleryProps {
@@ -27,6 +28,12 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
   const didSwipe = useRef(false);
   const active = images[activeIndex];
   const hasMultiple = images.length > 1;
+  // The only overlay in the storefront that previously had no role="dialog", no Escape handling,
+  // and no focus management at all — every other modal/drawer in the app has this.
+  const lightboxRef = useFocusTrap<HTMLDivElement>({
+    active: lightboxOpen,
+    onEscape: () => setLightboxOpen(false),
+  });
 
   useEffect(() => {
     if (!focusImageId) return;
@@ -161,6 +168,11 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
         createPortal(
           <AnimatePresence>
             <motion.div
+              ref={lightboxRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${productName} — image ${activeIndex + 1} of ${images.length}`}
+              tabIndex={-1}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}

@@ -5,7 +5,7 @@ import DOMPurify from "isomorphic-dompurify";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { ProductShowcase } from "@/components/storefront/product-showcase";
 import { ProductCarousel } from "@/components/storefront/product-carousel";
-import { ProductCardSkeleton } from "@/components/storefront/skeletons/product-card-skeleton";
+import { ProductCarouselSkeleton } from "@/components/storefront/skeletons/product-carousel-skeleton";
 import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
 import { TrackProductView } from "@/components/storefront/track-product-view";
 import { ProductReviews } from "@/components/storefront/product-reviews";
@@ -67,20 +67,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 // Each rail fetches and streams independently via its own Suspense boundary, instead of the whole
 // page waiting on every recommendation endpoint (9 concurrent origin calls) before it can paint —
 // the above-the-fold product info is only blocked on the 3 fetches it actually needs.
-function ProductCarouselSkeleton() {
-  return (
-    <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mb-6 h-6 w-48 animate-pulse rounded bg-ink-100" />
-      <div className="flex gap-4 overflow-x-hidden">
-        {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="w-[45vw] shrink-0 sm:w-56">
-            <ProductCardSkeleton />
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 async function BundleCarousel({ productId }: { productId: string }) {
   const { result: bundleResult } = await getBundleForProduct(productId);
@@ -154,7 +140,7 @@ export default async function ProductPage({ params }: Props) {
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(buildProductJsonLd(product, siteUrl, settings.storeName)) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(buildProductJsonLd(product, siteUrl, settings)) }}
         />
         <Breadcrumb
           trail={[

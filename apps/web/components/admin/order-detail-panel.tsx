@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer, Truck, Trash2, RotateCcw, Package, Pencil, X } from "lucide-react";
@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { BackLink } from "@/components/ui/back-link";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -105,6 +106,22 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const { data: currentAdmin } = useCurrentAdmin();
   const isOwner = currentAdmin?.admin.role === "OWNER";
 
+  // This panel can now stay mounted while `id` changes underneath it (Drawer next/prev) instead of
+  // always remounting fresh — without this, an in-progress edit on one order (e.g. editingDetails
+  // with its draft) would visually leak onto whichever order is navigated to next.
+  useEffect(() => {
+    setEditingDetails(false);
+    setDetailsDraft(null);
+    setDetailsError(null);
+    setEditingPrice(false);
+    setPriceDraft(null);
+    setPriceError(null);
+    setStatusNote("");
+    setTracking(null);
+    setAdminNotes(null);
+    setHoldNote("");
+  }, [id]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["admin-order", id],
     queryFn: () => adminOrdersApi.getOrder(id),
@@ -115,6 +132,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
       setStatusNote("");
       toast.success("Order status updated");
     },
@@ -159,6 +177,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
       toast.success("Price adjusted");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to adjust price"),
@@ -266,6 +285,13 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     );
   }
 
+  // Picking a new district directly (not via the area search above) leaves the old area belonging
+  // to a different district — clear it so a stale district/area pair can't be saved.
+  function handleDistrictChange(value: string) {
+    if (!detailsDraft) return;
+    setDetailsDraft({ ...detailsDraft, shippingDistrict: value, shippingArea: "" });
+  }
+
   function saveDetails() {
     if (!detailsDraft) return;
     const shippingDivision = BD_DIVISION_BY_DISTRICT[detailsDraft.shippingDistrict];
@@ -288,6 +314,9 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   }
 
   const canAdjustPrice = !order.deletedAt && !TERMINAL_ORDER_STATUSES.includes(order.status) && !order.courierConsignmentId;
+  // Steadfast has no API to push a name/address correction to an already-booked parcel — matches
+  // the backend guard in updateOrderDetails.
+  const canEditDetails = !order.deletedAt && !order.courierConsignmentId;
 
   function startEditingPrice() {
     setPriceError(null);
@@ -319,6 +348,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
 
   return (
     <div className={outerClassName}>
+      {variant === "page" && <BackLink onClick={onClose} label="Back to Orders" />}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{order.orderNumber}</h1>
@@ -377,11 +407,6 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                 <Trash2 size={14} /> Delete
               </Button>
             ))}
-          {variant === "page" && (
-            <button onClick={onClose} className="text-sm text-ink-500 hover:text-ink-900">
-              Back to orders
-            </button>
-          )}
         </div>
       </div>
 
@@ -601,7 +626,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
         <Card>
           <CardHeader className="flex items-center justify-between">
             <CardTitle>Customer</CardTitle>
-            {!order.deletedAt &&
+            {(editingDetails || canEditDetails) &&
               (editingDetails ? (
                 <button onClick={cancelEditingDetails} className="text-ink-400 hover:text-ink-700" aria-label="Cancel editing">
                   <X size={16} />
@@ -654,7 +679,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                   <SearchableSelect
                     id="shippingDistrict"
                     value={detailsDraft.shippingDistrict}
-                    onChange={(v) => setDetailsDraft({ ...detailsDraft, shippingDistrict: v })}
+                    onChange={handleDistrictChange}
                     options={BD_ALL_DISTRICTS}
                     placeholder="Search district..."
                   />
@@ -711,7 +736,50 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
           <CardTitle>Items</CardTitle>
         </CardHeader>
         <CardContent>
-          <table className="w-full text-sm">
+          {/* Below sm: a 5-column table has no room on a phone — stack each item instead of
+              horizontal-scrolling a second region inside the (already scrolling) drawer/page. */}
+          <div className="space-y-3 sm:hidden">
+            {order.items.map((item) => (
+              <div key={item.id} className="flex items-start gap-2.5 border-t border-ink-100 pt-3 first:border-t-0 first:pt-0">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-ink-100 bg-ink-50">
+                  {item.live?.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={resolveImageUrl(item.live.imageUrl)} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <Package size={14} className="text-ink-300" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      {item.live?.productSlug ? (
+                        <Link
+                          href={`/product/${item.live.productSlug}`}
+                          target="_blank"
+                          className="font-medium text-ink-900 transition-colors hover:text-info-600 hover:underline"
+                        >
+                          {item.productNameSnapshot}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-ink-900">{item.productNameSnapshot}</span>
+                      )}
+                      <div className="text-xs text-ink-400">
+                        {item.sizeSnapshot}/{item.colorSnapshot} · SKU {item.skuSnapshot}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-sm font-medium tabular-nums text-ink-900">
+                      {formatPrice(Number(item.priceSnapshot) * item.quantity)}
+                    </div>
+                  </div>
+                  <div className="mt-0.5 text-xs text-ink-500">
+                    Qty {item.quantity} × {formatPrice(item.priceSnapshot)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <table className="hidden w-full text-sm sm:table">
             <thead className="text-left text-xs uppercase tracking-wide text-ink-500">
               <tr>
                 <th className="pb-2">Product</th>

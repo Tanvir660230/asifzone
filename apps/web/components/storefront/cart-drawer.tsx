@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
@@ -8,11 +8,9 @@ import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCartStore, useCartSubtotal } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
-
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function CartDrawer() {
   const { isOpen, close } = useCartDrawerStore();
@@ -20,48 +18,11 @@ export function CartDrawer() {
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
   const subtotal = useCartSubtotal();
-  const panelRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLElement | null>(null);
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: close });
 
   // Zustand's persisted cart hydrates after mount — avoid a flash of "empty cart" on first paint.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    triggerRef.current = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const focusable = panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) : [];
-    (focusable[0] ?? panel)?.focus();
-
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        close();
-        return;
-      }
-      if (e.key !== "Tab" || !panel) return;
-      const focusableItems = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (focusableItems.length === 0) return;
-      const first = focusableItems[0]!;
-      const last = focusableItems[focusableItems.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
-      triggerRef.current?.focus();
-    };
-  }, [isOpen, close]);
 
   if (!isOpen) return null;
 
