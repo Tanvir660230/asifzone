@@ -582,6 +582,7 @@ export default function CustomersPage() {
                         icon={UserX}
                         title="No customers match your filters"
                         description="Try adjusting or clearing your search and filters."
+                        testId="customers-empty-filtered"
                         action={
                           <button onClick={clearAllFilters} className="text-sm text-info-600 hover:underline">
                             Clear all filters
@@ -596,7 +597,11 @@ export default function CustomersPage() {
               )}
               {items.map((customer) => {
                 return (
-                  <tr key={customer.id} className="group border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
+                  <tr
+                    key={customer.id}
+                    data-testid="customer-row"
+                    className="group border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60"
+                  >
                     <td className="px-4 py-3.5">
                       <Checkbox
                         checked={selected.has(customer.id)}
@@ -648,6 +653,7 @@ export default function CustomersPage() {
               icon={UserX}
               title="No customers match your filters"
               description="Try adjusting or clearing your search and filters."
+              testId="customers-empty-filtered"
               action={
                 <button onClick={clearAllFilters} className="text-sm text-info-600 hover:underline">
                   Clear all filters
@@ -665,7 +671,7 @@ export default function CustomersPage() {
           </div>
         )}
         {items.map((customer) => (
-          <div key={customer.id} className="border-t border-ink-100 p-3.5 first:border-t-0">
+          <div key={customer.id} data-testid="customer-row" className="border-t border-ink-100 p-3.5 first:border-t-0">
             <div className="flex items-start gap-2.5">
               <Checkbox
                 checked={selected.has(customer.id)}
