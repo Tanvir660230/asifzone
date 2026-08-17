@@ -50,6 +50,17 @@ export interface Category {
   children?: Category[];
 }
 
+export interface CategoryStockStat {
+  totalProducts: number;
+  inStockProducts: number;
+  totalStock: number;
+}
+
+export interface CategoryStockOverview {
+  total: CategoryStockStat;
+  subcategories: (CategoryStockStat & { id: string; name: string; slug: string })[];
+}
+
 export interface AttributeValue {
   id: string;
   attributeId: string;

@@ -4,6 +4,7 @@ import type {
   UpdateCategoryInput,
   ReorderCategoriesInput,
   MoveCategoryInput,
+  CategoryStockStat,
 } from "@clothing-brand/shared";
 import { slugify } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
@@ -116,6 +117,89 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
     }
   }
   return ids;
+}
+
+/** Live (isActive, non-deleted) product/unit counts for one category scope — self plus every
+ * descendant, same rollup listStorefrontProducts uses so these numbers match what a shopper
+ * actually sees when browsing that category. */
+async function getCategoryStockStat(categoryId: string) {
+  const descendantIds = await getCategoryDescendantIds(categoryId);
+  const where = { categoryId: { in: descendantIds }, isActive: true, deletedAt: null };
+
+  const [totalProducts, inStockProducts, stockSum] = await Promise.all([
+    prisma.product.count({ where }),
+    prisma.product.count({ where: { ...where, variants: { some: { stock: { gt: 0 } } } } }),
+    prisma.productVariant.aggregate({ where: { product: where }, _sum: { stock: true } }),
+  ]);
+
+  return { totalProducts, inStockProducts, totalStock: stockSum._sum.stock ?? 0 };
+}
+
+/** Powers the category page's "N in stock" summary and its subcategory breakdown — the parent's
+ * own stat rolls up every descendant (matching what browsing the parent category shows), while
+ * each subcategory's stat rolls up only its own descendants. Not cached like getCategoryTree:
+ * stock changes with every order, and this is a single per-page-view read rather than a
+ * hit-every-request nav lookup, so staleness would cost more than it saves here. */
+export async function getCategoryStockOverview(categoryId: string) {
+  const children = await prisma.category.findMany({
+    where: { parentId: categoryId, isActive: true, deletedAt: null },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, slug: true },
+  });
+
+  const [total, subStats] = await Promise.all([
+    getCategoryStockStat(categoryId),
+    Promise.all(children.map((child) => getCategoryStockStat(child.id))),
+  ]);
+
+  return {
+    total,
+    subcategories: children.map((child, i) => ({ ...child, ...subStats[i]! })),
+  };
+}
+
+/** Own-category + rolled-up-to-every-ancestor stock stats for every category in one pass — powers
+ * the admin category tree's per-row stock badge. Unlike getCategoryStockStat (storefront, one
+ * category at a time via a cached descendant lookup), this computes every node's total in a single
+ * pass: one query for each product's variant stock, then a bottom-up accumulate over the parent
+ * chain so a parent's total already folds in every descendant's, matching the "self + descendants"
+ * semantics getCategoryStockOverview uses on the storefront. */
+export async function getCategoryStockMap(): Promise<Record<string, CategoryStockStat>> {
+  const [categories, products] = await Promise.all([
+    prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, parentId: true } }),
+    prisma.product.findMany({
+      where: { isActive: true, deletedAt: null },
+      select: { categoryId: true, variants: { select: { stock: true } } },
+    }),
+  ]);
+
+  const own = new Map<string, CategoryStockStat>();
+  for (const cat of categories) own.set(cat.id, { totalProducts: 0, inStockProducts: 0, totalStock: 0 });
+  for (const product of products) {
+    const stat = own.get(product.categoryId);
+    if (!stat) continue;
+    stat.totalProducts += 1;
+    const stock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+    stat.totalStock += stock;
+    if (product.variants.some((v) => v.stock > 0)) stat.inStockProducts += 1;
+  }
+
+  const parentOf = new Map(categories.map((c) => [c.id, c.parentId]));
+  const rollup: Record<string, CategoryStockStat> = {};
+  for (const cat of categories) rollup[cat.id] = { totalProducts: 0, inStockProducts: 0, totalStock: 0 };
+  for (const cat of categories) {
+    const stat = own.get(cat.id)!;
+    let current: string | null = cat.id;
+    while (current) {
+      const target = rollup[current]!;
+      target.totalProducts += stat.totalProducts;
+      target.inStockProducts += stat.inStockProducts;
+      target.totalStock += stat.totalStock;
+      current = parentOf.get(current) ?? null;
+    }
+  }
+
+  return rollup;
 }
 
 /** Other categories under the same parent (or other top-level categories, if this one has no parent) —

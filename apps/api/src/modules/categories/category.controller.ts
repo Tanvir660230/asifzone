@@ -11,6 +11,10 @@ export const tree = asyncHandler(async (_req: Request, res: Response) => {
   res.json({ tree: await categoryService.getCategoryTree() });
 });
 
+export const stockMap = asyncHandler(async (_req: Request, res: Response) => {
+  res.json({ stock: await categoryService.getCategoryStockMap() });
+});
+
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
   res.json({ category: await categoryService.getCategoryById(req.params.id!) });
 });
@@ -19,6 +23,11 @@ export const getBySlug = asyncHandler(async (req: Request, res: Response) => {
   const category = await categoryService.getCategoryBySlug(req.params.slug!);
   const breadcrumb = await categoryService.getCategoryBreadcrumb(category);
   res.json({ category, breadcrumb });
+});
+
+export const stockOverviewBySlug = asyncHandler(async (req: Request, res: Response) => {
+  const category = await categoryService.getCategoryBySlug(req.params.slug!);
+  res.json(await categoryService.getCategoryStockOverview(category.id));
 });
 
 export const uploadImage = asyncHandler(async (req: Request, res: Response) => {

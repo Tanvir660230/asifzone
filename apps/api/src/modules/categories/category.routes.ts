@@ -18,7 +18,9 @@ export const categoryRouter = Router();
 // deliberately public, active-only reads the storefront actually links to.
 categoryRouter.get("/", requireAdmin, validate(categoryListQuerySchema, "query"), categoryController.list);
 categoryRouter.get("/tree", categoryController.tree);
+categoryRouter.get("/stock-map", requireAdmin, categoryController.stockMap);
 categoryRouter.get("/slug/:slug", categoryController.getBySlug);
+categoryRouter.get("/slug/:slug/stock", categoryController.stockOverviewBySlug);
 categoryRouter.get("/:id", requireAdmin, categoryController.getOne);
 
 categoryRouter.post("/upload-image", requireAdmin, imageUpload.single("image"), categoryController.uploadImage);

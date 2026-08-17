@@ -23,6 +23,11 @@ export default function CategoriesPage() {
     queryKey: CATEGORIES_KEY,
     queryFn: () => categoriesApi.listCategories({ trashed: tab === "trash" }),
   });
+  const { data: stockData } = useQuery({
+    queryKey: ["categories", "stock-map"],
+    queryFn: categoriesApi.getCategoryStockMap,
+    enabled: tab === "active",
+  });
   const [editing, setEditing] = useState<Category | "new" | null>(null);
   const [newParentId, setNewParentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -257,6 +262,7 @@ export default function CategoriesPage() {
       ) : (
         <CategoryTree
           categories={categories}
+          stock={stockData?.stock}
           onToggleActive={(category, next) => toggleActiveMutation.mutate({ id: category.id, isActive: next })}
           onEdit={setEditing}
           onDelete={handleDelete}

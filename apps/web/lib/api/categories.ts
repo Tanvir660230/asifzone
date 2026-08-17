@@ -1,5 +1,6 @@
 import type {
   Category,
+  CategoryStockStat,
   CreateCategoryInput,
   UpdateCategoryInput,
   ReorderCategoriesInput,
@@ -12,6 +13,13 @@ export function listCategories(params: { trashed?: boolean } = {}) {
   if (params.trashed) query.set("trashed", "true");
   const qs = query.toString();
   return apiFetch<{ categories: Category[] }>(`/api/categories${qs ? `?${qs}` : ""}`);
+}
+
+/** Self + descendant stock rollup for every category, keyed by id — powers the admin category
+ * tree's stock badges. Kept as its own call instead of folding into listCategories() since most
+ * listCategories callers (product/coupon/bundle pickers) are plain dropdowns that don't need it. */
+export function getCategoryStockMap() {
+  return apiFetch<{ stock: Record<string, CategoryStockStat> }>("/api/categories/stock-map");
 }
 
 export function createCategory(input: CreateCategoryInput) {

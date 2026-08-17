@@ -2,6 +2,7 @@ import type {
   Banner,
   BundleForProduct,
   Category,
+  CategoryStockOverview,
   FlashSale,
   HomepageSection,
   PaymentMethodOption,
@@ -34,7 +35,11 @@ async function storefrontFetch<T>(path: string, revalidate: number | false = REV
 async function safe<T>(fetcher: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await fetcher();
-  } catch {
+  } catch (err) {
+    // Silent otherwise — a real runtime failure (API blip, timeout) would render generic fallback
+    // branding/nav with no trace anywhere that it happened, indistinguishable from the expected
+    // "API container isn't up yet during Docker build" case this fallback exists for.
+    console.error(`[storefront] ${fetcher.name || "fetch"} failed, using fallback:`, err);
     return fallback;
   }
 }
@@ -55,6 +60,12 @@ export function getCategoryBySlug(slug: string) {
   return storefrontFetch<{ category: Category; breadcrumb: Category[] }>(
     `/api/categories/slug/${encodeURIComponent(slug)}`,
   );
+}
+
+/** Live stock counts for a category page: the category's own rollup plus a per-subcategory
+ * breakdown. Short revalidate window (same as facets) since stock moves with every order. */
+export function getCategoryStockOverview(slug: string) {
+  return storefrontFetch<CategoryStockOverview>(`/api/categories/slug/${encodeURIComponent(slug)}/stock`, 60);
 }
 
 export function getProductBySlug(slug: string) {

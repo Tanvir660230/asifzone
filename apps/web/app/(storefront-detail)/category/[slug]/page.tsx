@@ -7,7 +7,8 @@ import { SortSelect } from "@/components/storefront/sort-select";
 import { Pagination } from "@/components/storefront/pagination";
 import { FacetFilters } from "@/components/storefront/facet-filters";
 import { ComingSoon } from "@/components/storefront/coming-soon";
-import { getCategoryBySlug, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
+import { CategoryStockPanel } from "@/components/storefront/category-stock-panel";
+import { getCategoryBySlug, getCategoryStockOverview, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -66,9 +67,10 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const minPrice = resolvedSearchParams.minPrice ? Number(resolvedSearchParams.minPrice) : undefined;
   const maxPrice = resolvedSearchParams.maxPrice ? Number(resolvedSearchParams.maxPrice) : undefined;
 
-  const [result, facets] = await Promise.all([
+  const [result, facets, stockOverview] = await Promise.all([
     listStorefrontProducts({ category: slug, sort, page, pageSize: PAGE_SIZE, sizes, colors, minPrice, maxPrice }),
     getStorefrontFacets({ category: slug }),
+    getCategoryStockOverview(slug),
   ]);
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
@@ -90,7 +92,10 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         <ComingSoon categoryName={category.name} />
       ) : (
         <div className="flex flex-col gap-10 lg:flex-row">
-          <FacetFilters facets={facets} />
+          <div className="w-full lg:w-56 lg:shrink-0">
+            <CategoryStockPanel overview={stockOverview} />
+            <FacetFilters facets={facets} />
+          </div>
           <div className="min-w-0 flex-1">
             {result.items.length > 0 && (
               <script
@@ -98,7 +103,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(buildItemListJsonLd(result.items, getSiteUrl())) }}
               />
             )}
-            <ProductGrid products={result.items} />
+            <ProductGrid products={result.items} priority />
             <Pagination page={page} totalPages={totalPages} />
           </div>
         </div>

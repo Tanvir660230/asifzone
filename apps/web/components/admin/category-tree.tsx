@@ -21,8 +21,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, GripVertical, Pencil, Trash2, FolderPlus, Star, ImageIcon } from "lucide-react";
-import type { Category } from "@clothing-brand/shared";
+import { ChevronRight, GripVertical, Pencil, Trash2, FolderPlus, Star, ImageIcon, Package } from "lucide-react";
+import type { Category, CategoryStockStat } from "@clothing-brand/shared";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
@@ -44,6 +44,9 @@ function groupByParent(categories: Category[]): ByParent {
 
 interface CategoryTreeProps {
   categories: Category[];
+  /** id -> self+descendant stock rollup, from GET /api/categories/stock-map. Undefined while
+   * loading — rows just render without the badge rather than blocking on it. */
+  stock?: Record<string, CategoryStockStat>;
   onToggleActive: (category: Category, next: boolean) => void;
   onEdit: (category: Category) => void;
   onDelete: (category: Category) => void;
@@ -57,10 +60,8 @@ interface CategoryTreeProps {
  * "child zone" (its own droppable region, shown only while dragging, highlighted on hover)
  * moves it to become that category's child instead — this is how a category is reparented, e.g.
  * moving "Cap" out of "Accessories" and into "Men" by dropping it on Men's child zone. */
-export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onAddChild, onReorder, onMove }: CategoryTreeProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(categories.filter((c) => !c.parentId).map((c) => c.id)),
-  );
+export function CategoryTree({ categories, stock, onToggleActive, onEdit, onDelete, onAddChild, onReorder, onMove }: CategoryTreeProps) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const byParent = groupByParent(categories);
   const topLevel = byParent.get(null) ?? [];
@@ -134,6 +135,7 @@ export function CategoryTree({ categories, onToggleActive, onEdit, onDelete, onA
               category={cat}
               depth={0}
               byParent={byParent}
+              stock={stock}
               expanded={expanded}
               activeId={activeId}
               onToggleExpanded={toggleExpanded}
@@ -177,6 +179,7 @@ interface CategoryNodeProps {
   category: Category;
   depth: number;
   byParent: ByParent;
+  stock?: Record<string, CategoryStockStat>;
   expanded: Set<string>;
   activeId: string | null;
   onToggleExpanded: (id: string) => void;
@@ -190,6 +193,7 @@ function CategoryNode({
   category,
   depth,
   byParent,
+  stock,
   expanded,
   activeId,
   onToggleExpanded,
@@ -277,6 +281,19 @@ function CategoryNode({
                 <Star size={10} className="fill-current" /> Featured
               </Badge>
             )}
+            {stock?.[category.id] && (
+              <Badge
+                variant={stock[category.id]!.totalStock > 0 ? "success" : "neutral"}
+                className={cn(
+                  "gap-1 border-0 tabular-nums",
+                  stock[category.id]!.totalStock === 0 && "bg-ink-50 text-ink-300",
+                )}
+                title={`${stock[category.id]!.inStockProducts} of ${stock[category.id]!.totalProducts} products in stock, including subcategories`}
+              >
+                <Package size={10} />
+                {stock[category.id]!.totalStock} in stock
+              </Badge>
+            )}
           </div>
           <p className="truncate text-xs text-ink-400">/{category.slug}</p>
         </div>
@@ -347,6 +364,7 @@ function CategoryNode({
                     category={child}
                     depth={depth + 1}
                     byParent={byParent}
+                    stock={stock}
                     expanded={expanded}
                     activeId={activeId}
                     onToggleExpanded={onToggleExpanded}
