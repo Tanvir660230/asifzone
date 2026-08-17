@@ -12,7 +12,15 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const openSearch = useSearchOverlayStore((s) => s.open);
-  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: () => setOpen(false) });
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: close });
+
+  // Closing the drawer (X button, Escape, or navigating away) leaves `open` false but the
+  // component itself stays mounted, so without this the next open would still show whichever
+  // subcategory list was last expanded instead of starting fresh.
+  function close() {
+    setOpen(false);
+    setExpandedId(null);
+  }
 
   return (
     <div className="lg:hidden">
@@ -40,7 +48,7 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
             <div className="glass flex h-14 items-center justify-between border-b border-ink-100/70 px-4">
               <span className="font-display text-lg">Menu</span>
               <button
-                onClick={() => setOpen(false)}
+                onClick={close}
                 aria-label="Close menu"
                 className="rounded-full p-1 transition-colors duration-150 ease-smooth hover:bg-ink-100"
               >
@@ -51,7 +59,7 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
               <div className="mb-2 flex gap-4 border-b border-ink-100 pb-4">
                 <button
                   onClick={() => {
-                    setOpen(false);
+                    close();
                     openSearch();
                   }}
                   className="flex items-center gap-2 text-sm text-ink-700"
@@ -60,14 +68,14 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
                 </button>
                 <Link
                   href="/account"
-                  onClick={() => setOpen(false)}
+                  onClick={close}
                   className="flex items-center gap-2 text-sm text-ink-700"
                 >
                   <User size={16} /> Account
                 </Link>
                 <Link
                   href="/track-order"
-                  onClick={() => setOpen(false)}
+                  onClick={close}
                   className="flex items-center gap-2 text-sm text-ink-700"
                 >
                   <PackageSearch size={16} /> Track Order
@@ -78,7 +86,7 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
                   <div className="flex items-center justify-between py-3">
                     <Link
                       href={`/category/${cat.slug}`}
-                      onClick={() => setOpen(false)}
+                      onClick={close}
                       className="text-sm uppercase tracking-wide"
                     >
                       {cat.name}
@@ -101,7 +109,7 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
                         <li key={child.id}>
                           <Link
                             href={`/category/${child.slug}`}
-                            onClick={() => setOpen(false)}
+                            onClick={close}
                             className="block py-2 text-sm text-ink-600"
                           >
                             {child.name}

@@ -23,6 +23,9 @@ const nextConfig = {
       { protocol: "http", hostname: "localhost" },
       { protocol: apiHost.protocol.replace(":", ""), hostname: apiHost.hostname },
     ],
+    // AVIF first — smaller than WebP for most product photography at equivalent quality; Next
+    // falls back to WebP (then the original format) for browsers that don't support it.
+    formats: ["image/avif", "image/webp"],
   },
 };
 

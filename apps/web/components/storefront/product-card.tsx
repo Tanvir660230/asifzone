@@ -15,7 +15,15 @@ import { WishlistButton } from "./wishlist-button";
 import { PromoBadge, getProductBadge } from "./promo-badge";
 import { StarRating } from "./star-rating";
 
-export function ProductCard({ product }: { product: Product }) {
+interface ProductCardProps {
+  product: Product;
+  /** Set for the first row of an above-the-fold grid/carousel (e.g. a category page's opening
+   * row) so this card's primary image skips lazy-loading — it's frequently the LCP element, and
+   * without this it's treated like every other (likely below-the-fold) product image. */
+  priority?: boolean;
+}
+
+export function ProductCard({ product, priority }: ProductCardProps) {
   const [primaryImage, secondaryImage] = product.images;
   const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
   const flash = product.activeFlashSale;
@@ -74,6 +82,7 @@ export function ProductCard({ product }: { product: Product }) {
                 alt={primaryImage.altText ?? product.name}
                 fill
                 sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                priority={priority}
                 className={cn(
                   "object-cover transition-all duration-500 ease-smooth",
                   secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-105",
