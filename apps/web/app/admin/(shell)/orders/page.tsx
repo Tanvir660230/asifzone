@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Search,
   Trash2,
@@ -24,6 +25,10 @@ import {
   ChevronDown,
   SearchX,
   Package,
+  MoreHorizontal,
+  Wallet,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import type {
   OrderStatus,
@@ -42,6 +47,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { Drawer } from "@/components/ui/drawer";
+import { Popover } from "@/components/ui/popover";
+import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
@@ -50,14 +57,18 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import { EmptyState } from "@/components/admin/empty-state";
+import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
+import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import type { BulkCourierBookResult, AdminOrderListParams } from "@/lib/api/admin-orders";
 import {
   formatPrice,
+  initials,
   orderStatusBadgeClass,
+  orderStatusLabel,
   courierStatusBadgeClass,
   courierStatusLabel,
   courierStatusDescription,
@@ -117,11 +128,6 @@ function quickFilterParams(filter: QuickFilter, status: OrderStatus | "") {
     default:
       return { status: status || undefined };
   }
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "")).toUpperCase();
 }
 
 type SortColumn = NonNullable<AdminOrderListParams["sortBy"]>;
@@ -204,6 +210,94 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
   );
 }
 
+/** Compact status pill that opens a small popover to change status — replaces a raw <select>
+ * dropdown with something that can show an icon + reads consistently with the detail panel's
+ * status picker. Shared render helper, used by both the desktop table cell and the mobile card. */
+function StatusPickerCell({
+  order,
+  disabled,
+  onSelect,
+}: {
+  order: AdminOrderListItem;
+  disabled: boolean;
+  onSelect: (next: OrderStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  if (order.deletedAt) {
+    return (
+      <Badge className={orderStatusBadgeClass(order.status)}>
+        <span className="flex items-center gap-1">
+          <OrderStatusIcon status={order.status} size={11} />
+          {orderStatusLabel(order.status)}
+        </span>
+      </Badge>
+    );
+  }
+
+  return (
+    <div className="relative inline-block">
+      <button
+        ref={triggerRef}
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-opacity duration-150 ease-smooth hover:opacity-80 disabled:pointer-events-none disabled:opacity-50",
+          orderStatusBadgeClass(order.status),
+        )}
+        aria-label={`Change status for ${order.orderNumber}`}
+      >
+        <OrderStatusIcon status={order.status} size={11} />
+        {orderStatusLabel(order.status)}
+        <ChevronDown size={11} className="opacity-60" />
+      </button>
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={triggerRef} align="start" className="w-56 p-1.5">
+        {STATUS_OPTIONS.map((s) => (
+          <button
+            key={s}
+            disabled={s === order.status}
+            onClick={() => {
+              onSelect(s);
+              setOpen(false);
+            }}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors duration-150 ease-smooth disabled:cursor-default",
+              s === order.status ? "bg-ink-50 font-medium text-ink-900" : "text-ink-600 hover:bg-ink-50",
+            )}
+          >
+            <OrderStatusIcon status={s} size={13} className="text-ink-400" />
+            {orderStatusLabel(s)}
+          </button>
+        ))}
+      </Popover>
+    </div>
+  );
+}
+
+/** Single "⋯" trigger + context menu, replacing a row of separate icon buttons. Each row mounts
+ * its own instance (own open state/ref) rather than sharing one — simplest correct way to have
+ * many independent anchors without a shared-ref juggling act. */
+function RowActionsMenu({ items }: { items: DropdownMenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+        aria-label="Order actions"
+        title="Order actions"
+      >
+        <MoreHorizontal size={16} />
+      </button>
+      <DropdownMenu open={open} onClose={() => setOpen(false)} anchorRef={triggerRef} items={items} align="end" />
+    </>
+  );
+}
+
 /** Loading placeholder for the mobile order list — TableSkeleton renders <tr>/<td> and can't back
  * a div-based list, so this is a small standalone equivalent. Border-t/first:border-t-0 (not its
  * own rounded/shadowed box) to match the real rows' styling inside their shared container. */
@@ -227,6 +321,9 @@ export default function OrdersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkStatusValue, setBulkStatusValue] = useState<OrderStatus | "">("");
   const [drawerOrderId, setDrawerOrderId] = useState<string | null>(null);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const moreFiltersButtonRef = useRef<HTMLButtonElement>(null);
 
   // Advanced filters — combinable with each other and with the quick filters/status dropdown above,
   // so an admin can e.g. isolate "not yet booked, Dhaka division, placed this week" for a courier run.
@@ -260,6 +357,22 @@ export default function OrdersPage() {
   const isOwner = currentAdmin?.admin.role === "OWNER";
   const debouncedSearch = useDebouncedValue(search, 350);
 
+  // "/" or ⌘K focuses search from anywhere on the page — skipped while already typing somewhere
+  // else (a filter input, a note field) so it doesn't hijack a literal "/" character being typed.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable;
+      if ((e.key === "/" && !isTyping) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const filterParams = {
     ...quickFilterParams(quickFilter, status),
     courierBooked: courierBooked || undefined,
@@ -289,10 +402,43 @@ export default function OrdersPage() {
     setPage(1);
   }
 
+  // Always-visible active-filter chips — every filter that can be applied above maps to exactly
+  // one removable chip here, so the current filter state never hides behind a popover or a count.
+  const filterChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+    if (debouncedSearch) chips.push({ key: "search", label: `"${debouncedSearch}"`, onRemove: () => setSearch("") });
+    if (quickFilter) {
+      chips.push({
+        key: "quick",
+        label: QUICK_FILTERS.find((f) => f.id === quickFilter)?.label ?? "",
+        onRemove: () => setQuickFilter(null),
+      });
+    }
+    if (status) chips.push({ key: "status", label: `Status: ${status}`, onRemove: () => setStatus("") });
+    if (courierBooked) {
+      chips.push({
+        key: "courierBooked",
+        label: courierBooked === "true" ? "Courier: booked" : "Courier: not booked",
+        onRemove: () => setCourierBooked(""),
+      });
+    }
+    if (courierStatusFilter) {
+      chips.push({
+        key: "courierStatus",
+        label: `Delivery: ${courierStatusLabel(courierStatusFilter)}`,
+        onRemove: () => setCourierStatusFilter(""),
+      });
+    }
+    if (division) chips.push({ key: "division", label: `Division: ${division}`, onRemove: () => { setDivision(""); setDistrict(""); } });
+    if (district) chips.push({ key: "district", label: `District: ${district}`, onRemove: () => setDistrict("") });
+    if (dateFrom) chips.push({ key: "dateFrom", label: `From ${dateFrom}`, onRemove: () => setDateFrom("") });
+    if (dateTo) chips.push({ key: "dateTo", label: `To ${dateTo}`, onRemove: () => setDateTo("") });
+    return chips;
+  }, [debouncedSearch, quickFilter, status, courierBooked, courierStatusFilter, division, district, dateFrom, dateTo]);
+
   // The row set on screen changes under the selection whenever the query params change — without
   // this, the bulk-action bar can keep showing "N selected" for rows that have scrolled out of view
   // (a different page/filter), and bulk actions would silently apply to that stale, invisible set.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => setSelected(new Set()), [
     page,
     pageSize,
@@ -381,6 +527,15 @@ export default function OrdersPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to update order status"),
   });
 
+  const bookCourierMutation = useMutation({
+    mutationFn: adminOrdersApi.bookCourier,
+    onSuccess: () => {
+      invalidate();
+      toast.success("Booked with Steadfast");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to book with Steadfast"),
+  });
+
   const bulkBookCourierMutation = useMutation({
     mutationFn: adminOrdersApi.bulkBookCourier,
     onSuccess: (result) => {
@@ -447,6 +602,15 @@ export default function OrdersPage() {
     statusMutation.mutate({ id, status: to });
   }
 
+  async function handleBookCourier(order: AdminOrderListItem) {
+    const codAmount = order.paymentMethod === "COD" ? Number(order.total) : 0;
+    const ok = await confirm(
+      `Book delivery with Steadfast for ${order.customerName} (${order.customerPhone})? COD to collect: ${formatPrice(codAmount)}.`,
+      "Book",
+    );
+    if (ok) bookCourierMutation.mutate(order.id);
+  }
+
   async function handleBulkStatus() {
     const ids = Array.from(selected);
     if (!bulkStatusValue) return;
@@ -471,8 +635,8 @@ export default function OrdersPage() {
     bulkBookCourierMutation.mutate(ids);
   }
 
-  function handlePrintLabels() {
-    sessionStorage.setItem(adminOrdersApi.PRINT_LABEL_ORDER_IDS_KEY, JSON.stringify(Array.from(selected)));
+  function handlePrintLabels(ids?: string[]) {
+    sessionStorage.setItem(adminOrdersApi.PRINT_LABEL_ORDER_IDS_KEY, JSON.stringify(ids ?? Array.from(selected)));
     router.push("/admin/orders/print-labels");
   }
 
@@ -565,29 +729,12 @@ export default function OrdersPage() {
   // (e.g. a new bulk action, a new status color) can't update one view and silently miss the other
   // — only the surrounding layout differs between the two.
   function renderStatusCell(order: AdminOrderListItem) {
-    if (order.deletedAt) {
-      return <Badge className={orderStatusBadgeClass(order.status)}>{order.status}</Badge>;
-    }
     return (
-      <div className="relative inline-block">
-        <Select
-          value={order.status}
-          disabled={statusMutation.isPending}
-          onChange={(e) => handleStatusChange(order.orderNumber, order.id, order.status, e.target.value as OrderStatus)}
-          className={cn(
-            "h-auto w-auto appearance-none rounded-full border-0 py-1 pl-2.5 pr-6 text-xs font-semibold",
-            orderStatusBadgeClass(order.status),
-          )}
-          aria-label={`Change status for ${order.orderNumber}`}
-        >
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </Select>
-        <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 opacity-60" />
-      </div>
+      <StatusPickerCell
+        order={order}
+        disabled={statusMutation.isPending}
+        onSelect={(next) => handleStatusChange(order.orderNumber, order.id, order.status, next)}
+      />
     );
   }
 
@@ -624,49 +771,31 @@ export default function OrdersPage() {
     );
   }
 
-  function renderRowActions(order: AdminOrderListItem) {
-    return (
-      <>
-        <button
-          onClick={() => setDrawerOrderId(order.id)}
-          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-          aria-label="View order"
-          title="View order"
-        >
-          <Eye size={16} />
-        </button>
-        {isOwner &&
-          (order.deletedAt ? (
-            <>
-              <button
-                onClick={() => handleRestore(order.orderNumber, order.id)}
-                className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
-                aria-label="Restore"
-                title="Restore"
-              >
-                <RotateCcw size={16} />
-              </button>
-              <button
-                onClick={() => handlePermanentDelete(order.orderNumber, order.id)}
-                className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
-                aria-label="Delete permanently"
-                title="Delete permanently"
-              >
-                <Trash2 size={16} />
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => handleDelete(order.orderNumber, order.id)}
-              className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
-              aria-label="Delete"
-              title="Move to Trash"
-            >
-              <Trash2 size={16} />
-            </button>
-          ))}
-      </>
-    );
+  function rowMenuItems(order: AdminOrderListItem): DropdownMenuItem[] {
+    if (order.deletedAt) {
+      return isOwner
+        ? [
+            { label: "View order", icon: Eye, onClick: () => setDrawerOrderId(order.id) },
+            { label: "Restore", icon: RotateCcw, onClick: () => handleRestore(order.orderNumber, order.id) },
+            {
+              label: "Delete permanently",
+              icon: Trash2,
+              destructive: true,
+              onClick: () => handlePermanentDelete(order.orderNumber, order.id),
+            },
+          ]
+        : [{ label: "View order", icon: Eye, onClick: () => setDrawerOrderId(order.id) }];
+    }
+    return [
+      { label: "View order", icon: Eye, onClick: () => setDrawerOrderId(order.id) },
+      { label: "Print label", icon: Printer, onClick: () => handlePrintLabels([order.id]) },
+      ...(!order.courierConsignmentId
+        ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
+        : []),
+      ...(isOwner
+        ? [{ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => handleDelete(order.orderNumber, order.id) }]
+        : []),
+    ];
   }
 
   function renderEmptyState() {
@@ -724,6 +853,21 @@ export default function OrdersPage() {
         }
       />
 
+      {tab === "active" && (
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {stats ? (
+            <>
+              <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={18} />} />
+              <StatTile label="Today's revenue" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={18} />} tone="warning" />
+              <StatTile label="Needs attention" value={String(stats.needsAttention)} icon={<AlertTriangle size={18} />} tone="warning" />
+            </>
+          ) : (
+            Array.from({ length: 4 }).map((_, i) => <StatTileSkeleton key={i} />)
+          )}
+        </div>
+      )}
+
       {/* Sticky control zone: anchored just below the app shell's h-14 top bar, so filters and bulk
           actions stay reachable while scrolling. The table below scrolls with the page (no bounded
           inner scroll box) — nesting a second vertical-scroll region inside an already-scrolling
@@ -760,7 +904,9 @@ export default function OrdersPage() {
             <div className="border-b border-ink-100 px-4 py-2.5">
               {/* A single horizontally-scrollable row, not flex-wrap — 14 pills (All + 9 statuses + 4
                   quick filters) wrapping wastes several rows of height on any viewport, which buried
-                  the actual order list below the fold. Same scroll-affordance component as the table. */}
+                  the actual order list below the fold. Same scroll-affordance component as the table.
+                  A divider splits "in flight" statuses from terminal/outcome ones so the row still
+                  reads as two groups even while scrolling as one strip. */}
               <HScrollShadow className="overflow-x-auto">
                 <div className="flex flex-nowrap items-center gap-1.5">
                   <span className="mr-1 shrink-0 text-xs font-medium uppercase tracking-wide text-ink-400">Status</span>
@@ -793,26 +939,28 @@ export default function OrdersPage() {
                     const count = stats?.statusCounts[s];
                     const active = status === s;
                     return (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          setStatus((prev) => (prev === s ? "" : s));
-                          setQuickFilter(null);
-                          setPage(1);
-                        }}
-                        className={cn(
-                          "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth lg:px-2.5 lg:py-1",
-                          orderStatusBadgeClass(s),
-                          active ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-60 hover:opacity-100",
-                        )}
-                      >
-                        {s}
-                        {typeof count === "number" && (
-                          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-900/10 px-1 text-[10px] font-semibold tabular-nums">
-                            {count}
-                          </span>
-                        )}
-                      </button>
+                      <span key={s} className="flex shrink-0 items-center gap-1.5">
+                        {s === "DELIVERED" && <span className="mx-0.5 h-4 w-px shrink-0 bg-ink-200" aria-hidden />}
+                        <button
+                          onClick={() => {
+                            setStatus((prev) => (prev === s ? "" : s));
+                            setQuickFilter(null);
+                            setPage(1);
+                          }}
+                          className={cn(
+                            "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth lg:px-2.5 lg:py-1",
+                            orderStatusBadgeClass(s),
+                            active ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-60 hover:opacity-100",
+                          )}
+                        >
+                          {s}
+                          {typeof count === "number" && (
+                            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ink-900/10 px-1 text-[10px] font-semibold tabular-nums">
+                              {count}
+                            </span>
+                          )}
+                        </button>
+                      </span>
                     );
                   })}
                   <span className="mx-1 h-4 w-px shrink-0 bg-ink-200" aria-hidden />
@@ -840,6 +988,7 @@ export default function OrdersPage() {
               <div className="relative w-full sm:w-64 lg:w-56">
                 <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
                 <Input
+                  ref={searchInputRef}
                   placeholder="Search order #, name, phone…"
                   value={search}
                   onChange={(e) => {
@@ -848,7 +997,7 @@ export default function OrdersPage() {
                   }}
                   className="pl-9 pr-8"
                 />
-                {search && (
+                {search ? (
                   <button
                     onClick={() => {
                       setSearch("");
@@ -859,9 +1008,14 @@ export default function OrdersPage() {
                   >
                     <XCircle size={14} />
                   </button>
+                ) : (
+                  <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-ink-200 px-1 py-0.5 font-sans text-[10px] font-medium text-ink-300 sm:inline-block">
+                    /
+                  </kbd>
                 )}
               </div>
               <button
+                ref={moreFiltersButtonRef}
                 onClick={() => setShowMoreFilters((v) => !v)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth lg:py-1.5",
@@ -878,6 +1032,118 @@ export default function OrdersPage() {
                   </span>
                 )}
               </button>
+              <Popover
+                open={showMoreFilters}
+                onClose={() => setShowMoreFilters(false)}
+                anchorRef={moreFiltersButtonRef}
+                align="start"
+                className="w-[min(92vw,640px)] p-4"
+              >
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-500">Courier</label>
+                    <Select
+                      value={courierBooked}
+                      onChange={(e) => {
+                        setCourierBooked(e.target.value as "" | "true" | "false");
+                        setPage(1);
+                      }}
+                    >
+                      <option value="">Any</option>
+                      <option value="false">Not booked</option>
+                      <option value="true">Booked</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-500">Delivery status</label>
+                    <Select
+                      value={courierStatusFilter}
+                      onChange={(e) => {
+                        setCourierStatusFilter(e.target.value);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="">Any</option>
+                      {COURIER_DELIVERY_STATUSES.map((s) => (
+                        <option key={s} value={s}>
+                          {courierStatusLabel(s)}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-500">Division</label>
+                    <Select
+                      value={division}
+                      onChange={(e) => {
+                        setDivision(e.target.value as BdDivision | "");
+                        setDistrict("");
+                        setPage(1);
+                      }}
+                    >
+                      <option value="">Any</option>
+                      {BD_DIVISIONS.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-500">District</label>
+                    <SearchableSelect
+                      value={district}
+                      onChange={(v) => {
+                        setDistrict(v);
+                        setPage(1);
+                      }}
+                      options={division ? BD_DISTRICTS_BY_DIVISION[division] : ALL_DISTRICTS}
+                      placeholder="Any district"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-500">Placed from</label>
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => {
+                        setDateFrom(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-ink-500">Placed to</label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => {
+                        setDateTo(e.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                </div>
+                {activeMoreFiltersCount > 0 && (
+                  <div className="mt-3 flex justify-end border-t border-ink-100 pt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCourierBooked("");
+                        setCourierStatusFilter("");
+                        setDivision("");
+                        setDistrict("");
+                        setDateFrom("");
+                        setDateTo("");
+                        setPage(1);
+                      }}
+                    >
+                      <XCircle size={14} /> Clear filters
+                    </Button>
+                  </div>
+                )}
+              </Popover>
             </div>
             <PageSizeSelect
               value={pageSize}
@@ -888,177 +1154,28 @@ export default function OrdersPage() {
             />
           </div>
 
-          {showMoreFilters && (
-          <div className="grid grid-cols-1 gap-3 border-t border-ink-100 p-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">Courier</label>
-              <Select
-                value={courierBooked}
-                onChange={(e) => {
-                  setCourierBooked(e.target.value as "" | "true" | "false");
-                  setPage(1);
-                }}
-              >
-                <option value="">Any</option>
-                <option value="false">Not booked</option>
-                <option value="true">Booked</option>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">Delivery status</label>
-              <Select
-                value={courierStatusFilter}
-                onChange={(e) => {
-                  setCourierStatusFilter(e.target.value);
-                  setPage(1);
-                }}
-              >
-                <option value="">Any</option>
-                {COURIER_DELIVERY_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {courierStatusLabel(s)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">Division</label>
-              <Select
-                value={division}
-                onChange={(e) => {
-                  setDivision(e.target.value as BdDivision | "");
-                  setDistrict("");
-                  setPage(1);
-                }}
-              >
-                <option value="">Any</option>
-                {BD_DIVISIONS.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">District</label>
-              <SearchableSelect
-                value={district}
-                onChange={(v) => {
-                  setDistrict(v);
-                  setPage(1);
-                }}
-                options={division ? BD_DISTRICTS_BY_DIVISION[division] : ALL_DISTRICTS}
-                placeholder="Any district"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">Placed from</label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-ink-500">Placed to</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-            {activeMoreFiltersCount > 0 && (
-              <div className="flex items-end">
-                <Button
-                  variant="outline"
-                  size="sm"
+          {filterChips.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 px-4 py-2.5">
+              <span className="text-xs font-medium text-ink-400">Filters:</span>
+              {filterChips.map((chip) => (
+                <button
+                  key={chip.key}
                   onClick={() => {
-                    setCourierBooked("");
-                    setCourierStatusFilter("");
-                    setDivision("");
-                    setDistrict("");
-                    setDateFrom("");
-                    setDateTo("");
+                    chip.onRemove();
                     setPage(1);
                   }}
+                  className="flex items-center gap-1 rounded-full bg-ink-100 py-1 pl-2.5 pr-1.5 text-xs font-medium text-ink-700 transition-colors duration-150 ease-smooth hover:bg-ink-200"
                 >
-                  <XCircle size={14} /> Clear filters
-                </Button>
-              </div>
-            )}
-          </div>
+                  {chip.label}
+                  <XCircle size={12} className="text-ink-400" />
+                </button>
+              ))}
+              <button onClick={clearAllFilters} className="text-xs font-medium text-ink-400 underline-offset-2 hover:text-ink-700 hover:underline">
+                Clear all
+              </button>
+            </div>
           )}
         </div>
-
-        {selected.size > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink-200 bg-cream-50 px-4 py-3 text-sm shadow-float animate-fade-in">
-            <span className="flex items-center gap-1.5 font-medium text-ink-800">
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-900 px-1.5 text-xs font-semibold text-cream-50">
-                {selected.size}
-              </span>
-              selected
-            </span>
-            {tab === "active" ? (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <Select
-                    className="h-8 w-40"
-                    value={bulkStatusValue}
-                    onChange={(e) => setBulkStatusValue(e.target.value as OrderStatus | "")}
-                  >
-                    <option value="">Set status…</option>
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button variant="outline" size="sm" disabled={!bulkStatusValue} onClick={handleBulkStatus}>
-                    Apply
-                  </Button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={bulkBookCourierMutation.isPending}
-                  onClick={handleBulkBookCourier}
-                >
-                  <Truck size={14} /> Book with Steadfast
-                </Button>
-                <Button variant="outline" size="sm" onClick={handlePrintLabels}>
-                  <Printer size={14} /> Print Labels
-                </Button>
-                {isOwner && (
-                  <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
-                    <Trash2 size={14} /> Move to Trash
-                  </Button>
-                )}
-              </>
-            ) : (
-              <>
-                <Button variant="outline" size="sm" onClick={handleBulkRestore}>
-                  <RotateCcw size={14} /> Restore selected
-                </Button>
-                <Button variant="destructive" size="sm" onClick={handleBulkPermanentDelete}>
-                  <Trash2 size={14} /> Delete forever
-                </Button>
-              </>
-            )}
-            <button
-              onClick={() => setSelected(new Set())}
-              className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
-              aria-label="Clear selection"
-            >
-              <XCircle size={16} />
-            </button>
-          </div>
-        )}
       </div>
 
       {/* sm and up: the original table, unchanged content. Below sm: a card list (below). */}
@@ -1178,7 +1295,9 @@ export default function OrdersPage() {
                   </div>
                 </td>
                 <td className="px-5 py-4">
-                  <div className="flex justify-end gap-3">{renderRowActions(order)}</div>
+                  <div className="flex justify-end">
+                    <RowActionsMenu items={rowMenuItems(order)} />
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1267,7 +1386,7 @@ export default function OrdersPage() {
                 {renderStatusCell(order)}
                 {renderCourierCell(order)}
               </div>
-              <div className="flex items-center gap-3">{renderRowActions(order)}</div>
+              <RowActionsMenu items={rowMenuItems(order)} />
             </div>
           </div>
         ))}
@@ -1275,6 +1394,78 @@ export default function OrdersPage() {
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       {confirmDialog}
+
+      <AnimatePresence>
+        {selected.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 rounded-2xl border border-ink-200 bg-cream-50 px-4 py-3 text-sm shadow-floatLg"
+          >
+            <span className="flex items-center gap-1.5 font-medium text-ink-800">
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-900 px-1.5 text-xs font-semibold text-cream-50">
+                {selected.size}
+              </span>
+              selected
+            </span>
+            {tab === "active" ? (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <Select
+                    className="h-8 w-40"
+                    value={bulkStatusValue}
+                    onChange={(e) => setBulkStatusValue(e.target.value as OrderStatus | "")}
+                  >
+                    <option value="">Set status…</option>
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button variant="outline" size="sm" disabled={!bulkStatusValue} onClick={handleBulkStatus}>
+                    Apply
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkBookCourierMutation.isPending}
+                  onClick={handleBulkBookCourier}
+                >
+                  <Truck size={14} /> Book with Steadfast
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => handlePrintLabels()}>
+                  <Printer size={14} /> Print Labels
+                </Button>
+                {isOwner && (
+                  <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                    <Trash2 size={14} /> Move to Trash
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={handleBulkRestore}>
+                  <RotateCcw size={14} /> Restore selected
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleBulkPermanentDelete}>
+                  <Trash2 size={14} /> Delete forever
+                </Button>
+              </>
+            )}
+            <button
+              onClick={() => setSelected(new Set())}
+              className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
+              aria-label="Clear selection"
+            >
+              <XCircle size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Drawer
         open={Boolean(drawerOrderId)}

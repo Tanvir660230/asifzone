@@ -14,10 +14,17 @@ import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api-client";
 import { PushNotificationToggle } from "@/components/account/push-notification-toggle";
 import { AccountPageHeader } from "@/components/account/account-page-header";
+import { SmartOrderTracker } from "@/components/account/smart-order-tracker";
+import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
 
 export default function AccountProfilePage() {
   const { data, isLoading, refetch } = useCurrentCustomer();
   const [serverError, setServerError] = useState<string | null>(null);
+  // Forces the loading skeleton on the very first client render regardless of how fast the query
+  // resolves — react-query can settle before hydration's DOM comparison in some navigation timings,
+  // which would otherwise make the client's first paint (form) diverge from the server's (skeleton).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const {
     register,
@@ -48,60 +55,64 @@ export default function AccountProfilePage() {
     }
   }
 
-  if (isLoading || !data?.customer) {
-    return (
-      <div className="animate-pulse">
-        <div className="mb-6 h-7 w-24 rounded bg-ink-100" />
-        <div className="max-w-md space-y-4">
-          <div className="h-10 w-full rounded-lg bg-ink-100" />
-          <div className="h-10 w-full rounded-lg bg-ink-100" />
-          <div className="h-10 w-full rounded-lg bg-ink-100" />
-        </div>
-      </div>
-    );
-  }
+  const profileLoading = !mounted || isLoading || !data?.customer;
 
   return (
     <div>
-      <AccountPageHeader title="Profile" description="Manage your personal details and communication preferences." />
+      <AccountPageHeader title="Dashboard" description="Your latest order, picks for you, and account settings." />
 
-      <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
-        <div>
-          <Label htmlFor="name">Full name</Label>
-          <Input id="name" {...register("name")} />
-          {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+      <SmartOrderTracker />
+
+      <h2 className="mb-3 font-display text-lg text-ink-900">Personal details</h2>
+      {profileLoading ? (
+        <div className="max-w-md animate-pulse space-y-4">
+          <div className="h-10 w-full rounded-lg bg-ink-100" />
+          <div className="h-10 w-full rounded-lg bg-ink-100" />
+          <div className="h-10 w-full rounded-lg bg-ink-100" />
         </div>
+      ) : (
+        <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
+          <div>
+            <Label htmlFor="name">Full name</Label>
+            <Input id="name" {...register("name")} />
+            {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+          </div>
 
-        <div>
-          <Label>Email</Label>
-          <Input value={data.customer.email ?? ""} placeholder="No email on file" disabled />
-        </div>
+          <div>
+            <Label>Email</Label>
+            <Input value={data!.customer.email ?? ""} placeholder="No email on file" disabled />
+          </div>
 
-        <div>
-          <Label htmlFor="phone">Phone</Label>
-          <Input id="phone" placeholder="01XXXXXXXXX" {...register("phone")} />
-        </div>
+          <div>
+            <Label htmlFor="phone">Phone</Label>
+            <Input id="phone" placeholder="01XXXXXXXXX" {...register("phone")} />
+          </div>
 
-        <label className="flex items-center gap-2 text-sm text-ink-700">
-          <Checkbox {...register("smsMarketingOptIn")} />
-          Send me SMS updates about sales and offers
-        </label>
+          <label className="flex items-center gap-2 text-sm text-ink-700">
+            <Checkbox {...register("smsMarketingOptIn")} />
+            Send me SMS updates about sales and offers
+          </label>
 
-        <label className="flex items-center gap-2 text-sm text-ink-700">
-          <Checkbox {...register("emailMarketingOptIn")} />
-          Send me email updates about sales and offers
-        </label>
+          <label className="flex items-center gap-2 text-sm text-ink-700">
+            <Checkbox {...register("emailMarketingOptIn")} />
+            Send me email updates about sales and offers
+          </label>
 
-        {serverError && <p className="text-sm text-danger-600">{serverError}</p>}
+          {serverError && <p className="text-sm text-danger-600">{serverError}</p>}
 
-        <Button type="submit" variant="brass" disabled={isSubmitting}>
-          {isSubmitting ? "Saving…" : "Save changes"}
-        </Button>
-      </form>
+          <Button type="submit" variant="brass" disabled={isSubmitting}>
+            {isSubmitting ? "Saving…" : "Save changes"}
+          </Button>
+        </form>
+      )}
 
       <div className="mt-8 max-w-md">
         <h2 className="mb-3 font-display text-lg text-ink-900">Notifications</h2>
         <PushNotificationToggle />
+      </div>
+
+      <div className="mt-10">
+        <RecentlyViewedCarousel title="Picked for you" />
       </div>
     </div>
   );

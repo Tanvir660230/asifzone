@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, MapPin, Heart, Package, User, RotateCcw, Gift, Tag, History } from "lucide-react";
+import { LogOut, MapPin, Heart, Package, LayoutDashboard, RotateCcw, Gift, Tag, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutCustomer } from "@/lib/customer-auth";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
@@ -19,7 +19,7 @@ const NAV_GROUPS = [
   {
     label: "Account",
     items: [
-      { href: "/account", label: "Profile", icon: User },
+      { href: "/account", label: "Dashboard", icon: LayoutDashboard },
       { href: "/account/addresses", label: "Addresses", icon: MapPin },
       { href: "/account/reward-points", label: "Reward Points", icon: Gift },
       { href: "/account/coupons", label: "Coupons", icon: Tag },

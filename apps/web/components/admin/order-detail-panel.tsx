@@ -1,9 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Printer, Truck, Trash2, RotateCcw, Package, PackageX, Pencil, X } from "lucide-react";
+import {
+  Printer,
+  Truck,
+  Trash2,
+  RotateCcw,
+  Package,
+  PackageX,
+  Pencil,
+  X,
+  User,
+  MapPin,
+  ShoppingBag,
+  Receipt,
+  History,
+  ListChecks,
+  StickyNote,
+  Phone,
+  MessageCircle,
+  Copy,
+  ExternalLink,
+  ChevronDown,
+  Check,
+  CalendarClock,
+} from "lucide-react";
 import type {
   OrderStatus,
   UpdateOrderDetailsInput,
@@ -13,6 +36,7 @@ import type {
 import {
   updateOrderDetailsSchema,
   adjustOrderPriceSchema,
+  normalizeBdPhone,
   BD_ALL_DISTRICTS,
   BD_AREAS_BY_DISTRICT,
   BD_ALL_AREA_OPTIONS,
@@ -20,7 +44,6 @@ import {
   parseAreaDistrictOption,
 } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,13 +51,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BackLink } from "@/components/ui/back-link";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Popover } from "@/components/ui/popover";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
+import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
-import { formatPrice, courierStatusBadgeClass, courierStatusLabel, courierStatusDescription } from "@/lib/format";
+import {
+  formatPrice,
+  initials,
+  orderStatusBadgeClass,
+  orderStatusLabel,
+  courierStatusBadgeClass,
+  courierStatusLabel,
+  courierStatusDescription,
+} from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
+import { copyToClipboard } from "@/lib/clipboard";
 import { ApiError } from "@/lib/api-client";
+import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 
@@ -83,6 +118,21 @@ const STATUS_OPTIONS: OrderStatus[] = [
   "REFUNDED",
 ];
 
+// The natural happy-path pipeline — used only to suggest the next status in the picker, not to
+// restrict which status can be picked (any status is still selectable, this just highlights one).
+const PIPELINE_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED", "SHIPPED", "DELIVERED"];
+
+function suggestedNextStatus(current: OrderStatus): OrderStatus | null {
+  const idx = PIPELINE_STATUSES.indexOf(current);
+  if (idx === -1 || idx === PIPELINE_STATUSES.length - 1) return null;
+  return PIPELINE_STATUSES[idx + 1] ?? null;
+}
+
+function waLink(phone: string, message: string): string {
+  const local = normalizeBdPhone(phone);
+  return `https://wa.me/880${local.slice(1)}?text=${encodeURIComponent(message)}`;
+}
+
 interface OrderDetailPanelProps {
   orderId: string;
   /** "Back to orders" (page) / drawer close (drawer) — also called after a permanent delete, since
@@ -98,6 +148,8 @@ interface OrderDetailPanelProps {
 export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: OrderDetailPanelProps) {
   const queryClient = useQueryClient();
   const [statusNote, setStatusNote] = useState("");
+  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
+  const statusTriggerRef = useRef<HTMLButtonElement>(null);
   const [tracking, setTracking] = useState<{ trackingNumber: string; carrier: string } | null>(null);
   const [adminNotes, setAdminNotes] = useState<string | null>(null);
   const [editingDetails, setEditingDetails] = useState(false);
@@ -124,6 +176,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     setPriceDraft(null);
     setPriceError(null);
     setStatusNote("");
+    setStatusPickerOpen(false);
     setTracking(null);
     setAdminNotes(null);
     setHoldNote("");
@@ -164,7 +217,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
       setHoldNote("");
-      toast.success("Order put on hold — follow-up scheduled");
+      toast.success("Follow-up scheduled");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to set follow-up"),
   });
@@ -175,7 +228,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
       queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
-      toast.success("Follow-up hold cleared");
+      toast.success("Follow-up cleared");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to clear hold"),
   });
@@ -260,13 +313,16 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to unlink courier booking"),
   });
 
-  const outerClassName =
-    variant === "page" ? "mx-auto max-w-4xl space-y-6" : "space-y-5 p-5";
+  const outerClassName = variant === "page" ? "mx-auto max-w-4xl space-y-5" : "space-y-4 p-5";
 
   if (isLoading || !data) {
     return (
       <div className={outerClassName}>
-        <p className="py-10 text-center text-sm text-ink-400">Loading…</p>
+        <div className="animate-pulse space-y-4">
+          <div className="h-20 rounded-xl bg-ink-50" />
+          <div className="h-32 rounded-xl bg-ink-50" />
+          <div className="h-48 rounded-xl bg-ink-50" />
+        </div>
       </div>
     );
   }
@@ -274,6 +330,10 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const { order } = data;
   const trackingValue = tracking ?? { trackingNumber: order.trackingNumber ?? "", carrier: order.carrier ?? "" };
   const notesValue = adminNotes ?? order.adminNotes ?? "";
+  const suggested = suggestedNextStatus(order.status);
+  const fullAddress = `${order.shippingAddressLine}, ${order.shippingArea}, ${order.shippingDistrict}, ${order.shippingDivision}`;
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${fullAddress}, Bangladesh`)}`;
+  const trackingCode = order.trackingNumber || order.courierConsignmentId || "";
 
   const areaOptions: readonly string[] = detailsDraft?.shippingDistrict
     ? (BD_AREAS_BY_DISTRICT[detailsDraft.shippingDistrict] ?? [])
@@ -366,15 +426,42 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     priceMutation.mutate(parsed.data, { onSuccess: () => cancelEditingPrice() });
   }
 
+  function pickStatus(next: OrderStatus) {
+    if (next === order.status) {
+      setStatusPickerOpen(false);
+      return;
+    }
+    statusMutation.mutate(next);
+    setStatusPickerOpen(false);
+  }
+
   return (
     <div className={outerClassName}>
       {variant === "page" && <BackLink onClick={onClose} label="Back to Orders" />}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{order.orderNumber}</h1>
-          <p className="text-sm text-ink-500">Placed {new Date(order.createdAt).toLocaleString()}</p>
+
+      {order.deletedAt && (
+        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          This order was deleted on {new Date(order.deletedAt).toLocaleString()}. Restore it to make further changes.
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+      )}
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="font-display text-xl tracking-tight text-ink-900 sm:text-2xl">{order.orderNumber}</h1>
+          <Badge className={orderStatusBadgeClass(order.status)}>
+            <span className="flex items-center gap-1">
+              <OrderStatusIcon status={order.status} size={12} />
+              {orderStatusLabel(order.status)}
+            </span>
+          </Badge>
+          {variant === "drawer" && (
+            <span className="hidden items-center gap-2 text-xs text-ink-300 sm:flex">
+              <kbd className="rounded border border-ink-200 px-1 py-0.5 font-sans">↑↓</kbd> navigate
+              <kbd className="rounded border border-ink-200 px-1 py-0.5 font-sans">Esc</kbd> close
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Link href={`/admin/orders/${id}/invoice`} target="_blank">
             <Button variant="outline" size="sm">
               <Printer size={14} /> Invoice
@@ -430,57 +517,148 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
         </div>
       </div>
 
-      {order.deletedAt && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
-          This order was deleted on {new Date(order.deletedAt).toLocaleString()}. Restore it to make further changes.
-        </div>
-      )}
-
+      {/* Order Summary — order/date/amount/payment/courier at a glance. */}
       <Card>
-        <CardHeader className="flex items-center justify-between">
-          <CardTitle>Status</CardTitle>
-          <Badge>{order.paymentStatus}</Badge>
+        <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-4 p-5 sm:p-6">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-400">Placed</p>
+            <p className="mt-0.5 text-sm text-ink-700">{new Date(order.createdAt).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-400">Amount</p>
+            <p className="mt-0.5 font-sans text-lg font-semibold tabular-nums text-ink-900">{formatPrice(order.total)}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-400">Payment</p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
+                {order.paymentMethod === "COD" ? "COD" : "Online"}
+              </Badge>
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  order.paymentStatus === "PAID"
+                    ? "text-success-600"
+                    : order.paymentStatus === "FAILED"
+                      ? "text-danger-600"
+                      : "text-warning-600",
+                )}
+              >
+                {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+              </span>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-400">Courier</p>
+            <div className="mt-1">
+              {order.courierConsignmentId ? (
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                    courierStatusBadgeClass(order.courierStatus ?? ""),
+                  )}
+                >
+                  {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
+                </span>
+              ) : (
+                <span className="text-sm text-ink-400">Not booked</span>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Status Management — contextual workflow instead of a raw dropdown. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ListChecks size={16} className="text-ink-400" /> Status
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={order.status}
-              onChange={(e) => statusMutation.mutate(e.target.value as OrderStatus)}
-              disabled={statusMutation.isPending || !!order.deletedAt}
-              className="w-44"
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </Select>
-            <Input
-              placeholder="Note for this status change (optional)"
-              value={statusNote}
-              onChange={(e) => setStatusNote(e.target.value)}
+          <div className="relative inline-block">
+            <button
+              ref={statusTriggerRef}
+              onClick={() => setStatusPickerOpen((v) => !v)}
               disabled={!!order.deletedAt}
-              className="max-w-xs"
-            />
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-opacity duration-150 ease-smooth hover:opacity-80 disabled:pointer-events-none disabled:opacity-50",
+                orderStatusBadgeClass(order.status),
+              )}
+            >
+              <OrderStatusIcon status={order.status} size={13} />
+              {orderStatusLabel(order.status)}
+              <ChevronDown size={12} className="opacity-60" />
+            </button>
+
+            <Popover
+              open={statusPickerOpen}
+              onClose={() => setStatusPickerOpen(false)}
+              anchorRef={statusTriggerRef}
+              align="start"
+              className="w-72"
+            >
+              <div className="space-y-2 p-2.5">
+                <p className="px-1 text-xs font-medium uppercase tracking-wide text-ink-400">Change status</p>
+                {suggested && (
+                  <button
+                    disabled={statusMutation.isPending}
+                    onClick={() => pickStatus(suggested)}
+                    className="flex w-full items-center gap-2.5 rounded-lg bg-ink-900 px-3 py-2.5 text-left text-sm font-medium text-cream-50 transition-colors duration-150 ease-smooth hover:bg-ink-800 disabled:opacity-60"
+                  >
+                    <OrderStatusIcon status={suggested} size={15} />
+                    <span className="flex-1">Move to {orderStatusLabel(suggested)}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-cream-50/70">Suggested</span>
+                  </button>
+                )}
+                <div className="max-h-52 space-y-0.5 overflow-y-auto border-t border-ink-100 pt-2">
+                  {STATUS_OPTIONS.map((s) => (
+                    <button
+                      key={s}
+                      disabled={s === order.status || statusMutation.isPending}
+                      onClick={() => pickStatus(s)}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150 ease-smooth disabled:cursor-default",
+                        s === order.status ? "bg-ink-50 font-medium text-ink-900" : "text-ink-600 hover:bg-ink-50",
+                      )}
+                    >
+                      <OrderStatusIcon status={s} size={14} className="text-ink-400" />
+                      {orderStatusLabel(s)}
+                      {s === order.status && <Check size={14} className="ml-auto text-ink-400" />}
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-ink-100 pt-2">
+                  <Input
+                    placeholder="Note for this change (optional)"
+                    value={statusNote}
+                    onChange={(e) => setStatusNote(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            </Popover>
           </div>
 
-          {order.status === "PENDING" && !order.deletedAt && (
+          {!TERMINAL_ORDER_STATUSES.includes(order.status) && !order.deletedAt && (
             <div className="rounded-lg border border-warning-200 bg-warning-50 p-3">
               {order.followUpAt ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm text-warning-800">
-                    On hold — follow up by {formatBdDateTime(order.followUpAt)}
+                  <p className="flex items-center gap-1.5 text-sm text-warning-800">
+                    <CalendarClock size={14} /> Follow up by {formatBdDateTime(order.followUpAt)}
                     {order.callAttempts > 0 && (
                       <> · {order.callAttempts} call attempt{order.callAttempts > 1 ? "s" : ""}</>
                     )}
                   </p>
                   <Button variant="outline" size="sm" disabled={clearHoldMutation.isPending} onClick={() => clearHoldMutation.mutate()}>
-                    Clear hold
+                    Clear
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-ink-700">Hold — call back later</p>
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-ink-700">
+                    <CalendarClock size={14} /> Schedule a callback / reminder
+                  </p>
                   <div className="flex flex-wrap items-center gap-2">
                     {HOLD_QUICK_PICKS.map((p) => (
                       <Button
@@ -507,17 +685,34 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
 
-          <ol className="mt-4 space-y-3 border-l border-ink-100 pl-4">
-            {order.statusHistory.map((entry) => (
-              <li key={entry.id} className="relative text-sm">
-                <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-ink-400" />
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-ink-900">{entry.status}</span>
-                  <span className="text-xs text-ink-400">{new Date(entry.createdAt).toLocaleString()}</span>
-                  {entry.changedByAdmin && <span className="text-xs text-ink-400">· {entry.changedByAdmin.name}</span>}
+      {/* Timeline — chronological status history: icon, timestamp, actor, optional note. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History size={16} className="text-ink-400" /> Timeline
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ol className="space-y-0">
+            {order.statusHistory.map((entry, i) => (
+              <li key={entry.id} className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-ink-600">
+                    <OrderStatusIcon status={entry.status} size={13} />
+                  </span>
+                  {i < order.statusHistory.length - 1 && <span className="my-1 w-px flex-1 bg-ink-100" />}
                 </div>
-                {entry.note && <p className="mt-0.5 text-ink-600">{entry.note}</p>}
+                <div className="min-w-0 flex-1 pb-4">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="text-sm font-medium text-ink-900">{orderStatusLabel(entry.status)}</span>
+                    <span className="text-xs text-ink-400">{new Date(entry.createdAt).toLocaleString()}</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-ink-500">{entry.changedByAdmin?.name ?? "System"}</p>
+                  {entry.note && <p className="mt-1.5 rounded-lg bg-ink-50 px-2.5 py-1.5 text-sm text-ink-600">{entry.note}</p>}
+                </div>
               </li>
             ))}
           </ol>
@@ -605,49 +800,69 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Truck size={16} className="text-info-500" /> Shipping &amp; Tracking
+            <Truck size={16} className="text-info-500" /> Shipping &amp; Courier
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-lg border border-ink-100 bg-ink-50/50 p-3">
+          <div className="rounded-lg border border-ink-100 bg-ink-50/50 p-3.5">
             {order.courierConsignmentId ? (
               <>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${courierStatusBadgeClass(order.courierStatus ?? "")}`}>
-                    Steadfast: {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className="inline-flex items-center rounded-md bg-ink-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cream-50">
+                    Steadfast
+                  </span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                      courierStatusBadgeClass(order.courierStatus ?? ""),
+                    )}
+                  >
+                    {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
                   </span>
                   {order.courierTrackingLink && (
                     <a
                       href={order.courierTrackingLink}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-sm text-info-600 underline hover:text-info-700"
+                      className="inline-flex items-center gap-1 text-sm text-info-600 hover:text-info-700 hover:underline"
                     >
-                      Track parcel
+                      <ExternalLink size={13} /> Open tracking
                     </a>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={refreshCourierMutation.isPending || !!order.deletedAt}
-                    onClick={() => refreshCourierMutation.mutate()}
-                  >
-                    Refresh status
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={unlinkCourierMutation.isPending || !!order.deletedAt}
-                    onClick={async () => {
-                      const ok = await confirm(
-                        "Unlink this Steadfast booking? Only do this if the consignment was cancelled or deleted directly in the Steadfast panel — this doesn't cancel anything on Steadfast's side, it just clears the link here so you can book again.",
-                        "Unlink",
-                      );
-                      if (ok) unlinkCourierMutation.mutate();
-                    }}
-                  >
-                    Unlink
-                  </Button>
+                  {trackingCode && (
+                    <button
+                      onClick={() => copyToClipboard(trackingCode, "Tracking number copied")}
+                      className={cn(ICON_BUTTON_HIT, "text-ink-400 hover:text-ink-900")}
+                      aria-label="Copy tracking number"
+                      title="Copy tracking number"
+                    >
+                      <Copy size={13} />
+                    </button>
+                  )}
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={refreshCourierMutation.isPending || !!order.deletedAt}
+                      onClick={() => refreshCourierMutation.mutate()}
+                    >
+                      Refresh
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={unlinkCourierMutation.isPending || !!order.deletedAt}
+                      onClick={async () => {
+                        const ok = await confirm(
+                          "Unlink this Steadfast booking? Only do this if the consignment was cancelled or deleted directly in the Steadfast panel — this doesn't cancel anything on Steadfast's side, it just clears the link here so you can book again.",
+                          "Unlink",
+                        );
+                        if (ok) unlinkCourierMutation.mutate();
+                      }}
+                    >
+                      Unlink
+                    </Button>
+                  </div>
                 </div>
                 <p className="mt-1.5 text-xs text-ink-400">
                   {order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported."}
@@ -657,7 +872,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                     Order status will automatically move to <span className="font-medium">Delivered</span>,{" "}
                     <span className="font-medium">Partially Delivered</span>, or{" "}
                     <span className="font-medium">Cancelled</span> once Steadfast reports a final outcome — it&apos;s expected to
-                    stay <span className="font-medium">{order.status}</span> until then.
+                    stay <span className="font-medium">{orderStatusLabel(order.status)}</span> until then.
                   </p>
                 )}
                 <p className="mt-2 text-xs text-ink-400">
@@ -724,7 +939,9 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
       <div className={variant === "page" ? "grid grid-cols-1 gap-6 sm:grid-cols-2" : "grid grid-cols-1 gap-4"}>
         <Card>
           <CardHeader className="flex items-center justify-between">
-            <CardTitle>Customer</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <User size={16} className="text-ink-400" /> Customer
+            </CardTitle>
             {(editingDetails || canEditDetails) &&
               (editingDetails ? (
                 <button onClick={cancelEditingDetails} className="text-ink-400 hover:text-ink-700" aria-label="Cancel editing">
@@ -736,7 +953,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                 </Button>
               ))}
           </CardHeader>
-          <CardContent className="space-y-1 text-sm text-ink-700">
+          <CardContent className="space-y-3 text-sm text-ink-700">
             {editingDetails && detailsDraft ? (
               <div className="space-y-2">
                 <div>
@@ -758,9 +975,36 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               </div>
             ) : (
               <>
-                <p>{order.customerName}</p>
-                <p>{order.customerPhone}</p>
-                {order.customerEmail && <p>{order.customerEmail}</p>}
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-semibold text-ink-700">
+                    {initials(order.customerName)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-ink-900">{order.customerName}</p>
+                    <p className="text-xs text-ink-400">{order.customerPhone}</p>
+                  </div>
+                </div>
+                {order.customerEmail && <p className="text-ink-600">{order.customerEmail}</p>}
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
+                  <a href={`tel:${order.customerPhone}`}>
+                    <Button variant="outline" size="sm">
+                      <Phone size={13} /> Call
+                    </Button>
+                  </a>
+                  <a href={waLink(order.customerPhone, `Hi ${order.customerName.split(" ")[0]}, `)} target="_blank" rel="noreferrer">
+                    <Button variant="outline" size="sm">
+                      <MessageCircle size={13} /> WhatsApp
+                    </Button>
+                  </a>
+                  <button
+                    onClick={() => copyToClipboard(order.customerPhone, "Phone number copied")}
+                    className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+                    aria-label="Copy phone number"
+                    title="Copy phone number"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
               </>
             )}
           </CardContent>
@@ -768,9 +1012,11 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
 
         <Card>
           <CardHeader>
-            <CardTitle>Shipping Address</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin size={16} className="text-ink-400" /> Shipping Address
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1 text-sm text-ink-700">
+          <CardContent className="space-y-3 text-sm text-ink-700">
             {editingDetails && detailsDraft ? (
               <div className="space-y-2">
                 <div>
@@ -805,11 +1051,23 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               </div>
             ) : (
               <>
-                <p>{order.shippingAddressLine}</p>
-                <p>
-                  {order.shippingArea}, {order.shippingDistrict}
-                </p>
-                <p>{order.shippingDivision}</p>
+                <div>
+                  <p>{order.shippingAddressLine}</p>
+                  <p>
+                    {order.shippingArea}, {order.shippingDistrict}
+                  </p>
+                  <p>{order.shippingDivision}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
+                  <Button variant="outline" size="sm" onClick={() => copyToClipboard(fullAddress, "Address copied")}>
+                    <Copy size={13} /> Copy address
+                  </Button>
+                  <a href={mapsUrl} target="_blank" rel="noreferrer">
+                    <Button variant="outline" size="sm">
+                      <ExternalLink size={13} /> Open in Maps
+                    </Button>
+                  </a>
+                </div>
               </>
             )}
           </CardContent>
@@ -832,7 +1090,9 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
 
       <Card>
         <CardHeader>
-          <CardTitle>Items</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <ShoppingBag size={16} className="text-ink-400" /> Order Items
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {/* Below sm: a 5-column table has no room on a phone — stack each item instead of
@@ -926,7 +1186,23 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
             </tbody>
           </table>
 
-          <div className="mt-4 ml-auto max-w-xs space-y-1 border-t border-ink-100 pt-4 text-sm">
+          {order.notes && (
+            <div className="mt-4 border-t border-ink-100 pt-4 text-sm text-ink-600">
+              <span className="font-medium text-ink-900">Customer notes: </span>
+              {order.notes}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Receipt size={16} className="text-ink-400" /> Payment Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="ml-auto max-w-xs space-y-1 text-sm">
             <div className="flex justify-between text-ink-600">
               <span>Subtotal</span>
               <span>{formatPrice(order.subtotal)}</span>
@@ -996,19 +1272,14 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               <span>{formatPrice(order.total)}</span>
             </div>
           </div>
-
-          {order.notes && (
-            <div className="mt-4 border-t border-ink-100 pt-4 text-sm text-ink-600">
-              <span className="font-medium text-ink-900">Customer notes: </span>
-              {order.notes}
-            </div>
-          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Admin Notes</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <StickyNote size={16} className="text-ink-400" /> Admin Notes
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <Textarea

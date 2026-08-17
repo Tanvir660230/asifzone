@@ -3,6 +3,13 @@ export function formatPrice(value: string | number): string {
   return `৳${amount.toLocaleString("en-BD")}`;
 }
 
+/** "John Doe" -> "JD" — first + last initial, for avatar-chip placeholders (orders list/detail,
+ * anywhere a customer name needs a compact visual anchor without a real photo). */
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "")).toUpperCase();
+}
+
 /** Plain-text fallback for contexts (meta tags, JSON-LD, previews) that can't render the rich-text
  * HTML a product description is actually stored as — strips tags rather than displaying them raw. */
 export function stripHtml(html: string): string {
