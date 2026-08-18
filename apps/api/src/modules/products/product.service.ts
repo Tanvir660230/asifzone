@@ -237,10 +237,13 @@ async function findDidYouMean(query: string): Promise<string | undefined> {
   return (findClosestVocabularyTerm(query) ?? (await findBestNameSuggestion(query))) ?? undefined;
 }
 
-/** Fire-and-forget — a real search-page visit, not typeahead. Never allowed to break search. */
-async function logSearch(query: string, resultCount: number) {
+/** Fire-and-forget — a real search-page visit, not typeahead. Never allowed to break search.
+ * `suggestion` is whatever findDidYouMean already computed for this exact search (see the call
+ * site below) — passed in rather than recomputed here, so a zero-result search never pays for a
+ * second trigram lookup. */
+async function logSearch(query: string, resultCount: number, suggestion?: string) {
   try {
-    await prisma.searchLog.create({ data: { query: query.trim().toLowerCase(), resultCount } });
+    await prisma.searchLog.create({ data: { query: query.trim().toLowerCase(), resultCount, suggestion: suggestion ?? null } });
   } catch {
     // logging is best-effort only
   }
@@ -381,7 +384,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
   const didYouMean = query.search && resultTotal === 0 ? await findDidYouMean(query.search) : undefined;
 
   if (query.search) {
-    void logSearch(query.search, resultTotal);
+    void logSearch(query.search, resultTotal, didYouMean);
   }
 
   return { items, total: resultTotal, page: query.page, pageSize: query.pageSize, didYouMean };

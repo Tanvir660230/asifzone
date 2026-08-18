@@ -22,6 +22,15 @@ export function computeTrendPct(current: number, previous: number): number | nul
   return ((current - previous) / previous) * 100;
 }
 
+/** Milliseconds -> "2m 15s" / "45s" — for session-duration and time-per-page BI metrics. */
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
 /** "3 hours ago" / "2 days ago" style relative time, for urgency signals like "Last purchased…". */
 /** "August 20, 2026" style, for a real admin-set restock date. */
 export function formatDate(iso: string): string {

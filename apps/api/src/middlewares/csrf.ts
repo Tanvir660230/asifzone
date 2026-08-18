@@ -32,6 +32,19 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/customers/otp/verify",
 ]);
 
+/** Matched by prefix, not the exact-path Set above, since the pageview id segment is dynamic
+ * (`/api/analytics/pageview/:id/exit`). Exempt for a different reason than the auth-bootstrap
+ * paths above: this beacon requires no cookie-based session authority to act at all — it's public
+ * by design, rate-limited, and only ever updates bounded engagement numbers on one already-existing
+ * anonymous PageView row by its unguessable id, so a forged cross-site call can't do anything the
+ * endpoint doesn't already let any caller do. It's also fired via navigator.sendBeacon on page
+ * unload (see lib/analytics.ts's sendPageExit), which structurally cannot attach a custom
+ * X-CSRF-Token header — exemption is the only option here, not just the simplest one. Read
+ * requests to this same PageView beacon family (POST /pageview itself) still go through the
+ * `credentials: "include"` + X-CSRF-Token pairing like any other authenticated-aware POST, since
+ * that one *is* sent via fetch and can carry the header. */
+const CSRF_EXEMPT_PREFIX = "/api/analytics/pageview/";
+
 /** Double-submit cookie check. The `csrf_token` cookie is deliberately not httpOnly — the frontend
  * reads it and echoes it back as a header, which a cross-site attacker can't do (they can't read our
  * cookies). SameSite=strict on the auth cookies already blocks most cross-site sends, so this is
@@ -42,6 +55,7 @@ const CSRF_EXEMPT_PATHS = new Set([
 export function csrfProtection(req: Request, res: Response, next: NextFunction) {
   if (SAFE_METHODS.has(req.method)) return next();
   if (CSRF_EXEMPT_PATHS.has(req.path)) return next();
+  if (req.path.startsWith(CSRF_EXEMPT_PREFIX)) return next();
   if (!req.cookies?.access_token && !req.cookies?.[CUSTOMER_ACCESS_COOKIE]) return next();
 
   const cookieToken = req.cookies?.csrf_token as string | undefined;

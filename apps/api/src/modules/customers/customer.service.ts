@@ -573,12 +573,15 @@ const adminSelect = {
   codRisk: true,
 } as const;
 
-/** One shared query + tag/stat computation behind both listCustomersAdmin and getCustomerStatsAdmin
- * — fetches every customer matching `where` with just enough order/address data to derive
+/** One shared query + tag/stat computation behind listCustomersAdmin, getCustomerStatsAdmin, and
+ * (Section 6 BI) analytics.service.ts's RFM table / purchase-frequency distribution — fetches
+ * every customer matching `where` with just enough order/address data to derive
  * totalOrders/totalSpent/lastOrderAt/district/tags in JS. Fine at this store's customer volumes
  * (computed once per request, not per row); a raw aggregate query would be the next step if the
- * customer base grows into the tens of thousands. */
-async function loadCustomersWithComputedFields(where: Prisma.CustomerWhereInput) {
+ * customer base grows into the tens of thousands. Exported (not just used internally) so BI reads
+ * derive from the exact same tag logic the customers list already shows, rather than a
+ * re-derived approximation that could quietly drift out of sync with it. */
+export async function loadCustomersWithComputedFields(where: Prisma.CustomerWhereInput) {
   const customers = await prisma.customer.findMany({
     where,
     select: {
@@ -703,6 +706,12 @@ export async function getCustomerStatsAdmin() {
     repeatCustomers: computed.filter((c) => c.totalOrders >= 2).length,
     lifetimeRevenue: computed.reduce((sum, c) => sum + c.totalSpent, 0),
     vipCustomers: computed.filter((c) => c.tags.includes("VIP")).length,
+    // Added for Section 6 BI ("High-Risk Customers" / "One-Time Buyers") — cheap to add here since
+    // `computed` already holds everything needed; avoids a second full-customer-table scan.
+    suspiciousCount: computed.filter((c) => c.tags.includes("SUSPICIOUS")).length,
+    codRiskCount: computed.filter((c) => c.tags.includes("COD_RISK")).length,
+    blockedCount: computed.filter((c) => c.tags.includes("BLOCKED")).length,
+    oneTimeBuyers: computed.filter((c) => c.totalOrders === 1).length,
     inactive30: inactiveSince(30),
     inactive60: inactiveSince(60),
     inactive90: inactiveSince(90),

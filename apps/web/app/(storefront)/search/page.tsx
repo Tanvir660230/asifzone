@@ -6,6 +6,7 @@ import { SortSelect } from "@/components/storefront/sort-select";
 import { Pagination } from "@/components/storefront/pagination";
 import { FacetFilters } from "@/components/storefront/facet-filters";
 import { NoSearchResults } from "@/components/storefront/no-search-results";
+import { SearchSessionTracker } from "@/components/analytics/search-session-tracker";
 import { getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
@@ -62,6 +63,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   return (
     <div>
+      <SearchSessionTracker query={query} />
       {/* An editorial header band, same language as the other content pages (PageHero), instead
           of a bare input dropped onto the page — the search box is the whole point of this page,
           so it gets a proper moment rather than looking like an afterthought. */}

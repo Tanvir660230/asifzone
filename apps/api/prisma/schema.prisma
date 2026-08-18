@@ -97,6 +97,15 @@ enum StockMovementReason {
   RETURN
 }
 
+/// The two purchase-funnel steps that have no other trace anywhere in the schema — everything
+/// else in the Landing→Repeat-Purchase journey (Section 3 BI) is derivable from PageView.path or
+/// Order, but variant selection and guest add-to-cart are otherwise invisible server-side.
+enum FunnelEventType {
+  VARIANT_SELECTED
+  ADD_TO_CART
+  REMOVE_FROM_CART
+}
+
 enum BannerPlacement {
   HERO_CAROUSEL
   PROMO_STRIP
@@ -198,10 +207,22 @@ model SearchLog {
   id          String   @id @default(cuid())
   query       String
   resultCount Int
+  /// Attached after the fact by a best-effort correlation beacon (see attributeSearchSession in
+  /// analytics.service.ts) fired once the search-results page has rendered — not set at write
+  /// time, since listStorefrontProducts (where this row is created) never receives `req` and the
+  /// search-results fetch is ISR-cached, so threading a per-session id into that request would
+  /// fragment the cache. Null until (if ever) attributed; older rows stay null forever.
+  sessionId   String?
+  visitorId   String?
+  /// The catalog suggestion already shown to the shopper for this exact zero-result search (see
+  /// findDidYouMean in product.service.ts) — stored at write time so "misspelled searches" don't
+  /// need to recompute a trigram lookup for every historical row on every admin page load.
+  suggestion  String?
   createdAt   DateTime @default(now())
 
   @@index([createdAt])
   @@index([query])
+  @@index([sessionId])
 }
 
 model Category {
@@ -319,16 +340,57 @@ model ProductViewLog {
 model PageView {
   id          String   @id @default(cuid())
   sessionId   String
+  /// Persistent (1yr cookie) visitor id, distinct from `sessionId` (a browser-session cookie
+  /// cleared on close) — lets BI metrics recognize the same person across visits. Nullable since
+  /// rows recorded before this column existed have no value here.
+  visitorId   String?
   path        String
   referrer    String?
   utmSource   String?
   utmMedium   String?
   utmCampaign String?
   userAgent   String?
+  /// Filled by a second "exit" beacon (navigator.sendBeacon) fired when the visitor leaves this
+  /// page — null until then, and forever null for a row whose exit beacon never arrived (tab
+  /// killed, browser crash, etc.), which is expected and excluded from engagement averages.
+  durationMs     Int?
+  scrollDepthPct Int?
+  clickCount     Int?
+  /// Derived server-side from whether a valid customer session cookie rode along with the beacon —
+  /// never trusted from the request body. Defaults false (guest) since most pageviews are.
+  isLoggedIn  Boolean  @default(false)
+  /// Primary Accept-Language tag (e.g. "en-US"), read server-side from the request header.
+  language    String?
+  /// geoip-lite lookup off the request IP — offline/free, so accuracy (esp. city-level) is rough,
+  /// particularly for mobile-carrier IPs common in this store's market. Null on a lookup miss
+  /// (private/local IPs in dev, or an address geoip-lite's bundled database doesn't cover).
+  countryCode String?
+  region      String?
+  city        String?
   createdAt   DateTime @default(now())
 
   @@index([sessionId, createdAt])
   @@index([createdAt])
+  @@index([visitorId])
+}
+
+/// Discrete, multiple-per-session purchase-funnel events (Section 3 BI) that PageView can't
+/// represent — a shopper picks several variants before adding one to cart, so this can't be a
+/// one-row-per-page model. productId/variantId are bare ids with no FK relation, same reasoning as
+/// OrderItem's snapshot fields: an analytics event must survive the referenced product being
+/// deleted later, and doesn't need cascade behavior.
+model FunnelEvent {
+  id        String          @id @default(cuid())
+  sessionId String
+  visitorId String?
+  type      FunnelEventType
+  productId String?
+  variantId String?
+  path      String?
+  createdAt DateTime        @default(now())
+
+  @@index([sessionId, type])
+  @@index([type, createdAt])
 }
 
 /// A one-way, server-side mirror of a logged-in customer's client-side (localStorage) cart —
@@ -995,6 +1057,7 @@ model WishlistItem {
 
   @@unique([customerId, productId])
   @@index([customerId])
+  @@index([productId])
 }
 
 /// System-generated admin alerts (new order, low stock, ...) shown via the bell icon in the admin

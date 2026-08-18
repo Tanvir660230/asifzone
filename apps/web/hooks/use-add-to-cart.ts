@@ -6,6 +6,7 @@ import type { ProductVariant } from "@clothing-brand/shared";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { pixelAddToCart } from "@/lib/meta-pixel";
+import { trackFunnelEvent } from "@/lib/analytics";
 
 interface UseAddToCartParams {
   selectedVariant: ProductVariant | undefined;
@@ -46,6 +47,7 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     if (!item) return;
     addItem(item, quantity);
     pixelAddToCart({ contentId: item.productId, contentName: productName, value: item.price, quantity });
+    trackFunnelEvent("ADD_TO_CART", { productId: item.productId, variantId: item.variantId });
     setJustAdded(true);
     setTimeout(() => setJustAdded(false), 2500);
   }
@@ -55,6 +57,9 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     if (!item) return;
     setExpressItem({ ...item, quantity });
     pixelAddToCart({ contentId: item.productId, contentName: productName, value: item.price, quantity });
+    // Buy Now skips the cart drawer but still puts the item into the checkout flow, so it counts
+    // the same as an explicit Add to Cart for funnel purposes.
+    trackFunnelEvent("ADD_TO_CART", { productId: item.productId, variantId: item.variantId });
     router.push("/checkout");
   }
 

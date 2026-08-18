@@ -7,6 +7,7 @@ import type { ProductVariant } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { cn, isPaleColor } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
+import { trackFunnelEvent } from "@/lib/analytics";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { WishlistButton } from "./wishlist-button";
@@ -72,6 +73,10 @@ export function VariantSelector({
 
   useEffect(() => {
     onVariantChange?.(selectedVariant);
+    // Fires once per distinct variant id (not per render) — the effect's own dependency array
+    // already provides the dedup a funnel event needs, so a shopper toggling back and forth
+    // between two variants just records each distinct pick, not a flood of duplicates.
+    if (selectedVariant) trackFunnelEvent("VARIANT_SELECTED", { productId, variantId: selectedVariant.id });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVariant?.id]);
 

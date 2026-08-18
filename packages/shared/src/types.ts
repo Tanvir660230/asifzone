@@ -585,6 +585,10 @@ export interface CustomerStats {
   repeatCustomers: number;
   lifetimeRevenue: number;
   vipCustomers: number;
+  suspiciousCount: number;
+  codRiskCount: number;
+  blockedCount: number;
+  oneTimeBuyers: number;
   inactive30: number;
   inactive60: number;
   inactive90: number;

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { syncCart } from "@/lib/api/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
+import { trackFunnelEvent } from "@/lib/analytics";
 
 export interface CartItem {
   variantId: string;
@@ -67,8 +68,13 @@ export const useCartStore = create<CartState>()(
       },
 
       removeItem: (variantId) => {
+        // Looked up before filtering — the one canonical place cart removal happens (cart drawer
+        // and cart page both call this same action), so this is also the one place a
+        // REMOVE_FROM_CART event needs to fire, regardless of which UI triggered it.
+        const removed = get().items.find((i) => i.variantId === variantId);
         set((state) => ({ items: state.items.filter((i) => i.variantId !== variantId), lastActivityAt: Date.now() }));
         scheduleSync(get().items);
+        if (removed) trackFunnelEvent("REMOVE_FROM_CART", { productId: removed.productId, variantId: removed.variantId });
       },
 
       updateQuantity: (variantId, quantity) => {
