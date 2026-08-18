@@ -68,7 +68,7 @@ function ResetPasswordForm() {
       <h1 className="mb-1 font-display text-2xl text-ink-900">Reset password</h1>
       <p className="mb-6 text-sm text-ink-500">Choose a new password for your account.</p>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} method="post" className="space-y-4">
         <input type="hidden" {...register("token")} />
 
         <div>
