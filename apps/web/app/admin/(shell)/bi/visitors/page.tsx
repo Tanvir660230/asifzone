@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Users, Repeat, Globe2, FileText, LogIn, Radio, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,10 +9,7 @@ import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked
 import * as biApi from "@/lib/api/bi";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { formatDuration } from "@/lib/format";
-import { cn } from "@/lib/utils";
-
-type RangeOption = 7 | 30 | 90 | "all";
-const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
+import { useBiDateRange } from "@/components/admin/bi-date-range-context";
 
 function countryName(code: string): string {
   try {
@@ -34,29 +30,59 @@ function timeAgo(iso: string): string {
 }
 
 export default function VisitorAnalyticsPage() {
-  const [range, setRange] = useState<RangeOption>(30);
-  // Endpoints built for this page (getEntryExitPages, getEngagementSummary, getOsBreakdown, etc.)
-  // support a true "all time" lookback via an omitted `days` param. The handful of *reused*
-  // endpoints from the original dashboard (device/browser/funnel/traffic-sources) default to 30
-  // days when `days` is omitted and are schema-capped at 365 — so "All" maps to 365 for those
-  // specifically, the closest available approximation rather than genuine lifetime.
-  const apiDays = range === "all" ? undefined : range;
-  const legacyDays = range === "all" ? 365 : range;
+  // Driven by the shared BI date-range picker (app/admin/(shell)/bi/layout.tsx) rather than a
+  // local pill picker — an explicit dateFrom/dateTo always wins over the legacy `days` lookback
+  // (see resolveDateRange in analytics.service.ts), so `days` is left undefined everywhere below.
+  const { range } = useBiDateRange();
+  const rangeKey = `${range.from.toISOString()}:${range.to.toISOString()}`;
 
   const { data: overview } = useQuery({ queryKey: ["bi-overview-for-visitors"], queryFn: biApi.getExecutiveOverview });
-  const { data: funnel } = useQuery({ queryKey: ["bi-visitors-funnel", legacyDays], queryFn: () => analyticsApi.getConversionFunnel(legacyDays) });
-  const { data: visitorSeries } = useQuery({ queryKey: ["bi-visitors-series", legacyDays], queryFn: () => analyticsApi.getVisitorSeries(legacyDays) });
-  const { data: loggedInVsGuest } = useQuery({ queryKey: ["bi-visitors-logged-in", apiDays], queryFn: () => analyticsApi.getLoggedInVsGuest(apiDays) });
+  const { data: funnel } = useQuery({
+    queryKey: ["bi-visitors-funnel", rangeKey],
+    queryFn: () => analyticsApi.getConversionFunnel(undefined, range.from, range.to),
+  });
+  const { data: visitorSeries } = useQuery({
+    queryKey: ["bi-visitors-series", rangeKey],
+    queryFn: () => analyticsApi.getVisitorSeries(undefined, range.from, range.to),
+  });
+  const { data: loggedInVsGuest } = useQuery({
+    queryKey: ["bi-visitors-logged-in", rangeKey],
+    queryFn: () => analyticsApi.getLoggedInVsGuest(undefined, range.from, range.to),
+  });
   const { data: activeVisitors } = useQuery({ queryKey: ["bi-visitors-active"], queryFn: analyticsApi.getActiveVisitors, refetchInterval: 30_000 });
 
-  const { data: engagement } = useQuery({ queryKey: ["bi-visitors-engagement", apiDays], queryFn: () => analyticsApi.getEngagementSummary(apiDays) });
-  const { data: entryExit } = useQuery({ queryKey: ["bi-visitors-entry-exit", apiDays], queryFn: () => analyticsApi.getEntryExitPages(apiDays, 8) });
-  const { data: geo } = useQuery({ queryKey: ["bi-visitors-geo", apiDays], queryFn: () => analyticsApi.getGeoBreakdown(apiDays, 8) });
-  const { data: devices } = useQuery({ queryKey: ["bi-visitors-devices", legacyDays], queryFn: () => analyticsApi.getDeviceBreakdown(legacyDays) });
-  const { data: browsers } = useQuery({ queryKey: ["bi-visitors-browsers", legacyDays], queryFn: () => analyticsApi.getBrowserBreakdown(legacyDays) });
-  const { data: os } = useQuery({ queryKey: ["bi-visitors-os", apiDays], queryFn: () => analyticsApi.getOsBreakdown(apiDays) });
-  const { data: languages } = useQuery({ queryKey: ["bi-visitors-languages", apiDays], queryFn: () => analyticsApi.getLanguageBreakdown(apiDays, 8) });
-  const { data: trafficSources } = useQuery({ queryKey: ["bi-visitors-traffic-sources", legacyDays], queryFn: () => analyticsApi.getTrafficSources(legacyDays, 8) });
+  const { data: engagement } = useQuery({
+    queryKey: ["bi-visitors-engagement", rangeKey],
+    queryFn: () => analyticsApi.getEngagementSummary(undefined, range.from, range.to),
+  });
+  const { data: entryExit } = useQuery({
+    queryKey: ["bi-visitors-entry-exit", rangeKey],
+    queryFn: () => analyticsApi.getEntryExitPages(undefined, 8, range.from, range.to),
+  });
+  const { data: geo } = useQuery({
+    queryKey: ["bi-visitors-geo", rangeKey],
+    queryFn: () => analyticsApi.getGeoBreakdown(undefined, 8, range.from, range.to),
+  });
+  const { data: devices } = useQuery({
+    queryKey: ["bi-visitors-devices", rangeKey],
+    queryFn: () => analyticsApi.getDeviceBreakdown(undefined, range.from, range.to),
+  });
+  const { data: browsers } = useQuery({
+    queryKey: ["bi-visitors-browsers", rangeKey],
+    queryFn: () => analyticsApi.getBrowserBreakdown(undefined, range.from, range.to),
+  });
+  const { data: os } = useQuery({
+    queryKey: ["bi-visitors-os", rangeKey],
+    queryFn: () => analyticsApi.getOsBreakdown(undefined, range.from, range.to),
+  });
+  const { data: languages } = useQuery({
+    queryKey: ["bi-visitors-languages", rangeKey],
+    queryFn: () => analyticsApi.getLanguageBreakdown(undefined, 8, range.from, range.to),
+  });
+  const { data: trafficSources } = useQuery({
+    queryKey: ["bi-visitors-traffic-sources", rangeKey],
+    queryFn: () => analyticsApi.getTrafficSources(undefined, 8, range.from, range.to),
+  });
 
   const { data: frequency } = useQuery({ queryKey: ["bi-visitors-frequency"], queryFn: analyticsApi.getReturningVisitorFrequency });
   const { data: recentSessions } = useQuery({ queryKey: ["bi-visitors-recent-sessions"], queryFn: () => analyticsApi.getRecentSessions(20) });
@@ -69,25 +95,9 @@ export default function VisitorAnalyticsPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl tracking-tight text-ink-900 sm:text-3xl">Visitor Analytics</h1>
-          <p className="mt-1 text-sm text-ink-500">Who&apos;s coming to the site, where from, and what they do once they&apos;re here.</p>
-        </div>
-        <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full border border-ink-100 bg-ink-50/60 p-1">
-          {RANGE_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setRange(opt)}
-              className={cn(
-                "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 ease-smooth",
-                range === opt ? "bg-ink-900 text-cream-50 shadow-sm" : "text-ink-500 hover:text-ink-900",
-              )}
-            >
-              {opt === "all" ? "All" : `${opt}D`}
-            </button>
-          ))}
-        </div>
+      <div>
+        <h1 className="font-display text-2xl tracking-tight text-ink-900 sm:text-3xl">Visitor Analytics</h1>
+        <p className="mt-1 text-sm text-ink-500">Who&apos;s coming to the site, where from, and what they do once they&apos;re here.</p>
       </div>
 
       {/* Visitors & sessions */}
@@ -106,7 +116,7 @@ export default function VisitorAnalyticsPage() {
                 icon={<Repeat size={18} />}
                 pct={overview.returningVisitorRatePct}
               />
-              <StatTile label={`Sessions (${range === "all" ? "365d" : `${range}D`})`} value={funnel.totalSessions.toLocaleString("en-BD")} icon={<Radio size={18} />} />
+              <StatTile label="Sessions" value={funnel.totalSessions.toLocaleString("en-BD")} icon={<Radio size={18} />} />
               <StatTile label="Pages Viewed" value={totalPageViews.toLocaleString("en-BD")} icon={<FileText size={18} />} />
               <StatTile label="Logged In" value={loggedInVsGuest.loggedIn.toLocaleString("en-BD")} icon={<LogIn size={18} />} />
               <StatTile label="Guest" value={loggedInVsGuest.guest.toLocaleString("en-BD")} icon={<Users size={18} />} />

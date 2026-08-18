@@ -22,6 +22,31 @@ function daysAgoOrUndefined(days: number | undefined): Date | undefined {
   return days === undefined ? undefined : daysAgo(days);
 }
 
+interface ResolvedDateRange {
+  since: Date;
+  until: Date;
+  /** Stable fragment for cache keys. Mirrors the pre-existing `${days ?? "all"}` shape when no
+   * custom range is given, so caching for the common (days-only) case is unchanged — `until`
+   * otherwise defaults to "now" on every call, and keying on that would produce a unique cache key
+   * per request and defeat caching entirely. Widens to the actual since/until timestamps only when
+   * an explicit dateFrom/dateTo (a custom Google-Analytics-style range) is supplied. */
+  cacheKeyPart: string;
+}
+
+/** Absolute `dateFrom`/`dateTo` (a custom range picked in the BI date-range picker) wins over the
+ * legacy `days`-back-from-now lookback when either is present; with neither, `since` falls back to
+ * the epoch (lifetime) and `until` to now, matching the pre-existing "since only, no upper bound"
+ * behavior of every function below (there's never future data, so an explicit upper bound of "now"
+ * doesn't change results — it only matters for the cache key, handled via `cacheKeyPart` above). */
+function resolveDateRange(days: number | undefined, dateFrom?: Date, dateTo?: Date): ResolvedDateRange {
+  if (dateFrom || dateTo) {
+    const since = dateFrom ?? new Date(0);
+    const until = dateTo ?? new Date();
+    return { since, until, cacheKeyPart: `${since.toISOString()}:${until.toISOString()}` };
+  }
+  return { since: daysAgoOrUndefined(days) ?? new Date(0), until: new Date(), cacheKeyPart: String(days ?? "all") };
+}
+
 /** Best-effort geoip-lite lookup off the request IP — offline/free database, so misses (private/
  * local IPs, addresses outside its coverage) are expected and just mean null geo fields, not an
  * error. IPv4-mapped IPv6 addresses (the common shape of req.ip behind a proxy) are handled by
@@ -217,21 +242,27 @@ export async function getDashboardSummary() {
 /** Daily unique-visitor + pageview counts for the last N days, zero-filled — the visitor-side
  * counterpart to getRevenueSeries. "Visitor" here means a distinct PageView.sessionId, the closest
  * this anonymous, cookie-based system gets to a person. */
-export async function getVisitorSeries(days = 30) {
-  const cacheKey = `analytics:visitors:${days}`;
+// Zero-fill loops (this one and getRevenueSeries) emit one row per day, so an unbounded custom
+// range would generate an unbounded response — clamp to just over a year regardless of how wide a
+// dateFrom/dateTo the caller picks.
+const MAX_SERIES_DAYS = 400;
+
+export async function getVisitorSeries(days = 30, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:visitors:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ date: string; visitors: number; pageViews: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = new Date();
-  since.setUTCDate(since.getUTCDate() - (days - 1));
+  const since = new Date(range.since);
   since.setUTCHours(0, 0, 0, 0);
+  const until = range.until;
 
   const rows = await prisma.$queryRaw<Array<{ day: Date; visitors: bigint; pageViews: bigint }>>`
     SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day,
            COUNT(DISTINCT "sessionId")::bigint AS visitors,
            COUNT(*)::bigint AS "pageViews"
     FROM "PageView"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
     GROUP BY day
     ORDER BY day ASC
   `;
@@ -240,8 +271,9 @@ export async function getVisitorSeries(days = 30) {
     rows.map((r) => [r.day.toISOString().slice(0, 10), { visitors: Number(r.visitors), pageViews: Number(r.pageViews) }]),
   );
 
+  const dayCount = Math.min(Math.floor((until.getTime() - since.getTime()) / 86_400_000) + 1, MAX_SERIES_DAYS);
   const series = [];
-  for (let i = 0; i < days; i++) {
+  for (let i = 0; i < dayCount; i++) {
     const d = new Date(since);
     d.setUTCDate(d.getUTCDate() + i);
     const key = d.toISOString().slice(0, 10);
@@ -848,25 +880,26 @@ export async function getTopBrands(days = 30, limit = 10) {
 /** Conversion rate = sessions that placed an order ÷ total sessions; bounce rate = sessions with
  * exactly one pageview ÷ total sessions. Both require the PageView beacon to actually be firing —
  * return zeros (not an error) when there's no pageview data yet for the window. */
-export async function getConversionFunnel(days = 30) {
-  const cacheKey = `analytics:funnel:${days}`;
+export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:funnel:${range.cacheKeyPart}`;
   const cached = await cacheGet<{ totalSessions: number; bouncedSessions: number; convertedSessions: number; conversionRate: number; bounceRate: number }>(
     cacheKey,
   );
   if (cached) return cached;
 
-  const since = daysAgo(days);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ totalSessions: bigint; bouncedSessions: bigint; convertedSessions: bigint }>>`
     WITH sessions AS (
       SELECT "sessionId", COUNT(*) AS views
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       GROUP BY "sessionId"
     ),
     converted AS (
       SELECT DISTINCT "sessionId"
       FROM "Order"
-      WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since} AND status != 'CANCELLED'
+      WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since} AND "createdAt" <= ${until} AND status != 'CANCELLED'
     )
     SELECT
       (SELECT COUNT(*) FROM sessions)::bigint AS "totalSessions",
@@ -891,17 +924,18 @@ export async function getConversionFunnel(days = 30) {
 
 /** Sessions grouped by first-touch source: an explicit utm_source if present, else the referring
  * site's domain, else "Direct" (no referrer — typed URL, bookmark, or an app with no referrer). */
-export async function getTrafficSources(days = 30, limit = 10) {
-  const cacheKey = `analytics:traffic-sources:${days}:${limit}`;
+export async function getTrafficSources(days = 30, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:traffic-sources:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<Array<{ source: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgo(days);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ source: string; sessions: bigint }>>`
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", referrer, "utmSource"
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1096,17 +1130,18 @@ export async function getTrafficHeatmap(days = 30) {
 /** Sessions grouped by coarse device class, sniffed from the pageview beacon's User-Agent header.
  * Deliberately simple substring/regex matching (no UA-parsing library) — good enough for a
  * mobile-vs-desktop split, not meant to identify exact devices. */
-export async function getDeviceBreakdown(days = 30) {
-  const cacheKey = `analytics:devices:${days}`;
+export async function getDeviceBreakdown(days = 30, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:devices:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ device: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgo(days);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ device: string; sessions: bigint }>>`
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1130,17 +1165,18 @@ export async function getDeviceBreakdown(days = 30) {
 /** Sessions grouped by browser family, sniffed from the same User-Agent header as
  * getDeviceBreakdown. Match order matters — Edge/Opera UAs also contain "Chrome/", and
  * Chrome/Edge/Opera UAs all contain "Safari/", so the more specific tokens are checked first. */
-export async function getBrowserBreakdown(days = 30) {
-  const cacheKey = `analytics:browsers:${days}`;
+export async function getBrowserBreakdown(days = 30, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:browsers:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ browser: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgo(days);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ browser: string; sessions: bigint }>>`
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1207,17 +1243,18 @@ function deviceFromUserAgent(userAgent: string | null): string {
 
 /** OS family, sniffed from the same User-Agent header as getDeviceBreakdown/getBrowserBreakdown —
  * Android/iOS checked before Linux/Mac since their UAs also contain those substrings. */
-export async function getOsBreakdown(days?: number) {
-  const cacheKey = `analytics:os:${days ?? "all"}`;
+export async function getOsBreakdown(days?: number, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:os:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ os: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ os: string; sessions: bigint }>>`
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1242,17 +1279,18 @@ export async function getOsBreakdown(days?: number) {
 }
 
 /** Sessions grouped by first-touch Accept-Language primary tag. */
-export async function getLanguageBreakdown(days?: number, limit = 10) {
-  const cacheKey = `analytics:languages:${days ?? "all"}:${limit}`;
+export async function getLanguageBreakdown(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:languages:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<Array<{ language: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ language: string; sessions: bigint }>>`
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "language"
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT COALESCE("language", 'Unknown') AS language, COUNT(*)::bigint AS sessions
@@ -1269,8 +1307,9 @@ export async function getLanguageBreakdown(days?: number, limit = 10) {
 
 /** Top countries/regions/cities by first-touch session — all from the geoip-lite lookup recorded
  * at pageview time (see trackPageView), so accuracy is only as good as that offline database. */
-export async function getGeoBreakdown(days?: number, limit = 10) {
-  const cacheKey = `analytics:geo:${days ?? "all"}:${limit}`;
+export async function getGeoBreakdown(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:geo:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<{
     countries: Array<{ countryCode: string; sessions: number }>;
     regions: Array<{ region: string; sessions: number }>;
@@ -1278,13 +1317,13 @@ export async function getGeoBreakdown(days?: number, limit = 10) {
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const [countryRows, regionRows, cityRows] = await Promise.all([
     prisma.$queryRaw<Array<{ countryCode: string; sessions: bigint }>>`
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", "countryCode"
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "countryCode" IS NOT NULL
+        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "countryCode" IS NOT NULL
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT "countryCode", COUNT(*)::bigint AS sessions
@@ -1297,7 +1336,7 @@ export async function getGeoBreakdown(days?: number, limit = 10) {
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", "region", "countryCode"
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "region" IS NOT NULL
+        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "region" IS NOT NULL
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT (COALESCE("countryCode", '') || '-' || "region") AS region, COUNT(*)::bigint AS sessions
@@ -1310,7 +1349,7 @@ export async function getGeoBreakdown(days?: number, limit = 10) {
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", "city"
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "city" IS NOT NULL AND "city" != ''
+        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "city" IS NOT NULL AND "city" != ''
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT "city", COUNT(*)::bigint AS sessions
@@ -1333,17 +1372,18 @@ export async function getGeoBreakdown(days?: number, limit = 10) {
 /** Sessions split by whether the visitor had a valid customer session cookie on their first
  * pageview — a session that logs in partway through still counts as "guest" here, same
  * first-touch simplification getDeviceBreakdown/getTrafficSources already make. */
-export async function getLoggedInVsGuest(days?: number) {
-  const cacheKey = `analytics:logged-in-vs-guest:${days ?? "all"}`;
+export async function getLoggedInVsGuest(days?: number, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:logged-in-vs-guest:${range.cacheKeyPart}`;
   const cached = await cacheGet<{ loggedIn: number; guest: number }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ loggedIn: bigint; guest: bigint }>>`
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "isLoggedIn"
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1359,21 +1399,22 @@ export async function getLoggedInVsGuest(days?: number) {
 
 /** Top landing pages (first pageview of a session) and top exit pages (last pageview) — the
  * "where visitors arrive" / "where visitors give up" pair. */
-export async function getEntryExitPages(days?: number, limit = 10) {
-  const cacheKey = `analytics:entry-exit-pages:${days ?? "all"}:${limit}`;
+export async function getEntryExitPages(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:entry-exit-pages:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<{
     entryPages: Array<{ path: string; sessions: number }>;
     exitPages: Array<{ path: string; sessions: number }>;
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const [entryRows, exitRows] = await Promise.all([
     prisma.$queryRaw<Array<{ path: string; sessions: bigint }>>`
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", path
         FROM "PageView"
-        WHERE "createdAt" >= ${since}
+        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT path, COUNT(*)::bigint AS sessions
@@ -1386,7 +1427,7 @@ export async function getEntryExitPages(days?: number, limit = 10) {
       WITH last_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", path
         FROM "PageView"
-        WHERE "createdAt" >= ${since}
+        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
         ORDER BY "sessionId", "createdAt" DESC
       )
       SELECT path, COUNT(*)::bigint AS sessions
@@ -1408,8 +1449,9 @@ export async function getEntryExitPages(days?: number, limit = 10) {
 /** Engagement averages — time-per-page/scroll-depth/clicks only cover pageviews whose exit beacon
  * actually landed (durationMs IS NOT NULL); a tab killed before that beacon fires just isn't
  * counted, rather than skewing the average with a false zero. */
-export async function getEngagementSummary(days?: number) {
-  const cacheKey = `analytics:engagement:${days ?? "all"}`;
+export async function getEngagementSummary(days?: number, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:engagement:${range.cacheKeyPart}`;
   const cached = await cacheGet<{
     avgTimePerPageMs: number;
     avgScrollDepthPct: number;
@@ -1419,7 +1461,7 @@ export async function getEngagementSummary(days?: number) {
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const [pageRows, sessionRows] = await Promise.all([
     prisma.$queryRaw<Array<{ avgDuration: number; avgScroll: number; avgClicks: number }>>`
       SELECT
@@ -1427,13 +1469,13 @@ export async function getEngagementSummary(days?: number) {
         COALESCE(AVG("scrollDepthPct"), 0)::float AS "avgScroll",
         COALESCE(AVG("clickCount"), 0)::float AS "avgClicks"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "durationMs" IS NOT NULL
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "durationMs" IS NOT NULL
     `,
     prisma.$queryRaw<Array<{ avgSessionDuration: number; avgPages: number }>>`
       WITH per_session AS (
         SELECT "sessionId", COALESCE(SUM("durationMs"), 0) AS total_duration, COUNT(*) AS pages
         FROM "PageView"
-        WHERE "createdAt" >= ${since}
+        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
         GROUP BY "sessionId"
       )
       SELECT COALESCE(AVG(total_duration), 0)::float AS "avgSessionDuration", COALESCE(AVG(pages), 0)::float AS "avgPages"
@@ -2172,16 +2214,17 @@ export async function getPurchaseFrequencyDistribution() {
 }
 
 /** Order count/revenue by payment method — COD vs. the two online gateways. */
-export async function getFavoritePaymentMethod(days?: number) {
-  const cacheKey = `analytics:favorite-payment-method:${days ?? "all"}`;
+export async function getFavoritePaymentMethod(days?: number, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:favorite-payment-method:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ method: string; orders: number; revenue: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<Array<{ method: string; orders: bigint; revenue: number }>>`
     SELECT "paymentMethod" AS method, COUNT(*)::bigint AS orders, COALESCE(SUM(total), 0)::float AS revenue
     FROM "Order"
-    WHERE status != 'CANCELLED' AND "createdAt" >= ${since}
+    WHERE status != 'CANCELLED' AND "createdAt" >= ${since} AND "createdAt" <= ${until}
     GROUP BY "paymentMethod"
     ORDER BY orders DESC
   `;
@@ -2441,8 +2484,9 @@ export async function getLoyaltyPointsOverview() {
 
 /** How much of order revenue is discounted, lifetime or windowed — coupon and bundle discounts
  * counted separately since they're independent mechanisms (an order can carry either or both). */
-export async function getDiscountUsageBreakdown(days?: number) {
-  const cacheKey = `analytics:discount-usage:${days ?? "all"}`;
+export async function getDiscountUsageBreakdown(days?: number, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:discount-usage:${range.cacheKeyPart}`;
   const cached = await cacheGet<{
     totalOrders: number;
     ordersWithDiscount: number;
@@ -2454,7 +2498,7 @@ export async function getDiscountUsageBreakdown(days?: number) {
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const rows = await prisma.$queryRaw<
     Array<{ totalOrders: bigint; ordersWithDiscount: bigint; couponDiscountTotal: number; bundleDiscountTotal: number; subtotalTotal: number }>
   >`
@@ -2464,7 +2508,7 @@ export async function getDiscountUsageBreakdown(days?: number) {
       COALESCE(SUM("bundleDiscount"), 0)::float AS "bundleDiscountTotal",
       COALESCE(SUM(subtotal), 0)::float AS "subtotalTotal"
     FROM "Order"
-    WHERE status != 'CANCELLED' AND "createdAt" >= ${since}
+    WHERE status != 'CANCELLED' AND "createdAt" >= ${since} AND "createdAt" <= ${until}
   `;
 
   const row = rows[0]!;
@@ -2487,27 +2531,28 @@ export async function getDiscountUsageBreakdown(days?: number) {
 /** Return/exchange request volume by type + status, plus the most common reasons — `reason` is
  * free text (customers type it), so only exact repeats group together; it's a signal, not a
  * clustered taxonomy. */
-export async function getReturnRequestAnalytics(days?: number) {
-  const cacheKey = `analytics:return-request-analytics:${days ?? "all"}`;
+export async function getReturnRequestAnalytics(days?: number, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:return-request-analytics:${range.cacheKeyPart}`;
   const cached = await cacheGet<{
     byTypeStatus: Array<{ type: string; status: string; count: number }>;
     topReasons: Array<{ reason: string; count: number }>;
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const [typeStatusRows, reasonRows] = await Promise.all([
     prisma.$queryRaw<Array<{ type: string; status: string; count: bigint }>>`
       SELECT type::text AS type, status::text AS status, COUNT(*)::bigint AS count
       FROM "ReturnRequest"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       GROUP BY type, status
       ORDER BY count DESC
     `,
     prisma.$queryRaw<Array<{ reason: string; count: bigint }>>`
       SELECT reason, COUNT(*)::bigint AS count
       FROM "ReturnRequest"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       GROUP BY reason
       ORDER BY count DESC
       LIMIT 10
@@ -2526,8 +2571,9 @@ export async function getReturnRequestAnalytics(days?: number) {
  * (CourierLossEvent) by reason — the two together answer "how is the courier actually performing
  * and what is it costing us", since Steadfast's API exposes no per-order fee to compute the
  * latter from directly (see CourierLossEvent's schema comment). */
-export async function getCourierPerformance(days?: number) {
-  const cacheKey = `analytics:courier-performance:${days ?? "all"}`;
+export async function getCourierPerformance(days?: number, dateFrom?: Date, dateTo?: Date) {
+  const range = resolveDateRange(days, dateFrom, dateTo);
+  const cacheKey = `analytics:courier-performance:${range.cacheKeyPart}`;
   const cached = await cacheGet<{
     byStatus: Array<{ status: string; count: number }>;
     lossByReason: Array<{ reason: string; count: number; amount: number }>;
@@ -2535,19 +2581,19 @@ export async function getCourierPerformance(days?: number) {
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const { since, until } = range;
   const [statusRows, lossRows] = await Promise.all([
     prisma.$queryRaw<Array<{ status: string | null; count: bigint }>>`
       SELECT "courierStatus" AS status, COUNT(*)::bigint AS count
       FROM "Order"
-      WHERE "courierConsignmentId" IS NOT NULL AND "createdAt" >= ${since}
+      WHERE "courierConsignmentId" IS NOT NULL AND "createdAt" >= ${since} AND "createdAt" <= ${until}
       GROUP BY "courierStatus"
       ORDER BY count DESC
     `,
     prisma.$queryRaw<Array<{ reason: string; count: bigint; amount: number }>>`
       SELECT reason::text AS reason, COUNT(*)::bigint AS count, COALESCE(SUM(amount), 0)::float AS amount
       FROM "CourierLossEvent"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
       GROUP BY reason
       ORDER BY amount DESC
     `,

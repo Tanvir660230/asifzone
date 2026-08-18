@@ -28,19 +28,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Gauge,
-  UserSearch,
-  Milestone,
-  Search,
-  PackageSearch,
-  Megaphone as MegaphoneIcon,
-  Receipt,
-  DollarSign,
-  Boxes as BoxesIcon,
-  Activity,
-  Heart,
-  Sparkles,
-  History,
-  FileBarChart,
   CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -66,23 +53,10 @@ const NAV_SECTIONS = [
   },
   {
     label: "Business Intelligence",
-    items: [
-      { href: "/admin/bi/overview", label: "Overview", icon: Gauge },
-      { href: "/admin/bi/visitors", label: "Visitors", icon: UserSearch },
-      { href: "/admin/bi/journey", label: "Journey", icon: Milestone },
-      { href: "/admin/bi/search", label: "Search", icon: Search },
-      { href: "/admin/bi/products", label: "Product Intel", icon: PackageSearch },
-      { href: "/admin/bi/customers", label: "Customer Intel", icon: Users },
-      { href: "/admin/bi/marketing", label: "Marketing", icon: MegaphoneIcon },
-      { href: "/admin/bi/sales", label: "Sales", icon: Receipt },
-      { href: "/admin/bi/financial", label: "Financial", icon: DollarSign },
-      { href: "/admin/bi/inventory", label: "Inventory Intel", icon: BoxesIcon },
-      { href: "/admin/bi/operations", label: "Operations", icon: Activity },
-      { href: "/admin/bi/behavior", label: "Behavior", icon: Heart },
-      { href: "/admin/bi/ai-insights", label: "AI Insights", icon: Sparkles },
-      { href: "/admin/bi/lifetime", label: "Lifetime", icon: History },
-      { href: "/admin/bi/reports", label: "Reports", icon: FileBarChart },
-    ],
+    // Overview, Visitors, Journey, Search, Product/Customer/Marketing/Sales/Financial/Inventory
+    // Intelligence, Operations, Behavior, AI Insights, Lifetime, and Reports all live behind this
+    // one entry now via BiSubNav — see app/admin/(shell)/bi/layout.tsx.
+    items: [{ href: "/admin/bi/overview", label: "Business Intelligence", icon: Gauge }],
   },
   {
     label: "Catalog",

@@ -11,9 +11,24 @@ interface HeroRevenueCardProps {
   trendPct?: number | null;
   series: number[];
   className?: string;
+  /** Overrides for callers whose baseline isn't literally "today" (e.g. a BI dashboard driven by
+   * a date-range picker) — all default to the original dashboard wording so existing callers are
+   * unaffected. */
+  label?: string;
+  ordersSuffix?: string;
+  trendLabel?: string;
 }
 
-export function HeroRevenueCard({ value, todayOrders, trendPct, series, className }: HeroRevenueCardProps) {
+export function HeroRevenueCard({
+  value,
+  todayOrders,
+  trendPct,
+  series,
+  className,
+  label = "Today's revenue",
+  ordersSuffix = "today",
+  trendLabel = "30-day trend",
+}: HeroRevenueCardProps) {
   const hasTrend = trendPct !== null && trendPct !== undefined && Number.isFinite(trendPct);
   const isUp = hasTrend && trendPct! >= 0;
 
@@ -41,16 +56,16 @@ export function HeroRevenueCard({ value, todayOrders, trendPct, series, classNam
             )}
           >
             {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-            {Math.abs(trendPct!).toFixed(0)}% 30-day trend
+            {Math.abs(trendPct!).toFixed(0)}% {trendLabel}
           </span>
         )}
       </div>
 
       <div className="relative mt-6 space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-cream-50/50">Today&apos;s revenue</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-cream-50/50">{label}</p>
         <p className="text-4xl font-semibold tabular-nums leading-tight tracking-tight sm:text-[2.75rem]">{value}</p>
         <p className="flex items-center gap-1.5 text-sm text-cream-50/60">
-          <ShoppingBag size={14} /> {todayOrders} order{todayOrders === 1 ? "" : "s"} today
+          <ShoppingBag size={14} /> {todayOrders} order{todayOrders === 1 ? "" : "s"} {ordersSuffix}
         </p>
       </div>
 

@@ -83,8 +83,8 @@ export interface VisitorPoint {
   pageViews: number;
 }
 
-export function getVisitorSeries(days = 30) {
-  return apiFetch<{ series: VisitorPoint[] }>(`/api/analytics/visitors?days=${days}`);
+export function getVisitorSeries(days = 30, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<{ series: VisitorPoint[] }>(`/api/analytics/visitors${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface TrendingProduct {
@@ -169,8 +169,8 @@ export interface ConversionFunnel {
   bounceRate: number;
 }
 
-export function getConversionFunnel(days = 30) {
-  return apiFetch<ConversionFunnel>(`/api/analytics/funnel?days=${days}`);
+export function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<ConversionFunnel>(`/api/analytics/funnel${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface TrafficSource {
@@ -178,8 +178,8 @@ export interface TrafficSource {
   sessions: number;
 }
 
-export function getTrafficSources(days = 30, limit = 10) {
-  return apiFetch<{ sources: TrafficSource[] }>(`/api/analytics/traffic-sources?days=${days}&limit=${limit}`);
+export function getTrafficSources(days = 30, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<{ sources: TrafficSource[] }>(`/api/analytics/traffic-sources${windowParams({ days, limit, dateFrom, dateTo })}`);
 }
 
 export interface CampaignStat {
@@ -211,8 +211,8 @@ export interface DeviceStat {
   sessions: number;
 }
 
-export function getDeviceBreakdown(days = 30) {
-  return apiFetch<{ devices: DeviceStat[] }>(`/api/analytics/devices?days=${days}`);
+export function getDeviceBreakdown(days = 30, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<{ devices: DeviceStat[] }>(`/api/analytics/devices${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface BrowserStat {
@@ -220,8 +220,8 @@ export interface BrowserStat {
   sessions: number;
 }
 
-export function getBrowserBreakdown(days = 30) {
-  return apiFetch<{ browsers: BrowserStat[] }>(`/api/analytics/browsers?days=${days}`);
+export function getBrowserBreakdown(days = 30, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<{ browsers: BrowserStat[] }>(`/api/analytics/browsers${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface SlowMovingProduct {
@@ -264,9 +264,12 @@ export function getDemandForecast(days = 14, limit = 10) {
 /** Builds a query string from {days, limit} where `days === undefined` means "all time" — omitted
  * from the string entirely rather than sent as a value, since analyticsQuerySchema on the API side
  * treats an absent `days` the same way (see analytics.service.ts's daysAgoOrUndefined). */
-function windowParams(params: Record<string, number | undefined>): string {
+function windowParams(params: Record<string, number | Date | undefined>): string {
   const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) if (value !== undefined) search.set(key, String(value));
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue;
+    search.set(key, value instanceof Date ? value.toISOString() : String(value));
+  }
   const qs = search.toString();
   return qs ? `?${qs}` : "";
 }
@@ -276,8 +279,8 @@ export interface OsStat {
   sessions: number;
 }
 
-export function getOsBreakdown(days?: number) {
-  return apiFetch<{ os: OsStat[] }>(`/api/analytics/os${windowParams({ days })}`);
+export function getOsBreakdown(days?: number, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<{ os: OsStat[] }>(`/api/analytics/os${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface LanguageStat {
@@ -285,8 +288,8 @@ export interface LanguageStat {
   sessions: number;
 }
 
-export function getLanguageBreakdown(days?: number, limit = 10) {
-  return apiFetch<{ languages: LanguageStat[] }>(`/api/analytics/languages${windowParams({ days, limit })}`);
+export function getLanguageBreakdown(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<{ languages: LanguageStat[] }>(`/api/analytics/languages${windowParams({ days, limit, dateFrom, dateTo })}`);
 }
 
 export interface GeoBreakdown {
@@ -295,8 +298,8 @@ export interface GeoBreakdown {
   cities: Array<{ city: string; sessions: number }>;
 }
 
-export function getGeoBreakdown(days?: number, limit = 10) {
-  return apiFetch<GeoBreakdown>(`/api/analytics/geo${windowParams({ days, limit })}`);
+export function getGeoBreakdown(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<GeoBreakdown>(`/api/analytics/geo${windowParams({ days, limit, dateFrom, dateTo })}`);
 }
 
 export interface LoggedInVsGuest {
@@ -304,8 +307,8 @@ export interface LoggedInVsGuest {
   guest: number;
 }
 
-export function getLoggedInVsGuest(days?: number) {
-  return apiFetch<LoggedInVsGuest>(`/api/analytics/logged-in-vs-guest${windowParams({ days })}`);
+export function getLoggedInVsGuest(days?: number, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<LoggedInVsGuest>(`/api/analytics/logged-in-vs-guest${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface EntryExitPages {
@@ -313,8 +316,8 @@ export interface EntryExitPages {
   exitPages: Array<{ path: string; sessions: number }>;
 }
 
-export function getEntryExitPages(days?: number, limit = 10) {
-  return apiFetch<EntryExitPages>(`/api/analytics/entry-exit-pages${windowParams({ days, limit })}`);
+export function getEntryExitPages(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<EntryExitPages>(`/api/analytics/entry-exit-pages${windowParams({ days, limit, dateFrom, dateTo })}`);
 }
 
 export interface EngagementSummary {
@@ -325,8 +328,8 @@ export interface EngagementSummary {
   avgPagesPerSession: number;
 }
 
-export function getEngagementSummary(days?: number) {
-  return apiFetch<EngagementSummary>(`/api/analytics/engagement${windowParams({ days })}`);
+export function getEngagementSummary(days?: number, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<EngagementSummary>(`/api/analytics/engagement${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface ReturningVisitorBucket {
@@ -560,8 +563,8 @@ export interface PaymentMethodStat {
   revenue: number;
 }
 
-export function getFavoritePaymentMethod(days?: number) {
-  return apiFetch<{ methods: PaymentMethodStat[] }>(`/api/analytics/favorite-payment-method${windowParams({ days })}`);
+export function getFavoritePaymentMethod(days?: number, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<{ methods: PaymentMethodStat[] }>(`/api/analytics/favorite-payment-method${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface PurchaseTimeDistribution {
@@ -657,8 +660,8 @@ export interface DiscountUsageBreakdown {
   discountRatePct: number;
 }
 
-export function getDiscountUsageBreakdown(days?: number) {
-  return apiFetch<DiscountUsageBreakdown>(`/api/analytics/discount-usage${windowParams({ days })}`);
+export function getDiscountUsageBreakdown(days?: number, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<DiscountUsageBreakdown>(`/api/analytics/discount-usage${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface ReturnRequestAnalytics {
@@ -666,8 +669,8 @@ export interface ReturnRequestAnalytics {
   topReasons: Array<{ reason: string; count: number }>;
 }
 
-export function getReturnRequestAnalytics(days?: number) {
-  return apiFetch<ReturnRequestAnalytics>(`/api/analytics/return-request-analytics${windowParams({ days })}`);
+export function getReturnRequestAnalytics(days?: number, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<ReturnRequestAnalytics>(`/api/analytics/return-request-analytics${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 export interface CourierPerformance {
@@ -676,8 +679,8 @@ export interface CourierPerformance {
   totalLoss: number;
 }
 
-export function getCourierPerformance(days?: number) {
-  return apiFetch<CourierPerformance>(`/api/analytics/courier-performance${windowParams({ days })}`);
+export function getCourierPerformance(days?: number, dateFrom?: Date, dateTo?: Date) {
+  return apiFetch<CourierPerformance>(`/api/analytics/courier-performance${windowParams({ days, dateFrom, dateTo })}`);
 }
 
 // Section 9 — Financial Analytics

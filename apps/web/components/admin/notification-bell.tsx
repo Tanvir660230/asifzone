@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bell, PackageX, ShoppingBag } from "lucide-react";
 import * as notificationsApi from "@/lib/api/notifications";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const ICON_BY_TYPE: Record<string, typeof ShoppingBag> = {
@@ -13,16 +14,6 @@ const ICON_BY_TYPE: Record<string, typeof ShoppingBag> = {
   "product.low_stock": PackageX,
   "order.cancelled_but_paid": AlertTriangle,
 };
-
-function timeAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);

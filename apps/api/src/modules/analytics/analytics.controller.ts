@@ -71,8 +71,8 @@ export const mostViewedProducts = asyncHandler(async (req: Request, res: Respons
 });
 
 export const visitorSeries = asyncHandler(async (req: Request, res: Response) => {
-  const { days = 30 } = query(req);
-  res.json({ series: await analyticsService.getVisitorSeries(days) });
+  const { days = 30, dateFrom, dateTo } = query(req);
+  res.json({ series: await analyticsService.getVisitorSeries(days, dateFrom, dateTo) });
 });
 
 export const trendingProducts = asyncHandler(async (req: Request, res: Response) => {
@@ -108,13 +108,13 @@ export const topBrands = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const conversionFunnel = asyncHandler(async (req: Request, res: Response) => {
-  const { days = 30 } = query(req);
-  res.json(await analyticsService.getConversionFunnel(days));
+  const { days = 30, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getConversionFunnel(days, dateFrom, dateTo));
 });
 
 export const trafficSources = asyncHandler(async (req: Request, res: Response) => {
-  const { days = 30, limit = 10 } = query(req);
-  res.json({ sources: await analyticsService.getTrafficSources(days, limit) });
+  const { days = 30, limit = 10, dateFrom, dateTo } = query(req);
+  res.json({ sources: await analyticsService.getTrafficSources(days, limit, dateFrom, dateTo) });
 });
 
 export const campaignPerformance = asyncHandler(async (req: Request, res: Response) => {
@@ -132,13 +132,13 @@ export const trafficHeatmap = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const deviceBreakdown = asyncHandler(async (req: Request, res: Response) => {
-  const { days = 30 } = query(req);
-  res.json({ devices: await analyticsService.getDeviceBreakdown(days) });
+  const { days = 30, dateFrom, dateTo } = query(req);
+  res.json({ devices: await analyticsService.getDeviceBreakdown(days, dateFrom, dateTo) });
 });
 
 export const browserBreakdown = asyncHandler(async (req: Request, res: Response) => {
-  const { days = 30 } = query(req);
-  res.json({ browsers: await analyticsService.getBrowserBreakdown(days) });
+  const { days = 30, dateFrom, dateTo } = query(req);
+  res.json({ browsers: await analyticsService.getBrowserBreakdown(days, dateFrom, dateTo) });
 });
 
 export const slowMovingProducts = asyncHandler(async (req: Request, res: Response) => {
@@ -161,33 +161,33 @@ export const demandForecast = asyncHandler(async (req: Request, res: Response) =
 // selector.
 
 export const osBreakdown = asyncHandler(async (req: Request, res: Response) => {
-  const { days } = query(req);
-  res.json({ os: await analyticsService.getOsBreakdown(days) });
+  const { days, dateFrom, dateTo } = query(req);
+  res.json({ os: await analyticsService.getOsBreakdown(days, dateFrom, dateTo) });
 });
 
 export const languageBreakdown = asyncHandler(async (req: Request, res: Response) => {
-  const { days, limit = 10 } = query(req);
-  res.json({ languages: await analyticsService.getLanguageBreakdown(days, limit) });
+  const { days, limit = 10, dateFrom, dateTo } = query(req);
+  res.json({ languages: await analyticsService.getLanguageBreakdown(days, limit, dateFrom, dateTo) });
 });
 
 export const geoBreakdown = asyncHandler(async (req: Request, res: Response) => {
-  const { days, limit = 10 } = query(req);
-  res.json(await analyticsService.getGeoBreakdown(days, limit));
+  const { days, limit = 10, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getGeoBreakdown(days, limit, dateFrom, dateTo));
 });
 
 export const loggedInVsGuest = asyncHandler(async (req: Request, res: Response) => {
-  const { days } = query(req);
-  res.json(await analyticsService.getLoggedInVsGuest(days));
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getLoggedInVsGuest(days, dateFrom, dateTo));
 });
 
 export const entryExitPages = asyncHandler(async (req: Request, res: Response) => {
-  const { days, limit = 10 } = query(req);
-  res.json(await analyticsService.getEntryExitPages(days, limit));
+  const { days, limit = 10, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getEntryExitPages(days, limit, dateFrom, dateTo));
 });
 
 export const engagementSummary = asyncHandler(async (req: Request, res: Response) => {
-  const { days } = query(req);
-  res.json(await analyticsService.getEngagementSummary(days));
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getEngagementSummary(days, dateFrom, dateTo));
 });
 
 export const returningVisitorFrequency = asyncHandler(async (_req: Request, res: Response) => {
@@ -294,8 +294,8 @@ export const purchaseFrequencyDistribution = asyncHandler(async (_req: Request, 
 });
 
 export const favoritePaymentMethod = asyncHandler(async (req: Request, res: Response) => {
-  const { days } = query(req);
-  res.json({ methods: await analyticsService.getFavoritePaymentMethod(days) });
+  const { days, dateFrom, dateTo } = query(req);
+  res.json({ methods: await analyticsService.getFavoritePaymentMethod(days, dateFrom, dateTo) });
 });
 
 export const purchaseTimeDistribution = asyncHandler(async (req: Request, res: Response) => {
@@ -337,18 +337,18 @@ export const loyaltyPointsOverview = asyncHandler(async (_req: Request, res: Res
 // Section 8 — Sales Intelligence
 
 export const discountUsageBreakdown = asyncHandler(async (req: Request, res: Response) => {
-  const { days } = query(req);
-  res.json(await analyticsService.getDiscountUsageBreakdown(days));
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getDiscountUsageBreakdown(days, dateFrom, dateTo));
 });
 
 export const returnRequestAnalytics = asyncHandler(async (req: Request, res: Response) => {
-  const { days } = query(req);
-  res.json(await analyticsService.getReturnRequestAnalytics(days));
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getReturnRequestAnalytics(days, dateFrom, dateTo));
 });
 
 export const courierPerformance = asyncHandler(async (req: Request, res: Response) => {
-  const { days } = query(req);
-  res.json(await analyticsService.getCourierPerformance(days));
+  const { days, dateFrom, dateTo } = query(req);
+  res.json(await analyticsService.getCourierPerformance(days, dateFrom, dateTo));
 });
 
 // Section 9 — Financial Analytics

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -25,22 +25,24 @@ export function Popover({ open, onClose, anchorRef, align = "start", className, 
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, lockScroll: false });
   const [style, setStyle] = useState<{ top: number; left: number } | null>(null);
 
+  const reposition = useCallback(() => {
+    const anchor = anchorRef.current;
+    const panel = panelRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const panelWidth = panel?.offsetWidth ?? 280;
+    const rawLeft = align === "end" ? rect.right - panelWidth : rect.left;
+    const left = Math.min(Math.max(8, rawLeft), window.innerWidth - panelWidth - 8);
+    const top = Math.min(rect.bottom + 8, window.innerHeight - 8);
+    setStyle({ top, left });
+    // panelRef is a stable ref object from useFocusTrap; not a reactive dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [align, anchorRef]);
+
   useLayoutEffect(() => {
     if (!open) {
       setStyle(null);
       return;
-    }
-
-    function reposition() {
-      const anchor = anchorRef.current;
-      const panel = panelRef.current;
-      if (!anchor) return;
-      const rect = anchor.getBoundingClientRect();
-      const panelWidth = panel?.offsetWidth ?? 280;
-      const rawLeft = align === "end" ? rect.right - panelWidth : rect.left;
-      const left = Math.min(Math.max(8, rawLeft), window.innerWidth - panelWidth - 8);
-      const top = Math.min(rect.bottom + 8, window.innerHeight - 8);
-      setStyle({ top, left });
     }
 
     reposition();
@@ -50,9 +52,20 @@ export function Popover({ open, onClose, anchorRef, align = "start", className, 
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
     };
-    // panelRef is a stable ref object from useFocusTrap; not a reactive dependency.
+  }, [open, reposition]);
+
+  // Re-measure when the panel's own content resizes (e.g. a picker expanding to show a calendar) —
+  // the effect above only fires on open/align/anchor changes, so without this a panel that grows
+  // after its initial position is set can silently overflow off the edge of the viewport.
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const ro = new ResizeObserver(() => reposition());
+    ro.observe(panel);
+    return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, align, anchorRef]);
+  }, [open]);
 
   // mousedown (not click) so a drag-select that ends outside the panel doesn't fire as a stray close.
   useEffect(() => {

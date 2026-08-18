@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, ShoppingBag, Percent, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,46 +7,41 @@ import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { formatPrice, orderStatusLabel } from "@/lib/format";
-import { cn } from "@/lib/utils";
-
-type RangeOption = 7 | 30 | 90 | "all";
-const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
+import { useBiDateRange } from "@/components/admin/bi-date-range-context";
 
 function toBarItems<T>(rows: T[] | undefined, opts: { key: (r: T) => string; label: (r: T) => string; value: (r: T) => number; valueLabel: (r: T) => string }): RankedBarListItem[] {
   return (rows ?? []).map((r) => ({ key: opts.key(r), label: opts.label(r), value: opts.value(r), valueLabel: opts.valueLabel(r) }));
 }
 
 export default function SalesIntelligencePage() {
-  const [range, setRange] = useState<RangeOption>(30);
-  const apiDays = range === "all" ? undefined : range;
+  // Driven by the shared BI date-range picker (app/admin/(shell)/bi/layout.tsx) — see the same
+  // note in visitors/page.tsx.
+  const { range } = useBiDateRange();
+  const rangeKey = `${range.from.toISOString()}:${range.to.toISOString()}`;
 
   const { data: statusCounts } = useQuery({ queryKey: ["bi-sales-status"], queryFn: analyticsApi.getOrderStatusCounts });
-  const { data: paymentMethod } = useQuery({ queryKey: ["bi-sales-payment", apiDays], queryFn: () => analyticsApi.getFavoritePaymentMethod(apiDays) });
-  const { data: discounts } = useQuery({ queryKey: ["bi-sales-discounts", apiDays], queryFn: () => analyticsApi.getDiscountUsageBreakdown(apiDays) });
-  const { data: returns } = useQuery({ queryKey: ["bi-sales-returns", apiDays], queryFn: () => analyticsApi.getReturnRequestAnalytics(apiDays) });
-  const { data: courier } = useQuery({ queryKey: ["bi-sales-courier", apiDays], queryFn: () => analyticsApi.getCourierPerformance(apiDays) });
+  const { data: paymentMethod } = useQuery({
+    queryKey: ["bi-sales-payment", rangeKey],
+    queryFn: () => analyticsApi.getFavoritePaymentMethod(undefined, range.from, range.to),
+  });
+  const { data: discounts } = useQuery({
+    queryKey: ["bi-sales-discounts", rangeKey],
+    queryFn: () => analyticsApi.getDiscountUsageBreakdown(undefined, range.from, range.to),
+  });
+  const { data: returns } = useQuery({
+    queryKey: ["bi-sales-returns", rangeKey],
+    queryFn: () => analyticsApi.getReturnRequestAnalytics(undefined, range.from, range.to),
+  });
+  const { data: courier } = useQuery({
+    queryKey: ["bi-sales-courier", rangeKey],
+    queryFn: () => analyticsApi.getCourierPerformance(undefined, range.from, range.to),
+  });
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl tracking-tight text-ink-900 sm:text-3xl">Sales Intelligence</h1>
-          <p className="mt-1 text-sm text-ink-500">Order mix, discounts, returns, and how well the courier is actually performing.</p>
-        </div>
-        <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full border border-ink-100 bg-ink-50/60 p-1">
-          {RANGE_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setRange(opt)}
-              className={cn(
-                "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 ease-smooth",
-                range === opt ? "bg-ink-900 text-cream-50 shadow-sm" : "text-ink-500 hover:text-ink-900",
-              )}
-            >
-              {opt === "all" ? "All" : `${opt}D`}
-            </button>
-          ))}
-        </div>
+      <div>
+        <h1 className="font-display text-2xl tracking-tight text-ink-900 sm:text-3xl">Sales Intelligence</h1>
+        <p className="mt-1 text-sm text-ink-500">Order mix, discounts, returns, and how well the courier is actually performing.</p>
       </div>
 
       {/* Order mix */}
@@ -161,7 +155,7 @@ export default function SalesIntelligencePage() {
                 <Truck size={18} />
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Total loss ({range === "all" ? "lifetime" : `${range}D`})</p>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Total loss</p>
                 <p className="text-xl font-semibold tabular-nums text-ink-900">{courier ? formatPrice(courier.totalLoss) : "—"}</p>
               </div>
             </div>
