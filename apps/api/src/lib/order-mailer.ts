@@ -1,6 +1,7 @@
 import type { Order } from "@prisma/client";
 import { sendMail } from "./mailer";
 import { renderEmailLayout } from "./email-template";
+import { escapeHtml } from "./html";
 import { getSmsSettings } from "../modules/sms-settings/sms-settings.service";
 import { env } from "../config/env";
 
@@ -20,8 +21,9 @@ export function sendPaymentConfirmationEmail(order: Order): void {
     const smsSettings = await getSmsSettings();
     if (!smsSettings.customerPaymentConfirmedEmailEnabled) return;
 
+    const firstName = escapeHtml(order.customerName.split(" ")[0] ?? "");
     const bodyHtml = `
-      <p style="margin:0 0 16px;">Hi ${order.customerName.split(" ")[0]},</p>
+      <p style="margin:0 0 16px;">Hi ${firstName},</p>
       <p style="margin:0 0 16px;">We've received your payment for order <strong>${order.orderNumber}</strong>.</p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 16px;border-collapse:collapse;">
         <tr>

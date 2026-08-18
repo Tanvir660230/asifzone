@@ -784,8 +784,11 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
   // SSLCommerz already took the payment, and nothing else in this function initiates a refund, so an
   // admin has to see this and act rather than the order silently sitting cancelled with money still
   // collected. Checked against the pre-transaction snapshot, not `updated` — paymentStatus isn't
-  // part of what this function changes, so it can't have been affected by the update itself.
-  if (input.status === "CANCELLED" && existing.paymentStatus === "PAID") {
+  // part of what this function changes, so it can't have been affected by the update itself. Gated on
+  // the *previous* status (same guard shape as restockNeeded above) so re-saving an already-cancelled
+  // order — e.g. a bulk-status action re-applied over a mixed selection — doesn't refire this alert
+  // for every order that was cancelled-but-paid before this call ever started.
+  if (input.status === "CANCELLED" && existing.status !== "CANCELLED" && existing.paymentStatus === "PAID") {
     notify({
       type: "order.cancelled_but_paid",
       title: `Cancelled but paid: ${updated.orderNumber}`,

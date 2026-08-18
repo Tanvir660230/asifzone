@@ -276,7 +276,9 @@ export interface Refund {
   id: string;
   orderId: string;
   paymentId: string | null;
-  amount: number;
+  // Prisma Decimal serializes over JSON as a string, same convention as Order.total/subtotal/discount
+  // below — not a number.
+  amount: string;
   reason: string | null;
   method: string | null;
   status: "REQUESTED" | "COMPLETED";

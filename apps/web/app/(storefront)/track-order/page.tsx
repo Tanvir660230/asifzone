@@ -45,7 +45,7 @@ export default function TrackOrderPage() {
               id="orderNumber"
               value={orderNumber}
               onChange={(e) => setOrderNumber(e.target.value)}
-              placeholder="ORD-20260804-XXXX"
+              placeholder="ORD-20260804-XXXXXX"
               required
             />
           </div>

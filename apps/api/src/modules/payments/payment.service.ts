@@ -1,5 +1,6 @@
 import crypto from "crypto";
-import type { Order, Prisma } from "@prisma/client";
+import type { Order } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { sendCustomerOrderSms } from "../../lib/order-sms";
@@ -52,15 +53,30 @@ export async function startPaymentSession(order: Order): Promise<{ gatewayUrl: s
   if (order.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
 
   const attemptRef = newAttemptRef();
-  const session = await prisma.paymentSession.create({
-    data: {
-      orderId: order.id,
-      provider: order.paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ",
-      status: "ACTIVE",
-      gatewayTransactionRef: attemptRef,
-      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-    },
-  });
+  let session;
+  try {
+    session = await prisma.paymentSession.create({
+      data: {
+        orderId: order.id,
+        provider: order.paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ",
+        status: "ACTIVE",
+        gatewayTransactionRef: attemptRef,
+        expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+      },
+    });
+  } catch (err) {
+    // The one-ACTIVE-session-per-order partial unique index rejected this — a concurrent duplicate
+    // request for the same order (e.g. a double-click on "Place Order" racing createOrder's own
+    // dedup guard, which only covers the Order insert, not this) already has an ACTIVE session in
+    // flight. Reuse its gatewayUrl instead of throwing: the caller (order.controller.ts) treats any
+    // throw here as "this order can never be paid" and cancels + restocks it, which would rip a real
+    // customer's gateway tab out from under them mid-payment.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const active = await prisma.paymentSession.findFirst({ where: { orderId: order.id, status: "ACTIVE" } });
+      if (active?.gatewayUrl) return { gatewayUrl: active.gatewayUrl, sessionId: active.id };
+    }
+    throw err;
+  }
 
   const gatewayParams = {
     orderNumber: order.orderNumber,
@@ -103,8 +119,12 @@ export async function settlePaymentSession(
 ): Promise<{ order: Order; justSettled: boolean }> {
   const session = await prisma.paymentSession.findUnique({ where: { gatewayTransactionRef: attemptRef }, include: { order: true } });
   if (!session) throw AppError.notFound("Payment session not found");
-  if (session.status !== "ACTIVE") {
-    // Already resolved — a racer beat us here, or this is a replayed/late callback. Idempotent no-op.
+  // EXPIRED still accepts a settle — it only means the cron or a retry gave up waiting, not that the
+  // gateway itself declined. A customer's original gateway tab can complete payment *after* retryPayment
+  // (order.service.ts) has already expired this exact session to free up a fresh attempt; without this,
+  // that late-but-genuine success would be silently discarded — money taken, order left UNPAID forever.
+  // FAILED/CANCELLED/SUCCEEDED are the only true terminal states where a settle is a stale/replayed no-op.
+  if (session.status !== "ACTIVE" && session.status !== "EXPIRED") {
     return { order: session.order, justSettled: false };
   }
   if (Math.abs(Number(session.order.total) - verifiedAmount) > 0.01) {
@@ -113,10 +133,10 @@ export async function settlePaymentSession(
 
   // The WHERE clause here — not the read above — is what actually makes this safe under
   // concurrency: a live redirect callback, the reconciliation cron, and an IPN can all reach this
-  // for the same session around the same moment. Only the first UPDATE to actually commit matches
-  // `status: "ACTIVE"`; any other racer's updateMany matches zero rows.
+  // for the same session around the same moment. Only the first UPDATE to actually commit matches;
+  // any other racer's updateMany matches zero rows.
   const claimed = await prisma.paymentSession.updateMany({
-    where: { gatewayTransactionRef: attemptRef, status: "ACTIVE" },
+    where: { gatewayTransactionRef: attemptRef, status: { in: ["ACTIVE", "EXPIRED"] } },
     data: { status: "SUCCEEDED" },
   });
   if (claimed.count === 0) {
