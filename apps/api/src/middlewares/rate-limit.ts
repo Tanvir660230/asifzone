@@ -40,6 +40,17 @@ export const orderTrackRateLimit = rateLimit({
   message: { error: "Too many tracking requests, please slow down and try again shortly" },
 });
 
+/** Retrying payment on an existing order — same shape as orderCreateRateLimit, kept separate so a
+ * shopper repeatedly retrying one stubborn payment doesn't eat into the budget for placing brand
+ * new orders (or vice versa). */
+export const retryPaymentRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many payment retries, please slow down and try again shortly" },
+});
+
 export const couponValidateRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 20,

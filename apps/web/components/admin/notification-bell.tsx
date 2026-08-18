@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, PackageX, ShoppingBag } from "lucide-react";
+import { AlertTriangle, Bell, PackageX, ShoppingBag } from "lucide-react";
 import * as notificationsApi from "@/lib/api/notifications";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 const ICON_BY_TYPE: Record<string, typeof ShoppingBag> = {
   "order.created": ShoppingBag,
   "product.low_stock": PackageX,
+  "order.cancelled_but_paid": AlertTriangle,
 };
 
 function timeAgo(iso: string): string {
@@ -89,9 +90,16 @@ export function NotificationBell() {
           aria-modal="true"
           aria-label="Notifications"
           tabIndex={-1}
-          className="glass absolute right-0 z-50 mt-2 w-80 animate-modal-in rounded-xl border border-ink-100/70 shadow-floatLg"
+          // Fully opaque, not `.glass` — this floats over busy admin content (tables, colored
+          // status pills), and translucency there let the content behind visibly bleed through
+          // the notification text, hurting legibility.
+          // flex-col + the header's shrink-0 + the list's min-h-0 flex-1 keeps the header pinned
+          // while only the notification list scrolls, capped at 70vh so the panel never grows tall
+          // enough to swallow the page underneath it. Width is viewport-aware: ~full width with a
+          // margin on phones, 400px on desktop.
+          className="absolute right-0 top-full z-50 mt-2 flex max-h-[70vh] w-[min(92vw,400px)] flex-col overflow-hidden rounded-xl border border-ink-100/70 bg-cream-50 shadow-floatLg animate-modal-in"
         >
-          <div className="flex items-center justify-between border-b border-ink-100 px-4 py-2.5">
+          <div className="flex shrink-0 items-center justify-between border-b border-ink-100 px-4 py-3">
             <span className="text-sm font-medium text-ink-900">Notifications</span>
             {unreadCount > 0 && (
               <button
@@ -103,7 +111,7 @@ export function NotificationBell() {
               </button>
             )}
           </div>
-          <div className="max-h-96 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {items.length === 0 && <p className="px-4 py-8 text-center text-sm text-ink-400">No notifications yet.</p>}
             {items.map((n) => {
               const Icon = ICON_BY_TYPE[n.type] ?? Bell;

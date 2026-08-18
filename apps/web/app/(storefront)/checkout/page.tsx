@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, User, MapPin, Banknote, Smartphone } from "lucide-react";
+import { ChevronDown, User, MapPin, Banknote, Smartphone, X } from "lucide-react";
 import {
   checkoutSchema,
   BD_ALL_DISTRICTS,
@@ -44,7 +44,20 @@ const checkoutFormSchema = checkoutSchema.omit({ items: true, couponCode: true }
 type CheckoutFormValues = ReturnType<typeof checkoutFormSchema.parse>;
 
 export default function CheckoutPage() {
+  return (
+    <Suspense>
+      <CheckoutForm />
+    </Suspense>
+  );
+}
+
+// useSearchParams (read below, for the ?paymentError=1/?paymentCancelled=1 gateway-redirect notice)
+// requires a Suspense boundary around its nearest client-component caller during static generation
+// — split into an outer wrapper + this inner component rather than wrapping the whole tree lower
+// down, same pattern as account/(auth)/login/page.tsx.
+function CheckoutForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const cartItems = useCartStore((s) => s.items);
   const clearCart = useCartStore((s) => s.clear);
   const expressItem = useExpressCheckoutStore((s) => s.item);
@@ -86,6 +99,17 @@ export default function CheckoutPage() {
   const [selectedAddressId, setSelectedAddressId] = useState("");
   const [summaryOpen, setSummaryOpen] = useState(false);
 
+  // A failed/cancelled gateway redirect (payment.controller.ts) lands the shopper back here with
+  // ?paymentError=1 / ?paymentCancelled=1 — read once on mount rather than kept live against
+  // searchParams, so dismissing it (or submitting a fresh order) doesn't have it reappear on a
+  // re-render triggered by something unrelated.
+  const [gatewayNotice, setGatewayNotice] = useState<"error" | "cancelled" | null>(null);
+  useEffect(() => {
+    if (searchParams.get("paymentError")) setGatewayNotice("error");
+    else if (searchParams.get("paymentCancelled")) setGatewayNotice("cancelled");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Bundle discounts are auto-detected from cart contents (no code to enter, unlike coupons) — this
   // is a preview only, the authoritative amount is recomputed server-side when the order is created.
   useEffect(() => {
@@ -125,7 +149,9 @@ export default function CheckoutPage() {
   } = useForm<CheckoutFormValues>({
     resolver: zodResolver(checkoutFormSchema),
     defaultValues: {
-      paymentMethod: "COD",
+      // Left unselected so the shopper has to actively pick one, instead of quietly submitting
+      // under COD because they never looked at the radios.
+      paymentMethod: "" as CheckoutFormValues["paymentMethod"],
       shippingDivision: "" as CheckoutFormValues["shippingDivision"],
       shippingDistrict: "",
       shippingArea: "",
@@ -141,9 +167,11 @@ export default function CheckoutPage() {
   const anyPaymentMethodEnabled = codEnabled || onlinePaymentEnabled || epsPaymentEnabled;
   const paymentMethod = watch("paymentMethod");
 
-  // If the shopper's currently-selected method gets turned off (or settings load in after mount and
-  // COD wasn't actually available), fall back to whichever method is still enabled.
+  // If the shopper had already picked a method and it gets turned off underneath them, fall back to
+  // whichever method is still enabled. Doesn't fire for the initial unselected state — the shopper
+  // is meant to pick one themselves, not have COD (or whatever's first) silently chosen for them.
   useEffect(() => {
+    if (!paymentMethod) return;
     const enabledByMethod = { COD: codEnabled, SSLCOMMERZ: onlinePaymentEnabled, EPS_PG: epsPaymentEnabled } as const;
     if (enabledByMethod[paymentMethod]) return;
     const fallback = (Object.keys(enabledByMethod) as Array<keyof typeof enabledByMethod>).find((m) => enabledByMethod[m]);
@@ -316,6 +344,24 @@ export default function CheckoutPage() {
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <h1 className={cn("font-display text-2xl text-ink-900", isExpress ? "mb-1" : "mb-8")}>Checkout</h1>
       {isExpress && <p className="mb-7 text-sm text-ink-500">Buying 1 item — your cart is untouched.</p>}
+
+      {gatewayNotice && (
+        <div className="mb-6 flex items-center justify-between gap-4 rounded-lg border border-warning-100 bg-warning-50 px-4 py-3 text-sm text-ink-800">
+          <span role="status" aria-live="polite">
+            {gatewayNotice === "error"
+              ? "Your last payment attempt failed. Please try again."
+              : "Your last payment was cancelled. Please try again when you're ready."}
+          </span>
+          <button
+            type="button"
+            onClick={() => setGatewayNotice(null)}
+            aria-label="Dismiss"
+            className="shrink-0 text-ink-400 hover:text-ink-700"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] lg:gap-10">
         {/* Mobile: the price is what a shopper wants to see before typing anything, so the summary
@@ -628,6 +674,9 @@ export default function CheckoutPage() {
                 <p className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-600">
                   Checkout is temporarily unavailable — please try again later.
                 </p>
+              )}
+              {errors.paymentMethod && (
+                <p className="text-xs text-danger-600">{errors.paymentMethod.message || "Please select a payment method"}</p>
               )}
             </div>
             {(settingsData?.settings.paymentMethodsImageUrl ?? paymentMethods.length > 0) && (

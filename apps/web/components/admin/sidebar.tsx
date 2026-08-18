@@ -41,6 +41,7 @@ import {
   Sparkles,
   History,
   FileBarChart,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
@@ -96,6 +97,7 @@ const NAV_SECTIONS = [
     label: "Sales",
     items: [
       { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+      { href: "/admin/payments/overview", label: "Payments", icon: CreditCard },
       { href: "/admin/customers", label: "Customers", icon: Users },
       { href: "/admin/flash-sales", label: "Flash Sales", icon: Zap },
       { href: "/admin/coupons", label: "Coupons", icon: Tag },

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 
-const BASE_URL = env.eps.sandbox ? "https://sandbox-pgapi.eps.com.bd/v1" : "https://pgapi.eps.com.bd/v1";
+const BASE_URL = env.eps.sandbox ? "https://sandboxpgapi.eps.com.bd/v1" : "https://pgapi.eps.com.bd/v1";
 
 function signHash(value: string): string {
   return crypto.createHmac("sha512", Buffer.from(env.eps.hashKey, "utf8")).update(value, "utf8").digest("base64");
@@ -40,6 +40,12 @@ async function getEpsToken(): Promise<string> {
 
 export interface InitEpsSessionParams {
   orderNumber: string;
+  /** What's actually sent to EPS as merchantTransactionId — the id a callback/verify call is
+   * looked up by. Defaults to orderNumber (today's direct-call behavior) when omitted; payment.service.ts's
+   * startPaymentSession always passes its own fresh PaymentSession.gatewayTransactionRef here, since
+   * an order can now have more than one payment attempt and merchantTransactionId must be unique per
+   * attempt, not per order. `orderNumber` itself stays display-only (CustomerOrderId/ProductName). */
+  attemptRef?: string;
   amount: number;
   customerName: string;
   customerEmail: string | null;
@@ -58,14 +64,16 @@ interface EpsInitResponse {
 export async function initEpsSession(params: InitEpsSessionParams): Promise<{ gatewayUrl: string; transactionId: string }> {
   const token = await getEpsToken();
   // EPS's own merchantTransactionId is what the success/fail/cancel callback later carries back —
-  // using our orderNumber for it (like tran_id for SSLCommerz) means the callback needs no extra lookup.
-  const hash = signHash(params.orderNumber);
+  // this is attemptRef (unique per payment attempt), not orderNumber (shared across every attempt
+  // on the same order once retries exist).
+  const attemptRef = params.attemptRef ?? params.orderNumber;
+  const hash = signHash(attemptRef);
 
   const body = {
     merchantId: env.eps.merchantId,
     storeId: env.eps.storeId,
     CustomerOrderId: params.orderNumber,
-    merchantTransactionId: params.orderNumber,
+    merchantTransactionId: attemptRef,
     transactionTypeId: 1, // WEB
     financialEntityId: 0,
     transitionStatusId: 0,

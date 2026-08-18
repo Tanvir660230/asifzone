@@ -1,8 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import * as orderService from "./order.service";
-import { initSslcommerzSession } from "../payments/sslcommerz.service";
-import { initEpsSession } from "../payments/eps.service";
+import { startPaymentSession, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -18,20 +17,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   }
 
   try {
-    const gatewayParams = {
-      orderNumber: order.orderNumber,
-      amount: Number(order.total),
-      customerName: order.customerName,
-      customerEmail: order.customerEmail,
-      customerPhone: order.customerPhone,
-      customerAddress: order.shippingAddressLine,
-    };
-    const { gatewayUrl, sessionKey } =
-      order.paymentMethod === "SSLCOMMERZ"
-        ? await initSslcommerzSession(gatewayParams)
-        : await initEpsSession(gatewayParams).then(({ gatewayUrl, transactionId }) => ({ gatewayUrl, sessionKey: transactionId }));
-
-    await orderService.setPaymentSessionKey(order.id, sessionKey);
+    const { gatewayUrl } = await startPaymentSession(order);
     res.status(201).json({ order, gatewayUrl });
   } catch (err) {
     await orderService.cancelUnstartedOrder(order.id);
@@ -44,11 +30,25 @@ export const track = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.trackOrder(orderNumber, phone) });
 });
 
+export const retryPayment = asyncHandler(async (req: Request, res: Response) => {
+  const { gatewayUrl } = await orderService.retryPayment(req.params.orderNumber!, req.body.phone);
+  res.json({ gatewayUrl });
+});
+
 // --- admin ---
 
 export const createManual = asyncHandler(async (req: Request, res: Response) => {
   const order = await orderService.createManualOrder(req.body, req.admin!.adminId);
   res.status(201).json({ order });
+});
+
+export const createRefund = asyncHandler(async (req: Request, res: Response) => {
+  const refund = await refundOrderPayment(req.params.id!, req.body, req.admin!.adminId);
+  res.status(201).json({ refund });
+});
+
+export const listRefunds = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ refunds: await listRefundsForOrder(req.params.id!) });
 });
 
 export const list = asyncHandler(async (req: Request, res: Response) => {

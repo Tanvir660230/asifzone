@@ -15,6 +15,7 @@ import { returnRequestRouter } from "./modules/return-requests/return-request.ro
 import { reviewRouter } from "./modules/reviews/review.routes";
 import { redirectRouter } from "./modules/redirects/redirect.routes";
 import { paymentRouter } from "./modules/payments/payment.routes";
+import { paymentAdminRouter } from "./modules/payments/payment-admin.routes";
 import { paymentMethodRouter } from "./modules/payment-methods/payment-method.routes";
 import { flashSaleRouter } from "./modules/flash-sales/flash-sale.routes";
 import { bannerRouter } from "./modules/banners/banner.routes";
@@ -73,6 +74,7 @@ app.use("/api/return-requests", returnRequestRouter);
 app.use("/api/reviews", reviewRouter);
 app.use("/api/redirects", redirectRouter);
 app.use("/api/payments", paymentRouter);
+app.use("/api/payment-admin", paymentAdminRouter);
 app.use("/api/payment-methods", paymentMethodRouter);
 app.use("/api/flash-sales", flashSaleRouter);
 app.use("/api/banners", bannerRouter);

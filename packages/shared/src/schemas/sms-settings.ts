@@ -30,6 +30,9 @@ export const updateSmsSettingsSchema = z.object({
   customerOrderShippedEnabled: z.boolean().optional(),
   customerOrderDeliveredEnabled: z.boolean().optional(),
   customerOrderCancelledEnabled: z.boolean().optional(),
+  // Gates the payment-confirmation email (not SMS) fired from settlePaymentSession — kept on this
+  // same settings object per the schema comment on SmsNotificationSetting.
+  customerPaymentConfirmedEmailEnabled: z.boolean().optional(),
   // Blank/null means "use the built-in default template" — see DEFAULT_CUSTOMER_SMS_TEMPLATES.
   customerOrderPlacedTemplate: nullableString(320),
   customerOrderConfirmedTemplate: nullableString(320),

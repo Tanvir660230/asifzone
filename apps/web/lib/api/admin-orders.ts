@@ -28,6 +28,8 @@ export interface AdminOrderListParams {
   shippingDistrict?: string;
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue.
   followUpDue?: "true";
+  // "true" = only CANCELLED orders where paymentStatus is still PAID — the refund-risk queue.
+  cancelledButPaid?: "true";
   dateFrom?: string;
   dateTo?: string;
   sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt";
@@ -40,6 +42,7 @@ export interface OrderStats {
   pending: number;
   needsAttention: number;
   followUpDue: number;
+  cancelledButPaidCount: number;
   statusCounts: Record<OrderStatus, number>;
 }
 
@@ -58,6 +61,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.shippingDivision) query.set("shippingDivision", params.shippingDivision);
   if (params.shippingDistrict) query.set("shippingDistrict", params.shippingDistrict);
   if (params.followUpDue) query.set("followUpDue", params.followUpDue);
+  if (params.cancelledButPaid) query.set("cancelledButPaid", params.cancelledButPaid);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params.dateTo) query.set("dateTo", params.dateTo);
   if (params.sortBy) query.set("sortBy", params.sortBy);

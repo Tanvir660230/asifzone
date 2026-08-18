@@ -7,6 +7,12 @@ const BASE_URL = env.sslcommerz.isLive
 
 export interface InitSessionParams {
   orderNumber: string;
+  /** What's actually sent to SSLCommerz as tran_id — the id a callback/IPN is looked up by.
+   * Defaults to orderNumber (today's direct-call behavior) when omitted; payment.service.ts's
+   * startPaymentSession always passes its own fresh PaymentSession.gatewayTransactionRef here, since
+   * an order can now have more than one payment attempt and tran_id must be unique per attempt, not
+   * per order. `orderNumber` itself stays display-only (product_name). */
+  attemptRef?: string;
   amount: number;
   customerName: string;
   customerEmail: string | null;
@@ -23,12 +29,13 @@ interface SslSessionResponse {
 
 /** Starts a hosted-checkout session; the caller redirects the customer's browser to the returned GatewayPageURL. */
 export async function initSslcommerzSession(params: InitSessionParams): Promise<{ gatewayUrl: string; sessionKey: string }> {
+  const attemptRef = params.attemptRef ?? params.orderNumber;
   const body = new URLSearchParams({
     store_id: env.sslcommerz.storeId,
     store_passwd: env.sslcommerz.storePassword,
     total_amount: params.amount.toFixed(2),
     currency: "BDT",
-    tran_id: params.orderNumber,
+    tran_id: attemptRef,
     success_url: `${env.apiOrigin}/api/payments/sslcommerz/success`,
     fail_url: `${env.apiOrigin}/api/payments/sslcommerz/fail`,
     cancel_url: `${env.apiOrigin}/api/payments/sslcommerz/cancel`,

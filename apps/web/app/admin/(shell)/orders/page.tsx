@@ -69,6 +69,7 @@ import {
   initials,
   orderStatusBadgeClass,
   orderStatusLabel,
+  orderStatusShortLabel,
   courierStatusBadgeClass,
   courierStatusLabel,
   courierStatusDescription,
@@ -106,13 +107,14 @@ const STATUS_BORDER_COLORS: Record<OrderStatus, string> = {
 
 const ALL_DISTRICTS = Array.from(new Set(Object.values(BD_DISTRICTS_BY_DIVISION).flat())).sort();
 
-type QuickFilter = "unpaid" | "cod" | "cancelledReturned" | "followUpDue" | null;
+type QuickFilter = "unpaid" | "cod" | "cancelledReturned" | "followUpDue" | "cancelledButPaid" | null;
 
 const QUICK_FILTERS: Array<{ id: Exclude<QuickFilter, null>; label: string }> = [
   { id: "unpaid", label: "Unpaid" },
   { id: "cod", label: "COD" },
   { id: "cancelledReturned", label: "Cancelled / Returned" },
   { id: "followUpDue", label: "Follow-up due" },
+  { id: "cancelledButPaid", label: "Cancelled but paid" },
 ];
 
 function quickFilterParams(filter: QuickFilter, status: OrderStatus | "") {
@@ -125,6 +127,8 @@ function quickFilterParams(filter: QuickFilter, status: OrderStatus | "") {
       return { statusIn: ["CANCELLED", "RETURNED"] as OrderStatus[] };
     case "followUpDue":
       return { followUpDue: "true" as const };
+    case "cancelledButPaid":
+      return { cancelledButPaid: "true" as const };
     default:
       return { status: status || undefined };
   }
@@ -225,13 +229,21 @@ function StatusPickerCell({
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // Fixed size for every status — same width/height whether the label is "Packed" or
+  // "Processing" — so the Status column reads as a uniform grid of pills instead of ragged
+  // shapes. Only the color (from orderStatusBadgeClass) varies; the short label (from
+  // orderStatusShortLabel) exists specifically so a long workflow name never has to wrap or
+  // shrink to fit the fixed box. Full labels still show in the status-change popover below and
+  // everywhere else in the app — only this compact pill uses the short form.
   if (order.deletedAt) {
     return (
-      <Badge className={orderStatusBadgeClass(order.status)}>
-        <span className="flex items-center gap-1">
-          <OrderStatusIcon status={order.status} size={11} />
-          {orderStatusLabel(order.status)}
-        </span>
+      <Badge
+        className={cn(
+          "h-9 w-[108px] justify-center whitespace-nowrap px-3 text-xs font-medium leading-none",
+          orderStatusBadgeClass(order.status),
+        )}
+      >
+        {orderStatusShortLabel(order.status)}
       </Badge>
     );
   }
@@ -243,14 +255,13 @@ function StatusPickerCell({
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
         className={cn(
-          "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-opacity duration-150 ease-smooth hover:opacity-80 disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex h-9 w-[108px] items-center justify-center gap-1 whitespace-nowrap rounded-full px-3 text-xs font-medium leading-none transition-opacity duration-150 ease-smooth hover:opacity-80 disabled:pointer-events-none disabled:opacity-50",
           orderStatusBadgeClass(order.status),
         )}
         aria-label={`Change status for ${order.orderNumber}`}
       >
-        <OrderStatusIcon status={order.status} size={11} />
-        {orderStatusLabel(order.status)}
-        <ChevronDown size={11} className="opacity-60" />
+        {orderStatusShortLabel(order.status)}
+        <ChevronDown size={11} className="shrink-0 opacity-60" />
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchorRef={triggerRef} align="start" className="w-56 p-1.5">
         {STATUS_OPTIONS.map((s) => (
@@ -861,9 +872,22 @@ export default function OrdersPage() {
               <StatTile label="Today's revenue" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={18} />} tone="accent" />
               <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={18} />} tone="warning" />
               <StatTile label="Needs attention" value={String(stats.needsAttention)} icon={<AlertTriangle size={18} />} tone="warning" />
+              {/* A plain button wrapper, not a StatTile prop — this is the only tile on the page
+                  that's a filter shortcut, so it didn't seem worth adding onClick to the shared
+                  component for one caller. Cancelled-but-paid is real, uncollected refund risk
+                  (see updateOrderStatus's alert), so it gets its own tile rather than staying folded
+                  only into the combined "Needs attention" count above. */}
+              <button type="button" onClick={() => selectQuickFilter("cancelledButPaid")} className="text-left">
+                <StatTile
+                  label="Cancelled but paid"
+                  value={String(stats.cancelledButPaidCount)}
+                  icon={<AlertTriangle size={18} />}
+                  tone={stats.cancelledButPaidCount > 0 ? "warning" : "default"}
+                />
+              </button>
             </>
           ) : (
-            Array.from({ length: 4 }).map((_, i) => <StatTileSkeleton key={i} />)
+            Array.from({ length: 5 }).map((_, i) => <StatTileSkeleton key={i} />)
           )}
         </div>
       )}
@@ -1241,10 +1265,10 @@ export default function OrdersPage() {
                   STATUS_BORDER_COLORS[order.status],
                 )}
               >
-                <td className="px-5 py-4">
+                <td className="px-5 py-4 align-middle">
                   <Checkbox checked={selected.has(order.id)} onChange={() => toggleOne(order.id)} aria-label={`Select ${order.orderNumber}`} />
                 </td>
-                <td className="sticky left-0 z-[1] bg-cream-50 px-5 py-4 group-hover:bg-ink-50/60">
+                <td className="sticky left-0 z-[1] bg-cream-50 px-5 py-4 align-middle group-hover:bg-ink-50/60">
                   <button
                     onClick={() => setDrawerOrderId(order.id)}
                     className="font-medium text-ink-900 transition-colors hover:text-info-600 hover:underline"
@@ -1252,10 +1276,10 @@ export default function OrdersPage() {
                     {order.orderNumber}
                   </button>
                 </td>
-                <td className="px-5 py-4">
+                <td className="px-5 py-4 align-middle">
                   <ProductCell summary={order.itemsSummary} />
                 </td>
-                <td className="px-5 py-4">
+                <td className="px-5 py-4 align-middle">
                   <div className="flex items-center gap-3">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
                       {initials(order.customerName)}
@@ -1266,7 +1290,7 @@ export default function OrdersPage() {
                     </div>
                   </div>
                 </td>
-                <td className="px-5 py-4">
+                <td className="px-5 py-4 align-middle">
                   <div className="flex flex-col items-start gap-1">
                     <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
                       {order.paymentMethod === "COD" ? "COD" : "Online"}
@@ -1285,16 +1309,16 @@ export default function OrdersPage() {
                     </span>
                   </div>
                 </td>
-                <td className="px-5 py-4 text-right font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
-                <td className="px-5 py-4">{renderStatusCell(order)}</td>
-                <td className="px-5 py-4">{renderCourierCell(order)}</td>
-                <td className="hidden px-5 py-4 text-ink-500 sm:table-cell">
+                <td className="px-5 py-4 text-right align-middle font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
+                <td className="px-5 py-4 align-middle">{renderStatusCell(order)}</td>
+                <td className="px-5 py-4 align-middle">{renderCourierCell(order)}</td>
+                <td className="hidden px-5 py-4 align-middle text-ink-500 sm:table-cell">
                   <div>{new Date(order.createdAt).toLocaleDateString()}</div>
                   <div className="text-xs text-ink-400">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
                 </td>
-                <td className="px-5 py-4">
+                <td className="px-5 py-4 align-middle">
                   <div className="flex justify-end">
                     <RowActionsMenu items={rowMenuItems(order)} />
                   </div>

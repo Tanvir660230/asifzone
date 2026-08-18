@@ -84,6 +84,31 @@ export function orderStatusLabel(status: string): string {
   return ORDER_STATUS_LABELS[status] ?? status;
 }
 
+// Short labels for fixed-size status badges (admin orders list) — the full labels above wrap or
+// overflow a pill that's meant to stay one fixed size across every status, so the compact badge
+// gets its own shorter wording instead. A few keys here (AWAITING_PAYMENT etc.) aren't in the
+// current OrderStatus union yet; they're harmless placeholders if that status list grows.
+const ORDER_STATUS_SHORT_LABELS: Record<string, string> = {
+  PENDING: "Pending",
+  CONFIRMED: "Confirmed",
+  PROCESSING: "Processing",
+  PACKED: "Packed",
+  SHIPPED: "Shipped",
+  DELIVERED: "Delivered",
+  PARTIALLY_DELIVERED: "Partial",
+  CANCELLED: "Cancelled",
+  RETURNED: "Returned",
+  REFUNDED: "Refunded",
+  AWAITING_PAYMENT: "Payment",
+  PAYMENT_VERIFICATION: "Verify",
+  FAILED_DELIVERY: "Failed",
+  RETURN_REQUESTED: "Return",
+};
+
+export function orderStatusShortLabel(status: string): string {
+  return ORDER_STATUS_SHORT_LABELS[status] ?? orderStatusLabel(status);
+}
+
 const COURIER_STATUS_BADGE_CLASS: Record<string, string> = {
   delivered: "bg-success-100 text-success-700",
   // Amber, not green — this now maps to the distinct PARTIALLY_DELIVERED order status (see

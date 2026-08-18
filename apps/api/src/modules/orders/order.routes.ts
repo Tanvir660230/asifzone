@@ -9,6 +9,8 @@ import {
   adjustOrderPriceSchema,
   reconcilePartialDeliverySchema,
   trackOrderSchema,
+  retryPaymentSchema,
+  recordRefundSchema,
   bulkOrderIdsSchema,
   bulkOrderStatusSchema,
   bulkCourierBookSchema,
@@ -16,7 +18,7 @@ import {
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requireRole } from "../../middlewares/require-admin";
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
-import { orderCreateRateLimit, orderTrackRateLimit } from "../../middlewares/rate-limit";
+import { orderCreateRateLimit, orderTrackRateLimit, retryPaymentRateLimit } from "../../middlewares/rate-limit";
 import * as orderController from "./order.controller";
 
 export const orderRouter = Router();
@@ -29,6 +31,12 @@ orderRouter.post(
   orderController.create,
 );
 orderRouter.post("/track", orderTrackRateLimit, validate(trackOrderSchema), orderController.track);
+orderRouter.post(
+  "/:orderNumber/retry-payment",
+  retryPaymentRateLimit,
+  validate(retryPaymentSchema),
+  orderController.retryPayment,
+);
 
 orderRouter.get("/", requireAdmin, validate(orderListQuerySchema, "query"), orderController.list);
 orderRouter.post("/admin", requireAdmin, validate(adminCreateOrderSchema), orderController.createManual);
@@ -63,6 +71,8 @@ orderRouter.patch(
   validate(reconcilePartialDeliverySchema),
   orderController.reconcilePartialDelivery,
 );
+orderRouter.post("/:id/refunds", requireAdmin, validate(recordRefundSchema), orderController.createRefund);
+orderRouter.get("/:id/refunds", requireAdmin, orderController.listRefunds);
 orderRouter.post("/:id/courier/book", requireAdmin, orderController.bookCourier);
 orderRouter.post("/:id/courier/refresh", requireAdmin, orderController.refreshCourier);
 orderRouter.post("/:id/courier/unlink", requireAdmin, orderController.unlinkCourier);

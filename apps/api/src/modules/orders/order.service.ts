@@ -13,6 +13,7 @@ import type {
   ReconcilePartialDeliveryInput,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
 import { paginate } from "../../lib/paginate";
@@ -24,6 +25,7 @@ import { resolveCartLines, effectivePrice } from "./cart-lines";
 import { getSettings } from "../settings/settings.service";
 import { awardDeliveryPoints, findOrCreateGuestCustomer } from "../customers/customer.service";
 import { clearCart } from "../cart/cart.service";
+import { startPaymentSession } from "../payments/payment.service";
 
 const include = {
   items: true,
@@ -100,6 +102,60 @@ export async function createOrder(
     input.shippingDivision === "Dhaka" ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
   const total = subtotal - discount + (couponFreeShipping ? 0 : shippingFee);
 
+  // A double-click / double-submit on the checkout button fires two POST /orders before the first
+  // one's response ever comes back — without a guard, each call independently decrements stock and
+  // inserts its own Order, so the customer (and, for online methods, EPS) ends up with two live
+  // payment sessions for one purchase. Matched on the storefront's own client-generated sessionId,
+  // never on phone number: a phone+total match was tried first and dropped, because it let anyone
+  // who merely knew a stranger's phone number and order total get that stranger's full order (name,
+  // address, items) echoed straight back in the response by submitting a matching checkout within
+  // the window. sessionId is an unguessable per-browser token, so this can only ever match the same
+  // browser's own in-flight request. Scoped to still-PENDING/UNPAID orders only — a genuine retry
+  // after FAILED/CANCELLED must still create a fresh attempt, not get stuck reusing a dead one.
+  // No sessionId on the request (shouldn't normally happen — the storefront always sends one) means
+  // there's no safe key to dedupe on, so the guard is skipped entirely rather than falling back to
+  // the leaky phone-based match.
+  const sessionLockKey = input.sessionId ? `order-create-lock:${input.sessionId}` : null;
+  const findDuplicateForSession = () =>
+    prisma.order.findFirst({
+      where: {
+        deletedAt: null,
+        status: "PENDING",
+        paymentStatus: "UNPAID",
+        sessionId: input.sessionId,
+        total,
+        createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
+      },
+      orderBy: { createdAt: "desc" },
+      include,
+    });
+
+  if (sessionLockKey) {
+    // Closes the gap between checking for a duplicate and committing the new order — without this,
+    // two truly concurrent requests for the same session could both pass the check before either
+    // one inserts. Best-effort like every other use of this Redis client (config/redis.ts): if
+    // Redis is unreachable, fail open to the old race rather than block checkout entirely.
+    const acquired = await redis.set(sessionLockKey, "1", "PX", 10_000, "NX").catch(() => "OK");
+
+    if (!acquired) {
+      // Another request for this exact session already holds the lock — it's either about to
+      // insert or already has. Poll briefly for its row rather than racing a second insert.
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const existing = await findDuplicateForSession();
+        if (existing) return existing;
+      }
+      // Lock holder never committed within ~3s (crashed mid-request?) — fall through and create a
+      // fresh order rather than leaving the customer stuck.
+    } else {
+      const duplicate = await findDuplicateForSession();
+      if (duplicate) {
+        await redis.del(sessionLockKey).catch(() => {});
+        return duplicate;
+      }
+    }
+  }
+
   const order = await prisma.$transaction(async (tx) => {
     // Each item's conditional decrement is independent (distinct variantId rows) — running them
     // concurrently instead of one-at-a-time cuts checkout latency roughly in proportion to cart size.
@@ -174,6 +230,10 @@ export async function createOrder(
 
     return created;
   });
+
+  // The row is committed now, so any concurrent request polling findDuplicateForSession above will
+  // find it — safe to release the lock rather than wait out its full TTL.
+  if (sessionLockKey) await redis.del(sessionLockKey).catch(() => {});
 
   notify({
     type: "order.created",
@@ -322,6 +382,54 @@ export async function trackOrder(orderNumber: string, phone: string) {
   return order;
 }
 
+// Two minutes is the same window createOrder's duplicate-submit guard uses — long enough that a
+// customer who just got redirected to the gateway and immediately bounces back isn't told their own
+// in-flight attempt is "in progress" by mistake, short enough that a genuinely abandoned session
+// doesn't block a real retry for long.
+const ACTIVE_SESSION_RETRY_GRACE_MS = 2 * 60 * 1000;
+
+/** Starts a fresh payment attempt on an existing order — the storefront's "Retry payment" action
+ * after a failed/abandoned checkout. Ownership-checked the same way trackOrder is (orderNumber +
+ * phone, no account required). Deliberately scoped to still-PENDING orders only: stock is still
+ * reserved for those, so nothing else needs to happen before starting a new PaymentSession. A
+ * CANCELLED order (stock already restocked) requires a fresh checkout instead — retrying it here
+ * would need to re-reserve stock that may already have been sold to someone else. */
+export async function retryPayment(orderNumber: string, phone: string) {
+  const order = await prisma.order.findUnique({ where: { orderNumber } });
+  if (!order || order.deletedAt || order.customerPhone !== phone) throw AppError.notFound("Order not found");
+  if (order.paymentMethod === "COD") throw AppError.badRequest("This order is Cash on Delivery");
+  if (order.paymentStatus === "PAID" || order.paymentStatus === "REFUNDED") {
+    throw AppError.badRequest("This order is already settled");
+  }
+  if (order.status !== "PENDING") {
+    throw AppError.badRequest("This order can no longer be paid online — please contact support");
+  }
+
+  // Closes the gap between checking for an existing ACTIVE session and starting a new one — same
+  // best-effort Redis lock pattern as createOrder's duplicate-submit guard, just order-scoped
+  // instead of storefront-sessionId-scoped (retry has no client-generated sessionId to key off).
+  // The DB-level one-ACTIVE-session-per-order partial unique index is the real backstop either way.
+  const lockKey = `payment-retry-lock:${order.id}`;
+  const acquired = await redis.set(lockKey, "1", "PX", 10_000, "NX").catch(() => "OK");
+  if (!acquired) throw AppError.conflict("A payment attempt is already in progress for this order");
+
+  try {
+    const active = await prisma.paymentSession.findFirst({ where: { orderId: order.id, status: "ACTIVE" } });
+    if (active) {
+      if (Date.now() - active.createdAt.getTime() < ACTIVE_SESSION_RETRY_GRACE_MS) {
+        throw AppError.conflict("A payment attempt is already in progress — please finish or wait a moment before retrying");
+      }
+      // Stale — no callback ever arrived and it's outlasted the grace window. Expire it explicitly
+      // rather than leaving it for the reconciliation cron, so retry isn't blocked waiting on the
+      // next sweep.
+      await prisma.paymentSession.update({ where: { id: active.id }, data: { status: "EXPIRED" } });
+    }
+    return await startPaymentSession(order);
+  } finally {
+    await redis.del(lockKey).catch(() => {});
+  }
+}
+
 /** Shared by listOrders and exportOrdersCsv so the two never drift on what a given filter set matches. */
 function buildOrderWhere(query: OrderListQuery) {
   return {
@@ -345,6 +453,9 @@ function buildOrderWhere(query: OrderListQuery) {
     // `statusIn` above resolved to, since the frontend only ever sends this on its own (same
     // mutually-exclusive pattern as the other quick filters).
     ...(query.followUpDue === "true" ? { status: "PENDING" as const, followUpAt: { lte: new Date() } } : {}),
+    // The refund-risk queue — CANCELLED orders where the gateway payment was never refunded back
+    // out, surfaced via the "Cancelled but paid" admin alert (updateOrderStatus/getOrderStats).
+    ...(query.cancelledButPaid === "true" ? { status: "CANCELLED" as const, paymentStatus: "PAID" as const } : {}),
     ...(query.dateFrom || query.dateTo
       ? {
           createdAt: {
@@ -469,7 +580,7 @@ export async function getOrderStats() {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const [todayOrders, todayRevenue, pending, needsAttention, followUpDue, statusGroups] = await Promise.all([
+  const [todayOrders, todayRevenue, pending, needsAttention, followUpDue, cancelledButPaidCount, statusGroups] = await Promise.all([
     prisma.order.count({ where: { deletedAt: null, createdAt: { gte: startOfToday } } }),
     prisma.order.aggregate({
       where: { deletedAt: null, createdAt: { gte: startOfToday } },
@@ -478,8 +589,9 @@ export async function getOrderStats() {
     prisma.order.count({ where: { deletedAt: null, status: { in: ["PENDING", "CONFIRMED"] } } }),
     // A fresh PENDING order isn't "stuck" yet — only one sitting unconfirmed for a day, one whose
     // payment gateway callback actually failed, one Steadfast has put "on hold" (couldn't reach the
-    // recipient, address issue, etc.), or one whose confirmation-call follow-up is due, is something
-    // an admin needs to go look at.
+    // recipient, address issue, etc.), one whose confirmation-call follow-up is due, or one that's
+    // CANCELLED with the gateway payment still uncollected-back, is something an admin needs to go
+    // look at.
     prisma.order.count({
       where: {
         deletedAt: null,
@@ -488,6 +600,7 @@ export async function getOrderStats() {
           { paymentStatus: "FAILED" },
           { courierStatus: "hold" },
           { status: "PENDING", followUpAt: { lte: now } },
+          { status: "CANCELLED", paymentStatus: "PAID" },
         ],
       },
     }),
@@ -495,6 +608,9 @@ export async function getOrderStats() {
     // "Follow-up due" quick-filter pill can both show the exact callback-queue count, not just "how
     // many of several different things need attention" folded into one bucket.
     prisma.order.count({ where: { deletedAt: null, status: "PENDING", followUpAt: { lte: now } } }),
+    // Same reasoning as followUpDue above — its own number so the "Cancelled but paid" tile/pill can
+    // show the exact refund-risk count, not just its share of the combined needsAttention bucket.
+    prisma.order.count({ where: { deletedAt: null, status: "CANCELLED", paymentStatus: "PAID" } }),
     // Powers the status-filter pills' "(N)" counts — one row per status that has at least one
     // order, zero-filled below for the rest so every pill always shows a count.
     prisma.order.groupBy({ by: ["status"], where: { deletedAt: null }, _count: true }),
@@ -509,6 +625,7 @@ export async function getOrderStats() {
     pending,
     needsAttention,
     followUpDue,
+    cancelledButPaidCount,
     statusCounts,
   };
 }
@@ -661,6 +778,20 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
 
   if (input.status === "DELIVERED" && updated.customerId) {
     await awardDeliveryPoints(updated.customerId, updated.id, Number(updated.total));
+  }
+
+  // A cancellation on an order that was actually already paid is a real money-risk case — EPS/
+  // SSLCommerz already took the payment, and nothing else in this function initiates a refund, so an
+  // admin has to see this and act rather than the order silently sitting cancelled with money still
+  // collected. Checked against the pre-transaction snapshot, not `updated` — paymentStatus isn't
+  // part of what this function changes, so it can't have been affected by the update itself.
+  if (input.status === "CANCELLED" && existing.paymentStatus === "PAID") {
+    notify({
+      type: "order.cancelled_but_paid",
+      title: `Cancelled but paid: ${updated.orderNumber}`,
+      body: `${updated.customerName} · ${formatBdt(Number(updated.total))} — refund may be owed`,
+      link: `/admin/orders/${updated.id}`,
+    });
   }
 
   const touchpoint = STATUS_SMS_TOUCHPOINT[input.status];
@@ -824,41 +955,11 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   });
 }
 
-/** verifiedAmount must come from the payment gateway's own validation record, never from the callback
- * body — it's the last line of defense against a valid val_id for one order being replayed against a
- * different, more expensive order's tran_id. */
-export async function markOrderPaid(orderNumber: string, transactionId: string, verifiedAmount: number) {
-  const { order, justPaid } = await prisma.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { orderNumber } });
-    if (!order) throw AppError.notFound("Order not found");
-    if (order.paymentStatus === "PAID") return { order, justPaid: false };
-    if (Math.abs(Number(order.total) - verifiedAmount) > 0.01) {
-      throw AppError.badRequest("Payment amount does not match order total");
-    }
-    const updated = await tx.order.update({
-      where: { orderNumber },
-      data: { paymentStatus: "PAID", status: "CONFIRMED", paymentTransactionId: transactionId },
-    });
-    return { order: updated, justPaid: true };
-  });
-
-  // Only on the actual transition — a replayed gateway webhook hitting the idempotent early-return
-  // above must not re-send the "confirmed" SMS.
-  if (justPaid) sendCustomerOrderSms(order, "CONFIRMED");
-
-  return order;
-}
-
-export async function markOrderFailed(orderNumber: string) {
-  return prisma.order.update({ where: { orderNumber }, data: { paymentStatus: "FAILED" } });
-}
-
-/** Records the gateway session key returned by initSslcommerzSession right after order creation —
- * kept as a named service function (not a raw prisma call from the controller) so every order
- * mutation goes through one place. */
-export async function setPaymentSessionKey(orderId: string, sessionKey: string) {
-  await prisma.order.update({ where: { id: orderId }, data: { paymentSessionKey: sessionKey } });
-}
+// markOrderPaid, markOrderFailed, isOrderPaid, and setPaymentSessionKey used to live here — they're
+// superseded by settlePaymentSession/markPaymentSessionFailed/isPaymentSessionSettled/
+// startPaymentSession in payments/payment.service.ts, which operate on PaymentSession (an order can
+// now have more than one payment attempt) rather than directly on Order's deprecated
+// paymentSessionKey/paymentTransactionId fields.
 
 /** Compensates a just-created order whose payment session could never be started (e.g. gateway unreachable) — restores the stock reserved for it and marks it cancelled rather than leaving it stuck as an unpayable PENDING order. */
 export async function cancelUnstartedOrder(orderId: string) {

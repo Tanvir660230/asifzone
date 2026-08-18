@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { generateOrderNumber } from "./order-number";
 
 describe("generateOrderNumber", () => {
-  it("matches the ORD-YYYYMMDD-XXXX format", () => {
-    expect(generateOrderNumber()).toMatch(/^ORD-\d{8}-[A-Z0-9]{4}$/);
+  it("matches the ORD-YYYYMMDD-XXXXXX format", () => {
+    expect(generateOrderNumber()).toMatch(/^ORD-\d{8}-[A-Z0-9]{6}$/);
   });
 
   it("embeds today's date", () => {

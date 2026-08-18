@@ -87,6 +87,7 @@ export default function SmsNotificationsPage() {
       customerOrderShippedEnabled: s.customerOrderShippedEnabled,
       customerOrderDeliveredEnabled: s.customerOrderDeliveredEnabled,
       customerOrderCancelledEnabled: s.customerOrderCancelledEnabled,
+      customerPaymentConfirmedEmailEnabled: s.customerPaymentConfirmedEmailEnabled,
       customerOrderPlacedTemplate: s.customerOrderPlacedTemplate,
       customerOrderConfirmedTemplate: s.customerOrderConfirmedTemplate,
       customerOrderShippedTemplate: s.customerOrderShippedTemplate,
@@ -188,6 +189,16 @@ export default function SmsNotificationsPage() {
               </div>
             ))}
           </div>
+        </FormSection>
+
+        <FormSection
+          title="Payment confirmation email"
+          description="A receipt emailed to the customer when an online payment (EPS or SSLCommerz) settles. Sent alongside the 'Order confirmed' SMS above, only when the order has an email on file."
+        >
+          <label className="flex items-center gap-2 text-sm font-medium text-ink-900">
+            <Checkbox {...register("customerPaymentConfirmedEmailEnabled")} />
+            Email a receipt when payment is confirmed
+          </label>
         </FormSection>
 
         <div className="flex justify-end">

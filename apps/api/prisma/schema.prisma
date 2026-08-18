@@ -66,6 +66,37 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum PaymentProvider {
+  SSLCOMMERZ
+  EPS_PG
+}
+
+/// ACTIVE -> SUCCEEDED/FAILED (a definitive, re-verified gateway answer) or CANCELLED (customer
+/// backed out on the gateway's own page) or EXPIRED (set only by the reconciliation sweep — no
+/// gateway signal ever arrived within the session's window; see payment-reconciliation-cron.ts).
+/// FAILED and EXPIRED are deliberately distinct: FAILED means the gateway explicitly said no,
+/// EXPIRED means we simply never heard back (the customer likely closed the tab).
+enum PaymentSessionStatus {
+  ACTIVE
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/// A Payment row is only ever created once a PaymentSession reaches a definitive, re-verified
+/// answer — CANCELLED/EXPIRED sessions never produce one, since no charge attempt ever reached the
+/// gateway's ledger for those.
+enum PaymentTxnStatus {
+  SUCCEEDED
+  FAILED
+}
+
+enum RefundStatus {
+  REQUESTED
+  COMPLETED
+}
+
 enum CouponType {
   PERCENTAGE
   FIXED
@@ -149,6 +180,7 @@ model AdminUser {
   sentInvites            AdminInvite[]
   deletedOrders          Order[]              @relation("OrderDeletedBy")
   stockMovements         StockMovement[]
+  refundsRequested       Refund[]             @relation("RefundRequestedBy")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -758,8 +790,15 @@ model Order {
   adminNotes           String?
   trackingNumber       String?
   carrier              String?
+  /// @deprecated superseded by PaymentSession.gatewayTransactionRef/providerTransactionId — kept
+  /// only until the follow-up migration that drops it (see PaymentSession's doc comment); nothing
+  /// reads or writes these two fields any more once payment.service.ts's cutover lands.
   paymentSessionKey    String?
+  /// @deprecated superseded by Payment.providerTransactionId.
   paymentTransactionId String?
+  paymentSessions      PaymentSession[]
+  payments             Payment[]
+  refunds              Refund[]
 
   /// Steadfast's internal id for the booked consignment — the key used to poll status and to
   /// match incoming webhooks back to this order. Null until "Book with Steadfast" is used.
@@ -870,6 +909,110 @@ model ReturnRequest {
   @@index([orderId])
   @@index([customerId])
   @@index([status])
+}
+
+/// One row per payment attempt. An order can have several over time (a failed/cancelled/expired
+/// attempt followed by a retry) — this is what makes retryPayment (order.service.ts) possible at
+/// all, unlike the single paymentSessionKey field this supersedes. `gatewayTransactionRef` is OUR
+/// id for the attempt (a fresh cuid, NEVER the orderNumber), sent to the gateway as tran_id
+/// (SSLCommerz) / merchantTransactionId (EPS) and carried back on every callback — callbacks now
+/// look up a session by this ref, not by orderNumber, since an orderNumber can map to several.
+/// `providerTransactionId` is the gateway's OWN id for the session (SSLCommerz sessionkey / EPS's
+/// InitializeEPS TransactionId) — informational only, never used as a lookup key.
+///
+/// At most one ACTIVE session per order is enforced at the DB level by a raw partial unique index
+/// (see migrations/..._add_payment_sessions) — Prisma's schema DSL can't express a partial/
+/// conditional unique constraint, so it isn't declared here, but it exists. Same pattern as
+/// ReturnRequest's one-PENDING-per-order index above.
+model PaymentSession {
+  id                    String               @id @default(cuid())
+  orderId               String
+  order                 Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider              PaymentProvider
+  status                PaymentSessionStatus @default(ACTIVE)
+  gatewayTransactionRef String               @unique
+  providerTransactionId String?
+  gatewayUrl            String?
+  /// 48h out from creation — the same lookback bound the EPS reconciliation sweep already used
+  /// before this table existed. The sweep flips any still-ACTIVE session past this to EXPIRED so it
+  /// stops being polled and stops blocking a retry.
+  expiresAt             DateTime
+  payment               Payment?
+  events                PaymentEvent[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([orderId])
+  @@index([status, provider, createdAt])
+}
+
+/// The settlement record for one PaymentSession — created only once the gateway has given a
+/// definitive, re-verified answer (see PaymentTxnStatus). At most one per session
+/// (`paymentSessionId` unique): a session settles exactly once. `verifiedAmount` always comes from
+/// the gateway's own re-verify response, never a client-supplied value — the same anti-replay
+/// guarantee the old direct Order.total comparison provided. `rawResponse` is a full JSON snapshot
+/// of the verify/validate call, kept as an audit trail independent of whatever fields above project
+/// out of it.
+model Payment {
+  id                    String           @id @default(cuid())
+  orderId               String
+  order                 Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  paymentSessionId      String           @unique
+  paymentSession        PaymentSession   @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
+  provider              PaymentProvider
+  status                PaymentTxnStatus
+  amount                Decimal          @db.Decimal(10, 2)
+  verifiedAmount        Decimal?         @db.Decimal(10, 2)
+  /// SSLCommerz bank_tran_id (falls back to val_id) / EPS EpsTransactionId.
+  providerTransactionId String?
+  rawResponse           Json?
+  settledAt             DateTime         @default(now())
+  refunds               Refund[]
+  createdAt             DateTime         @default(now())
+
+  @@index([orderId])
+}
+
+/// Append-only timeline of one payment attempt (INITIATED, VERIFIED_SUCCESS, VERIFIED_FAILED,
+/// CANCELLED, EXPIRED, ...) — same template as OrderStatusHistory (no updatedAt, one index on the
+/// parent FK), but scoped to a PaymentSession rather than an Order, since one order's full payment
+/// history can now span several attempts.
+model PaymentEvent {
+  id               String         @id @default(cuid())
+  paymentSessionId String
+  paymentSession   PaymentSession @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
+  type             String
+  note             String?
+  rawResponse      Json?
+  createdAt        DateTime       @default(now())
+
+  @@index([paymentSessionId])
+}
+
+/// A manual, out-of-band refund record — neither SSLCommerz nor EPS expose a refund API (see the
+/// comment above ReturnRequest), so an admin transfers money back themselves (bKash/bank/cash) and
+/// logs it here. This table is the record of what happened, not a trigger: creating a COMPLETED
+/// Refund is the only thing (besides settlePaymentSession/markPaymentSessionFailed) allowed to move
+/// Order.paymentStatus to REFUNDED — see refundOrderPayment in payment.service.ts, and
+/// syncOrderPaymentStatus's explicit exclusion of REFUNDED orders from its own writes.
+model Refund {
+  id                 String       @id @default(cuid())
+  orderId            String
+  order              Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  paymentId          String?
+  payment            Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  amount             Decimal      @db.Decimal(10, 2)
+  reason             String?
+  /// How the money was actually sent back — "bKash", "Bank transfer", "Cash", ... — free text, no
+  /// enum, since the set of real-world methods isn't fixed and this is informational only.
+  method             String?
+  status             RefundStatus @default(REQUESTED)
+  requestedByAdminId String?
+  requestedByAdmin   AdminUser?   @relation("RefundRequestedBy", fields: [requestedByAdminId], references: [id], onDelete: SetNull)
+  completedAt        DateTime?
+  createdAt          DateTime     @default(now())
+
+  @@index([orderId])
 }
 
 /// A customer-submitted star rating + write-up for a product. Starts PENDING and only counts
@@ -1149,6 +1292,11 @@ model SmsNotificationSetting {
   customerOrderShippedEnabled    Boolean  @default(true)
   customerOrderDeliveredEnabled  Boolean  @default(true)
   customerOrderCancelledEnabled  Boolean  @default(true)
+  /// Separate from the SMS toggles above (this one gates an email, not an SMS) but kept on this
+  /// same admin-only settings row rather than the public StoreSetting — same non-public reasoning
+  /// as adminAlertPhones. Fires from settlePaymentSession's success branch (payment.service.ts),
+  /// gated on both this flag and Order.customerEmail being present.
+  customerPaymentConfirmedEmailEnabled Boolean @default(true)
   /// Admin-editable message text, with {customerName}/{orderNumber}/{total}/{storeName}
   /// placeholders — null means "use the built-in default" (packages/shared/src/sms-templates.ts),
   /// not "send nothing" (that's what the matching *Enabled toggle above is for).

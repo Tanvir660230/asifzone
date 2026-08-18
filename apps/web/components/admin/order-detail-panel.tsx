@@ -26,12 +26,14 @@ import {
   ChevronDown,
   Check,
   CalendarClock,
+  Undo2,
 } from "lucide-react";
 import type {
   OrderStatus,
   UpdateOrderDetailsInput,
   AdjustOrderPriceInput,
   ReconcilePartialDeliveryInput,
+  RecordRefundInput,
 } from "@clothing-brand/shared";
 import {
   updateOrderDetailsSchema,
@@ -57,6 +59,7 @@ import { toast } from "@/components/ui/toast";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
+import * as paymentsAdminApi from "@/lib/api/payments-admin";
 import {
   formatPrice,
   initials,
@@ -160,6 +163,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const [priceDraft, setPriceDraft] = useState<PriceDraft | null>(null);
   const [priceError, setPriceError] = useState<string | null>(null);
   const [returnedQuantities, setReturnedQuantities] = useState<Record<string, number>>({});
+  const [refundDraft, setRefundDraft] = useState<{ amount: string; reason: string; method: string } | null>(null);
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
@@ -181,6 +185,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     setAdminNotes(null);
     setHoldNote("");
     setReturnedQuantities({});
+    setRefundDraft(null);
   }, [id]);
 
   const { data, isLoading } = useQuery({
@@ -311,6 +316,23 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
       toast.success("Courier booking unlinked — you can book again");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to unlink courier booking"),
+  });
+
+  const { data: refundsData } = useQuery({
+    queryKey: ["admin-order-refunds", id],
+    queryFn: () => paymentsAdminApi.listRefunds(id),
+  });
+  const refundMutation = useMutation({
+    mutationFn: (input: RecordRefundInput) => paymentsAdminApi.createRefund(id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order-refunds", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
+      setRefundDraft(null);
+      toast.success("Refund recorded");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to record refund"),
   });
 
   const outerClassName = variant === "page" ? "mx-auto max-w-4xl space-y-5" : "space-y-4 p-5";
@@ -567,6 +589,109 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
           </div>
         </CardContent>
       </Card>
+
+      {/* Refunds — no EPS/SSLCommerz refund API exists, so this only records what an admin already
+          did themselves (bKash/bank transfer) rather than triggering a real money movement. Shown
+          whenever there's history to display, even if the order is no longer PAID. */}
+      {(order.paymentStatus === "PAID" || (refundsData?.refunds.length ?? 0) > 0) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Undo2 size={16} className="text-ink-400" /> Refunds
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {refundsData && refundsData.refunds.length > 0 && (
+              <ul className="space-y-2">
+                {refundsData.refunds.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 p-3 text-sm">
+                    <div>
+                      <p className="font-medium text-ink-900">
+                        {formatPrice(r.amount)}
+                        {r.method ? ` · ${r.method}` : ""}
+                      </p>
+                      {r.reason && <p className="mt-0.5 text-xs text-ink-500">{r.reason}</p>}
+                    </div>
+                    <div className="text-right text-xs text-ink-400">
+                      <p>{r.requestedByAdmin?.name ?? "—"}</p>
+                      <p>{new Date(r.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {order.paymentStatus === "PAID" &&
+              (refundDraft ? (
+                <div className="space-y-3 rounded-lg border border-ink-100 p-4">
+                  <div>
+                    <Label htmlFor="refundAmount">Amount</Label>
+                    <Input
+                      id="refundAmount"
+                      type="number"
+                      step="0.01"
+                      value={refundDraft.amount}
+                      onChange={(e) => setRefundDraft({ ...refundDraft, amount: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="refundMethod">Method</Label>
+                    <Input
+                      id="refundMethod"
+                      placeholder="bKash, Bank transfer, Cash…"
+                      value={refundDraft.method}
+                      onChange={(e) => setRefundDraft({ ...refundDraft, method: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="refundReason">Reason</Label>
+                    <Textarea
+                      id="refundReason"
+                      rows={2}
+                      value={refundDraft.reason}
+                      onChange={(e) => setRefundDraft({ ...refundDraft, reason: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setRefundDraft(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="brass"
+                      size="sm"
+                      disabled={refundMutation.isPending || !refundDraft.amount}
+                      onClick={async () => {
+                        const amount = Number(refundDraft.amount);
+                        if (!amount || amount <= 0) return toast.error("Enter a valid amount");
+                        if (
+                          !(await confirm(
+                            `Record a ${formatPrice(amount)} refund for order ${order.orderNumber}? This assumes you've already sent the money back yourself — nothing is charged or refunded automatically.`,
+                          ))
+                        )
+                          return;
+                        refundMutation.mutate({
+                          amount,
+                          reason: refundDraft.reason || undefined,
+                          method: refundDraft.method || undefined,
+                        } as RecordRefundInput);
+                      }}
+                    >
+                      {refundMutation.isPending ? "Recording…" : "Record refund"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRefundDraft({ amount: String(order.total), reason: "", method: "" })}
+                >
+                  <Undo2 size={14} /> Record a refund
+                </Button>
+              ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Status Management — contextual workflow instead of a raw dropdown. */}
       <Card>

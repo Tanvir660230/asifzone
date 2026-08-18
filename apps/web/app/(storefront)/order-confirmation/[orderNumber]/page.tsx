@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { estimateDelivery, type Order } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
-import { trackOrder } from "@/lib/api/orders";
+import { trackOrder, retryPayment } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
 import { formatDateShort } from "@/lib/format";
 import { pixelPurchase } from "@/lib/meta-pixel";
@@ -17,18 +17,30 @@ import { pixelPurchase } from "@/lib/meta-pixel";
 const SESSION_KEY = "lastOrderPhone";
 const PIXEL_PURCHASE_KEY = "pixelPurchaseTracked";
 
+function needsPaymentRetry(order: Order) {
+  return order.paymentMethod !== "COD" && order.paymentStatus !== "PAID" && order.status === "PENDING";
+}
+
+function isCancelledUnpaid(order: Order) {
+  return order.paymentMethod !== "COD" && order.paymentStatus !== "PAID" && order.status === "CANCELLED";
+}
+
 export default function OrderConfirmationPage() {
   const { orderNumber } = useParams<{ orderNumber: string }>();
   const [order, setOrder] = useState<Order | null>(null);
   const [phone, setPhone] = useState("");
+  const [confirmedPhone, setConfirmedPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   async function attempt(candidatePhone: string) {
     setError(null);
     try {
       const { order: found } = await trackOrder(orderNumber, candidatePhone);
       setOrder(found);
+      setConfirmedPhone(candidatePhone);
       // Guards against double-counting the same order as a Purchase on a page refresh or a
       // second phone-lookup submit — sessionStorage, not a ref, since a fresh mount (refresh)
       // would otherwise re-fire it.
@@ -61,6 +73,19 @@ export default function OrderConfirmationPage() {
     await attempt(phone);
   }
 
+  async function handleRetry() {
+    if (!order) return;
+    setRetryError(null);
+    setRetrying(true);
+    try {
+      const { gatewayUrl } = await retryPayment(order.orderNumber, confirmedPhone);
+      window.location.href = gatewayUrl;
+    } catch (err) {
+      setRetryError(err instanceof ApiError ? err.message : "Could not start a new payment attempt");
+      setRetrying(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl animate-pulse px-4 py-16 text-center sm:px-6 lg:px-8">
@@ -89,6 +114,45 @@ export default function OrderConfirmationPage() {
             View order
           </Button>
         </form>
+      </div>
+    );
+  }
+
+  if (isCancelledUnpaid(order)) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
+        <XCircle className="mx-auto mb-4 text-ink-400" size={48} />
+        <h1 className="font-display text-3xl text-ink-900">This order was cancelled</h1>
+        <p className="mt-2 text-ink-500">
+          Order <span className="text-ink-900">{order.orderNumber}</span> was cancelled before payment completed.
+        </p>
+        <Link href="/">
+          <Button variant="brass" className="mt-8">
+            Continue Shopping
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  if (needsPaymentRetry(order)) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
+        <Clock3 className="mx-auto mb-4 text-amber-500" size={48} />
+        <h1 className="font-display text-3xl text-ink-900">Payment incomplete</h1>
+        <p className="mt-2 text-ink-500">
+          Order <span className="text-ink-900">{order.orderNumber}</span> was placed, but we haven&apos;t received
+          payment for it yet.
+        </p>
+
+        <div className="mt-8">
+          <OrderSummaryCard order={order} />
+        </div>
+
+        {retryError && <p className="mt-4 text-sm text-danger-600">{retryError}</p>}
+        <Button variant="brass" className="mt-8" onClick={handleRetry} disabled={retrying}>
+          {retrying ? "Redirecting…" : "Retry payment"}
+        </Button>
       </div>
     );
   }

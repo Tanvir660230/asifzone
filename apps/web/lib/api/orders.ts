@@ -9,3 +9,11 @@ export function createOrder(input: CheckoutInput) {
 export function trackOrder(orderNumber: string, phone: string) {
   return apiFetch<{ order: Order }>("/api/orders/track", { method: "POST", body: { orderNumber, phone } });
 }
+
+/** Starts a fresh payment attempt on an existing PENDING order — same phone-match ownership check as trackOrder. */
+export function retryPayment(orderNumber: string, phone: string) {
+  return apiFetch<{ gatewayUrl: string }>(`/api/orders/${encodeURIComponent(orderNumber)}/retry-payment`, {
+    method: "POST",
+    body: { phone },
+  });
+}

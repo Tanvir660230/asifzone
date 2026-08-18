@@ -272,6 +272,20 @@ export interface OrderStatusHistoryEntry {
   createdAt: string;
 }
 
+export interface Refund {
+  id: string;
+  orderId: string;
+  paymentId: string | null;
+  amount: number;
+  reason: string | null;
+  method: string | null;
+  status: "REQUESTED" | "COMPLETED";
+  requestedByAdminId: string | null;
+  requestedByAdmin?: { name: string } | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -636,6 +650,7 @@ export interface SmsNotificationSettings {
   customerOrderShippedEnabled: boolean;
   customerOrderDeliveredEnabled: boolean;
   customerOrderCancelledEnabled: boolean;
+  customerPaymentConfirmedEmailEnabled: boolean;
   customerOrderPlacedTemplate: string | null;
   customerOrderConfirmedTemplate: string | null;
   customerOrderShippedTemplate: string | null;

@@ -6,6 +6,7 @@ import { startFlashSaleCron } from "./jobs/flash-sale-cron";
 import { startCampaignSendWorker } from "./jobs/campaign-send-worker";
 import { startCampaignSchedulerCron } from "./jobs/campaign-scheduler-cron";
 import { startCourierStatusCron } from "./jobs/courier-status-cron";
+import { startPaymentReconciliationCron } from "./jobs/payment-reconciliation-cron";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
 
 let shuttingDown = false;
@@ -26,6 +27,7 @@ async function main() {
   startCampaignSendWorker().catch((err) => console.error("[campaign-send-worker] failed to start:", err));
   startCampaignSchedulerCron().catch((err) => console.error("[campaign-scheduler-cron] failed to start:", err));
   startCourierStatusCron().catch((err) => console.error("[courier-status-cron] failed to start:", err));
+  startPaymentReconciliationCron().catch((err) => console.error("[payment-reconciliation-cron] failed to start:", err));
 
   // Stop accepting new connections and let in-flight requests finish before tearing down Prisma —
   // without this, a deploy's SIGTERM could cut a request off mid-response instead of draining it.

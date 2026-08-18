@@ -708,6 +708,9 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue
   // (followUpAt <= now) — the callback queue. No "false" variant; omit the param for the normal listing.
   followUpDue: z.enum(["true"]).optional(),
+  // "true" = only orders that are CANCELLED but still show paymentStatus PAID — the refund-risk
+  // queue behind getOrderStats().cancelledButPaidCount. No "false" variant; omit for the normal listing.
+  cancelledButPaid: z.enum(["true"]).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   // Powers the sortable column headers on the admin orders table — restricted to plain scalar
@@ -782,6 +785,13 @@ export const trackOrderSchema = z.object({
   phone: bdPhoneSchema(),
 });
 
+// orderNumber comes from the route param (/orders/:orderNumber/retry-payment), not the body — same
+// ownership check as trackOrder (phone must match), so only the customer who placed the order can
+// start a new payment attempt on it.
+export const retryPaymentSchema = z.object({
+  phone: bdPhoneSchema(),
+});
+
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export type AdminCreateOrderInput = z.infer<typeof adminCreateOrderSchema>;
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
@@ -795,6 +805,7 @@ export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
 export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;
 export type ValidateCouponInput = z.infer<typeof validateCouponSchema>;
 export type TrackOrderInput = z.infer<typeof trackOrderSchema>;
+export type RetryPaymentInput = z.infer<typeof retryPaymentSchema>;
 export type OrderStatus = z.infer<typeof orderStatusEnum>;
 export type PaymentMethod = z.infer<typeof paymentMethodEnum>;
 export type PaymentStatus = z.infer<typeof paymentStatusEnum>;
