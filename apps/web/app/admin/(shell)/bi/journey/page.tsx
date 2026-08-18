@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Repeat } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { JourneyFunnel } from "@/components/admin/journey-funnel";
 import * as analyticsApi from "@/lib/api/admin-analytics";

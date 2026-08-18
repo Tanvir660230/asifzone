@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, TrendingUp, XCircle, ShoppingBag, LogOut, Info } from "lucide-react";
+import { Search, XCircle, ShoppingBag, LogOut, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { ConversionMetricCard } from "@/components/admin/conversion-metric-card";

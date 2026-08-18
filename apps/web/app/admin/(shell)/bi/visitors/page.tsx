@@ -72,7 +72,7 @@ export default function VisitorAnalyticsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-2xl tracking-tight text-ink-900 sm:text-3xl">Visitor Analytics</h1>
-          <p className="mt-1 text-sm text-ink-500">Who's coming to the site, where from, and what they do once they're here.</p>
+          <p className="mt-1 text-sm text-ink-500">Who&apos;s coming to the site, where from, and what they do once they&apos;re here.</p>
         </div>
         <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full border border-ink-100 bg-ink-50/60 p-1">
           {RANGE_OPTIONS.map((opt) => (
@@ -160,7 +160,7 @@ export default function VisitorAnalyticsPage() {
         <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Geography</h2>
         <p className="mb-3 text-xs text-ink-400">
           From an offline IP-to-location lookup — country is reliable, but region/city accuracy is rough, especially for mobile-carrier
-          IPs, which often resolve to the same city regardless of the visitor's actual location.
+          IPs, which often resolve to the same city regardless of the visitor&apos;s actual location.
         </p>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card>
