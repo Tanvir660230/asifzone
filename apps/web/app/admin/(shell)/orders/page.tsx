@@ -309,12 +309,12 @@ function RowActionsMenu({ items }: { items: DropdownMenuItem[] }) {
   );
 }
 
-/** Loading placeholder for the mobile order list — TableSkeleton renders <tr>/<td> and can't back
- * a div-based list, so this is a small standalone equivalent. Border-t/first:border-t-0 (not its
- * own rounded/shadowed box) to match the real rows' styling inside their shared container. */
-function OrderCardSkeleton({ first = false }: { first?: boolean }) {
+/** Loading placeholder for the card grid (mobile/tablet) — TableSkeleton renders <tr>/<td> and
+ * can't back a div-based grid, so this is a standalone equivalent matching each real card's own
+ * rounded/shadowed box (the grid holds independent cards, not a shared bordered list). */
+function OrderCardSkeleton() {
   return (
-    <div className={cn("animate-pulse border-t border-ink-100 p-3.5", first && "border-t-0")}>
+    <div className="animate-pulse rounded-xl border border-ink-100 bg-cream-50 p-3.5 shadow-sm">
       <div className="h-4 w-24 rounded bg-ink-100" />
       <div className="mt-3 h-9 w-full rounded bg-ink-50" />
       <div className="mt-3 h-4 w-40 rounded bg-ink-100" />
@@ -865,7 +865,7 @@ export default function OrdersPage() {
       />
 
       {tab === "active" && (
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
           {stats ? (
             <>
               <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={18} />} />
@@ -1202,50 +1202,59 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* sm and up: the original table, unchanged content. Below sm: a card list (below). */}
-      <div className="mt-5 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow sm:block">
+      {/* xl and up (≥1280px, where all 9 columns fit most laptop/desktop widths without the
+          horizontal scrollbar becoming the primary way to read the table): the data table. Below
+          xl: the card grid (below) — a compressed version of this same table on a touch-oriented
+          tablet width reads worse than fewer, larger cards.
+          The header row isn't sticky: doing that while also keeping this table horizontally
+          scrollable would need it to escape both this rounded/overflow-hidden card wrapper and the
+          horizontal-scroll div's own scroll-containment (overflow-x non-visible forces overflow-y
+          to computed "auto" too, per spec, which traps position:sticky inside that div instead of
+          the page) — restructuring around that risks the janky nested-scroll feel the page-level
+          scroll here was deliberately chosen to avoid. */}
+      <div className="mt-5 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow xl:block">
         <HScrollShadow className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-ink-100 bg-ink-50/70 text-left text-xs font-semibold uppercase tracking-wider text-ink-500">
             <tr>
-              <th className="w-10 px-5 py-3.5">
+              <th className="w-10 px-3 py-2">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="sticky left-0 z-20 bg-ink-50/70 px-5 py-3.5">
+              <th className="sticky left-0 z-20 bg-ink-50/70 px-3 py-2">
                 <SortableHeader column="orderNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Order
                 </SortableHeader>
               </th>
-              <th className="px-5 py-3.5">Product</th>
-              <th className="px-5 py-3.5">
+              <th className="px-3 py-2">Product</th>
+              <th className="px-3 py-2">
                 <SortableHeader column="customerName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Customer
                 </SortableHeader>
               </th>
-              <th className="px-5 py-3.5">
+              <th className="px-3 py-2">
                 <SortableHeader column="paymentStatus" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Payment
                 </SortableHeader>
               </th>
-              <th className="px-5 py-3.5">
+              <th className="px-3 py-2">
                 <div className="flex justify-end">
                   <SortableHeader column="total" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Total
                   </SortableHeader>
                 </div>
               </th>
-              <th className="px-5 py-3.5">
+              <th className="px-3 py-2">
                 <SortableHeader column="status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Status
                 </SortableHeader>
               </th>
-              <th className="px-5 py-3.5">Courier</th>
-              <th className="hidden px-5 py-3.5 sm:table-cell">
+              <th className="px-3 py-2">Courier</th>
+              <th className="px-3 py-2">
                 <SortableHeader column="createdAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Placed
                 </SortableHeader>
               </th>
-              <th className="px-5 py-3.5 text-right">Actions</th>
+              <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1265,10 +1274,10 @@ export default function OrdersPage() {
                   STATUS_BORDER_COLORS[order.status],
                 )}
               >
-                <td className="px-5 py-4 align-middle">
+                <td className="px-3 py-2.5 align-middle">
                   <Checkbox checked={selected.has(order.id)} onChange={() => toggleOne(order.id)} aria-label={`Select ${order.orderNumber}`} />
                 </td>
-                <td className="sticky left-0 z-[1] bg-cream-50 px-5 py-4 align-middle group-hover:bg-ink-50/60">
+                <td className="sticky left-0 z-[1] bg-cream-50 px-3 py-2.5 align-middle group-hover:bg-ink-50/60">
                   <button
                     onClick={() => setDrawerOrderId(order.id)}
                     className="font-medium text-ink-900 transition-colors hover:text-info-600 hover:underline"
@@ -1276,12 +1285,12 @@ export default function OrdersPage() {
                     {order.orderNumber}
                   </button>
                 </td>
-                <td className="px-5 py-4 align-middle">
+                <td className="px-3 py-2.5 align-middle">
                   <ProductCell summary={order.itemsSummary} />
                 </td>
-                <td className="px-5 py-4 align-middle">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
+                <td className="px-3 py-2.5 align-middle">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-100 text-[11px] font-semibold text-ink-700">
                       {initials(order.customerName)}
                     </span>
                     <div className="min-w-0">
@@ -1290,7 +1299,7 @@ export default function OrdersPage() {
                     </div>
                   </div>
                 </td>
-                <td className="px-5 py-4 align-middle">
+                <td className="px-3 py-2.5 align-middle">
                   <div className="flex flex-col items-start gap-1">
                     <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
                       {order.paymentMethod === "COD" ? "COD" : "Online"}
@@ -1309,16 +1318,16 @@ export default function OrdersPage() {
                     </span>
                   </div>
                 </td>
-                <td className="px-5 py-4 text-right align-middle font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
-                <td className="px-5 py-4 align-middle">{renderStatusCell(order)}</td>
-                <td className="px-5 py-4 align-middle">{renderCourierCell(order)}</td>
-                <td className="hidden px-5 py-4 align-middle text-ink-500 sm:table-cell">
+                <td className="px-3 py-2.5 text-right align-middle font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
+                <td className="px-3 py-2.5 align-middle">{renderStatusCell(order)}</td>
+                <td className="px-3 py-2.5 align-middle">{renderCourierCell(order)}</td>
+                <td className="px-3 py-2.5 align-middle text-ink-500">
                   <div>{new Date(order.createdAt).toLocaleDateString()}</div>
                   <div className="text-xs text-ink-400">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
                 </td>
-                <td className="px-5 py-4 align-middle">
+                <td className="px-3 py-2.5 align-middle">
                   <div className="flex justify-end">
                     <RowActionsMenu items={rowMenuItems(order)} />
                   </div>
@@ -1330,90 +1339,120 @@ export default function OrdersPage() {
         </HScrollShadow>
       </div>
 
-      {/* Below sm: one continuous bordered list instead of the table above — deliberately NOT
-          separately-shadowed floating cards. The sticky filter zone above scrolls over this list
-          as the page scrolls (by design, so filters stay reachable); a floating card whose own
-          rounded top border gets covered by the sticky bar mid-scroll leaves a borderless,
-          disconnected-looking fragment behind. One shared container with border-t dividers between
-          orders (same structure as the desktop table's rows) scrolls under the sticky bar exactly
-          the way the table already does, with nothing looking detached. */}
-      <div className="mt-5 overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow sm:hidden">
-        {isLoading &&
-          Array.from({ length: 4 }).map((_, i) => <OrderCardSkeleton key={i} first={i === 0} />)}
-        {!isLoading && items.length === 0 && renderEmptyState()}
+      {/* Below xl: standalone cards, one column under md (mobile — one-handed, no horizontal
+          scroll), two columns from md to xl (tablet — more orders on screen than a single stack
+          without shrinking to the desktop table's cramped touch targets). Status leads each card
+          (right under the order number) since "what state is this order in" is the thing an admin
+          scans for first; product/customer follow since they're read, not acted on. */}
+      <div className="mt-5 xl:hidden">
         {!isLoading && items.length > 0 && (
-          <div className="flex items-center gap-2 border-b border-ink-100 px-3.5 py-2 text-xs text-ink-500">
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-ink-100 bg-cream-50 px-3.5 py-2 text-xs text-ink-500 shadow-sm">
             <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
             Select all on this page
+            <span className="ml-auto tabular-nums text-ink-400">{data?.total ?? items.length} total</span>
           </div>
         )}
-        {items.map((order) => (
-          <div
-            key={order.id}
-            className={cn(
-              "border-t border-ink-100 border-l-4 p-3.5 first:border-t-0",
-              STATUS_BORDER_COLORS[order.status],
-            )}
-          >
-            <div className="flex items-start gap-2.5">
-              <Checkbox
-                checked={selected.has(order.id)}
-                onChange={() => toggleOne(order.id)}
-                className="mt-1"
-                aria-label={`Select ${order.orderNumber}`}
-              />
-              <button onClick={() => setDrawerOrderId(order.id)} className="min-w-0 flex-1 text-left">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-ink-900">{order.orderNumber}</span>
-                  <span className="font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</span>
-                </div>
-                <div className="mt-0.5 text-xs text-ink-400">
-                  {new Date(order.createdAt).toLocaleDateString()} ·{" "}
-                  {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </div>
-              </button>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {isLoading && Array.from({ length: 4 }).map((_, i) => <OrderCardSkeleton key={i} />)}
+          {!isLoading && items.length === 0 && (
+            <div className="col-span-full overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm">
+              {renderEmptyState()}
             </div>
+          )}
+          {items.map((order) => {
+            const canBook = !order.deletedAt && !order.courierConsignmentId;
+            return (
+              <div
+                key={order.id}
+                className={cn(
+                  "overflow-hidden rounded-xl border border-ink-100 border-l-4 bg-cream-50 p-3.5 shadow-sm transition-shadow duration-150 ease-smooth hover:shadow-md",
+                  STATUS_BORDER_COLORS[order.status],
+                )}
+              >
+                <div className="flex items-start gap-2.5">
+                  <Checkbox
+                    checked={selected.has(order.id)}
+                    onChange={() => toggleOne(order.id)}
+                    className="mt-1"
+                    aria-label={`Select ${order.orderNumber}`}
+                  />
+                  <button onClick={() => setDrawerOrderId(order.id)} className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-ink-900">{order.orderNumber}</span>
+                      <span className="font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-ink-400">
+                      {new Date(order.createdAt).toLocaleDateString()} ·{" "}
+                      {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </button>
+                </div>
 
-            <div className="mt-2.5 border-t border-ink-100 pt-2.5">
-              <ProductCell summary={order.itemsSummary} />
-            </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-2.5">
+                  {renderStatusCell(order)}
+                  <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
+                    {order.paymentMethod === "COD" ? "COD" : "Online"}
+                  </Badge>
+                  <span
+                    className={cn(
+                      "text-[11px] font-medium",
+                      order.paymentStatus === "PAID"
+                        ? "text-success-600"
+                        : order.paymentStatus === "FAILED"
+                          ? "text-danger-600"
+                          : "text-warning-600",
+                    )}
+                  >
+                    {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+                  </span>
+                  <span className="ml-auto">{renderCourierCell(order)}</span>
+                </div>
 
-            <div className="mt-2.5 flex items-center gap-3 border-t border-ink-100 pt-2.5">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
-                {initials(order.customerName)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm text-ink-800">{order.customerName}</div>
-                <div className="text-xs text-ink-400">{order.customerPhone}</div>
-              </div>
-              <div className="flex shrink-0 flex-col items-end gap-0.5">
-                <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
-                  {order.paymentMethod === "COD" ? "COD" : "Online"}
-                </Badge>
-                <span
-                  className={cn(
-                    "text-[11px] font-medium",
-                    order.paymentStatus === "PAID"
-                      ? "text-success-600"
-                      : order.paymentStatus === "FAILED"
-                        ? "text-danger-600"
-                        : "text-warning-600",
+                <div className="mt-2.5 border-t border-ink-100 pt-2.5">
+                  <ProductCell summary={order.itemsSummary} />
+                </div>
+
+                <div className="mt-2.5 flex items-center gap-3 border-t border-ink-100 pt-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
+                    {initials(order.customerName)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-ink-800">{order.customerName}</div>
+                    <div className="text-xs text-ink-400">{order.customerPhone}</div>
+                  </div>
+                </div>
+
+                {/* One quick action for the single most common next step on this order — book a
+                    courier if it isn't one yet, restore if it's in Trash — visible without opening
+                    the overflow menu. Everything else (view, print label, delete, …) stays in "⋯"
+                    so the card doesn't turn into a wall of buttons. */}
+                <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-ink-100 pt-2.5">
+                  {order.deletedAt ? (
+                    isOwner ? (
+                      <Button variant="outline" size="sm" onClick={() => handleRestore(order.orderNumber, order.id)}>
+                        <RotateCcw size={13} /> Restore
+                      </Button>
+                    ) : (
+                      <span />
+                    )
+                  ) : canBook ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={bookCourierMutation.isPending}
+                      onClick={() => handleBookCourier(order)}
+                    >
+                      <Truck size={13} /> Book courier
+                    </Button>
+                  ) : (
+                    <span />
                   )}
-                >
-                  {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
-                </span>
+                  <RowActionsMenu items={rowMenuItems(order)} />
+                </div>
               </div>
-            </div>
-
-            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                {renderStatusCell(order)}
-                {renderCourierCell(order)}
-              </div>
-              <RowActionsMenu items={rowMenuItems(order)} />
-            </div>
-          </div>
-        ))}
+            );
+          })}
+        </div>
       </div>
 
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
