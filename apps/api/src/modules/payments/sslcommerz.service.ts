@@ -54,13 +54,23 @@ export async function initSslcommerzSession(params: InitSessionParams): Promise<
     num_of_item: "1",
   });
 
-  const res = await fetch(`${BASE_URL}/gwprocess/v4/api.php`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
+  let data: SslSessionResponse;
+  try {
+    const res = await fetch(`${BASE_URL}/gwprocess/v4/api.php`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    data = (await res.json()) as SslSessionResponse;
+  } catch (err) {
+    // A network failure (gateway unreachable/timeout) or a non-JSON response (maintenance page,
+    // proxy error) throws here — left unguarded this became an unhandled TypeError/SyntaxError that
+    // the generic error handler turned into a raw 500 instead of the same friendly message the
+    // "gateway said no" branch below already gives for a well-formed failure.
+    console.error(`[sslcommerz] session init request failed for order ${params.orderNumber}:`, err);
+    throw AppError.badRequest("Could not start the payment session. Please try again or choose Cash on Delivery.");
+  }
 
-  const data = (await res.json()) as SslSessionResponse;
   if (data.status !== "SUCCESS" || !data.GatewayPageURL) {
     // The gateway's failedreason is an internal/config-facing detail (e.g. bad store_id) — log it
     // for us, but never surface it to the customer verbatim.
@@ -89,8 +99,18 @@ export async function validateSslcommerzTransaction(valId: string): Promise<SslV
     format: "json",
   });
 
-  const res = await fetch(`${BASE_URL}/validator/api/validationserverAPI.php?${query.toString()}`);
-  const data = (await res.json()) as { status?: string; tran_id?: string; amount?: string };
+  let data: { status?: string; tran_id?: string; amount?: string };
+  try {
+    const res = await fetch(`${BASE_URL}/validator/api/validationserverAPI.php?${query.toString()}`);
+    data = (await res.json()) as { status?: string; tran_id?: string; amount?: string };
+  } catch (err) {
+    // Same network/non-JSON failure mode as initSslcommerzSession — here it's already documented
+    // as "could not verify" (the caller treats null as unverified, same as a well-formed but
+    // rejected validation response), so resolve to that instead of throwing an unhandled exception
+    // out of a gateway callback route.
+    console.error(`[sslcommerz] validation request failed for val_id ${valId}:`, err);
+    return null;
+  }
   if ((data.status !== "VALID" && data.status !== "VALIDATED") || !data.tran_id || !data.amount) {
     return null;
   }

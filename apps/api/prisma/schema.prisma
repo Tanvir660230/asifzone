@@ -923,16 +923,27 @@ model ReturnRequest {
 /// At most one ACTIVE session per order is enforced at the DB level by a raw partial unique index
 /// (see migrations/..._add_payment_sessions) — Prisma's schema DSL can't express a partial/
 /// conditional unique constraint, so it isn't declared here, but it exists. Same pattern as
-/// ReturnRequest's one-PENDING-per-order index above.
+/// ReturnRequest's one-PENDING-per-order index above. Doesn't constrain orderId: NULL sessions
+/// (a storefront checkout that hasn't settled into an Order yet, see checkoutPayload) — Postgres
+/// never treats two NULLs as a collision, so several such attempts can be ACTIVE at once; the
+/// constraint only bites once a session is actually tied to a real order.
 model PaymentSession {
   id                    String               @id @default(cuid())
-  orderId               String
-  order                 Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Null until settlement for a storefront digital-payment checkout — see checkoutPayload.
+  /// Always set immediately for a session started against an order that already exists
+  /// (retryPayment, admin-created orders).
+  orderId               String?
+  order                 Order?               @relation(fields: [orderId], references: [id], onDelete: Cascade)
   provider              PaymentProvider
   status                PaymentSessionStatus @default(ACTIVE)
   gatewayTransactionRef String               @unique
   providerTransactionId String?
   gatewayUrl            String?
+  /// A snapshot of the CheckoutInput (plus the resolved customerId) taken when a storefront
+  /// digital-payment checkout starts this session with no Order yet — settlePaymentSession uses
+  /// it to materialize the real Order only once the gateway confirms success. Null for a session
+  /// started against an order that already exists (retryPayment, admin-created orders).
+  checkoutPayload       Json?
   /// 48h out from creation — the same lookback bound the EPS reconciliation sweep already used
   /// before this table existed. The sweep flips any still-ACTIVE session past this to EXPIRED so it
   /// stops being polled and stops blocking a retry.
@@ -955,8 +966,10 @@ model PaymentSession {
 /// out of it.
 model Payment {
   id                    String           @id @default(cuid())
-  orderId               String
-  order                 Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Null for a FAILED settlement of a storefront digital-payment checkout — no Order is ever
+  /// created for a failed/cancelled attempt, so this row (not an Order) is the payment log.
+  orderId               String?
+  order                 Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   paymentSessionId      String           @unique
   paymentSession        PaymentSession   @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
   provider              PaymentProvider

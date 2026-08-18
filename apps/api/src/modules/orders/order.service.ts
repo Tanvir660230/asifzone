@@ -6,6 +6,7 @@ import type {
   OrderListItemSummary,
   OrderItemLiveInfo,
   OrderStatus,
+  PaymentStatus,
   UpdateOrderStatusInput,
   UpdateOrderDetailsInput,
   HoldOrderInput,
@@ -41,15 +42,16 @@ const STATUS_SMS_TOUCHPOINT: Partial<Record<OrderStatus, CustomerTouchpoint>> = 
   CANCELLED: "CANCELLED",
 };
 
-export async function createOrder(
-  input: CheckoutInput,
-  customerId: string | null = null,
-  // Only the admin "Create order" path sets these — attributes the order's opening PENDING
-  // statusHistory entry to the staff member who entered it, so the order-detail timeline reads
-  // "PENDING · <time> · <admin name> — Order manually entered..." for free, same as any other
-  // admin-driven status change.
-  opts: { changedByAdminId?: string; statusNote?: string } = {},
-) {
+export type DerivedOrderPricing = Awaited<ReturnType<typeof deriveOrderPricing>>;
+
+/** Everything about a checkout that can be computed without writing anything — cart-line pricing,
+ * stock/active validation, coupon/bundle evaluation, shipping fee, and the final total. Shared by
+ * createOrder (computes once, right before inserting) and the storefront digital-payment flow
+ * (payment.service.ts's initiatePendingPayment computes it read-only to price the gateway session
+ * and validate the cart before ever redirecting; settlePaymentSession recomputes it fresh at
+ * settlement so a stale coupon/flash-sale price from sitting on the gateway page can't be
+ * exploited). Never decrements stock — only insertOrderRecord's transaction does that. */
+export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null) {
   // A guest (no session cookie) still gets tied to a real Customer row, matched by email/phone —
   // see findOrCreateGuestCustomer for why (repeat-guest recognition, and a base to merge into once
   // they register/log in).
@@ -102,6 +104,196 @@ export async function createOrder(
     input.shippingDivision === "Dhaka" ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
   const total = subtotal - discount + (couponFreeShipping ? 0 : shippingFee);
 
+  return { customerId, variantById, flashByProduct, subtotal, discount, couponId, couponFreeShipping, bundleId, bundleDiscount, shippingFee, total };
+}
+
+/** Inserts the actual Order row (+ items/statusHistory/StockMovement, coupon-usage increment) and
+ * fires the post-commit side effects (admin notification, customer SMS, cart-mirror clear,
+ * low-stock alerts) — the one place that writes an Order at all. `init` picks the row's starting
+ * state: PENDING/UNPAID for a checkout that hasn't been paid yet (COD, admin-entered), or
+ * CONFIRMED/PAID for a storefront digital payment materializing its order only now that the
+ * gateway has confirmed success (see payment.service.ts's settlePaymentSession).
+ *
+ * `allowOversell`, set only by that settlement path, governs what happens if stock ran out while
+ * the customer was on the gateway page: since money has already changed hands, the order is still
+ * created (never strand a paid customer with nothing) and stock is decremented unconditionally
+ * (allowed to go to/below 0) with an admin alert instead of the AppError.conflict a pre-payment
+ * checkout throws in the same situation. */
+export interface OrderItemSnapshot {
+  variantId: string;
+  productNameSnapshot: string;
+  skuSnapshot: string;
+  sizeSnapshot: string;
+  colorSnapshot: string;
+  priceSnapshot: number;
+  quantity: number;
+}
+
+export async function insertOrderRecord(
+  input: CheckoutInput,
+  pricing: DerivedOrderPricing,
+  init: { status: OrderStatus; paymentStatus: PaymentStatus },
+  opts: {
+    changedByAdminId?: string;
+    statusNote?: string;
+    customerSmsTouchpoint?: CustomerTouchpoint;
+    allowOversell?: boolean;
+    // Locked-in item snapshots from checkout-initiation time (payment.service.ts's
+    // initiatePendingPayment) — used instead of re-deriving productNameSnapshot/priceSnapshot from
+    // `pricing.variantById` so a paid order's line items always match exactly what the customer was
+    // quoted and charged, immune to any catalog/flash-sale drift while they were on the gateway page.
+    itemSnapshots?: OrderItemSnapshot[];
+  } = {},
+) {
+  const { customerId, variantById, flashByProduct, subtotal, discount, couponId, bundleId, bundleDiscount, shippingFee, total } = pricing;
+  const itemSnapshotByVariantId = opts.itemSnapshots ? new Map(opts.itemSnapshots.map((s) => [s.variantId, s])) : null;
+  const oversoldItems: { name: string; size: string; color: string }[] = [];
+
+  const order = await prisma.$transaction(async (tx) => {
+    // Each item's conditional decrement is independent (distinct variantId rows) — running them
+    // concurrently instead of one-at-a-time cuts checkout latency roughly in proportion to cart size.
+    const results = await Promise.all(
+      input.items.map((item) =>
+        tx.productVariant.updateMany({
+          where: { id: item.variantId, stock: { gte: item.quantity } },
+          data: { stock: { decrement: item.quantity } },
+        }),
+      ),
+    );
+    const shortfalls = input.items.filter((_, i) => results[i]!.count === 0);
+    if (shortfalls.length > 0) {
+      if (!opts.allowOversell) {
+        throw AppError.conflict("Stock changed while placing your order — please review your cart");
+      }
+      // Payment already succeeded for this order — decrement unconditionally (stock can go
+      // negative) rather than lose a paid customer's order to a late stock race.
+      for (const item of shortfalls) {
+        await tx.productVariant.update({ where: { id: item.variantId }, data: { stock: { decrement: item.quantity } } });
+        const variant = variantById.get(item.variantId);
+        const snapshot = itemSnapshotByVariantId?.get(item.variantId);
+        oversoldItems.push({
+          name: variant?.product.name ?? snapshot?.productNameSnapshot ?? item.variantId,
+          size: variant?.size ?? snapshot?.sizeSnapshot ?? "",
+          color: variant?.color ?? snapshot?.colorSnapshot ?? "",
+        });
+      }
+    }
+
+    const created = await tx.order.create({
+      data: {
+        orderNumber: generateOrderNumber(),
+        customerId,
+        sessionId: input.sessionId ?? null,
+        paymentMethod: input.paymentMethod,
+        customerName: input.customerName,
+        customerEmail: input.customerEmail ?? null,
+        customerPhone: input.customerPhone,
+        shippingDivision: input.shippingDivision,
+        shippingDistrict: input.shippingDistrict,
+        shippingArea: input.shippingArea,
+        shippingAddressLine: input.shippingAddressLine,
+        notes: input.notes ?? null,
+        subtotal,
+        discount,
+        shippingFee,
+        total,
+        couponId,
+        bundleId,
+        bundleDiscount,
+        status: init.status,
+        paymentStatus: init.paymentStatus,
+        items: {
+          create: input.items.map((item) => {
+            const snapshot = itemSnapshotByVariantId?.get(item.variantId);
+            if (snapshot) return snapshot;
+            const variant = variantById.get(item.variantId)!;
+            return {
+              variantId: item.variantId,
+              productNameSnapshot: variant.product.name,
+              skuSnapshot: variant.sku,
+              sizeSnapshot: variant.size,
+              colorSnapshot: variant.color,
+              priceSnapshot: effectivePrice(variant, flashByProduct),
+              quantity: item.quantity,
+            };
+          }),
+        },
+        statusHistory: {
+          create: {
+            status: init.status,
+            changedByAdminId: opts.changedByAdminId ?? null,
+            note: opts.statusNote ?? null,
+          },
+        },
+      },
+      include,
+    });
+
+    await tx.stockMovement.createMany({
+      data: input.items.map((item) => ({
+        variantId: item.variantId,
+        change: -item.quantity,
+        reason: "ORDER" as const,
+        orderId: created.id,
+      })),
+    });
+
+    if (couponId) await incrementCouponUsage(tx, couponId);
+
+    return created;
+  });
+
+  notify({
+    type: "order.created",
+    title: `New order ${order.orderNumber}`,
+    body: `${order.customerName} · ${input.items.length} item(s)`,
+    link: `/admin/orders/${order.id}`,
+  });
+
+  if (oversoldItems.length > 0) {
+    notify({
+      type: "product.low_stock",
+      title: `Oversold on paid order ${order.orderNumber}`,
+      body: oversoldItems.map((i) => `${i.name} (${i.size}/${i.color})`).join(", "),
+      link: `/admin/orders/${order.id}`,
+    });
+  }
+
+  sendCustomerOrderSms(order, opts.customerSmsTouchpoint ?? "PLACED");
+  sendAdminOrderAlertSms(order);
+
+  // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
+  // abandonment sweep must not fire on it.
+  if (customerId) {
+    clearCart(customerId).catch((err) => console.error("[cart] clear after order failed:", err));
+  }
+
+  for (const item of input.items) {
+    const variant = variantById.get(item.variantId);
+    if (!variant) continue;
+    const remaining = variant.stock - item.quantity;
+    if (variant.product.trackInventory && remaining <= variant.product.lowStockThreshold) {
+      notify({
+        type: "product.low_stock",
+        title: `Low stock: ${variant.product.name}`,
+        body: `${variant.size}/${variant.color} — ${Math.max(0, remaining)} left`,
+        link: `/admin/products/${variant.productId}/edit`,
+      });
+    }
+  }
+
+  return order;
+}
+
+export async function createOrder(
+  input: CheckoutInput,
+  customerId: string | null = null,
+  // Only the admin "Create order" path sets these — attributes the order's opening PENDING
+  // statusHistory entry to the staff member who entered it, so the order-detail timeline reads
+  // "PENDING · <time> · <admin name> — Order manually entered..." for free, same as any other
+  // admin-driven status change.
+  opts: { changedByAdminId?: string; statusNote?: string } = {},
+) {
   // A double-click / double-submit on the checkout button fires two POST /orders before the first
   // one's response ever comes back — without a guard, each call independently decrements stock and
   // inserts its own Order, so the customer (and, for online methods, EPS) ends up with two live
@@ -115,6 +307,8 @@ export async function createOrder(
   // No sessionId on the request (shouldn't normally happen — the storefront always sends one) means
   // there's no safe key to dedupe on, so the guard is skipped entirely rather than falling back to
   // the leaky phone-based match.
+  const pricing = await deriveOrderPricing(input, customerId);
+
   const sessionLockKey = input.sessionId ? `order-create-lock:${input.sessionId}` : null;
   const findDuplicateForSession = () =>
     prisma.order.findFirst({
@@ -123,7 +317,7 @@ export async function createOrder(
         status: "PENDING",
         paymentStatus: "UNPAID",
         sessionId: input.sessionId,
-        total,
+        total: pricing.total,
         createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
       },
       orderBy: { createdAt: "desc" },
@@ -156,113 +350,11 @@ export async function createOrder(
     }
   }
 
-  const order = await prisma.$transaction(async (tx) => {
-    // Each item's conditional decrement is independent (distinct variantId rows) — running them
-    // concurrently instead of one-at-a-time cuts checkout latency roughly in proportion to cart size.
-    const results = await Promise.all(
-      input.items.map((item) =>
-        tx.productVariant.updateMany({
-          where: { id: item.variantId, stock: { gte: item.quantity } },
-          data: { stock: { decrement: item.quantity } },
-        }),
-      ),
-    );
-    if (results.some((r) => r.count === 0)) {
-      throw AppError.conflict("Stock changed while placing your order — please review your cart");
-    }
-
-    const created = await tx.order.create({
-      data: {
-        orderNumber: generateOrderNumber(),
-        customerId,
-        sessionId: input.sessionId ?? null,
-        paymentMethod: input.paymentMethod,
-        customerName: input.customerName,
-        customerEmail: input.customerEmail ?? null,
-        customerPhone: input.customerPhone,
-        shippingDivision: input.shippingDivision,
-        shippingDistrict: input.shippingDistrict,
-        shippingArea: input.shippingArea,
-        shippingAddressLine: input.shippingAddressLine,
-        notes: input.notes ?? null,
-        subtotal,
-        discount,
-        shippingFee,
-        total,
-        couponId,
-        bundleId,
-        bundleDiscount,
-        items: {
-          create: input.items.map((item) => {
-            const variant = variantById.get(item.variantId)!;
-            return {
-              variantId: item.variantId,
-              productNameSnapshot: variant.product.name,
-              skuSnapshot: variant.sku,
-              sizeSnapshot: variant.size,
-              colorSnapshot: variant.color,
-              priceSnapshot: effectivePrice(variant, flashByProduct),
-              quantity: item.quantity,
-            };
-          }),
-        },
-        statusHistory: {
-          create: {
-            status: "PENDING",
-            changedByAdminId: opts.changedByAdminId ?? null,
-            note: opts.statusNote ?? null,
-          },
-        },
-      },
-      include,
-    });
-
-    await tx.stockMovement.createMany({
-      data: input.items.map((item) => ({
-        variantId: item.variantId,
-        change: -item.quantity,
-        reason: "ORDER" as const,
-        orderId: created.id,
-      })),
-    });
-
-    if (couponId) await incrementCouponUsage(tx, couponId);
-
-    return created;
-  });
+  const order = await insertOrderRecord(input, pricing, { status: "PENDING", paymentStatus: "UNPAID" }, opts);
 
   // The row is committed now, so any concurrent request polling findDuplicateForSession above will
   // find it — safe to release the lock rather than wait out its full TTL.
   if (sessionLockKey) await redis.del(sessionLockKey).catch(() => {});
-
-  notify({
-    type: "order.created",
-    title: `New order ${order.orderNumber}`,
-    body: `${order.customerName} · ${input.items.length} item(s)`,
-    link: `/admin/orders/${order.id}`,
-  });
-
-  sendCustomerOrderSms(order, "PLACED");
-  sendAdminOrderAlertSms(order);
-
-  // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
-  // abandonment sweep must not fire on it.
-  if (customerId) {
-    clearCart(customerId).catch((err) => console.error("[cart] clear after order failed:", err));
-  }
-
-  for (const item of input.items) {
-    const variant = variantById.get(item.variantId)!;
-    const remaining = variant.stock - item.quantity;
-    if (variant.product.trackInventory && remaining <= variant.product.lowStockThreshold) {
-      notify({
-        type: "product.low_stock",
-        title: `Low stock: ${variant.product.name}`,
-        body: `${variant.size}/${variant.color} — ${Math.max(0, remaining)} left`,
-        link: `/admin/products/${variant.productId}/edit`,
-      });
-    }
-  }
 
   return order;
 }
@@ -723,8 +815,8 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
     // existing (fetched moments ago, same id) already proved this row exists.
     if (!locked) throw AppError.notFound("Order not found");
 
-    // CANCELLED/REFUNDED are treated everywhere else (deleteOrder, cancelUnstartedOrder) as "this
-    // order's reserved stock has already been put back" — but until now this was the one path that
+    // CANCELLED/REFUNDED are treated everywhere else (deleteOrder) as "this order's reserved stock
+    // has already been put back" — but until now this was the one path that
     // could land an order on either status (an admin picking it from the dropdown, a bulk update, or
     // Steadfast reporting a parcel as cancelled) without actually restocking it, silently leaving the
     // units stuck as "sold". Guarded on the *previous* status so re-saving an already-cancelled/
@@ -960,34 +1052,12 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
 
 // markOrderPaid, markOrderFailed, isOrderPaid, and setPaymentSessionKey used to live here — they're
 // superseded by settlePaymentSession/markPaymentSessionFailed/isPaymentSessionSettled/
-// startPaymentSession in payments/payment.service.ts, which operate on PaymentSession (an order can
-// now have more than one payment attempt) rather than directly on Order's deprecated
-// paymentSessionKey/paymentTransactionId fields.
-
-/** Compensates a just-created order whose payment session could never be started (e.g. gateway unreachable) — restores the stock reserved for it and marks it cancelled rather than leaving it stuck as an unpayable PENDING order. */
-export async function cancelUnstartedOrder(orderId: string) {
-  await prisma.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } });
-    if (!order) return;
-
-    for (const item of order.items) {
-      await tx.productVariant.update({
-        where: { id: item.variantId },
-        data: { stock: { increment: item.quantity } },
-      });
-    }
-    await tx.stockMovement.createMany({
-      data: order.items.map((item) => ({
-        variantId: item.variantId,
-        change: item.quantity,
-        reason: "ADJUSTMENT" as const,
-        orderId: order.id,
-      })),
-    });
-
-    await tx.order.update({ where: { id: orderId }, data: { status: "CANCELLED" } });
-  });
-}
+// startPaymentSession/initiatePendingPayment in payments/payment.service.ts, which operate on
+// PaymentSession (an order can now have more than one payment attempt, or none at all until
+// settlement) rather than directly on Order's deprecated paymentSessionKey/paymentTransactionId
+// fields. cancelUnstartedOrder (restocked+cancelled an Order whose payment session failed to start)
+// used to live here too — no longer reachable now that a digital-payment checkout never creates an
+// Order before settlement in the first place (see order.controller.ts's create).
 
 /** Soft-deletes an order (OWNER-only, see order.routes.ts) — hides it from every default query but
  * never physically removes the row, since it's a financial/audit record. Restocks the items first,

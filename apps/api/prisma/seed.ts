@@ -69,7 +69,10 @@ async function seedDemoCustomer() {
 
   const passwordHash = await bcrypt.hash("DemoCustomer123!", 12);
   await prisma.customer.create({
-    data: { name: "Demo Customer", email, passwordHash },
+    // A phone on file matters here specifically because checkout prefills customerPhone from it
+    // (see checkout/page.tsx's reset() on login) — leaving it null on the one account QA/demo
+    // scripts actually log in as made every checkout look like the prefill was broken.
+    data: { name: "Demo Customer", email, phone: "01799999999", passwordHash },
   });
 
   console.log(`Seeded demo customer: ${email}`);

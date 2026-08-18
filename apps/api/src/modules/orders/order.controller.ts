@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import * as orderService from "./order.service";
-import { startPaymentSession, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
+import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -10,19 +10,18 @@ import {
 } from "../courier/courier.service";
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null);
-
-  if (order.paymentMethod === "COD") {
+  // COD has no gateway step — the order is real (and collectable) the instant it's placed, exactly
+  // as before. Every other payment method must NOT create an Order yet: initiatePendingPayment only
+  // opens a PaymentSession (no Order, no stock touched) and the Order is materialized later, in
+  // settlePaymentSession, only once the gateway confirms success — a failed/cancelled attempt never
+  // produces an Order at all, only the Payment FAILED row that already serves as its payment log.
+  if (req.body.paymentMethod === "COD") {
+    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null);
     return res.status(201).json({ order });
   }
 
-  try {
-    const { gatewayUrl } = await startPaymentSession(order);
-    res.status(201).json({ order, gatewayUrl });
-  } catch (err) {
-    await orderService.cancelUnstartedOrder(order.id);
-    throw err;
-  }
+  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null);
+  res.status(201).json({ gatewayUrl });
 });
 
 export const track = asyncHandler(async (req: Request, res: Response) => {

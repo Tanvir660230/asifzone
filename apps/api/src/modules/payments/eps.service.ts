@@ -22,13 +22,22 @@ let cachedToken: { token: string; expiry: Date } | null = null;
 async function getEpsToken(): Promise<string> {
   if (cachedToken && cachedToken.expiry.getTime() > Date.now() + 5000) return cachedToken.token;
 
-  const res = await fetch(`${BASE_URL}/Auth/GetToken`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-hash": signHash(env.eps.username) },
-    body: JSON.stringify({ userName: env.eps.username, password: env.eps.password }),
-  });
+  let data: EpsTokenResponse;
+  try {
+    const res = await fetch(`${BASE_URL}/Auth/GetToken`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-hash": signHash(env.eps.username) },
+      body: JSON.stringify({ userName: env.eps.username, password: env.eps.password }),
+    });
+    data = (await res.json()) as EpsTokenResponse;
+  } catch (err) {
+    // A network failure or non-JSON response throws here — left unguarded this became an unhandled
+    // TypeError/SyntaxError that the generic error handler turned into a raw 500 instead of the same
+    // friendly message the "gateway said no" branch below already gives for a well-formed failure.
+    console.error("[eps] token request failed:", err);
+    throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
+  }
 
-  const data = (await res.json()) as EpsTokenResponse;
   if (!data.token || !data.expireDate || data.errorMessage || data.errorCode) {
     console.error("[eps] token request failed:", data.errorMessage);
     throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
@@ -111,13 +120,19 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
     ProductList: [],
   };
 
-  const res = await fetch(`${BASE_URL}/EPSEngine/InitializeEPS`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-hash": hash, Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-  });
+  let data: EpsInitResponse;
+  try {
+    const res = await fetch(`${BASE_URL}/EPSEngine/InitializeEPS`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-hash": hash, Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    data = (await res.json()) as EpsInitResponse;
+  } catch (err) {
+    console.error(`[eps] session init request failed for order ${params.orderNumber}:`, err);
+    throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
+  }
 
-  const data = (await res.json()) as EpsInitResponse;
   if (data.ErrorMessage || data.ErrorCode || !data.RedirectURL) {
     // The gateway's ErrorMessage is an internal/config-facing detail (e.g. bad merchantId) — log it
     // for us, but never surface it to the customer verbatim.
@@ -151,11 +166,19 @@ export async function verifyEpsTransaction(merchantTransactionId: string): Promi
   const hash = signHash(merchantTransactionId);
   const query = new URLSearchParams({ merchantTransactionId });
 
-  const res = await fetch(`${BASE_URL}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`, {
-    headers: { "x-hash": hash, Authorization: `Bearer ${token}` },
-  });
-
-  const data = (await res.json()) as EpsVerifyResponse;
+  let data: EpsVerifyResponse;
+  try {
+    const res = await fetch(`${BASE_URL}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`, {
+      headers: { "x-hash": hash, Authorization: `Bearer ${token}` },
+    });
+    data = (await res.json()) as EpsVerifyResponse;
+  } catch (err) {
+    // Same network/non-JSON failure mode as initEpsSession — here it's already documented as
+    // "could not verify" (the caller treats null as unverified), so resolve to that instead of
+    // throwing an unhandled exception out of a gateway callback route.
+    console.error(`[eps] verify request failed for ${merchantTransactionId}:`, err);
+    return null;
+  }
   if (data.ErrorMessage || data.ErrorCode || !data.MerchantTransactionId || !data.TotalAmount) {
     return null;
   }

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, User, MapPin, Banknote, Smartphone, X } from "lucide-react";
+import { ChevronDown, User, MapPin, Banknote, Smartphone } from "lucide-react";
 import {
   checkoutSchema,
   BD_ALL_DISTRICTS,
@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
@@ -100,13 +101,13 @@ function CheckoutForm() {
   const [summaryOpen, setSummaryOpen] = useState(false);
 
   // A failed/cancelled gateway redirect (payment.controller.ts) lands the shopper back here with
-  // ?paymentError=1 / ?paymentCancelled=1 — read once on mount rather than kept live against
-  // searchParams, so dismissing it (or submitting a fresh order) doesn't have it reappear on a
-  // re-render triggered by something unrelated.
-  const [gatewayNotice, setGatewayNotice] = useState<"error" | "cancelled" | null>(null);
+  // ?paymentError=1 / ?paymentCancelled=1 — read once on mount (not kept live against
+  // searchParams) so the toast doesn't refire on a re-render triggered by something unrelated. No
+  // Order was ever created for that attempt (see order.controller.ts's create) and the cart is
+  // untouched, so there's nothing to show beyond the notice itself — the shopper can just retry.
   useEffect(() => {
-    if (searchParams.get("paymentError")) setGatewayNotice("error");
-    else if (searchParams.get("paymentCancelled")) setGatewayNotice("cancelled");
+    if (searchParams.get("paymentError")) toast.error("Payment Failed. Please try again.");
+    else if (searchParams.get("paymentCancelled")) toast.error("Payment Cancelled. Your cart is unchanged — feel free to retry.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -313,12 +314,16 @@ function CheckoutForm() {
       const { order, gatewayUrl } = await createOrder(payload);
       sessionStorage.setItem("lastOrderPhone", values.customerPhone);
       if (gatewayUrl) {
+        // No Order exists yet for this attempt — it's only created once the gateway confirms
+        // success (order.controller.ts / payment.service.ts's settlePaymentSession). Cart is left
+        // alone until then so a failed/cancelled payment can just be retried.
         window.location.href = gatewayUrl;
         return;
       }
+      toast.success("Order placed!");
       if (isExpress) clearExpressItem();
       else clearCart();
-      router.push(`/order-confirmation/${order.orderNumber}`);
+      router.push(`/order-confirmation/${order!.orderNumber}`);
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "Could not place order, please try again");
     }
@@ -344,24 +349,6 @@ function CheckoutForm() {
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
       <h1 className={cn("font-display text-2xl text-ink-900", isExpress ? "mb-1" : "mb-8")}>Checkout</h1>
       {isExpress && <p className="mb-7 text-sm text-ink-500">Buying 1 item — your cart is untouched.</p>}
-
-      {gatewayNotice && (
-        <div className="mb-6 flex items-center justify-between gap-4 rounded-lg border border-warning-100 bg-warning-50 px-4 py-3 text-sm text-ink-800">
-          <span role="status" aria-live="polite">
-            {gatewayNotice === "error"
-              ? "Your last payment attempt failed. Please try again."
-              : "Your last payment was cancelled. Please try again when you're ready."}
-          </span>
-          <button
-            type="button"
-            onClick={() => setGatewayNotice(null)}
-            aria-label="Dismiss"
-            className="shrink-0 text-ink-400 hover:text-ink-700"
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] lg:gap-10">
         {/* Mobile: the price is what a shopper wants to see before typing anything, so the summary
@@ -480,7 +467,7 @@ function CheckoutForm() {
           </div>
         </aside>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="order-2 space-y-5 lg:order-1">
+        <form onSubmit={handleSubmit(onSubmit)} method="post" className="order-2 space-y-5 lg:order-1">
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">

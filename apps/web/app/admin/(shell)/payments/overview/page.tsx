@@ -1,12 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCcw, ShieldAlert, Undo2 } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCcw, Search, ShieldAlert, Undo2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatPrice } from "@/lib/format";
+
+const SESSION_STATUS_BADGE: Record<string, "success" | "danger" | "warning" | "neutral"> = {
+  SUCCEEDED: "success",
+  FAILED: "danger",
+  CANCELLED: "neutral",
+  EXPIRED: "neutral",
+  ACTIVE: "warning",
+};
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -25,6 +37,19 @@ export default function PaymentsOverviewPage() {
     refetchInterval: 60_000,
   });
 
+  // Support's "a customer called saying their payment failed" lookup — searches every payment
+  // attempt for this phone number, including ones that never became an Order (a failed/cancelled
+  // pre-order digital-payment checkout only leaves a PaymentSession/Payment trail, see
+  // payments-overview.service.ts's searchPaymentAttempts).
+  const [phoneInput, setPhoneInput] = useState("");
+  const debouncedPhone = useDebouncedValue(phoneInput, 350);
+  const { data: searchData, isFetching: searching } = useQuery({
+    queryKey: ["payment-attempt-search", debouncedPhone],
+    queryFn: () => paymentsAdminApi.searchPaymentAttempts(debouncedPhone),
+    enabled: debouncedPhone.trim().length >= 4,
+  });
+  const searchResults = debouncedPhone.trim().length >= 4 ? (searchData?.results ?? []) : [];
+
   return (
     <div className="space-y-8">
       <div>
@@ -33,6 +58,62 @@ export default function PaymentsOverviewPage() {
           EPS and SSLCommerz attempts, the reconciliation queue, and refund-risk signals — updated roughly every minute.
         </p>
       </div>
+
+      {/* Customer lookup */}
+      <section>
+        <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+          Look Up a Customer&apos;s Payment Attempts
+        </h2>
+        <Card className="p-4">
+          <div className="relative max-w-sm">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+            <Input
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              placeholder="Search by phone number (01XXXXXXXXX)…"
+              className="pl-9"
+            />
+          </div>
+          <p className="mt-2 text-xs text-ink-400">
+            Covers attempts that never became an order too — a failed or abandoned gateway checkout still
+            leaves a record here, keyed on the phone number entered at checkout.
+          </p>
+
+          {debouncedPhone.trim().length >= 4 && (
+            <div className="mt-4 divide-y divide-ink-100 border-t border-ink-100">
+              {searching ? (
+                <p className="py-4 text-sm text-ink-400">Searching…</p>
+              ) : searchResults.length === 0 ? (
+                <p className="py-4 text-sm text-ink-400">No payment attempts found for that number.</p>
+              ) : (
+                searchResults.map((r) => (
+                  <div key={r.sessionId} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <Badge variant={SESSION_STATUS_BADGE[r.status] ?? "neutral"}>{r.status}</Badge>
+                      <span className="font-medium text-ink-900">{r.customerName || "Unknown customer"}</span>
+                      <span className="text-ink-400">{r.customerPhone}</span>
+                      <span className="text-ink-400">{r.provider}</span>
+                      <span className="text-ink-600">{formatPrice(r.amount)}</span>
+                      {r.orderNumber ? (
+                        <Link
+                          href={`/admin/orders?search=${r.orderNumber}`}
+                          className="font-medium text-brass-600 hover:underline"
+                        >
+                          {r.orderNumber}
+                        </Link>
+                      ) : (
+                        <span className="text-ink-400">No order created</span>
+                      )}
+                      {r.lastEventNote && <span className="text-xs text-ink-400">— {r.lastEventNote}</span>}
+                    </div>
+                    <span className="shrink-0 text-xs text-ink-400">{timeAgo(r.createdAt)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </Card>
+      </section>
 
       {/* Today */}
       <section>
@@ -116,9 +197,13 @@ export default function PaymentsOverviewPage() {
               <div key={i} className="flex items-center justify-between gap-4 p-4 text-sm">
                 <div className="flex items-center gap-2.5">
                   <AlertTriangle size={16} className="shrink-0 text-danger-500" />
-                  <Link href={`/admin/orders?search=${f.orderNumber}`} className="font-medium text-ink-900 hover:underline">
-                    {f.orderNumber}
-                  </Link>
+                  {f.orderNumber ? (
+                    <Link href={`/admin/orders?search=${f.orderNumber}`} className="font-medium text-ink-900 hover:underline">
+                      {f.orderNumber}
+                    </Link>
+                  ) : (
+                    <span className="font-medium text-ink-400">No order created</span>
+                  )}
                   <span className="text-ink-400">{f.provider}</span>
                 </div>
                 <span className="text-xs text-ink-400">{timeAgo(f.failedAt)}</span>

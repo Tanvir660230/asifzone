@@ -8,14 +8,17 @@ import { estimateDelivery, type Order } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "@/components/ui/toast";
 import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
 import { trackOrder, retryPayment } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
 import { formatDateShort } from "@/lib/format";
 import { pixelPurchase } from "@/lib/meta-pixel";
+import { useCartStore } from "@/store/cart";
 
 const SESSION_KEY = "lastOrderPhone";
 const PIXEL_PURCHASE_KEY = "pixelPurchaseTracked";
+const PAYMENT_TOAST_KEY = "paymentSuccessToastShown";
 
 function needsPaymentRetry(order: Order) {
   return order.paymentMethod !== "COD" && order.paymentStatus !== "PAID" && order.status === "PENDING";
@@ -34,6 +37,7 @@ export default function OrderConfirmationPage() {
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const clearCart = useCartStore((s) => s.clear);
 
   async function attempt(candidatePhone: string) {
     setError(null);
@@ -41,6 +45,23 @@ export default function OrderConfirmationPage() {
       const { order: found } = await trackOrder(orderNumber, candidatePhone);
       setOrder(found);
       setConfirmedPhone(candidatePhone);
+
+      // Only a gateway-settled order reaches this page already PAID (COD gets its own "Order
+      // placed!" toast + cart clear on the checkout page itself, before the redirect here — see
+      // checkout/page.tsx's onSubmit). The digital-payment checkout never clears the client cart
+      // before redirecting to the gateway (a failed/cancelled attempt must leave it untouched for
+      // retry), so this is the one place a *settled* payment's cart finally gets cleared. Same
+      // sessionStorage dedupe shape as the pixel-purchase guard below, so a refresh doesn't re-fire
+      // either of these.
+      if (found.paymentMethod !== "COD" && found.paymentStatus === "PAID") {
+        const toastKey = `${PAYMENT_TOAST_KEY}:${found.orderNumber}`;
+        if (!sessionStorage.getItem(toastKey)) {
+          sessionStorage.setItem(toastKey, "1");
+          toast.success("Payment Successful");
+          clearCart();
+        }
+      }
+
       // Guards against double-counting the same order as a Purchase on a page refresh or a
       // second phone-lookup submit — sessionStorage, not a ref, since a fresh mount (refresh)
       // would otherwise re-fire it.

@@ -1,12 +1,37 @@
 import crypto from "crypto";
 import type { Order } from "@prisma/client";
 import { Prisma } from "@prisma/client";
+import type { CheckoutInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { sendCustomerOrderSms } from "../../lib/order-sms";
 import { sendPaymentConfirmationEmail } from "../../lib/order-mailer";
+import { deriveOrderPricing, insertOrderRecord, type DerivedOrderPricing, type OrderItemSnapshot } from "../orders/order.service";
+import { resolveCartLines, effectivePrice } from "../orders/cart-lines";
 import { initEpsSession, verifyEpsTransaction } from "./eps.service";
 import { initSslcommerzSession } from "./sslcommerz.service";
+
+/** What's snapshotted onto PaymentSession.checkoutPayload when a storefront digital-payment
+ * checkout starts a session with no Order yet (see initiatePendingPayment). `pricing`/
+ * `itemSnapshots` are locked in at initiation and used as-is at settlement (settlePaymentSession)
+ * rather than recomputed — the customer is charged exactly what they were quoted, immune to any
+ * catalog/coupon/flash-sale drift while they're on the gateway page. */
+export interface PendingCheckoutPayload {
+  input: CheckoutInput;
+  customerId: string;
+  pricing: {
+    subtotal: number;
+    discount: number;
+    couponId: string | null;
+    couponFreeShipping: boolean;
+    bundleId: string | null;
+    bundleDiscount: number;
+    shippingFee: number;
+    total: number;
+  };
+  itemSnapshots: OrderItemSnapshot[];
+}
 
 // Same lookback bound the EPS reconciliation sweep already used before this table existed.
 const SESSION_TTL_MS = 48 * 60 * 60 * 1000;
@@ -106,11 +131,154 @@ export async function startPaymentSession(order: Order): Promise<{ gatewayUrl: s
   }
 }
 
+/** Starts a digital-payment checkout with NO Order yet — the storefront entrypoint for
+ * SSLCommerz/EPS checkouts (order.controller.ts's `create`, for every paymentMethod other than
+ * COD). Validates the cart/coupon/stock and prices the gateway amount via deriveOrderPricing
+ * exactly like createOrder does, but never writes an Order or touches stock: the PaymentSession is
+ * created with `orderId: null` and a `checkoutPayload` snapshot of everything needed to materialize
+ * the real Order later. That only happens in settlePaymentSession, once the gateway has confirmed
+ * success — a failed/cancelled/expired attempt never produces an Order at all, only the existing
+ * `Payment` FAILED row (see markPaymentSessionFailed), which is the payment log for it. */
+export async function initiatePendingPayment(
+  input: CheckoutInput,
+  customerId: string | null,
+): Promise<{ gatewayUrl: string; sessionId: string }> {
+  if (input.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
+
+  const pricing = await deriveOrderPricing(input, customerId);
+  const itemSnapshots: OrderItemSnapshot[] = input.items.map((item) => {
+    const variant = pricing.variantById.get(item.variantId)!;
+    return {
+      variantId: item.variantId,
+      productNameSnapshot: variant.product.name,
+      skuSnapshot: variant.sku,
+      sizeSnapshot: variant.size,
+      colorSnapshot: variant.color,
+      priceSnapshot: effectivePrice(variant, pricing.flashByProduct),
+      quantity: item.quantity,
+    };
+  });
+  const checkoutPayload: PendingCheckoutPayload = {
+    input,
+    customerId: pricing.customerId,
+    pricing: {
+      subtotal: pricing.subtotal,
+      discount: pricing.discount,
+      couponId: pricing.couponId,
+      couponFreeShipping: pricing.couponFreeShipping,
+      bundleId: pricing.bundleId,
+      bundleDiscount: pricing.bundleDiscount,
+      shippingFee: pricing.shippingFee,
+      total: pricing.total,
+    },
+    itemSnapshots,
+  };
+
+  // Same double-submit guard as createOrder's sessionLockKey (order.service.ts) — a double-click on
+  // "Place Order" before the first request's response comes back would otherwise open two live
+  // gateway sessions for the same cart. Scoped to still-pre-order (orderId: null) ACTIVE sessions
+  // since there's no Order to dedupe against yet.
+  const sessionLockKey = input.sessionId ? `payment-init-lock:${input.sessionId}` : null;
+  const findDuplicateSession = () =>
+    prisma.paymentSession.findFirst({
+      where: {
+        orderId: null,
+        status: "ACTIVE",
+        createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
+        AND: [
+          { checkoutPayload: { path: ["input", "sessionId"], equals: input.sessionId! } },
+          { checkoutPayload: { path: ["pricing", "total"], equals: pricing.total } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+  if (sessionLockKey) {
+    const acquired = await redis.set(sessionLockKey, "1", "PX", 10_000, "NX").catch(() => "OK");
+    if (!acquired) {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const existing = await findDuplicateSession();
+        if (existing?.gatewayUrl) return { gatewayUrl: existing.gatewayUrl, sessionId: existing.id };
+      }
+    } else {
+      const duplicate = await findDuplicateSession();
+      if (duplicate?.gatewayUrl) {
+        await redis.del(sessionLockKey).catch(() => {});
+        return { gatewayUrl: duplicate.gatewayUrl, sessionId: duplicate.id };
+      }
+    }
+  }
+
+  const attemptRef = newAttemptRef();
+  const session = await prisma.paymentSession.create({
+    data: {
+      orderId: null,
+      provider: input.paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ",
+      status: "ACTIVE",
+      gatewayTransactionRef: attemptRef,
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+      checkoutPayload: checkoutPayload as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  // No Order (and so no orderNumber) exists yet — the attemptRef is what the gateway actually keys
+  // its callback on, so it stands in as the display-only "product name" value too.
+  const gatewayParams = {
+    orderNumber: attemptRef,
+    attemptRef,
+    amount: pricing.total,
+    customerName: input.customerName,
+    customerEmail: input.customerEmail ?? null,
+    customerPhone: input.customerPhone,
+    customerAddress: input.shippingAddressLine,
+  };
+
+  try {
+    const { gatewayUrl, providerTransactionId } =
+      input.paymentMethod === "EPS_PG"
+        ? await initEpsSession(gatewayParams).then((r) => ({ gatewayUrl: r.gatewayUrl, providerTransactionId: r.transactionId }))
+        : await initSslcommerzSession(gatewayParams).then((r) => ({ gatewayUrl: r.gatewayUrl, providerTransactionId: r.sessionKey }));
+
+    await prisma.paymentSession.update({ where: { id: session.id }, data: { gatewayUrl, providerTransactionId } });
+    recordEvent(session.id, "INITIATED");
+    if (sessionLockKey) await redis.del(sessionLockKey).catch(() => {});
+    return { gatewayUrl, sessionId: session.id };
+  } catch (err) {
+    // Init failed at the gateway — nothing was ever reserved (no Order, no stock touched), so
+    // there's nothing to compensate beyond marking the dead-on-arrival session FAILED.
+    await prisma.paymentSession.update({ where: { id: session.id }, data: { status: "FAILED" } }).catch(() => {});
+    if (sessionLockKey) await redis.del(sessionLockKey).catch(() => {});
+    throw err;
+  }
+}
+
+/** Polls for a session's order to show up — used when this call lost a concurrent settle race (a
+ * live redirect callback, the reconciliation cron, and an IPN can all reach settlePaymentSession
+ * for the same session around the same moment) or found the session already SUCCEEDED from an
+ * earlier call. For a pre-order session (orderId was null), the winner of that race is what
+ * actually runs insertOrderRecord, so there's a brief real gap between "status flipped to
+ * SUCCEEDED" and "the order row exists" — short-poll rather than read a stale/missing order. */
+async function waitForSettledOrder(paymentSessionId: string): Promise<Order> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const session = await prisma.paymentSession.findUnique({ where: { id: paymentSessionId }, include: { order: true } });
+    if (session?.order) return session.order;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw AppError.conflict("Payment session is still settling — please try again in a moment");
+}
+
 /** Replaces markOrderPaid. Looks up the PaymentSession by the gateway's own callback/verify
  * reference (never by orderNumber — an order can now have several attempts). verifiedAmount must
  * come from the gateway's own validation record, never the callback body — the last line of defense
  * against a valid confirmation for one attempt being replayed against a different, more expensive
- * order's attempt. */
+ * order's attempt.
+ *
+ * When the session has no Order yet (a storefront digital-payment checkout — see
+ * initiatePendingPayment), this is also where that Order gets materialized for the first time,
+ * from the checkoutPayload snapshotted at checkout-initiation — never recomputed from live catalog
+ * data, so the order's total/items always match exactly what the customer was quoted and charged,
+ * regardless of any coupon/flash-sale drift while they were on the gateway page. */
 export async function settlePaymentSession(
   attemptRef: string,
   providerTransactionId: string,
@@ -119,15 +287,24 @@ export async function settlePaymentSession(
 ): Promise<{ order: Order; justSettled: boolean }> {
   const session = await prisma.paymentSession.findUnique({ where: { gatewayTransactionRef: attemptRef }, include: { order: true } });
   if (!session) throw AppError.notFound("Payment session not found");
+
+  const payload = session.orderId ? null : (session.checkoutPayload as unknown as PendingCheckoutPayload | null);
+  if (!session.orderId && !payload) throw AppError.notFound("Payment session has no order and no checkout data to create one");
+  const expectedTotal = session.orderId ? Number(session.order!.total) : payload!.pricing.total;
+
   // EXPIRED still accepts a settle — it only means the cron or a retry gave up waiting, not that the
   // gateway itself declined. A customer's original gateway tab can complete payment *after* retryPayment
   // (order.service.ts) has already expired this exact session to free up a fresh attempt; without this,
   // that late-but-genuine success would be silently discarded — money taken, order left UNPAID forever.
   // FAILED/CANCELLED/SUCCEEDED are the only true terminal states where a settle is a stale/replayed no-op.
   if (session.status !== "ACTIVE" && session.status !== "EXPIRED") {
-    return { order: session.order, justSettled: false };
+    if (session.status === "SUCCEEDED") return { order: await waitForSettledOrder(session.id), justSettled: false };
+    if (session.orderId) return { order: session.order!, justSettled: false };
+    // A pre-order session that reached FAILED/CANCELLED never created an Order — a success signal
+    // arriving after that is a genuine contradiction from the gateway, not a safe stale replay.
+    throw AppError.conflict("This payment session already reached a final state");
   }
-  if (Math.abs(Number(session.order.total) - verifiedAmount) > 0.01) {
+  if (Math.abs(expectedTotal - verifiedAmount) > 0.01) {
     throw AppError.badRequest("Payment amount does not match order total");
   }
 
@@ -140,17 +317,41 @@ export async function settlePaymentSession(
     data: { status: "SUCCEEDED" },
   });
   if (claimed.count === 0) {
-    const order = await prisma.order.findUniqueOrThrow({ where: { id: session.orderId } });
-    return { order, justSettled: false };
+    return { order: await waitForSettledOrder(session.id), justSettled: false };
+  }
+
+  let orderId = session.orderId;
+  if (!orderId) {
+    // Live catalog data purely for informational display (an oversold-item admin alert, the
+    // low-stock check) — never for pricing. Best-effort: a variant hard-deleted between checkout
+    // and settlement must not cost a customer who already paid their order.
+    const liveVariants = await resolveCartLines(payload!.input.items).catch((err) => {
+      console.error(`[payment.service] failed to fetch live variant info for settlement of session ${session.id}:`, err);
+      return { variantById: new Map(), flashByProduct: new Map() } as Awaited<ReturnType<typeof resolveCartLines>>;
+    });
+    const finalPricing: DerivedOrderPricing = {
+      customerId: payload!.customerId,
+      variantById: liveVariants.variantById,
+      flashByProduct: liveVariants.flashByProduct,
+      ...payload!.pricing,
+    };
+    const created = await insertOrderRecord(payload!.input, finalPricing, { status: "CONFIRMED", paymentStatus: "PAID" }, {
+      customerSmsTouchpoint: "CONFIRMED",
+      allowOversell: true,
+      itemSnapshots: payload!.itemSnapshots,
+    });
+    orderId = created.id;
+    await prisma.paymentSession.update({ where: { id: session.id }, data: { orderId } });
+    sendPaymentConfirmationEmail(created);
   }
 
   await prisma.payment.create({
     data: {
-      orderId: session.orderId,
+      orderId,
       paymentSessionId: session.id,
       provider: session.provider,
       status: "SUCCEEDED",
-      amount: session.order.total,
+      amount: expectedTotal,
       verifiedAmount,
       providerTransactionId,
       rawResponse: rawResponse as Prisma.InputJsonValue | undefined,
@@ -161,9 +362,11 @@ export async function settlePaymentSession(
   // Gated on whether this actually flipped the order (not on `claimed` above) — a second session on
   // the same order somehow also succeeding (a genuine double payment, not a race) still gets its own
   // Payment row recorded for the refund/reconciliation trail, but must not re-send the "confirmed"
-  // SMS the customer already received for the first one.
-  const syncResult = await syncOrderPaymentStatus(session.orderId, "PAID");
-  const order = await prisma.order.findUniqueOrThrow({ where: { id: session.orderId } });
+  // SMS the customer already received for the first one. A session that just materialized its own
+  // order above is already PAID/CONFIRMED and already got its SMS/email from insertOrderRecord, so
+  // this is deliberately a no-op for it (syncOrderPaymentStatus's own paymentStatus guard matches 0 rows).
+  const syncResult = session.orderId ? await syncOrderPaymentStatus(orderId, "PAID") : { count: 0 };
+  const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
   if (syncResult.count > 0) {
     sendCustomerOrderSms(order, "CONFIRMED");
     sendPaymentConfirmationEmail(order);
@@ -174,7 +377,12 @@ export async function settlePaymentSession(
 
 /** Replaces markOrderFailed. Same atomic guard shape as settlePaymentSession — only an ACTIVE
  * session can be failed, so a late/duplicate fail callback on an already-resolved session is a
- * no-op rather than corrupting a session another caller already settled. */
+ * no-op rather than corrupting a session another caller already settled.
+ *
+ * For a pre-order session (orderId null — a storefront digital-payment checkout, see
+ * initiatePendingPayment), no Order is ever created here: this Payment FAILED row is itself the
+ * "payment log" the failed attempt leaves behind, and there is nothing to sync back onto an Order
+ * because none exists. */
 export async function markPaymentSessionFailed(attemptRef: string, rawResponse?: unknown): Promise<boolean> {
   const session = await prisma.paymentSession.findUnique({ where: { gatewayTransactionRef: attemptRef }, include: { order: true } });
   if (!session || session.status !== "ACTIVE") return false;
@@ -185,18 +393,21 @@ export async function markPaymentSessionFailed(attemptRef: string, rawResponse?:
   });
   if (claimed.count === 0) return false;
 
+  const payload = session.checkoutPayload as unknown as PendingCheckoutPayload | null;
+  const amount = session.order ? session.order.total : (payload?.pricing.total ?? 0);
+
   await prisma.payment.create({
     data: {
       orderId: session.orderId,
       paymentSessionId: session.id,
       provider: session.provider,
       status: "FAILED",
-      amount: session.order.total,
+      amount,
       rawResponse: rawResponse as Prisma.InputJsonValue | undefined,
     },
   });
   recordEvent(session.id, "VERIFIED_FAILED", undefined, rawResponse);
-  await syncOrderPaymentStatus(session.orderId, "FAILED");
+  if (session.orderId) await syncOrderPaymentStatus(session.orderId, "FAILED");
   return true;
 }
 
@@ -244,7 +455,13 @@ export async function reconcileStuckEpsSessions(): Promise<number> {
       provider: "EPS_PG",
       status: "ACTIVE",
       createdAt: { lte: settleGrace, gte: lookback },
-      order: { deletedAt: null },
+      // A pre-order session (orderId null — a storefront digital-payment checkout that hasn't
+      // settled into an Order yet) has no `order` relation to check `deletedAt` against at all; the
+      // plain `order: { deletedAt: null }` shorthand requires a related row to exist, which would
+      // silently exclude every one of these from the sweep and break the safety net for exactly the
+      // checkouts that need it most. Only actually exclude a session whose *existing* order was
+      // soft-deleted.
+      OR: [{ orderId: null }, { order: { deletedAt: null } }],
     },
     // Bounds one job run under a large backlog — the oldest/most-likely-to-have-resolved sessions
     // first, rather than an unbounded scan that could run past the next 5-minute tick.
