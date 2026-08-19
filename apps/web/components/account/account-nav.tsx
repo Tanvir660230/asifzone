@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, MapPin, Heart, Package, LayoutDashboard, RotateCcw, Gift, Tag, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutCustomer } from "@/lib/customer-auth";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 
 const NAV_GROUPS = [
   {
@@ -30,6 +29,18 @@ const NAV_GROUPS = [
 
 const NAV_ITEMS = NAV_GROUPS.flatMap((group) => group.items);
 
+/** Which nav item should read as "current" for a given URL — not just the sub-pages that exactly
+ * equal a nav href (Order Detail, Invoice, etc. never would), but also not naively "starts with,"
+ * since "/account" would then match every other item too. Resolves to whichever nav href is the
+ * longest matching prefix of the pathname, so "/account/orders/123/invoice" highlights "Orders"
+ * and "/account" only highlights "Dashboard" on its own page. */
+function isNavItemActive(pathname: string, href: string): boolean {
+  const matches = NAV_ITEMS.filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
+  if (matches.length === 0) return false;
+  const longest = matches.reduce((best, item) => (item.href.length > best.href.length ? item : best));
+  return longest.href === href;
+}
+
 export function AccountNav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -41,11 +52,13 @@ export function AccountNav() {
 
   return (
     <aside className="w-full shrink-0 sm:w-60">
-      {/* Mobile: horizontal pill strip for moving between subpages */}
+      {/* Mobile: wrapping pill grid — every destination visible up front instead of behind a
+          horizontal scroll, which previously hid most of the section (only ~3 of 8 items fit in
+          one row on a typical phone, with just a faint edge shadow hinting at the rest). */}
       <nav aria-label="Account navigation" className="sm:hidden">
-        <HScrollShadow className="flex gap-2 overflow-x-auto pb-1" edgeFrom="from-cream-100">
+        <div className="flex flex-wrap gap-2">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
+            const active = isNavItemActive(pathname, href);
             return (
               <Link
                 key={href}
@@ -68,7 +81,7 @@ export function AccountNav() {
             <LogOut size={15} />
             Log out
           </button>
-        </HScrollShadow>
+        </div>
       </nav>
 
       {/* Desktop: grouped card with an active accent bar */}
@@ -80,7 +93,7 @@ export function AccountNav() {
                 {group.label}
               </p>
               {group.items.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href;
+                const active = isNavItemActive(pathname, href);
                 return (
                   <Link
                     key={href}

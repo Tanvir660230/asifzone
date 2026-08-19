@@ -130,10 +130,18 @@ export default function AccountAddressesPage() {
                 )}
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setEditing(address)} className="text-xs text-ink-500 hover:text-ink-900">
+                <button
+                  onClick={() => setEditing(address)}
+                  aria-label={`Edit the ${address.label || address.fullName} address`}
+                  className="text-xs text-ink-500 hover:text-ink-900"
+                >
                   Edit
                 </button>
-                <button onClick={() => handleDelete(address)} className="text-ink-400 hover:text-danger-600">
+                <button
+                  onClick={() => handleDelete(address)}
+                  aria-label={`Remove the ${address.label || address.fullName} address`}
+                  className="text-ink-400 hover:text-danger-600"
+                >
                   <Trash2 size={14} />
                 </button>
               </div>

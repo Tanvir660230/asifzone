@@ -29,6 +29,8 @@ import {
   Wallet,
   Clock,
   AlertTriangle,
+  RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
 import type {
   OrderStatus,
@@ -63,7 +65,12 @@ import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
-import type { BulkCourierBookResult, AdminOrderListParams } from "@/lib/api/admin-orders";
+import type {
+  BulkCourierBookResult,
+  BulkCourierSyncResult,
+  BulkDeliveryScoreResult,
+  AdminOrderListParams,
+} from "@/lib/api/admin-orders";
 import {
   formatPrice,
   initials,
@@ -73,6 +80,8 @@ import {
   courierStatusBadgeClass,
   courierStatusLabel,
   courierStatusDescription,
+  deliveryScoreBadgeClass,
+  timeAgo,
 } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
@@ -346,6 +355,8 @@ export default function OrdersPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [bulkCourierResult, setBulkCourierResult] = useState<BulkCourierBookResult | null>(null);
+  const [bulkCourierSyncResult, setBulkCourierSyncResult] = useState<BulkCourierSyncResult | null>(null);
+  const [bulkDeliveryScoreResult, setBulkDeliveryScoreResult] = useState<BulkDeliveryScoreResult | null>(null);
 
   // Column-header sort — undefined sortBy means the default (newest first) from the API.
   const [sortBy, setSortBy] = useState<AdminOrderListParams["sortBy"]>(undefined);
@@ -478,6 +489,10 @@ export default function OrdersPage() {
         ...filterParams,
       }),
     placeholderData: (prev) => prev,
+    // Courier statuses change server-side outside of anything this tab does (Steadfast webhook, the
+    // 15-min sync cron) — polling keeps the Courier column current without an admin having to
+    // manually reload. Same pattern as dashboard/page.tsx and notification-bell.tsx.
+    refetchInterval: 30_000,
   });
 
   const { data: stats } = useQuery({
@@ -563,6 +578,47 @@ export default function OrdersPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk courier booking failed"),
   });
 
+  const syncCourierMutation = useMutation({
+    mutationFn: adminOrdersApi.refreshCourierStatus,
+    onSuccess: () => {
+      invalidate();
+      toast.success("Courier status synced");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Courier sync failed"),
+  });
+
+  const bulkSyncCourierMutation = useMutation({
+    mutationFn: adminOrdersApi.bulkSyncCourier,
+    onSuccess: (result) => {
+      invalidate();
+      setBulkCourierSyncResult(result);
+      if (result.failed.length === 0) {
+        toast.success(`${result.synced.length} order(s) synced`);
+      } else if (result.synced.length === 0) {
+        toast.error(`Sync failed for all ${result.failed.length} order(s)`);
+      } else {
+        toast.success(`${result.synced.length} synced, ${result.failed.length} failed — see details`);
+      }
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk courier sync failed"),
+  });
+
+  const bulkCheckDeliveryScoreMutation = useMutation({
+    mutationFn: adminOrdersApi.bulkCheckDeliveryScore,
+    onSuccess: (result) => {
+      invalidate();
+      setBulkDeliveryScoreResult(result);
+      if (result.failed.length === 0) {
+        toast.success(`Checked ${result.checked.length} order(s)`);
+      } else if (result.checked.length === 0) {
+        toast.error(`Delivery score check failed for all ${result.failed.length} order(s)`);
+      } else {
+        toast.success(`${result.checked.length} checked, ${result.failed.length} failed — see details`);
+      }
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk delivery score check failed"),
+  });
+
   // Same reasoning as bulkStatusMutation above — refetch even on partial failure.
   const bulkDeleteMutation = useMutation({ mutationFn: adminOrdersApi.bulkDeleteOrders, onSettled: invalidate });
   const bulkPermanentDeleteMutation = useMutation({
@@ -644,6 +700,14 @@ export default function OrdersPage() {
     )
       return;
     bulkBookCourierMutation.mutate(ids);
+  }
+
+  function handleBulkSyncCourier() {
+    bulkSyncCourierMutation.mutate(Array.from(selected));
+  }
+
+  function handleBulkCheckDeliveryScore() {
+    bulkCheckDeliveryScoreMutation.mutate(Array.from(selected));
   }
 
   function handlePrintLabels(ids?: string[]) {
@@ -754,31 +818,60 @@ export default function OrdersPage() {
       return <span className="text-xs text-ink-400">Not booked</span>;
     }
     return (
-      <div className="flex items-center gap-1.5">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-            courierStatusBadgeClass(order.courierStatus ?? ""),
-          )}
-          title={
-            order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported"
-          }
-        >
-          {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
-        </span>
-        {order.courierTrackingLink && (
-          <a
-            href={order.courierTrackingLink}
-            target="_blank"
-            rel="noreferrer"
-            className="text-ink-400 hover:text-info-600"
-            aria-label="Track parcel"
-            title="Track parcel"
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+              courierStatusBadgeClass(order.courierStatus ?? ""),
+            )}
+            title={
+              order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported"
+            }
           >
-            <ExternalLink size={13} />
-          </a>
-        )}
+            {order.courierStatus ? courierStatusLabel(order.courierStatus) : "Booked"}
+          </span>
+          {order.courierTrackingLink && (
+            <a
+              href={order.courierTrackingLink}
+              target="_blank"
+              rel="noreferrer"
+              className="text-ink-400 hover:text-info-600"
+              aria-label="Track parcel"
+              title="Track parcel"
+            >
+              <ExternalLink size={13} />
+            </a>
+          )}
+          {order.courierSyncError && (
+            <span title={`Sync failed: ${order.courierSyncError}`}>
+              <AlertTriangle size={13} className="text-danger-500" aria-label="Sync error" />
+            </span>
+          )}
+        </div>
+        <span className="text-[11px] text-ink-400">
+          {order.courierStatusSyncedAt ? `Synced ${timeAgo(order.courierStatusSyncedAt)}` : "Never synced"}
+        </span>
       </div>
+    );
+  }
+
+  // Compact badge meant to sit beside the phone number in the customer cell, not a standalone
+  // column — kept small and pill-shaped so it reads as a tag next to the number rather than
+  // running into it.
+  function renderDeliveryScoreBadge(order: AdminOrderListItem) {
+    if (!order.deliveryScore) return null;
+    const { successRate, totalParcels, successParcels, cancelledParcels, checkedAt } = order.deliveryScore;
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center rounded px-1.5 py-[1px] text-[10px] font-semibold leading-tight",
+          deliveryScoreBadgeClass(successRate),
+        )}
+        title={`${successParcels} delivered, ${cancelledParcels} cancelled of ${totalParcels} parcel(s) — Steadfast fraud check · checked ${timeAgo(checkedAt)}`}
+      >
+        {successRate === null ? "No history" : `${successRate}%`}
+      </span>
     );
   }
 
@@ -802,7 +895,7 @@ export default function OrdersPage() {
       { label: "Print label", icon: Printer, onClick: () => handlePrintLabels([order.id]) },
       ...(!order.courierConsignmentId
         ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
-        : []),
+        : [{ label: "Sync courier status", icon: RefreshCw, onClick: () => syncCourierMutation.mutate(order.id) }]),
       ...(isOwner
         ? [{ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => handleDelete(order.orderNumber, order.id) }]
         : []),
@@ -1295,7 +1388,10 @@ export default function OrdersPage() {
                     </span>
                     <div className="min-w-0">
                       <div className="truncate">{order.customerName}</div>
-                      <div className="text-xs text-ink-400">{order.customerPhone}</div>
+                      <div className="flex items-center gap-1.5 text-xs text-ink-400">
+                        <span>{order.customerPhone}</span>
+                        {renderDeliveryScoreBadge(order)}
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -1405,7 +1501,7 @@ export default function OrdersPage() {
                   >
                     {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
                   </span>
-                  <span className="ml-auto">{renderCourierCell(order)}</span>
+                  <span className="ml-auto flex items-center gap-2">{renderCourierCell(order)}</span>
                 </div>
 
                 <div className="mt-2.5 border-t border-ink-100 pt-2.5">
@@ -1418,7 +1514,10 @@ export default function OrdersPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm text-ink-800">{order.customerName}</div>
-                    <div className="text-xs text-ink-400">{order.customerPhone}</div>
+                    <div className="flex items-center gap-1.5 text-xs text-ink-400">
+                      <span>{order.customerPhone}</span>
+                      {renderDeliveryScoreBadge(order)}
+                    </div>
                   </div>
                 </div>
 
@@ -1499,6 +1598,22 @@ export default function OrdersPage() {
                   onClick={handleBulkBookCourier}
                 >
                   <Truck size={14} /> Book with Steadfast
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkSyncCourierMutation.isPending}
+                  onClick={handleBulkSyncCourier}
+                >
+                  <RefreshCw size={14} /> Sync courier status
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkCheckDeliveryScoreMutation.isPending}
+                  onClick={handleBulkCheckDeliveryScore}
+                >
+                  <ShieldCheck size={14} /> Check delivery score
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => handlePrintLabels()}>
                   <Printer size={14} /> Print Labels
@@ -1600,6 +1715,131 @@ export default function OrdersPage() {
             )}
             <div className="flex justify-end">
               <Button variant="outline" size="sm" onClick={() => setBulkCourierResult(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(bulkCourierSyncResult)}
+        onClose={() => setBulkCourierSyncResult(null)}
+        title="Courier sync results"
+      >
+        {bulkCourierSyncResult && (
+          <div className="space-y-4">
+            <p className="text-sm text-ink-600">
+              {bulkCourierSyncResult.synced.length} synced, {bulkCourierSyncResult.failed.length} failed.
+            </p>
+            {bulkCourierSyncResult.synced.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-success-600">Synced</h3>
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                  {bulkCourierSyncResult.synced.map((s) => (
+                    <li key={s.orderId} className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={() => {
+                          setBulkCourierSyncResult(null);
+                          setDrawerOrderId(s.orderId);
+                        }}
+                        className="text-info-600 hover:underline"
+                      >
+                        {s.orderNumber}
+                      </button>
+                      <span className="text-ink-400">{courierStatusLabel(s.courierStatus)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {bulkCourierSyncResult.failed.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-danger-600">Failed</h3>
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                  {bulkCourierSyncResult.failed.map((f) => (
+                    <li key={f.orderId} className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={() => {
+                          setBulkCourierSyncResult(null);
+                          setDrawerOrderId(f.orderId);
+                        }}
+                        className="text-info-600 hover:underline"
+                      >
+                        {f.orderNumber}
+                      </button>
+                      <span className="text-ink-400">{f.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setBulkCourierSyncResult(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(bulkDeliveryScoreResult)}
+        onClose={() => setBulkDeliveryScoreResult(null)}
+        title="Delivery score check results"
+      >
+        {bulkDeliveryScoreResult && (
+          <div className="space-y-4">
+            <p className="text-sm text-ink-600">
+              {bulkDeliveryScoreResult.checked.length} checked, {bulkDeliveryScoreResult.failed.length} failed.
+            </p>
+            {bulkDeliveryScoreResult.checked.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-success-600">Checked</h3>
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                  {bulkDeliveryScoreResult.checked.map((c) => (
+                    <li key={c.orderId} className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={() => {
+                          setBulkDeliveryScoreResult(null);
+                          setDrawerOrderId(c.orderId);
+                        }}
+                        className="text-info-600 hover:underline"
+                      >
+                        {c.orderNumber}
+                      </button>
+                      <span className="text-ink-400">
+                        {c.successRate === null ? "No history" : `${c.successRate}%`} ({c.totalParcels} parcel
+                        {c.totalParcels === 1 ? "" : "s"})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {bulkDeliveryScoreResult.failed.length > 0 && (
+              <div>
+                <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-danger-600">Failed</h3>
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                  {bulkDeliveryScoreResult.failed.map((f) => (
+                    <li key={f.orderId} className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={() => {
+                          setBulkDeliveryScoreResult(null);
+                          setDrawerOrderId(f.orderId);
+                        }}
+                        className="text-info-600 hover:underline"
+                      >
+                        {f.orderNumber}
+                      </button>
+                      <span className="text-ink-400">{f.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setBulkDeliveryScoreResult(null)}>
                 Close
               </Button>
             </div>

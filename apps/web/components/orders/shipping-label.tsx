@@ -7,6 +7,9 @@ import { QrCodeSvg } from "./qr-code-svg";
 interface ShippingLabelProps {
   order: Order;
   store: StoreSettings | undefined;
+  /** Forwarded to the internal BarcodeSvg — the label-printing capture pipeline uses this to know
+   * when it's safe to rasterize this label (JsBarcode draws in an effect, after mount). */
+  onBarcodeReady?: () => void;
 }
 
 /** Packing-list text shrinks in steps as an order picks up more line items, instead of a fixed
@@ -20,8 +23,9 @@ function itemListSizing(itemCount: number): { className: string; maxShown: numbe
   return { className: "text-[7px]", maxShown: 3 };
 }
 
-/** A compact cut-and-paste shipping label — one order per card, sized for the 95mm x 91mm grid
- * cell defined in globals.css's print rules. Doubles as an internal packing label even before a
+/** A compact cut-and-paste shipping label — one order per card, hand-tuned for a ~95mm x 91mm cell
+ * (see label-capture-host.tsx's NATIVE_LABEL_WMM/HMM, which uniformly scales this design to fit
+ * whatever label template is actually selected). Doubles as an internal packing label even before a
  * courier booking exists (falls back to encoding the order number instead of a tracking code).
  *
  * The visual language is deliberately editorial rather than "web card on paper" — thin rule lines
@@ -36,14 +40,14 @@ function itemListSizing(itemCount: number): { className: string; maxShown: numbe
  * signaled by hue alone; (3) every text field is admin/customer-entered and unbounded in length (a
  * long name, a pasted paragraph of an address, a 12-item order) — every line either truncates or
  * shrinks so one long value can't silently push the barcode off the card. */
-export function ShippingLabel({ order, store }: ShippingLabelProps) {
+export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelProps) {
   const booked = Boolean(order.courierConsignmentId);
   const barcodeValue = booked && order.trackingNumber ? order.trackingNumber : order.orderNumber;
   const { className: itemFontClass, maxShown: maxItemsShown } = itemListSizing(order.items.length);
   const extraItemCount = order.items.length - maxItemsShown;
 
   return (
-    <div className="label-cell flex h-full flex-col bg-white text-ink-900">
+    <div className="flex h-full flex-col bg-white text-ink-900">
       {/* Just the logo — it already has the store name baked into the artwork, so a separate text
           label next to it would be redundant. Falls back to a text wordmark only if there's no
           logo configured, or the logo URL fails to load. */}
@@ -138,7 +142,7 @@ export function ShippingLabel({ order, store }: ShippingLabelProps) {
           of overflowing if the encoded value happens to be long — see its own comment for why. */}
       <div className="mt-auto flex flex-col items-center border-t border-ink-200 pt-1 text-center">
         <div className="flex w-full justify-center">
-          <BarcodeSvg value={barcodeValue} height={40} width={1.2} fontSize={9} />
+          <BarcodeSvg value={barcodeValue} height={40} width={1.2} fontSize={9} onReady={onBarcodeReady} />
         </div>
         {booked ? (
           <p className="mt-0.5 truncate text-[7.5px] text-ink-600">Parcel ID: {order.courierConsignmentId}</p>

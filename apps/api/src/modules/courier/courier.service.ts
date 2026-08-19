@@ -6,6 +6,7 @@ import {
   createSteadfastConsignment,
   createBulkSteadfastConsignments,
   getSteadfastStatusByConsignmentId,
+  getSteadfastFraudCheck,
 } from "../../lib/steadfast";
 import { getOrderById, updateOrderStatus } from "../orders/order.service";
 
@@ -87,7 +88,10 @@ function hasUsableAddress(order: {
  * (order.service.ts) so the status-history timeline and delivery-points award stay authoritative —
  * a courier update is just another way an order's status changes, not a side channel. */
 async function applyCourierStatus(order: { id: string; orderNumber: string; status: OrderStatus }, status: string) {
-  await prisma.order.update({ where: { id: order.id }, data: { courierStatus: status } });
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { courierStatus: status, courierStatusSyncedAt: new Date(), courierSyncError: null },
+  });
 
   const mapped = mapSteadfastStatusToOrderStatus(status);
   if (!mapped || mapped === order.status || TERMINAL_ORDER_STATUSES.includes(order.status)) return;
@@ -250,13 +254,143 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
   return { booked, failed };
 }
 
+/** Extracts a message worth showing an admin from whatever getSteadfastStatusByConsignmentId threw
+ * — AppError.message is already human-readable; anything else falls back to a generic string
+ * rather than leaking a raw axios/network error shape into the UI. */
+function syncErrorMessage(err: unknown): string {
+  return err instanceof AppError || err instanceof Error ? err.message : "Could not reach Steadfast";
+}
+
+async function recordCourierSyncError(orderId: string, message: string) {
+  await prisma.order.update({ where: { id: orderId }, data: { courierSyncError: message } });
+}
+
 export async function refreshSteadfastStatus(orderId: string) {
   const order = await getOrderById(orderId);
   if (!order.courierConsignmentId) throw AppError.badRequest("This order has not been booked with a courier yet");
 
-  const status = await getSteadfastStatusByConsignmentId(order.courierConsignmentId);
-  await applyCourierStatus(order, status);
+  try {
+    const status = await getSteadfastStatusByConsignmentId(order.courierConsignmentId);
+    await applyCourierStatus(order, status);
+  } catch (err) {
+    await recordCourierSyncError(orderId, syncErrorMessage(err));
+    throw err;
+  }
   return getOrderById(orderId);
+}
+
+export interface BulkCourierSyncResult {
+  synced: Array<{ orderId: string; orderNumber: string; courierStatus: string }>;
+  failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
+}
+
+/** Admin-triggered bulk "Sync courier status" for a set of already-booked orders — the selection-
+ * based counterpart to bookOrdersWithSteadfastBulk. Unlike syncPendingCourierStatuses (the cron
+ * sweep), this always re-checks every order passed in, including terminal ones, since an admin who
+ * explicitly selected them wants a fresh answer right now. */
+export async function bulkSyncCourierStatuses(orderIds: string[]): Promise<BulkCourierSyncResult> {
+  const orders = await prisma.order.findMany({ where: { id: { in: orderIds } } });
+
+  const synced: BulkCourierSyncResult["synced"] = [];
+  const failed: BulkCourierSyncResult["failed"] = [];
+  for (const order of orders) {
+    if (!order.courierConsignmentId) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not booked with a courier" });
+      continue;
+    }
+    try {
+      const status = await getSteadfastStatusByConsignmentId(order.courierConsignmentId);
+      await applyCourierStatus(order, status);
+      synced.push({ orderId: order.id, orderNumber: order.orderNumber, courierStatus: status });
+    } catch (err) {
+      const reason = syncErrorMessage(err);
+      await recordCourierSyncError(order.id, reason);
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason });
+    }
+  }
+
+  return { synced, failed };
+}
+
+export interface BulkDeliveryScoreResult {
+  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number }>;
+  failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
+}
+
+/** Admin-triggered bulk "Check delivery score" for a set of orders on the admin order list —
+ * fraud_check is keyed by phone, not order, so this groups the selection by customerId first and
+ * makes one Steadfast call per distinct customer, then fans the cached result back out to every
+ * order in that group instead of burning one API call per row. Orders with no linked Customer
+ * (shouldn't happen post-checkout — see findOrCreateGuestCustomer — but possible for old rows) are
+ * reported as failed up front. Uses the order's own customerPhone snapshot rather than Customer.phone
+ * to look up the score, since that's the exact value findOrCreateGuestCustomer wrote to the Customer
+ * row at checkout time; the cached result is still stored on the Customer row so it's shared across
+ * every one of that customer's orders, not just the ones selected here. */
+export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkDeliveryScoreResult> {
+  const orders = await prisma.order.findMany({ where: { id: { in: orderIds } } });
+
+  const checked: BulkDeliveryScoreResult["checked"] = [];
+  const failed: BulkDeliveryScoreResult["failed"] = [];
+
+  const groupsByCustomerId = new Map<string, typeof orders>();
+  for (const order of orders) {
+    if (!order.customerId) {
+      failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "No customer record linked to this order" });
+      continue;
+    }
+    const group = groupsByCustomerId.get(order.customerId);
+    if (group) group.push(order);
+    else groupsByCustomerId.set(order.customerId, [order]);
+  }
+
+  for (const [customerId, group] of groupsByCustomerId) {
+    try {
+      const phone = normalizeBdPhone(group[0]!.customerPhone);
+      const result = await getSteadfastFraudCheck(phone);
+      await prisma.customer.update({
+        where: { id: customerId },
+        data: {
+          deliveryTotalParcels: result.totalParcels,
+          deliverySuccessParcels: result.successParcels,
+          deliveryCancelledParcels: result.cancelledParcels,
+          deliverySuccessRate: result.successRate,
+          deliveryScoreCheckedAt: new Date(),
+        },
+      });
+      for (const order of group) {
+        checked.push({ orderId: order.id, orderNumber: order.orderNumber, successRate: result.successRate, totalParcels: result.totalParcels });
+      }
+    } catch (err) {
+      const reason = syncErrorMessage(err);
+      for (const order of group) failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason });
+    }
+  }
+
+  return { checked, failed };
+}
+
+// Never block viewing an order on Steadfast being reachable, and never re-check on every single
+// request — a 2-minute floor is short enough to feel "live" to an admin flipping between orders,
+// long enough that repeatedly opening/re-rendering the same order in a session doesn't hammer
+// Steadfast's API.
+const AUTO_SYNC_STALE_MS = 2 * 60 * 1000;
+
+/** Used by GET /api/orders/:id so opening an order's detail page always shows a current courier
+ * status without the admin having to click "Sync Now" first. Only fires for orders that are booked,
+ * not yet in a terminal delivery state, and stale — otherwise just returns the order as stored. */
+export async function getOrderByIdWithAutoSync(orderId: string) {
+  const order = await getOrderById(orderId);
+  const isStale = !order.courierStatusSyncedAt || Date.now() - new Date(order.courierStatusSyncedAt).getTime() > AUTO_SYNC_STALE_MS;
+  const isTerminal = order.courierStatus ? TERMINAL_COURIER_STATUSES.includes(order.courierStatus) : false;
+
+  if (!order.courierConsignmentId || isTerminal || !isStale) return order;
+
+  try {
+    return await refreshSteadfastStatus(orderId);
+  } catch {
+    // Error already persisted inside refreshSteadfastStatus; re-fetch so the caller still sees it.
+    return getOrderById(orderId);
+  }
 }
 
 /** Clears a stuck courier booking so the order can be re-booked. Exists for the case where the
@@ -279,6 +413,8 @@ export async function unlinkCourierBooking(orderId: string) {
       courierStatus: null,
       courierTrackingLink: null,
       courierBookedAt: null,
+      courierStatusSyncedAt: null,
+      courierSyncError: null,
     },
   });
 
@@ -322,7 +458,7 @@ export async function syncPendingCourierStatuses(): Promise<number> {
       deletedAt: null,
       OR: [{ courierStatus: null }, { courierStatus: { notIn: TERMINAL_COURIER_STATUSES } }],
     },
-    select: { id: true, orderNumber: true, status: true, courierConsignmentId: true, courierStatus: true },
+    select: { id: true, orderNumber: true, status: true, courierConsignmentId: true, courierStatus: true, courierSyncError: true },
   });
 
   let changed = 0;
@@ -332,9 +468,14 @@ export async function syncPendingCourierStatuses(): Promise<number> {
       if (status !== order.courierStatus) {
         await applyCourierStatus(order, status);
         changed++;
+      } else if (order.courierSyncError) {
+        // A previous poll failed but this one recovered without the status itself having changed —
+        // still need to clear the stale error and stamp a fresh sync time.
+        await prisma.order.update({ where: { id: order.id }, data: { courierStatusSyncedAt: new Date(), courierSyncError: null } });
       }
     } catch (err) {
       console.error(`[courier-status-cron] failed to refresh order ${order.id}:`, err);
+      await recordCourierSyncError(order.id, syncErrorMessage(err));
     }
   }
   return changed;

@@ -5,6 +5,9 @@ import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from 
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
+  bulkSyncCourierStatuses,
+  checkDeliveryScoresBulk,
+  getOrderByIdWithAutoSync,
   refreshSteadfastStatus,
   unlinkCourierBooking,
 } from "../courier/courier.service";
@@ -55,7 +58,7 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ order: await orderService.getOrderById(req.params.id!) });
+  res.json({ order: await getOrderByIdWithAutoSync(req.params.id!) });
 });
 
 export const bulkGet = asyncHandler(async (req: Request, res: Response) => {
@@ -131,6 +134,14 @@ export const bookCourier = asyncHandler(async (req: Request, res: Response) => {
 
 export const bulkBookCourier = asyncHandler(async (req: Request, res: Response) => {
   res.json(await bookOrdersWithSteadfastBulk(req.body.ids));
+});
+
+export const bulkSyncCourier = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await bulkSyncCourierStatuses(req.body.ids));
+});
+
+export const bulkCheckDeliveryScore = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await checkDeliveryScoresBulk(req.body.ids));
 });
 
 export const refreshCourier = asyncHandler(async (req: Request, res: Response) => {

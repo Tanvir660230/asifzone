@@ -14,6 +14,7 @@ import {
   bulkOrderIdsSchema,
   bulkOrderStatusSchema,
   bulkCourierBookSchema,
+  bulkDeliveryScoreCheckSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requireRole } from "../../middlewares/require-admin";
@@ -57,6 +58,18 @@ orderRouter.post(
   requireAdmin,
   validate(bulkCourierBookSchema),
   orderController.bulkBookCourier,
+);
+orderRouter.post(
+  "/bulk/courier/sync",
+  requireAdmin,
+  validate(bulkOrderIdsSchema),
+  orderController.bulkSyncCourier,
+);
+orderRouter.post(
+  "/bulk/delivery-score",
+  requireAdmin,
+  validate(bulkDeliveryScoreCheckSchema),
+  orderController.bulkCheckDeliveryScore,
 );
 orderRouter.post("/bulk/get", requireAdmin, validate(bulkOrderIdsSchema), orderController.bulkGet);
 orderRouter.get("/:id", requireAdmin, orderController.getOne);

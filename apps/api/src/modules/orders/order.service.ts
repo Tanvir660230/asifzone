@@ -4,6 +4,7 @@ import type {
   AdminCreateOrderInput,
   OrderListQuery,
   OrderListItemSummary,
+  DeliveryScore,
   OrderItemLiveInfo,
   OrderStatus,
   PaymentStatus,
@@ -592,6 +593,9 @@ export async function listOrders(query: OrderListQuery) {
   );
 
   const itemsSummaryByOrderId = await buildItemsSummary(result.items.map((o) => o.id));
+  const deliveryScoreByCustomerId = await buildDeliveryScoreByCustomerId(
+    result.items.map((o) => o.customerId).filter((id): id is string => id !== null),
+  );
 
   return {
     ...result,
@@ -600,8 +604,43 @@ export async function listOrders(query: OrderListQuery) {
       items: [],
       statusHistory: [],
       itemsSummary: itemsSummaryByOrderId.get(order.id) ?? { totalItems: 0, firstItem: null },
+      deliveryScore: order.customerId ? (deliveryScoreByCustomerId.get(order.customerId) ?? null) : null,
     })),
   };
+}
+
+/** Batched lookup backing the admin orders list's delivery-score badge — one Customer query for the
+ * whole page rather than a join per row, mirroring buildItemsSummary below. Only ever reads the
+ * cached fields written by checkDeliveryScoresBulk (courier.service.ts); this never calls Steadfast
+ * itself. */
+async function buildDeliveryScoreByCustomerId(customerIds: string[]) {
+  const scores = new Map<string, DeliveryScore>();
+  const uniqueIds = Array.from(new Set(customerIds));
+  if (uniqueIds.length === 0) return scores;
+
+  const customers = await prisma.customer.findMany({
+    where: { id: { in: uniqueIds }, deliveryScoreCheckedAt: { not: null } },
+    select: {
+      id: true,
+      deliverySuccessRate: true,
+      deliveryTotalParcels: true,
+      deliverySuccessParcels: true,
+      deliveryCancelledParcels: true,
+      deliveryScoreCheckedAt: true,
+    },
+  });
+
+  for (const c of customers) {
+    scores.set(c.id, {
+      successRate: c.deliverySuccessRate,
+      totalParcels: c.deliveryTotalParcels ?? 0,
+      successParcels: c.deliverySuccessParcels ?? 0,
+      cancelledParcels: c.deliveryCancelledParcels ?? 0,
+      checkedAt: c.deliveryScoreCheckedAt!.toISOString(),
+    });
+  }
+
+  return scores;
 }
 
 /** Batched "what's in this order" summary for the admin orders list's Product column — one row of

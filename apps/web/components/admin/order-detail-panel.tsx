@@ -27,6 +27,7 @@ import {
   Check,
   CalendarClock,
   Undo2,
+  AlertTriangle,
 } from "lucide-react";
 import type {
   OrderStatus,
@@ -68,6 +69,7 @@ import {
   courierStatusBadgeClass,
   courierStatusLabel,
   courierStatusDescription,
+  timeAgo,
 } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -971,7 +973,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                       disabled={refreshCourierMutation.isPending || !!order.deletedAt}
                       onClick={() => refreshCourierMutation.mutate()}
                     >
-                      Refresh
+                      Sync Now
                     </Button>
                     <Button
                       variant="outline"
@@ -991,7 +993,15 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                 </div>
                 <p className="mt-1.5 text-xs text-ink-400">
                   {order.courierStatus ? courierStatusDescription(order.courierStatus) : "Booked with Steadfast — status not yet reported."}
+                  {" · "}
+                  {order.courierStatusSyncedAt ? `Last synced ${timeAgo(order.courierStatusSyncedAt)}` : "Never synced"}
                 </p>
+                {order.courierSyncError && (
+                  <p className="mt-1.5 flex items-start gap-1.5 text-xs text-danger-600">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                    Sync failed: {order.courierSyncError} — showing last known status.
+                  </p>
+                )}
                 {!TERMINAL_ORDER_STATUSES.includes(order.status) && (
                   <p className="mt-1.5 text-xs text-ink-400">
                     Order status will automatically move to <span className="font-medium">Delivered</span>,{" "}

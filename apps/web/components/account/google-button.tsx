@@ -99,7 +99,10 @@ export function GoogleButton({
     if (!script) {
       script = document.createElement("script");
       script.id = SCRIPT_ID;
-      script.src = "https://accounts.google.com/gsi/client";
+      // hl=en pins the rendered button's label to English regardless of the visitor's browser
+      // locale or network geolocation — without it, Google Identity Services can render the button
+      // text in a different language than the rest of the (English) auth page.
+      script.src = "https://accounts.google.com/gsi/client?hl=en";
       script.async = true;
       script.defer = true;
       document.head.appendChild(script);

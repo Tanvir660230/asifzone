@@ -190,3 +190,13 @@ const COURIER_STATUS_DESCRIPTIONS: Record<string, string> = {
 export function courierStatusDescription(status: string): string {
   return COURIER_STATUS_DESCRIPTIONS[status] ?? "Status reported by Steadfast.";
 }
+
+/** Tone thresholds for Steadfast's fraud_check delivery success rate (Customer.deliverySuccessRate)
+ * — same red/amber/green vocabulary as courierStatusBadgeClass above, chosen so an admin scanning
+ * the orders list gets an instant "safe to book COD" read without doing the math themselves. */
+export function deliveryScoreBadgeClass(rate: number | null): string {
+  if (rate === null) return "bg-ink-100 text-ink-700";
+  if (rate >= 80) return "bg-success-100 text-success-700";
+  if (rate >= 50) return "bg-warning-100 text-warning-700";
+  return "bg-danger-100 text-danger-700";
+}

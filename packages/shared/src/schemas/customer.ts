@@ -3,15 +3,15 @@ import { bdPhoneSchema, nullableBdPhone, nullableString, paginationQuerySchema }
 import { BD_DIVISIONS } from "./order";
 
 export const customerRegisterSchema = z.object({
-  name: z.string().min(1).max(200),
-  email: z.string().email(),
-  password: z.string().min(8),
+  name: z.string().min(1, "Enter your name").max(200),
+  email: z.string().email("Enter a valid email address"),
+  password: z.string().min(8, "Use at least 8 characters"),
   phone: nullableBdPhone(),
 });
 
 export const customerLoginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.string().email("Enter a valid email address"),
+  password: z.string().min(8, "Use at least 8 characters"),
   // Defaults to today's persistent (7-day) session when omitted — explicitly `false` is the one
   // that changes anything, shortening the session to browser-close rather than the other way round.
   rememberMe: z.boolean().optional(),
@@ -27,11 +27,11 @@ export const requestOtpSchema = z.object({
 
 export const verifyOtpSchema = z.object({
   phone: bdPhoneSchema(),
-  code: z.string().length(6),
+  code: z.string().length(6, "Enter the 6-digit code"),
   // Only required the first time a new phone number verifies — an existing customer's phone
   // logs in without them.
-  name: z.string().min(1).max(200).optional(),
-  email: z.string().email().optional(),
+  name: z.string().min(1, "Enter your name").max(200).optional(),
+  email: z.string().email("Enter a valid email address").optional(),
 });
 
 export const verifyEmailSchema = z.object({
@@ -39,7 +39,7 @@ export const verifyEmailSchema = z.object({
 });
 
 export const updateCustomerSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
+  name: z.string().min(1, "Enter your name").max(200).optional(),
   phone: nullableBdPhone(),
   smsMarketingOptIn: z.boolean().optional(),
   emailMarketingOptIn: z.boolean().optional(),
@@ -54,12 +54,12 @@ export const unsubscribeEmailSchema = z.object({
 
 export const addressSchema = z.object({
   label: nullableString(50),
-  fullName: z.string().min(1).max(200),
+  fullName: z.string().min(1, "Enter a full name").max(200),
   phone: bdPhoneSchema(),
   division: z.enum(BD_DIVISIONS),
-  district: z.string().min(1).max(120),
-  area: z.string().min(1).max(120),
-  addressLine: z.string().min(1).max(500),
+  district: z.string().min(1, "Choose a district").max(120),
+  area: z.string().min(1, "Choose an area / thana").max(120),
+  addressLine: z.string().min(1, "Enter the house/road details").max(500),
   isDefault: z.boolean().default(false),
 });
 
@@ -67,12 +67,12 @@ export const createAddressSchema = addressSchema;
 export const updateAddressSchema = addressSchema.partial();
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email("Enter a valid email address"),
 });
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1),
-  password: z.string().min(8),
+  password: z.string().min(8, "Use at least 8 characters"),
 });
 
 export const customerTagEnum = z.enum([

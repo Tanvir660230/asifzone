@@ -209,6 +209,58 @@ export async function getSteadfastBalance(): Promise<number> {
   return data.current_balance;
 }
 
+export interface SteadfastFraudCheck {
+  totalParcels: number;
+  successParcels: number;
+  cancelledParcels: number;
+  /** 0-100, or null when totalParcels is 0 — no delivery history yet, not the same as a bad score. */
+  successRate: number | null;
+}
+
+/** The fraud_check endpoint's exact response shape is unconfirmed against a live account — unlike
+ * create_order/status_by_cid (verified against real responses), published examples of this one don't
+ * show the {status, message} envelope every other endpoint here uses. Treat `status` as optional and
+ * gate on getting real parcel counts back instead, the same defensive stance normalizeBulkResultItem
+ * takes above for the bulk booking response. `success_ratio` isn't trusted from the API either, if
+ * present at all — it's computed locally from the three counts so rounding/definition can't drift. */
+interface RawSteadfastFraudCheck {
+  status?: number;
+  message?: string;
+  total_parcel?: number;
+  success_parcel?: number;
+  cancelled_parcel?: number;
+}
+
+export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFraudCheck> {
+  requireConfigured();
+
+  const res = await fetch(`${env.steadfast.baseUrl}/fraud_check/${encodeURIComponent(phone)}`, {
+    headers: authHeaders(),
+  });
+
+  const { data: parsed, rawText } = await readSteadfastResponse(res);
+  const data = parsed as RawSteadfastFraudCheck | null;
+
+  if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || typeof data.total_parcel !== "number") {
+    if (!data) console.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    throw AppError.badRequest(
+      `Steadfast fraud check failed: ${data?.message ?? `HTTP ${res.status}`}`,
+      data ?? { status: res.status, body: rawText.slice(0, 2000) },
+    );
+  }
+
+  const totalParcels = data.total_parcel;
+  const successParcels = data.success_parcel ?? 0;
+  const cancelledParcels = data.cancelled_parcel ?? 0;
+
+  return {
+    totalParcels,
+    successParcels,
+    cancelledParcels,
+    successRate: totalParcels > 0 ? Math.round((successParcels / totalParcels) * 1000) / 10 : null,
+  };
+}
+
 export async function getSteadfastStatusByConsignmentId(consignmentId: string): Promise<string> {
   requireConfigured();
 

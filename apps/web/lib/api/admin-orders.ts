@@ -180,6 +180,24 @@ export function bulkBookCourier(ids: string[]) {
   return apiFetch<BulkCourierBookResult>("/api/orders/bulk/courier/book", { method: "POST", body: { ids } });
 }
 
+export interface BulkCourierSyncResult {
+  synced: Array<{ orderId: string; orderNumber: string; courierStatus: string }>;
+  failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
+}
+
+export function bulkSyncCourier(ids: string[]) {
+  return apiFetch<BulkCourierSyncResult>("/api/orders/bulk/courier/sync", { method: "POST", body: { ids } });
+}
+
+export interface BulkDeliveryScoreResult {
+  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number }>;
+  failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
+}
+
+export function bulkCheckDeliveryScore(ids: string[]) {
+  return apiFetch<BulkDeliveryScoreResult>("/api/orders/bulk/delivery-score", { method: "POST", body: { ids } });
+}
+
 export function getSteadfastBalance() {
   return apiFetch<{ balance: number }>("/api/courier/steadfast/balance");
 }

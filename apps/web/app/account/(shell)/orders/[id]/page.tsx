@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Printer, RotateCcw } from "lucide-react";
+import { Printer, RotateCcw, PackageSearch } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,10 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BackLink } from "@/components/ui/back-link";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { toast } from "@/components/ui/toast";
 import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { getMyOrder } from "@/lib/api/customers";
 import { createReturnRequest } from "@/lib/api/return-requests";
 import { getProductBySlug } from "@/lib/api/storefront";
@@ -44,7 +46,7 @@ export default function AccountOrderDetailPage() {
   const [exchangeItemId, setExchangeItemId] = useState("");
   const [exchangeVariantId, setExchangeVariantId] = useState("");
 
-  const { data, isLoading } = useQuery({ queryKey: ["my-order", id], queryFn: () => getMyOrder(id) });
+  const { data, isLoading, isError } = useQuery({ queryKey: ["my-order", id], queryFn: () => getMyOrder(id) });
 
   const exchangeItem = data?.order.items.find((item) => item.id === exchangeItemId) ?? null;
   const exchangeProductSlug = exchangeItem?.live?.productSlug ?? null;
@@ -84,6 +86,24 @@ export default function AccountOrderDetailPage() {
     },
     onError: (err) => setRequestError(err instanceof ApiError ? err.message : "Could not submit request"),
   });
+
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <BackLink href="/account/orders" label="Back to Orders" />
+        <AccountEmptyState
+          icon={PackageSearch}
+          title="Order not found"
+          description="This order doesn't exist, or isn't linked to your account."
+          action={
+            <Link href="/account/orders">
+              <Button size="sm">Back to Orders</Button>
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   if (isLoading || !data) {
     return (
@@ -162,7 +182,10 @@ export default function AccountOrderDetailPage() {
 
   return (
     <div className="space-y-6">
-      <BackLink href="/account/orders" label="Back to Orders" />
+      <div>
+        <Breadcrumb items={[{ label: "Account", href: "/account" }, { label: "Orders", href: "/account/orders" }, { label: order.orderNumber }]} />
+        <BackLink href="/account/orders" label="Back to Orders" />
+      </div>
       <AccountPageHeader
         title={order.orderNumber}
         description={`Placed ${new Date(order.createdAt).toLocaleString()}`}

@@ -74,10 +74,17 @@ function LoginForm() {
     onAltSuccess(customer);
   }
 
+  // Middleware sends signed-out visitors here with ?next=<the page they were trying to reach>
+  // whenever they hit a protected /account route directly — explaining why they landed here
+  // closes the loop instead of showing the same generic copy as someone who just clicked "Sign in".
+  const cameFromRedirect = Boolean(searchParams.get("next"));
+
   return (
     <div>
       <h1 className="mb-1 font-display text-2xl text-ink-900">Sign in</h1>
-      <p className="mb-6 text-sm text-ink-500">Access your orders, addresses, and wishlist.</p>
+      <p className="mb-6 text-sm text-ink-500">
+        {cameFromRedirect ? "Sign in to continue." : "Access your orders, addresses, and wishlist."}
+      </p>
 
       {env.googleClientId && (
         <>

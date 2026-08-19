@@ -555,6 +555,18 @@ model Customer {
   isBlocked               Boolean                  @default(false)
   /// Manually flagged by an admin (e.g. repeated COD refusals) — informational only, doesn't block checkout.
   codRisk                 Boolean                  @default(false)
+  /// Cached result of Steadfast's fraud_check API for this customer's phone — refreshed on demand
+  /// via the "Check delivery score" bulk action on the admin order list (checkDeliveryScoresBulk in
+  /// courier.service.ts), never on a schedule, since a phone's delivery history doesn't change fast
+  /// enough to warrant polling the way courier status does. Null until the first check.
+  deliveryTotalParcels     Int?
+  deliverySuccessParcels   Int?
+  deliveryCancelledParcels Int?
+  /// Percentage (0-100), computed from the three counts above rather than trusted from Steadfast's
+  /// response directly — see getSteadfastFraudCheck's comment on why. Null when totalParcels is 0
+  /// (no delivery history yet — not the same as a bad score, so the UI must not treat null as 0%).
+  deliverySuccessRate      Float?
+  deliveryScoreCheckedAt   DateTime?
   addresses               Address[]
   orders                  Order[]
   wishlistItems           WishlistItem[]
@@ -811,6 +823,13 @@ model Order {
   /// the create_order/bulk-order response body, not derivable from tracking_code and not returned
   /// by status_by_cid, so bookings made before this field existed will have it null forever.
   courierTrackingLink  String?
+  /// Last time `courierStatus` was confirmed against Steadfast's API (webhook, cron sweep, or a
+  /// manual/bulk sync) — null until the first successful sync. Drives the admin UI's "last synced"
+  /// label and the staleness check in getOrderByIdWithAutoSync.
+  courierStatusSyncedAt DateTime?
+  /// Message from the most recent failed sync attempt; cleared on the next successful one. Lets the
+  /// admin UI show "sync failed" instead of silently displaying a possibly-stale courierStatus.
+  courierSyncError     String?
 
   /// Set once an admin has reconciled a PARTIALLY_DELIVERED order — picked which items actually
   /// came back (OrderItem.returnedQuantity) and had them restocked. Status stays

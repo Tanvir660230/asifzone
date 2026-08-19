@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { ProductGridSkeleton } from "@/components/storefront/skeletons/product-grid-skeleton";
 import { AccountNav } from "@/components/account/account-nav";
+import { AccountOverview } from "@/components/account/account-overview";
+import { VerifyEmailBanner } from "@/components/account/verify-email-banner";
 import { listWishlist } from "@/lib/api/wishlist";
 import { fetchProductsByIds } from "@/lib/api/storefront";
 import { useWishlistStore } from "@/store/wishlist";
@@ -72,16 +74,24 @@ export default function WishlistPage() {
     </>
   );
 
-  // Logged-in: same shell as every other /account page (sidebar + heading style) so this reads as
-  // part of the account section instead of a standalone storefront page. Guest: the original
-  // simple, wider layout — there's no sidebar to show since a guest has no other account pages.
+  // Logged-in: same shell as every other /account page (verify-email banner, overview strip,
+  // sidebar, heading style) so this reads as part of the account section instead of a standalone
+  // storefront page that happens to share its sidebar. Mirrors account/(shell)/layout.tsx's inner
+  // markup exactly — this route can't sit under that layout group itself (its middleware requires
+  // a session), but the visual identity should still match on every visit, not just structurally.
+  // Guest: the original simple, wider layout — there's no sidebar to show since a guest has no
+  // other account pages.
   if (isLoggedIn) {
     return (
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10 sm:flex-row sm:px-6 lg:px-8">
-        <AccountNav />
-        <div className="min-w-0 flex-1">
-          <h1 className="mb-6 font-display text-2xl text-ink-900 sm:text-3xl">Wishlist</h1>
-          {content}
+      <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 lg:px-8">
+        <VerifyEmailBanner />
+        <AccountOverview />
+        <div className="flex flex-col gap-8 sm:flex-row">
+          <AccountNav />
+          <div className="min-w-0 flex-1 animate-fade-in">
+            <h1 className="mb-6 font-display text-2xl text-ink-900 sm:text-3xl">Wishlist</h1>
+            {content}
+          </div>
         </div>
       </div>
     );

@@ -8,6 +8,13 @@ interface BarcodeSvgProps {
   height?: number;
   width?: number;
   fontSize?: number;
+  /** False hides the human-readable digits row beneath the bars — used on the smallest sticker
+   * templates, where there's no vertical room for both and the bars alone stay fully scannable. */
+  displayValue?: boolean;
+  /** Called once JsBarcode has actually drawn into the SVG — the label-printing capture pipeline
+   * waits on this (via ShippingLabel/ShippingLabelCompact) to know the barcode is paint-ready before
+   * rasterizing, since JsBarcode's DOM mutation happens in an effect, after React's own commit. */
+  onReady?: () => void;
 }
 
 /** Renders a Code128 barcode straight into an <svg> node — no canvas, so it stays vector-crisp at
@@ -20,7 +27,7 @@ interface BarcodeSvgProps {
  * value (a longer tracking code, say) scales the whole barcode down to fit its container instead of
  * quietly overflowing it — JsBarcode only controls the SVG's own intrinsic size, not how it behaves
  * when that's wider than the space available. */
-export function BarcodeSvg({ value, height = 40, width = 1.4, fontSize = 11 }: BarcodeSvgProps) {
+export function BarcodeSvg({ value, height = 40, width = 1.4, fontSize = 11, displayValue = true, onReady }: BarcodeSvgProps) {
   const ref = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -34,9 +41,10 @@ export function BarcodeSvg({ value, height = 40, width = 1.4, fontSize = 11 }: B
       marginBottom: 0,
       marginLeft: 6,
       marginRight: 6,
-      displayValue: true,
+      displayValue,
     });
-  }, [value, height, width, fontSize]);
+    onReady?.();
+  }, [value, height, width, fontSize, displayValue, onReady]);
 
   return <svg ref={ref} className="h-auto max-w-full" />;
 }

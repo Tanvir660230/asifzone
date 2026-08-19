@@ -722,6 +722,7 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
 export const bulkOrderIdsSchema = z.object({ ids: z.array(z.string().cuid()).min(1).max(500) });
 export const bulkOrderStatusSchema = bulkOrderIdsSchema.extend({ status: orderStatusEnum });
 export const bulkCourierBookSchema = bulkOrderIdsSchema;
+export const bulkDeliveryScoreCheckSchema = bulkOrderIdsSchema;
 
 export const updateOrderStatusSchema = z.object({
   status: orderStatusEnum,
@@ -803,6 +804,7 @@ export type ReconcilePartialDeliveryInput = z.infer<typeof reconcilePartialDeliv
 export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
 export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
 export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;
+export type BulkDeliveryScoreCheckInput = z.infer<typeof bulkDeliveryScoreCheckSchema>;
 export type ValidateCouponInput = z.infer<typeof validateCouponSchema>;
 export type TrackOrderInput = z.infer<typeof trackOrderSchema>;
 export type RetryPaymentInput = z.infer<typeof retryPaymentSchema>;

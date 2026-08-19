@@ -328,6 +328,8 @@ export interface Order {
   courierStatus: string | null;
   courierTrackingLink: string | null;
   courierBookedAt: string | null;
+  courierStatusSyncedAt: string | null;
+  courierSyncError: string | null;
   partialDeliveryReconciledAt: string | null;
   followUpAt: string | null;
   callAttempts: number;
@@ -357,8 +359,21 @@ export interface OrderListItemSummary {
   } | null;
 }
 
+/** Cached Steadfast fraud_check result for the order's customer — refreshed on demand via the
+ * "Check delivery score" bulk action on the admin order list, never on a schedule. Null until an
+ * admin has checked at least once for this customer's phone. */
+export interface DeliveryScore {
+  /** 0-100, or null when totalParcels is 0 — no delivery history yet, not the same as a bad score. */
+  successRate: number | null;
+  totalParcels: number;
+  successParcels: number;
+  cancelledParcels: number;
+  checkedAt: string;
+}
+
 export interface AdminOrderListItem extends Order {
   itemsSummary: OrderListItemSummary;
+  deliveryScore: DeliveryScore | null;
 }
 
 export interface FlashSaleItem {
