@@ -19,7 +19,7 @@ function signHash(value: string): string {
  * hours even after the retry landed. `agent: false` opts every EPS call out of that pool entirely and
  * opens a fresh, unpooled TCP+TLS connection per call — the same thing a one-off curl does, which never
  * reproduced the failure no matter how many times it was run back-to-back. */
-function fetchEpsJson<T>(url: string, init: { method?: string; headers: Record<string, string>; body?: string }): Promise<T> {
+function fetchEpsJsonOnce<T>(url: string, init: { method?: string; headers: Record<string, string>; body?: string }): Promise<T> {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const req = https.request(
@@ -46,6 +46,23 @@ function fetchEpsJson<T>(url: string, init: { method?: string; headers: Record<s
     if (init.body) req.write(init.body);
     req.end();
   });
+}
+
+/** Even with `agent: false` above forcing a brand-new, never-reused connection per call, EPS's
+ * gateway still occasionally hands back an empty body on an otherwise-200 response (confirmed live
+ * on 2026-08-20: 2 real checkout attempts failed this way within the same second-long window while
+ * dozens of other calls around them succeeded, so it's not a systemic outage, just an occasional
+ * gateway-side hiccup). Unlike the old pooled-connection retry (which could hit the same stale
+ * socket twice), a retry here always opens a second, independent fresh connection — so it isn't
+ * exposed to the failure mode that made retrying unreliable before. One retry, no backoff: this is
+ * a synchronous customer-facing checkout call, not worth delaying further. */
+async function fetchEpsJson<T>(url: string, init: { method?: string; headers: Record<string, string>; body?: string }): Promise<T> {
+  try {
+    return await fetchEpsJsonOnce<T>(url, init);
+  } catch (err) {
+    console.error(`[eps] request to ${url} failed, retrying once:`, err instanceof Error ? err.message : err);
+    return fetchEpsJsonOnce<T>(url, init);
+  }
 }
 
 interface EpsTokenResponse {
