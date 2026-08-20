@@ -51,24 +51,33 @@ function fetchEpsJsonOnce<T>(url: string, init: { method?: string; headers: Reco
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Even with `agent: false` above forcing a brand-new, never-reused connection per call, EPS's
- * gateway still occasionally hands back an empty body on an otherwise-200 response. An immediate,
- * no-delay retry isn't enough on its own — confirmed live on 2026-08-20, a real checkout's initial
- * attempt AND its immediate retry both failed back-to-back within the same request, then two more
- * calls seconds later succeeded cleanly. That pattern looks like a brief window (sub-second
- * gateway-side hiccup or burst-rate-limit) wide enough to catch two attempts fired with no gap, but
- * not three spread out over ~1.5s. So: up to 2 retries (3 attempts total), with a growing delay
- * between them to actually clear whatever the transient condition is instead of hitting it again
- * immediately. */
-async function fetchEpsJson<T>(url: string, init: { method?: string; headers: Record<string, string>; body?: string }): Promise<T> {
+ * InitializeEPS/CheckMerchantTransactionStatus calls still hand back an empty body on an otherwise-
+ * 200 response — and confirmed live on 2026-08-20, this hits all 3 attempts of a single checkout
+ * identically (a plain delay-and-retry doesn't help), while separate calls made minutes apart on
+ * the same process succeed. The one thing all 3 identical-failing attempts share that the
+ * successful ones don't: the exact same cached bearer token, fetched once up front and reused
+ * across retries — Auth/GetToken itself (no token needed) never fails this way. That points to an
+ * intermittently-bad cached token (e.g. EPS invalidating it sooner than the expireDate it quoted us)
+ * rather than a purely random network blip. `buildRequest` is re-invoked fresh on every attempt so
+ * `onRetry` can force a brand-new token into it before the next try, in addition to the connection
+ * already being brand-new. */
+async function fetchEpsJson<T>(
+  buildRequest: () => Promise<{ url: string; init: { method?: string; headers: Record<string, string>; body?: string } }>,
+  onRetry?: () => Promise<void>,
+): Promise<T> {
   const delaysMs = [300, 1000];
   let lastErr: unknown;
   for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
     try {
+      const { url, init } = await buildRequest();
       return await fetchEpsJsonOnce<T>(url, init);
     } catch (err) {
       lastErr = err;
-      console.error(`[eps] request to ${url} failed (attempt ${attempt + 1}/${delaysMs.length + 1}):`, err instanceof Error ? err.message : err);
-      if (attempt < delaysMs.length) await sleep(delaysMs[attempt]!);
+      console.error(`[eps] request failed (attempt ${attempt + 1}/${delaysMs.length + 1}):`, err instanceof Error ? err.message : err);
+      if (attempt < delaysMs.length) {
+        if (onRetry) await onRetry();
+        await sleep(delaysMs[attempt]!);
+      }
     }
   }
   throw lastErr;
@@ -85,16 +94,26 @@ interface EpsTokenResponse {
 // (not per-request) so a burst of checkouts doesn't re-authenticate for every single one.
 let cachedToken: { token: string; expiry: Date } | null = null;
 
+// Called before a retry when the *previous* attempt used this token and failed — see fetchEpsJson's
+// comment. Forces the next getEpsToken() to fetch a genuinely fresh one instead of reusing whatever
+// is cached, which is the one variable a delay-and-retry alone doesn't change.
+function invalidateEpsToken(): void {
+  cachedToken = null;
+}
+
 async function getEpsToken(): Promise<string> {
   if (cachedToken && cachedToken.expiry.getTime() > Date.now() + 5000) return cachedToken.token;
 
   let data: EpsTokenResponse;
   try {
-    data = await fetchEpsJson<EpsTokenResponse>(`${BASE_URL}/Auth/GetToken`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-hash": signHash(env.eps.username) },
-      body: JSON.stringify({ userName: env.eps.username, password: env.eps.password }),
-    });
+    data = await fetchEpsJson<EpsTokenResponse>(async () => ({
+      url: `${BASE_URL}/Auth/GetToken`,
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-hash": signHash(env.eps.username) },
+        body: JSON.stringify({ userName: env.eps.username, password: env.eps.password }),
+      },
+    }));
   } catch (err) {
     // A network failure or non-JSON response throws here — left unguarded this became an unhandled
     // TypeError/SyntaxError that the generic error handler turned into a raw 500 instead of the same
@@ -144,7 +163,7 @@ interface EpsInitResponse {
 
 /** Starts a hosted-checkout session; the caller redirects the customer's browser to the returned gatewayUrl. */
 export async function initEpsSession(params: InitEpsSessionParams): Promise<{ gatewayUrl: string; transactionId: string }> {
-  const token = await getEpsToken();
+  let token = await getEpsToken();
   // EPS's own merchantTransactionId is what the success/fail/cancel callback later carries back —
   // this is attemptRef (unique per payment attempt), not orderNumber (shared across every attempt
   // on the same order once retries exist).
@@ -201,11 +220,20 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
 
   let data: EpsInitResponse;
   try {
-    data = await fetchEpsJson<EpsInitResponse>(`${BASE_URL}/EPSEngine/InitializeEPS`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-hash": hash, Authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
-    });
+    data = await fetchEpsJson<EpsInitResponse>(
+      async () => ({
+        url: `${BASE_URL}/EPSEngine/InitializeEPS`,
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-hash": hash, Authorization: `Bearer ${token}` },
+          body: JSON.stringify(body),
+        },
+      }),
+      async () => {
+        invalidateEpsToken();
+        token = await getEpsToken();
+      },
+    );
   } catch (err) {
     console.error(`[eps] session init request failed for order ${params.orderNumber}:`, err);
     throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
@@ -240,15 +268,22 @@ interface EpsVerifyResponse {
 /** Confirms a success/fail/cancel redirect is genuine by re-checking the transaction against EPS's
  * own records — never trust the callback's query params alone. */
 export async function verifyEpsTransaction(merchantTransactionId: string): Promise<EpsValidationResult | null> {
-  const token = await getEpsToken();
+  let token = await getEpsToken();
   const hash = signHash(merchantTransactionId);
   const query = new URLSearchParams({ merchantTransactionId });
 
   let data: EpsVerifyResponse;
   try {
-    data = await fetchEpsJson<EpsVerifyResponse>(`${BASE_URL}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`, {
-      headers: { "x-hash": hash, Authorization: `Bearer ${token}` },
-    });
+    data = await fetchEpsJson<EpsVerifyResponse>(
+      async () => ({
+        url: `${BASE_URL}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`,
+        init: { headers: { "x-hash": hash, Authorization: `Bearer ${token}` } },
+      }),
+      async () => {
+        invalidateEpsToken();
+        token = await getEpsToken();
+      },
+    );
   } catch (err) {
     // Same network/non-JSON failure mode as initEpsSession — here it's already documented as
     // "could not verify" (the caller treats null as unverified), so resolve to that instead of
