@@ -30,7 +30,17 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/customers/google",
   "/api/customers/otp/request",
   "/api/customers/otp/verify",
+  "/api/analytics/funnel-event",
 ]);
+
+/** Same trust model as CSRF_EXEMPT_PREFIX below: a public, rate-limited, fire-and-forget beacon
+ * that only increments a view counter on one already-identified product, so a forged cross-site
+ * call can't do anything the endpoint doesn't already let any caller do. Frontend sends it via a
+ * plain `fetch(..., { method: "POST" })` with no credentials/CSRF pairing (lib/api/storefront.ts's
+ * logProductView), which trips this check for any caller with a live session cookie riding along —
+ * exemption matches what the endpoint already trusts anyone to do. Matched by regex since the
+ * product id segment is dynamic. */
+const PRODUCT_VIEW_PATH = /^\/api\/products\/[^/]+\/view$/;
 
 /** Matched by prefix, not the exact-path Set above, since the pageview id segment is dynamic
  * (`/api/analytics/pageview/:id/exit`). Exempt for a different reason than the auth-bootstrap
@@ -56,6 +66,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   if (SAFE_METHODS.has(req.method)) return next();
   if (CSRF_EXEMPT_PATHS.has(req.path)) return next();
   if (req.path.startsWith(CSRF_EXEMPT_PREFIX)) return next();
+  if (PRODUCT_VIEW_PATH.test(req.path)) return next();
   if (!req.cookies?.access_token && !req.cookies?.[CUSTOMER_ACCESS_COOKIE]) return next();
 
   const cookieToken = req.cookies?.csrf_token as string | undefined;
