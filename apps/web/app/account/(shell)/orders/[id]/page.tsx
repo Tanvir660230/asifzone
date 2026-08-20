@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BackLink } from "@/components/ui/back-link";
@@ -18,7 +19,7 @@ import { AccountPageHeader } from "@/components/account/account-page-header";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { getMyOrder } from "@/lib/api/customers";
 import { createReturnRequest } from "@/lib/api/return-requests";
-import { getProductBySlug } from "@/lib/api/storefront";
+import { getProductBySlug, listStorefrontProducts } from "@/lib/api/storefront";
 import { useCartStore } from "@/store/cart";
 import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
@@ -45,21 +46,35 @@ export default function AccountOrderDetailPage() {
   const [requestError, setRequestError] = useState<string | null>(null);
   const [exchangeItemId, setExchangeItemId] = useState("");
   const [exchangeVariantId, setExchangeVariantId] = useState("");
+  // Overrides which product's variants the size/color picker below shows — null means "the item's
+  // own product" (the common case: same item, different size/color). Set once the customer picks a
+  // result from the cross-product search, so an exchange isn't limited to the original product.
+  const [exchangeProductOverrideSlug, setExchangeProductOverrideSlug] = useState<string | null>(null);
+  const [showProductSearch, setShowProductSearch] = useState(false);
+  const [productSearchQuery, setProductSearchQuery] = useState("");
 
   const { data, isLoading, isError } = useQuery({ queryKey: ["my-order", id], queryFn: () => getMyOrder(id) });
 
   const exchangeItem = data?.order.items.find((item) => item.id === exchangeItemId) ?? null;
-  const exchangeProductSlug = exchangeItem?.live?.productSlug ?? null;
+  const exchangeProductSlug = exchangeProductOverrideSlug ?? exchangeItem?.live?.productSlug ?? null;
   const { data: exchangeProductData, isLoading: exchangeProductLoading } = useQuery({
     queryKey: ["product-slug", exchangeProductSlug],
     queryFn: () => getProductBySlug(exchangeProductSlug!),
     enabled: formMode === "exchange" && Boolean(exchangeProductSlug),
   });
-  // Same product, a different variant, and actually in stock — anything else isn't a real option
-  // to exchange into.
+  // In stock, and not literally the same variant the customer already has — that's it. No longer
+  // restricted to the original item's own product, so a completely different product is a valid
+  // exchange target too (createExchangeOrder on the API side bills any price difference as COD).
   const exchangeVariantOptions = (exchangeProductData?.product.variants ?? []).filter(
     (v) => v.id !== exchangeItem?.variantId && v.stock > 0,
   );
+
+  const productSearchEnabled = formMode === "exchange" && showProductSearch && productSearchQuery.trim().length >= 2;
+  const { data: productSearchResults, isLoading: productSearchLoading } = useQuery({
+    queryKey: ["exchange-product-search", productSearchQuery],
+    queryFn: () => listStorefrontProducts({ search: productSearchQuery.trim(), pageSize: 8 }),
+    enabled: productSearchEnabled,
+  });
 
   const requestMutation = useMutation({
     mutationFn: () =>
@@ -82,6 +97,9 @@ export default function AccountOrderDetailPage() {
       setNote("");
       setExchangeItemId("");
       setExchangeVariantId("");
+      setExchangeProductOverrideSlug(null);
+      setShowProductSearch(false);
+      setProductSearchQuery("");
       toast.success(wasExchange ? "Exchange request submitted" : "Return request submitted");
     },
     onError: (err) => setRequestError(err instanceof ApiError ? err.message : "Could not submit request"),
@@ -140,6 +158,9 @@ export default function AccountOrderDetailPage() {
     setReason(EXCHANGE_REASONS[0]!);
     setExchangeItemId(itemsEligibleForExchange[0]?.id ?? "");
     setExchangeVariantId("");
+    setExchangeProductOverrideSlug(null);
+    setShowProductSearch(false);
+    setProductSearchQuery("");
     setRequestError(null);
   }
 
@@ -378,6 +399,9 @@ export default function AccountOrderDetailPage() {
                     onChange={(e) => {
                       setExchangeItemId(e.target.value);
                       setExchangeVariantId("");
+                      setExchangeProductOverrideSlug(null);
+                      setShowProductSearch(false);
+                      setProductSearchQuery("");
                     }}
                   >
                     {itemsEligibleForExchange.map((item) => (
@@ -388,26 +412,83 @@ export default function AccountOrderDetailPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="exchangeVariant">Exchange for</Label>
-                  <Select
-                    id="exchangeVariant"
-                    value={exchangeVariantId}
-                    onChange={(e) => setExchangeVariantId(e.target.value)}
-                    disabled={exchangeProductLoading || exchangeVariantOptions.length === 0}
-                  >
-                    <option value="">
-                      {exchangeProductLoading
-                        ? "Loading options…"
-                        : exchangeVariantOptions.length === 0
-                          ? "No other sizes/colors currently in stock"
-                          : "Select a size/color"}
-                    </option>
-                    {exchangeVariantOptions.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.size}/{v.color}
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="exchangeVariant">
+                      Exchange for {exchangeProductOverrideSlug ? `— ${exchangeProductData?.product.name ?? "…"}` : ""}
+                    </Label>
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-info-600 hover:underline"
+                      onClick={() => {
+                        setShowProductSearch((v) => !v);
+                        setProductSearchQuery("");
+                      }}
+                    >
+                      {showProductSearch ? "Cancel" : exchangeProductOverrideSlug ? "Change product" : "Exchange for a different product"}
+                    </button>
+                  </div>
+
+                  {showProductSearch ? (
+                    <div className="mt-1 space-y-2">
+                      <Input
+                        placeholder="Search products…"
+                        value={productSearchQuery}
+                        onChange={(e) => setProductSearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                      {productSearchEnabled && (
+                        <div className="max-h-56 overflow-y-auto rounded-md border border-ink-200">
+                          {productSearchLoading ? (
+                            <p className="p-3 text-sm text-ink-400">Searching…</p>
+                          ) : !productSearchResults || productSearchResults.items.length === 0 ? (
+                            <p className="p-3 text-sm text-ink-400">No products found.</p>
+                          ) : (
+                            productSearchResults.items.map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-ink-50"
+                                onClick={() => {
+                                  setExchangeProductOverrideSlug(p.slug);
+                                  setExchangeVariantId("");
+                                  setShowProductSearch(false);
+                                  setProductSearchQuery("");
+                                }}
+                              >
+                                <span className="truncate">{p.name}</span>
+                                <span className="shrink-0 pl-2 text-ink-500">{formatPrice(p.basePrice)}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Select
+                      id="exchangeVariant"
+                      value={exchangeVariantId}
+                      onChange={(e) => setExchangeVariantId(e.target.value)}
+                      disabled={exchangeProductLoading || exchangeVariantOptions.length === 0}
+                    >
+                      <option value="">
+                        {exchangeProductLoading
+                          ? "Loading options…"
+                          : exchangeVariantOptions.length === 0
+                            ? "No sizes/colors currently in stock"
+                            : "Select a size/color"}
                       </option>
-                    ))}
-                  </Select>
+                      {exchangeVariantOptions.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.size}/{v.color}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                  {exchangeProductOverrideSlug && (
+                    <p className="mt-1 text-xs text-ink-400">
+                      If this costs more than your original item, the difference is collected as Cash on Delivery on the replacement.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="exchangeReason">Reason</Label>

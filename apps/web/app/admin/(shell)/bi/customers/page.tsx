@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Wallet, Receipt, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -134,7 +135,11 @@ export default function CustomerIntelligencePage() {
                 <tbody>
                   {rfm.customers.map((c) => (
                     <tr key={c.id} className="border-b border-ink-50 last:border-0">
-                      <td className="py-2 pr-4 font-medium text-ink-800">{c.name}</td>
+                      <td className="py-2 pr-4 font-medium text-ink-800">
+                        <Link href={`/admin/customers/${c.id}`} className="hover:text-brass-600">
+                          {c.name}
+                        </Link>
+                      </td>
                       <td className="py-2 pr-4 text-ink-600">{c.recencyDays === null ? "—" : `${c.recencyDays}d ago`}</td>
                       <td className="py-2 pr-4 text-ink-600">{c.frequency}</td>
                       <td className="py-2 pr-4 text-ink-800">{formatPrice(c.monetary)}</td>

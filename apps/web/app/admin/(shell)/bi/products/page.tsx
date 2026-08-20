@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,9 +16,14 @@ import { cn } from "@/lib/utils";
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
 
-function toBarItems<T>(rows: T[] | undefined, opts: { key: (r: T) => string; label: (r: T) => string; value: (r: T) => number; valueLabel: (r: T) => string }): RankedBarListItem[] {
-  return (rows ?? []).map((r) => ({ key: opts.key(r), label: opts.label(r), value: opts.value(r), valueLabel: opts.valueLabel(r) }));
+function toBarItems<T>(
+  rows: T[] | undefined,
+  opts: { key: (r: T) => string; label: (r: T) => string; value: (r: T) => number; valueLabel: (r: T) => string; href?: (r: T) => string | null },
+): RankedBarListItem[] {
+  return (rows ?? []).map((r) => ({ key: opts.key(r), label: opts.label(r), value: opts.value(r), valueLabel: opts.valueLabel(r), href: opts.href?.(r) ?? undefined }));
 }
+
+const productEditHref = (id: string) => `/admin/products/${id}/edit`;
 
 export default function ProductIntelligencePage() {
   const [range, setRange] = useState<RangeOption>(30);
@@ -87,6 +93,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.views,
                 valueLabel: (p) => p.views.toLocaleString("en-BD"),
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No views recorded yet."
             />
@@ -103,6 +110,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.count,
                 valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No wishlist activity yet."
             />
@@ -119,6 +127,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.count,
                 valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No add-to-cart activity yet for this range."
             />
@@ -135,6 +144,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.count,
                 valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No cart-removal activity yet for this range."
             />
@@ -155,6 +165,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.conversionRatePct,
                 valueLabel: (p) => `${p.conversionRatePct.toFixed(1)}%`,
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="Not enough view data yet."
             />
@@ -171,6 +182,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => Math.max(p.conversionRatePct, 0.01),
                 valueLabel: (p) => `${p.conversionRatePct.toFixed(1)}%`,
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="Not enough view data yet."
             />
@@ -191,6 +203,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.revenue,
                 valueLabel: (p) => formatPrice(p.revenue),
+                href: (p) => (p.productId ? productEditHref(p.productId) : null),
               })}
               emptyLabel="No sales recorded yet."
             />
@@ -207,6 +220,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.profit,
                 valueLabel: (p) => formatPrice(p.profit),
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No sales recorded yet."
             />
@@ -237,7 +251,11 @@ export default function ProductIntelligencePage() {
                 <tbody>
                   {risk.products.map((p) => (
                     <tr key={p.id} className="border-b border-ink-50 last:border-0">
-                      <td className="py-2 pr-4 font-medium text-ink-800">{p.name}</td>
+                      <td className="py-2 pr-4 font-medium text-ink-800">
+                        <Link href={productEditHref(p.id)} className="hover:text-brass-600">
+                          {p.name}
+                        </Link>
+                      </td>
                       <td className={cn("py-2 pr-4", p.returnRatePct > 20 ? "font-medium text-danger-600" : "text-ink-600")}>
                         {p.returnRatePct.toFixed(1)}%
                       </td>
@@ -377,6 +395,7 @@ export default function ProductIntelligencePage() {
                 label: (p) => p.name,
                 value: (p) => p.turnoverRatio,
                 valueLabel: (p) => `${p.turnoverRatio.toFixed(2)}x`,
+                href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No turnover data yet — needs both sales and cost-priced stock on hand."
             />

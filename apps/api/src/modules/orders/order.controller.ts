@@ -23,7 +23,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     return res.status(201).json({ order });
   }
 
-  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null);
+  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip);
   res.status(201).json({ gatewayUrl });
 });
 
@@ -33,7 +33,7 @@ export const track = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const retryPayment = asyncHandler(async (req: Request, res: Response) => {
-  const { gatewayUrl } = await orderService.retryPayment(req.params.orderNumber!, req.body.phone);
+  const { gatewayUrl } = await orderService.retryPayment(req.params.orderNumber!, req.body.phone, req.ip);
   res.json({ gatewayUrl });
 });
 

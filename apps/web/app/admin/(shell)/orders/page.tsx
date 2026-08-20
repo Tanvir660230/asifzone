@@ -619,6 +619,18 @@ export default function OrdersPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk delivery score check failed"),
   });
 
+  // Separate instance (same underlying bulk endpoint, called with a single id) so a one-row "Check"
+  // click doesn't share pending/loading state with the toolbar's multi-select bulk action above —
+  // each row's own button spins only for that row.
+  const rowCheckDeliveryScoreMutation = useMutation({
+    mutationFn: adminOrdersApi.bulkCheckDeliveryScore,
+    onSuccess: (result) => {
+      invalidate();
+      if (result.failed.length > 0) toast.error(result.failed[0]!.reason);
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Delivery score check failed"),
+  });
+
   // Same reasoning as bulkStatusMutation above — refetch even on partial failure.
   const bulkDeleteMutation = useMutation({ mutationFn: adminOrdersApi.bulkDeleteOrders, onSettled: invalidate });
   const bulkPermanentDeleteMutation = useMutation({
@@ -708,6 +720,10 @@ export default function OrdersPage() {
 
   function handleBulkCheckDeliveryScore() {
     bulkCheckDeliveryScoreMutation.mutate(Array.from(selected));
+  }
+
+  function handleCheckDeliveryScore(orderId: string) {
+    rowCheckDeliveryScoreMutation.mutate([orderId]);
   }
 
   function handlePrintLabels(ids?: string[]) {
@@ -860,7 +876,21 @@ export default function OrdersPage() {
   // column — kept small and pill-shaped so it reads as a tag next to the number rather than
   // running into it.
   function renderDeliveryScoreBadge(order: AdminOrderListItem) {
-    if (!order.deliveryScore) return null;
+    if (!order.deliveryScore) {
+      const isChecking = rowCheckDeliveryScoreMutation.isPending && rowCheckDeliveryScoreMutation.variables?.[0] === order.id;
+      return (
+        <button
+          type="button"
+          disabled={isChecking}
+          onClick={() => handleCheckDeliveryScore(order.id)}
+          title="Check this customer's delivery success rate (Steadfast fraud check)"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-[1px] text-[10px] font-semibold leading-tight text-ink-400 ring-1 ring-inset ring-ink-200 transition-colors duration-150 ease-smooth hover:text-ink-700 hover:ring-ink-400 disabled:opacity-50"
+        >
+          <ShieldCheck size={10} />
+          {isChecking ? "Checking…" : "Check score"}
+        </button>
+      );
+    }
     const { successRate, totalParcels, successParcels, cancelledParcels, checkedAt } = order.deliveryScore;
     return (
       <span

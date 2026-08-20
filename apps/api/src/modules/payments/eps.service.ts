@@ -99,6 +99,14 @@ export interface InitEpsSessionParams {
   customerEmail: string | null;
   customerPhone: string;
   customerAddress: string;
+  /** District/division, for EPS's CustomerCity/CustomerState — falls back to "Dhaka" when a caller
+   * doesn't have real shipping-address data on hand (e.g. an old code path never updated). */
+  customerCity?: string;
+  customerState?: string;
+  /** The customer's own request IP, per the integration guide's example — falls back to "0.0.0.0"
+   * rather than making this required, since not every caller has a live request to read it from. */
+  ipAddress?: string;
+  items?: Array<{ name: string; quantity: number; price: number }>;
 }
 
 interface EpsInitResponse {
@@ -126,7 +134,7 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
     financialEntityId: 0,
     transitionStatusId: 0,
     totalAmount: params.amount,
-    ipAddress: "0.0.0.0",
+    ipAddress: params.ipAddress || "0.0.0.0",
     version: "1",
     successUrl: `${env.apiOrigin}/api/payments/eps/success`,
     failUrl: `${env.apiOrigin}/api/payments/eps/fail`,
@@ -135,8 +143,8 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
     customerEmail: params.customerEmail || "no-reply@example.com",
     CustomerAddress: params.customerAddress,
     CustomerAddress2: "",
-    CustomerCity: "Dhaka",
-    CustomerState: "Dhaka",
+    CustomerCity: params.customerCity || "Dhaka",
+    CustomerState: params.customerState || "Dhaka",
     CustomerPostcode: "1000",
     CustomerCountry: "BD",
     CustomerPhone: params.customerPhone,
@@ -152,11 +160,17 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
     ValueC: "",
     ValueD: "",
     ShippingMethod: "NO",
-    NoOfItem: "1",
+    NoOfItem: String(params.items?.length ? params.items.reduce((sum, i) => sum + i.quantity, 0) : 1),
     ProductName: "Order " + params.orderNumber,
     ProductProfile: "general",
     ProductCategory: "Clothing",
-    ProductList: [],
+    ProductList: (params.items ?? []).map((item) => ({
+      ProductName: item.name,
+      NoOfItem: String(item.quantity),
+      ProductProfile: "general",
+      ProductCategory: "Clothing",
+      ProductPrice: String(item.price),
+    })),
   };
 
   let data: EpsInitResponse;

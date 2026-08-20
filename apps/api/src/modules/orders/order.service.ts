@@ -487,8 +487,8 @@ const ACTIVE_SESSION_RETRY_GRACE_MS = 2 * 60 * 1000;
  * reserved for those, so nothing else needs to happen before starting a new PaymentSession. A
  * CANCELLED order (stock already restocked) requires a fresh checkout instead — retrying it here
  * would need to re-reserve stock that may already have been sold to someone else. */
-export async function retryPayment(orderNumber: string, phone: string) {
-  const order = await prisma.order.findUnique({ where: { orderNumber } });
+export async function retryPayment(orderNumber: string, phone: string, ipAddress?: string) {
+  const order = await prisma.order.findUnique({ where: { orderNumber }, include: { items: true } });
   if (!order || order.deletedAt || order.customerPhone !== phone) throw AppError.notFound("Order not found");
   if (order.paymentMethod === "COD") throw AppError.badRequest("This order is Cash on Delivery");
   if (order.paymentStatus === "PAID" || order.paymentStatus === "REFUNDED") {
@@ -517,7 +517,7 @@ export async function retryPayment(orderNumber: string, phone: string) {
       // next sweep.
       await prisma.paymentSession.update({ where: { id: active.id }, data: { status: "EXPIRED" } });
     }
-    return await startPaymentSession(order);
+    return await startPaymentSession(order, ipAddress);
   } finally {
     await redis.del(lockKey).catch(() => {});
   }
@@ -1101,23 +1101,30 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
 /** Soft-deletes an order (OWNER-only, see order.routes.ts) — hides it from every default query but
  * never physically removes the row, since it's a financial/audit record. Restocks the items first,
  * the same way cancelUnstartedOrder does, unless the order was already CANCELLED/REFUNDED (which
- * already restocked, so doing it again would double-credit the inventory). */
+ * already restocked, so doing it again would double-credit the inventory). Restocks
+ * `quantity - returnedQuantity`, not the full original quantity — a reconciled PARTIALLY_DELIVERED
+ * order already put the returned units back via reconcilePartialDelivery, so restocking the full
+ * amount here again would double-credit exactly those units a second time. */
 export async function deleteOrder(orderId: string, adminId: string) {
   const order = await getOrderById(orderId);
   if (order.deletedAt) return order;
 
   return prisma.$transaction(async (tx) => {
     if (order.status !== "CANCELLED" && order.status !== "REFUNDED") {
-      for (const item of order.items) {
+      const toRestock = order.items
+        .map((item) => ({ variantId: item.variantId, amount: item.quantity - item.returnedQuantity }))
+        .filter((entry) => entry.amount > 0);
+
+      for (const entry of toRestock) {
         await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { stock: { increment: item.quantity } },
+          where: { id: entry.variantId },
+          data: { stock: { increment: entry.amount } },
         });
       }
       await tx.stockMovement.createMany({
-        data: order.items.map((item) => ({
-          variantId: item.variantId,
-          change: item.quantity,
+        data: toRestock.map((entry) => ({
+          variantId: entry.variantId,
+          change: entry.amount,
           reason: "ADJUSTMENT" as const,
           orderId: order.id,
           adminId,
@@ -1227,6 +1234,31 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
     const note = returnedEntries.length
       ? `Partial delivery reconciled — ${returnedEntries.length} item(s) returned and restocked`
       : "Partial delivery reconciled — customer kept the full shipment";
+
+    // Gives the returned portion its own visible record in the same Return Requests list an admin
+    // already checks for customer-initiated returns, rather than leaving it discoverable only by
+    // reading this order's status history. Auto-approved (not PENDING) since the items are already
+    // physically back — there's no review decision left to make, just a paper trail of what came
+    // back and why. Skipped for the rare pre-findOrCreateGuestCustomer order with no linked
+    // Customer, since ReturnRequest.customerId is required.
+    if (returnedEntries.length > 0 && existing.customerId) {
+      const itemLines = returnedEntries.map((entry) => {
+        const item = itemById.get(entry.orderItemId)!;
+        return `${item.productNameSnapshot} (${item.sizeSnapshot}/${item.colorSnapshot}) x${entry.returnedQuantity}`;
+      });
+      await tx.returnRequest.create({
+        data: {
+          orderId,
+          customerId: existing.customerId,
+          type: "RETURN",
+          reason: "Courier partial delivery — rejected by customer",
+          note: itemLines.join(", "),
+          status: "APPROVED",
+          reviewedAt: new Date(),
+          reviewedByAdminId: adminId,
+        },
+      });
+    }
 
     return tx.order.update({
       where: { id: orderId },

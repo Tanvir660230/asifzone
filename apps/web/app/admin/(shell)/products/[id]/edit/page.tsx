@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ExternalLink } from "lucide-react";
 import type { CreateProductInput } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/admin/page-header";
@@ -45,7 +47,23 @@ export default function EditProductPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <PageHeader title={`Edit ${product.name}`} action={<BackLink href="/admin/products" label="Back to Products" />} />
+      <PageHeader
+        title={`Edit ${product.name}`}
+        action={
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/product/${product.slug}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 rounded-full border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400 hover:text-ink-900"
+            >
+              <ExternalLink size={13} />
+              View on site
+            </Link>
+            <BackLink href="/admin/products" label="Back to Products" />
+          </div>
+        }
+      />
 
       <Card>
         <CardHeader>

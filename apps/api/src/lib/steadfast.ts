@@ -217,18 +217,18 @@ export interface SteadfastFraudCheck {
   successRate: number | null;
 }
 
-/** The fraud_check endpoint's exact response shape is unconfirmed against a live account — unlike
- * create_order/status_by_cid (verified against real responses), published examples of this one don't
- * show the {status, message} envelope every other endpoint here uses. Treat `status` as optional and
- * gate on getting real parcel counts back instead, the same defensive stance normalizeBulkResultItem
- * takes above for the bulk booking response. `success_ratio` isn't trusted from the API either, if
- * present at all — it's computed locally from the three counts so rounding/definition can't drift. */
+/** Response shape confirmed against a live account: {total_parcels, total_delivered, total_cancelled,
+ * total_fraud_reports} — no {status, message} envelope at all, unlike every other endpoint here.
+ * (Earlier field-name guesses — total_parcel/success_parcel/cancelled_parcel, singular — never matched
+ * a real response, so every check silently failed with "HTTP 200" as the only clue.) `status` is still
+ * treated as optional in case it ever appears. Success rate is computed locally from the two counts
+ * rather than trusted from the API, so rounding/definition can't drift. */
 interface RawSteadfastFraudCheck {
   status?: number;
   message?: string;
-  total_parcel?: number;
-  success_parcel?: number;
-  cancelled_parcel?: number;
+  total_parcels?: number;
+  total_delivered?: number;
+  total_cancelled?: number;
 }
 
 export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFraudCheck> {
@@ -241,7 +241,7 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
   const { data: parsed, rawText } = await readSteadfastResponse(res);
   const data = parsed as RawSteadfastFraudCheck | null;
 
-  if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || typeof data.total_parcel !== "number") {
+  if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || typeof data.total_parcels !== "number") {
     if (!data) console.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
     throw AppError.badRequest(
       `Steadfast fraud check failed: ${data?.message ?? `HTTP ${res.status}`}`,
@@ -249,9 +249,9 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
     );
   }
 
-  const totalParcels = data.total_parcel;
-  const successParcels = data.success_parcel ?? 0;
-  const cancelledParcels = data.cancelled_parcel ?? 0;
+  const totalParcels = data.total_parcels;
+  const successParcels = data.total_delivered ?? 0;
+  const cancelledParcels = data.total_cancelled ?? 0;
 
   return {
     totalParcels,

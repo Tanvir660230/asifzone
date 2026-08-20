@@ -42,17 +42,14 @@ export async function createReturnRequest(customerId: string, input: CreateRetur
     if (!item) throw AppError.badRequest("Select an item from this order to exchange");
 
     const requestedVariant = await prisma.productVariant.findUnique({ where: { id: input.requestedVariantId } });
-    if (!requestedVariant) throw AppError.badRequest("The selected size/color is no longer available");
+    if (!requestedVariant) throw AppError.badRequest("The selected item is no longer available");
 
-    const originalVariant = await prisma.productVariant.findUnique({
-      where: { id: item.variantId },
-      select: { productId: true },
-    });
-    if (!originalVariant || originalVariant.productId !== requestedVariant.productId) {
-      throw AppError.badRequest("The selected size/color must be from the same product as the original item");
-    }
+    // Exchanges aren't restricted to the same product any more — a customer can request a
+    // completely different item, not just a different size/color of what they already have.
+    // createExchangeOrder (below) handles the price difference: any positive gap is collected via
+    // COD on the replacement shipment rather than assumed free like a same-price swap.
     if (requestedVariant.id === item.variantId) {
-      throw AppError.badRequest("Choose a different size or color to exchange for");
+      throw AppError.badRequest("Choose a different item to exchange for");
     }
 
     exchangeFields = {
@@ -156,13 +153,16 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
   return prisma.returnRequest.findUnique({ where: { id }, include });
 }
 
-/** Creates the free replacement shipment for an approved EXCHANGE request: decrements stock for
- * the requested size/color (re-checked here, not trusted from request-creation time — it may have
- * sold out since), restocks the original (wrong-size) item back to inventory, and opens a new
- * companion Order — copying the original's shipping/contact details, starting at CONFIRMED (an
- * admin already approved it, so it skips the confirmation-call queue), with `total: 0` since the
- * customer already paid for the original item and owes nothing more. Left for the admin to book
- * with Steadfast the same way any other order is booked. */
+/** Creates the replacement shipment for an approved EXCHANGE request: decrements stock for the
+ * requested item (re-checked here, not trusted from request-creation time — it may have sold out
+ * since), restocks the original item back to inventory, and opens a new companion Order — copying
+ * the original's shipping/contact details, starting at CONFIRMED (an admin already approved it, so
+ * it skips the confirmation-call queue). Since exchanges are no longer limited to a same-priced
+ * same-product swap, the new item's price may exceed what the customer already paid: any positive
+ * gap becomes a COD `total` collected by the courier on delivery, same as any other COD order —
+ * there's no refund-API integration to pay out the other direction, so a downgrade stays free
+ * rather than owing the customer a refund. Left for the admin to book with Steadfast the same way
+ * any other order is booked. */
 async function createExchangeOrder(
   request: NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>,
   adminId: string,
@@ -181,7 +181,12 @@ async function createExchangeOrder(
   if (!requestedVariant) throw AppError.badRequest("The requested size/color is no longer available");
 
   const price = Number(requestedVariant.price ?? requestedVariant.product.basePrice);
-  const lineTotal = price * originalItem.quantity;
+  const subtotal = price * originalItem.quantity;
+  const alreadyPaidValue = Number(originalItem.priceSnapshot) * originalItem.quantity;
+  // Only ever collects more, never refunds — a cheaper replacement is still a free exchange (no
+  // refund path exists), an equal-or-pricier one bills the gap as COD on the new shipment.
+  const amountDue = Math.max(0, subtotal - alreadyPaidValue);
+  const discount = subtotal - amountDue;
 
   return prisma.$transaction(async (tx) => {
     // Conditional decrement, same "stock changed underneath us" guard createOrder uses at checkout
@@ -197,13 +202,18 @@ async function createExchangeOrder(
       );
     }
 
+    const exchangeNote =
+      amountDue > 0
+        ? `Exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot} ${originalItem.sizeSnapshot}/${originalItem.colorSnapshot} → ${requestedVariant.product.name} ${requestedVariant.size}/${requestedVariant.color}) — BDT ${amountDue} due COD on delivery for the price difference`
+        : `Free exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot} ${originalItem.sizeSnapshot}/${originalItem.colorSnapshot} → ${requestedVariant.product.name} ${requestedVariant.size}/${requestedVariant.color})`;
+
     const exchangeOrder = await tx.order.create({
       data: {
         orderNumber: generateOrderNumber(),
         customerId: originalOrder.customerId,
         status: "CONFIRMED",
-        paymentMethod: originalOrder.paymentMethod,
-        paymentStatus: "PAID",
+        paymentMethod: amountDue > 0 ? "COD" : originalOrder.paymentMethod,
+        paymentStatus: amountDue > 0 ? "UNPAID" : "PAID",
         customerName: originalOrder.customerName,
         customerEmail: originalOrder.customerEmail,
         customerPhone: originalOrder.customerPhone,
@@ -211,14 +221,14 @@ async function createExchangeOrder(
         shippingDistrict: originalOrder.shippingDistrict,
         shippingArea: originalOrder.shippingArea,
         shippingAddressLine: originalOrder.shippingAddressLine,
-        adminNotes: `Free exchange for order ${originalOrder.orderNumber} (${originalItem.sizeSnapshot}/${originalItem.colorSnapshot} → ${requestedVariant.size}/${requestedVariant.color})`,
-        subtotal: lineTotal,
-        // 100% discount, not a $0 subtotal — keeps priceSnapshot/subtotal a real record of the
-        // item's value (useful for any future "cost of exchanges" reporting) while total still nets
-        // to 0, the same "discount folds into total" arithmetic every other order uses.
-        discount: lineTotal,
+        adminNotes: exchangeNote,
+        subtotal,
+        // Discount covers whatever value the customer already paid via the original item — the
+        // rest (if any) is `total`, collected as COD. Keeps subtotal a real record of the new
+        // item's value (useful for "cost of exchanges" reporting) rather than always netting to 0.
+        discount,
         shippingFee: 0,
-        total: 0,
+        total: amountDue,
         items: {
           create: {
             variantId: requestedVariant.id,

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import type { Order } from "@prisma/client";
+import type { Order, OrderItem } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import type { CheckoutInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
@@ -74,7 +74,10 @@ async function syncOrderPaymentStatus(orderId: string, outcome: "PAID" | "FAILED
 /** Creates a PaymentSession for this order and starts the gateway's hosted-checkout flow — the
  * caller redirects the customer's browser to the returned gatewayUrl. Used both at checkout
  * (order.controller.ts) and for a later retry on the same order (retryPayment). */
-export async function startPaymentSession(order: Order): Promise<{ gatewayUrl: string; sessionId: string }> {
+export async function startPaymentSession(
+  order: Order & { items: OrderItem[] },
+  ipAddress?: string,
+): Promise<{ gatewayUrl: string; sessionId: string }> {
   if (order.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
 
   const attemptRef = newAttemptRef();
@@ -111,6 +114,10 @@ export async function startPaymentSession(order: Order): Promise<{ gatewayUrl: s
     customerEmail: order.customerEmail,
     customerPhone: order.customerPhone,
     customerAddress: order.shippingAddressLine,
+    customerCity: order.shippingDistrict,
+    customerState: order.shippingDivision,
+    ipAddress,
+    items: order.items.map((item) => ({ name: item.productNameSnapshot, quantity: item.quantity, price: Number(item.priceSnapshot) })),
   };
 
   try {
@@ -142,6 +149,7 @@ export async function startPaymentSession(order: Order): Promise<{ gatewayUrl: s
 export async function initiatePendingPayment(
   input: CheckoutInput,
   customerId: string | null,
+  ipAddress?: string,
 ): Promise<{ gatewayUrl: string; sessionId: string }> {
   if (input.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
 
@@ -232,6 +240,10 @@ export async function initiatePendingPayment(
     customerEmail: input.customerEmail ?? null,
     customerPhone: input.customerPhone,
     customerAddress: input.shippingAddressLine,
+    customerCity: input.shippingDistrict,
+    customerState: input.shippingDivision,
+    ipAddress,
+    items: itemSnapshots.map((item) => ({ name: item.productNameSnapshot, quantity: item.quantity, price: item.priceSnapshot })),
   };
 
   try {
