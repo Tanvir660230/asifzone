@@ -48,21 +48,30 @@ function fetchEpsJsonOnce<T>(url: string, init: { method?: string; headers: Reco
   });
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** Even with `agent: false` above forcing a brand-new, never-reused connection per call, EPS's
- * gateway still occasionally hands back an empty body on an otherwise-200 response (confirmed live
- * on 2026-08-20: 2 real checkout attempts failed this way within the same second-long window while
- * dozens of other calls around them succeeded, so it's not a systemic outage, just an occasional
- * gateway-side hiccup). Unlike the old pooled-connection retry (which could hit the same stale
- * socket twice), a retry here always opens a second, independent fresh connection — so it isn't
- * exposed to the failure mode that made retrying unreliable before. One retry, no backoff: this is
- * a synchronous customer-facing checkout call, not worth delaying further. */
+ * gateway still occasionally hands back an empty body on an otherwise-200 response. An immediate,
+ * no-delay retry isn't enough on its own — confirmed live on 2026-08-20, a real checkout's initial
+ * attempt AND its immediate retry both failed back-to-back within the same request, then two more
+ * calls seconds later succeeded cleanly. That pattern looks like a brief window (sub-second
+ * gateway-side hiccup or burst-rate-limit) wide enough to catch two attempts fired with no gap, but
+ * not three spread out over ~1.5s. So: up to 2 retries (3 attempts total), with a growing delay
+ * between them to actually clear whatever the transient condition is instead of hitting it again
+ * immediately. */
 async function fetchEpsJson<T>(url: string, init: { method?: string; headers: Record<string, string>; body?: string }): Promise<T> {
-  try {
-    return await fetchEpsJsonOnce<T>(url, init);
-  } catch (err) {
-    console.error(`[eps] request to ${url} failed, retrying once:`, err instanceof Error ? err.message : err);
-    return fetchEpsJsonOnce<T>(url, init);
+  const delaysMs = [300, 1000];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+    try {
+      return await fetchEpsJsonOnce<T>(url, init);
+    } catch (err) {
+      lastErr = err;
+      console.error(`[eps] request to ${url} failed (attempt ${attempt + 1}/${delaysMs.length + 1}):`, err instanceof Error ? err.message : err);
+      if (attempt < delaysMs.length) await sleep(delaysMs[attempt]!);
+    }
   }
+  throw lastErr;
 }
 
 interface EpsTokenResponse {
