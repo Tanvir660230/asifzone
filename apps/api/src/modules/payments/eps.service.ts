@@ -8,6 +8,21 @@ function signHash(value: string): string {
   return crypto.createHmac("sha512", Buffer.from(env.eps.hashKey, "utf8")).update(value, "utf8").digest("base64");
 }
 
+/** EPS's server closes idle keep-alive sockets on its own schedule; undici's connection pool doesn't
+ * always notice before reusing one, so the next request over it reads back an empty body and
+ * `res.json()` throws "Unexpected end of JSON input" — a dead-connection artifact, not a real EPS
+ * response. A single retry (which grabs a fresh connection) clears it; seen live filling the prod
+ * error logs on 2026-08-20 with every EPS session-init failing this way. */
+async function fetchEpsJson<T>(url: string, init: RequestInit): Promise<T> {
+  try {
+    const res = await fetch(url, init);
+    return (await res.json()) as T;
+  } catch {
+    const res = await fetch(url, init);
+    return (await res.json()) as T;
+  }
+}
+
 interface EpsTokenResponse {
   token?: string;
   expireDate?: string;
@@ -24,12 +39,11 @@ async function getEpsToken(): Promise<string> {
 
   let data: EpsTokenResponse;
   try {
-    const res = await fetch(`${BASE_URL}/Auth/GetToken`, {
+    data = await fetchEpsJson<EpsTokenResponse>(`${BASE_URL}/Auth/GetToken`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-hash": signHash(env.eps.username) },
       body: JSON.stringify({ userName: env.eps.username, password: env.eps.password }),
     });
-    data = (await res.json()) as EpsTokenResponse;
   } catch (err) {
     // A network failure or non-JSON response throws here — left unguarded this became an unhandled
     // TypeError/SyntaxError that the generic error handler turned into a raw 500 instead of the same
@@ -122,12 +136,11 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
 
   let data: EpsInitResponse;
   try {
-    const res = await fetch(`${BASE_URL}/EPSEngine/InitializeEPS`, {
+    data = await fetchEpsJson<EpsInitResponse>(`${BASE_URL}/EPSEngine/InitializeEPS`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-hash": hash, Authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
     });
-    data = (await res.json()) as EpsInitResponse;
   } catch (err) {
     console.error(`[eps] session init request failed for order ${params.orderNumber}:`, err);
     throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
@@ -168,10 +181,9 @@ export async function verifyEpsTransaction(merchantTransactionId: string): Promi
 
   let data: EpsVerifyResponse;
   try {
-    const res = await fetch(`${BASE_URL}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`, {
+    data = await fetchEpsJson<EpsVerifyResponse>(`${BASE_URL}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`, {
       headers: { "x-hash": hash, Authorization: `Bearer ${token}` },
     });
-    data = (await res.json()) as EpsVerifyResponse;
   } catch (err) {
     // Same network/non-JSON failure mode as initEpsSession — here it's already documented as
     // "could not verify" (the caller treats null as unverified), so resolve to that instead of
