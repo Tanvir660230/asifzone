@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import https from "https";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 
@@ -8,19 +9,43 @@ function signHash(value: string): string {
   return crypto.createHmac("sha512", Buffer.from(env.eps.hashKey, "utf8")).update(value, "utf8").digest("base64");
 }
 
-/** EPS's server closes idle keep-alive sockets on its own schedule; undici's connection pool doesn't
- * always notice before reusing one, so the next request over it reads back an empty body and
- * `res.json()` throws "Unexpected end of JSON input" — a dead-connection artifact, not a real EPS
- * response. A single retry (which grabs a fresh connection) clears it; seen live filling the prod
- * error logs on 2026-08-20 with every EPS session-init failing this way. */
-async function fetchEpsJson<T>(url: string, init: RequestInit): Promise<T> {
-  try {
-    const res = await fetch(url, init);
-    return (await res.json()) as T;
-  } catch {
-    const res = await fetch(url, init);
-    return (await res.json()) as T;
-  }
+/** EPS checkout traffic is sparse (one checkout at a time, one reconciliation tick per 5 minutes), so
+ * undici's shared keep-alive pool for this host is almost always idle long enough for EPS's server to
+ * have quietly closed its end. undici doesn't always surface that as a connection error — it hands back
+ * a "successfully completed" but empty body, so `res.json()` throws "Unexpected end of JSON input" on a
+ * dead-connection artifact rather than a real EPS response. A single retry over the same shared pool
+ * isn't reliable here: with so little traffic, the *other* idle sockets tend to be equally stale, so the
+ * retry can hit the exact same failure — confirmed live on 2026-08-20, where every request failed for
+ * hours even after the retry landed. `agent: false` opts every EPS call out of that pool entirely and
+ * opens a fresh, unpooled TCP+TLS connection per call — the same thing a one-off curl does, which never
+ * reproduced the failure no matter how many times it was run back-to-back. */
+function fetchEpsJson<T>(url: string, init: { method?: string; headers: Record<string, string>; body?: string }): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const req = https.request(
+      {
+        hostname: target.hostname,
+        path: target.pathname + target.search,
+        method: init.method ?? "GET",
+        headers: init.headers,
+        agent: false,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")) as T);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      },
+    );
+    req.on("error", reject);
+    if (init.body) req.write(init.body);
+    req.end();
+  });
 }
 
 interface EpsTokenResponse {
