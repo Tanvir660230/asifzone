@@ -1,10 +1,12 @@
 import type {
   AdminCustomerListItem,
   AdminCustomerDetail,
+  Customer,
   CustomerStats,
   CustomerTag,
   PaginatedResult,
   UpdateCustomerAdminFieldsInput,
+  CreateCustomerAdminInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
@@ -44,6 +46,13 @@ export function listCustomers(params: AdminCustomerListParams = {}) {
 
 export function getCustomerStats() {
   return apiFetch<CustomerStats>("/api/customers/admin/stats");
+}
+
+export function createCustomer(input: CreateCustomerAdminInput) {
+  return apiFetch<{ customer: Customer & { adminNotes: string | null; isBlocked: boolean; codRisk: boolean } }>(
+    "/api/customers/admin",
+    { method: "POST", body: input },
+  );
 }
 
 export function getCustomer(id: string) {

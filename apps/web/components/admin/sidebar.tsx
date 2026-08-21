@@ -8,14 +8,8 @@ import {
   FolderTree,
   Shirt,
   ClipboardList,
-  Zap,
-  Tag,
-  Gift,
-  RotateCcw,
-  Image as ImageIcon,
   LayoutTemplate,
   Users,
-  SlidersHorizontal,
   ShieldOff,
   Settings,
   LogOut,
@@ -23,12 +17,12 @@ import {
   Bot,
   Megaphone,
   MessageSquare,
-  Star,
   Boxes,
   PanelLeftClose,
   PanelLeftOpen,
   Gauge,
   CreditCard,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
@@ -43,7 +37,22 @@ import { toast } from "@/components/ui/toast";
  * entry point to Payment Methods/Social Links/Redirects, which STAFF can use (see SettingsSubNav). */
 const OWNER_ONLY_HREFS = new Set(["/admin/audit-log", "/admin/team"]);
 
-const NAV_SECTIONS = [
+interface NavItem {
+  href: string;
+  /** Extra pathname prefixes that should also count as active — for entries whose subnav groups
+   * pages under unrelated paths (e.g. Promotions covers /admin/flash-sales, /admin/coupons, ...).
+   * Defaults to just `href` when omitted. */
+  match?: string[];
+  label: string;
+  icon: LucideIcon;
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
   {
     label: "Overview",
     items: [
@@ -56,53 +65,64 @@ const NAV_SECTIONS = [
     // Overview, Visitors, Journey, Search, Product/Customer/Marketing/Sales/Financial/Inventory
     // Intelligence, Operations, Behavior, AI Insights, Lifetime, and Reports all live behind this
     // one entry now via BiSubNav — see app/admin/(shell)/bi/layout.tsx.
-    items: [{ href: "/admin/bi/overview", label: "Business Intelligence", icon: Gauge }],
+    items: [{ href: "/admin/bi/overview", match: ["/admin/bi"], label: "Business Intelligence", icon: Gauge }],
   },
   {
     label: "Catalog",
+    // Attributes lives behind Products via ProductsSubNav.
     items: [
       { href: "/admin/categories", label: "Categories", icon: FolderTree },
-      { href: "/admin/products", label: "Products", icon: Shirt },
+      { href: "/admin/products", match: ["/admin/products", "/admin/attributes"], label: "Products", icon: Shirt },
       { href: "/admin/inventory", label: "Inventory", icon: Boxes },
-      { href: "/admin/attributes", label: "Attributes", icon: SlidersHorizontal },
     ],
   },
   {
     label: "Sales",
+    // Return Requests lives behind Orders (OrdersSubNav); Flash Sales, Coupons, Bundles, and
+    // Campaigns live behind Promotions (PromotionsSubNav) — see components/admin/*-subnav.tsx.
     items: [
-      { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+      { href: "/admin/orders", match: ["/admin/orders", "/admin/return-requests"], label: "Orders", icon: ClipboardList },
       { href: "/admin/payments/overview", label: "Payments", icon: CreditCard },
       { href: "/admin/customers", label: "Customers", icon: Users },
-      { href: "/admin/flash-sales", label: "Flash Sales", icon: Zap },
-      { href: "/admin/coupons", label: "Coupons", icon: Tag },
-      { href: "/admin/bundles", label: "Bundles", icon: Gift },
-      { href: "/admin/return-requests", label: "Returns", icon: RotateCcw },
+      {
+        href: "/admin/flash-sales",
+        match: ["/admin/flash-sales", "/admin/coupons", "/admin/bundles", "/admin/campaigns"],
+        label: "Promotions",
+        icon: Megaphone,
+      },
     ],
   },
   {
     label: "Content",
-    items: [
-      { href: "/admin/homepage", label: "Homepage", icon: LayoutTemplate },
-      { href: "/admin/banners", label: "Banners", icon: ImageIcon },
-    ],
-  },
-  {
-    label: "Marketing",
-    items: [{ href: "/admin/campaigns", label: "Campaigns", icon: Megaphone }],
+    // Banners lives behind this one entry via ContentSubNav.
+    items: [{ href: "/admin/homepage", match: ["/admin/homepage", "/admin/banners"], label: "Content", icon: LayoutTemplate }],
   },
   {
     label: "Support",
-    items: [
-      { href: "/admin/feedback", label: "Feedback", icon: MessageSquare },
-      { href: "/admin/reviews", label: "Reviews", icon: Star },
-    ],
+    // Reviews lives behind this one entry via SupportSubNav.
+    items: [{ href: "/admin/feedback", match: ["/admin/feedback", "/admin/reviews"], label: "Support", icon: MessageSquare }],
   },
   {
     label: "System",
     // Payment Methods, Social Links, Redirects, Team, and Audit Log all live behind this one entry
     // now via SettingsSubNav — "configure once, revisit rarely" pages no longer each get top-level
     // sidebar real estate. See settings-subnav.tsx.
-    items: [{ href: "/admin/settings", label: "Settings", icon: Settings }],
+    items: [
+      {
+        href: "/admin/settings",
+        match: [
+          "/admin/settings",
+          "/admin/sms-notifications",
+          "/admin/payment-methods",
+          "/admin/social-links",
+          "/admin/redirects",
+          "/admin/team",
+          "/admin/audit-log",
+        ],
+        label: "Settings",
+        icon: Settings,
+      },
+    ],
   },
 ];
 
@@ -180,8 +200,8 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                 <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">{section.label}</p>
               )}
               <div className="space-y-0.5">
-                {section.items.map(({ href, label, icon: Icon }) => {
-                  const active = pathname.startsWith(href);
+                {section.items.map(({ href, match, label, icon: Icon }) => {
+                  const active = (match ?? [href]).some((prefix) => pathname.startsWith(prefix));
                   return (
                     <Link
                       key={href}
@@ -261,9 +281,13 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
         {renderNav({ collapse: collapsed, mobileDrawer: false })}
       </aside>
 
-      {/* Mobile: off-canvas drawer — always full width/labels, independent of the desktop preference */}
+      {/* Mobile: off-canvas drawer — always full width/labels, independent of the desktop preference.
+          z-50, not z-40: this is a full-screen nav overlay, the same role as Modal/Drawer (both
+          z-50) — at z-40 it tied with page-level floating bars like the Orders bulk-action bar
+          (also fixed, z-40), and on a tie the later-in-DOM element wins, so that bar rendered on
+          top of the open drawer instead of being covered by it. */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 animate-fade-in bg-ink-950/50 backdrop-blur-sm" onClick={onCloseMobile} />
           <aside
             ref={drawerRef}

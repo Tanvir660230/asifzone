@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { bdPhoneSchema, nullableBdPhone, nullableString, paginationQuerySchema } from "./common";
+import { bdPhoneSchema, nullableBdPhone, nullableEmail, nullableString, paginationQuerySchema } from "./common";
 import { BD_DIVISIONS } from "./order";
 
 export const customerRegisterSchema = z.object({
@@ -104,6 +104,17 @@ export const customerListQuerySchema = paginationQuerySchema.extend({
   sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
+/** Admin-created customer — e.g. someone who messaged on Facebook/WhatsApp instead of ordering
+ * through the storefront. Phone is required (it's how the admin actually knows this person and how
+ * they'd be reached for delivery), email is optional. Deduped against existing customers by
+ * phone/email in customer.service.ts's createCustomerAdmin, same as guest checkout. */
+export const createCustomerAdminSchema = z.object({
+  name: z.string().min(1, "Enter a name").max(200),
+  phone: bdPhoneSchema(),
+  email: nullableEmail(),
+  adminNotes: nullableString(2000),
+});
+
 export const adjustRewardPointsSchema = z.object({
   points: z.number().int().refine((v) => v !== 0, "Point adjustment cannot be zero"),
   reason: z.string().max(200).optional(),
@@ -135,4 +146,5 @@ export type CustomerTag = z.infer<typeof customerTagEnum>;
 export type AdjustRewardPointsInput = z.infer<typeof adjustRewardPointsSchema>;
 export type UnsubscribeEmailInput = z.infer<typeof unsubscribeEmailSchema>;
 export type UpdateCustomerAdminFieldsInput = z.infer<typeof updateCustomerAdminFieldsSchema>;
+export type CreateCustomerAdminInput = z.infer<typeof createCustomerAdminSchema>;
 export type SendAdHocSmsInput = z.infer<typeof sendAdHocSmsSchema>;

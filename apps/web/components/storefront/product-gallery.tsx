@@ -107,9 +107,18 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
         // desktop windows (laptop, browser zoom), pushing price/Add to Cart off-screen with no
         // hint anything was below. The cap only ever engages when that would happen; a normal
         // window never hits it.
+        role="button"
+        tabIndex={0}
+        aria-label={`Open zoomed view of ${productName}`}
         className="group relative aspect-square max-h-[70vh] flex-1 cursor-zoom-in touch-pan-y select-none overflow-hidden rounded-xl bg-ink-100"
         onMouseMove={handleMouseMove}
         onClick={handleImageClick}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleImageClick();
+          }
+        }}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
       >

@@ -406,6 +406,7 @@ function CheckoutForm() {
                 <div className="flex gap-2">
                   <Input
                     placeholder="Coupon code"
+                    aria-label="Coupon code"
                     value={couponInput}
                     onChange={(e) => setCouponInput(e.target.value)}
                     className="h-9"

@@ -54,6 +54,7 @@ import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-me
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
+import { OrdersSubNav } from "@/components/admin/orders-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
@@ -987,6 +988,8 @@ export default function OrdersPage() {
         }
       />
 
+      <OrdersSubNav />
+
       {tab === "active" && (
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
           {stats ? (
@@ -1020,7 +1023,15 @@ export default function OrdersPage() {
           inner scroll box) — nesting a second vertical-scroll region inside an already-scrolling
           page made the mouse wheel scroll the tiny table box first before the page would move,
           which read as broken/janky. Horizontal scroll (for narrow viewports) is unaffected. */}
-      <div className="sticky top-14 z-30 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50/95 px-4 pb-3 pt-2.5 backdrop-blur-sm sm:-mx-8 sm:px-8">
+      {/* z-10, not higher: the app shell's header (components/admin/sidebar.tsx's neighboring
+          layout.tsx) is a sibling stacking context at z-20, and its notification-bell dropdown
+          only out-ranks siblings *within* the header — a bar here at z-20+ would paint in front of
+          the header (and the dropdown) instead of tucking underneath it once scrolled. Matches the
+          equivalent bar on the Customers and Orders/Print Labels pages. */}
+      {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx: this floats over the
+          scrolling order rows (order #, status pills), and translucency there let row text visibly
+          bleed/cut through the bar's bottom edge as it scrolled underneath. */}
+      <div className="sticky top-14 z-10 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50 px-4 pb-3 pt-2.5 sm:-mx-8 sm:px-8">
         {isOwner && (
           <div className="flex items-center gap-1">
             {(["active", "trash"] as const).map((t) => (
@@ -1343,7 +1354,12 @@ export default function OrdersPage() {
               <th className="w-10 px-3 py-2">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="sticky left-0 z-20 bg-ink-50/70 px-3 py-2">
+              {/* z-[1], matching the frozen column's <td> below and the identical pattern on the
+                  Products page — not z-20: that tied with the sticky filter bar above (z-10) and the
+                  app shell header (z-20) in the same stacking context, so as this non-sticky header
+                  row scrolled past them, it painted in FRONT of both instead of being covered by
+                  them, showing up as a floating "Order" box overlapping the tabs/header on scroll. */}
+              <th className="sticky left-0 z-[1] bg-ink-50/70 px-3 py-2">
                 <SortableHeader column="orderNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                   Order
                 </SortableHeader>

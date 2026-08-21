@@ -134,6 +134,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
               type="number"
               min={0}
               placeholder={String(facets.minPrice)}
+              aria-label="Minimum price"
               value={minPriceInput}
               onChange={(e) => setMinPriceInput(e.target.value)}
               className="h-9 w-full rounded border border-ink-200 px-2 text-sm focus:border-brass-400"
@@ -143,6 +144,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
               type="number"
               min={0}
               placeholder={String(facets.maxPrice)}
+              aria-label="Maximum price"
               value={maxPriceInput}
               onChange={(e) => setMaxPriceInput(e.target.value)}
               className="h-9 w-full rounded border border-ink-200 px-2 text-sm focus:border-brass-400"

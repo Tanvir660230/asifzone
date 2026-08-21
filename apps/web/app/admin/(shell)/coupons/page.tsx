@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
+import { PromotionsSubNav } from "@/components/admin/promotions-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { CouponForm } from "@/components/admin/coupon-form";
@@ -171,6 +172,8 @@ export default function CouponsPage() {
           )
         }
       />
+
+      <PromotionsSubNav />
 
       <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
         {(["active", "trash"] as const).map((t) => (

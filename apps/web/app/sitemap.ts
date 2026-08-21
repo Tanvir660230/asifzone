@@ -29,9 +29,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [{ tree }, products] = await Promise.all([getCategoryTree(), fetchAllProducts()]);
   const categories = flattenCategories(tree);
 
+  const staticPages = ["/faq", "/contact", "/privacy-policy", "/terms", "/shipping-returns"];
+
   return [
     { url: siteUrl, changeFrequency: "daily", priority: 1 },
     { url: `${siteUrl}/search`, changeFrequency: "daily", priority: 0.5 },
+    ...staticPages.map((path) => ({
+      url: `${siteUrl}${path}`,
+      changeFrequency: "monthly" as const,
+      priority: 0.3,
+    })),
     ...categories.map((c) => ({
       url: `${siteUrl}/category/${c.slug}`,
       lastModified: c.updatedAt,

@@ -291,7 +291,8 @@ export function SearchOverlay() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search products…"
-            className="min-w-0 flex-1 border-none bg-transparent text-base text-ink-900 outline-none placeholder:text-ink-400"
+            aria-label="Search products"
+            className="min-w-0 flex-1 rounded border-none bg-transparent text-base text-ink-900 outline-none placeholder:text-ink-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900"
           />
           {query && (
             <button

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { BD_ALL_DISTRICTS, normalizeBdPhone, type CustomerTag } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -147,6 +148,12 @@ export default function CustomersPage() {
   const [bulkSmsOpen, setBulkSmsOpen] = useState(false);
   const [bulkSmsBody, setBulkSmsBody] = useState("");
 
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newNotes, setNewNotes] = useState("");
+
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [district, setDistrict] = useState("");
   const [minSpend, setMinSpend] = useState("");
@@ -242,6 +249,32 @@ export default function CustomersPage() {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Bulk SMS failed"),
   });
 
+  function resetAddCustomerForm() {
+    setNewName("");
+    setNewPhone("");
+    setNewEmail("");
+    setNewNotes("");
+  }
+
+  const addCustomerMutation = useMutation({
+    mutationFn: () =>
+      adminCustomersApi.createCustomer({
+        name: newName.trim(),
+        phone: newPhone.trim(),
+        email: newEmail.trim() || null,
+        adminNotes: newNotes.trim() || null,
+      }),
+    onSuccess: ({ customer }) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-customers"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-customer-stats"] });
+      toast.success(`Added ${customer.name}`);
+      setAddCustomerOpen(false);
+      resetAddCustomerForm();
+      setDrawer({ id: customer.id });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't add customer"),
+  });
+
   // Shared between the desktop table row and the mobile card (below) so the two views can't drift —
   // same reasoning as the Orders admin page's renderStatusCell/renderRowActions split.
   function renderTagBadge(customer: (typeof items)[number]) {
@@ -303,7 +336,15 @@ export default function CustomersPage() {
 
   return (
     <div>
-      <PageHeader title="Customers" description="Accounts registered on the storefront, with orders, spend, and marketing tools." />
+      <PageHeader
+        title="Customers"
+        description="Accounts registered on the storefront, with orders, spend, and marketing tools."
+        action={
+          <Button size="sm" onClick={() => setAddCustomerOpen(true)}>
+            <UserPlus size={14} /> Add customer
+          </Button>
+        }
+      />
 
       <div className={cn("mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6")}>
         {stats ? (
@@ -332,7 +373,10 @@ export default function CustomersPage() {
         )}
       </div>
 
-      <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50/95 px-4 pb-4 pt-3 backdrop-blur-sm sm:-mx-8 sm:px-8">
+      {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx and the Orders page's
+          equivalent bar: this floats over the scrolling customer rows, and translucency there let
+          row text visibly bleed/cut through the bar's bottom edge as it scrolled underneath. */}
+      <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50 px-4 pb-4 pt-3 sm:-mx-8 sm:px-8">
         <div className="space-y-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Tag</span>
@@ -541,7 +585,12 @@ export default function CustomersPage() {
                 <th className="w-10 px-4 py-3">
                   <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
                 </th>
-                <th className="sticky left-0 z-20 bg-ink-50 px-4 py-3">
+                {/* z-[1], matching the frozen column's <td> below and the identical pattern on the
+                    Products page — not z-20: that tied with the sticky filter bar above (z-10) and
+                    the app shell header (z-20) in the same stacking context, so as this non-sticky
+                    header row scrolled past them, it painted in FRONT of both instead of being
+                    covered by them, showing up as a floating box overlapping the tabs/header. */}
+                <th className="sticky left-0 z-[1] bg-ink-50 px-4 py-3">
                   <SortableHeader column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Customer
                   </SortableHeader>
@@ -740,6 +789,67 @@ export default function CustomersPage() {
               onClick={() => bulkSmsMutation.mutate()}
             >
               <Send size={14} /> Send to {selected.size}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={addCustomerOpen}
+        onClose={() => {
+          setAddCustomerOpen(false);
+          resetAddCustomerForm();
+        }}
+        title="Add customer"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-ink-500">
+            For someone who messaged you directly instead of ordering through the site — you can place orders for
+            them once they're saved here.
+          </p>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Name</label>
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Full name" autoFocus />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Phone</label>
+            <Input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="01XXXXXXXXX" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Email (optional)</label>
+            <Input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="name@example.com"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-ink-500">Notes (optional)</label>
+            <Textarea
+              value={newNotes}
+              onChange={(e) => setNewNotes(e.target.value)}
+              rows={3}
+              placeholder="How you know them, what they're interested in, etc."
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAddCustomerOpen(false);
+                resetAddCustomerForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!newName.trim() || !newPhone.trim() || addCustomerMutation.isPending}
+              onClick={() => addCustomerMutation.mutate()}
+            >
+              <UserPlus size={14} /> Add customer
             </Button>
           </div>
         </div>

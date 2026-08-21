@@ -28,9 +28,11 @@ interface Props {
 }
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
-  const query = (await searchParams).q?.trim();
+  const resolvedSearchParams = await searchParams;
+  const query = resolvedSearchParams.q?.trim();
   const title = query ? `Search results for "${query}"` : "All Products";
-  const url = `${getSiteUrl()}/search`;
+  const page = Number(resolvedSearchParams.page) || 1;
+  const url = `${getSiteUrl()}/search${page > 1 ? `?page=${page}` : ""}`;
   return {
     title,
     alternates: { canonical: url },

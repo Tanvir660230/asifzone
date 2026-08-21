@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
+import { SupportSubNav } from "@/components/admin/support-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
@@ -80,6 +81,8 @@ export default function AdminReviewsPage() {
   return (
     <div>
       <PageHeader title="Reviews" description="Moderate customer product reviews before they go live." />
+
+      <SupportSubNav />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-ink-100">
         <div className="flex gap-1">

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
+import { OrdersSubNav } from "@/components/admin/orders-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
@@ -52,6 +53,8 @@ export default function AdminReturnRequestsPage() {
   return (
     <div>
       <PageHeader title="Return Requests" />
+
+      <OrdersSubNav />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">

@@ -48,6 +48,7 @@ export function NewsletterForm({ variant = "dark", stacked = false, className }:
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email address"
+          aria-label="Email address"
           className={cn(
             "h-10 min-w-0 flex-1 rounded-full border bg-transparent px-4 text-sm transition-colors duration-200 ease-smooth placeholder:opacity-60",
             variant === "dark"

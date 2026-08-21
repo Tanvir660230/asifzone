@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
+import { ProductsSubNav } from "@/components/admin/products-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
@@ -221,6 +222,8 @@ export default function ProductsPage() {
           </div>
         }
       />
+
+      <ProductsSubNav />
 
       <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
         {(["active", "trash"] as const).map((t) => (

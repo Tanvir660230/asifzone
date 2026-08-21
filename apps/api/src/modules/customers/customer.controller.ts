@@ -170,6 +170,11 @@ export const getCustomerStatsAdmin = asyncHandler(async (_req: Request, res: Res
   res.json(await customerService.getCustomerStatsAdmin());
 });
 
+export const createCustomerAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const customer = await customerService.createCustomerAdmin(req.body);
+  res.status(201).json({ customer });
+});
+
 export const getCustomerDetailAdmin = asyncHandler(async (req: Request, res: Response) => {
   res.json({ customer: await customerService.getCustomerDetailAdmin(req.params.id!) });
 });

@@ -236,7 +236,10 @@ export default function PrintLabelsPage() {
 
   return (
     <div className="min-h-screen bg-ink-50/60">
-      <div className="sticky top-14 z-10 border-b border-ink-200 bg-white/95 backdrop-blur">
+      {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx: this floats over the
+          scrolling label list, and translucency there let row text visibly bleed/cut through the
+          bar's bottom edge as it scrolled underneath. */}
+      <div className="sticky top-14 z-10 border-b border-ink-200 bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-6 py-4 sm:px-10">
           <Link
             href="/admin/orders"

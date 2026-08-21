@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { HomepageSection, HomepageSectionType, UpdateHomepageSectionInput } from "@clothing-brand/shared";
 import { PageHeader } from "@/components/admin/page-header";
+import { ContentSubNav } from "@/components/admin/content-subnav";
 import { SectionList } from "@/components/admin/homepage/section-list";
 import { AddSectionMenu } from "@/components/admin/homepage/add-section-menu";
 import { SectionConfigPanel, type SectionSavePayload } from "@/components/admin/homepage/section-config-panel";
@@ -85,6 +86,8 @@ export default function HomepageBuilderPage() {
         title="Homepage Builder"
         description="Drag to reorder, toggle sections on or off, and edit each section's content."
       />
+
+      <ContentSubNav />
 
       {isLoading && <p className="text-ink-400">Loading…</p>}
       {!isLoading && (

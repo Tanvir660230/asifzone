@@ -18,6 +18,7 @@ import {
   pushSubscribeSchema,
   pushUnsubscribeQuerySchema,
   updateCustomerAdminFieldsSchema,
+  createCustomerAdminSchema,
   sendAdHocSmsSchema,
   bulkSendSmsSchema,
 } from "@clothing-brand/shared";
@@ -112,6 +113,12 @@ customerRouter.get(
   requireAdmin,
   validate(customerListQuerySchema, "query"),
   customerController.listCustomersAdmin,
+);
+customerRouter.post(
+  "/admin",
+  requireAdmin,
+  validate(createCustomerAdminSchema),
+  customerController.createCustomerAdmin,
 );
 // Must come before "/admin/:id" — otherwise Express matches "stats" as the :id param.
 customerRouter.get("/admin/stats", requireAdmin, customerController.getCustomerStatsAdmin);

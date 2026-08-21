@@ -17,6 +17,7 @@ import {
   type PushSubscribeInput,
   type CustomerTag,
   type UpdateCustomerAdminFieldsInput,
+  type CreateCustomerAdminInput,
   type CustomerSmsVars,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
@@ -831,6 +832,26 @@ export async function getCustomerDetailAdmin(customerId: string) {
     smsHistory,
     timeline,
   };
+}
+
+/** Manual add for someone who reached out (DM/call) instead of ordering through the storefront —
+ * unlike findOrCreateGuestCustomer this rejects a phone/email that already matches an existing
+ * customer rather than silently reusing it, since the admin is consciously creating a new record
+ * and a silent merge would look like their new customer vanished. */
+export async function createCustomerAdmin(input: CreateCustomerAdminInput) {
+  const email = input.email ? normalizeEmail(input.email) : null;
+  const or: Prisma.CustomerWhereInput[] = [{ phone: input.phone }];
+  if (email) or.push({ email });
+
+  const existing = await prisma.customer.findFirst({ where: { OR: or }, select: { id: true, name: true } });
+  if (existing) {
+    throw AppError.conflict(`A customer with this phone or email already exists (${existing.name})`);
+  }
+
+  return prisma.customer.create({
+    data: { name: input.name, phone: input.phone, email, adminNotes: input.adminNotes ?? null },
+    select: adminSelect,
+  });
 }
 
 export async function updateCustomerAdminFields(customerId: string, input: UpdateCustomerAdminFieldsInput) {

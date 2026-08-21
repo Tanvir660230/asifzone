@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, MessageCircleMore, MessageSquareText, Phone, X } from "lucide-react";
@@ -90,9 +90,52 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
       window.removeEventListener("resize", checkNearBottom);
     };
   }, []);
+  // The fixed corner this button occupies isn't exclusively ours: ProductCard's own quick-add
+  // button (marked `data-fab-collision`) sits at its card's bottom-right corner too, and product
+  // carousels (Trending/Recently Viewed etc.) scroll horizontally on their own — shifting this
+  // button sideways (see the right-20 note below) fully separates the two on a static grid, but a
+  // carousel card can still slide to any x position, including right under us. Rather than chase
+  // every layout, just watch for actual overlap and duck out of the way when it happens.
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [overlappingCard, setOverlappingCard] = useState(false);
   useEffect(() => {
-    if (nearFooter) setOpen(false);
-  }, [nearFooter]);
+    let raf = 0;
+    function checkOverlap() {
+      raf = 0;
+      const widget = widgetRef.current;
+      if (!widget) return;
+      const widgetBox = widget.getBoundingClientRect();
+      const cardButtons = document.querySelectorAll<HTMLElement>("[data-fab-collision]");
+      let overlaps = false;
+      for (const el of cardButtons) {
+        const box = el.getBoundingClientRect();
+        if (box.left < widgetBox.right && box.right > widgetBox.left && box.top < widgetBox.bottom && box.bottom > widgetBox.top) {
+          overlaps = true;
+          break;
+        }
+      }
+      setOverlappingCard(overlaps);
+    }
+    function scheduleCheck() {
+      if (!raf) raf = requestAnimationFrame(checkOverlap);
+    }
+    checkOverlap();
+    // capture: true — a carousel's own scroll happens inside its `overflow-x-auto` container, and
+    // scroll events don't bubble, but they do fire on ancestors during the capture phase, so this
+    // one listener catches both the page scrolling and any carousel scrolling independently of it.
+    document.addEventListener("scroll", scheduleCheck, { passive: true, capture: true });
+    window.addEventListener("resize", scheduleCheck);
+    return () => {
+      document.removeEventListener("scroll", scheduleCheck, { capture: true });
+      window.removeEventListener("resize", scheduleCheck);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  const shouldHide = nearFooter || overlappingCard;
+  useEffect(() => {
+    if (shouldHide) setOpen(false);
+  }, [shouldHide]);
 
   const whatsapp = socialLinks.find((l) => l.platform === "WHATSAPP" && l.isActive);
 
@@ -145,9 +188,15 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
 
   return (
     <>
+      {/* right-20, not flush to the edge (sm:right-6 once there's room) — on a narrow 2-column
+          product grid, ProductCard's own quick-add button sits at the card's bottom-right corner
+          (`bottom-3 right-3`, see product-card.tsx), which lands in almost the exact same viewport
+          pocket as a corner-flush FAB. That made this button visually sit on top of — and, being
+          z-40, actually intercept taps meant for — whatever card happened to scroll underneath it. */}
       <div
-        className={`fixed right-4 z-40 flex flex-col items-end gap-3 transition-[bottom,opacity] duration-200 ease-smooth sm:right-6 ${bottomClass} ${
-          nearFooter ? "pointer-events-none opacity-0" : "opacity-100"
+        ref={widgetRef}
+        className={`fixed right-20 z-40 flex flex-col items-end gap-3 transition-[bottom,opacity] duration-200 ease-smooth sm:right-6 ${bottomClass} ${
+          shouldHide ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
       >
         <AnimatePresence>
@@ -169,7 +218,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                     rel={action.external ? "noreferrer" : undefined}
                     onClick={() => setOpen(false)}
                     aria-label={action.label}
-                    className="glass glossy flex h-11 w-11 items-center justify-center rounded-full text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
+                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
                   >
                     {action.icon}
                   </Link>
@@ -178,7 +227,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                     type="button"
                     onClick={action.onClick}
                     aria-label={action.label}
-                    className="glass glossy flex h-11 w-11 items-center justify-center rounded-full text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
+                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
                   >
                     {action.icon}
                   </button>
@@ -194,7 +243,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
           aria-expanded={open}
           animate={open ? { scale: 1 } : { scale: [1, 1.05, 1] }}
           transition={open ? { duration: 0.15 } : { duration: 2.4, repeat: 2, repeatDelay: 1, ease: "easeInOut" }}
-          className="glass glossy flex h-[52px] w-[52px] items-center justify-center rounded-full text-ink-900 shadow-floatLg"
+          className="glass glossy flex h-11 w-11 items-center justify-center rounded-full text-ink-900 shadow-floatLg"
         >
           <motion.span initial={false} animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
             {open ? <X size={24} /> : <MessageCircle size={24} />}

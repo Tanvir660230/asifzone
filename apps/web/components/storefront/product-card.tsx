@@ -143,6 +143,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           <button
             onClick={handleQuickAdd}
             aria-label="Quick add to cart"
+            data-fab-collision
             className="glass glossy absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-float transition-all duration-300 ease-smooth hover:scale-110 hover:bg-brass-400 active:scale-95 lg:translate-y-2 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
           >
             <ShoppingBag size={16} />

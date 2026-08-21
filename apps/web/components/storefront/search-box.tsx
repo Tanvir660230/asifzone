@@ -20,6 +20,7 @@ export function SearchBox({ initialValue = "" }: { initialValue?: string }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Search for products, categories, styles…"
+        aria-label="Search for products, categories, styles"
         className="h-14 w-full rounded-full border border-ink-200 bg-cream-50 pl-12 pr-[6.5rem] text-sm text-ink-900 shadow-sm outline-none transition-all duration-200 ease-smooth placeholder:text-ink-400 focus:border-brass-400 focus:shadow-glow sm:pr-28 sm:text-base"
       />
       <button

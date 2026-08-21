@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
+import { ContentSubNav } from "@/components/admin/content-subnav";
 import { BannerForm } from "@/components/admin/banner-form";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -112,6 +113,8 @@ export default function BannersPage() {
           </Button>
         }
       />
+
+      <ContentSubNav />
 
       {isLoading && <p className="text-ink-400">Loading…</p>}
       {!isLoading && banners.length === 0 && (

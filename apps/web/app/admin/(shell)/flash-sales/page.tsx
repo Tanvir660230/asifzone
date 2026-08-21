@@ -15,6 +15,7 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
+import { PromotionsSubNav } from "@/components/admin/promotions-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { ProductPicker } from "@/components/admin/product-picker";
@@ -93,6 +94,8 @@ export default function FlashSalesPage() {
           </Button>
         }
       />
+
+      <PromotionsSubNav />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">

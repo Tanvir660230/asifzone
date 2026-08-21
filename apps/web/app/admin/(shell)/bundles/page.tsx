@@ -11,6 +11,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { BundleForm } from "@/components/admin/bundle-form";
 import { PageHeader } from "@/components/admin/page-header";
+import { PromotionsSubNav } from "@/components/admin/promotions-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as bundlesApi from "@/lib/api/admin-bundles";
@@ -92,7 +93,10 @@ export default function BundlesPage() {
           </Button>
         }
       />
-      <p className="mb-4 -mt-2 text-sm text-ink-500">
+
+      <PromotionsSubNav />
+
+      <p className="mb-4 text-sm text-ink-500">
         Cross-sell rules — buying from an anchor category (e.g. Panjabi) suggests products from the categories
         below it and unlocks a discount once enough of them are in the cart.
       </p>
