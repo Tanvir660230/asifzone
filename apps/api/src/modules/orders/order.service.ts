@@ -25,7 +25,7 @@ import { evaluateCoupon, incrementCouponUsage } from "../coupons/coupon.service"
 import { evaluateBundleForItems } from "../bundles/bundle.service";
 import { resolveCartLines, effectivePrice } from "./cart-lines";
 import { getSettings } from "../settings/settings.service";
-import { awardDeliveryPoints, findOrCreateGuestCustomer } from "../customers/customer.service";
+import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 
@@ -267,6 +267,14 @@ export async function insertOrderRecord(
   // abandonment sweep must not fire on it.
   if (customerId) {
     clearCart(customerId).catch((err) => console.error("[cart] clear after order failed:", err));
+
+    // Same Steadfast fraud_check the admin used to trigger by hand with "Check score" on the order
+    // list — fired automatically the moment the order lands, so the delivery-score badge is already
+    // populated by the time anyone opens the order. Fire-and-forget: Steadfast being slow/down must
+    // never delay or fail checkout.
+    checkAndUpdateDeliveryScore(customerId, order.customerPhone).catch((err) =>
+      console.error(`[courier] auto delivery-score check failed for order ${order.orderNumber}:`, err),
+    );
   }
 
   for (const item of input.items) {

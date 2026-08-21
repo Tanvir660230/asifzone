@@ -6,9 +6,9 @@ import {
   createSteadfastConsignment,
   createBulkSteadfastConsignments,
   getSteadfastStatusByConsignmentId,
-  getSteadfastFraudCheck,
 } from "../../lib/steadfast";
 import { getOrderById, updateOrderStatus } from "../orders/order.service";
+import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 
 // PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
 // anything further for this consignment) even though it still needs an admin to reconcile which
@@ -345,18 +345,7 @@ export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkD
 
   for (const [customerId, group] of groupsByCustomerId) {
     try {
-      const phone = normalizeBdPhone(group[0]!.customerPhone);
-      const result = await getSteadfastFraudCheck(phone);
-      await prisma.customer.update({
-        where: { id: customerId },
-        data: {
-          deliveryTotalParcels: result.totalParcels,
-          deliverySuccessParcels: result.successParcels,
-          deliveryCancelledParcels: result.cancelledParcels,
-          deliverySuccessRate: result.successRate,
-          deliveryScoreCheckedAt: new Date(),
-        },
-      });
+      const result = await checkAndUpdateDeliveryScore(customerId, group[0]!.customerPhone);
       for (const order of group) {
         checked.push({ orderId: order.id, orderNumber: order.orderNumber, successRate: result.successRate, totalParcels: result.totalParcels });
       }

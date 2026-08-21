@@ -5,6 +5,7 @@ import { OAuth2Client } from "google-auth-library";
 import {
   renderCustomerSmsTemplate,
   looksLikeFakePhone,
+  normalizeBdPhone,
   type CustomerRegisterInput,
   type CustomerLoginInput,
   type VerifyOtpInput,
@@ -25,6 +26,7 @@ import { mapWithConcurrency } from "../../lib/concurrency";
 import { signCustomerAccessToken, signCustomerRefreshToken, verifyCustomerRefreshToken } from "../../lib/customer-jwt";
 import { sendMail } from "../../lib/mailer";
 import { sendSms } from "../../lib/sms";
+import { getSteadfastFraudCheck } from "../../lib/steadfast";
 import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken, signPayload, constantTimeEqual } from "../../lib/token-hash";
 import { env } from "../../config/env";
@@ -942,6 +944,27 @@ export async function awardDeliveryPoints(customerId: string, orderId: string, o
     prisma.rewardPointsEntry.create({ data: { customerId, orderId, points, reason: "order_delivered" } }),
     prisma.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } }),
   ]);
+}
+
+/** One Steadfast fraud_check call for a customer, cached onto their Customer row (fraud_check is
+ * keyed by phone, not order, so every one of that customer's orders shares the same cached score).
+ * Shared by the auto-check fired right after checkout (order.service.ts's insertOrderRecord) and
+ * the admin "Check score" bulk action (courier.service.ts's checkDeliveryScoresBulk). Throws on
+ * failure — the checkout call site must catch and log rather than let it fail the order. */
+export async function checkAndUpdateDeliveryScore(customerId: string, rawPhone: string) {
+  const phone = normalizeBdPhone(rawPhone);
+  const result = await getSteadfastFraudCheck(phone);
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: {
+      deliveryTotalParcels: result.totalParcels,
+      deliverySuccessParcels: result.successParcels,
+      deliveryCancelledParcels: result.cancelledParcels,
+      deliverySuccessRate: result.successRate,
+      deliveryScoreCheckedAt: new Date(),
+    },
+  });
+  return result;
 }
 
 export async function adjustRewardPoints(customerId: string, points: number, reason: string) {
