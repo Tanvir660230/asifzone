@@ -805,7 +805,7 @@ export default function CustomersPage() {
         <div className="space-y-4">
           <p className="text-sm text-ink-500">
             For someone who messaged you directly instead of ordering through the site — you can place orders for
-            them once they're saved here.
+            them once they&rsquo;re saved here.
           </p>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">Name</label>
