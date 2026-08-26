@@ -20,6 +20,7 @@ import {
 import { LabelCaptureHost } from "@/components/orders/label-capture-host";
 import { PrintLabelPreview } from "@/components/orders/print-label-preview";
 import { PrintLabelOptions, type PrintOptions, type CaptureState } from "@/components/orders/print-label-options";
+import { loadStoredPrintPrefs, saveStoredPrintPrefs } from "@/lib/label-print-prefs";
 
 function buildFilename(orderCount: number): string {
   const now = new Date();
@@ -57,6 +58,49 @@ export default function PrintLabelsPage() {
     copies: 1,
     selectedOrderIds: new Set<string>(),
   }));
+
+  // Restores whichever template/orientation/margin/copies the admin printed with last time, so this
+  // page opens on their usual label size instead of always resetting to a4-6up — see
+  // label-print-prefs.ts's own doc comment. Deliberately a mount-only effect reading localStorage
+  // (not a lazy useState initializer) to match this file's existing SSR-safety convention (see the
+  // `ids` state above): the very first render has to match what the server produced, so the
+  // stored-prefs read happens after mount, not during it.
+  //
+  // `prefsLoaded` gates the persist effect right below so it can never fire using this render's
+  // still-default `options` and stomp a real stored preference before that preference has actually
+  // been applied to state — see that effect's own comment for the exact race this closes.
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  useEffect(() => {
+    const stored = loadStoredPrintPrefs();
+    setOptions((prev) => {
+      const templateId = stored.templateId ?? prev.templateId;
+      const nextTemplate = getTemplate(templateId);
+      return {
+        ...prev,
+        templateId,
+        orientation: nextTemplate.orientationSwappable && stored.orientation ? stored.orientation : "portrait",
+        marginMm: stored.marginMm ?? nextTemplate.defaultMarginMm,
+        copies: stored.copies ?? prev.copies,
+      };
+    });
+    setPrefsLoaded(true);
+  }, []);
+
+  // Persists every template/orientation/margin/copies change back to localStorage so the restore
+  // effect above has something real to find next visit. `selectedOrderIds` is deliberately excluded
+  // — that's a per-batch choice (which orders are loaded right now), not a printer preference.
+  // Guarded on `prefsLoaded` so this can't run before the restore effect has applied the stored
+  // values to `options`, which would otherwise overwrite a real saved preference with this render's
+  // pre-hydration defaults on every single page load.
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    saveStoredPrintPrefs({
+      templateId: options.templateId,
+      orientation: options.orientation,
+      marginMm: options.marginMm,
+      copies: options.copies,
+    });
+  }, [prefsLoaded, options.templateId, options.orientation, options.marginMm, options.copies]);
 
   // Default to "every loaded order selected" exactly once — a ref guard (not a size===0 check) so
   // intentionally deselecting everything later doesn't get silently re-selected on the next render.
@@ -259,11 +303,25 @@ export default function PrintLabelsPage() {
       <div className="mx-auto max-w-7xl p-6 sm:p-10">
         <div className="mb-6 flex items-start gap-2.5 rounded-lg border border-ink-200 bg-white px-4 py-3 text-xs leading-relaxed text-ink-600">
           <Info size={15} className="mt-0.5 shrink-0 text-ink-400" />
-          <p>
-            This generates a real, exact-size PDF — in the print dialog it opens, confirm{" "}
-            <strong className="text-ink-900">Actual size / 100%</strong> is selected (not &ldquo;Fit to page&rdquo;), so every
-            label prints at its true physical dimensions.
-          </p>
+          <div>
+            <p>
+              This generates a real, exact-size PDF — in the print dialog it opens, confirm{" "}
+              <strong className="text-ink-900">Actual size / 100%</strong> is selected (not &ldquo;Fit to page&rdquo;), so every
+              label prints at its true physical dimensions.
+            </p>
+            {template.kind === "sticker" && (
+              <p className="mt-1.5">
+                Printing on a thermal sticker printer: set the printer&apos;s own paper size to{" "}
+                <strong className="text-ink-900">
+                  {geometry.pageWmm} × {geometry.pageHmm} mm
+                </strong>{" "}
+                in Windows (Printer Properties → Advanced → Paper Size) to match this template — a
+                mismatch here is the usual cause of a cropped or cut-off side. If a side is still
+                cut after that, recalibrate the printer&apos;s gap sensor for the current roll
+                (hold the Feed button while powering the printer on).
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
