@@ -5,6 +5,7 @@ export type LabelTemplateId =
   | "a4-6up"
   | "a4-8up"
   | "sticker-100x150"
+  | "sticker-76x76"
   | "sticker-80x50"
   | "sticker-60x40"
   | "sticker-50x30";
@@ -98,6 +99,25 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     kind: "sticker",
     pageWmm: 100,
     pageHmm: 150,
+    columns: 1,
+    rows: 1,
+    defaultMarginMm: 2,
+    orientationSwappable: false,
+    compact: false,
+  },
+  {
+    // 3"x3" thermal sticker rolls (common on GP-3120TUC-class printers) — 76.2mm is the exact
+    // inch-to-mm conversion (3 * 25.4), not rounded to 76, since even a fraction of a mm of drift
+    // compounds into a visibly cropped edge on a roll this small once the printer's own paper-size
+    // setting has to match it exactly (see the sticker guidance banner on the print-labels page).
+    // Not in the compact tier: at 76.2mm square the full ShippingLabel design (native ~95x91mm)
+    // scales down to ~80% — cramped is what forced the compact design onto 80x50/60x40/50x30
+    // (as low as ~55% scale there), but 80% still leaves the QR/packing-list/full layout legible.
+    id: "sticker-76x76",
+    name: "Sticker — 76 × 76mm (3 × 3\")",
+    kind: "sticker",
+    pageWmm: 76.2,
+    pageHmm: 76.2,
     columns: 1,
     rows: 1,
     defaultMarginMm: 2,
