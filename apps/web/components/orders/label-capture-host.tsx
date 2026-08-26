@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Order, StoreSettings } from "@clothing-brand/shared";
 import type { LabelTemplate, ResolvedGeometry } from "@/lib/label-templates";
 import { ShippingLabel } from "./shipping-label";
+import { ShippingLabelSquare } from "./shipping-label-square";
 import { ShippingLabelCompact, isCompactTemplateId } from "./shipping-label-compact";
 
 // ShippingLabel was hand-tuned for a ~95mm x 91mm cell (see its own doc comment) — every non-compact
@@ -83,7 +84,12 @@ export function LabelCaptureHost({ orders, store, template, geometry, onReady }:
           }}
           style={{ width: `${geometry.cellWmm}mm`, height: `${geometry.cellHmm}mm`, background: "#fff", overflow: "hidden" }}
         >
-          {isCompactTemplateId(template.id) ? (
+          {template.id === "sticker-76x76" ? (
+            // Own component, native-size render (no LabelScaleWrapper) — see ShippingLabelSquare's
+            // own doc comment for why this size gets a dedicated, non-scaled design rather than
+            // reusing ShippingLabel through the scale wrapper below.
+            <ShippingLabelSquare order={order} store={store} onBarcodeReady={() => markOrderReady(order.id)} />
+          ) : isCompactTemplateId(template.id) ? (
             <ShippingLabelCompact
               order={order}
               store={store}

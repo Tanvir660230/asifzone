@@ -111,14 +111,16 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     // compounds into a visibly cropped edge on a roll this small once the printer's own paper-size
     // setting has to match it exactly (see the sticker guidance banner on the print-labels page).
     //
-    // Runs through the compact tier now, not the full ShippingLabel scaled down — an earlier
-    // version of this template used the full design at its ~80% natural scale, reasoning that was
-    // generous compared to 80x50's ~55%. Real prints proved that wrong: the packing-list text and
-    // QR in that scaled-down design still came out too fine for a thermal head to reproduce
-    // cleanly. A purpose-built compact tier (see COMPACT_TIERS["sticker-76x76"] in
-    // shipping-label-compact.tsx) picks large absolute font sizes for this size directly, the same
-    // way 80x50/60x40/50x30 already do, instead of inheriting whatever a uniform scale-down of a
-    // bigger design happens to produce.
+    // Neither `compact` value actually fits this template — it gets its own dedicated component,
+    // ShippingLabelSquare, special-cased directly by id in label-capture-host.tsx rather than
+    // through this flag. Two things were tried and rejected first: the full ShippingLabel scaled
+    // down via LabelScaleWrapper (its own doc comment explains why — the packing list and QR came
+    // out too fine for a thermal head at the resulting ~76% scale), and ShippingLabelCompact's
+    // stripped-down style (rejected on the merchant's own design feedback: they wanted the original
+    // editorial look — logo, serif name, QR beside it, double-rule COD box — just bigger, not a
+    // plainer redesign). ShippingLabelSquare keeps that look, drops only the packing list to free
+    // enough room, and uses font sizes tuned directly for 76.2mm instead of a scaled-down value.
+    // `compact: false` here is nominal, not load-bearing — see ShippingLabelSquare's own comment.
     id: "sticker-76x76",
     name: "Sticker — 76 × 76mm (3 × 3\")",
     kind: "sticker",
@@ -128,7 +130,7 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 2,
     orientationSwappable: false,
-    compact: true,
+    compact: false,
   },
   {
     id: "sticker-80x50",
