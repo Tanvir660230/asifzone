@@ -62,7 +62,7 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
         ) : (
           <span className="text-[10px] font-bold uppercase tracking-wide">{store?.storeName ?? "Store"}</span>
         )}
-        <span className="shrink-0 truncate text-[8px] tracking-wide text-ink-400">{order.orderNumber}</span>
+        <span className="shrink-0 truncate text-[8px] tracking-wide text-ink-600">{order.orderNumber}</span>
       </div>
 
       {/* Recipient — the single most important block on the label, set in the brand's own display
@@ -77,8 +77,8 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
           <p className="truncate text-[13px] font-semibold leading-tight tabular-nums text-ink-800">
             {order.customerPhone}
           </p>
-          <p className="mt-1 truncate text-[10px] leading-snug text-ink-600">{order.shippingAddressLine}</p>
-          <p className="truncate text-[10px] leading-snug text-ink-500">
+          <p className="mt-1 truncate text-[10px] leading-snug text-ink-800">{order.shippingAddressLine}</p>
+          <p className="truncate text-[10px] leading-snug text-ink-800">
             {order.shippingArea}, {order.shippingDistrict}, {order.shippingDivision}
           </p>
         </div>
@@ -97,7 +97,7 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
           either needing color. */}
       {order.paymentMethod === "COD" ? (
         <div className="mt-2 flex items-baseline justify-between border-y-2 border-ink-900 py-1.5">
-          <span className="text-[8px] font-semibold uppercase tracking-[0.15em] text-ink-500">
+          <span className="text-[8px] font-semibold uppercase tracking-[0.15em] text-ink-700">
             Cash on delivery
           </span>
           <span className="text-[19px] font-extrabold leading-none tabular-nums text-ink-900">
@@ -106,8 +106,8 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
         </div>
       ) : (
         <div className="mt-2 flex items-baseline justify-between border-y border-ink-200 py-1">
-          <span className="text-[8px] font-semibold uppercase tracking-[0.15em] text-ink-400">Payment</span>
-          <span className="text-[10px] font-semibold text-ink-600">
+          <span className="text-[8px] font-semibold uppercase tracking-[0.15em] text-ink-700">Payment</span>
+          <span className="text-[10px] font-semibold text-ink-800">
             {order.paymentStatus === "PAID" ? "Paid online" : `Online — ${order.paymentStatus}`}
           </span>
         </div>
@@ -122,7 +122,7 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
           <p key={item.id} className={`truncate leading-snug text-ink-700 ${itemFontClass}`}>
             <span className="font-semibold text-ink-900">{item.quantity}×</span> {item.productNameSnapshot}
             {(item.sizeSnapshot || item.colorSnapshot) && (
-              <span className="text-ink-500">
+              <span className="text-ink-700">
                 {" "}
                 ({[item.sizeSnapshot, item.colorSnapshot].filter(Boolean).join(", ")})
               </span>
@@ -130,7 +130,7 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
           </p>
         ))}
         {extraItemCount > 0 && (
-          <p className="text-[7px] font-medium text-ink-500">
+          <p className="text-[7px] font-medium text-ink-700">
             +{extraItemCount} more item{extraItemCount === 1 ? "" : "s"}
           </p>
         )}
@@ -145,7 +145,7 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
           <BarcodeSvg value={barcodeValue} height={40} width={1.2} fontSize={9} onReady={onBarcodeReady} />
         </div>
         {booked ? (
-          <p className="mt-0.5 truncate text-[7.5px] text-ink-600">Parcel ID: {order.courierConsignmentId}</p>
+          <p className="mt-0.5 truncate text-[7.5px] text-ink-700">Parcel ID: {order.courierConsignmentId}</p>
         ) : (
           <p className="mt-0.5 inline-block rounded border border-ink-900 px-1.5 py-0.5 text-[7.5px] font-bold uppercase tracking-wide text-ink-900">
             Not booked with courier yet

@@ -129,7 +129,7 @@ export function ShippingLabelCompact({ order, store, templateId, onBarcodeReady 
             {store?.storeName ?? "Store"}
           </span>
         )}
-        <span className="shrink-0 truncate text-ink-400" style={{ fontSize: `${tier.orderNumberPx}px` }}>
+        <span className="shrink-0 truncate text-ink-600" style={{ fontSize: `${tier.orderNumberPx}px` }}>
           {order.orderNumber}
         </span>
       </div>
@@ -140,7 +140,7 @@ export function ShippingLabelCompact({ order, store, templateId, onBarcodeReady 
       <p className="truncate font-semibold leading-tight tabular-nums text-ink-800" style={{ fontSize: `${tier.phonePx}px` }}>
         {order.customerPhone}
       </p>
-      <p className="mt-0.5 truncate leading-snug text-ink-600" style={{ fontSize: `${tier.addressPx}px` }}>
+      <p className="mt-0.5 truncate leading-snug text-ink-800" style={{ fontSize: `${tier.addressPx}px` }}>
         {addressLine}
       </p>
 
@@ -149,7 +149,7 @@ export function ShippingLabelCompact({ order, store, templateId, onBarcodeReady 
           COD {formatPrice(order.total)}
         </p>
       ) : (
-        <p className="mt-1 truncate font-extrabold leading-none text-ink-700" style={{ fontSize: `${tier.codPx}px` }}>
+        <p className="mt-1 truncate font-extrabold leading-none text-ink-800" style={{ fontSize: `${tier.codPx}px` }}>
           Prepaid
         </p>
       )}
