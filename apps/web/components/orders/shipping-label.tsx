@@ -83,8 +83,11 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
           </p>
         </div>
         {booked && order.courierTrackingLink && (
+          // Bumped from 36 — a small QR with a proper quiet zone (see QrCodeSvg's own comment)
+          // still needs enough absolute size for its modules to survive a thermal head's real dot
+          // pitch; 44 keeps it well clear of the barcode row below without crowding the address.
           <div className="shrink-0 pt-0.5">
-            <QrCodeSvg value={order.courierTrackingLink} size={36} />
+            <QrCodeSvg value={order.courierTrackingLink} size={44} />
           </div>
         )}
       </div>

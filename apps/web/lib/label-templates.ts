@@ -110,9 +110,15 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     // inch-to-mm conversion (3 * 25.4), not rounded to 76, since even a fraction of a mm of drift
     // compounds into a visibly cropped edge on a roll this small once the printer's own paper-size
     // setting has to match it exactly (see the sticker guidance banner on the print-labels page).
-    // Not in the compact tier: at 76.2mm square the full ShippingLabel design (native ~95x91mm)
-    // scales down to ~80% — cramped is what forced the compact design onto 80x50/60x40/50x30
-    // (as low as ~55% scale there), but 80% still leaves the QR/packing-list/full layout legible.
+    //
+    // Runs through the compact tier now, not the full ShippingLabel scaled down — an earlier
+    // version of this template used the full design at its ~80% natural scale, reasoning that was
+    // generous compared to 80x50's ~55%. Real prints proved that wrong: the packing-list text and
+    // QR in that scaled-down design still came out too fine for a thermal head to reproduce
+    // cleanly. A purpose-built compact tier (see COMPACT_TIERS["sticker-76x76"] in
+    // shipping-label-compact.tsx) picks large absolute font sizes for this size directly, the same
+    // way 80x50/60x40/50x30 already do, instead of inheriting whatever a uniform scale-down of a
+    // bigger design happens to produce.
     id: "sticker-76x76",
     name: "Sticker — 76 × 76mm (3 × 3\")",
     kind: "sticker",
@@ -122,7 +128,7 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 2,
     orientationSwappable: false,
-    compact: false,
+    compact: true,
   },
   {
     id: "sticker-80x50",
