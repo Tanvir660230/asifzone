@@ -87,7 +87,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         <div className="grid grid-cols-1 items-start gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             {darkBgLogoUrl ? (
-              <StoreLogoImage src={darkBgLogoUrl} alt={settings.storeName} className="h-5 w-20 object-contain object-left" fallback={wordmark} />
+              <StoreLogoImage src={darkBgLogoUrl} alt={settings.storeName} className="h-8 w-32 object-contain object-left" fallback={wordmark} />
             ) : (
               wordmark
             )}
