@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 interface StoreLogoImageProps {
   src: string;
@@ -26,7 +27,17 @@ export function StoreLogoImage({ src, alt, className, style, fallback }: StoreLo
     // width leaves the browser nothing to reserve space with, and the layout (everything after the
     // logo) jumps once it does load. object-contain on the <img> itself letterboxes whatever the
     // true ratio turns out to be inside this fixed box instead.
-    <span className={className} style={style}>
+    //
+    // The base `inline-block` here is load-bearing, not decorative: a bare <span> is `display:
+    // inline` by default, and CSS silently ignores height/width on inline elements — so a caller's
+    // `h-*`/`w-*` classes only actually took effect when this happened to render as a flex/grid
+    // item (which gets blockified regardless of its own display value). Everywhere that wasn't the
+    // case — e.g. the storefront footer's top-left logo, sitting in a plain <div> — the box had no
+    // real size at all, and the <img> inside (itself sized `h-full w-full`, which resolves against
+    // nothing) fell back to rendering at the source file's raw uploaded resolution instead of the
+    // intended small logo size. Forcing `inline-block` here means the caller's sizing always takes
+    // effect, regardless of what kind of parent it happens to render inside.
+    <span className={cn("inline-block", className)} style={style}>
       {/* eslint-disable-next-line @next/next/no-img-element -- admin-supplied URL, arbitrary host not worth whitelisting for next/image */}
       <img src={src} alt={alt} className="h-full w-full object-contain" onError={() => setFailed(true)} />
     </span>
