@@ -66,7 +66,11 @@ export function VariantSelector({
   const sizes = useMemo(() => Array.from(new Set(variants.map((v) => v.size))), [variants]);
   const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))).filter((c) => productType !== "FRAGRANCE" && Boolean(c)), [variants, productType]);
 
-  const [selectedSize, setSelectedSize] = useState<string | null>(sizes.length === 1 ? (sizes[0] ?? null) : null);
+  const [selectedSize, setSelectedSize] = useState<string | null>(
+    productType === "FRAGRANCE"
+      ? (variants.find((v) => v.stock > 0)?.size ?? variants[0]?.size ?? null)
+      : (sizes.length === 1 ? (sizes[0] ?? null) : null)
+  );
   const [selectedColor, setSelectedColor] = useState<string | null>(productType === "FRAGRANCE" ? "" : (colors.length === 1 ? (colors[0] ?? null) : null));
   const [quantity, setQuantity] = useState(1);
 
@@ -125,7 +129,7 @@ export function VariantSelector({
 
   return (
     <div className="space-y-5">
-      {sizes.length > 0 && (
+      {productType !== "FRAGRANCE" && sizes.length > 0 && (
         <div
           className={cn(
             "rounded-xl transition-shadow duration-200",
