@@ -1,4 +1,7 @@
 import paramiko
+import sys
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 HOST = "178.16.136.125"
 PORT = 65002
@@ -17,7 +20,7 @@ def run_cmd(ssh, command, description):
             break
         print(line.strip())
         
-    err = stderr.read().decode().strip()
+    err = stderr.read().decode('utf-8', errors='replace').strip()
     exit_status = stdout.channel.recv_exit_status()
     
     if exit_status != 0:
@@ -43,8 +46,21 @@ def deploy():
             git log -n 1;
         """, "Fixing git remote URL and syncing with GitHub main branch")
 
+        run_cmd(ssh, f"""
+            export PATH=/opt/alt/alt-nodejs20/root/usr/bin:$PATH;
+            cd {INSTALL_DIR};
+            mkdir -p ~/.npm-global;
+            npm config set prefix '~/.npm-global';
+            export PATH=~/.npm-global/bin:$PATH;
+            npm install -g pnpm || true;
+            export PATH=~/.npm-global/bin:~/.npm-global/lib/node_modules/pnpm/bin:$PATH;
+            pnpm --version || npx pnpm --version;
+            pnpm install;
+            pnpm build;
+        """, "Setting up local pnpm, installing dependencies, and building project on VPS")
+
         print(f"\n========================================")
-        print(f" UPDATES DEPLOYED SUCCESSFULLY TO LIVE SITE! ")
+        print(f" UPDATES DEPLOYED & BUILT SUCCESSFULLY! ")
         print(f"========================================")
 
     finally:
@@ -52,6 +68,10 @@ def deploy():
 
 if __name__ == "__main__":
     deploy()
+
+
+
+
 
 
 

@@ -1,4 +1,7 @@
 import paramiko
+import sys
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 HOST = "178.16.136.125"
 PORT = 65002
@@ -12,18 +15,30 @@ def inspect():
 
     commands = [
         "ls -la domains/asifzone.com",
-        "ls -la domains/asifzone.com/public_html"
+        "ls -la domains"
     ]
 
     for cmd in commands:
         print(f"--- Running: {cmd} ---")
         stdin, stdout, stderr = ssh.exec_command(cmd)
-        print(stdout.read().decode().strip())
+        out = stdout.read().decode('utf-8', errors='replace').strip()
+        print(out)
+        err = stderr.read().decode('utf-8', errors='replace').strip()
+        if err:
+            print(f"STDERR: {err}")
         print()
 
     ssh.close()
 
 if __name__ == "__main__":
     inspect()
+
+
+
+
+
+
+
+
 
 

@@ -100,14 +100,14 @@ export const PRODUCT_TYPE_CONFIGS: Record<string, ProductTypeConfig> = {
     sizeGuide: { supported: false, defaultEnabled: false },
   },
   ISLAMIC_PRODUCT: {
-    type: "ISLAMIC_PRODUCT", label: "Islamic Product", description: "Prayer mats, attars, and books.",
+    type: "ISLAMIC_PRODUCT", label: "Islamic Product", description: "Prayer mats and books.",
     fields: [
       { key: "material", label: "Material", type: "TEXT", placeholder: "Plush Velvet", section: "spec" },
       { key: "publisher", label: "Publisher / Origin", type: "TEXT", placeholder: "Madinah / Local Artisan", section: "spec" },
     ],
     variantDimensions: [{ key: "edition", label: "Edition / Type", targetField: "size", options: ["Standard", "Deluxe", "Gift Box"] }],
     sections: [{ key: "description", label: "Description" }, { key: "spec", label: "Specifications" }],
-    sizeGuide: { supported: true, defaultEnabled: false },
+    sizeGuide: { supported: false, defaultEnabled: false },
   },
   HOME: {
     type: "HOME", label: "Home", description: "Home decor and diffusers.",
@@ -120,7 +120,7 @@ export const PRODUCT_TYPE_CONFIGS: Record<string, ProductTypeConfig> = {
       { key: "color", label: "Color", targetField: "color", options: ["White", "Wood", "Matte Black"] },
     ],
     sections: [{ key: "description", label: "Description" }, { key: "spec", label: "Specifications" }],
-    sizeGuide: { supported: true, defaultEnabled: false },
+    sizeGuide: { supported: false, defaultEnabled: false },
   },
 };
 
