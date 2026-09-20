@@ -20,7 +20,7 @@ function toBulkSmsBdNumber(phone: string): string {
 // No BULKSMSBD_API_KEY configured yet: log instead of sending, same fallback spirit as
 // lib/mailer.ts, so local dev/CI never needs a real account.
 export async function sendSms({ to, body }: SmsInput): Promise<void> {
-  if (!env.bulkSmsBd.apiKey) {
+  if (!env.bulkSmsBd.apiKey || process.env.NODE_ENV === "test") {
     console.log(`[sms] (dev mode, not actually sent) To: ${to} | Body: ${body}`);
     return;
   }

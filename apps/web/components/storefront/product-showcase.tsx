@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Banknote, RotateCcw, Truck } from "lucide-react";
 import type { Product, ProductVariant } from "@clothing-brand/shared";
+import { getProductTypeConfig } from "@clothing-brand/shared";
 import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
@@ -122,6 +124,8 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             basePrice={product.activeFlashSale?.flashPrice ?? product.basePrice}
             lowStockThreshold={product.lowStockThreshold}
             restockDate={product.restockDate}
+            productType={product.productType}
+            sizeGuide={(product.attributes as any)?.sizeGuide}
             onVariantChange={setSelectedVariant}
             onFocusImageChange={setFocusImageId}
             highlightMissing={highlightMissing}
@@ -138,24 +142,58 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
           ))}
         </div>
 
-        <ProductAccordion
-          items={[
+        {(() => {
+          const config = getProductTypeConfig(product.productType);
+          const attrs = (product.attributes ?? {}) as Record<string, string>;
+
+          const populatedFields = config.fields.filter((f) => {
+            const val = attrs[f.key];
+            return val !== undefined && val !== null && String(val).trim() !== "";
+          });
+          const dynamicSections = config.sections
+            .filter((sec) => sec.key !== "description")
+            .map((sec) => {
+              const secFields = populatedFields.filter((f) => f.section === sec.key || !f.section);
+              if (secFields.length === 0 && populatedFields.length === 0) return null;
+
+              // If specific section has fields or we group remaining fields into spec/details
+              const fieldsToRender = secFields.length > 0 ? secFields : (sec.key === config.sections[1]?.key ? populatedFields : []);
+              if (fieldsToRender.length === 0 && sec.key !== "spec" && sec.key !== "details" && sec.key !== "notes") return null;
+
+              const contentHtml = fieldsToRender.length > 0
+                ? `<ul class="space-y-1.5 text-sm text-ink-700">${fieldsToRender.map((f) => `<li><strong>${f.label}:</strong> ${attrs[f.key]}</li>`).join("")}</ul>`
+                : `<p class="text-sm text-ink-600">${attrs.careInstructions || "Standard product specification and care details."}</p>`;
+
+              return {
+                title: sec.label,
+                content: contentHtml,
+                html: true,
+              };
+            })
+            .filter((sec): sec is { title: string; content: string; html: boolean } => sec !== null);
+
+          const accordionItems = [
             {
               title: "Description",
               content: descriptionHtml.trim() ? descriptionHtml : "<p>No description provided yet.</p>",
               html: true,
             },
-            {
-              title: "Care",
-              content: "Machine wash cold with like colors. Do not bleach. Tumble dry low. Iron on low heat if needed.",
-            },
+            ...(dynamicSections.length > 0
+              ? dynamicSections
+              : [
+                  {
+                    title: "Specifications & Care",
+                    content: attrs.careInstructions || attrs.material || "Standard quality product specifications.",
+                  },
+                ]),
             {
               title: "Shipping & Returns",
               content:
                 "Dispatched within 1–2 business days. Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days. Unworn items with tags can be returned or exchanged within 7 days of delivery.",
             },
-          ]}
-        />
+          ];
+          return <ProductAccordion items={accordionItems} />;
+        })()}
       </div>
 
       <StickyAddToCart

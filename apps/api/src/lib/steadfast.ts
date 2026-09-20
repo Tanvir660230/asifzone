@@ -249,9 +249,9 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
     );
   }
 
-  const totalParcels = data.total_parcels;
-  const successParcels = data.total_delivered ?? 0;
-  const cancelledParcels = data.total_cancelled ?? 0;
+  const totalParcels = Number(data.total_parcels);
+  const successParcels = Number(data.total_delivered ?? 0);
+  const cancelledParcels = Number(data.total_cancelled ?? 0);
 
   return {
     totalParcels,

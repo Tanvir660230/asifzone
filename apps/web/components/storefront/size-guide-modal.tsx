@@ -3,19 +3,39 @@
 import { useState } from "react";
 import { Ruler } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { cn } from "@/lib/utils";
 
-const SIZE_CHART = [
-  { size: "S", chest: "36–38", waist: "30–32", length: "27" },
-  { size: "M", chest: "39–41", waist: "33–35", length: "28" },
-  { size: "L", chest: "42–44", waist: "36–38", length: "29" },
-  { size: "XL", chest: "45–47", waist: "39–41", length: "30" },
-  { size: "XXL", chest: "48–50", waist: "42–44", length: "31" },
-];
+interface SizeGuideProps {
+  sizeGuide?: {
+    enabled?: boolean;
+    title?: string;
+    unit?: string;
+    columns: string[];
+    rows: string[][] | string[][];
+  };
+}
 
-/** A generic reference chart — not per-product measurements, since the catalog doesn't track
- * those. Good enough for "which size is roughly right for me" without overclaiming precision. */
-export function SizeGuideModal() {
+const DEFAULT_SIZE_CHART = {
+  title: "Size guide",
+  unit: "inch",
+  columns: ["Size", "Chest", "Waist", "Length"],
+  rows: [
+    ["S", "36–38", "30–32", "27"],
+    ["M", "39–41", "33–35", "28"],
+    ["L", "42–44", "36–38", "29"],
+    ["XL", "45–47", "39–41", "30"],
+    ["XXL", "48–50", "42–44", "31"],
+  ],
+};
+
+export function SizeGuideModal({ sizeGuide }: SizeGuideProps) {
   const [open, setOpen] = useState(false);
+
+  if (sizeGuide && sizeGuide.enabled === false) {
+    return null;
+  }
+
+  const chart = (sizeGuide && sizeGuide.enabled && sizeGuide.columns?.length > 0) ? sizeGuide : DEFAULT_SIZE_CHART;
 
   return (
     <>
@@ -27,31 +47,34 @@ export function SizeGuideModal() {
         <Ruler size={12} /> Size guide
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Size guide" widthClassName="max-w-md">
+      <Modal open={open} onClose={() => setOpen(false)} title={chart.title || "Size guide"} widthClassName="max-w-md">
         <p className="mb-4 text-xs text-ink-500">
-          General reference in inches. Fit varies slightly by style — when between sizes, we recommend sizing up.
+          All measurements are in {chart.unit || "inches"}. Fit varies slightly by style — when between sizes, we recommend sizing up.
         </p>
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="text-xs uppercase tracking-wide text-ink-400">
-              <th className="border-b border-ink-100 pb-2">Size</th>
-              <th className="border-b border-ink-100 pb-2">Chest (in)</th>
-              <th className="border-b border-ink-100 pb-2">Waist (in)</th>
-              <th className="border-b border-ink-100 pb-2">Length (in)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {SIZE_CHART.map((row) => (
-              <tr key={row.size}>
-                <td className="border-b border-ink-50 py-2 font-medium text-ink-900">{row.size}</td>
-                <td className="border-b border-ink-50 py-2 text-ink-600">{row.chest}</td>
-                <td className="border-b border-ink-50 py-2 text-ink-600">{row.waist}</td>
-                <td className="border-b border-ink-50 py-2 text-ink-600">{row.length}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-ink-400">
+                {chart.columns.map((col: string, idx: number) => (
+                  <th key={idx} className="border-b border-ink-100 pb-2 px-2 first:pl-0">{col}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {chart.rows.map((row: string[], rIdx: number) => (
+                <tr key={rIdx}>
+                  {row.map((cell: string, cIdx: number) => (
+                    <td key={cIdx} className={cn("border-b border-ink-50 py-2 px-2 first:pl-0 text-ink-600", cIdx === 0 && "font-medium text-ink-900")}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Modal>
     </>
   );
 }
+

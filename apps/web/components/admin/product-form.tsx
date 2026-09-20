@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
@@ -8,9 +9,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import {
   createProductSchema,
+  getProductTypeConfig,
   type Category,
   type CreateProductInput,
   type Product,
+  type ProductTypeConfig,
 } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/admin/form-section";
 import { VariantEditor } from "./variant-editor";
+import { SizeGuideEditor } from "./size-guide-editor";
 import type { StagedImage } from "./image-uploader";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +66,37 @@ const RichTextEditor = dynamic(
   { ssr: false },
 );
 import * as attributesApi from "@/lib/api/attributes";
+function DynamicProductFields({ config, register }: { config: ProductTypeConfig; register: any }) {
+  if (!config.fields || config.fields.length === 0) return null;
+  return (
+    <FormSection title={`${config.label} specifications`} description={config.description}>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {config.fields.map((field) => {
+          const fieldName = `attributes.${field.key}` as const;
+          const isFullWidth = field.type === "TEXTAREA" || field.type === "RICH_TEXT";
+          return (
+            <div key={field.key} className={cn(isFullWidth && "sm:col-span-2")}>
+              <Label htmlFor={`attr-${field.key}`}>{field.label}</Label>
+              {field.type === "SELECT" && field.options ? (
+                <Select id={`attr-${field.key}`} {...register(fieldName)}>
+                  <option value="">Select {field.label}…</option>
+                  {field.options.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </Select>
+              ) : field.type === "TEXTAREA" ? (
+                <Textarea id={`attr-${field.key}`} placeholder={field.placeholder} rows={3} {...register(fieldName)} />
+              ) : (
+                <Input id={`attr-${field.key}`} placeholder={field.placeholder} {...register(fieldName)} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </FormSection>
+  );
+}
+
 import { uploadEditorImage } from "@/lib/api/uploads";
 import * as aiApi from "@/lib/api/ai";
 import { ApiError } from "@/lib/api-client";
@@ -171,7 +206,8 @@ export function ProductForm({
           })),
         }
       : {
-          brandTier: "PREMIUM",
+          productType: "CLOTHING",
+          attributes: {},
           isActive: true,
           isFeatured: false,
           trackInventory: true,
@@ -219,99 +255,117 @@ export function ProductForm({
       </div>
 
       {tab === "basic" && (
-      <FormSection title="Basic information">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <Label htmlFor="name">Product name</Label>
-            <Input id="name" {...register("name")} />
-            {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
-          </div>
+        <>
+          <FormSection title="Basic information">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="name">Product name</Label>
+                <Input id="name" {...register("name")} />
+                {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+              </div>
 
-          <div>
-            <Label htmlFor="categoryId">Category</Label>
-            <Select id="categoryId" {...register("categoryId")}>
-              <option value="">Select a category…</option>
-              {categoryOptions.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </Select>
-            {errors.categoryId && <p className="mt-1 text-xs text-danger-600">{errors.categoryId.message}</p>}
-          </div>
+              <div>
+                <Label htmlFor="categoryId">Category</Label>
+                <Select id="categoryId" {...register("categoryId")}>
+                  <option value="">Select a category…</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </Select>
+                {errors.categoryId && <p className="mt-1 text-xs text-danger-600">{errors.categoryId.message}</p>}
+              </div>
 
-          <div>
-            <Label htmlFor="brand">Brand</Label>
-            <Input id="brand" placeholder="e.g. Asif Zone Originals" {...register("brand")} />
-          </div>
+              <div>
+                <Label htmlFor="productType">Product type</Label>
+                <Select id="productType" {...register("productType")}>
+                  <option value="CLOTHING">Clothing (Panjabi, Shirt, etc.)</option>
+                  <option value="FRAGRANCE">Fragrance (Attar, Perfume, etc.)</option>
+                  <option value="ACCESSORY">Accessory</option>
+                  <option value="WATCH">Watch</option>
+                  <option value="SHOES">Shoes</option>
+                  <option value="COSMETICS">Cosmetics</option>
+                  <option value="ISLAMIC_PRODUCT">Islamic Product</option>
+                  <option value="HOME">Home</option>
+                </Select>
+              </div>
 
-          <div>
-            <Label htmlFor="brandTier">Tier</Label>
-            <Select id="brandTier" {...register("brandTier")}>
-              <option value="PREMIUM">Premium</option>
-              <option value="PLATINUM">Platinum</option>
-              <option value="LUXURY">Luxury</option>
-            </Select>
-          </div>
+              <div>
+                <Label htmlFor="brand">Brand</Label>
+                <Input id="brand" placeholder="e.g. Asif Zone Originals" {...register("brand")} />
+              </div>
 
-          <div>
-            <Label htmlFor="sortOrder">Sort order</Label>
-            <Input id="sortOrder" type="number" {...register("sortOrder", { valueAsNumber: true })} />
-            <p className="mt-1 text-xs text-ink-400">Lower numbers appear first within their category.</p>
-          </div>
+              <div>
+                <Label htmlFor="brandTier">Tier</Label>
+                <Select id="brandTier" {...register("brandTier")}>
+                  <option value="PREMIUM">Premium</option>
+                  <option value="PLATINUM">Platinum</option>
+                  <option value="LUXURY">Luxury</option>
+                </Select>
+              </div>
 
-          <div className="flex items-end gap-6 pb-2">
-            <label className="flex items-center gap-2 text-sm text-ink-700">
-              <Checkbox {...register("isActive")} />
-              Active
-            </label>
-            <label className="flex items-center gap-2 text-sm text-ink-700">
-              <Checkbox {...register("isFeatured")} />
-              Featured
-            </label>
-          </div>
+              <div>
+                <Label htmlFor="sortOrder">Sort order</Label>
+                <Input id="sortOrder" type="number" {...register("sortOrder", { valueAsNumber: true })} />
+                <p className="mt-1 text-xs text-ink-400">Lower numbers appear first within their category.</p>
+              </div>
 
-          <div className="sm:col-span-2">
-            <Label htmlFor="shortDescription">Short description</Label>
-            <Textarea
-              id="shortDescription"
-              rows={2}
-              placeholder="One or two lines shown in listings and previews"
-              {...register("shortDescription")}
-            />
-          </div>
-        </div>
+              <div className="flex items-end gap-6 pb-2">
+                <label className="flex items-center gap-2 text-sm text-ink-700">
+                  <Checkbox {...register("isActive")} />
+                  Active
+                </label>
+                <label className="flex items-center gap-2 text-sm text-ink-700">
+                  <Checkbox {...register("isFeatured")} />
+                  Featured
+                </label>
+              </div>
 
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <Label>Description</Label>
-            {canUseAi && (
-              <AiGenerateButton
-                disabled={!productName}
-                onGenerate={async () => {
-                  const { text } = await aiApi.generateAiContent({ type: "product_description", ...aiProductContext });
-                  setValue(
-                    "description",
-                    text
-                      .split(/\n{2,}/)
-                      .map((p) => `<p>${p.trim()}</p>`)
-                      .join(""),
-                    { shouldDirty: true },
-                  );
-                  return text;
-                }}
+              <div className="sm:col-span-2">
+                <Label htmlFor="shortDescription">Short description</Label>
+                <Textarea
+                  id="shortDescription"
+                  rows={2}
+                  placeholder="One or two lines shown in listings and previews"
+                  {...register("shortDescription")}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <Label>Description</Label>
+                {canUseAi && (
+                  <AiGenerateButton
+                    disabled={!productName}
+                    onGenerate={async () => {
+                      const { text } = await aiApi.generateAiContent({ type: "product_description", ...aiProductContext });
+                      setValue(
+                        "description",
+                        text
+                          .split(/\n{2,}/)
+                          .map((p) => `<p>${p.trim()}</p>`)
+                          .join(""),
+                        { shouldDirty: true },
+                      );
+                      return text;
+                    }}
+                  />
+                )}
+              </div>
+              <Controller
+                control={control}
+                name="description"
+                render={({ field }) => (
+                  <RichTextEditor value={field.value ?? ""} onChange={field.onChange} uploadImage={uploadEditorImage} />
+                )}
               />
-            )}
-          </div>
-          <Controller
-            control={control}
-            name="description"
-            render={({ field }) => (
-              <RichTextEditor value={field.value ?? ""} onChange={field.onChange} uploadImage={uploadEditorImage} />
-            )}
-          />
-        </div>
-      </FormSection>
+            </div>
+          </FormSection>
+          <DynamicProductFields config={getProductTypeConfig(watch("productType"))} register={register} />
+          <SizeGuideEditor config={getProductTypeConfig(watch("productType"))} control={control} register={register} watch={watch} setValue={setValue} />
+        </>
       )}
 
       {tab === "pricing" && (
@@ -420,6 +474,7 @@ export function ProductForm({
           watch={watch}
           setValue={setValue}
           attributes={attributes}
+          productType={watch("productType")}
           productImages={initial?.images ?? []}
           stagedImages={stagedImages}
           variantImageKeys={variantImageKeys}

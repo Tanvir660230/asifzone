@@ -21,6 +21,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, GripVertical, History, Sparkles, Star, Trash2 } from "lucide-react";
 import type { Attribute, AttributeValue, CreateProductInput, ProductImage } from "@clothing-brand/shared";
+import { getProductTypeConfig } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,7 @@ interface VariantEditorProps {
   variantImageKeys?: Record<number, string>;
   onVariantImageKeyChange?: (index: number, key: string) => void;
   skuPrefix?: string;
+  productType?: string;
 }
 
 function slugPart(s: string) {
@@ -70,6 +72,7 @@ export function VariantEditor({
   variantImageKeys,
   onVariantImageKeyChange,
   skuPrefix = "SKU",
+  productType = "CLOTHING",
 }: VariantEditorProps) {
   const { fields, append, remove, move } = useFieldArray({ control, name: "variants" });
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
@@ -184,8 +187,10 @@ export function VariantEditor({
                 <Sparkles size={14} /> Generate combinations
               </Button>
               <p className="text-xs text-ink-400">
-                Include &ldquo;Size&rdquo; and &ldquo;Color&rdquo; attributes so storefront filtering keeps working — other attributes (Fabric,
-                Pattern…) are stored per-variant but don&rsquo;t affect filters yet.
+                {(() => {
+                  const config = getProductTypeConfig(productType);
+                  return `Configure variant dimensions for ${config.label} (${config.variantDimensions.map((d) => d.label).join(" & ")}).`;
+                })()}
               </p>
             </div>
           )}
@@ -256,31 +261,44 @@ export function VariantEditor({
                       <Label className="text-[11px]">Barcode</Label>
                       <Input placeholder="Optional" {...register(`variants.${index}.barcode`)} />
                     </div>
-                    <div>
-                      <Label className="text-[11px]">Size</Label>
-                      <Input placeholder="M / L / XL / 21" {...register(`variants.${index}.size`)} />
-                    </div>
-                    <div>
-                      <Label className="text-[11px]">Equivalent size</Label>
-                      <Input placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
-                    </div>
-                    <div>
-                      <Label className="text-[11px]">Color</Label>
-                      <Input placeholder="Black" {...register(`variants.${index}.color`)} />
-                    </div>
-                    <div>
-                      <Label className="text-[11px]">Color code</Label>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="color"
-                          value={/^#[0-9a-fA-F]{6}$/.test(watch(`variants.${index}.colorHex`) ?? "") ? (watch(`variants.${index}.colorHex`) as string) : "#000000"}
-                          onChange={(e) => setValue(`variants.${index}.colorHex`, e.target.value, { shouldDirty: true })}
-                          className="h-9 w-9 shrink-0 cursor-pointer rounded border border-ink-200 bg-transparent p-0.5"
-                          aria-label="Pick color"
-                        />
-                        <Input placeholder="#000000" {...register(`variants.${index}.colorHex`)} />
-                      </div>
-                    </div>
+                    {(() => {
+                      const config = getProductTypeConfig(productType);
+                      const sizeDim = config.variantDimensions.find(d => d.targetField === "size") || config.variantDimensions[0];
+                      const colorDim = config.variantDimensions.find(d => d.targetField === "color") || config.variantDimensions[1];
+                      return (
+                        <>
+                          <div>
+                            <Label className="text-[11px]">{sizeDim?.label ?? "Size"}</Label>
+                            <Input placeholder={sizeDim?.options?.[0] ? `e.g. ${sizeDim.options.join(", ")}` : "Standard"} {...register(`variants.${index}.size`)} />
+                          </div>
+                          {colorDim && (
+                            <>
+                              <div>
+                                <Label className="text-[11px]">Equivalent size</Label>
+                                <Input placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
+                              </div>
+                              <div>
+                                <Label className="text-[11px]">{colorDim.label}</Label>
+                                <Input placeholder={colorDim.options?.[0] ?? "Black"} {...register(`variants.${index}.color`)} />
+                              </div>
+                              <div>
+                                <Label className="text-[11px]">Color code</Label>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="color"
+                                    value={/^#[0-9a-fA-F]{6}$/.test(watch(`variants.${index}.colorHex`) ?? "") ? (watch(`variants.${index}.colorHex`) as string) : "#000000"}
+                                    onChange={(e) => setValue(`variants.${index}.colorHex`, e.target.value, { shouldDirty: true })}
+                                    className="h-9 w-9 shrink-0 cursor-pointer rounded border border-ink-200 bg-transparent p-0.5"
+                                    aria-label="Pick color"
+                                  />
+                                  <Input placeholder="#000000" {...register(`variants.${index}.colorHex`)} />
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                     <div>
                       <Label className="text-[11px]">Price override</Label>
                       <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.price`, { valueAsNumber: true })} />

@@ -33,4 +33,6 @@ export * from "./search-synonyms";
 export * from "./delivery";
 export * from "./sms-templates";
 export * from "./customer-sms-templates";
+export * from "./config/product-types";
+
 export * from "./types";

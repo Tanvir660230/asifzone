@@ -46,6 +46,8 @@ const PUBLIC_PRODUCT_SELECT = {
   shortDescription: true,
   sortOrder: true,
   categoryId: true,
+  productType: true,
+  attributes: true,
   brand: true,
   brandTier: true,
   basePrice: true,
@@ -77,6 +79,8 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   const { attributeValueIds = [], ...rest } = variant;
   return {
     ...rest,
+    size: rest.size || "",
+    color: rest.color || "",
     sortOrder,
     attributeValues: { create: attributeValueIds.map((attributeValueId) => ({ attributeValueId })) },
   };
@@ -926,21 +930,22 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
   let product;
   try {
     product = await prisma.$transaction(async (tx) => {
-      const created = await tx.product.create({
+      const created = (await tx.product.create({
         data: {
           ...productData,
+          attributes: (productData.attributes ?? undefined) as Prisma.InputJsonValue,
           slug,
           variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
         },
         include,
-      });
+      })) as any;
 
       // Every variant starts life with a real stock number but no history explaining it — log it
       // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
-      const stocked = created.variants.filter((v) => v.stock > 0);
+      const stocked = created.variants.filter((v: any) => v.stock > 0);
       if (stocked.length) {
         await tx.stockMovement.createMany({
-          data: stocked.map((v) => ({
+          data: stocked.map((v: any) => ({
             variantId: v.id,
             change: v.stock,
             reason: "RESTOCK" as const,
@@ -978,6 +983,10 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
 
   const data: Record<string, unknown> = { ...input };
   delete data.variants;
+
+  if (data.attributes !== undefined) {
+    data.attributes = (data.attributes ?? undefined) as Prisma.InputJsonValue;
+  }
 
   if (input.name && !input.slug) {
     data.slug = await ensureUniqueSlug(slugify(input.name), async (candidate) => {
@@ -1035,7 +1044,15 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
         for (const [index, variant] of input.variants.entries()) {
           if (variant.id) {
             const { id: variantId, attributeValueIds = [], ...updateData } = variant;
-            await tx.productVariant.update({ where: { id: variantId }, data: { ...updateData, sortOrder: index } });
+            await tx.productVariant.update({
+              where: { id: variantId },
+              data: {
+                ...updateData,
+                size: updateData.size || "",
+                color: updateData.color || "",
+                sortOrder: index,
+              },
+            });
             await tx.variantAttributeValue.deleteMany({ where: { variantId } });
             if (attributeValueIds.length) {
               await tx.variantAttributeValue.createMany({

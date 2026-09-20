@@ -25,6 +25,14 @@ interface VariantSelectorProps {
   basePrice: string;
   lowStockThreshold: number;
   restockDate: string | null;
+  productType?: string;
+  sizeGuide?: {
+    enabled?: boolean;
+    title?: string;
+    unit?: string;
+    columns: string[];
+    rows: string[][];
+  };
   /** Called whenever the fully-selected (size + color) variant changes — this is the "cart-ready"
    * variant, used by the parent for the sticky bar. Left undefined until every choice is made. */
   onVariantChange?: (variant: ProductVariant | undefined) => void;
@@ -48,19 +56,21 @@ export function VariantSelector({
   basePrice,
   lowStockThreshold,
   restockDate,
+  productType = "CLOTHING",
+  sizeGuide,
   onVariantChange,
   onFocusImageChange,
   highlightMissing,
   onRequireSelection,
 }: VariantSelectorProps) {
   const sizes = useMemo(() => Array.from(new Set(variants.map((v) => v.size))), [variants]);
-  const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))), [variants]);
+  const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))).filter((c) => productType !== "FRAGRANCE" && Boolean(c)), [variants, productType]);
 
   const [selectedSize, setSelectedSize] = useState<string | null>(sizes.length === 1 ? (sizes[0] ?? null) : null);
-  const [selectedColor, setSelectedColor] = useState<string | null>(colors.length === 1 ? (colors[0] ?? null) : null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(productType === "FRAGRANCE" ? "" : (colors.length === 1 ? (colors[0] ?? null) : null));
   const [quantity, setQuantity] = useState(1);
 
-  const selectedVariant = variants.find((v) => v.size === selectedSize && v.color === selectedColor);
+  const selectedVariant = variants.find((v) => v.size === selectedSize && (productType === "FRAGRANCE" || v.color === selectedColor));
   const { addToCart, buyNow, justAdded } = useAddToCart({
     selectedVariant,
     productId,
@@ -124,9 +134,9 @@ export function VariantSelector({
         >
           <div className="mb-2 flex items-center justify-between">
             <p className={cn("text-xs uppercase tracking-wide", highlightMissing && sizeMissing ? "font-medium text-danger-600" : "text-ink-500")}>
-              Size
+              {productType === "FRAGRANCE" ? "Volume" : "Size"}
             </p>
-            <SizeGuideModal />
+            {sizeGuide?.enabled === true && <SizeGuideModal sizeGuide={sizeGuide} />}
           </div>
           <div className="flex flex-wrap gap-2">
             {sizes.map((size) => {

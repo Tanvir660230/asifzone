@@ -1,7 +1,19 @@
 import { z } from "zod";
 import { blankToNull, nullableCuid, nullableDate, nullableNumber, nullableString, paginationQuerySchema, slugSchema } from "./common";
+import { getProductTypeConfig } from "../config/product-types";
 
 export const brandTierEnum = z.enum(["PREMIUM", "PLATINUM", "LUXURY"]);
+
+export const productTypeEnum = z.enum([
+  "CLOTHING",
+  "FRAGRANCE",
+  "ACCESSORY",
+  "WATCH",
+  "SHOES",
+  "COSMETICS",
+  "ISLAMIC_PRODUCT",
+  "HOME",
+]);
 
 export const createVariantSchema = z.object({
   id: z.string().cuid().optional(),
@@ -9,7 +21,7 @@ export const createVariantSchema = z.object({
   barcode: nullableString(64),
   size: z.string().min(1).max(32),
   sizeLabel: nullableString(32),
-  color: z.string().min(1).max(48),
+  color: nullableString(48),
   colorHex: z.preprocess(
     blankToNull,
     z
@@ -26,13 +38,15 @@ export const createVariantSchema = z.object({
   attributeValueIds: z.array(z.string().cuid()).default([]),
 });
 
-export const createProductSchema = z.object({
+export const baseProductSchema = z.object({
   name: z.string().min(1).max(200),
   slug: z.preprocess((v) => (v === "" ? undefined : v), slugSchema.optional()),
   description: z.string().max(20_000).default(""),
   shortDescription: nullableString(300),
   sortOrder: z.number().int().default(0),
   categoryId: z.string().cuid(),
+  productType: productTypeEnum.default("CLOTHING"),
+  attributes: z.record(z.string(), z.unknown()).nullable().optional(),
   brand: nullableString(120),
   brandTier: brandTierEnum.default("PREMIUM"),
   basePrice: z.number().positive(),
@@ -49,7 +63,66 @@ export const createProductSchema = z.object({
   variants: z.array(createVariantSchema).min(1, "At least one variant is required"),
 });
 
-export const updateProductSchema = createProductSchema.partial({
+export const createProductSchema = baseProductSchema.superRefine((data, ctx) => {
+  const config = getProductTypeConfig(data.productType);
+  const needsSize = config.variantDimensions.some((d) => d.targetField === "size");
+  const needsColor = config.variantDimensions.some((d) => d.targetField === "color");
+  const sizeLabel = config.variantDimensions.find((d) => d.targetField === "size")?.label ?? "Size";
+  const colorLabel = config.variantDimensions.find((d) => d.targetField === "color")?.label ?? "Color";
+
+  const attrs = (data.attributes ?? {}) as Record<string, any>;
+  const sizeGuide = attrs.sizeGuide;
+  if (sizeGuide && typeof sizeGuide === "object" && sizeGuide.enabled === true) {
+    if (!Array.isArray(sizeGuide.columns) || sizeGuide.columns.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Size guide must have at least one column",
+        path: ["attributes", "sizeGuide", "columns"],
+      });
+    }
+    if (!Array.isArray(sizeGuide.rows) || sizeGuide.rows.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Size guide must have at least one row",
+        path: ["attributes", "sizeGuide", "rows"],
+      });
+    } else {
+      sizeGuide.rows.forEach((row: any, rIdx: number) => {
+        if (!Array.isArray(row) || row.length !== (sizeGuide.columns?.length || 0)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Row ${rIdx + 1} must match the number of columns`,
+            path: ["attributes", "sizeGuide", "rows", rIdx],
+          });
+        }
+      });
+    }
+  }
+
+  data.variants.forEach((v, idx) => {
+    if (needsSize && (!v.size || v.size.trim() === "")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${sizeLabel} is required`,
+        path: ["variants", idx, "size"],
+      });
+    } else if (!v.size) {
+      v.size = "Standard";
+    }
+
+    if (needsColor && (!v.color || v.color.trim() === "")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${colorLabel} is required`,
+        path: ["variants", idx, "color"],
+      });
+    } else if (!v.color) {
+      v.color = "";
+    }
+  });
+});
+
+export const updateProductSchema = baseProductSchema.partial({
   name: true,
   categoryId: true,
   basePrice: true,

@@ -79,6 +79,16 @@ export interface Attribute {
   updatedAt: string;
 }
 
+export type ProductType =
+  | "CLOTHING"
+  | "FRAGRANCE"
+  | "ACCESSORY"
+  | "WATCH"
+  | "SHOES"
+  | "COSMETICS"
+  | "ISLAMIC_PRODUCT"
+  | "HOME";
+
 export interface VariantAttributeValue {
   id: string;
   variantId: string;
@@ -130,6 +140,8 @@ export interface Product {
   sortOrder: number;
   categoryId: string;
   category: Category;
+  productType: ProductType;
+  attributes: Record<string, unknown> | null;
   brand: string | null;
   brandTier: "PREMIUM" | "PLATINUM" | "LUXURY";
   basePrice: string;

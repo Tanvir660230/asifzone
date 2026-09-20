@@ -11,6 +11,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ProductType {
+  CLOTHING
+  FRAGRANCE
+  ACCESSORY
+  WATCH
+  SHOES
+  COSMETICS
+  ISLAMIC_PRODUCT
+  HOME
+}
+
 enum BrandTier {
   PREMIUM
   PLATINUM
@@ -318,6 +329,8 @@ model Product {
   sortOrder         Int              @default(0)
   categoryId        String
   category          Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  productType       ProductType      @default(CLOTHING)
+  attributes        Json?
   brand             String?
   brandTier         BrandTier        @default(PREMIUM)
   basePrice         Decimal          @db.Decimal(10, 2)

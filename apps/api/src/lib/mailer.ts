@@ -10,7 +10,7 @@ interface MailInput {
 }
 
 const devMailDir = path.join(process.cwd(), ".devmail");
-const resend = env.resend.apiKey ? new Resend(env.resend.apiKey) : null;
+const resend = !env.resend.apiKey || process.env.NODE_ENV === "test" ? null : new Resend(env.resend.apiKey);
 
 function writeDevMail({ to, subject, html }: MailInput) {
   console.log(`[mailer] (dev mode, not actually sent) To: ${to} | Subject: ${subject}`);

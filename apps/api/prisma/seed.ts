@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
 
@@ -21,40 +22,162 @@ async function seedAdmin() {
   console.log(`Created admin user: ${email} / ${password} (change this password after first login)`);
 }
 
-/** A minimal demo product (with variants) so a fresh database isn't completely empty — CI's
- * integration/e2e tests need at least one real product to exist, and it doubles as something to
- * click through when manually verifying a fresh deploy. Idempotent: safe to run repeatedly. */
+/** Comprehensive demo products across all categories and sections so a fresh database is fully populated
+ * and ready for storefront browsing, featured carousels, flash sales, and e2e testing. */
 async function seedDemoCatalog() {
-  const existingProduct = await prisma.product.findUnique({ where: { slug: "classic-cotton-tee" } });
-  if (existingProduct) {
-    console.log("Demo catalog already seeded");
-    return;
-  }
-
-  const category = await prisma.category.upsert({
+  // Categories
+  const tshirtsCat = await prisma.category.upsert({
     where: { slug: "t-shirts" },
     update: {},
-    create: { name: "T-Shirts", slug: "t-shirts" },
+    create: { name: "T-Shirts & Apparel", slug: "t-shirts" },
   });
 
-  await prisma.product.create({
-    data: {
+  const fragrancesCat = await prisma.category.upsert({
+    where: { slug: "fragrances" },
+    update: {},
+    create: { name: "Fragrances & Attar", slug: "fragrances" },
+  });
+
+  const watchesCat = await prisma.category.upsert({
+    where: { slug: "watches" },
+    update: {},
+    create: { name: "Luxury Watches", slug: "watches" },
+  });
+
+  const islamicCat = await prisma.category.upsert({
+    where: { slug: "islamic-products" },
+    update: {},
+    create: { name: "Islamic Products", slug: "islamic-products" },
+  });
+
+  const shoesCat = await prisma.category.upsert({
+    where: { slug: "shoes" },
+    update: {},
+    create: { name: "Footwear & Shoes", slug: "shoes" },
+  });
+
+  const accessoriesCat = await prisma.category.upsert({
+    where: { slug: "accessories" },
+    update: {},
+    create: { name: "Accessories", slug: "accessories" },
+  });
+
+  const homeCat = await prisma.category.upsert({
+    where: { slug: "home-decor" },
+    update: {},
+    create: { name: "Home & Living", slug: "home-decor" },
+  });
+
+  const demoProducts = [
+    {
       name: "Classic Cotton Tee",
       slug: "classic-cotton-tee",
       description: "A soft, breathable everyday cotton t-shirt.",
-      categoryId: category.id,
+      categoryId: tshirtsCat.id,
+      productType: "CLOTHING" as const,
       basePrice: 1200,
       isFeatured: true,
-      variants: {
-        create: [
-          { sku: "DEMO-TEE-S-WHT", size: "S", color: "White", colorHex: "#FFFFFF", stock: 50 },
-          { sku: "DEMO-TEE-M-BLK", size: "M", color: "Black", colorHex: "#000000", stock: 50 },
-        ],
-      },
+      brandTier: "PREMIUM" as const,
+      variants: [
+        { sku: "DEMO-TEE-S-WHT", size: "S", color: "White", colorHex: "#FFFFFF", stock: 50 },
+        { sku: "DEMO-TEE-M-BLK", size: "M", color: "Black", colorHex: "#000000", stock: 50 },
+      ],
     },
-  });
+    {
+      name: "Royal Oud Attar",
+      slug: "royal-oud-attar",
+      description: "Rich, long-lasting oriental fragrance with notes of agarwood and amber.",
+      categoryId: fragrancesCat.id,
+      productType: "FRAGRANCE" as const,
+      basePrice: 2500,
+      isFeatured: true,
+      brandTier: "LUXURY" as const,
+      variants: [
+        { sku: "DEMO-OUD-12ML", size: "12ml", color: "Gold", colorHex: "#D4AF37", stock: 30 },
+        { sku: "DEMO-OUD-50ML", size: "50ml", color: "Crystal", colorHex: "#E5E4E2", stock: 15 },
+      ],
+    },
+    {
+      name: "Minimalist Chronograph Watch",
+      slug: "minimalist-chronograph-watch",
+      description: "Sleek stainless steel watch with a genuine leather strap.",
+      categoryId: watchesCat.id,
+      productType: "WATCH" as const,
+      basePrice: 4500,
+      isFeatured: true,
+      brandTier: "PLATINUM" as const,
+      variants: [
+        { sku: "DEMO-WATCH-BLK-SLV", size: "Standard", color: "Black/Silver", colorHex: "#2C2C2C", stock: 25 },
+      ],
+    },
+    {
+      name: "Premium Velvet Prayer Mat (Janamaz)",
+      slug: "premium-velvet-prayer-mat",
+      description: "Plush, cushioned Islamic prayer rug with intricate Anatolian motifs.",
+      categoryId: islamicCat.id,
+      productType: "ISLAMIC_PRODUCT" as const,
+      basePrice: 1800,
+      isFeatured: true,
+      brandTier: "PREMIUM" as const,
+      variants: [
+        { sku: "DEMO-MAT-EMR", size: "Standard", color: "Emerald Green", colorHex: "#50C878", stock: 60 },
+      ],
+    },
+    {
+      name: "Minimalist Leather Sneaker",
+      slug: "minimalist-leather-sneaker",
+      description: "Handcrafted full-grain leather sneakers for all-day comfort.",
+      categoryId: shoesCat.id,
+      productType: "SHOES" as const,
+      basePrice: 3800,
+      isFeatured: true,
+      brandTier: "PLATINUM" as const,
+      variants: [
+        { sku: "DEMO-SHOE-42-WHT", size: "42", color: "White", colorHex: "#FFFFFF", stock: 25 },
+      ],
+    },
+    {
+      name: "Genuine Leather Minimalist Wallet",
+      slug: "genuine-leather-wallet",
+      description: "Slim RFID-blocking bifold wallet crafted from vegetable-tanned leather.",
+      categoryId: accessoriesCat.id,
+      productType: "ACCESSORY" as const,
+      basePrice: 950,
+      isFeatured: true,
+      brandTier: "PREMIUM" as const,
+      variants: [
+        { sku: "DEMO-WAL-TAN", size: "One Size", color: "Tan", colorHex: "#D2B48C", stock: 50 },
+      ],
+    },
+    {
+      name: "Aromatherapy Ceramic Diffuser",
+      slug: "aromatherapy-ceramic-diffuser",
+      description: "Ultrasonic essential oil diffuser with ambient LED lighting for home relaxation.",
+      categoryId: homeCat.id,
+      productType: "HOME" as const,
+      basePrice: 2200,
+      isFeatured: true,
+      brandTier: "PREMIUM" as const,
+      variants: [
+        { sku: "DEMO-DIFF-WHT", size: "Standard", color: "Matte White", colorHex: "#F8F8F8", stock: 35 },
+      ],
+    },
+  ];
 
-  console.log("Seeded demo category + product (Classic Cotton Tee)");
+  for (const productData of demoProducts) {
+    const { variants, ...prodFields } = productData;
+    const existing = await prisma.product.findUnique({ where: { slug: prodFields.slug } });
+    if (!existing) {
+      await prisma.product.create({
+        data: {
+          ...prodFields,
+          variants: { create: variants },
+        },
+      });
+    }
+  }
+
+  console.log(`Seeded demo catalog with ${demoProducts.length} products across all sections and categories.`);
 }
 
 /** A demo customer so the admin Customers list (and anything that assumes at least one exists,
