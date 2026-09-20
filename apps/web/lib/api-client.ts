@@ -10,6 +10,29 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+export function getErrorMessage(err: unknown, fallback: string = "Something went wrong"): string {
+  if (err instanceof ApiError || err instanceof Error) {
+    return err.message || fallback;
+  }
+  if (err && typeof err === "object") {
+    if (
+      "type" in err ||
+      "target" in err ||
+      "srcElement" in err ||
+      (err as { constructor?: { name?: string } }).constructor?.name?.includes("Event")
+    ) {
+      return fallback;
+    }
+    if ("message" in err && typeof (err as { message: unknown }).message === "string") {
+      return (err as { message: string }).message;
+    }
+  }
+  if (typeof err === "string" && err.trim().length > 0) {
+    return err;
+  }
+  return fallback;
+}
+
 
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { useCurrentCustomer } from "@/hooks/use-current-customer";
 import { resendVerificationEmail } from "@/lib/customer-auth";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, getErrorMessage } from "@/lib/api-client";
 
 export function VerifyEmailBanner() {
   const { data } = useCurrentCustomer();
@@ -20,7 +20,7 @@ export function VerifyEmailBanner() {
       setStatus("sent");
     } catch (err) {
       setStatus("error");
-      console.error(err instanceof ApiError ? err.message : err);
+      console.error(getErrorMessage(err, "Verification email resend failed"));
     }
   }
 
