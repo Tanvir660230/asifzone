@@ -125,7 +125,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             lowStockThreshold={product.lowStockThreshold}
             restockDate={product.restockDate}
             productType={product.productType}
-            sizeGuide={(product.attributes as any)?.sizeGuide}
+            sizeGuide={product.productType === "FRAGRANCE" ? undefined : (product.attributes as any)?.sizeGuide}
             onVariantChange={setSelectedVariant}
             onFocusImageChange={setFocusImageId}
             highlightMissing={highlightMissing}
@@ -162,7 +162,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
 
               const contentHtml = fieldsToRender.length > 0
                 ? `<ul class="space-y-1.5 text-sm text-ink-700">${fieldsToRender.map((f) => `<li><strong>${f.label}:</strong> ${attrs[f.key]}</li>`).join("")}</ul>`
-                : `<p class="text-sm text-ink-600">${attrs.careInstructions || "Standard product specification and care details."}</p>`;
+                : `<p class="text-sm text-ink-600">${product.productType === "FRAGRANCE" ? "Store in a cool, dry place away from direct sunlight. Apply on pulse points for best results." : (attrs.careInstructions || "Standard product specification and care details.")}</p>`;
 
               return {
                 title: sec.label,
@@ -182,8 +182,10 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
               ? dynamicSections
               : [
                   {
-                    title: "Specifications & Care",
-                    content: attrs.careInstructions || attrs.material || "Standard quality product specifications.",
+                    title: product.productType === "FRAGRANCE" ? "Fragrance & Storage Details" : "Specifications & Care",
+                    content: product.productType === "FRAGRANCE"
+                      ? "Store in a cool, dry place away from direct sunlight. Premium fragrance composition formulated for long-lasting wear on skin and clothing."
+                      : (attrs.careInstructions || attrs.material || "Standard quality product specifications."),
                   },
                 ]),
             {
