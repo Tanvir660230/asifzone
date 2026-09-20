@@ -33,6 +33,7 @@ interface GoogleIdentityServices {
       }) => void;
       renderButton: (parent: HTMLElement, options: { theme: string; size: string; width: number }) => void;
       prompt: (callback?: (notification: GoogleNotification) => void) => void;
+      cancel: () => void;
     };
   };
 }
@@ -72,11 +73,20 @@ export function GoogleButton({
         callback: handleCredential,
         auto_select: true,
         cancel_on_tap_outside: false,
-        // Chrome/Firefox now block the legacy One Tap prompt outright once third-party cookies are
-        // off unless this is set — without it, prompt() fails silently with no visible error.
-        use_fedcm_for_prompt: true,
+        // FedCM is disabled by default (`use_fedcm_for_prompt: false`) to prevent
+        // NetworkError: Error retrieving a token in development (localhost), non-HTTPS,
+        // or when browser privacy settings restrict third-party credential management.
+        use_fedcm_for_prompt: false,
       });
       google.accounts.id.renderButton(containerRef.current, { theme: "outline", size: "large", width: 320 });
+      // Cancel any pending One Tap prompt or FedCM request first to avoid
+      // "NotAllowedError: Only one navigator.credentials.get request may be outstanding at one time."
+      try {
+        google.accounts.id.cancel();
+      } catch {
+        // ignore if no active prompt
+      }
+
       // Shows the One Tap prompt in the corner, auto-suggesting the visitor's signed-in Google
       // account so returning users don't have to click the button at all. Logged so a silent
       // no-show (not signed into Google, prior dismissal cooldown, browser blocking it, ...) is
@@ -92,7 +102,14 @@ export function GoogleButton({
 
     if ((window as unknown as { google?: unknown }).google) {
       render();
-      return;
+      return () => {
+        try {
+          const google = (window as unknown as { google?: GoogleIdentityServices }).google;
+          google?.accounts.id.cancel();
+        } catch {
+          // ignore
+        }
+      };
     }
 
     let script = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
@@ -108,7 +125,15 @@ export function GoogleButton({
       document.head.appendChild(script);
     }
     script.addEventListener("load", render);
-    return () => script?.removeEventListener("load", render);
+    return () => {
+      script?.removeEventListener("load", render);
+      try {
+        const google = (window as unknown as { google?: GoogleIdentityServices }).google;
+        google?.accounts.id.cancel();
+      } catch {
+        // ignore
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
