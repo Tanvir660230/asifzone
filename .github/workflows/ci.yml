@@ -103,6 +103,7 @@ jobs:
           name: playwright-report
           path: apps/web/playwright-report/
           retention-days: 7
+          if-no-files-found: ignore
 
   deploy:
     needs: test

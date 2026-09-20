@@ -125,7 +125,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             lowStockThreshold={product.lowStockThreshold}
             restockDate={product.restockDate}
             productType={product.productType}
-            sizeGuide={product.productType === "FRAGRANCE" ? undefined : (product.attributes as any)?.sizeGuide}
+            sizeGuide={!getProductTypeConfig(product.productType).sizeGuide?.supported ? undefined : (product.attributes as any)?.sizeGuide}
             onVariantChange={setSelectedVariant}
             onFocusImageChange={setFocusImageId}
             highlightMissing={highlightMissing}
