@@ -106,6 +106,10 @@ export function deleteProductImage(productId: string, imageId: string) {
   return apiFetch<void>(`/api/products/${productId}/images/${imageId}`, { method: "DELETE" });
 }
 
+export function updateProductImage(productId: string, imageId: string, input: { altText?: string; caption?: string | null }) {
+  return apiFetch<void>(`/api/products/${productId}/images/${imageId}`, { method: "PATCH", body: input });
+}
+
 export function updateProductImageAltText(productId: string, imageId: string, altText: string) {
   return apiFetch<void>(`/api/products/${productId}/images/${imageId}`, { method: "PATCH", body: { altText } });
 }

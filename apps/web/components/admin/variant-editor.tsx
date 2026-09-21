@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useFieldArray, type Control, type UseFormRegister, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
+import { Controller, useFieldArray, type Control, type UseFormRegister, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 import {
   DndContext,
   closestCenter,
@@ -19,9 +19,13 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, GripVertical, History, Sparkles, Star, Trash2 } from "lucide-react";
+import { ChevronDown, GripVertical, History, Sparkles, Star, Trash2, Wand2 } from "lucide-react";
 import type { Attribute, AttributeValue, CreateProductInput, ProductImage, VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "@/components/ui/toast";
+import * as catalogApi from "@/lib/api/catalog";
+import { VariantGalleryPicker } from "./variant-gallery-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -45,6 +49,8 @@ interface VariantEditorProps {
   /** The selected type's variant dimensions (which of size/colour it uses, and how they are labelled). */
   variantDimensions?: VariantDimension[];
   typeName?: string;
+  /** The product's type — the SKU generator numbers per type. */
+  typeId?: string;
 }
 
 function slugPart(s: string) {
@@ -75,8 +81,32 @@ export function VariantEditor({
   skuPrefix = "SKU",
   variantDimensions = [],
   typeName = "this product type",
+  typeId,
 }: VariantEditorProps) {
   const { fields, append, remove, move } = useFieldArray({ control, name: "variants" });
+  const [generatingSku, setGeneratingSku] = useState<number | null>(null);
+
+  /** Asks the server for the next SKU from the configured pattern, telling it which SKUs this form already holds
+   * so two unsaved rows can't be handed the same one. */
+  async function handleGenerateSku(index: number) {
+    if (!typeId) return;
+    setGeneratingSku(index);
+    try {
+      const all = (watch("variants") ?? []) as { sku?: string; color?: string | null; size?: string | null }[];
+      const row = all[index];
+      const { sku } = await catalogApi.generateSku({
+        typeId,
+        color: row?.color,
+        size: row?.size,
+        taken: all.map((v) => v.sku ?? "").filter(Boolean),
+      });
+      setValue(`variants.${index}.sku`, sku, { shouldDirty: true, shouldValidate: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't generate a SKU");
+    } finally {
+      setGeneratingSku(null);
+    }
+  }
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
   // Attributes load asynchronously (separate query), so this can't be a one-shot useState initializer —
   // it needs to open as soon as attributes actually arrive, not just at first mount.
@@ -136,6 +166,7 @@ export function VariantEditor({
         stock: 0,
         weight: undefined,
         imageId: null,
+        isActive: true,
         attributeValueIds: combo.map((v) => v.id),
       });
     }
@@ -255,7 +286,20 @@ export function VariantEditor({
 
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                     <div>
-                      <Label className="text-[11px]">SKU</Label>
+                      {/* The button sits beside the label, not inside it: a control nested in a <label> becomes that label's
+                          labelled element and disappears from the accessibility tree as a button of its own. */}
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[11px]">SKU</Label>
+                        <button
+                          type="button"
+                          disabled={!typeId || generatingSku === index}
+                          onClick={() => handleGenerateSku(index)}
+                          className="flex items-center gap-0.5 text-[11px] text-brass-600 hover:text-brass-700 disabled:opacity-40"
+                          title="Generate from the SKU pattern (Catalog setup → SKUs)"
+                        >
+                          <Wand2 size={11} /> {generatingSku === index ? "…" : "Generate"}
+                        </button>
+                      </div>
                       <Input placeholder="SKU-001" {...register(`variants.${index}.sku`)} />
                     </div>
                     <div>
@@ -337,17 +381,31 @@ export function VariantEditor({
                       <Label className="text-[11px]">Weight (kg)</Label>
                       <Input type="number" step="0.01" placeholder="Optional" {...register(`variants.${index}.weight`, { valueAsNumber: true })} />
                     </div>
-                    <div className="col-span-2">
-                      <Label className="text-[11px]">Variant image</Label>
+                    <div>
+                      <Label className="text-[11px]">Compare-at price</Label>
+                      <Input type="number" step="0.01" placeholder="Optional" {...register(`variants.${index}.compareAtPrice`, { valueAsNumber: true })} />
+                    </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 text-sm text-ink-700" title="Inactive variants are hidden from the storefront and can't be bought">
+                        <Checkbox {...register(`variants.${index}.isActive`)} />
+                        On sale
+                      </label>
+                    </div>
+                    <div className={productImages.length > 0 ? "col-span-2 sm:col-span-3 lg:col-span-6" : "col-span-2"}>
+                      <Label className="text-[11px]">{productImages.length > 0 ? "Variant images" : "Variant image"}</Label>
                       {productImages.length > 0 ? (
-                        <Select {...register(`variants.${index}.imageId`)}>
-                          <option value="">Use default product image</option>
-                          {productImages.map((img) => (
-                            <option key={img.id} value={img.id}>
-                              {img.altText || img.url.split("/").pop()}
-                            </option>
-                          ))}
-                        </Select>
+                        <Controller
+                          control={control}
+                          name={`variants.${index}.imageIds`}
+                          render={({ field }) => (
+                            <VariantGalleryPicker
+                              images={productImages}
+                              value={(field.value as string[] | undefined) ?? []}
+                              onChange={field.onChange}
+                              label={`Variant ${index + 1}`}
+                            />
+                          )}
+                        />
                       ) : stagedImages && stagedImages.length > 0 ? (
                         <Select
                           value={variantImageKeys?.[index] ?? ""}
@@ -379,7 +437,7 @@ export function VariantEditor({
         variant="outline"
         size="sm"
         className="mt-3"
-        onClick={() => append({ sku: "", size: "", color: "", stock: 0, attributeValueIds: [] })}
+        onClick={() => append({ sku: "", size: "", color: "", stock: 0, isActive: true, attributeValueIds: [] })}
       >
         Add variant manually
       </Button>

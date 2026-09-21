@@ -58,6 +58,20 @@ the focus keyword is admin-only.
 `details_updated` — each with the fields that changed (from → to), computed by a pure diff (`product-audit.ts`). They live in `AuditLog`
 (`entityType: "products"`); those routes opt out of the generic per-request audit row. `GET /api/products/:id/history` serves them.
 
+## Variants, media and SKUs
+
+- **Variant galleries.** A variant has its own ordered gallery (`VariantImage`); its first image is the variant's primary `imageId`.
+  On write, `imageIds` is authoritative; an older client that only sends `imageId` means "exactly this one image". Every image must belong to the
+  product. The storefront picks what to show with `pickGalleryImages` (shared, unit-tested): the selected variant's images, else a same-colour
+  sibling's, then the product's shared images (assigned to no variant), else everything.
+- **Variant status and price.** `ProductVariant.isActive = false` hides the variant from every public read and refuses it at checkout; it keeps its
+  order and stock history. `compareAtPrice` must exceed the variant's `price`. The product page shows the selected variant's own price (which is what
+  the cart charges) and compare-at price; a running flash sale still wins.
+- **Image metadata.** Uploads record the stored image's pixel size; alt text and caption are edited independently. The caption shows on the storefront.
+- **SKU generator.** Catalog setup → SKUs: a prefix and a pattern of `{PREFIX} {TYPE} {COLOR} {SIZE} {SEQ:n}` (must contain `{SEQ}`). `{TYPE}` is the
+  type's SKU code (falls back to the first three letters of its name). Counters are atomic per type and never reused; a generated SKU is also checked
+  against saved variants and the other rows of the open form. Any admin can generate; only the owner changes the pattern. Existing SKUs are never changed.
+
 ## Permissions
 
 Any admin can read the catalog setup (the product editor needs it). All catalog **writes are OWNER-only**.
@@ -73,6 +87,8 @@ type by the enum key, and its JSON attribute values are still shown until it is 
 
 - The storefront caches product pages for up to **60 seconds** (`REVALIDATE_SECONDS` in `apps/web/lib/api/storefront.ts`), so an unpublished product
   can stay visible for that long. The API stops serving it immediately. (This predates the status workflow; on-demand revalidation would remove it.)
+- Variant galleries are set per variant, not per colour: give each variant of a colour the same images (the picker makes that quick). The storefront
+  already falls back to a same-colour sibling's gallery when the chosen size has none.
 - A template supports at most two variant dimensions (size-like and colour-like), because variants are still unique on `(productId, size, color)`.
 
 ## Deploying
@@ -81,6 +97,7 @@ type by the enum key, and its JSON attribute values are still shown until it is 
   the transaction that adds it.
 - CI's deploy job runs `docker compose up -d --build` **before** `prisma migrate deploy`, so for a few seconds the new API code runs
   against the old schema. Product detail reads will 500 in that window; nothing is lost.
+- P3 adds `20260921160000_add_variant_galleries_media_sku`: additive; each variant's existing image is copied into its gallery, built-in types get SKU codes.
 - P2 adds `20260921140000_add_product_status_seo_care_materials`: additive; inactive products backfill to `UNPUBLISHED`, everything else to
   `PUBLISHED` (the column default). `ProductMaterial` has CHECK constraints (a name is required; percentage in (0, 100]) that Prisma doesn't model.
 - The first catalog migration also seeds the 8 built-in types and backfills `typeId` and `ProductAttributeValue` from the JSON blob. It only inserts;

@@ -240,10 +240,14 @@ export function ProductForm({
             color: v.color,
             colorHex: v.colorHex,
             price: v.price ? Number(v.price) : undefined,
+            compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : undefined,
             costPrice: v.costPrice ? Number(v.costPrice) : undefined,
             stock: v.stock,
             weight: v.weight ? Number(v.weight) : undefined,
+            isActive: v.isActive ?? true,
             imageId: v.imageId,
+            // The variant's own gallery, in order (falling back to its single legacy image).
+            imageIds: v.images?.length ? [...v.images].sort((a, b) => a.sortOrder - b.sortOrder).map((i) => i.imageId) : v.imageId ? [v.imageId] : [],
             attributeValueIds: (v.attributeValues ?? []).map((av) => av.attributeValueId),
           })),
         }
@@ -258,7 +262,7 @@ export function ProductForm({
           trackInventory: true,
           lowStockThreshold: 5,
           sortOrder: 0,
-          variants: [{ sku: "", size: "", color: "", stock: 0, attributeValueIds: [] }],
+          variants: [{ sku: "", size: "", color: "", stock: 0, isActive: true, attributeValueIds: [] }],
         },
   });
 
@@ -697,6 +701,7 @@ export function ProductForm({
           attributes={attributes}
           variantDimensions={selectedConfig?.variantDimensions}
           typeName={selectedConfig?.name}
+          typeId={selectedConfig?.typeId}
           productImages={initial?.images ?? []}
           stagedImages={stagedImages}
           variantImageKeys={variantImageKeys}
