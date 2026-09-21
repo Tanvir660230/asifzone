@@ -17,7 +17,8 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
   }) as typeof res.json;
 
   res.on("finish", () => {
-    if (!req.admin || res.statusCode >= 400) return;
+    // A handler that records its own, more specific audit events (see product.service) opts out of the generic row.
+    if (!req.admin || res.statusCode >= 400 || res.locals.auditHandled) return;
 
     const entityType = req.baseUrl.split("/").filter(Boolean)[1] ?? "unknown";
     let entityId = (req.params.id as string | undefined) ?? null;

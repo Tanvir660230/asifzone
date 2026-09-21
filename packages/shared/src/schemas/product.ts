@@ -6,6 +6,34 @@ export const brandTierEnum = z.enum(["PREMIUM", "PLATINUM", "LUXURY"]);
 
 export const productTypeEnum = z.enum(PRODUCT_TYPE_KEYS);
 
+export const PRODUCT_STATUSES = ["DRAFT", "READY", "PUBLISHED", "UNPUBLISHED"] as const;
+export const productStatusEnum = z.enum(PRODUCT_STATUSES);
+export type ProductStatus = z.infer<typeof productStatusEnum>;
+
+/** A composition line: a catalog material or a product-specific name (exactly one), optionally with a percentage. */
+export const productMaterialSchema = z
+  .object({
+    materialId: z.preprocess(blankToNull, z.string().min(1).nullable().optional()),
+    customName: z.preprocess((v) => (typeof v === "string" ? v.trim() || null : v), z.string().max(80).nullable().optional()),
+    percentage: z.preprocess(blankToNull, z.number().gt(0).max(100).nullable().optional()),
+  })
+  .superRefine((m, ctx) => {
+    if (Boolean(m.materialId) === Boolean(m.customName)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pick a material or type a custom one", path: ["materialId"] });
+    }
+  });
+
+const httpUrl = (max = 2000) =>
+  z.preprocess(
+    blankToNull,
+    z
+      .string()
+      .max(max)
+      .regex(/^https?:\/\/\S+$/i, "Must start with http:// or https://")
+      .nullable()
+      .optional(),
+  );
+
 export const createVariantSchema = z.object({
   id: z.string().cuid().optional(),
   sku: z.string().min(1).max(64),
@@ -57,10 +85,29 @@ export const baseProductSchema = z.object({
   trackInventory: z.boolean().default(true),
   lowStockThreshold: z.number().int().min(0).default(5),
   restockDate: nullableDate(),
-  isActive: z.boolean().default(true),
+  /** Legacy switch, kept for older clients: true = PUBLISHED, false = UNPUBLISHED, unless `status` is sent. */
+  isActive: z.boolean().optional(),
+  /** Moving to READY or PUBLISHED is refused while a required completeness check is missing. */
+  status: productStatusEnum.optional(),
   isFeatured: z.boolean().default(false),
   seoTitle: nullableString(200),
   seoDescription: nullableString(500),
+  focusKeyword: nullableString(120),
+  ogTitle: nullableString(200),
+  ogDescription: nullableString(500),
+  ogImageUrl: httpUrl(),
+  canonicalUrl: httpUrl(),
+  carePresetId: z.preprocess(blankToNull, z.string().min(1).nullable().optional()),
+  /** The product's own care steps; when set (non-empty) they replace the preset's. null/[] clears the override. */
+  careOverride: z.array(z.string().trim().min(1).max(300)).max(30).nullable().optional(),
+  materials: z
+    .array(productMaterialSchema)
+    .max(12)
+    .refine(
+      (rows) => rows.reduce((sum, r) => sum + (r.percentage ?? 0), 0) <= 100.005,
+      "Material percentages add up to more than 100%",
+    )
+    .optional(),
   variants: z.array(createVariantSchema).min(1, "At least one variant is required"),
 });
 
@@ -77,6 +124,8 @@ export const updateProductSchema = baseProductSchema.partial({
 
 export const productListQuerySchema = paginationQuerySchema.extend({
   categoryId: z.string().cuid().optional(),
+  status: productStatusEnum.optional(),
+  typeId: z.string().min(1).optional(),
   search: z.string().min(1).max(200).optional(),
   trashed: z.coerce.boolean().optional(),
 });
@@ -85,7 +134,10 @@ export const updateImageAltTextSchema = z.object({ altText: z.string().min(1).ma
 export const reorderImagesSchema = z.object({ imageIds: z.array(z.string().cuid()).min(1) });
 
 export const bulkProductIdsSchema = z.object({ ids: z.array(z.string().cuid()).min(1).max(500) });
-export const bulkProductStatusSchema = bulkProductIdsSchema.extend({ isActive: z.boolean() });
+/** `status` is the real field; `isActive` (true = publish, false = unpublish) is the legacy form, kept for older clients. */
+export const bulkProductStatusSchema = bulkProductIdsSchema
+  .extend({ status: productStatusEnum.optional(), isActive: z.boolean().optional() })
+  .refine((v) => v.status !== undefined || v.isActive !== undefined, "Send a status");
 export const bulkProductCategorySchema = bulkProductIdsSchema.extend({ categoryId: z.string().cuid() });
 
 export type UpdateImageAltTextInput = z.infer<typeof updateImageAltTextSchema>;

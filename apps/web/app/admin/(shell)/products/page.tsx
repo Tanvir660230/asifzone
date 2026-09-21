@@ -7,7 +7,7 @@ import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX } 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { ProductStatusBadge, PRODUCT_STATUS_LABELS } from "@/components/admin/product-status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
 import { ProductsSubNav } from "@/components/admin/products-subnav";
@@ -19,6 +19,8 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import * as productsApi from "@/lib/api/products";
 import * as categoriesApi from "@/lib/api/categories";
+import * as catalogApi from "@/lib/api/catalog";
+import { PRODUCT_STATUSES, type ProductStatus } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
@@ -43,11 +45,23 @@ export default function ProductsPage() {
   const [pageSize, setPageSize] = useState(20);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCategoryId, setBulkCategoryId] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ProductStatus | "">("");
+  const [typeFilter, setTypeFilter] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["products", { page, pageSize, search, tab }],
-    queryFn: () => productsApi.listProducts({ page, pageSize, search: search || undefined, trashed: tab === "trash" }),
+    queryKey: ["products", { page, pageSize, search, tab, statusFilter, typeFilter }],
+    queryFn: () =>
+      productsApi.listProducts({
+        page,
+        pageSize,
+        search: search || undefined,
+        trashed: tab === "trash",
+        status: statusFilter || undefined,
+        typeId: typeFilter || undefined,
+      }),
   });
+  const { data: typesData } = useQuery({ queryKey: ["catalog-types", "all"], queryFn: () => catalogApi.listTypes(true) });
+  const types = typesData?.types ?? [];
   const { data: categoriesData } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesApi.listCategories() });
   const categories = categoriesData?.categories ?? [];
 
@@ -81,7 +95,7 @@ export default function ProductsPage() {
   });
   const bulkDeleteMutation = useMutation({ mutationFn: productsApi.bulkDeleteProducts, onSuccess: invalidate });
   const bulkStatusMutation = useMutation({
-    mutationFn: ({ ids, isActive }: { ids: string[]; isActive: boolean }) => productsApi.bulkUpdateProductStatus(ids, isActive),
+    mutationFn: ({ ids, status }: { ids: string[]; status: ProductStatus }) => productsApi.bulkUpdateProductStatus(ids, status),
     onSuccess: invalidate,
   });
   const bulkCategoryMutation = useMutation({
@@ -118,11 +132,18 @@ export default function ProductsPage() {
     }
   }
 
-  async function handleBulkStatus(isActive: boolean) {
+  async function handleBulkStatus(status: ProductStatus) {
     const ids = Array.from(selected);
     try {
-      await bulkStatusMutation.mutateAsync({ ids, isActive });
-      toast.success(`${ids.length} product(s) set ${isActive ? "active" : "inactive"}`);
+      const result = await bulkStatusMutation.mutateAsync({ ids, status });
+      const label = PRODUCT_STATUS_LABELS[status].toLowerCase();
+      if (result.updated > 0) toast.success(`${result.updated} product(s) set to ${label}`);
+      // Products that can't go ready/live aren't an error for the batch — say exactly what each is missing.
+      if (result.blocked.length > 0) {
+        const first = result.blocked.slice(0, 3).map((b) => `${b.name} (missing ${b.missing.join(", ")})`).join("; ");
+        toast.error(`${result.blocked.length} product(s) not moved: ${first}${result.blocked.length > 3 ? "…" : ""}`);
+      }
+      if (result.updated === 0 && result.blocked.length === 0) toast.success(`Already ${label}`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Bulk update failed");
     }
@@ -257,6 +278,40 @@ export default function ProductsPage() {
             className="max-w-xs"
           />
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            className="h-9 w-40"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as ProductStatus | "");
+              setPage(1);
+            }}
+            aria-label="Filter by status"
+          >
+            <option value="">All statuses</option>
+            {PRODUCT_STATUSES.map((st) => (
+              <option key={st} value={st}>
+                {PRODUCT_STATUS_LABELS[st]}
+              </option>
+            ))}
+          </Select>
+          <Select
+            className="h-9 w-44"
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Filter by product type"
+          >
+            <option value="">All types</option>
+            {types.map((t) => (
+              <option key={t.typeId} value={t.typeId}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+        </div>
         <PageSizeSelect
           value={pageSize}
           onChange={(size) => {
@@ -271,11 +326,14 @@ export default function ProductsPage() {
           <span className="font-medium text-ink-800">{selected.size} selected</span>
           {tab === "active" ? (
             <>
-              <Button variant="outline" size="sm" onClick={() => handleBulkStatus(true)}>
-                Set active
+              <Button variant="outline" size="sm" onClick={() => handleBulkStatus("PUBLISHED")}>
+                Publish
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleBulkStatus(false)}>
-                Set inactive
+              <Button variant="outline" size="sm" onClick={() => handleBulkStatus("UNPUBLISHED")}>
+                Unpublish
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleBulkStatus("DRAFT")}>
+                Move to draft
               </Button>
               <div className="flex items-center gap-1.5">
                 <Select className="h-8 w-44" value={bulkCategoryId} onChange={(e) => setBulkCategoryId(e.target.value)}>
@@ -374,9 +432,7 @@ export default function ProductsPage() {
                   <td className="px-4 py-3">৳{Number(p.basePrice).toLocaleString()}</td>
                   <td className="px-4 py-3">{totalStock}</td>
                   <td className="px-4 py-3">
-                    <Badge className={p.isActive ? "bg-success-100 text-success-700" : ""}>
-                      {p.isActive ? "Active" : "Inactive"}
-                    </Badge>
+                    <ProductStatusBadge status={p.status} />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-3">{renderRowActions(p)}</div>
@@ -426,9 +482,7 @@ export default function ProductsPage() {
                   <p className="truncate font-medium text-ink-900">{p.name}</p>
                   <p className="truncate text-xs text-ink-400">{p.category.name}</p>
                 </div>
-                <Badge className={cn("shrink-0", p.isActive ? "bg-success-100 text-success-700" : "")}>
-                  {p.isActive ? "Active" : "Inactive"}
-                </Badge>
+                <ProductStatusBadge status={p.status} className="shrink-0" />
               </div>
 
               <div className="mt-2.5 flex items-center justify-between border-t border-ink-100 pt-2.5 text-sm">

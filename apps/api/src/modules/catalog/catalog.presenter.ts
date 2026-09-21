@@ -17,6 +17,7 @@ export const TYPE_INCLUDE = {
   template: {
     include: {
       sizeGuidePreset: true,
+      carePreset: true,
       attributes: {
         orderBy: { sortOrder: "asc" as const },
         include: {
@@ -83,6 +84,12 @@ export function toResolvedTypeConfig(type: TypeWithTemplate): ResolvedTypeConfig
       presetId: template.sizeGuidePresetId,
       chart: template.sizeGuidePreset ? presetToChart(template.sizeGuidePreset) : null,
     },
+    care: {
+      presetId: template.carePresetId,
+      name: template.carePreset?.name ?? null,
+      steps: template.carePreset ? (template.carePreset.steps as string[]) : [],
+    },
+    requiredChecks: template.requiredChecks,
     fields,
   };
 }
@@ -201,11 +208,30 @@ export function buildSizeGuideView(
   return { show: config.sizeGuide.mode === "ON_BY_DEFAULT", chart: config.sizeGuide.chart ?? DEFAULT_SIZE_GUIDE };
 }
 
-export function buildResolvedView(config: ResolvedTypeConfig | null, attributes: Record<string, unknown>): ProductResolvedView {
+/** What care steps to show, most specific first: the product's own list, its chosen preset, then the template's default. */
+export function buildCareView(
+  product: { careOverride: unknown; carePreset: { name: string; steps: unknown } | null },
+  config: Pick<ResolvedTypeConfig, "care"> | null,
+): ProductResolvedView["care"] {
+  const own = Array.isArray(product.careOverride) ? (product.careOverride as string[]).filter(Boolean) : [];
+  if (own.length) return { title: "Care", steps: own, source: "product" };
+  const steps = product.carePreset ? (product.carePreset.steps as string[]) : [];
+  if (product.carePreset && steps.length) return { title: product.carePreset.name, steps, source: "preset" };
+  if (config && config.care.steps.length) return { title: config.care.name ?? "Care", steps: config.care.steps, source: "template" };
+  return null;
+}
+
+export function buildResolvedView(
+  config: ResolvedTypeConfig | null,
+  attributes: Record<string, unknown>,
+  extras: { care: ProductResolvedView["care"]; materials: ProductResolvedView["materials"] } = { care: null, materials: [] },
+): ProductResolvedView {
   return {
     type: config ? { id: config.typeId, key: config.key, name: config.name } : null,
     variantDimensions: config?.variantDimensions ?? [],
     specGroups: config ? buildSpecGroups(config.fields, attributes) : [],
     sizeGuide: buildSizeGuideView(config, attributes),
+    care: extras.care,
+    materials: extras.materials,
   };
 }

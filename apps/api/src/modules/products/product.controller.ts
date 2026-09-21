@@ -91,12 +91,15 @@ export const urgencySignals = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const product = await productService.createProduct(req.body, req.admin!.adminId);
+  // The service records its own, more specific audit events (price changed, published, ...).
+  res.locals.auditHandled = true;
+  const product = await productService.createProduct(req.body, req.admin!.adminId, req.ip);
   res.status(201).json({ product });
 });
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const product = await productService.updateProduct(req.params.id!, req.body, req.admin!.adminId);
+  res.locals.auditHandled = true;
+  const product = await productService.updateProduct(req.params.id!, req.body, req.admin!.adminId, req.ip);
   res.json({ product });
 });
 
@@ -121,8 +124,15 @@ export const bulkDelete = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const bulkStatus = asyncHandler(async (req: Request, res: Response) => {
-  await productService.bulkUpdateProductStatus(req.body.ids, req.body.isActive);
-  res.status(204).send();
+  res.locals.auditHandled = true;
+  // `status` is the real field; `isActive` is the legacy boolean (true = publish, false = unpublish).
+  const target = req.body.status ?? (req.body.isActive ? "PUBLISHED" : "UNPUBLISHED");
+  res.json(await productService.bulkUpdateProductStatus(req.body.ids, target, req.admin!.adminId, req.ip));
+});
+
+export const history = asyncHandler(async (req: Request, res: Response) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  res.json(await productService.getProductHistory(req.params.id!, page));
 });
 
 export const bulkCategory = asyncHandler(async (req: Request, res: Response) => {

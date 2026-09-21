@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { blankToNull, nullableString, slugSchema } from "./common";
 import type { SizeGuideData } from "../config/product-types";
+import { OPTIONAL_COMPLETENESS_KEYS } from "../completeness-checks";
 
 /* ───────────────────────── enums ───────────────────────── */
 
@@ -130,6 +131,13 @@ export const templateSchema = z.object({
     .default([]),
   sizeGuideMode: sizeGuideModeEnum.default("NOT_APPLICABLE"),
   sizeGuidePresetId: z.preprocess(blankToNull, z.string().min(1).nullable().optional()),
+  carePresetId: z.preprocess(blankToNull, z.string().min(1).nullable().optional()),
+  /** Publish requirements beyond the always-required basics. */
+  requiredChecks: z
+    .array(z.enum(OPTIONAL_COMPLETENESS_KEYS as [string, ...string[]]))
+    .max(20)
+    .refine((k) => new Set(k).size === k.length, "Duplicate checks")
+    .default([]),
   /** Order in the array is the display order. */
   attributes: z
     .array(templateAttributeInputSchema)
@@ -137,6 +145,18 @@ export const templateSchema = z.object({
     .refine((a) => new Set(a.map((x) => x.definitionId)).size === a.length, "An attribute can only be added once")
     .default([]),
   isArchived: z.boolean().optional(),
+});
+
+export const careGuidePresetSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: nullableString(300),
+  /** One care instruction per entry, in display order. */
+  steps: z.array(z.string().trim().min(1).max(300)).min(1, "Add at least one care step").max(30),
+});
+
+export const materialSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: nullableString(300),
 });
 
 export const productTypeSchema = z.object({
@@ -156,6 +176,8 @@ export type SpecGroupInput = z.infer<typeof specGroupSchema>;
 export type SizeGuidePresetInput = z.infer<typeof sizeGuidePresetSchema>;
 export type TemplateInput = z.infer<typeof templateSchema>;
 export type ProductTypeInput = z.infer<typeof productTypeSchema>;
+export type CareGuidePresetInput = z.infer<typeof careGuidePresetSchema>;
+export type MaterialInput = z.infer<typeof materialSchema>;
 export type UpdateProductTypeInput = z.infer<typeof updateProductTypeSchema>;
 
 /* ───────────────────────── API shapes ───────────────────────── */
@@ -188,6 +210,9 @@ export interface ResolvedTypeConfig {
   templateName: string;
   variantDimensions: VariantDimension[];
   sizeGuide: { mode: SizeGuideMode; presetId: string | null; chart: SizeGuideData | null };
+  /** The template's default care guide (a product can pick another or write its own). */
+  care: { presetId: string | null; name: string | null; steps: string[] };
+  requiredChecks: string[];
   fields: ResolvedAttributeField[];
 }
 
@@ -205,6 +230,9 @@ export interface ProductResolvedView {
   variantDimensions: VariantDimension[];
   specGroups: { name: string; items: SpecItemView[] }[];
   sizeGuide: { show: boolean; chart: SizeGuideData | null };
+  /** Care steps to show: the product's own list, else its preset, else the template's default preset. */
+  care: { title: string; steps: string[]; source: "product" | "preset" | "template" } | null;
+  materials: { name: string; percentage: number | null }[];
 }
 
 /* ───────────────────────── value handling ───────────────────────── */

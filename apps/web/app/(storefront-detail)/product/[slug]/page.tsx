@@ -66,17 +66,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { product } = data;
   const title = product.seoTitle || product.name;
   const description = product.seoDescription || product.shortDescription || stripHtml(product.description) || undefined;
-  const url = `${getSiteUrl()}/product/${product.slug}`;
+  const ownUrl = `${getSiteUrl()}/product/${product.slug}`;
+  // An explicit canonical (e.g. this product is a variant listing of another page) wins; otherwise it points at itself.
+  const canonical = product.canonicalUrl || ownUrl;
 
   return {
     title,
     description,
-    alternates: { canonical: url },
+    alternates: { canonical },
     ...buildOpenGraph({
-      title,
-      description,
-      url,
-      images: product.images.map((img) => resolveImageUrl(img.url)),
+      // Social previews use their own overrides when set, and fall back to what search results show.
+      title: product.ogTitle || title,
+      description: product.ogDescription || description,
+      url: canonical,
+      images: product.ogImageUrl ? [product.ogImageUrl] : product.images.map((img) => resolveImageUrl(img.url)),
     }),
   };
 }

@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import type {
+  CareGuidePresetInput,
   CreateAttributeDefinitionInput,
+  MaterialInput,
   ProductTypeInput,
   ResolvedTypeConfig,
   SizeGuidePresetInput,
@@ -85,8 +87,11 @@ export async function createType(input: ProductTypeInput) {
   );
   const { key: _ignored, ...data } = input;
   void _ignored;
+  // Unless the admin picked an order, a new type goes to the end — the editor defaults new products to the first
+  // active type, and a freshly created "Cap" must not jump ahead of Clothing just because both have order 0.
+  const sortOrder = data.sortOrder || ((await prisma.productTypeDef.aggregate({ _max: { sortOrder: true } }))._max.sortOrder ?? 0) + 1;
   try {
-    const created = await prisma.productTypeDef.create({ data: { ...data, key, legacyType: "CUSTOM" } });
+    const created = await prisma.productTypeDef.create({ data: { ...data, sortOrder, key, legacyType: "CUSTOM" } });
     await afterConfigChange();
     return created;
   } catch (err) {
@@ -305,6 +310,7 @@ export async function deleteSizeGuidePreset(id: string) {
 
 const TEMPLATE_INCLUDE = {
   sizeGuidePreset: { select: { id: true, name: true } },
+  carePreset: { select: { id: true, name: true } },
   attributes: {
     orderBy: { sortOrder: "asc" as const },
     include: { definition: { select: { id: true, key: true, label: true, dataType: true, isArchived: true } }, specGroup: { select: { id: true, name: true } } },
@@ -325,7 +331,10 @@ export async function getTemplate(id: string) {
 }
 
 /** Rejects references that don't exist (or that were archived since) before anything is written. */
-async function assertTemplateReferences(input: Partial<TemplateInput>, current?: { attributeIds: string[]; presetId: string | null }) {
+async function assertTemplateReferences(
+  input: Partial<TemplateInput>,
+  current?: { attributeIds: string[]; presetId: string | null; carePresetId: string | null },
+) {
   if (input.attributes?.length) {
     const ids = input.attributes.map((a) => a.definitionId);
     const defs = await prisma.attributeDefinition.findMany({ where: { id: { in: ids } }, select: { id: true, label: true, isArchived: true } });
@@ -346,6 +355,11 @@ async function assertTemplateReferences(input: Partial<TemplateInput>, current?:
     const preset = await prisma.sizeGuidePreset.findUnique({ where: { id: input.sizeGuidePresetId }, select: { isArchived: true } });
     if (!preset) throw AppError.badRequest("Size guide does not exist");
     if (preset.isArchived && current?.presetId !== input.sizeGuidePresetId) throw AppError.badRequest("That size guide is archived");
+  }
+  if (input.carePresetId) {
+    const preset = await prisma.careGuidePreset.findUnique({ where: { id: input.carePresetId }, select: { isArchived: true } });
+    if (!preset) throw AppError.badRequest("Care guide does not exist");
+    if (preset.isArchived && current?.carePresetId !== input.carePresetId) throw AppError.badRequest("That care guide is archived");
   }
 }
 
@@ -372,6 +386,7 @@ export async function updateTemplate(id: string, input: Partial<TemplateInput>) 
   await assertTemplateReferences(input, {
     attributeIds: existing.attributes.map((a) => a.definitionId),
     presetId: existing.sizeGuidePresetId,
+    carePresetId: existing.carePresetId,
   });
 
   const { attributes, variantDimensions, ...data } = input;
@@ -406,4 +421,100 @@ export async function deleteTemplate(id: string) {
   if (template.typeCount > 0) throw AppError.conflict("Product types use this template — archive it instead of deleting");
   await prisma.productTemplate.delete({ where: { id } });
   await afterConfigChange();
+}
+
+/* ───────────────────────── care guide presets ───────────────────────── */
+
+export async function listCareGuides() {
+  const presets = await prisma.careGuidePreset.findMany({
+    orderBy: [{ isArchived: "asc" }, { name: "asc" }],
+    include: { _count: { select: { templates: true, products: true } } },
+  });
+  return presets.map(({ _count, ...p }) => ({ ...p, templateCount: _count.templates, productCount: _count.products }));
+}
+
+async function getCareGuide(id: string) {
+  const preset = await prisma.careGuidePreset.findUnique({ where: { id } });
+  if (!preset) throw AppError.notFound("Care guide not found");
+  return preset;
+}
+
+export async function createCareGuide(input: CareGuidePresetInput) {
+  try {
+    const created = await prisma.careGuidePreset.create({ data: { ...input, steps: input.steps } });
+    await afterConfigChange();
+    return created;
+  } catch (err) {
+    return conflictOnUnique(err, `A care guide named "${input.name}" already exists`);
+  }
+}
+
+export async function updateCareGuide(id: string, input: CareGuidePresetInput) {
+  await getCareGuide(id);
+  try {
+    const updated = await prisma.careGuidePreset.update({ where: { id }, data: input });
+    await afterConfigChange();
+    return updated;
+  } catch (err) {
+    return conflictOnUnique(err, `A care guide named "${input.name}" already exists`);
+  }
+}
+
+export async function setCareGuideArchived(id: string, isArchived: boolean) {
+  await getCareGuide(id);
+  const updated = await prisma.careGuidePreset.update({ where: { id }, data: { isArchived } });
+  await afterConfigChange();
+  return updated;
+}
+
+export async function duplicateCareGuide(id: string) {
+  const source = await getCareGuide(id);
+  let name = `${source.name} copy`;
+  for (let n = 2; await prisma.careGuidePreset.findUnique({ where: { name }, select: { id: true } }); n++) name = `${source.name} copy ${n}`;
+  return prisma.careGuidePreset.create({
+    data: { name, description: source.description, steps: source.steps as Prisma.InputJsonValue },
+  });
+}
+
+/** Templates and products that use it fall back (SetNull) to no preset, so deleting only needs the user's confirmation. */
+export async function deleteCareGuide(id: string) {
+  await getCareGuide(id);
+  await prisma.careGuidePreset.delete({ where: { id } });
+  await afterConfigChange();
+}
+
+/* ───────────────────────── materials ───────────────────────── */
+
+export async function listMaterials() {
+  const materials = await prisma.material.findMany({
+    orderBy: [{ isArchived: "asc" }, { name: "asc" }],
+    include: { _count: { select: { products: true } } },
+  });
+  return materials.map(({ _count, ...m }) => ({ ...m, productCount: _count.products }));
+}
+
+export async function createMaterial(input: MaterialInput) {
+  try {
+    return await prisma.material.create({ data: input });
+  } catch (err) {
+    return conflictOnUnique(err, `A material named "${input.name}" already exists`);
+  }
+}
+
+export async function updateMaterial(id: string, input: MaterialInput & { isArchived?: boolean }) {
+  if (!(await prisma.material.findUnique({ where: { id }, select: { id: true } }))) throw AppError.notFound("Material not found");
+  try {
+    const updated = await prisma.material.update({ where: { id }, data: input });
+    await afterConfigChange();
+    return updated;
+  } catch (err) {
+    return conflictOnUnique(err, `A material named "${input.name}" already exists`);
+  }
+}
+
+export async function deleteMaterial(id: string) {
+  const material = await prisma.material.findUnique({ where: { id }, include: { _count: { select: { products: true } } } });
+  if (!material) throw AppError.notFound("Material not found");
+  if (material._count.products > 0) throw AppError.conflict(`${material._count.products} product(s) use this material — archive it instead of deleting`);
+  await prisma.material.delete({ where: { id } });
 }
