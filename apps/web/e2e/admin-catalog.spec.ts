@@ -119,8 +119,9 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await page.getByRole("button", { name: "Create product" }).click();
     await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
 
-    const link = page.getByRole("link", { name: /view on site/i });
-    productSlug = (await link.getAttribute("href"))!.replace("/product/", "");
+    // A draft has no public page, so the editor offers Preview rather than "View on site"; read the slug from the SEO tab.
+    await page.getByRole("button", { name: "SEO", exact: true }).click();
+    productSlug = await page.getByLabel("URL slug").inputValue();
     expect(productSlug).toContain("e2e-cap");
   });
 

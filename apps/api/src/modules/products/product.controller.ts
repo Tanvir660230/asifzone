@@ -170,3 +170,13 @@ export const reorderImages = asyncHandler(async (req: Request, res: Response) =>
   const product = await productService.reorderProductImages(req.params.id!, req.body.imageIds);
   res.json({ product });
 });
+
+export const rail = asyncHandler(async (req: Request, res: Response) => {
+  const key = req.params.key!;
+  if (!productService.isRailKey(key)) throw AppError.notFound("Unknown list");
+  res.json(await productService.getRail(req.params.id!, key));
+});
+
+export const preview = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ product: await productService.getProductForPreview(req.params.id!) });
+});

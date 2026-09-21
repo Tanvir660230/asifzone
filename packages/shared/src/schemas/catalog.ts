@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { blankToNull, nullableString, slugSchema } from "./common";
 import { skuCodeSchema } from "../sku";
+import { sectionLayerSchema, type PublicSection } from "../sections";
 import type { SizeGuideData } from "../config/product-types";
 import { OPTIONAL_COMPLETENESS_KEYS } from "../completeness-checks";
 
@@ -139,6 +140,8 @@ export const templateSchema = z.object({
     .max(20)
     .refine((k) => new Set(k).size === k.length, "Duplicate checks")
     .default([]),
+  /** Page-section overrides for every product of this template. Sent whole; omit to leave them alone. */
+  sections: sectionLayerSchema.optional(),
   /** Order in the array is the display order. */
   attributes: z
     .array(templateAttributeInputSchema)
@@ -216,6 +219,8 @@ export interface ResolvedTypeConfig {
   /** The template's default care guide (a product can pick another or write its own). */
   care: { presetId: string | null; name: string | null; steps: string[] };
   requiredChecks: string[];
+  /** The template's own page-section overrides (the middle layer of product → template → store). */
+  sectionOverrides: { sectionKey: string; enabled?: boolean | null; sortOrder?: number | null; title?: string | null; content?: string | null }[];
   fields: ResolvedAttributeField[];
 }
 
@@ -236,6 +241,9 @@ export interface ProductResolvedView {
   /** Care steps to show: the product's own list, else its preset, else the template's default preset. */
   care: { title: string; steps: string[]; source: "product" | "preset" | "template" } | null;
   materials: { name: string; percentage: number | null }[];
+  /** The enabled page sections in display order, resolved product → template → global → default. */
+  sections: PublicSection[];
+  faqs: { question: string; answer: string }[];
 }
 
 /* ───────────────────────── value handling ───────────────────────── */

@@ -8,6 +8,7 @@ import type { ProductType } from "./config/product-types";
 import type { ProductResolvedView } from "./schemas/catalog";
 import type { CompletenessResult } from "./completeness";
 import type { ProductStatus } from "./schemas/product";
+import type { ResolvedSection, SectionOverride } from "./sections";
 
 export interface StockMovement {
   id: string;
@@ -171,6 +172,12 @@ export interface Product {
   materials?: { materialId: string | null; customName: string | null; percentage: number | null }[];
   /** Admin detail reads only. */
   completeness?: CompletenessResult;
+  /** Admin detail reads: this product's own section overrides, its FAQ and hand-picked lists, and every section resolved
+   * with where each value came from (so the editor can say "inherited from the template"). */
+  sectionOverrides?: (SectionOverride & { sectionKey: string })[];
+  sectionsResolved?: ResolvedSection[];
+  faqs?: { question: string; answer: string }[];
+  relations?: { kind: "RELATED" | "CROSS_SELL" | "UPSELL" | "FREQUENTLY_BOUGHT" | "RECOMMENDED"; productIds: string[]; products?: { id: string; name: string }[] }[];
   deletedAt: string | null;
   variants: ProductVariant[];
   images: ProductImage[];

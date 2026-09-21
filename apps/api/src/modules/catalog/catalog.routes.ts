@@ -4,6 +4,7 @@ import {
   createAttributeDefinitionSchema,
   materialSchema,
   productTypeSchema,
+  sectionLayerSchema,
   skuSettingsSchema,
   sizeGuidePresetSchema,
   specGroupSchema,
@@ -17,6 +18,7 @@ import { requireAdmin, requireRole } from "../../middlewares/require-admin";
 import { asyncHandler } from "../../lib/async-handler";
 import * as catalog from "./catalog.service";
 import * as sku from "./sku.service";
+import * as sections from "./sections.service";
 
 export const catalogRouter = Router();
 
@@ -167,4 +169,12 @@ catalogRouter.put("/sku-settings", ownerOnly, validate(skuSettingsSchema), async
 // Any admin can generate (staff create products); it only reserves a number, it changes no product.
 catalogRouter.post("/sku/generate", validate(generateSkuSchema), asyncHandler(async (req, res) => {
   res.json({ sku: await sku.generateSku(req.body) });
+}));
+
+/* product-page sections: the store-wide layer (templates and products carry theirs on their own payloads) */
+catalogRouter.get("/sections", asyncHandler(async (_req, res) => {
+  res.json(await sections.getGlobalSections());
+}));
+catalogRouter.put("/sections", ownerOnly, validate(z.object({ overrides: sectionLayerSchema })), asyncHandler(async (req, res) => {
+  res.json(await sections.saveGlobalSections(req.body.overrides));
 }));

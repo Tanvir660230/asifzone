@@ -18,6 +18,7 @@ export const TYPE_INCLUDE = {
     include: {
       sizeGuidePreset: true,
       carePreset: true,
+      sections: true,
       attributes: {
         orderBy: { sortOrder: "asc" as const },
         include: {
@@ -90,6 +91,7 @@ export function toResolvedTypeConfig(type: TypeWithTemplate): ResolvedTypeConfig
       steps: template.carePreset ? (template.carePreset.steps as string[]) : [],
     },
     requiredChecks: template.requiredChecks,
+    sectionOverrides: template.sections.map((r) => ({ sectionKey: r.sectionKey, enabled: r.enabled, sortOrder: r.sortOrder, title: r.title, content: r.content })),
     fields,
   };
 }
@@ -224,7 +226,7 @@ export function buildCareView(
 export function buildResolvedView(
   config: ResolvedTypeConfig | null,
   attributes: Record<string, unknown>,
-  extras: { care: ProductResolvedView["care"]; materials: ProductResolvedView["materials"] } = { care: null, materials: [] },
+  extras: Pick<ProductResolvedView, "care" | "materials" | "sections" | "faqs"> = { care: null, materials: [], sections: [], faqs: [] },
 ): ProductResolvedView {
   return {
     type: config ? { id: config.typeId, key: config.key, name: config.name } : null,
@@ -233,5 +235,7 @@ export function buildResolvedView(
     sizeGuide: buildSizeGuideView(config, attributes),
     care: extras.care,
     materials: extras.materials,
+    sections: extras.sections,
+    faqs: extras.faqs,
   };
 }
