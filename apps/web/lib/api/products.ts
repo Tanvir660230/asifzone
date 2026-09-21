@@ -4,6 +4,10 @@ import type {
   UpdateProductInput,
   PaginatedResult,
   ProductStatus,
+  DuplicateProductInput,
+  DuplicateProductResult,
+  ProductImportReport,
+  ProductImportResult,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 import { env } from "../env";
@@ -90,6 +94,33 @@ export function bulkUpdateProductCategory(ids: string[], categoryId: string) {
  * a plain same-tab navigation lets the browser handle the file download via Content-Disposition. */
 export function downloadProductsCsvUrl() {
   return `${env.apiUrl}/api/products/export/csv`;
+}
+
+/** The importable format (one row per variant) — a plain navigation, like the summary export above. */
+export function exportFullCsvUrl(typeId?: string) {
+  return `${env.apiUrl}/api/products/export/full${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
+}
+
+export function importTemplateUrl(typeId?: string) {
+  return `${env.apiUrl}/api/products/import/template${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
+}
+
+/** A draft copy of a product; the input says what to bring along. */
+export function duplicateProduct(id: string, input: DuplicateProductInput) {
+  return apiFetch<DuplicateProductResult>(`/api/products/${id}/duplicate`, { method: "POST", body: input });
+}
+
+/** Checks a CSV without writing anything. */
+export function validateProductImport(csv: string) {
+  return apiFetch<{ report: ProductImportReport }>("/api/products/import/validate", { method: "POST", body: { csv } });
+}
+
+/** Writes it. With errors and no `skipInvalid` the API answers 422 and the ApiError's `details.report` says why. */
+export function commitProductImport(csv: string, skipInvalid: boolean) {
+  return apiFetch<{ report: ProductImportReport; result: ProductImportResult }>("/api/products/import/commit", {
+    method: "POST",
+    body: { csv, skipInvalid },
+  });
 }
 
 export function uploadProductImages(id: string, files: File[]) {

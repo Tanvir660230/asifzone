@@ -30,6 +30,7 @@ import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
+import { csvCell } from "../../lib/csv";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteProductImageFiles } from "../uploads/upload.service";
 import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
@@ -1399,7 +1400,7 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
   return getProductById(product.id);
 }
 
-export async function updateProduct(id: string, input: UpdateProductInput, adminId: string, ip?: string) {
+export async function updateProduct(id: string, input: UpdateProductInput, adminId: string, ip?: string, options: { stockNote?: string } = {}) {
   const existing = await getProductById(id);
 
   if (input.categoryId) {
@@ -1590,7 +1591,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
               const delta = before ? updateData.stock - before.stock : 0;
               if (delta !== 0) {
                 await tx.stockMovement.create({
-                  data: { variantId, change: delta, reason: "ADJUSTMENT", adminId, note: "Manual edit via product form" },
+                  data: { variantId, change: delta, reason: "ADJUSTMENT", adminId, note: options.stockNote ?? "Manual edit via product form" },
                 });
               }
             }
@@ -1673,12 +1674,20 @@ export async function restoreProduct(id: string) {
   return getProductById(id);
 }
 
+/** Removes an image's files from disk — unless another image row still uses the same URL (call this after the row is gone).
+ * Duplicating a product copies files rather than sharing them, so this is a guard, not the usual path. */
+async function removeImageFilesIfUnused(urls: string[]) {
+  for (const url of new Set(urls)) {
+    if ((await prisma.productImage.count({ where: { url } })) === 0) await deleteProductImageFiles(url);
+  }
+}
+
 /** Irreversible — only meaningful for a product already in Trash. */
 export async function permanentlyDeleteProduct(id: string) {
   const product = await getProductById(id);
   if (!product.deletedAt) throw AppError.badRequest("Move the product to Trash before deleting it permanently");
   await prisma.product.delete({ where: { id } });
-  await Promise.all(product.images.map((img) => deleteProductImageFiles(img.url)));
+  await removeImageFilesIfUnused(product.images.map((img) => img.url));
   await invalidateCache();
 }
 
@@ -1729,11 +1738,6 @@ export async function bulkUpdateProductCategory(ids: string[], categoryId: strin
   if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
   await prisma.product.updateMany({ where: { id: { in: ids } }, data: { categoryId } });
   await invalidateCache();
-}
-
-function csvCell(value: unknown): string {
-  const str = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
 /** Product-level summary export (one row per product, not per variant) — stock is the sum across variants. */
@@ -1804,7 +1808,7 @@ export async function deleteProductImage(productId: string, imageId: string) {
     select: { id: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { imageId: true } } },
   });
   for (const v of orphaned) await prisma.productVariant.update({ where: { id: v.id }, data: { imageId: v.images[0]!.imageId } });
-  await deleteProductImageFiles(image.url);
+  await removeImageFilesIfUnused([image.url]);
   await invalidateCache();
 }
 
