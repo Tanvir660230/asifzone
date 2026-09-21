@@ -87,8 +87,11 @@ export async function createType(input: ProductTypeInput) {
   );
   const { key: _ignored, ...data } = input;
   void _ignored;
+  // Unless the admin picked an order, a new type goes to the end — the editor defaults new products to the first
+  // active type, and a freshly created "Cap" must not jump ahead of Clothing just because both have order 0.
+  const sortOrder = data.sortOrder || ((await prisma.productTypeDef.aggregate({ _max: { sortOrder: true } }))._max.sortOrder ?? 0) + 1;
   try {
-    const created = await prisma.productTypeDef.create({ data: { ...data, key, legacyType: "CUSTOM" } });
+    const created = await prisma.productTypeDef.create({ data: { ...data, sortOrder, key, legacyType: "CUSTOM" } });
     await afterConfigChange();
     return created;
   } catch (err) {

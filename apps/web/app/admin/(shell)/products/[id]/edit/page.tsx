@@ -33,7 +33,18 @@ export default function EditProductPage() {
       await productsApi.updateProduct(id, values);
       await queryClient.invalidateQueries({ queryKey: ["product", id] });
       await queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Product saved");
+      toast.success(
+        values.status === "PUBLISHED"
+          ? "Product published"
+          : values.status === "UNPUBLISHED"
+            ? "Product unpublished"
+            : values.status === "READY"
+              ? "Marked ready to publish"
+              : values.status === "DRAFT"
+                ? "Moved back to draft"
+                : "Product saved",
+      );
+      await queryClient.invalidateQueries({ queryKey: ["product-history", id] });
     } catch (err) {
       setError(describeApiError(err, "Failed to update product"));
     }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, LayoutTemplate, Pencil, Plus, Trash2, X } from "lucide-react";
-import { ATTRIBUTE_DATA_TYPE_LABELS, type SizeGuideMode, type VariantDimension } from "@clothing-brand/shared";
+import { ATTRIBUTE_DATA_TYPE_LABELS, COMPLETENESS_CHECKS, OPTIONAL_COMPLETENESS_KEYS, type SizeGuideMode, type VariantDimension } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -43,6 +43,8 @@ interface Draft {
   color: DimensionDraft;
   sizeGuideMode: SizeGuideMode;
   sizeGuidePresetId: string;
+  carePresetId: string;
+  requiredChecks: string[];
   attributes: AttributeDraft[];
   isArchived: boolean;
 }
@@ -54,6 +56,8 @@ const EMPTY: Draft = {
   color: { enabled: false, label: "Color", optionsText: "" },
   sizeGuideMode: "NOT_APPLICABLE",
   sizeGuidePresetId: "",
+  carePresetId: "",
+  requiredChecks: [],
   attributes: [],
   isArchived: false,
 };
@@ -82,10 +86,12 @@ export default function TemplatesPage() {
   const { data: defsData } = useQuery({ queryKey: ["catalog-attributes"], queryFn: catalogApi.listAttributeDefinitions });
   const { data: groupsData } = useQuery({ queryKey: ["catalog-spec-groups"], queryFn: catalogApi.listSpecGroups });
   const { data: guidesData } = useQuery({ queryKey: ["catalog-size-guides"], queryFn: catalogApi.listSizeGuides });
+  const { data: careData } = useQuery({ queryKey: ["catalog-care-guides"], queryFn: catalogApi.listCareGuides });
   const templates = data?.templates ?? [];
   const definitions = defsData?.attributes ?? [];
   const specGroups = groupsData?.specGroups ?? [];
   const guides = guidesData?.sizeGuides ?? [];
+  const careGuides = careData?.careGuides ?? [];
   const defById = new Map(definitions.map((d) => [d.id, d]));
 
   const [editing, setEditing] = useState<catalogApi.TemplateRow | "new" | null>(null);
@@ -107,6 +113,8 @@ export default function TemplatesPage() {
         variantDimensions: toDimensions(draft),
         sizeGuideMode: draft.sizeGuideMode,
         sizeGuidePresetId: draft.sizeGuideMode === "NOT_APPLICABLE" ? "" : draft.sizeGuidePresetId,
+        carePresetId: draft.carePresetId,
+        requiredChecks: draft.requiredChecks,
         attributes: draft.attributes,
         isArchived: draft.isArchived,
       };
@@ -134,6 +142,8 @@ export default function TemplatesPage() {
       color: { enabled: Boolean(color), label: color?.label ?? "Color", optionsText: optionsToText(color?.options ?? []) },
       sizeGuideMode: target.sizeGuideMode,
       sizeGuidePresetId: target.sizeGuidePresetId ?? "",
+      carePresetId: target.carePresetId ?? "",
+      requiredChecks: target.requiredChecks,
       attributes: target.attributes.map((a) => ({
         definitionId: a.definitionId,
         required: a.required,
@@ -170,6 +180,7 @@ export default function TemplatesPage() {
   const usedIds = new Set(draft.attributes.map((a) => a.definitionId));
   const addable = definitions.filter((d) => !d.isArchived && !usedIds.has(d.id));
   const usableGuides = guides.filter((g) => !g.isArchived || g.id === draft.sizeGuidePresetId);
+  const usableCare = careGuides.filter((g) => !g.isArchived || g.id === draft.carePresetId);
 
   function DimensionEditor({ title, dim, onChange }: { title: string; dim: DimensionDraft; onChange: (d: DimensionDraft) => void }) {
     return (
@@ -318,6 +329,41 @@ export default function TemplatesPage() {
                   </Select>
                 </div>
               )}
+            </div>
+          </FormSection>
+
+          <FormSection title="Care guide" description="Products of this type show this care guide unless they pick another or write their own.">
+            <Select value={draft.carePresetId} onChange={(e) => setDraft({ ...draft, carePresetId: e.target.value })} aria-label="Default care guide">
+              <option value="">No default care guide</option>
+              {usableCare.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                  {g.isArchived ? " (archived)" : ""}
+                </option>
+              ))}
+            </Select>
+          </FormSection>
+
+          <FormSection
+            title="Required before publishing"
+            description="A product can't be marked ready or published until these are complete. Name, category, price, variants, images and required attributes are always required."
+          >
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {COMPLETENESS_CHECKS.filter((c) => (OPTIONAL_COMPLETENESS_KEYS as readonly string[]).includes(c.key)).map((c) => (
+                <label key={c.key} className="flex items-start gap-2 text-sm text-ink-700">
+                  <Checkbox
+                    checked={draft.requiredChecks.includes(c.key)}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, requiredChecks: e.target.checked ? [...d.requiredChecks, c.key] : d.requiredChecks.filter((k) => k !== c.key) }))
+                    }
+                    aria-label={`Require ${c.label}`}
+                  />
+                  <span>
+                    {c.label}
+                    <span className="block text-xs text-ink-400">{c.hint}</span>
+                  </span>
+                </label>
+              ))}
             </div>
           </FormSection>
 

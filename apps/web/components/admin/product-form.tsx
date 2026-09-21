@@ -8,14 +8,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import {
+  computeCompleteness,
   createProductSchema,
   validateProductAgainstConfig,
   type Category,
   type CreateProductInput,
   type Product,
+  type ProductStatus,
   type ResolvedTypeConfig,
 } from "@clothing-brand/shared";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -25,6 +26,11 @@ import { FormSection } from "@/components/admin/form-section";
 import { VariantEditor } from "./variant-editor";
 import { SizeGuideEditor } from "./size-guide-editor";
 import { AttributeFields } from "./attribute-fields";
+import { CareMaterialSection } from "./care-material-section";
+import { ProductHistory } from "./product-history";
+import { ProductStatusPanel, type FixTarget } from "./product-status-panel";
+import { stripHtml } from "@/lib/format";
+import { slugify } from "@clothing-brand/shared";
 import type { StagedImage } from "./image-uploader";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +38,9 @@ const TABS = [
   { value: "basic", label: "Basic Info" },
   { value: "pricing", label: "Pricing & Inventory" },
   { value: "variants", label: "Variants" },
+  { value: "care", label: "Care & Material" },
   { value: "seo", label: "SEO" },
+  { value: "history", label: "History" },
 ] as const;
 type ProductFormTab = (typeof TABS)[number]["value"];
 
@@ -212,10 +220,17 @@ export function ProductForm({
           taxRate: initial.taxRate ? Number(initial.taxRate) : undefined,
           trackInventory: initial.trackInventory,
           lowStockThreshold: initial.lowStockThreshold,
-          isActive: initial.isActive,
           isFeatured: initial.isFeatured,
           seoTitle: initial.seoTitle,
           seoDescription: initial.seoDescription,
+          focusKeyword: initial.focusKeyword,
+          ogTitle: initial.ogTitle,
+          ogDescription: initial.ogDescription,
+          ogImageUrl: initial.ogImageUrl,
+          canonicalUrl: initial.canonicalUrl,
+          carePresetId: initial.carePresetId ?? "",
+          careOverride: initial.careOverride ?? [],
+          materials: initial.materials ?? [],
           variants: initial.variants.map((v) => ({
             id: v.id,
             sku: v.sku,
@@ -236,8 +251,10 @@ export function ProductForm({
           typeId: "",
           attributes: {},
           brandTier: "PREMIUM",
-          isActive: true,
           isFeatured: false,
+          carePresetId: "",
+          careOverride: [],
+          materials: [],
           trackInventory: true,
           lowStockThreshold: 5,
           sortOrder: 0,
@@ -259,12 +276,61 @@ export function ProductForm({
     }
   }, [initial, typeId, types, setValue]);
 
+  // Live completeness from what's in the form right now — the very function the server gates publishing with.
+  const live = watch();
+  const savedSizeGuide = (live.attributes as Record<string, any> | null | undefined)?.sizeGuide;
+  const completeness = computeCompleteness(
+    {
+      name: live.name,
+      categoryId: live.categoryId,
+      basePrice: live.basePrice,
+      description: live.description,
+      seoDescription: live.seoDescription,
+      trackInventory: live.trackInventory,
+      variants: live.variants ?? [],
+      // Images live outside this form: saved ones on the edit page, staged ones (uploaded after create) on the new page.
+      imageCount: initial ? initial.images.length : (stagedImages?.length ?? 0),
+      attributes: live.attributes,
+      materialCount: (live.materials ?? []).filter((m) => m?.materialId || m?.customName).length,
+      hasCare: (live.careOverride?.length ?? 0) > 0 || Boolean(live.carePresetId) || (selectedConfig?.care.steps.length ?? 0) > 0,
+      sizeGuideShown:
+        !selectedConfig || selectedConfig.sizeGuide.mode === "NOT_APPLICABLE"
+          ? null
+          : savedSizeGuide
+            ? savedSizeGuide.enabled === true
+            : selectedConfig.sizeGuide.mode === "ON_BY_DEFAULT",
+    },
+    selectedConfig ?? null,
+  );
+
+  /** `status` undefined = save without changing it. A new product is always created as a draft: its images are
+   * uploaded after it exists, and publishing needs at least one. */
+  function submitWith(status?: ProductStatus) {
+    return handleSubmit((values) => {
+      const withAttributes = selectedConfig
+        ? { ...values, attributes: pruneAttributes(values.attributes, selectedConfig, allFieldKeys, initialAttributeKeys) }
+        : values;
+      return onSubmit({ ...withAttributes, ...(initial ? (status ? { status } : {}) : { status: "DRAFT" as const }) });
+    })();
+  }
+
+  function jumpToFix(target: FixTarget) {
+    if (target === "images") window.scrollTo({ top: 0, behavior: "smooth" });
+    else setTab(target);
+  }
+
   const basePrice = watch("basePrice");
   const costPrice = watch("costPrice");
   const margin =
     basePrice && costPrice && basePrice > 0 ? (((basePrice - costPrice) / basePrice) * 100).toFixed(1) : null;
 
   const productName = watch("name");
+  const siteOrigin = typeof window === "undefined" ? "" : window.location.origin;
+  const seoTitleText = watch("seoTitle") || productName || "";
+  const defaultMeta = stripHtml(watch("shortDescription") || watch("description") || "").slice(0, 160);
+  const metaText = watch("seoDescription") || defaultMeta;
+  const slugText = watch("slug") || initial?.slug || slugify(productName ?? "");
+  const keyword = (watch("focusKeyword") ?? "").trim().toLowerCase();
   const categoryName = categories.find((c) => c.id === watch("categoryId"))?.name;
   const brandName = watch("brand");
   const aiProductContext = { productName: productName || undefined, category: categoryName, brand: brandName ?? undefined };
@@ -273,19 +339,32 @@ export function ProductForm({
     basic: ["name", "categoryId", "typeId", "attributes", "brand", "brandTier", "sortOrder", "shortDescription", "description"],
     pricing: ["basePrice", "compareAtPrice", "costPrice", "taxRate", "trackInventory", "lowStockThreshold", "restockDate"],
     variants: ["variants"],
-    seo: ["seoTitle", "seoDescription"],
+    care: ["carePresetId", "careOverride", "materials"],
+    seo: ["slug", "seoTitle", "seoDescription", "focusKeyword", "ogTitle", "ogDescription", "ogImageUrl", "canonicalUrl"],
+    history: [],
   };
+  const visibleTabs = TABS.filter((t) => t.value !== "history" || initial);
   const tabHasError = (t: ProductFormTab) => TAB_FIELDS[t].some((f) => f in errors);
 
   return (
     <form
-      onSubmit={handleSubmit((values) =>
-        onSubmit(selectedConfig ? { ...values, attributes: pruneAttributes(values.attributes, selectedConfig, allFieldKeys, initialAttributeKeys) } : values),
-      )}
+      onSubmit={(e) => {
+        e.preventDefault();
+        submitWith();
+      }}
       className="space-y-6"
     >
+      <ProductStatusPanel
+        status={initial?.status ?? null}
+        result={completeness}
+        createLabel={submitLabel}
+        busy={isSubmitting}
+        onAction={(status) => submitWith(status)}
+        onFix={jumpToFix}
+      />
+
       <div className="mb-2 flex flex-wrap gap-1 border-b border-ink-100">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.value}
             type="button"
@@ -376,10 +455,6 @@ export function ProductForm({
               </div>
 
               <div className="flex items-end gap-6 pb-2">
-                <label className="flex items-center gap-2 text-sm text-ink-700">
-                  <Checkbox {...register("isActive")} />
-                  Active
-                </label>
                 <label className="flex items-center gap-2 text-sm text-ink-700">
                   <Checkbox {...register("isFeatured")} />
                   Featured
@@ -502,43 +577,115 @@ export function ProductForm({
       )}
 
       {tab === "seo" && (
-      <FormSection title="SEO">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <Label htmlFor="seoTitle">SEO title</Label>
-              {canUseAi && (
-                <AiGenerateButton
-                  disabled={!productName}
-                  onGenerate={async () => {
-                    const { text } = await aiApi.generateAiContent({ type: "seo_title", ...aiProductContext });
-                    setValue("seoTitle", text, { shouldDirty: true });
-                    return text;
-                  }}
-                />
-              )}
+        <>
+          <FormSection title="Search listing" description="How this product appears in search results. Leave a field blank to use the automatic default shown in grey — nothing here is overwritten for you.">
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <Label htmlFor="slug">URL slug</Label>
+                <div className="flex items-center gap-1 text-sm text-ink-400">
+                  <span className="shrink-0">/product/</span>
+                  <Input id="slug" placeholder="auto-generated from the name" {...register("slug")} />
+                </div>
+                {errors.slug && <p className="mt-1 text-xs text-danger-600">{errors.slug.message as string}</p>}
+                {initial && initial.status === "PUBLISHED" && (
+                  <p className="mt-1 text-xs text-brass-700">This product is live — changing the slug changes its URL. Add a redirect from the old one under Settings → Redirects.</p>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <Label htmlFor="seoTitle">SEO title</Label>
+                  {canUseAi && (
+                    <AiGenerateButton
+                      disabled={!productName}
+                      onGenerate={async () => {
+                        const { text } = await aiApi.generateAiContent({ type: "seo_title", ...aiProductContext });
+                        setValue("seoTitle", text, { shouldDirty: true });
+                        return text;
+                      }}
+                    />
+                  )}
+                </div>
+                <Input id="seoTitle" placeholder={productName || "Defaults to the product name"} {...register("seoTitle")} />
+                <p className={cn("mt-1 text-xs", (watch("seoTitle") ?? "").length > 60 ? "text-brass-700" : "text-ink-400")}>{(watch("seoTitle") ?? "").length}/60 recommended</p>
+              </div>
+
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <Label htmlFor="seoDescription">Meta description</Label>
+                  {canUseAi && (
+                    <AiGenerateButton
+                      disabled={!productName}
+                      onGenerate={async () => {
+                        const { text } = await aiApi.generateAiContent({ type: "meta_description", ...aiProductContext });
+                        setValue("seoDescription", text, { shouldDirty: true });
+                        return text;
+                      }}
+                    />
+                  )}
+                </div>
+                <Textarea id="seoDescription" rows={2} placeholder={defaultMeta || "Shown in search results"} {...register("seoDescription")} />
+                <p className={cn("mt-1 text-xs", (watch("seoDescription") ?? "").length > 160 ? "text-brass-700" : "text-ink-400")}>{(watch("seoDescription") ?? "").length}/160 recommended</p>
+              </div>
+
+              <div>
+                <Label htmlFor="focusKeyword">Focus keyword</Label>
+                <Input id="focusKeyword" placeholder="e.g. black cotton panjabi" {...register("focusKeyword")} />
+                {keyword && (
+                  <ul className="mt-1.5 space-y-0.5 text-xs" data-testid="keyword-checks">
+                    {[
+                      ["in the SEO title", (seoTitleText || "").toLowerCase().includes(keyword)],
+                      ["in the meta description", (metaText || "").toLowerCase().includes(keyword)],
+                      ["in the URL", (slugText || "").includes(keyword.replace(/\s+/g, "-"))],
+                    ].map(([label, ok]) => (
+                      <li key={label as string} className={ok ? "text-success-700" : "text-ink-400"}>
+                        {ok ? "✓" : "○"} Keyword {ok ? "appears" : "not found"} {label as string}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-            <Input id="seoTitle" placeholder="Defaults to product name" {...register("seoTitle")} />
-          </div>
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <Label htmlFor="seoDescription">Meta description</Label>
-              {canUseAi && (
-                <AiGenerateButton
-                  disabled={!productName}
-                  onGenerate={async () => {
-                    const { text } = await aiApi.generateAiContent({ type: "meta_description", ...aiProductContext });
-                    setValue("seoDescription", text, { shouldDirty: true });
-                    return text;
-                  }}
-                />
-              )}
+
+            <div className="rounded-lg border border-ink-100 bg-white p-4" data-testid="serp-preview">
+              <p className="mb-2 text-xs uppercase tracking-wide text-ink-400">Search result preview</p>
+              <p className="truncate text-lg text-blue-700">{(seoTitleText || "Untitled product").slice(0, 70)}</p>
+              <p className="truncate text-xs text-success-700">{siteOrigin}/product/{slugText || "…"}</p>
+              <p className="mt-0.5 line-clamp-2 text-sm text-ink-600">{metaText || "No description — search engines will pick text from the page."}</p>
             </div>
-            <Input id="seoDescription" placeholder="Shown in search results" {...register("seoDescription")} />
-          </div>
-        </div>
-      </FormSection>
+          </FormSection>
+
+          <FormSection title="Social sharing & canonical" description="Overrides for link previews and the canonical URL. Blank uses the defaults.">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor="ogTitle">Social title</Label>
+                <Input id="ogTitle" placeholder={seoTitleText || "Defaults to the SEO title"} {...register("ogTitle")} />
+              </div>
+              <div>
+                <Label htmlFor="ogImageUrl">Social image URL</Label>
+                <Input id="ogImageUrl" placeholder="Defaults to the product images" {...register("ogImageUrl")} />
+                {errors.ogImageUrl && <p className="mt-1 text-xs text-danger-600">{errors.ogImageUrl.message as string}</p>}
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="ogDescription">Social description</Label>
+                <Textarea id="ogDescription" rows={2} placeholder={metaText || "Defaults to the meta description"} {...register("ogDescription")} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="canonicalUrl">Canonical URL</Label>
+                <Input id="canonicalUrl" placeholder={`${siteOrigin}/product/${slugText || "…"}`} {...register("canonicalUrl")} />
+                {errors.canonicalUrl && <p className="mt-1 text-xs text-danger-600">{errors.canonicalUrl.message as string}</p>}
+                <p className="mt-1 text-xs text-ink-400">Only set this if another page is the &ldquo;main&rdquo; version of this product.</p>
+              </div>
+            </div>
+          </FormSection>
+        </>
       )}
+
+      {tab === "care" && (
+        <CareMaterialSection control={control} register={register} watch={watch} setValue={setValue} errors={errors} config={selectedConfig} />
+      )}
+
+      {tab === "history" && initial && <ProductHistory productId={initial.id} />}
 
       {tab === "variants" && (
       <FormSection title="Variants" description="Size, color, SKU, price override, and stock for each purchasable option.">
@@ -560,11 +707,6 @@ export function ProductForm({
       </FormSection>
       )}
 
-      <div className="flex justify-end">
-        <Button type="submit" variant="brass" disabled={isSubmitting}>
-          {isSubmitting ? "Saving…" : submitLabel}
-        </Button>
-      </div>
     </form>
   );
 }
