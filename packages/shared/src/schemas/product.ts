@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { blankToNull, nullableCuid, nullableDate, nullableNumber, nullableString, paginationQuerySchema, slugSchema } from "./common";
-import { NO_SIZE_VALUE, PRODUCT_TYPE_KEYS, getProductTypeConfig } from "../config/product-types";
+import { PRODUCT_TYPE_KEYS } from "../config/product-types";
 
 export const brandTierEnum = z.enum(["PREMIUM", "PLATINUM", "LUXURY"]);
 
@@ -39,8 +39,15 @@ export const baseProductSchema = z.object({
   shortDescription: nullableString(300),
   sortOrder: z.number().int().default(0),
   categoryId: z.string().cuid(),
-  productType: productTypeEnum.default("CLOTHING"),
-  attributes: z.record(z.string(), z.unknown()).nullable().optional(),
+  /** The product's type row. Omitted on a partial update = keep the current type. */
+  typeId: z.string().min(1).optional(),
+  /** Deprecated: the legacy enum. Only read when `typeId` is absent (stale clients), to find the matching system type. */
+  productType: productTypeEnum.optional(),
+  attributes: z
+    .record(z.string(), z.unknown())
+    .refine((a) => JSON.stringify(a).length <= 100_000, "Attributes are too large")
+    .nullable()
+    .optional(),
   brand: nullableString(120),
   brandTier: brandTierEnum.default("PREMIUM"),
   basePrice: z.number().positive(),
@@ -57,89 +64,16 @@ export const baseProductSchema = z.object({
   variants: z.array(createVariantSchema).min(1, "At least one variant is required"),
 });
 
-interface ProductTypeRefineInput {
-  productType: z.infer<typeof productTypeEnum>;
-  attributes?: Record<string, unknown> | null;
-  variants?: z.infer<typeof createVariantSchema>[];
-}
+export const createProductSchema = baseProductSchema;
 
-function refineProductByType(data: ProductTypeRefineInput, ctx: z.RefinementCtx) {
-  const config = getProductTypeConfig(data.productType);
-  const needsSize = config.variantDimensions.some((d) => d.targetField === "size");
-  const needsColor = config.variantDimensions.some((d) => d.targetField === "color");
-  const sizeLabel = config.variantDimensions.find((d) => d.targetField === "size")?.label ?? "Size";
-  const colorLabel = config.variantDimensions.find((d) => d.targetField === "color")?.label ?? "Color";
-
-  const attrs = (data.attributes ?? {}) as Record<string, any>;
-  const sizeGuide = attrs.sizeGuide;
-  // Only validated for types that show a size guide — switching a product to a type without one
-  // leaves the old guide in `attributes`, and it must not block saving.
-  if (config.sizeGuide?.supported && sizeGuide && typeof sizeGuide === "object" && sizeGuide.enabled === true) {
-    if (!Array.isArray(sizeGuide.columns) || sizeGuide.columns.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Size guide must have at least one column",
-        path: ["attributes", "sizeGuide", "columns"],
-      });
-    }
-    if (!Array.isArray(sizeGuide.rows) || sizeGuide.rows.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Size guide must have at least one row",
-        path: ["attributes", "sizeGuide", "rows"],
-      });
-    } else {
-      sizeGuide.rows.forEach((row: any, rIdx: number) => {
-        if (!Array.isArray(row) || row.length !== (sizeGuide.columns?.length || 0)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: `Row ${rIdx + 1} must match the number of columns`,
-            path: ["attributes", "sizeGuide", "rows", rIdx],
-          });
-        }
-      });
-    }
-  }
-
-  data.variants?.forEach((v, idx) => {
-    if (needsSize && (!v.size || v.size.trim() === "")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `${sizeLabel} is required`,
-        path: ["variants", idx, "size"],
-      });
-    } else if (!v.size) {
-      v.size = NO_SIZE_VALUE;
-    }
-
-    if (needsColor && (!v.color || v.color.trim() === "")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `${colorLabel} is required`,
-        path: ["variants", idx, "color"],
-      });
-    } else if (!v.color) {
-      v.color = "";
-    }
-  });
-}
-
-export const createProductSchema = baseProductSchema.superRefine((data, ctx) => refineProductByType(data, ctx));
-
-// productType is optional on update: with its `.default("CLOTHING")` a partial payload (any client
-// that doesn't resend it) would silently reset the product's type. The per-type checks only run
-// when the payload says which type it is.
-export const updateProductSchema = baseProductSchema
-  .partial({
-    name: true,
-    categoryId: true,
-    basePrice: true,
-    variants: true,
-    productType: true,
-  })
-  .superRefine((data, ctx) => {
-    if (data.productType) refineProductByType({ ...data, productType: data.productType }, ctx);
-  });
+// Type-dependent rules (required size/colour, attribute types, size-guide shape) aren't here any more:
+// they depend on the product type's template, which is data. See validateProductAgainstConfig.
+export const updateProductSchema = baseProductSchema.partial({
+  name: true,
+  categoryId: true,
+  basePrice: true,
+  variants: true,
+});
 
 export const productListQuerySchema = paginationQuerySchema.extend({
   categoryId: z.string().cuid().optional(),

@@ -1,7 +1,7 @@
-/** The one list of product types. The zod enum, the `ProductType` union and the admin type picker are
- * all derived from it; the Prisma `ProductType` enum must match it (checked by a test, since a DB enum
- * can't be generated from TS — adding a type means: add it here + a config below + a migration). */
-export const PRODUCT_TYPE_KEYS = [
+/** The original hard-coded product types. They are now seeded into the `ProductTypeDef` table (see the
+ * catalog migration) and are only kept here as the seed's source of truth and as a last-resort fallback
+ * for a product whose type can't be resolved. New types are created in the admin, not here. */
+export const LEGACY_PRODUCT_TYPE_KEYS = [
   "CLOTHING",
   "FRAGRANCE",
   "ACCESSORY",
@@ -12,6 +12,11 @@ export const PRODUCT_TYPE_KEYS = [
   "HOME",
 ] as const;
 
+/** Values of the Prisma `ProductType` enum, which `Product.productType` still mirrors (CUSTOM for any
+ * admin-created type). Checked against schema.prisma by a test, since a DB enum can't be generated from TS. */
+export const PRODUCT_TYPE_KEYS = [...LEGACY_PRODUCT_TYPE_KEYS, "CUSTOM"] as const;
+
+export type LegacyProductType = (typeof LEGACY_PRODUCT_TYPE_KEYS)[number];
 export type ProductType = (typeof PRODUCT_TYPE_KEYS)[number];
 
 /** Stored in `size` when a product type has no size dimension (or the admin left it blank). Storefront
@@ -29,7 +34,7 @@ export interface VariantDimensionConfig {
 }
 
 export interface ProductTypeConfig {
-  type: ProductType; label: string; description: string; fields: ProductFieldConfig[]; variantDimensions: VariantDimensionConfig[]; sections: { key: string; label: string }[];
+  type: LegacyProductType; label: string; description: string; fields: ProductFieldConfig[]; variantDimensions: VariantDimensionConfig[]; sections: { key: string; label: string }[];
   /** `defaultChart` is what the storefront and the admin editor start from when the product has no
    * saved guide; it falls back to the generic apparel chart. */
   sizeGuide?: { supported: boolean; defaultEnabled: boolean; defaultChart?: SizeGuideData };
@@ -41,6 +46,8 @@ export interface SizeGuideData {
   unit?: string;
   columns: string[];
   rows: string[][];
+  /** Free-text instructions shown under the table ("Measure over the chest…"). */
+  notes?: string;
 }
 
 /** Generic apparel chart. Shown for size-guide-enabled types until an admin saves their own, so the
@@ -73,7 +80,7 @@ export const DEFAULT_SHOE_SIZE_GUIDE: SizeGuideData = {
   ],
 };
 
-export const PRODUCT_TYPE_CONFIGS: Record<ProductType, ProductTypeConfig> = {
+export const PRODUCT_TYPE_CONFIGS: Record<LegacyProductType, ProductTypeConfig> = {
   CLOTHING: {
     type: "CLOTHING", label: "Clothing", description: "Apparel items with size & color.",
     fields: [
@@ -186,7 +193,7 @@ export const PRODUCT_TYPE_CONFIGS: Record<ProductType, ProductTypeConfig> = {
 
 /** Unknown types (e.g. a value from a newer/older deploy) fall back to Clothing rather than crashing. */
 export function getProductTypeConfig(productType: string): ProductTypeConfig {
-  return PRODUCT_TYPE_CONFIGS[productType as ProductType] ?? PRODUCT_TYPE_CONFIGS.CLOTHING;
+  return PRODUCT_TYPE_CONFIGS[productType as LegacyProductType] ?? PRODUCT_TYPE_CONFIGS.CLOTHING;
 }
 
 /** The chart a product of this type starts from: the type's own default, else the generic apparel one. */
