@@ -258,8 +258,20 @@ describe("catalog: product types, templates and attribute definitions", () => {
       made.products.push(productId);
       expect(p.typeId).toBe(capTypeId);
       expect(p.productType).toBe("CUSTOM");
+      expect(p.status).toBe("DRAFT"); // new products start as drafts
       expect(p.attributes[`embroideryType${RUN}`]).toBe("Hand Embroidery");
       expect(await prisma.productAttributeValue.count({ where: { productId } })).toBe(1);
+    });
+
+    it("can't go live without an image, and can once it has one", async () => {
+      const blocked = await owner().patch(`/api/products/${productId}`, { status: "PUBLISHED" });
+      expect(blocked.status).toBe(400);
+      expect(JSON.stringify(blocked.body.details.blockers)).toContain("Images");
+
+      await prisma.productImage.create({ data: { productId, url: "http://localhost:4000/uploads/products/vitest-full.webp", altText: "test" } });
+      const published = await owner().patch(`/api/products/${productId}`, { status: "PUBLISHED" });
+      expect(published.status).toBe(200);
+      expect(published.body.product.status).toBe("PUBLISHED");
     });
 
     it("renders the product page data from the template: specs, size guide, variant dimensions", async () => {
