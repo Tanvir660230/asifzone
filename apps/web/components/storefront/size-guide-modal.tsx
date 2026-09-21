@@ -56,6 +56,7 @@ export function SizeGuideModal({ sizeGuide }: SizeGuideProps) {
             </tbody>
           </table>
         </div>
+        {chart.notes && <p className="mt-4 whitespace-pre-line text-xs leading-relaxed text-ink-500">{chart.notes}</p>}
       </Modal>
     </>
   );

@@ -105,10 +105,10 @@ export default function AttributesPage() {
   return (
     <div>
       <PageHeader
-        title="Attributes"
+        title="Variant options"
         action={
           <Button variant="brass" onClick={() => setEditing("new")}>
-            <Plus size={16} /> Add attribute
+            <Plus size={16} /> Add option type
           </Button>
         }
       />
@@ -117,7 +117,8 @@ export default function AttributesPage() {
 
       <p className="mb-4 text-sm text-ink-500">
         Define reusable option types (Color, Size, Fabric, Pattern…) and their values — used to build variant
-        combinations on the product form.
+        combinations on the product form. (Product fields like &ldquo;Material&rdquo; or &ldquo;Movement&rdquo; are
+        managed under Catalog setup → Attributes.)
       </p>
 
       {/* sm and up: the table below. Below sm: a card list (below that) — same split as the

@@ -34,6 +34,17 @@ export function getErrorMessage(err: unknown, fallback: string = "Something went
 }
 
 
+/** Like getErrorMessage, but for a 400 "Validation failed" it appends the server's per-field messages
+ * ("Validation failed: Embroidery Type is required") — those are what tell an admin what to fix. */
+export function describeApiError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    const fieldErrors = (err.details as { fieldErrors?: Record<string, string[] | undefined> } | undefined)?.fieldErrors;
+    const messages = fieldErrors ? Object.values(fieldErrors).flat().filter((m): m is string => Boolean(m)) : [];
+    return messages.length ? `${err.message}: ${messages.slice(0, 3).join("; ")}` : err.message;
+  }
+  return fallback;
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;

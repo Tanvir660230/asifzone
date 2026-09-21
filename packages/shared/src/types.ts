@@ -5,6 +5,7 @@
 import type { CustomerTag } from "./schemas/customer";
 import type { HomepageSectionType } from "./schemas/homepage-section";
 import type { ProductType } from "./config/product-types";
+import type { ProductResolvedView } from "./schemas/catalog";
 
 export interface StockMovement {
   id: string;
@@ -132,7 +133,9 @@ export interface Product {
   sortOrder: number;
   categoryId: string;
   category: Category;
+  /** Deprecated legacy enum mirror — use `typeId` / `resolved.type`. */
   productType: ProductType;
+  typeId: string | null;
   attributes: Record<string, unknown> | null;
   brand: string | null;
   brandTier: "PREMIUM" | "PLATINUM" | "LUXURY";
@@ -150,6 +153,9 @@ export interface Product {
   deletedAt: string | null;
   variants: ProductVariant[];
   images: ProductImage[];
+  /** Present on detail reads (admin editor, storefront product page), computed server-side from the
+   * product's type template. Absent on list rows. */
+  resolved?: ProductResolvedView;
   activeFlashSale?: ActiveFlashSale | null;
   avgRating: number;
   reviewCount: number;

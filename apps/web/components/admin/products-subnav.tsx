@@ -4,7 +4,7 @@ import { SubNav } from "./sub-nav";
 
 const TABS = [
   { label: "All Products", href: "/admin/products" },
-  { label: "Attributes", href: "/admin/attributes" },
+  { label: "Variant options", href: "/admin/attributes" },
 ];
 
 /** Shared sub-nav across Products and Attributes, which now live behind a single sidebar entry —

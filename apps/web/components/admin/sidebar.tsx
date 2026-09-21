@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  Layers,
   FolderTree,
   Shirt,
   ClipboardList,
@@ -74,6 +75,8 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/admin/categories", label: "Categories", icon: FolderTree },
       { href: "/admin/products", match: ["/admin/products", "/admin/attributes"], label: "Products", icon: Shirt },
       { href: "/admin/inventory", label: "Inventory", icon: Boxes },
+      // Product types, templates, attributes, size guides: what each kind of product collects and shows.
+      { href: "/admin/catalog/types", match: ["/admin/catalog"], label: "Catalog setup", icon: Layers },
     ],
   },
   {
