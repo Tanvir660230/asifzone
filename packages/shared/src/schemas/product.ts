@@ -136,12 +136,10 @@ export const createProductSchema = baseProductSchema;
 
 // Type-dependent rules (required size/colour, attribute types, size-guide shape) aren't here any more:
 // they depend on the product type's template, which is data. See validateProductAgainstConfig.
-export const updateProductSchema = baseProductSchema.partial({
-  name: true,
-  categoryId: true,
-  basePrice: true,
-  variants: true,
-});
+// Every field is optional on update, defaults included. A field that keeps its `.default()` here is *filled in* when a client leaves
+// it out, so a partial update (say, just a new price) would silently reset the description to "", the brand tier, the low-stock
+// threshold, the "featured" flag and so on. The editor always sends the whole form, which hid this from it.
+export const updateProductSchema = baseProductSchema.partial();
 
 export const productListQuerySchema = paginationQuerySchema.extend({
   categoryId: z.string().cuid().optional(),

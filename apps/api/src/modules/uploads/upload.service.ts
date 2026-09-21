@@ -42,19 +42,21 @@ export async function processProductImage(buffer: Buffer, originalName: string):
   const dir = path.join(process.cwd(), env.uploadsDir, "products");
   await ensureDir(dir);
 
-  await Promise.all(
+  // toFile reports the size it wrote, so the "full" file never has to be opened again just to read its dimensions.
+  // (Re-opening it left the file locked on Windows, where it then couldn't be deleted.)
+  const written = await Promise.all(
     Object.entries(SIZES).map(async ([label, width]) => {
       const filePath = path.join(dir, `${id}-${label}.webp`);
-      await sharp(buffer).resize({ width, withoutEnlargement: true }).webp({ quality: 82 }).toFile(filePath);
+      const info = await sharp(buffer).resize({ width, withoutEnlargement: true }).webp({ quality: 82 }).toFile(filePath);
+      return [label, info] as const;
     }),
   );
-
-  const { width, height } = await sharp(path.join(dir, `${id}-full.webp`)).metadata();
+  const full = written.find(([label]) => label === "full")![1];
   return {
     url: `${env.apiOrigin}/uploads/products/${id}-full.webp`,
     altText: originalName,
-    width,
-    height,
+    width: full.width,
+    height: full.height,
   };
 }
 
@@ -71,6 +73,35 @@ export async function deleteProductImageFiles(fullUrl: string): Promise<void> {
       }),
     ),
   );
+}
+
+export type ImageFileCopy =
+  /** The thumb/card/full files were copied under a new id; `url` is the new "full" URL. */
+  | { kind: "copied"; url: string }
+  /** Not one of our uploads (an external link): there are no files to own, so the URL can be shared as is. */
+  | { kind: "external"; url: string }
+  /** One of our uploads whose files are gone from disk — nothing to copy. */
+  | { kind: "missing" };
+
+const OWN_UPLOAD = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-full\.webp$/i;
+
+/** Copies a product image's files under a new id, so a duplicated product owns its own files and deleting an image
+ * from one product can never take the other's photo with it. */
+export async function copyProductImageFiles(fullUrl: string): Promise<ImageFileCopy> {
+  const source = OWN_UPLOAD.exec(path.basename(fullUrl.split("?")[0]!));
+  if (!source || !fullUrl.includes("/uploads/products/")) return { kind: "external", url: fullUrl };
+
+  const dir = path.join(process.cwd(), env.uploadsDir, "products");
+  const id = randomUUID();
+  const labels = Object.keys(SIZES);
+  try {
+    await Promise.all(labels.map((label) => fs.copyFile(path.join(dir, `${source[1]}-${label}.webp`), path.join(dir, `${id}-${label}.webp`))));
+  } catch {
+    // Roll back whatever part of the set was copied so no half-set is left behind.
+    await Promise.all(labels.map((label) => fs.unlink(path.join(dir, `${id}-${label}.webp`)).catch(() => undefined)));
+    return { kind: "missing" };
+  }
+  return { kind: "copied", url: `${env.apiOrigin}/uploads/products/${id}-full.webp` };
 }
 
 /** Deletes a single-file site image (logo/favicon/payment-methods/banner/category) previously

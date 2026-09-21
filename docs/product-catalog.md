@@ -93,10 +93,46 @@ the focus keyword is admin-only.
   with a banner, no view tracking and no structured data. `GET /api/products/:id/preview` is `requireAdmin`. The live route still 404s a draft.
 - **Migration** `20260921180000_add_page_sections_faq_relations` is additive (five tables, one enum, a CHECK that a product isn't related to itself).
 
+## Duplicating, importing and exporting
+
+- **Duplicate** (`POST /api/products/:id/duplicate`, the *Duplicate* button in the list and the editor). The copy goes through `createProduct`, so it is
+  validated by exactly the rules a hand-made product is. It is always a **draft**. Always copied: category, type, prices, descriptions, brand, attributes and
+  every variant's options and prices. Never copied: SKUs (each variant gets a fresh one from the SKU generator), barcodes, the slug, the canonical URL,
+  reviews, orders, wishlists, flash-sale and bundle membership, view counts and history. Optional (defaults in brackets, `DUPLICATE_COPY_OPTIONS`):
+  stock quantities (off, so inventory isn't counted twice), images (on), materials and care (on), page-section settings (on), FAQ (on), hand-picked lists (off),
+  SEO text (off: identical text on two pages competes in search). An archived material or care guide is carried over as plain text, with a warning.
+- **Images are copied as files**, not shared, so deleting one from either product can never remove the other's photo. As a second line of defence, deleting an image
+  (or a product) removes the files only when no other image row still uses the same URL. External image URLs (not ours) are shared as they are.
+  If a source image's files are missing on disk it is skipped and reported.
+- **Export** (`GET /api/products/export/full[?typeId=]`, any admin): one row per variant, `slug` on every row, the product's own columns on its first row.
+  `GET /api/products/import/template[?typeId=]` is just the header (with that type's `attr:<key>` columns). Files start with a UTF-8 byte-order mark so Excel reads
+  Bengali and other non-English text correctly. The older summary export (`/export/csv`) is unchanged apart from the guard below.
+- **Formula-injection guard.** A text cell that starts with `=`, `+`, `-`, `@`, tab or CR is written with a leading apostrophe (spreadsheets hide it), so a product
+  named `=HYPERLINK(...)` can't run on whoever opens the file; the import removes the apostrophe again, so an export re-imports as "no change". Numbers and
+  plain number-like text (a phone number such as `+8801711223344`) are left alone. The same guard now covers the order and analytics CSV exports, whose cells hold
+  customer-typed names and addresses.
+- **Import** (`POST /api/products/import/validate` then `/import/commit`, **owner only**: it can change prices across the whole catalog). Checking writes nothing and
+  returns a report with the CSV line and column of every problem, warnings, and what would change for each product. Rules:
+  - Rows are grouped by `slug` (or by the name's slug if there is none). An existing slug is **updated**, otherwise the product is **created**.
+  - On update a blank cell means "leave it as it is", the variants missing from the file stay (nothing is deleted), the slug never changes (even on a rename),
+    and what a CSV can't carry (images, FAQ, page sections, the size guide, hand-picked lists) is kept. A product that already matches the file is skipped.
+  - New products are always created as **drafts**; `status` is informational and an import never publishes. An import can't change a product's type.
+  - Values are parsed strictly (plain decimals, yes/no, `YYYY-MM-DD`, `a|b` for multiple choices, `Cotton:80|Polyester:20` for materials) and validated with the same
+    schemas and per-type rules as the editor. A blank `variant_sku` on a new variant gets a SKU from the store's pattern when the file is written.
+  - Commit refuses the whole file if it has any error (HTTP 422 with the report) unless `skipInvalid` is set, which imports the products that pass. File-level
+    problems (no header, unclosed quote, over the limits) can never be skipped. Each product is its own write, through `createProduct`/`updateProduct`, so one
+    failure affects only that product; those are listed in the result. Limits: 1.5 MB, 2000 rows, 500 products.
+  - Stock changes are recorded in the stock history as "Changed by CSV import"; a lower price notifies wishlisted customers, exactly as editing does. One
+    `products.imported` audit entry is written per commit, and each product's own history shows the usual events.
+- **History labels.** The product history now words the section, FAQ, related-list and duplication events instead of showing raw event names, and
+  describes a section override ("hidden, position 3") instead of printing JSON.
+- **Permanent delete is owner-only** (the route and the button).
+
 ## Permissions
 
 Any admin can read the catalog setup (the product editor needs it). All catalog **writes are OWNER-only**, including the store-wide page-section defaults.
-STAFF can still set a product's own sections, FAQ and picks, because those are part of editing the product.
+STAFF can still set a product's own sections, FAQ and picks, because those are part of editing the product, and can duplicate products and export.
+Importing a CSV and permanently deleting a product are owner-only.
 
 ## Legacy compatibility
 
@@ -112,6 +148,12 @@ type by the enum key, and its JSON attribute values are still shown until it is 
 - Variant galleries are set per variant, not per colour: give each variant of a colour the same images (the picker makes that quick). The storefront
   already falls back to a same-colour sibling's gallery when the chosen size has none.
 - A template supports at most two variant dimensions (size-like and colour-like), because variants are still unique on `(productId, size, color)`.
+- **Variants in a partial update.** A product PATCH that lists a variant must send its `sku` and, to keep them, its `stock` and `attributeValueIds`: those two
+  fields keep their `.default()` in the variant schema, so leaving them out sets stock to 0 and clears the variant's option links. (The product's own fields no longer
+  behave this way: a partial update changes only what it sends.) The editor and the CSV import always send them.
+- **CSV import cannot clear a value or delete anything.** A blank cell leaves the stored value as it is; to remove a value or a variant use the editor. Images are not
+  part of the file. Text is trimmed at both ends.
+- **Order and analytics exports** now share the CSV guard, but only the shared writer is unit-tested; there is no order-export integration test.
 
 ## Deploying
 

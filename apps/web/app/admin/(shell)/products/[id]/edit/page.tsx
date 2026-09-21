@@ -4,12 +4,13 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Eye } from "lucide-react";
+import { Copy, ExternalLink, Eye } from "lucide-react";
 import type { CreateProductInput } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/admin/page-header";
 import { BackLink } from "@/components/ui/back-link";
 import { ProductForm } from "@/components/admin/product-form";
+import { DuplicateProductDialog } from "@/components/admin/duplicate-product-dialog";
 import { ImageUploader } from "@/components/admin/image-uploader";
 import * as categoriesApi from "@/lib/api/categories";
 import * as productsApi from "@/lib/api/products";
@@ -20,6 +21,7 @@ export default function EditProductPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
 
   const { data: categoriesData } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesApi.listCategories() });
   const { data: productData, isLoading } = useQuery({
@@ -83,10 +85,20 @@ export default function EditProductPage() {
                 View on site
               </Link>
             )}
+            <button
+              type="button"
+              onClick={() => setDuplicating(true)}
+              className="flex items-center gap-1.5 rounded-full border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400 hover:text-ink-900"
+            >
+              <Copy size={13} />
+              Duplicate
+            </button>
             <BackLink href="/admin/products" label="Back to Products" />
           </div>
         }
       />
+
+      <DuplicateProductDialog product={duplicating ? { id: product.id, name: product.name } : null} onClose={() => setDuplicating(false)} />
 
       <Card>
         <CardHeader>

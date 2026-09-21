@@ -15,9 +15,12 @@ import {
   bulkProductCategorySchema,
   updateImageSchema,
   reorderImagesSchema,
+  duplicateProductSchema,
+  productImportRequestSchema,
+  productImportCommitSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
-import { requireAdmin } from "../../middlewares/require-admin";
+import { requireAdmin, requireRole } from "../../middlewares/require-admin";
 import { trackingRateLimit } from "../../middlewares/rate-limit";
 import { imageUpload } from "../uploads/upload.middleware";
 import * as productController from "./product.controller";
@@ -71,6 +74,11 @@ productRouter.get("/:id/urgency-signals", productController.urgencySignals);
 productRouter.post("/:id/view", trackingRateLimit, productController.recordView);
 
 productRouter.get("/export/csv", requireAdmin, productController.exportCsv);
+// The importable format (one row per variant) and its empty template. Import is the owner's: it can change prices across the whole catalog.
+productRouter.get("/export/full", requireAdmin, productController.exportFull);
+productRouter.get("/import/template", requireAdmin, productController.importTemplate);
+productRouter.post("/import/validate", requireAdmin, requireRole("OWNER"), validate(productImportRequestSchema), productController.importValidate);
+productRouter.post("/import/commit", requireAdmin, requireRole("OWNER"), validate(productImportCommitSchema), productController.importCommit);
 // Both of these return full records (costPrice included, isActive/deletedAt unfiltered) and are
 // only ever called from the admin console — the storefront uses GET /storefront and GET /slug/:slug.
 productRouter.get("/", requireAdmin, validate(productListQuerySchema, "query"), productController.list);
@@ -86,7 +94,9 @@ productRouter.post("/", requireAdmin, validate(createProductSchema), productCont
 productRouter.patch("/:id", requireAdmin, validate(updateProductSchema), productController.update);
 productRouter.delete("/:id", requireAdmin, productController.remove);
 productRouter.post("/:id/restore", requireAdmin, productController.restore);
-productRouter.delete("/:id/permanent", requireAdmin, productController.permanentlyRemove);
+productRouter.post("/:id/duplicate", requireAdmin, validate(duplicateProductSchema), productController.duplicate);
+// Irreversible (it also deletes the image files), so it is the owner's call, not staff's.
+productRouter.delete("/:id/permanent", requireAdmin, requireRole("OWNER"), productController.permanentlyRemove);
 
 productRouter.post(
   "/:id/images",
