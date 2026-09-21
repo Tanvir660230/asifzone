@@ -13,14 +13,11 @@ import { cn } from "@/lib/utils";
 interface ProductGalleryProps {
   images: ProductImage[];
   productName: string;
-  /** When set (e.g. the selected variant's assigned image), the gallery jumps to that image —
-   * used to sync the photo with a color/variant selection elsewhere on the page. */
-  focusImageId?: string | null;
 }
 
 const SWIPE_THRESHOLD = 50;
 
-export function ProductGallery({ images, productName, focusImageId }: ProductGalleryProps) {
+export function ProductGallery({ images, productName }: ProductGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [zoomOrigin, setZoomOrigin] = useState("50% 50%");
@@ -35,11 +32,11 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
     onEscape: () => setLightboxOpen(false),
   });
 
+  // The parent hands us the images for the current colour/size; when that set changes, start from its first image.
+  const imageKey = images.map((img) => img.id).join(",");
   useEffect(() => {
-    if (!focusImageId) return;
-    const index = images.findIndex((img) => img.id === focusImageId);
-    if (index !== -1) setActiveIndex(index);
-  }, [focusImageId, images]);
+    setActiveIndex(0);
+  }, [imageKey]);
 
   function handleMouseMove(e: MouseEvent<HTMLDivElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -133,6 +130,11 @@ export function ProductGallery({ images, productName, focusImageId }: ProductGal
               style={{ transformOrigin: zoomOrigin }}
               priority
             />
+            {active.caption && (
+              <span className="glass absolute left-3 top-3 max-w-[70%] truncate rounded-full px-3 py-1 text-xs text-ink-900" data-testid="image-caption">
+                {active.caption}
+              </span>
+            )}
             <span className="glass glossy absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full text-ink-900 opacity-0 shadow-float transition-opacity duration-200 ease-smooth group-hover:opacity-100">
               <ZoomIn size={16} />
             </span>

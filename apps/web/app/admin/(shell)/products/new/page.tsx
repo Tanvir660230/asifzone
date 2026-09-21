@@ -49,7 +49,12 @@ export default function NewProductPage() {
               costPrice: v.costPrice ? Number(v.costPrice) : undefined,
               stock: v.stock,
               weight: v.weight ? Number(v.weight) : undefined,
-              imageId: variantImageKeys[index] ? (stagedKeyToImageId.get(variantImageKeys[index]!) ?? null) : v.imageId,
+              ...(variantImageKeys[index] && stagedKeyToImageId.get(variantImageKeys[index]!)
+                ? { imageIds: [stagedKeyToImageId.get(variantImageKeys[index]!)!] }
+                : v.imageId
+                  ? { imageIds: [v.imageId] }
+                  : {}),
+              isActive: v.isActive ?? true,
               attributeValueIds: (v.attributeValues ?? []).map((av) => av.attributeValueId),
             }));
             await productsApi.updateProduct(product.id, { ...values, variants });

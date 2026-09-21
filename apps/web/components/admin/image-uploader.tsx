@@ -62,6 +62,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [altDrafts, setAltDrafts] = useState<Record<string, string>>({});
+  const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
 
@@ -86,6 +87,11 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
     mutationFn: ({ imageId, altText }: { imageId: string; altText: string }) =>
       productsApi.updateProductImageAltText(productId!, imageId, altText),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["product", productId] }),
+  });
+  const captionMutation = useMutation({
+    mutationFn: ({ imageId, caption }: { imageId: string; caption: string }) => productsApi.updateProductImage(productId!, imageId, { caption }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["product", productId] }),
+    onError: (err) => setError(err instanceof ApiError ? err.message : "Couldn't save the caption"),
   });
   const reorderMutation = useMutation({
     mutationFn: (imageIds: string[]) => productsApi.reorderProductImages(productId!, imageIds),
@@ -243,6 +249,22 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                         </button>
                       )}
                     </div>
+                    <Input
+                      value={captionDrafts[img.id] ?? img.caption ?? ""}
+                      placeholder="Caption (optional)"
+                      aria-label="Image caption"
+                      className="h-7 text-xs"
+                      onChange={(e) => setCaptionDrafts((d) => ({ ...d, [img.id]: e.target.value }))}
+                      onBlur={() => {
+                        const value = captionDrafts[img.id] ?? img.caption ?? "";
+                        if (value !== (img.caption ?? "")) captionMutation.mutate({ imageId: img.id, caption: value });
+                      }}
+                    />
+                    {img.width && img.height && (
+                      <p className="text-[10px] text-ink-400">
+                        {img.width}×{img.height}px
+                      </p>
+                    )}
                   </div>
                 ))}
           </SortableContext>

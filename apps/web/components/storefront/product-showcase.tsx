@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Banknote, RotateCcw, Truck } from "lucide-react";
-import type { Product, ProductVariant } from "@clothing-brand/shared";
+import { pickGalleryImages, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
@@ -32,7 +32,7 @@ interface ProductShowcaseProps {
  * selector — which image is currently "in focus" — since they live in separate, non-adjacent
  * parts of the two-column layout and neither can see the other's props directly. */
 export function ProductShowcase({ product, urgencySignals, descriptionHtml }: ProductShowcaseProps) {
-  const [focusImageId, setFocusImageId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
   const [highlightMissing, setHighlightMissing] = useState(false);
@@ -72,11 +72,21 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
     };
   }, []);
 
-  const activePrice = product.activeFlashSale?.flashPrice ?? product.basePrice;
+  // What the shopper is looking at follows their choice: the selected colour's own images (then the shared ones),
+  // or the whole gallery until they pick / when no variant of that colour has images of its own.
+  const galleryImages = useMemo(() => pickGalleryImages(product.images, product.variants, selection), [product.images, product.variants, selection]);
+
+  // A flash sale is "the price right now"; otherwise a chosen variant may sell for its own price (which is also what
+  // the cart charges), with its own compare-at price.
+  const variantPrice = selectedVariant?.price ?? null;
+  const activePrice = product.activeFlashSale?.flashPrice ?? variantPrice ?? product.basePrice;
+  const compareAt = product.activeFlashSale
+    ? null
+    : (selectedVariant?.compareAtPrice ?? (variantPrice ? null : product.compareAtPrice));
 
   return (
     <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
-      <ProductGallery images={product.images} productName={product.name} focusImageId={focusImageId} />
+      <ProductGallery images={galleryImages} productName={product.name} />
 
       <div>
         <p className="text-xs uppercase tracking-wide text-ink-400">
@@ -100,9 +110,9 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             </>
           ) : (
             <>
-              <span className="text-lg font-semibold text-ink-900">{formatPrice(product.basePrice)}</span>
-              {product.compareAtPrice && (
-                <span className="text-sm text-ink-400 line-through">{formatPrice(product.compareAtPrice)}</span>
+              <span className="text-lg font-semibold text-ink-900" data-testid="product-price">{formatPrice(activePrice)}</span>
+              {compareAt && Number(compareAt) > Number(activePrice) && (
+                <span className="text-sm text-ink-400 line-through" data-testid="product-compare-price">{formatPrice(compareAt)}</span>
               )}
             </>
           )}
@@ -129,7 +139,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             sizeGuide={resolved?.sizeGuide.chart ?? undefined}
             showSizeGuide={resolved?.sizeGuide.show ?? false}
             onVariantChange={setSelectedVariant}
-            onFocusImageChange={setFocusImageId}
+            onSelectionChange={setSelection}
             highlightMissing={highlightMissing}
             onRequireSelection={handleRequireSelection}
           />
