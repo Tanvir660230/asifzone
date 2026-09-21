@@ -38,8 +38,9 @@ export function getErrorMessage(err: unknown, fallback: string = "Something went
  * ("Validation failed: Embroidery Type is required") — those are what tell an admin what to fix. */
 export function describeApiError(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
-    const fieldErrors = (err.details as { fieldErrors?: Record<string, string[] | undefined> } | undefined)?.fieldErrors;
-    const messages = fieldErrors ? Object.values(fieldErrors).flat().filter((m): m is string => Boolean(m)) : [];
+    const details = err.details as { formErrors?: string[]; fieldErrors?: Record<string, string[] | undefined> } | undefined;
+    const fieldMessages = details?.fieldErrors ? Object.values(details.fieldErrors).flat() : [];
+    const messages = [...(details?.formErrors ?? []), ...fieldMessages].filter((m): m is string => Boolean(m));
     return messages.length ? `${err.message}: ${messages.slice(0, 3).join("; ")}` : err.message;
   }
   return fallback;

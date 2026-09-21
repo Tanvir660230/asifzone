@@ -11,6 +11,9 @@ const TEMPLATE_NAME = `Cap template ${RUN}`;
 const TYPE_NAME = `Cap ${RUN}`;
 const PRODUCT_NAME = `E2E Cap ${RUN}`;
 
+// 1x1 PNG the server's image pipeline accepts — enough to satisfy the "has an image" publish requirement.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+
 async function login(page: Page) {
   await page.goto("/admin/login");
   await page.getByLabel("Email").fill(adminEmail);
@@ -134,6 +137,14 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await expect(page.getByLabel("Product type")).toHaveValue(/.+/, { timeout: 15_000 });
     await expect(page.getByLabel("Product type").locator("option:checked")).toHaveText(TYPE_NAME);
     await expect(page.getByLabel(ATTR_LABEL)).toHaveValue("Hand Embroidery");
+
+    // New products are drafts. Publishing needs an image, so upload one and go live.
+    const panel = page.getByTestId("product-status-panel");
+    await expect(panel).toContainText("Draft");
+    await page.locator('input[type="file"]').first().setInputFiles({ name: "cap.png", mimeType: "image/png", buffer: PNG });
+    await expect(panel.getByRole("button", { name: "Publish" })).toBeEnabled({ timeout: 30_000 });
+    await panel.getByRole("button", { name: "Publish" }).click();
+    await expect(panel.getByRole("button", { name: "Unpublish" })).toBeVisible({ timeout: 15_000 });
   });
 
   test("7. the storefront shows specs, size guide and variant label from the template", async ({ page }) => {

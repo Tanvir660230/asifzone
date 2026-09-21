@@ -3,6 +3,7 @@ import type {
   CreateProductInput,
   UpdateProductInput,
   PaginatedResult,
+  ProductStatus,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 import { env } from "../env";
@@ -13,6 +14,8 @@ export interface ProductListParams {
   categoryId?: string;
   search?: string;
   trashed?: boolean;
+  status?: ProductStatus;
+  typeId?: string;
 }
 
 export function listProducts(params: ProductListParams = {}) {
@@ -22,6 +25,8 @@ export function listProducts(params: ProductListParams = {}) {
   if (params.categoryId) query.set("categoryId", params.categoryId);
   if (params.search) query.set("search", params.search);
   if (params.trashed) query.set("trashed", "true");
+  if (params.status) query.set("status", params.status);
+  if (params.typeId) query.set("typeId", params.typeId);
 
   return apiFetch<PaginatedResult<Product>>(`/api/products?${query.toString()}`);
 }
@@ -54,8 +59,27 @@ export function bulkDeleteProducts(ids: string[]) {
   return apiFetch<void>("/api/products/bulk/delete", { method: "POST", body: { ids } });
 }
 
-export function bulkUpdateProductStatus(ids: string[], isActive: boolean) {
-  return apiFetch<void>("/api/products/bulk/status", { method: "POST", body: { ids, isActive } });
+export interface BulkStatusResult {
+  updated: number;
+  unchanged: number;
+  /** Products that couldn't go live/ready, with the required checks they're missing. */
+  blocked: { id: string; name: string; missing: string[] }[];
+}
+
+export function bulkUpdateProductStatus(ids: string[], status: ProductStatus) {
+  return apiFetch<BulkStatusResult>("/api/products/bulk/status", { method: "POST", body: { ids, status } });
+}
+
+export interface ProductHistoryItem {
+  id: string;
+  action: string;
+  createdAt: string;
+  admin: { name: string } | null;
+  metadata: { changes?: { field: string; from: unknown; to: unknown }[]; bulk?: boolean } | null;
+}
+
+export function getProductHistory(id: string, page = 1) {
+  return apiFetch<{ items: ProductHistoryItem[]; total: number; page: number; pageSize: number }>(`/api/products/${id}/history?page=${page}`);
 }
 
 export function bulkUpdateProductCategory(ids: string[], categoryId: string) {

@@ -64,11 +64,31 @@ export function buildSpecAccordionItems(resolved: ProductResolvedView | undefine
     html: true,
   }));
 
-  // Apparel has always shown a generic care note; keep it until an admin writes product-specific care.
-  const careInstructions = attributes?.careInstructions;
-  const hasCare = typeof careInstructions === "string" && careInstructions.trim() !== "";
-  if (resolved?.type?.key === "CLOTHING" && !hasCare) {
-    items.push({ title: "Care", content: CLOTHING_CARE_NOTE });
+  // Composition: "80% Cotton", "20% Polyester" — catalog or custom materials, as the admin entered them.
+  if (resolved?.materials?.length) {
+    items.push({
+      title: "Material",
+      content: `<ul class="space-y-1.5 text-sm text-ink-700">${resolved.materials
+        .map((m) => `<li>${m.percentage ? `${escapeHtml(String(m.percentage))}% ` : ""}${escapeHtml(m.name)}</li>`)
+        .join("")}</ul>`,
+      html: true,
+    });
+  }
+
+  // Care: the product's own steps, its care guide, or the type's default — in that order.
+  if (resolved?.care) {
+    items.push({
+      title: "Care instructions",
+      content: `<ol class="list-decimal space-y-1 pl-5 text-sm text-ink-700">${resolved.care.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`,
+      html: true,
+    });
+  } else {
+    // Apparel has always shown a generic care note; keep it until a care guide (or the old free-text field) says otherwise.
+    const careInstructions = attributes?.careInstructions;
+    const hasCare = typeof careInstructions === "string" && careInstructions.trim() !== "";
+    if (resolved?.type?.key === "CLOTHING" && !hasCare) {
+      items.push({ title: "Care", content: CLOTHING_CARE_NOTE });
+    }
   }
 
   return items;

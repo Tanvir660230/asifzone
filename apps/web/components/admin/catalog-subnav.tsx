@@ -7,6 +7,8 @@ const TABS = [
   { label: "Templates", href: "/admin/catalog/templates" },
   { label: "Attributes", href: "/admin/catalog/attributes" },
   { label: "Size guides", href: "/admin/catalog/size-guides" },
+  { label: "Care guides", href: "/admin/catalog/care-guides" },
+  { label: "Materials", href: "/admin/catalog/materials" },
   { label: "Spec groups", href: "/admin/catalog/spec-groups" },
 ];
 

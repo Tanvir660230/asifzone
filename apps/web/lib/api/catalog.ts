@@ -1,6 +1,8 @@
 import type {
   AttributeDataType,
+  CareGuidePresetInput,
   CreateAttributeDefinitionInput,
+  MaterialInput,
   ProductTypeInput,
   ResolvedTypeConfig,
   SizeGuideMode,
@@ -69,6 +71,9 @@ export interface TemplateRow {
   sizeGuideMode: SizeGuideMode;
   sizeGuidePresetId: string | null;
   sizeGuidePreset: { id: string; name: string } | null;
+  carePresetId: string | null;
+  carePreset: { id: string; name: string } | null;
+  requiredChecks: string[];
   isArchived: boolean;
   typeCount: number;
   attributes: {
@@ -122,3 +127,37 @@ export const duplicateSizeGuide = (id: string) => apiFetch<{ sizeGuide: SizeGuid
 export const archiveSizeGuide = (id: string, isArchived: boolean) =>
   apiFetch<{ sizeGuide: SizeGuideRow }>(`/api/catalog/size-guides/${id}/archive`, json("PATCH", { isArchived }));
 export const deleteSizeGuide = (id: string) => apiFetch<void>(`/api/catalog/size-guides/${id}`, { method: "DELETE" });
+
+export interface CareGuideRow {
+  id: string;
+  name: string;
+  description: string | null;
+  steps: string[];
+  isArchived: boolean;
+  templateCount: number;
+  productCount: number;
+}
+
+export interface MaterialRow {
+  id: string;
+  name: string;
+  description: string | null;
+  isArchived: boolean;
+  productCount: number;
+}
+
+/* care guides */
+export const listCareGuides = () => apiFetch<{ careGuides: CareGuideRow[] }>("/api/catalog/care-guides");
+export const createCareGuide = (input: CareGuidePresetInput) => apiFetch<{ careGuide: CareGuideRow }>("/api/catalog/care-guides", json("POST", input));
+export const updateCareGuide = (id: string, input: CareGuidePresetInput) => apiFetch<{ careGuide: CareGuideRow }>(`/api/catalog/care-guides/${id}`, json("PUT", input));
+export const duplicateCareGuide = (id: string) => apiFetch<{ careGuide: CareGuideRow }>(`/api/catalog/care-guides/${id}/duplicate`, json("POST"));
+export const archiveCareGuide = (id: string, isArchived: boolean) =>
+  apiFetch<{ careGuide: CareGuideRow }>(`/api/catalog/care-guides/${id}/archive`, json("PATCH", { isArchived }));
+export const deleteCareGuide = (id: string) => apiFetch<void>(`/api/catalog/care-guides/${id}`, { method: "DELETE" });
+
+/* materials */
+export const listMaterials = () => apiFetch<{ materials: MaterialRow[] }>("/api/catalog/materials");
+export const createMaterial = (input: MaterialInput) => apiFetch<{ material: MaterialRow }>("/api/catalog/materials", json("POST", input));
+export const updateMaterial = (id: string, input: MaterialInput & { isArchived?: boolean }) =>
+  apiFetch<{ material: MaterialRow }>(`/api/catalog/materials/${id}`, json("PUT", input));
+export const deleteMaterial = (id: string) => apiFetch<void>(`/api/catalog/materials/${id}`, { method: "DELETE" });

@@ -182,6 +182,10 @@ describe("catalog: product types, templates and attribute definitions", () => {
       capTypeId = type.body.type.id;
       made.types.push(capTypeId);
       expect(type.body.type.legacyType).toBe("CUSTOM");
+      // Goes after every existing type, so it never becomes the editor's default for new products.
+      const all = (await staff().get("/api/catalog/types")).body.types as { typeId: string; key: string }[];
+      expect(all[all.length - 1]!.typeId).toBe(capTypeId);
+      expect(all[0]!.key).toBe("CLOTHING");
     });
 
     it("offers the new type, fully resolved, to the product editor", async () => {
