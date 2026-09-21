@@ -13,6 +13,29 @@ export interface ProductTypeConfig {
   sizeGuide?: { supported: boolean; defaultEnabled: boolean };
 }
 
+export interface SizeGuideData {
+  enabled?: boolean;
+  title?: string;
+  unit?: string;
+  columns: string[];
+  rows: string[][];
+}
+
+/** Generic apparel chart. Shown for size-guide-enabled types until an admin saves their own, so the
+ * admin editor and the storefront modal always start from the same table. */
+export const DEFAULT_SIZE_GUIDE: SizeGuideData = {
+  title: "Size guide",
+  unit: "inch",
+  columns: ["Size", "Chest", "Waist", "Length"],
+  rows: [
+    ["S", "36–38", "30–32", "27"],
+    ["M", "39–41", "33–35", "28"],
+    ["L", "42–44", "36–38", "29"],
+    ["XL", "45–47", "39–41", "30"],
+    ["XXL", "48–50", "42–44", "31"],
+  ],
+};
+
 export const PRODUCT_TYPE_CONFIGS: Record<string, ProductTypeConfig> = {
   CLOTHING: {
     type: "CLOTHING", label: "Clothing", description: "Apparel items with size & color.",
@@ -93,8 +116,8 @@ export const PRODUCT_TYPE_CONFIGS: Record<string, ProductTypeConfig> = {
       { key: "ingredients", label: "Ingredients", type: "TEXTAREA", placeholder: "Aqua, Niacinamide, Hyaluronic Acid...", section: "details" },
     ],
     variantDimensions: [
-      { key: "shade", label: "Shade", targetField: "size", options: ["Fair", "Light", "Medium", "Deep"] },
-      { key: "volume", label: "Volume", targetField: "color", options: ["30ml", "50ml", "100ml"] },
+      { key: "volume", label: "Volume", targetField: "size", options: ["30ml", "50ml", "100ml"] },
+      { key: "shade", label: "Shade", targetField: "color", options: ["Fair", "Light", "Medium", "Deep"] },
     ],
     sections: [{ key: "description", label: "Description" }, { key: "details", label: "Cosmetic Details" }],
     sizeGuide: { supported: false, defaultEnabled: false },

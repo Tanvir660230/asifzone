@@ -79,7 +79,7 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   const { attributeValueIds = [], ...rest } = variant;
   return {
     ...rest,
-    size: rest.size || "",
+    size: rest.size || "Standard",
     color: rest.color || "",
     sortOrder,
     attributeValues: { create: attributeValueIds.map((attributeValueId) => ({ attributeValueId })) },
@@ -1048,7 +1048,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
               where: { id: variantId },
               data: {
                 ...updateData,
-                size: updateData.size || "",
+                size: updateData.size || "Standard",
                 color: updateData.color || "",
                 sortOrder: index,
               },
