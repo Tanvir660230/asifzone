@@ -66,6 +66,12 @@ jobs:
       - name: Apply migrations
         run: pnpm --filter api exec prisma migrate deploy
 
+      # Fails when schema.prisma changed without a matching migration file. Production only runs
+      # `migrate deploy`, so a schema edit with no migration passes locally (where `db push` masks
+      # it) but breaks the live database. Must run before anything that could `db push`.
+      - name: Check schema has no un-migrated changes
+        run: pnpm --filter api exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
       - name: Seed admin + demo catalog
         run: pnpm --filter api db:seed
 
