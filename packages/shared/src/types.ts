@@ -6,6 +6,8 @@ import type { CustomerTag } from "./schemas/customer";
 import type { HomepageSectionType } from "./schemas/homepage-section";
 import type { ProductType } from "./config/product-types";
 import type { ProductResolvedView } from "./schemas/catalog";
+import type { CompletenessResult } from "./completeness";
+import type { ProductStatus } from "./schemas/product";
 
 export interface StockMovement {
   id: string;
@@ -147,9 +149,21 @@ export interface Product {
   lowStockThreshold: number;
   restockDate: string | null;
   isActive: boolean;
+  status: ProductStatus;
   isFeatured: boolean;
   seoTitle: string | null;
   seoDescription: string | null;
+  focusKeyword?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+  ogImageUrl?: string | null;
+  canonicalUrl?: string | null;
+  carePresetId?: string | null;
+  careOverride?: string[] | null;
+  /** Editable composition lines (admin detail reads); the storefront gets `resolved.materials` instead. */
+  materials?: { materialId: string | null; customName: string | null; percentage: number | null }[];
+  /** Admin detail reads only. */
+  completeness?: CompletenessResult;
   deletedAt: string | null;
   variants: ProductVariant[];
   images: ProductImage[];

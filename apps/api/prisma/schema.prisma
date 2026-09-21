@@ -25,6 +25,15 @@ enum ProductType {
   CUSTOM
 }
 
+/// Where a product is in its life. Only PUBLISHED products are on the storefront; `Product.isActive` is kept
+/// equal to `status === PUBLISHED` (one service function writes both) because dozens of existing queries filter on it.
+enum ProductStatus {
+  DRAFT
+  READY
+  PUBLISHED
+  UNPUBLISHED
+}
+
 enum AttributeDataType {
   TEXT
   TEXTAREA
@@ -372,9 +381,23 @@ model Product {
   lowStockThreshold Int                     @default(5)
   restockDate       DateTime?
   isActive          Boolean                 @default(true)
+  /// Defaults to PUBLISHED so rows written by code that only knows `isActive` stay live.
+  status            ProductStatus           @default(PUBLISHED)
   isFeatured        Boolean                 @default(false)
   seoTitle          String?
   seoDescription    String?
+  focusKeyword      String?
+  ogTitle           String?
+  ogDescription     String?
+  ogImageUrl        String?
+  /// Overrides the self-referencing canonical the product page emits (e.g. when this is a variant of another listing).
+  canonicalUrl      String?
+  /// Care steps: a preset (falls back to the template's), or this product's own list when `careOverride` is set.
+  carePresetId      String?
+  carePreset        CareGuidePreset?        @relation(fields: [carePresetId], references: [id], onDelete: SetNull)
+  /// string[] — the product's own care steps; wins over the preset.
+  careOverride      Json?
+  materials         ProductMaterial[]
   deletedAt         DateTime?
   variants          ProductVariant[]
   images            ProductImage[]
@@ -393,7 +416,9 @@ model Product {
 
   @@index([categoryId, isActive])
   @@index([deletedAt])
-  @@index([typeId])
+  @@index([typeId, status])
+  @@index([status])
+  @@index([carePresetId])
 }
 
 /// Anonymous, aggregate-only log of storefront product-page views — same spirit as SearchLog.
@@ -1589,6 +1614,12 @@ model ProductTemplate {
   sizeGuideMode     SizeGuideMode       @default(NOT_APPLICABLE)
   sizeGuidePresetId String?
   sizeGuidePreset   SizeGuidePreset?    @relation(fields: [sizeGuidePresetId], references: [id], onDelete: SetNull)
+  /// Default care steps for products of this template (a product can pick another preset or write its own).
+  carePresetId      String?
+  carePreset        CareGuidePreset?    @relation(fields: [carePresetId], references: [id], onDelete: SetNull)
+  /// Completeness check keys that must pass before a product of this template can be READY/PUBLISHED, on top of
+  /// the always-required basics (see COMPLETENESS_CHECKS in packages/shared).
+  requiredChecks    String[]            @default([])
   isArchived        Boolean             @default(false)
   attributes        TemplateAttribute[]
   types             ProductTypeDef[]
@@ -1596,6 +1627,7 @@ model ProductTemplate {
   updatedAt         DateTime            @updatedAt
 
   @@index([sizeGuidePresetId])
+  @@index([carePresetId])
 }
 
 /// A reusable product field ("Embroidery Type", "Movement").
@@ -1696,4 +1728,45 @@ model SizeGuidePreset {
   templates   ProductTemplate[]
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+}
+
+/// Reusable care instructions ("Cotton care"). `steps` is a string[] because a care guide is an ordered list of
+/// lines and is only ever read and written whole.
+model CareGuidePreset {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  steps       Json
+  isArchived  Boolean           @default(false)
+  templates   ProductTemplate[]
+  products    Product[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+/// A named material ("Premium Cotton", "Genuine Leather"). Relational so products can be found by material.
+model Material {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  isArchived  Boolean           @default(false)
+  products    ProductMaterial[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+/// One line of a product's composition: a catalog material or a product-specific custom name, optionally
+/// with a percentage ("80% Cotton"). A CHECK constraint (see the migration) requires one of the two names.
+model ProductMaterial {
+  id         String    @id @default(cuid())
+  productId  String
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  materialId String?
+  material   Material? @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  customName String?
+  percentage Decimal?  @db.Decimal(5, 2)
+  sortOrder  Int       @default(0)
+
+  @@index([productId])
+  @@index([materialId])
 }

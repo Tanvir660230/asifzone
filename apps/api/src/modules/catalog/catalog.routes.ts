@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
+  careGuidePresetSchema,
   createAttributeDefinitionSchema,
+  materialSchema,
   productTypeSchema,
   sizeGuidePresetSchema,
   specGroupSchema,
@@ -108,5 +110,41 @@ catalogRouter.patch("/size-guides/:id/archive", ownerOnly, validate(archiveSchem
 }));
 catalogRouter.delete("/size-guides/:id", ownerOnly, asyncHandler(async (req, res) => {
   await catalog.deleteSizeGuidePreset(req.params.id!);
+  res.status(204).send();
+}));
+
+/* care guide presets */
+catalogRouter.get("/care-guides", asyncHandler(async (_req, res) => {
+  res.json({ careGuides: await catalog.listCareGuides() });
+}));
+catalogRouter.post("/care-guides", ownerOnly, validate(careGuidePresetSchema), asyncHandler(async (req, res) => {
+  res.status(201).json({ careGuide: await catalog.createCareGuide(req.body) });
+}));
+catalogRouter.put("/care-guides/:id", ownerOnly, validate(careGuidePresetSchema), asyncHandler(async (req, res) => {
+  res.json({ careGuide: await catalog.updateCareGuide(req.params.id!, req.body) });
+}));
+catalogRouter.post("/care-guides/:id/duplicate", ownerOnly, asyncHandler(async (req, res) => {
+  res.status(201).json({ careGuide: await catalog.duplicateCareGuide(req.params.id!) });
+}));
+catalogRouter.patch("/care-guides/:id/archive", ownerOnly, validate(archiveSchema), asyncHandler(async (req, res) => {
+  res.json({ careGuide: await catalog.setCareGuideArchived(req.params.id!, req.body.isArchived) });
+}));
+catalogRouter.delete("/care-guides/:id", ownerOnly, asyncHandler(async (req, res) => {
+  await catalog.deleteCareGuide(req.params.id!);
+  res.status(204).send();
+}));
+
+/* materials */
+catalogRouter.get("/materials", asyncHandler(async (_req, res) => {
+  res.json({ materials: await catalog.listMaterials() });
+}));
+catalogRouter.post("/materials", ownerOnly, validate(materialSchema), asyncHandler(async (req, res) => {
+  res.status(201).json({ material: await catalog.createMaterial(req.body) });
+}));
+catalogRouter.put("/materials/:id", ownerOnly, validate(materialSchema.extend({ isArchived: z.boolean().optional() })), asyncHandler(async (req, res) => {
+  res.json({ material: await catalog.updateMaterial(req.params.id!, req.body) });
+}));
+catalogRouter.delete("/materials/:id", ownerOnly, asyncHandler(async (req, res) => {
+  await catalog.deleteMaterial(req.params.id!);
   res.status(204).send();
 }));

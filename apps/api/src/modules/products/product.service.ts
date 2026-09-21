@@ -11,11 +11,15 @@ import {
   slugify,
   expandSearchTerms,
   findClosestVocabularyTerm,
+  computeCompleteness,
+  describeBlockers,
   isBlankAttributeValue,
   validateProductAgainstConfig,
   NO_SIZE_VALUE,
   type AttributeDataType,
+  type CompletenessResult,
   type ProductResolvedView,
+  type ProductStatus,
   type ResolvedAttributeField,
   type ResolvedTypeConfig,
 } from "@clothing-brand/shared";
@@ -32,6 +36,7 @@ import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
 import {
   TYPE_INCLUDE,
+  buildCareView,
   buildResolvedView,
   fromStoredRow,
   presentAttributes,
@@ -39,7 +44,9 @@ import {
   toStoredColumns,
   type TypeWithTemplate,
 } from "../catalog/catalog.presenter";
+import { recordAudit } from "../../lib/audit";
 import { PRODUCT_CACHE_PREFIX, invalidateProductCache } from "./product.cache";
+import { diffProduct, type AuditSnapshot } from "./product-audit";
 
 const CACHE_PREFIX = PRODUCT_CACHE_PREFIX;
 const CACHE_TTL_SECONDS = 120;
@@ -100,9 +107,22 @@ type PublicProduct = Prisma.ProductGetPayload<{ select: typeof PUBLIC_PRODUCT_SE
 const detailRelations = {
   attributeValues: { include: { definition: { select: { key: true, dataType: true } } } },
   type: { include: TYPE_INCLUDE },
+  carePreset: { select: { name: true, steps: true } },
+  materials: { include: { material: { select: { name: true } } }, orderBy: { sortOrder: "asc" as const } },
 } as const;
 const detailInclude = { ...include, ...detailRelations };
-const PUBLIC_DETAIL_SELECT = { ...PUBLIC_PRODUCT_SELECT, typeId: true, ...detailRelations } as const;
+// What the product page itself needs beyond the shared public select: status-independent SEO overrides and
+// the type/care/material relations (internal SEO fields like the focus keyword stay admin-only).
+const PUBLIC_DETAIL_SELECT = {
+  ...PUBLIC_PRODUCT_SELECT,
+  typeId: true,
+  ogTitle: true,
+  ogDescription: true,
+  ogImageUrl: true,
+  canonicalUrl: true,
+  careOverride: true,
+  ...detailRelations,
+} as const;
 
 type PresentableRow = {
   attributes: unknown;
@@ -110,10 +130,14 @@ type PresentableRow = {
   type: TypeWithTemplate | null;
   typeId: string | null;
   productType: string;
+  careOverride?: unknown;
+  carePreset: { name: string; steps: unknown } | null;
+  materials: { materialId: string | null; customName: string | null; percentage: { toString(): string } | number | null; material: { name: string } | null }[];
 };
-type Presented<T> = Omit<T, "attributeValues" | "type" | "attributes" | "typeId"> & {
+type Presented<T> = Omit<T, "attributeValues" | "type" | "attributes" | "typeId" | "carePreset" | "materials"> & {
   typeId: string | null;
   attributes: Record<string, unknown>;
+  materials: { materialId: string | null; customName: string | null; percentage: number | null }[];
   resolved: ProductResolvedView;
 };
 
@@ -123,14 +147,58 @@ async function typeForRow(row: Pick<PresentableRow, "type" | "productType">): Pr
 }
 
 /** Turns a raw detail row into what clients receive: `attributes` as one flat map (typed rows + legacy
- * remainder) and a `resolved` view (spec groups, size guide, variant dimensions) computed from the template. */
-async function presentProduct<T extends PresentableRow>(row: T): Promise<Presented<T>> {
+ * remainder), the editable `materials` list, and a `resolved` view (spec groups, size guide, care, materials,
+ * variant dimensions) computed from the template. Also hands back the resolved type config for callers that
+ * need to score the product against it. */
+async function presentWithConfig<T extends PresentableRow>(row: T): Promise<{ presented: Presented<T>; config: ResolvedTypeConfig | null }> {
   const type = await typeForRow(row);
   const config = type ? toResolvedTypeConfig(type) : null;
   const attributes = presentAttributes(row, config?.fields ?? []);
-  const { attributeValues: _values, type: _type, attributes: _attrs, typeId: _typeId, ...rest } = row;
-  void _values; void _type; void _attrs; void _typeId;
-  return { ...rest, typeId: type?.id ?? null, attributes, resolved: buildResolvedView(config, attributes) } as unknown as Presented<T>;
+  const materials = row.materials.map((m) => ({
+    materialId: m.materialId,
+    customName: m.customName,
+    percentage: m.percentage === null ? null : Number(m.percentage.toString()),
+  }));
+  const resolved = buildResolvedView(config, attributes, {
+    care: buildCareView({ careOverride: row.careOverride, carePreset: row.carePreset }, config),
+    materials: row.materials.map((m, i) => ({ name: m.material?.name ?? m.customName ?? "", percentage: materials[i]!.percentage })),
+  });
+  const { attributeValues: _values, type: _type, attributes: _attrs, typeId: _typeId, carePreset: _care, materials: _materials, ...rest } = row;
+  void _values; void _type; void _attrs; void _typeId; void _care; void _materials;
+  return { presented: { ...rest, typeId: type?.id ?? null, attributes, materials, resolved } as unknown as Presented<T>, config };
+}
+
+async function presentProduct<T extends PresentableRow>(row: T): Promise<Presented<T>> {
+  return (await presentWithConfig(row)).presented;
+}
+
+type DetailRow = Prisma.ProductGetPayload<{ include: typeof detailInclude }>;
+
+/** Scores a detail row against its type's template — the same function the editor runs on live form values. */
+function completenessOf(presented: Presented<DetailRow>, config: ResolvedTypeConfig | null): CompletenessResult {
+  return computeCompleteness(
+    {
+      name: presented.name,
+      categoryId: presented.categoryId,
+      basePrice: presented.basePrice.toString(),
+      description: presented.description,
+      seoDescription: presented.seoDescription,
+      trackInventory: presented.trackInventory,
+      variants: presented.variants,
+      imageCount: presented.images.length,
+      attributes: presented.attributes,
+      materialCount: presented.materials.length,
+      hasCare: presented.resolved.care !== null,
+      sizeGuideShown: !config || config.sizeGuide.mode === "NOT_APPLICABLE" ? null : presented.resolved.sizeGuide.show,
+    },
+    config,
+  );
+}
+
+/** Admin detail read: the presented product plus its completeness (never sent to the storefront). */
+async function presentForAdmin(row: DetailRow) {
+  const { presented, config } = await presentWithConfig(row);
+  return { ...presented, completeness: completenessOf(presented, config) };
 }
 
 /** JSON column input: `undefined` leaves the column alone, `null` clears it (Prisma needs the JsonNull
@@ -326,6 +394,8 @@ export async function listProducts(query: ProductListQuery) {
   const where = {
     deletedAt: query.trashed ? { not: null } : null,
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.typeId ? { typeId: query.typeId } : {}),
     // Matches by product name OR any variant's SKU — the admin product list and the "Create
     // order" product picker both advertise "search by name or SKU", so a staff member typing in
     // a barcode/SKU (which never appears in the name) must still find the exact product.
@@ -341,7 +411,7 @@ export async function listProducts(query: ProductListQuery) {
 
   return paginate(
     query,
-    (p) => prisma.product.findMany({ where, include, orderBy: { createdAt: "desc" }, ...p }),
+    (p) => prisma.product.findMany({ where, include: { ...include, type: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, ...p }),
     () => prisma.product.count({ where }),
   );
 }
@@ -349,7 +419,7 @@ export async function listProducts(query: ProductListQuery) {
 export async function getProductById(id: string) {
   const product = await prisma.product.findUnique({ where: { id }, include: detailInclude });
   if (!product) throw AppError.notFound("Product not found");
-  return presentProduct(product);
+  return presentForAdmin(product);
 }
 
 /** Public lookup: only returns active products, matching what the storefront should link to. */
@@ -1056,7 +1126,78 @@ function attributeRowData(field: ResolvedAttributeField, value: unknown) {
   };
 }
 
-export async function createProduct(input: CreateProductInput, adminId: string) {
+const GATED_STATUSES: ReadonlySet<ProductStatus> = new Set(["READY", "PUBLISHED"]);
+
+/** A product can only move to READY or PUBLISHED while every required completeness check passes. Runs inside the
+ * write's transaction on the *saved* state, so a refusal rolls the whole save back — nothing half-applies. */
+async function assertPublishable(tx: Prisma.TransactionClient, productId: string, target: ProductStatus) {
+  const row = await tx.product.findUnique({ where: { id: productId }, include: detailInclude });
+  if (!row) throw AppError.notFound("Product not found");
+  const { presented, config } = await presentWithConfig(row);
+  const result = completenessOf(presented, config);
+  if (result.blockers.length) {
+    const verb = target === "READY" ? "mark it ready" : "publish it";
+    throw AppError.badRequest(`Can't ${verb} yet — missing: ${describeBlockers(result)}`, {
+      formErrors: [`Missing before this product can go ${target === "READY" ? "ready" : "live"}: ${result.blockers.map((b) => b.detail ?? b.label).join("; ")}`],
+      fieldErrors: {},
+      blockers: result.blockers,
+    });
+  }
+}
+
+/** Validates the composition lines (real, non-archived materials) and replaces the product's rows. */
+async function replaceMaterials(
+  tx: Prisma.TransactionClient,
+  productId: string,
+  materials: NonNullable<CreateProductInput["materials"]>,
+) {
+  const ids = [...new Set(materials.map((m) => m.materialId).filter((x): x is string => Boolean(x)))];
+  if (ids.length) {
+    const found = await tx.material.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, isArchived: true } });
+    const foundIds = new Set(found.map((m) => m.id));
+    if (ids.some((id) => !foundIds.has(id))) throw AppError.badRequest("One of the selected materials no longer exists");
+    const existing = new Set(
+      (await tx.productMaterial.findMany({ where: { productId, materialId: { in: ids } }, select: { materialId: true } })).map((m) => m.materialId),
+    );
+    const archived = found.find((m) => m.isArchived && !existing.has(m.id));
+    if (archived) throw AppError.badRequest(`The material "${archived.name}" is archived`);
+  }
+  await tx.productMaterial.deleteMany({ where: { productId } });
+  if (materials.length) {
+    await tx.productMaterial.createMany({
+      data: materials.map((m, sortOrder) => ({
+        productId,
+        materialId: m.materialId ?? null,
+        customName: m.materialId ? null : (m.customName ?? null),
+        percentage: m.percentage ?? null,
+        sortOrder,
+      })),
+    });
+  }
+}
+
+async function assertCarePresetUsable(carePresetId: string | null | undefined, currentId: string | null) {
+  if (!carePresetId || carePresetId === currentId) return;
+  const preset = await prisma.careGuidePreset.findUnique({ where: { id: carePresetId }, select: { isArchived: true } });
+  if (!preset) throw AppError.badRequest("Care guide does not exist");
+  if (preset.isArchived) throw AppError.badRequest("That care guide is archived");
+}
+
+/** `[]` and null both mean "no override" — stored as SQL NULL so "has an override" is a plain null check. */
+function careOverrideInput(value: string[] | null | undefined) {
+  if (value === undefined) return undefined;
+  return value && value.length ? (value as Prisma.InputJsonArray) : Prisma.DbNull;
+}
+
+const toSnapshot = (p: Awaited<ReturnType<typeof getProductById>>): AuditSnapshot => p as unknown as AuditSnapshot;
+
+function recordProductAudit(adminId: string, productId: string, ip: string | undefined, events: ReturnType<typeof diffProduct>) {
+  for (const event of events) {
+    recordAudit({ adminId, action: event.action, entityType: "products", entityId: productId, ipAddress: ip ?? null, metadata: { changes: event.changes } });
+  }
+}
+
+export async function createProduct(input: CreateProductInput, adminId: string, ip?: string) {
   const category = await prisma.category.findUnique({ where: { id: input.categoryId } });
   if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
 
@@ -1065,11 +1206,25 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
 
   const type = await resolveTypeForWrite(input);
   const config: ResolvedTypeConfig = toResolvedTypeConfig(type);
-  const { variants, typeId: _typeId, productType: _productType, attributes: submitted, ...productData } = input;
+  const {
+    variants,
+    typeId: _typeId,
+    productType: _productType,
+    attributes: submitted,
+    status: submittedStatus,
+    isActive: legacyIsActive,
+    materials,
+    careOverride,
+    ...productData
+  } = input;
   void _typeId; void _productType;
+
+  // A new product is a DRAFT unless the caller says otherwise; the old `isActive` flag still means what it did.
+  const status: ProductStatus = submittedStatus ?? (legacyIsActive === true ? "PUBLISHED" : legacyIsActive === false ? "UNPUBLISHED" : "DRAFT");
 
   throwIfInvalid(validateProductAgainstConfig({ attributes: submitted ?? {}, variants }, config));
   const { defined, legacy } = splitAttributes(config.fields, submitted ?? {}, new Set());
+  await assertCarePresetUsable(productData.carePresetId, null);
 
   const baseSlug = slugify(input.slug || input.name);
   const slug = await ensureUniqueSlug(baseSlug, async (candidate) => {
@@ -1084,7 +1239,10 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
           ...productData,
           typeId: type.id,
           productType: type.legacyType,
+          status,
+          isActive: status === "PUBLISHED",
           attributes: toJsonInput(Object.keys(legacy).length ? legacy : null),
+          careOverride: careOverrideInput(careOverride) === Prisma.DbNull ? undefined : careOverrideInput(careOverride),
           slug,
           variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
         },
@@ -1095,6 +1253,7 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
         .filter((f) => f.key in defined && !isBlankAttributeValue(defined[f.key]))
         .map((f) => ({ productId: created.id, definitionId: f.definitionId, ...attributeRowData(f, defined[f.key]) }));
       if (rows.length) await tx.productAttributeValue.createMany({ data: rows });
+      if (materials?.length) await replaceMaterials(tx, created.id, materials);
 
       // Every variant starts life with a real stock number but no history explaining it — log it
       // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
@@ -1111,6 +1270,7 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
         });
       }
 
+      if (GATED_STATUSES.has(status)) await assertPublishable(tx, created.id, status);
       return created;
     });
   } catch (err) {
@@ -1126,10 +1286,18 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
   }
 
   await invalidateCache();
+  recordAudit({
+    adminId,
+    action: "product.created",
+    entityType: "products",
+    entityId: product.id,
+    ipAddress: ip ?? null,
+    metadata: { changes: [{ field: "name", from: null, to: product.name }, { field: "status", from: null, to: status }] },
+  });
   return getProductById(product.id);
 }
 
-export async function updateProduct(id: string, input: UpdateProductInput, adminId: string) {
+export async function updateProduct(id: string, input: UpdateProductInput, adminId: string, ip?: string) {
   const existing = await getProductById(id);
 
   if (input.categoryId) {
@@ -1166,9 +1334,34 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     ),
   );
 
-  const { typeId: _typeId, productType: _productType, attributes: _attributes, variants: _variants, ...rest } = input;
+  const {
+    typeId: _typeId,
+    productType: _productType,
+    attributes: _attributes,
+    variants: _variants,
+    status: submittedStatus,
+    isActive: legacyIsActive,
+    materials,
+    careOverride,
+    ...rest
+  } = input;
   void _typeId; void _productType; void _attributes; void _variants;
   const data: Record<string, unknown> = { ...rest };
+  if (careOverride !== undefined) data.careOverride = careOverrideInput(careOverride);
+  await assertCarePresetUsable(rest.carePresetId, existing.carePresetId ?? null);
+
+  // Status: an explicit `status` wins; the legacy `isActive` flag maps onto it (true = publish, false = unpublish
+  // only a live product, so a stale form can't turn a draft into "unpublished").
+  let target: ProductStatus | undefined = submittedStatus;
+  if (!target && legacyIsActive !== undefined) {
+    if (legacyIsActive) target = "PUBLISHED";
+    else if (existing.status === "PUBLISHED") target = "UNPUBLISHED";
+  }
+  const statusChanged = target !== undefined && target !== existing.status;
+  if (statusChanged) {
+    data.status = target;
+    data.isActive = target === "PUBLISHED";
+  }
 
   if (typeChanged) {
     data.typeId = type.id;
@@ -1194,6 +1387,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
   try {
     await prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id }, data });
+      if (materials !== undefined) await replaceMaterials(tx, id, materials);
 
       if (attributeSplit) {
         for (const field of config.fields) {
@@ -1298,6 +1492,9 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
           }
         }
       }
+
+      // Only a *move* to READY/PUBLISHED is gated: saving an already-live product never re-litigates its completeness.
+      if (statusChanged && target && GATED_STATUSES.has(target)) await assertPublishable(tx, id, target);
     });
   } catch (err) {
     // Same race as createProduct — the ensureUniqueSlug check above isn't atomic with the write.
@@ -1326,7 +1523,26 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     notifyPriceDrop(id, input.basePrice).catch((err) => console.error("[price-drop] notify failed:", err));
   }
 
-  return getProductById(id);
+  const updated = await getProductById(id);
+  recordProductAudit(adminId, id, ip, diffProduct(toSnapshot(existing), toSnapshot(updated)));
+  return updated;
+}
+
+/** The product's change history, newest first: structured events (price changed, published, ...) recorded on every save. */
+export async function getProductHistory(id: string, page = 1, pageSize = 30) {
+  if (!(await prisma.product.findUnique({ where: { id }, select: { id: true } }))) throw AppError.notFound("Product not found");
+  const where = { entityType: "products", entityId: id };
+  const [items, total] = await Promise.all([
+    prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { admin: { select: { name: true } } },
+    }),
+    prisma.auditLog.count({ where }),
+  ]);
+  return { items, total, page, pageSize };
 }
 
 /** Soft delete — moves the product to Trash instead of destroying it, so wishlist/flash-sale
@@ -1358,9 +1574,41 @@ export async function bulkDeleteProducts(ids: string[]) {
   await invalidateCache();
 }
 
-export async function bulkUpdateProductStatus(ids: string[], isActive: boolean) {
-  await prisma.product.updateMany({ where: { id: { in: ids } }, data: { isActive } });
-  await invalidateCache();
+/** Moves many products to a status. Going READY/PUBLISHED is gated per product: the ones that pass move, the ones that
+ * don't are returned with what they're missing instead of failing the whole batch. */
+export async function bulkUpdateProductStatus(ids: string[], target: ProductStatus, adminId: string, ip?: string) {
+  const rows = await prisma.product.findMany({ where: { id: { in: ids } }, include: detailInclude });
+  const blocked: { id: string; name: string; missing: string[] }[] = [];
+  const movable: typeof rows = [];
+
+  for (const row of rows) {
+    if (row.status === target) continue;
+    if (GATED_STATUSES.has(target)) {
+      const { presented, config } = await presentWithConfig(row);
+      const result = completenessOf(presented, config);
+      if (result.blockers.length) {
+        blocked.push({ id: row.id, name: row.name, missing: result.blockers.map((b) => b.label) });
+        continue;
+      }
+    }
+    movable.push(row);
+  }
+
+  if (movable.length) {
+    await prisma.product.updateMany({
+      where: { id: { in: movable.map((r) => r.id) } },
+      data: { status: target, isActive: target === "PUBLISHED" },
+    });
+    for (const row of movable) {
+      const action = target === "PUBLISHED" ? "product.published" : row.status === "PUBLISHED" ? "product.unpublished" : "product.status_changed";
+      recordAudit({
+        adminId, action, entityType: "products", entityId: row.id, ipAddress: ip ?? null,
+        metadata: { changes: [{ field: "status", from: row.status, to: target }], bulk: true },
+      });
+    }
+    await invalidateCache();
+  }
+  return { updated: movable.length, unchanged: rows.length - movable.length - blocked.length, blocked };
 }
 
 export async function bulkUpdateProductCategory(ids: string[], categoryId: string) {

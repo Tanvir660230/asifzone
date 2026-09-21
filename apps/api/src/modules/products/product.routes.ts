@@ -74,6 +74,7 @@ productRouter.get("/export/csv", requireAdmin, productController.exportCsv);
 // only ever called from the admin console — the storefront uses GET /storefront and GET /slug/:slug.
 productRouter.get("/", requireAdmin, validate(productListQuerySchema, "query"), productController.list);
 productRouter.get("/:id", requireAdmin, productController.getOne);
+productRouter.get("/:id/history", requireAdmin, productController.history);
 
 productRouter.post("/bulk/delete", requireAdmin, validate(bulkProductIdsSchema), productController.bulkDelete);
 productRouter.post("/bulk/status", requireAdmin, validate(bulkProductStatusSchema), productController.bulkStatus);
