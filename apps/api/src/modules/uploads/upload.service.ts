@@ -14,6 +14,9 @@ const SIZES = {
 export interface ProcessedImage {
   url: string;
   altText?: string;
+  /** Pixel size of the stored "full" rendition. */
+  width?: number;
+  height?: number;
 }
 
 async function ensureDir(dir: string) {
@@ -46,9 +49,12 @@ export async function processProductImage(buffer: Buffer, originalName: string):
     }),
   );
 
+  const { width, height } = await sharp(path.join(dir, `${id}-full.webp`)).metadata();
   return {
     url: `${env.apiOrigin}/uploads/products/${id}-full.webp`,
     altText: originalName,
+    width,
+    height,
   };
 }
 

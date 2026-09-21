@@ -13,7 +13,7 @@ import {
   bulkProductIdsSchema,
   bulkProductStatusSchema,
   bulkProductCategorySchema,
-  updateImageAltTextSchema,
+  updateImageSchema,
   reorderImagesSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
@@ -102,6 +102,6 @@ productRouter.delete("/:id/images/:imageId", requireAdmin, productController.rem
 productRouter.patch(
   "/:id/images/:imageId",
   requireAdmin,
-  validate(updateImageAltTextSchema),
-  productController.updateImageAltText,
+  validate(updateImageSchema),
+  productController.updateImage,
 );

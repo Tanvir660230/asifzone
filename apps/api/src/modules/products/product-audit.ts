@@ -43,7 +43,17 @@ export interface AuditSnapshot {
   careOverride?: unknown;
   attributes: Record<string, unknown>;
   materials?: { materialId: string | null; customName: string | null; percentage: unknown }[];
-  variants: { id: string; sku: string; size: string; color: string; price: unknown; stock: number }[];
+  variants: {
+    id: string;
+    sku: string;
+    size: string;
+    color: string;
+    price: unknown;
+    compareAtPrice?: unknown;
+    isActive?: boolean;
+    images?: { imageId: string; sortOrder: number }[];
+    stock: number;
+  }[];
 }
 
 const num = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
@@ -76,6 +86,7 @@ export function diffProduct(before: AuditSnapshot, after: AuditSnapshot): AuditE
   for (const v of after.variants) {
     const old = byId.get(v.id);
     if (old && num(old.price) !== num(v.price)) priceChanges.push({ field: `variant ${v.sku} price`, from: num(old.price), to: num(v.price) });
+    if (old && num(old.compareAtPrice) !== num(v.compareAtPrice)) priceChanges.push({ field: `variant ${v.sku} compare-at price`, from: num(old.compareAtPrice), to: num(v.compareAtPrice) });
   }
   push("product.price_changed", priceChanges);
 
@@ -94,7 +105,15 @@ export function diffProduct(before: AuditSnapshot, after: AuditSnapshot): AuditE
     ...before.variants.filter((v) => !afterIds.has(v.id)).map((v) => ({ field: "variant removed", from: v.sku, to: null })),
     ...after.variants.flatMap((v) => {
       const old = byId.get(v.id);
-      return old && old.sku !== v.sku ? [{ field: "variant SKU", from: old.sku, to: v.sku }] : [];
+      if (!old) return [];
+      const changes: AuditChange[] = [];
+      if (old.sku !== v.sku) changes.push({ field: "variant SKU", from: old.sku, to: v.sku });
+      if ((old.isActive ?? true) !== (v.isActive ?? true)) changes.push({ field: `variant ${v.sku} active`, from: old.isActive ?? true, to: v.isActive ?? true });
+      const gallery = (x: typeof v) => (x.images ?? []).map((i) => i.imageId).join(",");
+      if (gallery(old) !== gallery(v)) {
+        changes.push({ field: `variant ${v.sku} images`, from: `${old.images?.length ?? 0} image(s)`, to: `${v.images?.length ?? 0} image(s)` });
+      }
+      return changes;
     }),
   ];
   push("product.variants_changed", variantChanges);
