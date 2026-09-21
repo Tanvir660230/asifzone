@@ -73,10 +73,10 @@ export function GoogleButton({
         callback: handleCredential,
         auto_select: true,
         cancel_on_tap_outside: false,
-        // FedCM is disabled by default (`use_fedcm_for_prompt: false`) to prevent
-        // NetworkError: Error retrieving a token in development (localhost), non-HTTPS,
-        // or when browser privacy settings restrict third-party credential management.
-        use_fedcm_for_prompt: false,
+        // Chrome/Firefox block the legacy One Tap prompt outright once third-party cookies are off,
+        // so real visitors need FedCM. It only throws "NetworkError: Error retrieving a token" on
+        // localhost / non-HTTPS dev origins, so it is switched off just there.
+        use_fedcm_for_prompt: !["localhost", "127.0.0.1"].includes(window.location.hostname),
       });
       google.accounts.id.renderButton(containerRef.current, { theme: "outline", size: "large", width: 320 });
       // Cancel any pending One Tap prompt or FedCM request first to avoid
