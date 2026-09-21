@@ -91,6 +91,7 @@ export function toResolvedTypeConfig(type: TypeWithTemplate): ResolvedTypeConfig
       steps: template.carePreset ? (template.carePreset.steps as string[]) : [],
     },
     requiredChecks: template.requiredChecks,
+    sectionOverrides: template.sections.map((r) => ({ sectionKey: r.sectionKey, enabled: r.enabled, sortOrder: r.sortOrder, title: r.title, content: r.content })),
     fields,
   };
 }

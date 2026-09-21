@@ -246,7 +246,9 @@ describe("page sections, FAQ, curated lists and preview", () => {
 
       const set = await owner().patch(`/api/products/${main.id}`, { relations: [{ kind: "RELATED", productIds: [b.id, hidden.id, a.id] }] });
       expect(set.status, JSON.stringify(set.body)).toBe(200);
-      expect(set.body.product.relations).toEqual([{ kind: "RELATED", productIds: [b.id, hidden.id, a.id] }]);
+      expect(set.body.product.relations).toEqual([
+        { kind: "RELATED", productIds: [b.id, hidden.id, a.id], products: [b, hidden, a].map((x) => ({ id: x.id, name: expect.stringContaining("Vitest Sections") })) },
+      ]);
 
       let curated = await request(app).get(`/api/products/${main.id}/rail/related`);
       expect(curated.body.source).toBe("curated");
@@ -257,6 +259,19 @@ describe("page sections, FAQ, curated lists and preview", () => {
       curated = await request(app).get(`/api/products/${main.id}/rail/related`);
       expect(curated.body.items.map((i: { id: string }) => i.id)).toEqual([b.id, a.id]);
       expect((await owner().get(`/api/products/${main.id}`)).body.product.relations[0].productIds).toHaveLength(3);
+    });
+
+    it("falls back to the automatic list when every pick has since been unpublished", async () => {
+      const main = await publishedProduct();
+      const a = await publishedProduct();
+      await owner().patch(`/api/products/${main.id}`, { relations: [{ kind: "RELATED", productIds: [a.id] }] });
+      expect((await request(app).get(`/api/products/${main.id}/rail/related`)).body.source).toBe("curated");
+
+      await owner().patch(`/api/products/${a.id}`, { status: "UNPUBLISHED" });
+      const rail = await request(app).get(`/api/products/${main.id}/rail/related`);
+      expect(rail.status).toBe(200);
+      expect(rail.body.source).toBe("auto"); // a section with picks that all vanished must not go blank
+      expect(rail.body.items.map((i: { id: string }) => i.id)).not.toContain(a.id);
     });
 
     it("replaces only the kinds sent, and each list feeds its own rail", async () => {

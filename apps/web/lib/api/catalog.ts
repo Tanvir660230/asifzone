@@ -1,4 +1,6 @@
 import type {
+  ResolvedSection,
+  SectionOverrideInput,
   AttributeDataType,
   SkuSettingsInput,
   CareGuidePresetInput,
@@ -76,6 +78,7 @@ export interface TemplateRow {
   carePresetId: string | null;
   carePreset: { id: string; name: string } | null;
   requiredChecks: string[];
+  sections: SectionOverrideRow[];
   isArchived: boolean;
   typeCount: number;
   attributes: {
@@ -173,3 +176,15 @@ export const getSkuSettings = () => apiFetch<{ settings: SkuSettings }>("/api/ca
 export const updateSkuSettings = (input: SkuSettingsInput) => apiFetch<{ settings: SkuSettings }>("/api/catalog/sku-settings", json("PUT", input));
 export const generateSku = (input: { typeId: string; color?: string | null; size?: string | null; taken?: string[] }) =>
   apiFetch<{ sku: string }>("/api/catalog/sku/generate", json("POST", input));
+
+/* page sections (store-wide layer; templates and products carry theirs on their own payloads) */
+export interface SectionOverrideRow {
+  sectionKey: string;
+  enabled: boolean | null;
+  sortOrder: number | null;
+  title: string | null;
+  content: string | null;
+}
+export const getGlobalSections = () => apiFetch<{ overrides: SectionOverrideRow[]; resolved: ResolvedSection[] }>("/api/catalog/sections");
+export const saveGlobalSections = (overrides: SectionOverrideInput[]) =>
+  apiFetch<{ overrides: SectionOverrideRow[]; resolved: ResolvedSection[] }>("/api/catalog/sections", json("PUT", { overrides }));

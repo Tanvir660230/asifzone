@@ -277,3 +277,9 @@ export async function fetchPopularSearches(limit = 8) {
   if (!res.ok) throw new Error(`Popular-searches fetch failed (${res.status})`);
   return res.json() as Promise<{ queries: string[] }>;
 }
+
+/** One of the hand-pickable lists (related / frequentlyBought / crossSell / upsell / recommended): the admin's picks, or
+ * the automatic list when none are picked. Short cache like the other recommendation calls. */
+export function getProductRail(productId: string, key: "related" | "frequentlyBought" | "crossSell" | "upsell" | "recommended") {
+  return storefrontFetch<{ source: "curated" | "auto"; items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/rail/${key}`);
+}

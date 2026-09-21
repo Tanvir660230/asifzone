@@ -1,4 +1,4 @@
-import type { ProductResolvedView, SpecItemView } from "@clothing-brand/shared";
+import { toVideoEmbed, type Product, type ProductResolvedView, type SpecItemView } from "@clothing-brand/shared";
 
 type Attributes = Record<string, unknown> | null | undefined;
 
@@ -23,8 +23,7 @@ export function escapeHtml(value: string): string {
 const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /** The value as HTML. Everything admin-typed is escaped; the only raw HTML is RICH_TEXT, which the
- * server-rendered product page sanitizes (DOMPurify) *before* it reaches this client-side code — sanitizing
- * here would bundle isomorphic-dompurify's jsdom fallback into the browser. */
+ * server-rendered product page sanitizes (DOMPurify) *before* it gets here. */
 function renderValueHtml(item: SpecItemView): string {
   const { value, dataType, unit } = item;
   switch (dataType) {
@@ -53,43 +52,112 @@ function renderValueHtml(item: SpecItemView): string {
   }
 }
 
-/** One accordion section per spec group, built only from what the admin filled in — nothing is invented
- * for empty fields. The groups themselves (names, order, membership) come from the product's template. */
-export function buildSpecAccordionItems(resolved: ProductResolvedView | undefined, attributes: Attributes): SpecAccordionItem[] {
-  const items: SpecAccordionItem[] = (resolved?.specGroups ?? []).map((group) => ({
+/** Admin-written text: real HTML (from an editor) is sanitized; plain text becomes escaped paragraphs. */
+export function textToHtml(content: string, sanitize: (html: string) => string): string {
+  if (/<[a-z][\s\S]*>/i.test(content)) return sanitize(content);
+  return content
+    .split(/\n{2,}/)
+    .map((p) => `<p>${escapeHtml(p.trim()).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+const linesOf = (content: string | null | undefined) => (content ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+
+const listHtml = (lines: string[]) => `<ul class="list-disc space-y-1 pl-5 text-sm text-ink-700">${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`;
+
+/** One accordion row per spec group, built only from what the admin filled in. */
+function specGroupItems(resolved: ProductResolvedView | undefined): SpecAccordionItem[] {
+  return (resolved?.specGroups ?? []).map((group) => ({
     title: group.name,
     content: `<ul class="space-y-1.5 text-sm text-ink-700">${group.items
       .map((item) => `<li><strong>${escapeHtml(item.label)}:</strong> ${renderValueHtml(item)}</li>`)
       .join("")}</ul>`,
     html: true,
   }));
+}
 
-  // Composition: "80% Cotton", "20% Polyester" — catalog or custom materials, as the admin entered them.
-  if (resolved?.materials?.length) {
-    items.push({
-      title: "Material",
-      content: `<ul class="space-y-1.5 text-sm text-ink-700">${resolved.materials
-        .map((m) => `<li>${m.percentage ? `${escapeHtml(String(m.percentage))}% ` : ""}${escapeHtml(m.name)}</li>`)
-        .join("")}</ul>`,
-      html: true,
-    });
+/** The video, as markup we build ourselves from a URL that passed the host allowlist — never from admin HTML. */
+function videoHtml(url: string, title: string): string | null {
+  const embed = toVideoEmbed(url);
+  if (!embed) return null;
+  if (embed.kind === "iframe") {
+    return `<div class="aspect-video overflow-hidden rounded-lg bg-ink-100"><iframe src="${escapeHtml(embed.src)}" title="${escapeHtml(title)}" class="h-full w-full" loading="lazy" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
   }
+  return `<video src="${escapeHtml(embed.src)}" controls preload="none" class="w-full rounded-lg"></video>`;
+}
 
-  // Care: the product's own steps, its care guide, or the type's default — in that order.
-  if (resolved?.care) {
-    items.push({
-      title: "Care instructions",
-      content: `<ol class="list-decimal space-y-1 pl-5 text-sm text-ink-700">${resolved.care.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`,
-      html: true,
-    });
-  } else {
-    // Apparel has always shown a generic care note; keep it until a care guide (or the old free-text field) says otherwise.
-    const careInstructions = attributes?.careInstructions;
-    const hasCare = typeof careInstructions === "string" && careInstructions.trim() !== "";
-    if (resolved?.type?.key === "CLOTHING" && !hasCare) {
-      items.push({ title: "Care", content: CLOTHING_CARE_NOTE });
+/**
+ * The product page's accordion, in the order the resolved sections say, from the sections that are switched on.
+ * Sections with nothing to show (no materials, no FAQ, no text) simply don't appear. `sanitize` is DOMPurify, passed in so
+ * the browser bundle never has to load it — this runs in the server-rendered page.
+ */
+export function buildAccordionItems(product: Product, sanitize: (html: string) => string): SpecAccordionItem[] {
+  const resolved = product.resolved;
+  const items: SpecAccordionItem[] = [];
+
+  for (const section of (resolved?.sections ?? []).filter((s) => s.area === "accordion")) {
+    switch (section.key) {
+      case "description": {
+        const html = sanitize(product.description);
+        items.push({ title: section.title, content: html.trim() ? html : "<p>No description provided yet.</p>", html: true });
+        break;
+      }
+      case "highlights":
+      case "whatsIncluded": {
+        const lines = linesOf(section.content);
+        if (lines.length) items.push({ title: section.title, content: listHtml(lines), html: true });
+        break;
+      }
+      case "specifications":
+        items.push(...specGroupItems(resolved));
+        break;
+      case "material":
+        if (resolved?.materials?.length) {
+          items.push({
+            title: section.title,
+            content: `<ul class="space-y-1.5 text-sm text-ink-700">${resolved.materials
+              .map((m) => `<li>${m.percentage ? `${escapeHtml(String(m.percentage))}% ` : ""}${escapeHtml(m.name)}</li>`)
+              .join("")}</ul>`,
+            html: true,
+          });
+        }
+        break;
+      case "care":
+        if (resolved?.care) {
+          items.push({
+            title: section.title,
+            content: `<ol class="list-decimal space-y-1 pl-5 text-sm text-ink-700">${resolved.care.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>`,
+            html: true,
+          });
+        } else {
+          // Apparel has always shown a generic care note; keep it until a care guide (or the old free-text field) says otherwise.
+          const careInstructions = (product.attributes as Attributes)?.careInstructions;
+          const hasCare = typeof careInstructions === "string" && careInstructions.trim() !== "";
+          if (resolved?.type?.key === "CLOTHING" && !hasCare) items.push({ title: "Care", content: CLOTHING_CARE_NOTE });
+        }
+        break;
+      case "shipping":
+      case "returns":
+      case "warranty":
+        if (section.content?.trim()) items.push({ title: section.title, content: textToHtml(section.content, sanitize), html: true });
+        break;
+      case "faq":
+        if (resolved?.faqs?.length) {
+          items.push({
+            title: section.title,
+            content: `<dl class="space-y-3 text-sm">${resolved.faqs
+              .map((f) => `<div><dt class="font-medium text-ink-900">${escapeHtml(f.question)}</dt><dd class="mt-0.5 text-ink-600">${escapeHtml(f.answer).replace(/\n/g, "<br>")}</dd></div>`)
+              .join("")}</dl>`,
+            html: true,
+          });
+        }
+        break;
+      case "video": {
+        const html = section.content ? videoHtml(section.content, `${product.name} video`) : null;
+        if (html) items.push({ title: section.title, content: html, html: true });
+        break;
+      }
     }
   }
-
   return items;
 }

@@ -219,6 +219,8 @@ export interface ResolvedTypeConfig {
   /** The template's default care guide (a product can pick another or write its own). */
   care: { presetId: string | null; name: string | null; steps: string[] };
   requiredChecks: string[];
+  /** The template's own page-section overrides (the middle layer of product → template → store). */
+  sectionOverrides: { sectionKey: string; enabled?: boolean | null; sortOrder?: number | null; title?: string | null; content?: string | null }[];
   fields: ResolvedAttributeField[];
 }
 

@@ -16,6 +16,7 @@ import {
   type Product,
   type ProductStatus,
   type ResolvedTypeConfig,
+  type SectionOverrideInput,
 } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,8 @@ import { SizeGuideEditor } from "./size-guide-editor";
 import { AttributeFields } from "./attribute-fields";
 import { CareMaterialSection } from "./care-material-section";
 import { ProductHistory } from "./product-history";
+import { SectionSettingsEditor, layerOf } from "./section-settings-editor";
+import { FaqEditor, RelatedProductsEditor } from "./product-content-editors";
 import { ProductStatusPanel, type FixTarget } from "./product-status-panel";
 import { stripHtml } from "@/lib/format";
 import { slugify } from "@clothing-brand/shared";
@@ -39,6 +42,7 @@ const TABS = [
   { value: "pricing", label: "Pricing & Inventory" },
   { value: "variants", label: "Variants" },
   { value: "care", label: "Care & Material" },
+  { value: "content", label: "Page content" },
   { value: "seo", label: "SEO" },
   { value: "history", label: "History" },
 ] as const;
@@ -191,6 +195,13 @@ export function ProductForm({
 
   const selectedConfigRef = useRef<ResolvedTypeConfig | undefined>(undefined);
 
+  // The store-wide section layer, so the product's section editor can say what a blank field inherits.
+  const { data: globalSections } = useQuery({ queryKey: ["catalog-sections"], queryFn: catalogApi.getGlobalSections });
+  // id → name for hand-picked related products (the API returns names for saved picks; new picks add theirs).
+  const [relationNames, setRelationNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries((initial?.relations ?? []).flatMap((r) => (r.products ?? []).map((p) => [p.id, p.name] as const))),
+  );
+
   const {
     register,
     control,
@@ -231,6 +242,9 @@ export function ProductForm({
           carePresetId: initial.carePresetId ?? "",
           careOverride: initial.careOverride ?? [],
           materials: initial.materials ?? [],
+          sections: (initial.sectionOverrides ?? []) as SectionOverrideInput[],
+          faqs: initial.faqs ?? [],
+          relations: (initial.relations ?? []).map((r) => ({ kind: r.kind, productIds: r.productIds })),
           variants: initial.variants.map((v) => ({
             id: v.id,
             sku: v.sku,
@@ -259,6 +273,9 @@ export function ProductForm({
           carePresetId: "",
           careOverride: [],
           materials: [],
+          sections: [],
+          faqs: [],
+          relations: [],
           trackInventory: true,
           lowStockThreshold: 5,
           sortOrder: 0,
@@ -344,6 +361,7 @@ export function ProductForm({
     pricing: ["basePrice", "compareAtPrice", "costPrice", "taxRate", "trackInventory", "lowStockThreshold", "restockDate"],
     variants: ["variants"],
     care: ["carePresetId", "careOverride", "materials"],
+    content: ["sections", "faqs", "relations"],
     seo: ["slug", "seoTitle", "seoDescription", "focusKeyword", "ogTitle", "ogDescription", "ogImageUrl", "canonicalUrl"],
     history: [],
   };
@@ -687,6 +705,55 @@ export function ProductForm({
 
       {tab === "care" && (
         <CareMaterialSection control={control} register={register} watch={watch} setValue={setValue} errors={errors} config={selectedConfig} />
+      )}
+
+      {tab === "content" && (
+        <>
+          <FormSection
+            title="Page sections"
+            description="Choose which sections this product's page shows, their order and wording. Anything left as Inherit follows this product's template, then the store settings."
+          >
+            <Controller
+              control={control}
+              name="sections"
+              render={({ field }) => (
+                <SectionSettingsEditor
+                  level="product"
+                  base={{
+                    global: layerOf((globalSections?.overrides ?? []) as SectionOverrideInput[]),
+                    template: layerOf((selectedConfig?.sectionOverrides ?? []) as SectionOverrideInput[]),
+                  }}
+                  value={(field.value ?? []) as SectionOverrideInput[]}
+                  onChange={field.onChange}
+                />
+              )}
+            />
+            {errors.sections && <p className="mt-1 text-xs text-danger-600">{(errors.sections as any).message ?? "Check the section settings"}</p>}
+          </FormSection>
+
+          <FormSection title="Questions & answers" description="Shown as a FAQ section on the product page (when the FAQ section is on).">
+            <Controller control={control} name="faqs" render={({ field }) => <FaqEditor value={field.value ?? []} onChange={field.onChange} />} />
+            {errors.faqs && <p className="mt-1 text-xs text-danger-600">{(errors.faqs as any).message ?? "Every question needs an answer"}</p>}
+          </FormSection>
+
+          <FormSection
+            title="Recommended products"
+            description="Hand-pick what appears in each recommendation list. Leave a list empty and the store's automatic suggestions are used."
+          >
+            <Controller
+              control={control}
+              name="relations"
+              render={({ field }) => (
+                <RelatedProductsEditor
+                  value={(field.value ?? []) as { kind: string; productIds: string[] }[]}
+                  names={relationNames}
+                  onNames={(added) => setRelationNames((prev) => ({ ...prev, ...added }))}
+                  onChange={field.onChange as (rows: { kind: string; productIds: string[] }[]) => void}
+                />
+              )}
+            />
+          </FormSection>
+        </>
       )}
 
       {tab === "history" && initial && <ProductHistory productId={initial.id} />}

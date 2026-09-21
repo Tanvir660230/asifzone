@@ -11,7 +11,7 @@ import { CountdownTimer } from "@/components/storefront/countdown-timer";
 import { ProductAccordion } from "@/components/storefront/product-accordion";
 import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { formatPrice } from "@/lib/format";
-import { buildSpecAccordionItems } from "@/lib/product-specs";
+import type { SpecAccordionItem } from "@/lib/product-specs";
 
 const TRUST_ITEMS = [
   { icon: Truck, label: "Nationwide delivery, 1–5 business days" },
@@ -22,16 +22,18 @@ const TRUST_ITEMS = [
 interface ProductShowcaseProps {
   product: Product;
   urgencySignals: React.ComponentProps<typeof UrgencySignals>["signals"];
-  /** Pre-sanitized (DOMPurify, server-side) HTML for the description — sanitizing here in a client
-   * component would bundle isomorphic-dompurify's jsdom fallback into the browser, where it has no
+  /** The accordion rows, built and sanitized on the server from the resolved page sections — sanitizing here in a
+   * client component would bundle isomorphic-dompurify's jsdom fallback into the browser, where it has no
    * real filesystem and throws trying to read its default stylesheet. */
-  descriptionHtml: string;
+  accordionItems: SpecAccordionItem[];
+  /** Whether the size-guide link is switched on for this product's page sections. */
+  showSizeGuideLink: boolean;
 }
 
 /** Owns the one piece of state that needs to be shared between the gallery and the variant
  * selector — which image is currently "in focus" — since they live in separate, non-adjacent
  * parts of the two-column layout and neither can see the other's props directly. */
-export function ProductShowcase({ product, urgencySignals, descriptionHtml }: ProductShowcaseProps) {
+export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink }: ProductShowcaseProps) {
   const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
@@ -137,7 +139,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             restockDate={product.restockDate}
             variantDimensions={resolved?.variantDimensions}
             sizeGuide={resolved?.sizeGuide.chart ?? undefined}
-            showSizeGuide={resolved?.sizeGuide.show ?? false}
+            showSizeGuide={showSizeGuideLink && (resolved?.sizeGuide.show ?? false)}
             onVariantChange={setSelectedVariant}
             onSelectionChange={setSelection}
             highlightMissing={highlightMissing}
@@ -154,21 +156,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
           ))}
         </div>
 
-        <ProductAccordion
-          items={[
-            {
-              title: "Description",
-              content: descriptionHtml.trim() ? descriptionHtml : "<p>No description provided yet.</p>",
-              html: true,
-            },
-            ...buildSpecAccordionItems(resolved, product.attributes),
-            {
-              title: "Shipping & Returns",
-              content:
-                "Dispatched within 1–2 business days. Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days. Unworn items with tags can be returned or exchanged within 7 days of delivery.",
-            },
-          ]}
-        />
+        <ProductAccordion items={accordionItems} />
       </div>
 
       <StickyAddToCart
