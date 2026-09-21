@@ -263,20 +263,30 @@ export function VariantEditor({
                     </div>
                     {(() => {
                       const config = getProductTypeConfig(productType);
-                      const sizeDim = config.variantDimensions.find(d => d.targetField === "size") || config.variantDimensions[0];
-                      const colorDim = config.variantDimensions.find(d => d.targetField === "color") || config.variantDimensions[1];
+                      // Strictly by target field: a type with only a color dimension (Accessory) has no
+                      // size input at all — the schema stores "Standard" — instead of the color dimension
+                      // being rendered a second time in the size slot.
+                      const sizeDim = config.variantDimensions.find((d) => d.targetField === "size");
+                      const colorDim = config.variantDimensions.find((d) => d.targetField === "color");
                       return (
                         <>
-                          <div>
-                            <Label className="text-[11px]">{sizeDim?.label ?? "Size"}</Label>
-                            <Input placeholder={sizeDim?.options?.[0] ? `e.g. ${sizeDim.options.join(", ")}` : "Standard"} {...register(`variants.${index}.size`)} />
-                          </div>
+                          {sizeDim && (
+                            <div>
+                              <Label className="text-[11px]">{sizeDim.label}</Label>
+                              <Input
+                                placeholder={sizeDim.options?.length ? `e.g. ${sizeDim.options.join(", ")}` : "Standard"}
+                                {...register(`variants.${index}.size`)}
+                              />
+                            </div>
+                          )}
+                          {sizeDim?.key === "size" && (
+                            <div>
+                              <Label className="text-[11px]">Equivalent size</Label>
+                              <Input placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
+                            </div>
+                          )}
                           {colorDim && (
                             <>
-                              <div>
-                                <Label className="text-[11px]">Equivalent size</Label>
-                                <Input placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
-                              </div>
                               <div>
                                 <Label className="text-[11px]">{colorDim.label}</Label>
                                 <Input placeholder={colorDim.options?.[0] ?? "Black"} {...register(`variants.${index}.color`)} />

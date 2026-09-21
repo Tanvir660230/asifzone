@@ -177,6 +177,10 @@ export function ProductForm({
           shortDescription: initial.shortDescription,
           sortOrder: initial.sortOrder,
           categoryId: initial.categoryId,
+          // Without these the form re-submits the select's first option ("CLOTHING") and blank
+          // spec fields, so saving any edit would reset the product's type and wipe its attributes.
+          productType: initial.productType,
+          attributes: initial.attributes ?? {},
           brand: initial.brand,
           brandTier: initial.brandTier,
           basePrice: Number(initial.basePrice),
@@ -208,6 +212,7 @@ export function ProductForm({
       : {
           productType: "CLOTHING",
           attributes: {},
+          brandTier: "PREMIUM",
           isActive: true,
           isFeatured: false,
           trackInventory: true,
