@@ -7,9 +7,20 @@ import type {
   StorefrontProductQuery,
   StorefrontFacetsQuery,
 } from "@clothing-brand/shared";
-import { slugify, expandSearchTerms, findClosestVocabularyTerm, NO_SIZE_VALUE } from "@clothing-brand/shared";
+import {
+  slugify,
+  expandSearchTerms,
+  findClosestVocabularyTerm,
+  isBlankAttributeValue,
+  validateProductAgainstConfig,
+  NO_SIZE_VALUE,
+  type AttributeDataType,
+  type ProductResolvedView,
+  type ResolvedAttributeField,
+  type ResolvedTypeConfig,
+} from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
-import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
+import { cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
@@ -18,8 +29,19 @@ import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } fr
 import { computeFlashPrice, getActiveFlashInfoByProduct } from "../flash-sales/flash-sale-pricing";
 import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
+import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
+import {
+  TYPE_INCLUDE,
+  buildResolvedView,
+  fromStoredRow,
+  presentAttributes,
+  toResolvedTypeConfig,
+  toStoredColumns,
+  type TypeWithTemplate,
+} from "../catalog/catalog.presenter";
+import { PRODUCT_CACHE_PREFIX, invalidateProductCache } from "./product.cache";
 
-const CACHE_PREFIX = "products:";
+const CACHE_PREFIX = PRODUCT_CACHE_PREFIX;
 const CACHE_TTL_SECONDS = 120;
 const include = {
   variants: {
@@ -72,6 +94,45 @@ const PUBLIC_PRODUCT_SELECT = {
  * needs this instead of `Awaited<ReturnType<typeof getProductById>>`. */
 type PublicProduct = Prisma.ProductGetPayload<{ select: typeof PUBLIC_PRODUCT_SELECT }>;
 
+/** Detail reads (admin editor, storefront product page) also need the typed attribute values and the
+ * product's type with its template. List reads deliberately don't load them — a page of 20 cards has no
+ * use for spec groups, and the extra joins would multiply. */
+const detailRelations = {
+  attributeValues: { include: { definition: { select: { key: true, dataType: true } } } },
+  type: { include: TYPE_INCLUDE },
+} as const;
+const detailInclude = { ...include, ...detailRelations };
+const PUBLIC_DETAIL_SELECT = { ...PUBLIC_PRODUCT_SELECT, typeId: true, ...detailRelations } as const;
+
+type PresentableRow = {
+  attributes: unknown;
+  attributeValues: Parameters<typeof presentAttributes>[0]["attributeValues"];
+  type: TypeWithTemplate | null;
+  typeId: string | null;
+  productType: string;
+};
+type Presented<T> = Omit<T, "attributeValues" | "type" | "attributes" | "typeId"> & {
+  typeId: string | null;
+  attributes: Record<string, unknown>;
+  resolved: ProductResolvedView;
+};
+
+/** Rows written before typeId existed (or by direct inserts) have no type row: resolve it by the legacy enum key. */
+async function typeForRow(row: Pick<PresentableRow, "type" | "productType">): Promise<TypeWithTemplate | null> {
+  return row.type ?? (await getTypeByKey(row.productType));
+}
+
+/** Turns a raw detail row into what clients receive: `attributes` as one flat map (typed rows + legacy
+ * remainder) and a `resolved` view (spec groups, size guide, variant dimensions) computed from the template. */
+async function presentProduct<T extends PresentableRow>(row: T): Promise<Presented<T>> {
+  const type = await typeForRow(row);
+  const config = type ? toResolvedTypeConfig(type) : null;
+  const attributes = presentAttributes(row, config?.fields ?? []);
+  const { attributeValues: _values, type: _type, attributes: _attrs, typeId: _typeId, ...rest } = row;
+  void _values; void _type; void _attrs; void _typeId;
+  return { ...rest, typeId: type?.id ?? null, attributes, resolved: buildResolvedView(config, attributes) } as unknown as Presented<T>;
+}
+
 /** JSON column input: `undefined` leaves the column alone, `null` clears it (Prisma needs the JsonNull
  * sentinel for that — a bare `undefined`/`null` would silently do nothing / be rejected). */
 function toJsonInput(value: Record<string, unknown> | null | undefined) {
@@ -115,7 +176,7 @@ async function withFlashSaleInfo<T extends { id: string; basePrice: unknown }>(p
 }
 
 export async function invalidateCache() {
-  await cacheDelByPrefix(CACHE_PREFIX);
+  await invalidateProductCache();
 }
 
 const SORT_ORDER_BY: Record<string, object> = {
@@ -286,19 +347,20 @@ export async function listProducts(query: ProductListQuery) {
 }
 
 export async function getProductById(id: string) {
-  const product = await prisma.product.findUnique({ where: { id }, include });
+  const product = await prisma.product.findUnique({ where: { id }, include: detailInclude });
   if (!product) throw AppError.notFound("Product not found");
-  return product;
+  return presentProduct(product);
 }
 
 /** Public lookup: only returns active products, matching what the storefront should link to. */
 export async function getProductBySlug(slug: string) {
   const cacheKey = `${CACHE_PREFIX}slug:${slug}`;
-  let product = await cacheGet<PublicProduct>(cacheKey);
+  let product = await cacheGet<Presented<Prisma.ProductGetPayload<{ select: typeof PUBLIC_DETAIL_SELECT }>>>(cacheKey);
 
   if (!product) {
-    product = await prisma.product.findUnique({ where: { slug }, select: PUBLIC_PRODUCT_SELECT });
-    if (!product || !product.isActive || product.deletedAt) throw AppError.notFound("Product not found");
+    const row = await prisma.product.findUnique({ where: { slug }, select: PUBLIC_DETAIL_SELECT });
+    if (!row || !row.isActive || row.deletedAt) throw AppError.notFound("Product not found");
+    product = await presentProduct(row);
     await cacheSet(cacheKey, product, CACHE_TTL_SECONDS);
   }
 
@@ -923,6 +985,77 @@ export async function getUrgencySignals(productId: string) {
   return signals;
 }
 
+type AttributeSplit = { defined: Record<string, unknown>; legacy: Record<string, unknown> };
+
+/** Splits the submitted `attributes` map into values for the type's defined fields (stored as typed rows)
+ * and the rest (kept in the legacy JSON). A key with no definition is only accepted when it is `sizeGuide`
+ * or was already stored on the product — otherwise it would be an arbitrary write into the JSON column. */
+function splitAttributes(
+  fields: ResolvedAttributeField[],
+  submitted: Record<string, unknown>,
+  existingKeys: ReadonlySet<string>,
+): AttributeSplit {
+  const fieldKeys = new Set(fields.map((f) => f.key));
+  const defined: Record<string, unknown> = {};
+  const legacy: Record<string, unknown> = {};
+  const unknown: string[] = [];
+
+  for (const [key, value] of Object.entries(submitted)) {
+    if (fieldKeys.has(key)) defined[key] = value;
+    else if (key === "sizeGuide" || existingKeys.has(key)) legacy[key] = value;
+    else unknown.push(key);
+  }
+  if (unknown.length) {
+    throw AppError.badRequest("Validation failed", {
+      formErrors: [],
+      fieldErrors: { attributes: [`Unknown attribute(s): ${unknown.join(", ")}`] },
+    });
+  }
+  return { defined, legacy };
+}
+
+function throwIfInvalid(issues: { path: (string | number)[]; message: string }[]) {
+  if (!issues.length) return;
+  const fieldErrors: Record<string, string[]> = {};
+  for (const issue of issues) (fieldErrors[issue.path.join(".")] ??= []).push(issue.message);
+  throw AppError.badRequest("Validation failed", { formErrors: [], fieldErrors });
+}
+
+/** Which type a write targets: the explicit `typeId`, else the system type matching a legacy `productType`
+ * (stale clients), else — for updates — the product's current type, else Clothing. */
+async function resolveTypeForWrite(
+  input: { typeId?: string; productType?: string },
+  current?: { typeId: string | null; productType: string },
+): Promise<TypeWithTemplate> {
+  let type: TypeWithTemplate | null;
+  if (input.typeId) {
+    type = await getTypeWithTemplate(input.typeId).catch(() => null);
+    if (!type) throw AppError.badRequest("Product type does not exist");
+  } else if (input.productType && input.productType !== "CUSTOM") {
+    type = await getTypeByKey(input.productType);
+  } else if (current) {
+    type = current.typeId ? await getTypeWithTemplate(current.typeId).catch(() => null) : await getTypeByKey(current.productType);
+  } else {
+    type = await getTypeByKey("CLOTHING");
+  }
+  if (!type) throw AppError.badRequest("Product type does not exist");
+  // Archived types can't take on new products, but a product already on one may keep saving.
+  if (!type.isActive && type.id !== current?.typeId) throw AppError.badRequest(`The "${type.name}" product type is archived`);
+  return type;
+}
+
+/** Only the typed column that applies to the field's data type is written; the others stay null. */
+function attributeRowData(field: ResolvedAttributeField, value: unknown) {
+  const cols = toStoredColumns(field.dataType, value);
+  return Object.fromEntries(Object.entries(cols).filter(([, v]) => v !== null)) as {
+    valueText?: string;
+    valueNumber?: number;
+    valueBoolean?: boolean;
+    valueDate?: Date;
+    valueJson?: Prisma.InputJsonValue;
+  };
+}
+
 export async function createProduct(input: CreateProductInput, adminId: string) {
   const category = await prisma.category.findUnique({ where: { id: input.categoryId } });
   if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
@@ -930,12 +1063,18 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
   const skus = input.variants.map((v) => v.sku);
   if (new Set(skus).size !== skus.length) throw AppError.badRequest("Duplicate SKU in variants");
 
+  const type = await resolveTypeForWrite(input);
+  const config: ResolvedTypeConfig = toResolvedTypeConfig(type);
+  const { variants, typeId: _typeId, productType: _productType, attributes: submitted, ...productData } = input;
+  void _typeId; void _productType;
+
+  throwIfInvalid(validateProductAgainstConfig({ attributes: submitted ?? {}, variants }, config));
+  const { defined, legacy } = splitAttributes(config.fields, submitted ?? {}, new Set());
+
   const baseSlug = slugify(input.slug || input.name);
   const slug = await ensureUniqueSlug(baseSlug, async (candidate) => {
     return Boolean(await prisma.product.findUnique({ where: { slug: candidate } }));
   });
-
-  const { variants, ...productData } = input;
 
   let product;
   try {
@@ -943,12 +1082,19 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
       const created = await tx.product.create({
         data: {
           ...productData,
-          attributes: toJsonInput(productData.attributes),
+          typeId: type.id,
+          productType: type.legacyType,
+          attributes: toJsonInput(Object.keys(legacy).length ? legacy : null),
           slug,
           variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
         },
         include,
       });
+
+      const rows = config.fields
+        .filter((f) => f.key in defined && !isBlankAttributeValue(defined[f.key]))
+        .map((f) => ({ productId: created.id, definitionId: f.definitionId, ...attributeRowData(f, defined[f.key]) }));
+      if (rows.length) await tx.productAttributeValue.createMany({ data: rows });
 
       // Every variant starts life with a real stock number but no history explaining it — log it
       // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
@@ -980,7 +1126,7 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
   }
 
   await invalidateCache();
-  return product;
+  return getProductById(product.id);
 }
 
 export async function updateProduct(id: string, input: UpdateProductInput, adminId: string) {
@@ -991,11 +1137,52 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
   }
 
-  const data: Record<string, unknown> = { ...input };
-  delete data.variants;
+  const type = await resolveTypeForWrite(input, { typeId: existing.typeId, productType: existing.productType });
+  const config = toResolvedTypeConfig(type);
+  const typeChanged = type.id !== existing.typeId;
 
-  if (data.attributes !== undefined) {
-    data.attributes = toJsonInput(data.attributes as Record<string, unknown> | null);
+  // Fields the payload didn't mention keep their current values, so a partial update from an API client
+  // is judged on the resulting product, not on the fragment it sent.
+  const attributesTouched = input.attributes !== undefined || typeChanged;
+  const currentFieldKeys = new Set(config.fields.map((f) => f.key));
+  // Values a previous stint on this type left behind (hidden while the product was on another type) count as
+  // current again after switching back — otherwise a required field would demand re-entering data that exists.
+  const restored: Record<string, unknown> = {};
+  if (typeChanged) {
+    const rows = await prisma.productAttributeValue.findMany({
+      where: { productId: id, definitionId: { in: config.fields.map((f) => f.definitionId) } },
+      include: { definition: { select: { key: true, dataType: true } } },
+    });
+    for (const row of rows) {
+      const value = fromStoredRow(row.definition.dataType as AttributeDataType, row);
+      if (!isBlankAttributeValue(value)) restored[row.definition.key] = value;
+    }
+  }
+  const mergedAttributes = { ...restored, ...existing.attributes, ...(input.attributes ?? {}) };
+  throwIfInvalid(
+    validateProductAgainstConfig(
+      { attributes: attributesTouched ? mergedAttributes : undefined, variants: input.variants },
+      { ...config, fields: attributesTouched ? config.fields : [] },
+    ),
+  );
+
+  const { typeId: _typeId, productType: _productType, attributes: _attributes, variants: _variants, ...rest } = input;
+  void _typeId; void _productType; void _attributes; void _variants;
+  const data: Record<string, unknown> = { ...rest };
+
+  if (typeChanged) {
+    data.typeId = type.id;
+    data.productType = type.legacyType;
+  }
+
+  let attributeSplit: AttributeSplit | null = null;
+  if (input.attributes !== undefined) {
+    const existingLegacyKeys = new Set(Object.keys(existing.attributes).filter((k) => !currentFieldKeys.has(k)));
+    // `null` means "clear everything" — every defined field is blanked (its row deleted) and the legacy JSON emptied.
+    const submitted = input.attributes ?? Object.fromEntries(config.fields.map((f) => [f.key, null]));
+    attributeSplit = splitAttributes(config.fields, submitted, existingLegacyKeys);
+    // The JSON column now only holds what has no attribute definition; defined values live in typed rows.
+    data.attributes = toJsonInput(Object.keys(attributeSplit.legacy).length ? attributeSplit.legacy : null);
   }
 
   if (input.name && !input.slug) {
@@ -1007,6 +1194,24 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
   try {
     await prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id }, data });
+
+      if (attributeSplit) {
+        for (const field of config.fields) {
+          if (!(field.key in attributeSplit.defined)) continue;
+          const value = attributeSplit.defined[field.key];
+          const key = { productId_definitionId: { productId: id, definitionId: field.definitionId } };
+          if (isBlankAttributeValue(value)) {
+            await tx.productAttributeValue.deleteMany({ where: { productId: id, definitionId: field.definitionId } });
+          } else {
+            const columns = attributeRowData(field, value);
+            await tx.productAttributeValue.upsert({
+              where: key,
+              update: { valueText: null, valueNumber: null, valueBoolean: null, valueDate: null, valueJson: Prisma.DbNull, ...columns },
+              create: { productId: id, definitionId: field.definitionId, ...columns },
+            });
+          }
+        }
+      }
 
       if (input.variants) {
         const incomingIds = new Set(input.variants.filter((v) => v.id).map((v) => v.id!));
