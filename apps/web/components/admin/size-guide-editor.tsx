@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { getDefaultSizeGuide, type ProductTypeConfig } from "@clothing-brand/shared";
+import { DEFAULT_SIZE_GUIDE, type ResolvedTypeConfig } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,42 +9,56 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
 
 interface SizeGuideEditorProps {
-  config: ProductTypeConfig;
-  control: any;
-  register: any;
+  typeName: string;
+  sizeGuide: ResolvedTypeConfig["sizeGuide"];
   watch: any;
   setValue: any;
 }
 
-export function SizeGuideEditor({ config, watch, setValue }: SizeGuideEditorProps) {
-  // With nothing saved yet the storefront shows the type's default chart (when the type enables it by
-  // default), so the editor starts from that same table; the first edit saves it onto the product.
-  const sg = watch("attributes.sizeGuide") ?? {
-    ...getDefaultSizeGuide(config.type),
-    enabled: config.sizeGuide?.defaultEnabled ?? false,
-  };
+/** A product's size guide: by default it follows its type's preset; editing anything here saves a
+ * product-level override, and "Use the type's size guide" drops the override again. */
+export function SizeGuideEditor({ typeName, sizeGuide, watch, setValue }: SizeGuideEditorProps) {
+  const saved = watch("attributes.sizeGuide");
+  const presetChart = sizeGuide.chart ?? DEFAULT_SIZE_GUIDE;
+  // With nothing saved the storefront shows the preset (when the type switches it on by default), so the
+  // editor starts from that same table; the first edit saves it onto the product as an override.
+  const sg = saved ?? { ...presetChart, enabled: sizeGuide.mode === "ON_BY_DEFAULT" };
 
-  if (!config.sizeGuide?.supported) {
+  if (sizeGuide.mode === "NOT_APPLICABLE") {
     return (
       <FormSection title="Size Guide">
-        <p className="text-sm text-ink-500">Size guide is not applicable for this product type.</p>
+        <p className="text-sm text-ink-500">Size guide is not applicable for {typeName}.</p>
       </FormSection>
     );
   }
 
   const enabled = Boolean(sg.enabled);
+  const isOverride = Boolean(saved);
 
   function update(updated: any) {
     setValue("attributes.sizeGuide", updated, { shouldDirty: true });
   }
 
   return (
-    <FormSection title="Size Guide" description="Configure size and measurement chart displayed to customers.">
+    <FormSection
+      title="Size Guide"
+      description={
+        isOverride
+          ? "This product has its own size guide."
+          : `Using the "${presetChart.title ?? "default"}" size guide from ${typeName}. Edit it below to give this product its own.`
+      }
+    >
       <div className="space-y-4">
         <label className="flex items-center gap-2 text-sm font-medium text-ink-800">
           <Checkbox checked={enabled} onChange={(e) => update({ ...sg, enabled: e.target.checked })} />
           Show Size Guide on Storefront
         </label>
+
+        {isOverride && (
+          <Button type="button" variant="outline" size="sm" onClick={() => setValue("attributes.sizeGuide", undefined, { shouldDirty: true })}>
+            Use the type&rsquo;s size guide
+          </Button>
+        )}
 
         {enabled && (
           <div className="mt-4 space-y-4 rounded-xl border border-ink-100 bg-cream-50/50 p-4">
@@ -63,15 +77,29 @@ export function SizeGuideEditor({ config, watch, setValue }: SizeGuideEditorProp
               <div className="mb-2 flex items-center justify-between">
                 <Label>Size Chart Table</Label>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => {
-                    const cols = [...(sg.columns || []), `Col ${(sg.columns?.length || 0) + 1}`];
-                    const rows = (sg.rows || []).map((r: string[]) => [...r, ""]);
-                    update({ ...sg, columns: cols, rows });
-                  }}>+ Add Column</Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => {
-                    const rows = [...(sg.rows || []), new Array(sg.columns?.length || 1).fill("")];
-                    update({ ...sg, rows });
-                  }}>+ Add Row</Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const cols = [...(sg.columns || []), `Col ${(sg.columns?.length || 0) + 1}`];
+                      const rows = (sg.rows || []).map((r: string[]) => [...r, ""]);
+                      update({ ...sg, columns: cols, rows });
+                    }}
+                  >
+                    + Add Column
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const rows = [...(sg.rows || []), new Array(sg.columns?.length || 1).fill("")];
+                      update({ ...sg, rows });
+                    }}
+                  >
+                    + Add Row
+                  </Button>
                 </div>
               </div>
 
@@ -80,17 +108,30 @@ export function SizeGuideEditor({ config, watch, setValue }: SizeGuideEditorProp
                   <thead>
                     <tr>
                       {(sg.columns || []).map((col: string, ci: number) => (
-                        <th key={ci} className="p-2 border-b border-ink-100">
+                        <th key={ci} className="border-b border-ink-100 p-2">
                           <div className="flex items-center gap-1">
-                            <Input value={col} onChange={(e) => {
-                              const cols = [...sg.columns]; cols[ci] = e.target.value; update({ ...sg, columns: cols });
-                            }} className="h-8 text-xs font-semibold" />
+                            <Input
+                              value={col}
+                              onChange={(e) => {
+                                const cols = [...sg.columns];
+                                cols[ci] = e.target.value;
+                                update({ ...sg, columns: cols });
+                              }}
+                              className="h-8 text-xs font-semibold"
+                            />
                             {sg.columns.length > 1 && (
-                              <button type="button" onClick={() => {
-                                const cols = sg.columns.filter((_: any, i: number) => i !== ci);
-                                const rows = sg.rows.map((r: string[]) => r.filter((_: any, i: number) => i !== ci));
-                                update({ ...sg, columns: cols, rows });
-                              }} className="text-danger-500 px-1 text-xs">×</button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const cols = sg.columns.filter((_: any, i: number) => i !== ci);
+                                  const rows = sg.rows.map((r: string[]) => r.filter((_: any, i: number) => i !== ci));
+                                  update({ ...sg, columns: cols, rows });
+                                }}
+                                className="px-1 text-xs text-danger-500"
+                                aria-label={`Remove column ${col}`}
+                              >
+                                ×
+                              </button>
                             )}
                           </div>
                         </th>
@@ -102,19 +143,29 @@ export function SizeGuideEditor({ config, watch, setValue }: SizeGuideEditorProp
                     {(sg.rows || []).map((row: string[], ri: number) => (
                       <tr key={ri}>
                         {row.map((cell: string, ci: number) => (
-                          <td key={ci} className="p-2 border-b border-ink-50">
-                            <Input value={cell} onChange={(e) => {
-                              const rows = sg.rows.map((r: string[], idx: number) => idx === ri ? r.map((val, cIdx) => cIdx === ci ? e.target.value : val) : r);
-                              update({ ...sg, rows });
-                            }} className="h-8 text-xs" />
+                          <td key={ci} className="border-b border-ink-50 p-2">
+                            <Input
+                              value={cell}
+                              onChange={(e) => {
+                                const rows = sg.rows.map((r: string[], idx: number) =>
+                                  idx === ri ? r.map((val, cIdx) => (cIdx === ci ? e.target.value : val)) : r,
+                                );
+                                update({ ...sg, rows });
+                              }}
+                              className="h-8 text-xs"
+                            />
                           </td>
                         ))}
-                        <td className="p-2 border-b border-ink-50 text-center">
+                        <td className="border-b border-ink-50 p-2 text-center">
                           {sg.rows.length > 1 && (
-                            <button type="button" onClick={() => {
-                              const rows = sg.rows.filter((_: any, idx: number) => idx !== ri);
-                              update({ ...sg, rows });
-                            }} className="text-danger-500 font-bold text-xs">×</button>
+                            <button
+                              type="button"
+                              onClick={() => update({ ...sg, rows: sg.rows.filter((_: any, idx: number) => idx !== ri) })}
+                              className="text-xs font-bold text-danger-500"
+                              aria-label={`Remove row ${ri + 1}`}
+                            >
+                              ×
+                            </button>
                           )}
                         </td>
                       </tr>

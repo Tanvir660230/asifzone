@@ -193,6 +193,30 @@ describe("catalog: product types, templates and attribute definitions", () => {
       expect(cap.sizeGuide.chart.columns).toEqual(["Size", "Head circumference"]);
     });
 
+    it("a partial update leaves everything it didn't mention alone (no zod defaults sneaking in)", async () => {
+      const renamed = await owner().patch(`/api/catalog/templates/${capTemplateId}`, { description: "Caps and kufis" });
+      expect(renamed.status).toBe(200);
+      expect(renamed.body.template.attributes).toHaveLength(1);
+      expect(renamed.body.template.variantDimensions).toHaveLength(1);
+      expect(renamed.body.template.sizeGuideMode).toBe("ON_BY_DEFAULT");
+      expect(renamed.body.template.sizeGuidePresetId).toBe(capPresetId);
+
+      const archivedType = await owner().patch(`/api/catalog/types/${capTypeId}`, { isActive: false });
+      expect(archivedType.body.type.isActive).toBe(false);
+      const renamedType = await owner().patch(`/api/catalog/types/${capTypeId}`, { description: "Headwear" });
+      expect(renamedType.body.type.isActive).toBe(false); // still archived: `isActive` wasn't sent, so it wasn't reset to true
+      await owner().patch(`/api/catalog/types/${capTypeId}`, { isActive: true });
+    });
+
+    it("keeps an archived type out of the create flow but lets its existing products keep saving", async () => {
+      // (exercised below with a product; here just the API contract for creating on an archived type)
+      await owner().patch(`/api/catalog/types/${capTypeId}`, { isActive: false });
+      const res = await owner().post("/api/products", productBody({ attributes: { [`embroideryType${RUN}`]: "None" }, variants: [{ sku: `VT-ARCH-${RUN}`, size: "M", stock: 1 }] }));
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toContain("archived");
+      await owner().patch(`/api/catalog/types/${capTypeId}`, { isActive: true });
+    });
+
     it("refuses to delete a template or attribute that is in use", async () => {
       expect((await owner().delete(`/api/catalog/templates/${capTemplateId}`)).status).toBe(409);
       expect((await owner().delete(`/api/catalog/attributes/${embroideryId}`)).status).toBe(409);

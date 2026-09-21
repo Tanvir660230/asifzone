@@ -11,7 +11,7 @@ import { CountdownTimer } from "@/components/storefront/countdown-timer";
 import { ProductAccordion } from "@/components/storefront/product-accordion";
 import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { formatPrice } from "@/lib/format";
-import { buildSpecAccordionItems, getSizeGuideDisplay } from "@/lib/product-specs";
+import { buildSpecAccordionItems } from "@/lib/product-specs";
 
 const TRUST_ITEMS = [
   { icon: Truck, label: "Nationwide delivery, 1–5 business days" },
@@ -36,7 +36,8 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
   const [highlightMissing, setHighlightMissing] = useState(false);
-  const sizeGuideDisplay = getSizeGuideDisplay(product.productType, product.attributes);
+  // Spec groups, size guide and variant dimensions arrive resolved from the product's type template.
+  const resolved = product.resolved;
   const buttonsRef = useRef<HTMLDivElement>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,9 +125,9 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             basePrice={product.activeFlashSale?.flashPrice ?? product.basePrice}
             lowStockThreshold={product.lowStockThreshold}
             restockDate={product.restockDate}
-            productType={product.productType}
-            sizeGuide={sizeGuideDisplay.sizeGuide}
-            showSizeGuide={sizeGuideDisplay.show}
+            variantDimensions={resolved?.variantDimensions}
+            sizeGuide={resolved?.sizeGuide.chart ?? undefined}
+            showSizeGuide={resolved?.sizeGuide.show ?? false}
             onVariantChange={setSelectedVariant}
             onFocusImageChange={setFocusImageId}
             highlightMissing={highlightMissing}
@@ -150,7 +151,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
               content: descriptionHtml.trim() ? descriptionHtml : "<p>No description provided yet.</p>",
               html: true,
             },
-            ...buildSpecAccordionItems(product.productType, product.attributes),
+            ...buildSpecAccordionItems(resolved, product.attributes),
             {
               title: "Shipping & Returns",
               content:

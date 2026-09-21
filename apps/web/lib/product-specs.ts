@@ -1,4 +1,4 @@
-import { getDefaultSizeGuide, getProductTypeConfig, type SizeGuideData } from "@clothing-brand/shared";
+import type { ProductResolvedView, SpecItemView } from "@clothing-brand/shared";
 
 type Attributes = Record<string, unknown> | null | undefined;
 
@@ -19,55 +19,55 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function readAttribute(attrs: Record<string, unknown>, key: string): string {
-  const value = attrs[key];
-  return value === undefined || value === null ? "" : String(value).trim();
+// Fixed locale + UTC so server and client render the same string (no hydration mismatch).
+const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+/** The value as HTML. Everything admin-typed is escaped; the only raw HTML is RICH_TEXT, which the
+ * server-rendered product page sanitizes (DOMPurify) *before* it reaches this client-side code — sanitizing
+ * here would bundle isomorphic-dompurify's jsdom fallback into the browser. */
+function renderValueHtml(item: SpecItemView): string {
+  const { value, dataType, unit } = item;
+  switch (dataType) {
+    case "BOOLEAN":
+      return value ? "Yes" : "No";
+    case "NUMBER":
+    case "MEASUREMENT":
+      return escapeHtml(`${value}${unit ? ` ${unit}` : ""}`);
+    case "DATE": {
+      const d = new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
+      return escapeHtml(Number.isNaN(d.getTime()) ? String(value) : DATE_FORMAT.format(d));
+    }
+    case "MULTI_SELECT":
+      return escapeHtml(Array.isArray(value) ? value.join(", ") : String(value));
+    case "URL": {
+      const href = String(value);
+      // Only ever a link when it is a plain http(s) URL — the API enforces that on write, this is the second lock.
+      return /^https?:\/\//i.test(href)
+        ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer nofollow" class="underline">${escapeHtml(href)}</a>`
+        : escapeHtml(href);
+    }
+    case "RICH_TEXT":
+      return String(value);
+    default:
+      return escapeHtml(String(value)).replace(/\n/g, "<br>");
+  }
 }
 
-/** Whether the product page offers a size guide, and the chart to show — the product's own if it has one,
- * else the type's default (footwear gets a shoe chart, not the apparel one). Types that don't support a
- * guide never show one, whatever is stored on the product. */
-export function getSizeGuideDisplay(
-  productType: string,
-  attributes: Attributes,
-): { show: boolean; sizeGuide: SizeGuideData | undefined } {
-  const support = getProductTypeConfig(productType).sizeGuide;
-  if (!support?.supported) return { show: false, sizeGuide: undefined };
-
-  const saved = attributes?.sizeGuide;
-  if (saved && typeof saved === "object") {
-    return { show: (saved as SizeGuideData).enabled === true, sizeGuide: saved as SizeGuideData };
-  }
-  return { show: support.defaultEnabled, sizeGuide: getDefaultSizeGuide(productType) };
-}
-
-/** Accordion sections built only from what the admin actually filled in for this product type —
- * nothing is invented for empty fields. Values are admin-typed free text, so they are escaped. */
-export function buildSpecAccordionItems(productType: string, attributes: Attributes): SpecAccordionItem[] {
-  const config = getProductTypeConfig(productType);
-  const attrs = attributes ?? {};
-  const items: SpecAccordionItem[] = [];
-
-  for (const section of config.sections) {
-    if (section.key === "description") continue;
-    const rows = config.fields
-      .filter((field) => field.section === section.key)
-      .map((field) => ({ label: field.label, value: readAttribute(attrs, field.key) }))
-      .filter((row) => row.value !== "");
-    if (rows.length === 0) continue;
-
-    const listItems = rows
-      .map((row) => `<li><strong>${escapeHtml(row.label)}:</strong> ${escapeHtml(row.value).replace(/\n/g, "<br>")}</li>`)
-      .join("");
-    items.push({
-      title: section.label,
-      content: `<ul class="space-y-1.5 text-sm text-ink-700">${listItems}</ul>`,
-      html: true,
-    });
-  }
+/** One accordion section per spec group, built only from what the admin filled in — nothing is invented
+ * for empty fields. The groups themselves (names, order, membership) come from the product's template. */
+export function buildSpecAccordionItems(resolved: ProductResolvedView | undefined, attributes: Attributes): SpecAccordionItem[] {
+  const items: SpecAccordionItem[] = (resolved?.specGroups ?? []).map((group) => ({
+    title: group.name,
+    content: `<ul class="space-y-1.5 text-sm text-ink-700">${group.items
+      .map((item) => `<li><strong>${escapeHtml(item.label)}:</strong> ${renderValueHtml(item)}</li>`)
+      .join("")}</ul>`,
+    html: true,
+  }));
 
   // Apparel has always shown a generic care note; keep it until an admin writes product-specific care.
-  if (config.type === "CLOTHING" && !readAttribute(attrs, "careInstructions")) {
+  const careInstructions = attributes?.careInstructions;
+  const hasCare = typeof careInstructions === "string" && careInstructions.trim() !== "";
+  if (resolved?.type?.key === "CLOTHING" && !hasCare) {
     items.push({ title: "Care", content: CLOTHING_CARE_NOTE });
   }
 

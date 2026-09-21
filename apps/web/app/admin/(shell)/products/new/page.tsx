@@ -11,7 +11,7 @@ import { ProductForm } from "@/components/admin/product-form";
 import { ImageUploader, type StagedImage } from "@/components/admin/image-uploader";
 import * as categoriesApi from "@/lib/api/categories";
 import * as productsApi from "@/lib/api/products";
-import { ApiError } from "@/lib/api-client";
+import { describeApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 
 export default function NewProductPage() {
@@ -63,7 +63,7 @@ export default function NewProductPage() {
       toast.success(`"${product.name}" was created`);
       router.push(`/admin/products/${product.id}/edit`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create product");
+      setError(describeApiError(err, "Failed to create product"));
     }
   }
 

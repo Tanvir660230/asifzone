@@ -20,8 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, GripVertical, History, Sparkles, Star, Trash2 } from "lucide-react";
-import type { Attribute, AttributeValue, CreateProductInput, ProductImage } from "@clothing-brand/shared";
-import { getProductTypeConfig } from "@clothing-brand/shared";
+import type { Attribute, AttributeValue, CreateProductInput, ProductImage, VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +42,9 @@ interface VariantEditorProps {
   variantImageKeys?: Record<number, string>;
   onVariantImageKeyChange?: (index: number, key: string) => void;
   skuPrefix?: string;
-  productType?: string;
+  /** The selected type's variant dimensions (which of size/colour it uses, and how they are labelled). */
+  variantDimensions?: VariantDimension[];
+  typeName?: string;
 }
 
 function slugPart(s: string) {
@@ -72,7 +73,8 @@ export function VariantEditor({
   variantImageKeys,
   onVariantImageKeyChange,
   skuPrefix = "SKU",
-  productType = "CLOTHING",
+  variantDimensions = [],
+  typeName = "this product type",
 }: VariantEditorProps) {
   const { fields, append, remove, move } = useFieldArray({ control, name: "variants" });
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
@@ -187,10 +189,9 @@ export function VariantEditor({
                 <Sparkles size={14} /> Generate combinations
               </Button>
               <p className="text-xs text-ink-400">
-                {(() => {
-                  const config = getProductTypeConfig(productType);
-                  return `Configure variant dimensions for ${config.label} (${config.variantDimensions.map((d) => d.label).join(" & ")}).`;
-                })()}
+                {variantDimensions.length
+                  ? `Variants for ${typeName} are defined by ${variantDimensions.map((d) => d.label).join(" & ")}.`
+                  : `${typeName} has no size or colour dimension — each variant is a single option.`}
               </p>
             </div>
           )}
@@ -262,12 +263,11 @@ export function VariantEditor({
                       <Input placeholder="Optional" {...register(`variants.${index}.barcode`)} />
                     </div>
                     {(() => {
-                      const config = getProductTypeConfig(productType);
                       // Strictly by target field: a type with only a color dimension (Accessory) has no
                       // size input at all — the schema stores "Standard" — instead of the color dimension
                       // being rendered a second time in the size slot.
-                      const sizeDim = config.variantDimensions.find((d) => d.targetField === "size");
-                      const colorDim = config.variantDimensions.find((d) => d.targetField === "color");
+                      const sizeDim = variantDimensions.find((d) => d.targetField === "size");
+                      const colorDim = variantDimensions.find((d) => d.targetField === "color");
                       return (
                         <>
                           {sizeDim && (
@@ -279,7 +279,7 @@ export function VariantEditor({
                               />
                             </div>
                           )}
-                          {sizeDim?.key === "size" && (
+                          {sizeDim?.label.trim().toLowerCase() === "size" && (
                             <div>
                               <Label className="text-[11px]">Equivalent size</Label>
                               <Input placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
