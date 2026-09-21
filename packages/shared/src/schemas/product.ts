@@ -53,12 +53,25 @@ export const createVariantSchema = z.object({
       .optional(),
   ),
   price: nullableNumber(),
+  /** "Was" price for this variant; must be above its selling price when both are set. */
+  compareAtPrice: nullableNumber(),
   costPrice: nullableNumber(),
   stock: z.number().int().min(0).default(0),
   weight: nullableNumber(),
+  /** An inactive variant is hidden from the storefront and refused at checkout; it keeps its history. */
+  isActive: z.boolean().optional(),
+  /** Legacy single image. Sent alone (older clients) it means "this variant's gallery is exactly this image". */
   imageId: nullableCuid(),
+  /** The variant's gallery in display order; the first is its primary image. Wins over `imageId` when present. */
+  imageIds: z.array(z.string().min(1)).max(20).refine((ids) => new Set(ids).size === ids.length, "An image can only be listed once").optional(),
   attributeValueIds: z.array(z.string().cuid()).default([]),
 });
+
+/** A variant's compare-at price only makes sense above what it actually sells for. */
+const variantWithRules = createVariantSchema.refine(
+  (v) => v.price == null || v.compareAtPrice == null || v.compareAtPrice > v.price,
+  { message: "Compare-at price must be higher than the variant price", path: ["compareAtPrice"] },
+);
 
 export const baseProductSchema = z.object({
   name: z.string().min(1).max(200),
@@ -108,7 +121,7 @@ export const baseProductSchema = z.object({
       "Material percentages add up to more than 100%",
     )
     .optional(),
-  variants: z.array(createVariantSchema).min(1, "At least one variant is required"),
+  variants: z.array(variantWithRules).min(1, "At least one variant is required"),
 });
 
 export const createProductSchema = baseProductSchema;
@@ -131,6 +144,11 @@ export const productListQuerySchema = paginationQuerySchema.extend({
 });
 
 export const updateImageAltTextSchema = z.object({ altText: z.string().min(1).max(300) });
+
+/** Alt text and caption for one image; either can be sent alone. A blank caption clears it. */
+export const updateImageSchema = z
+  .object({ altText: z.string().trim().min(1).max(300).optional(), caption: nullableString(300) })
+  .refine((v) => v.altText !== undefined || v.caption !== undefined, "Send an alt text or a caption");
 export const reorderImagesSchema = z.object({ imageIds: z.array(z.string().cuid()).min(1) });
 
 export const bulkProductIdsSchema = z.object({ ids: z.array(z.string().cuid()).min(1).max(500) });
@@ -141,6 +159,7 @@ export const bulkProductStatusSchema = bulkProductIdsSchema
 export const bulkProductCategorySchema = bulkProductIdsSchema.extend({ categoryId: z.string().cuid() });
 
 export type UpdateImageAltTextInput = z.infer<typeof updateImageAltTextSchema>;
+export type UpdateImageInput = z.infer<typeof updateImageSchema>;
 export type BulkProductIdsInput = z.infer<typeof bulkProductIdsSchema>;
 export type BulkProductStatusInput = z.infer<typeof bulkProductStatusSchema>;
 export type BulkProductCategoryInput = z.infer<typeof bulkProductCategorySchema>;

@@ -64,7 +64,7 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
 
   for (const item of input.items) {
     const variant = variantById.get(item.variantId)!;
-    if (!variant.product.isActive) throw AppError.badRequest(`${variant.product.name} is no longer available`);
+    if (!variant.product.isActive || !variant.isActive) throw AppError.badRequest(`${variant.product.name} is no longer available`);
     if (variant.stock < item.quantity) {
       throw AppError.conflict(`Not enough stock for ${variant.product.name}${formatVariantSuffix(variant.size, variant.color)}`);
     }
@@ -405,6 +405,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
       id: true,
       price: true,
       stock: true,
+      isActive: true,
       product: {
         select: {
           id: true,
@@ -422,7 +423,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
 
   return items.map((item) => {
     const variant = variantById.get(item.variantId);
-    const available = variant && variant.product.isActive && !variant.product.deletedAt && variant.stock > 0;
+    const available = variant && variant.isActive && variant.product.isActive && !variant.product.deletedAt && variant.stock > 0;
     const usable = opts.requireAvailable ? available : Boolean(variant);
     return {
       ...item,

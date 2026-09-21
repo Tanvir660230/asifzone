@@ -101,10 +101,14 @@ export interface ProductVariant {
   color: string;
   colorHex: string | null;
   price: string | null;
+  compareAtPrice?: string | null;
   costPrice: string | null;
   stock: number;
   weight: string | null;
+  isActive?: boolean;
   imageId: string | null;
+  /** The variant's own gallery, in display order (first = primary). */
+  images?: { imageId: string; sortOrder: number }[];
   sortOrder: number;
   attributeValues?: VariantAttributeValue[];
 }
@@ -114,6 +118,9 @@ export interface ProductImage {
   productId: string;
   url: string;
   altText: string | null;
+  caption?: string | null;
+  width?: number | null;
+  height?: number | null;
   sortOrder: number;
 }
 

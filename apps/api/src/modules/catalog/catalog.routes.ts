@@ -4,6 +4,7 @@ import {
   createAttributeDefinitionSchema,
   materialSchema,
   productTypeSchema,
+  skuSettingsSchema,
   sizeGuidePresetSchema,
   specGroupSchema,
   templateSchema,
@@ -15,6 +16,7 @@ import { validate } from "../../middlewares/validate";
 import { requireAdmin, requireRole } from "../../middlewares/require-admin";
 import { asyncHandler } from "../../lib/async-handler";
 import * as catalog from "./catalog.service";
+import * as sku from "./sku.service";
 
 export const catalogRouter = Router();
 
@@ -147,4 +149,22 @@ catalogRouter.put("/materials/:id", ownerOnly, validate(materialSchema.extend({ 
 catalogRouter.delete("/materials/:id", ownerOnly, asyncHandler(async (req, res) => {
   await catalog.deleteMaterial(req.params.id!);
   res.status(204).send();
+}));
+
+/* SKU generator */
+const generateSkuSchema = z.object({
+  typeId: z.string().min(1),
+  color: z.string().max(48).nullish(),
+  size: z.string().max(32).nullish(),
+  taken: z.array(z.string().max(64)).max(200).optional(),
+});
+catalogRouter.get("/sku-settings", asyncHandler(async (_req, res) => {
+  res.json({ settings: await sku.getSkuSettings() });
+}));
+catalogRouter.put("/sku-settings", ownerOnly, validate(skuSettingsSchema), asyncHandler(async (req, res) => {
+  res.json({ settings: await sku.updateSkuSettings(req.body) });
+}));
+// Any admin can generate (staff create products); it only reserves a number, it changes no product.
+catalogRouter.post("/sku/generate", validate(generateSkuSchema), asyncHandler(async (req, res) => {
+  res.json({ sku: await sku.generateSku(req.body) });
 }));

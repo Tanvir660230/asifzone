@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { blankToNull, nullableString, slugSchema } from "./common";
+import { skuCodeSchema } from "../sku";
 import type { SizeGuideData } from "../config/product-types";
 import { OPTIONAL_COMPLETENESS_KEYS } from "../completeness-checks";
 
@@ -165,6 +166,8 @@ export const productTypeSchema = z.object({
   description: nullableString(300),
   parentId: z.preprocess(blankToNull, z.string().min(1).nullable().optional()),
   templateId: z.string().min(1),
+  /** Short code for the SKU generator's {TYPE} token; blank falls back to the name's first letters. */
+  skuCode: skuCodeSchema,
   sortOrder: z.number().int().min(0).max(1000).default(0),
   isActive: z.boolean().default(true),
 });
