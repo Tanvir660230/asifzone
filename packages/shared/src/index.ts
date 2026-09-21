@@ -36,5 +36,7 @@ export * from "./sms-templates";
 export * from "./customer-sms-templates";
 export * from "./config/product-types";
 export * from "./completeness";
+export * from "./sku";
+export * from "./gallery";
 
 export * from "./types";

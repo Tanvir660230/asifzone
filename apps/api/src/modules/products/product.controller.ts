@@ -161,8 +161,8 @@ export const removeImage = asyncHandler(async (req: Request, res: Response) => {
   res.status(204).send();
 });
 
-export const updateImageAltText = asyncHandler(async (req: Request, res: Response) => {
-  await productService.updateProductImageAltText(req.params.id!, req.params.imageId!, req.body.altText);
+export const updateImage = asyncHandler(async (req: Request, res: Response) => {
+  await productService.updateProductImage(req.params.id!, req.params.imageId!, req.body);
   res.status(204).send();
 });
 

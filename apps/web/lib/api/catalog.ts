@@ -1,5 +1,6 @@
 import type {
   AttributeDataType,
+  SkuSettingsInput,
   CareGuidePresetInput,
   CreateAttributeDefinitionInput,
   MaterialInput,
@@ -24,6 +25,7 @@ export interface ManagedType {
   templateId: string;
   template: { id: string; name: string };
   legacyType: string;
+  skuCode: string | null;
   isSystem: boolean;
   isActive: boolean;
   sortOrder: number;
@@ -161,3 +163,13 @@ export const createMaterial = (input: MaterialInput) => apiFetch<{ material: Mat
 export const updateMaterial = (id: string, input: MaterialInput & { isArchived?: boolean }) =>
   apiFetch<{ material: MaterialRow }>(`/api/catalog/materials/${id}`, json("PUT", input));
 export const deleteMaterial = (id: string) => apiFetch<void>(`/api/catalog/materials/${id}`, { method: "DELETE" });
+
+/* SKU generator */
+export interface SkuSettings {
+  skuPrefix: string;
+  skuPattern: string;
+}
+export const getSkuSettings = () => apiFetch<{ settings: SkuSettings }>("/api/catalog/sku-settings");
+export const updateSkuSettings = (input: SkuSettingsInput) => apiFetch<{ settings: SkuSettings }>("/api/catalog/sku-settings", json("PUT", input));
+export const generateSku = (input: { typeId: string; color?: string | null; size?: string | null; taken?: string[] }) =>
+  apiFetch<{ sku: string }>("/api/catalog/sku/generate", json("POST", input));

@@ -547,11 +547,18 @@ model ProductVariant {
   color           String
   colorHex        String?
   price           Decimal?                @db.Decimal(10, 2)
+  /// "Was" price for this variant (shown struck through when above its selling price).
+  compareAtPrice  Decimal?                @db.Decimal(10, 2)
   costPrice       Decimal?                @db.Decimal(10, 2)
   stock           Int                     @default(0)
   weight          Decimal?                @db.Decimal(6, 2)
+  /// An inactive variant is hidden from the storefront and refused at checkout, but keeps its order and stock history.
+  isActive        Boolean                 @default(true)
+  /// The variant's primary image (swatch / cart thumbnail) — always the first of its `images` when it has any.
   imageId         String?
   image           ProductImage?           @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
+  /// The variant's own gallery, in display order.
+  images          VariantImage[]
   sortOrder       Int                     @default(0)
   attributeValues VariantAttributeValue[]
   stockMovements  StockMovement[]
@@ -584,11 +591,29 @@ model ProductImage {
   product       Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
   url           String
   altText       String?
+  caption       String?
+  /// Pixel size of the stored "full" rendition, recorded at upload (null for images uploaded before this existed).
+  width         Int?
+  height        Int?
   sortOrder     Int              @default(0)
   createdAt     DateTime         @default(now())
   variantsUsing ProductVariant[] @relation("VariantImage")
+  variantLinks  VariantImage[]
 
   @@index([productId])
+}
+
+/// One image in one variant's gallery. A product-level image can belong to several variants (e.g. all sizes of a colour).
+model VariantImage {
+  id        String         @id @default(cuid())
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  imageId   String
+  image     ProductImage   @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  sortOrder Int            @default(0)
+
+  @@unique([variantId, imageId])
+  @@index([imageId])
 }
 
 model Customer {
@@ -1594,6 +1619,8 @@ model ProductTypeDef {
   isSystem    Boolean          @default(false)
   isActive    Boolean          @default(true)
   sortOrder   Int              @default(0)
+  /// Short code used by the SKU generator's {TYPE} token ("PNJ"). Falls back to the first letters of the name.
+  skuCode     String?
   products    Product[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -1769,4 +1796,20 @@ model ProductMaterial {
 
   @@index([productId])
   @@index([materialId])
+}
+
+/// Catalog-wide settings, one row ("singleton"), created on first read like StoreSetting.
+model CatalogSetting {
+  id         String   @id @default("singleton")
+  /// The {PREFIX} token of the SKU pattern.
+  skuPrefix  String   @default("AZ")
+  /// Tokens: {PREFIX} {TYPE} {COLOR} {SIZE} {SEQ:n} (n = zero-padded digits). Validated on write.
+  skuPattern String   @default("{PREFIX}-{TYPE}-{COLOR}-{SIZE}-{SEQ:3}")
+  updatedAt  DateTime @updatedAt
+}
+
+/// Atomic per-scope counters behind the SKU generator's {SEQ} token (scope = the product type's SKU code).
+model SkuCounter {
+  scope String @id
+  next  Int    @default(1)
 }

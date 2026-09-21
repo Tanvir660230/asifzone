@@ -39,6 +39,8 @@ interface VariantSelectorProps {
   /** Called whenever the image to preview should change — fires as soon as a color is picked, even
    * before a size is chosen, so a parent can sync the product gallery to that color's photo. */
   onFocusImageChange?: (imageId: string | null) => void;
+  /** Called whenever the chosen size and/or colour changes (null = not chosen yet) — the parent uses it to pick the gallery. */
+  onSelectionChange?: (selection: { size: string | null; color: string | null }) => void;
   /** True for a brief moment after the shopper tries to Add to Cart/Buy Now without finishing their
    * selection — draws attention to whichever picker (size and/or color) still needs a choice. */
   highlightMissing?: boolean;
@@ -61,6 +63,7 @@ export function VariantSelector({
   showSizeGuide = false,
   onVariantChange,
   onFocusImageChange,
+  onSelectionChange,
   highlightMissing,
   onRequireSelection,
 }: VariantSelectorProps) {
@@ -111,6 +114,11 @@ export function VariantSelector({
   const focusImageId = selectedColor
     ? (variants.find((v) => v.color === selectedColor && v.imageId)?.imageId ?? null)
     : null;
+  useEffect(() => {
+    onSelectionChange?.({ size: selectedSize, color: selectedColor });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSize, selectedColor]);
+
   useEffect(() => {
     onFocusImageChange?.(focusImageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -52,7 +52,10 @@ const CACHE_PREFIX = PRODUCT_CACHE_PREFIX;
 const CACHE_TTL_SECONDS = 120;
 const include = {
   variants: {
-    include: { attributeValues: { include: { attributeValue: { include: { attribute: true } } } } },
+    include: {
+      attributeValues: { include: { attributeValue: { include: { attribute: true } } } },
+      images: { orderBy: { sortOrder: "asc" as const } },
+    },
     orderBy: { sortOrder: "asc" as const },
   },
   images: { orderBy: { sortOrder: "asc" as const } },
@@ -94,6 +97,8 @@ const PUBLIC_PRODUCT_SELECT = {
   createdAt: true,
   updatedAt: true,
   ...include,
+  // The storefront never sees an inactive variant (the admin reads use `include` and see them all).
+  variants: { ...include.variants, where: { isActive: true } },
 } as const;
 
 /** The shape returned by every query above that uses PUBLIC_PRODUCT_SELECT — distinct from (and
@@ -213,7 +218,9 @@ function toJsonInput(value: Record<string, unknown> | null | undefined) {
  * `sortOrder` comes from the variant's position in the submitted array: the storefront shows `variants[0]`'s color/size as the
  * default selection, so reordering variants in the admin form is how "which color is the main one" gets set. */
 function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
-  const { attributeValueIds = [], ...rest } = variant;
+  // `imageIds` isn't a column: galleries are written after the variant exists (see syncVariantGallery).
+  const { attributeValueIds = [], imageIds: _imageIds, ...rest } = variant;
+  void _imageIds;
   return {
     ...rest,
     size: rest.size || NO_SIZE_VALUE,
@@ -1176,6 +1183,20 @@ async function replaceMaterials(
   }
 }
 
+/** Replaces a variant's gallery with `imageIds` (in order) and points its primary image at the first. Every image
+ * must belong to this product — a variant can't be given another product's photo. */
+async function syncVariantGallery(tx: Prisma.TransactionClient, productId: string, variantId: string, imageIds: string[]) {
+  if (imageIds.length) {
+    const owned = await tx.productImage.count({ where: { id: { in: imageIds }, productId } });
+    if (owned !== new Set(imageIds).size) throw AppError.badRequest("A selected variant image doesn't belong to this product");
+  }
+  await tx.variantImage.deleteMany({ where: { variantId } });
+  if (imageIds.length) {
+    await tx.variantImage.createMany({ data: imageIds.map((imageId, sortOrder) => ({ variantId, imageId, sortOrder })) });
+  }
+  await tx.productVariant.update({ where: { id: variantId }, data: { imageId: imageIds[0] ?? null } });
+}
+
 async function assertCarePresetUsable(carePresetId: string | null | undefined, currentId: string | null) {
   if (!carePresetId || carePresetId === currentId) return;
   const preset = await prisma.careGuidePreset.findUnique({ where: { id: carePresetId }, select: { isArchived: true } });
@@ -1452,7 +1473,10 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
 
         for (const [index, variant] of input.variants.entries()) {
           if (variant.id) {
-            const { id: variantId, attributeValueIds = [], ...updateData } = variant;
+            const { id: variantId, attributeValueIds = [], imageIds, ...updateData } = variant;
+            // The gallery is authoritative when sent; an old client that only sends `imageId` means "exactly this one image".
+            const gallery = imageIds ?? (updateData.imageId !== undefined ? (updateData.imageId ? [updateData.imageId] : []) : undefined);
+            if (gallery) delete updateData.imageId; // syncVariantGallery sets it, from an image that is verified to belong here
             await tx.productVariant.update({
               where: { id: variantId },
               data: {
@@ -1464,6 +1488,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
                 sortOrder: index,
               },
             });
+            if (gallery) await syncVariantGallery(tx, id, variantId, gallery);
             await tx.variantAttributeValue.deleteMany({ where: { variantId } });
             if (attributeValueIds.length) {
               await tx.variantAttributeValue.createMany({
@@ -1484,6 +1509,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
             }
           } else {
             const created = await tx.productVariant.create({ data: { ...toVariantCreateData(variant, index), productId: id } });
+            if (variant.imageIds?.length) await syncVariantGallery(tx, id, created.id, variant.imageIds);
             if (created.stock > 0) {
               await tx.stockMovement.create({
                 data: { variantId: created.id, change: created.stock, reason: "RESTOCK", adminId, note: "Initial stock on variant creation" },
@@ -1670,7 +1696,7 @@ export async function exportProductsCsv(): Promise<string> {
   return [header.join(","), ...rows].join("\n");
 }
 
-export async function addProductImages(productId: string, images: Array<{ url: string; altText?: string }>) {
+export async function addProductImages(productId: string, images: Array<{ url: string; altText?: string; width?: number; height?: number }>) {
   await getProductById(productId);
   const existingCount = await prisma.productImage.count({ where: { productId } });
 
@@ -1685,14 +1711,20 @@ export async function deleteProductImage(productId: string, imageId: string) {
   const image = await prisma.productImage.findUnique({ where: { id: imageId } });
   if (!image || image.productId !== productId) throw AppError.notFound("Image not found");
   await prisma.productImage.delete({ where: { id: imageId } });
+  // A variant whose primary image just went away (imageId SetNull) falls back to the next image in its own gallery.
+  const orphaned = await prisma.productVariant.findMany({
+    where: { productId, imageId: null, images: { some: {} } },
+    select: { id: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { imageId: true } } },
+  });
+  for (const v of orphaned) await prisma.productVariant.update({ where: { id: v.id }, data: { imageId: v.images[0]!.imageId } });
   await deleteProductImageFiles(image.url);
   await invalidateCache();
 }
 
-export async function updateProductImageAltText(productId: string, imageId: string, altText: string) {
+export async function updateProductImage(productId: string, imageId: string, input: { altText?: string; caption?: string | null }) {
   const image = await prisma.productImage.findUnique({ where: { id: imageId } });
   if (!image || image.productId !== productId) throw AppError.notFound("Image not found");
-  await prisma.productImage.update({ where: { id: imageId }, data: { altText } });
+  await prisma.productImage.update({ where: { id: imageId }, data: input });
   await invalidateCache();
 }
 
