@@ -49,7 +49,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
 
   const colors = useMemo(() => {
     const seen = new Map<string, string | null>();
-    for (const v of product.variants) if (!seen.has(v.color)) seen.set(v.color, v.colorHex);
+    for (const v of product.variants) if (v.color && !seen.has(v.color)) seen.set(v.color, v.colorHex);
     return Array.from(seen.entries());
   }, [product.variants]);
 

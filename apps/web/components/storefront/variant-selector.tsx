@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
-import type { ProductVariant } from "@clothing-brand/shared";
+import { getProductTypeConfig, type ProductVariant, type SizeGuideData } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { cn, isPaleColor } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
@@ -26,13 +26,11 @@ interface VariantSelectorProps {
   lowStockThreshold: number;
   restockDate: string | null;
   productType?: string;
-  sizeGuide?: {
-    enabled?: boolean;
-    title?: string;
-    unit?: string;
-    columns: string[];
-    rows: string[][];
-  };
+  /** The product's saved size guide, if any. Undefined means "use the default chart". */
+  sizeGuide?: SizeGuideData;
+  /** Whether to offer the size guide at all — decided by the parent from the type config and the
+   * product's own `enabled` flag. */
+  showSizeGuide?: boolean;
   /** Called whenever the fully-selected (size + color) variant changes — this is the "cart-ready"
    * variant, used by the parent for the sticky bar. Left undefined until every choice is made. */
   onVariantChange?: (variant: ProductVariant | undefined) => void;
@@ -58,23 +56,34 @@ export function VariantSelector({
   restockDate,
   productType = "CLOTHING",
   sizeGuide,
+  showSizeGuide = false,
   onVariantChange,
   onFocusImageChange,
   highlightMissing,
   onRequireSelection,
 }: VariantSelectorProps) {
-  const sizes = useMemo(() => Array.from(new Set(variants.map((v) => v.size))), [variants]);
-  const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))).filter((c) => productType !== "FRAGRANCE" && Boolean(c)), [variants, productType]);
+  const config = getProductTypeConfig(productType);
+  const sizeDim = config.variantDimensions.find((d) => d.targetField === "size");
+  const colorDim = config.variantDimensions.find((d) => d.targetField === "color");
 
-  const [selectedSize, setSelectedSize] = useState<string | null>(
-    productType === "FRAGRANCE"
-      ? (variants.find((v) => v.stock > 0)?.size ?? variants[0]?.size ?? null)
-      : (sizes.length === 1 ? (sizes[0] ?? null) : null)
-  );
-  const [selectedColor, setSelectedColor] = useState<string | null>(productType === "FRAGRANCE" ? "" : (colors.length === 1 ? (colors[0] ?? null) : null));
+  const sizes = useMemo(() => Array.from(new Set(variants.map((v) => v.size))), [variants]);
+  const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))).filter(Boolean), [variants]);
+  // A picker is shown when the type has that dimension (Volume, Case Size, Color, ...) or when the
+  // data really offers a choice. A single value (e.g. "Standard", or no color at all) is
+  // auto-selected below and needs no picker.
+  const showSizes = sizes.length > 0 && (Boolean(sizeDim) || sizes.length > 1);
+  const showColors = colors.length > 0 && (Boolean(colorDim) || colors.length > 1);
+  const sizeLabel = sizeDim?.label ?? "Size";
+  const colorLabel = colorDim?.label ?? "Color";
+
+  const [selectedSize, setSelectedSize] = useState<string | null>(sizes.length === 1 ? (sizes[0] ?? null) : null);
+  const [selectedColor, setSelectedColor] = useState<string | null>(colors.length === 1 ? (colors[0] ?? null) : null);
   const [quantity, setQuantity] = useState(1);
 
-  const selectedVariant = variants.find((v) => v.size === selectedSize && (productType === "FRAGRANCE" || v.color === selectedColor));
+  // Products without any color (e.g. Islamic Product) have nothing to match on for color.
+  const selectedVariant = variants.find(
+    (v) => v.size === selectedSize && (colors.length === 0 || v.color === selectedColor),
+  );
   const { addToCart, buyNow, justAdded } = useAddToCart({
     selectedVariant,
     productId,
@@ -108,8 +117,8 @@ export function VariantSelector({
   const comboHasStock = (size: string, color: string) =>
     variants.some((v) => v.size === size && v.color === color && v.stock > 0);
 
-  const sizeMissing = sizes.length > 0 && !selectedSize;
-  const colorMissing = colors.length > 0 && !selectedColor;
+  const sizeMissing = showSizes && !selectedSize;
+  const colorMissing = showColors && !selectedColor;
 
   function handleAddToCart() {
     if (!selectedVariant) {
@@ -129,7 +138,7 @@ export function VariantSelector({
 
   return (
     <div className="space-y-5">
-      {productType !== "FRAGRANCE" && sizes.length > 0 && (
+      {showSizes && (
         <div
           className={cn(
             "rounded-xl transition-shadow duration-200",
@@ -138,9 +147,9 @@ export function VariantSelector({
         >
           <div className="mb-2 flex items-center justify-between">
             <p className={cn("text-xs uppercase tracking-wide", highlightMissing && sizeMissing ? "font-medium text-danger-600" : "text-ink-500")}>
-              {productType === "FRAGRANCE" ? "Volume" : "Size"}
+              {sizeLabel}
             </p>
-            {sizeGuide?.enabled === true && <SizeGuideModal sizeGuide={sizeGuide} />}
+            {showSizeGuide && <SizeGuideModal sizeGuide={sizeGuide} />}
           </div>
           <div className="flex flex-wrap gap-2">
             {sizes.map((size) => {
@@ -185,7 +194,7 @@ export function VariantSelector({
         </div>
       )}
 
-      {colors.length > 0 && (
+      {showColors && (
         <div
           className={cn(
             "rounded-xl transition-shadow duration-200",
@@ -193,7 +202,7 @@ export function VariantSelector({
           )}
         >
           <p className={cn("mb-2 text-xs uppercase tracking-wide", highlightMissing && colorMissing ? "font-medium text-danger-600" : "text-ink-500")}>
-            Color{selectedColor ? ` — ${selectedColor}` : ""}
+            {colorLabel}{selectedColor ? ` — ${selectedColor}` : ""}
           </p>
           <div className="flex flex-wrap gap-2">
             {colors.map((color) => {

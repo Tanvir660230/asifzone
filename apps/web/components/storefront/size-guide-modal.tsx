@@ -3,30 +3,13 @@
 import { useState } from "react";
 import { Ruler } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
+import { DEFAULT_SIZE_GUIDE, type SizeGuideData } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
 
 interface SizeGuideProps {
-  sizeGuide?: {
-    enabled?: boolean;
-    title?: string;
-    unit?: string;
-    columns: string[];
-    rows: string[][] | string[][];
-  };
+  /** The product's own chart; falls back to the shared default chart when absent or empty. */
+  sizeGuide?: SizeGuideData;
 }
-
-const DEFAULT_SIZE_CHART = {
-  title: "Size guide",
-  unit: "inch",
-  columns: ["Size", "Chest", "Waist", "Length"],
-  rows: [
-    ["S", "36–38", "30–32", "27"],
-    ["M", "39–41", "33–35", "28"],
-    ["L", "42–44", "36–38", "29"],
-    ["XL", "45–47", "39–41", "30"],
-    ["XXL", "48–50", "42–44", "31"],
-  ],
-};
 
 export function SizeGuideModal({ sizeGuide }: SizeGuideProps) {
   const [open, setOpen] = useState(false);
@@ -35,7 +18,7 @@ export function SizeGuideModal({ sizeGuide }: SizeGuideProps) {
     return null;
   }
 
-  const chart = (sizeGuide && sizeGuide.enabled && sizeGuide.columns?.length > 0) ? sizeGuide : DEFAULT_SIZE_CHART;
+  const chart = sizeGuide && sizeGuide.columns?.length > 0 ? sizeGuide : DEFAULT_SIZE_GUIDE;
 
   return (
     <>
@@ -77,4 +60,3 @@ export function SizeGuideModal({ sizeGuide }: SizeGuideProps) {
     </>
   );
 }
-

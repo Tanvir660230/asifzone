@@ -479,7 +479,7 @@ export default function AccountOrderDetailPage() {
                       </option>
                       {exchangeVariantOptions.map((v) => (
                         <option key={v.id} value={v.id}>
-                          {v.size}/{v.color}
+                          {[v.size, v.color].filter(Boolean).join("/")}
                         </option>
                       ))}
                     </Select>
