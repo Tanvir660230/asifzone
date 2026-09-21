@@ -28,6 +28,7 @@ import { getSettings } from "../settings/settings.service";
 import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
+import { csvCell } from "../../lib/csv";
 
 const include = {
   items: true,
@@ -768,11 +769,6 @@ export async function getOrderStats() {
     cancelledButPaidCount,
     statusCounts,
   };
-}
-
-function csvCell(value: unknown): string {
-  const str = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
 /** Same filters as listOrders (via buildOrderWhere) but unpaginated — admins export a whole filtered

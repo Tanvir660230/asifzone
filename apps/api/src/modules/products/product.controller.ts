@@ -3,6 +3,8 @@ import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import { processProductImage } from "../uploads/upload.service";
 import * as productService from "./product.service";
+import { duplicateProduct } from "./product-duplicate";
+import { exportProductsFullCsv, importTemplateCsv, planProductImport, runProductImport } from "./product-csv";
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
   res.json(await productService.listProducts(req.query as never));
@@ -97,6 +99,13 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   res.status(201).json({ product });
 });
 
+export const duplicate = asyncHandler(async (req: Request, res: Response) => {
+  // duplicateProduct records its own events (on the copy and on the original).
+  res.locals.auditHandled = true;
+  const result = await duplicateProduct(req.params.id!, req.body, req.admin!.adminId, req.ip);
+  res.status(201).json(result);
+});
+
 export const update = asyncHandler(async (req: Request, res: Response) => {
   res.locals.auditHandled = true;
   const product = await productService.updateProduct(req.params.id!, req.body, req.admin!.adminId, req.ip);
@@ -145,6 +154,38 @@ export const exportCsv = asyncHandler(async (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="products-${Date.now()}.csv"`);
   res.send(csv);
+});
+
+/** A UTF-8 byte-order mark so Excel reads Bengali and other non-ASCII text correctly instead of guessing a legacy code page. */
+function sendCsv(res: Response, filename: string, csv: string) {
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(`\ufeff${csv}`);
+}
+
+const typeIdOf = (req: Request) => (typeof req.query.typeId === "string" && req.query.typeId ? req.query.typeId : undefined);
+
+export const exportFull = asyncHandler(async (req: Request, res: Response) => {
+  sendCsv(res, `products-full-${Date.now()}.csv`, await exportProductsFullCsv(typeIdOf(req)));
+});
+
+export const importTemplate = asyncHandler(async (req: Request, res: Response) => {
+  sendCsv(res, "products-import-template.csv", await importTemplateCsv(typeIdOf(req)));
+});
+
+/** Checks a CSV without writing anything. */
+export const importValidate = asyncHandler(async (req: Request, res: Response) => {
+  res.locals.auditHandled = true;
+  const { report } = await planProductImport(req.body.csv);
+  res.json({ report });
+});
+
+/** Writes it. Any error stops the import (422 with the report) unless `skipInvalid` says to leave the bad products out. */
+export const importCommit = asyncHandler(async (req: Request, res: Response) => {
+  res.locals.auditHandled = true;
+  const { report, result } = await runProductImport(req.body.csv, { skipInvalid: req.body.skipInvalid }, req.admin!.adminId, req.ip);
+  if (!result) return void res.status(422).json({ error: "The file has errors, so nothing was imported.", details: { report } });
+  res.json({ report, result });
 });
 
 export const uploadImages = asyncHandler(async (req: Request, res: Response) => {

@@ -7,6 +7,7 @@ import type {
   AnalyticsQuery,
 } from "@clothing-brand/shared";
 import { asyncHandler } from "../../lib/async-handler";
+import { csvCell } from "../../lib/csv";
 import * as analyticsService from "./analytics.service";
 
 // req.query has already been through analyticsQuerySchema (see analytics.routes.ts) by the time
@@ -417,11 +418,6 @@ export const lifetimeYearlyTrend = asyncHandler(async (_req: Request, res: Respo
 
 // Section 15 — Reports (CSV exports). Same header-escaping shape as order.service.ts's
 // exportOrdersCsv, kept local since it's small and this is the only other CSV producer in the app.
-function csvCell(value: unknown): string {
-  const str = value === null || value === undefined ? "" : String(value);
-  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
-}
-
 function toCsv(header: string[], rows: Array<Array<string | number>>): string {
   return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }

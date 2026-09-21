@@ -133,6 +133,28 @@ describe("product workflow: status, completeness, SEO, care, materials, history"
       expect((await owner().patch(`/api/products/${draft.id}`, { isActive: false })).body.product.status).toBe("DRAFT");
     });
 
+    it("a partial update changes only what it sends: fields with defaults are not reset", async () => {
+      const q = await createProduct({
+        description: "<p>Keep me</p>",
+        brandTier: "LUXURY",
+        trackInventory: false,
+        lowStockThreshold: 11,
+        isFeatured: true,
+        sortOrder: 7,
+      });
+      const res = await owner().patch(`/api/products/${q.id}`, { basePrice: 640 });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body.product).toMatchObject({
+        description: "<p>Keep me</p>",
+        brandTier: "LUXURY",
+        trackInventory: false,
+        lowStockThreshold: 11,
+        isFeatured: true,
+        sortOrder: 7,
+      });
+      expect(Number(res.body.product.basePrice)).toBe(640);
+    });
+
     it("saving an already-live product never re-checks it", async () => {
       await owner().patch(`/api/products/${p.id}`, { status: "PUBLISHED" });
       await prisma.productImage.deleteMany({ where: { productId: p.id } }); // e.g. an image removed after publishing

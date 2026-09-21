@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX, Copy, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -24,6 +24,8 @@ import { PRODUCT_STATUSES, type ProductStatus } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
+import { DuplicateProductDialog } from "@/components/admin/duplicate-product-dialog";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 
 function ProductRowCardSkeleton({ first = false }: { first?: boolean }) {
   return (
@@ -47,6 +49,10 @@ export default function ProductsPage() {
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProductStatus | "">("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [duplicating, setDuplicating] = useState<{ id: string; name: string } | null>(null);
+  // Permanent deletion is the owner's call (the API refuses staff); don't offer a button that always 403s.
+  const { data: currentAdmin } = useCurrentAdmin();
+  const isOwner = currentAdmin?.admin.role === "OWNER";
 
   const { data, isLoading } = useQuery({
     queryKey: ["products", { page, pageSize, search, tab, statusFilter, typeFilter }],
@@ -193,14 +199,16 @@ export default function ProductsPage() {
         >
           <RotateCcw size={16} />
         </button>
-        <button
-          onClick={() => handlePermanentDelete(p.id, p.name)}
-          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
-          aria-label="Delete permanently"
-          title="Delete permanently"
-        >
-          <Trash2 size={16} />
-        </button>
+        {isOwner && (
+          <button
+            onClick={() => handlePermanentDelete(p.id, p.name)}
+            className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
+            aria-label="Delete permanently"
+            title="Delete permanently"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
       </>
     ) : (
       <>
@@ -212,6 +220,14 @@ export default function ProductsPage() {
         >
           <Pencil size={16} />
         </Link>
+        <button
+          onClick={() => setDuplicating({ id: p.id, name: p.name })}
+          className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
+          aria-label={`Duplicate ${p.name}`}
+          title="Duplicate"
+        >
+          <Copy size={16} />
+        </button>
         <button
           onClick={() => handleDelete(p.id, p.name)}
           className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}
@@ -235,6 +251,11 @@ export default function ProductsPage() {
                 <Download size={16} /> Export CSV
               </Button>
             </a>
+            <Link href="/admin/products/import">
+              <Button variant="outline">
+                <FileSpreadsheet size={16} /> Import / export
+              </Button>
+            </Link>
             <Link href="/admin/products/new">
               <Button variant="brass">
                 <Plus size={16} /> Add product
@@ -245,6 +266,7 @@ export default function ProductsPage() {
       />
 
       <ProductsSubNav />
+      <DuplicateProductDialog product={duplicating} onClose={() => setDuplicating(null)} />
 
       <div className="mb-4 flex items-center gap-1 border-b border-ink-100">
         {(["active", "trash"] as const).map((t) => (
