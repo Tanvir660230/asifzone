@@ -1,10 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Banknote, RotateCcw, Truck } from "lucide-react";
 import type { Product, ProductVariant } from "@clothing-brand/shared";
-import { getProductTypeConfig } from "@clothing-brand/shared";
 import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
@@ -13,6 +11,7 @@ import { CountdownTimer } from "@/components/storefront/countdown-timer";
 import { ProductAccordion } from "@/components/storefront/product-accordion";
 import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { formatPrice } from "@/lib/format";
+import { buildSpecAccordionItems, getSizeGuideDisplay } from "@/lib/product-specs";
 
 const TRUST_ITEMS = [
   { icon: Truck, label: "Nationwide delivery, 1–5 business days" },
@@ -37,6 +36,7 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
   const [highlightMissing, setHighlightMissing] = useState(false);
+  const sizeGuideDisplay = getSizeGuideDisplay(product.productType, product.attributes);
   const buttonsRef = useRef<HTMLDivElement>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -125,7 +125,8 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
             lowStockThreshold={product.lowStockThreshold}
             restockDate={product.restockDate}
             productType={product.productType}
-            sizeGuide={!getProductTypeConfig(product.productType).sizeGuide?.supported ? undefined : (product.attributes as any)?.sizeGuide}
+            sizeGuide={sizeGuideDisplay.sizeGuide}
+            showSizeGuide={sizeGuideDisplay.show}
             onVariantChange={setSelectedVariant}
             onFocusImageChange={setFocusImageId}
             highlightMissing={highlightMissing}
@@ -142,60 +143,21 @@ export function ProductShowcase({ product, urgencySignals, descriptionHtml }: Pr
           ))}
         </div>
 
-        {(() => {
-          const config = getProductTypeConfig(product.productType);
-          const attrs = (product.attributes ?? {}) as Record<string, string>;
-
-          const populatedFields = config.fields.filter((f) => {
-            const val = attrs[f.key];
-            return val !== undefined && val !== null && String(val).trim() !== "";
-          });
-          const dynamicSections = config.sections
-            .filter((sec) => sec.key !== "description")
-            .map((sec) => {
-              const secFields = populatedFields.filter((f) => f.section === sec.key || !f.section);
-              if (secFields.length === 0 && populatedFields.length === 0) return null;
-
-              // If specific section has fields or we group remaining fields into spec/details
-              const fieldsToRender = secFields.length > 0 ? secFields : (sec.key === config.sections[1]?.key ? populatedFields : []);
-              if (fieldsToRender.length === 0 && sec.key !== "spec" && sec.key !== "details" && sec.key !== "notes") return null;
-
-              const contentHtml = fieldsToRender.length > 0
-                ? `<ul class="space-y-1.5 text-sm text-ink-700">${fieldsToRender.map((f) => `<li><strong>${f.label}:</strong> ${attrs[f.key]}</li>`).join("")}</ul>`
-                : `<p class="text-sm text-ink-600">${product.productType === "FRAGRANCE" ? "Store in a cool, dry place away from direct sunlight. Apply on pulse points for best results." : (attrs.careInstructions || "Standard product specification and care details.")}</p>`;
-
-              return {
-                title: sec.label,
-                content: contentHtml,
-                html: true,
-              };
-            })
-            .filter((sec): sec is { title: string; content: string; html: boolean } => sec !== null);
-
-          const accordionItems = [
+        <ProductAccordion
+          items={[
             {
               title: "Description",
               content: descriptionHtml.trim() ? descriptionHtml : "<p>No description provided yet.</p>",
               html: true,
             },
-            ...(dynamicSections.length > 0
-              ? dynamicSections
-              : [
-                  {
-                    title: product.productType === "FRAGRANCE" ? "Fragrance & Storage Details" : "Specifications & Care",
-                    content: product.productType === "FRAGRANCE"
-                      ? "Store in a cool, dry place away from direct sunlight. Premium fragrance composition formulated for long-lasting wear on skin and clothing."
-                      : (attrs.careInstructions || attrs.material || "Standard quality product specifications."),
-                  },
-                ]),
+            ...buildSpecAccordionItems(product.productType, product.attributes),
             {
               title: "Shipping & Returns",
               content:
                 "Dispatched within 1–2 business days. Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days. Unworn items with tags can be returned or exchanged within 7 days of delivery.",
             },
-          ];
-          return <ProductAccordion items={accordionItems} />;
-        })()}
+          ]}
+        />
       </div>
 
       <StickyAddToCart

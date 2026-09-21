@@ -88,7 +88,7 @@ export function CartDrawer() {
                         {item.productName}
                       </Link>
                       <p className="mt-0.5 text-xs text-ink-400">
-                        {item.size} / {item.color}
+                        {[item.size, item.color].filter(Boolean).join(" / ")}
                       </p>
                     </div>
                     <div className="flex items-center justify-between">

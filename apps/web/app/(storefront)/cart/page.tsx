@@ -179,7 +179,7 @@ export default function CartPage() {
                     {item.productName}
                   </Link>
                   <p className="mt-1 text-xs text-ink-400">
-                    {item.size} / {item.color} · SKU {item.sku}
+                    {[item.size, item.color].filter(Boolean).join(" / ")} · SKU {item.sku}
                   </p>
                 </div>
                 <div className="flex items-center justify-between">
