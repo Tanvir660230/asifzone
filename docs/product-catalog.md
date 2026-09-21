@@ -72,9 +72,31 @@ the focus keyword is admin-only.
   type's SKU code (falls back to the first three letters of its name). Counters are atomic per type and never reused; a generated SKU is also checked
   against saved variants and the other rows of the open form. Any admin can generate; only the owner changes the pattern. Existing SKUs are never changed.
 
+## Page sections, FAQ, curated lists and preview
+
+- **Sections are code; their settings are data.** `SECTION_REGISTRY` (`packages/shared/src/sections.ts`) lists every section the product page can render
+  (description, highlights, specifications, material, care, shipping, returns, warranty, what's included, FAQ, video, size-guide link, reviews and the
+  recommendation lists). An admin never adds a section without code, but controls each one's visibility, order, title and — for the text ones — wording.
+- **Three levels, resolved field by field:** product → template → store (`GlobalSection`) → the registry default. A template can retitle "Care" and
+  inherit everything else. With no overrides the page is exactly what it was before sections existed (the default order is the registry order, and the
+  default Shipping & Returns text is the old hard-coded sentence). All override columns are nullable; a row that overrides nothing is not stored.
+- **Where to edit:** store level in Catalog setup → Page sections (owner-only writes); template level in the template editor; product level in the
+  product form's *Page content* tab, which shows what each blank field inherits and from where. Moving a section pins the whole order at that level.
+- **Per-product content:** highlights and "what's included" (one item per line) and the video link live on the product's own section override;
+  FAQ (`ProductFaq`, max 30) has its own editor. Text is sanitized on the server (DOMPurify) before it is rendered. Video links are limited to
+  YouTube / Vimeo or a direct https `.mp4`/`.webm` (`toVideoEmbed`), so an admin cannot embed an arbitrary page.
+- **Curated lists.** `ProductRelation` (RELATED, CROSS_SELL, UPSELL, FREQUENTLY_BOUGHT, RECOMMENDED; max 12 each, never itself). A hand-picked list
+  replaces the automatic one; an empty list falls back to the algorithm that always fed the section (`GET /api/products/:id/rail/:key`). Only
+  published, active products are served; if every pick has since been unpublished the automatic list is used.
+- **Structured data.** A product with FAQ entries and the FAQ section on emits `FAQPage` JSON-LD next to the existing `Product` JSON-LD.
+- **Preview.** `/preview/:id` (admin session required) renders the same `ProductPageView` component as the live page from the saved product in any status,
+  with a banner, no view tracking and no structured data. `GET /api/products/:id/preview` is `requireAdmin`. The live route still 404s a draft.
+- **Migration** `20260921180000_add_page_sections_faq_relations` is additive (five tables, one enum, a CHECK that a product isn't related to itself).
+
 ## Permissions
 
-Any admin can read the catalog setup (the product editor needs it). All catalog **writes are OWNER-only**.
+Any admin can read the catalog setup (the product editor needs it). All catalog **writes are OWNER-only**, including the store-wide page-section defaults.
+STAFF can still set a product's own sections, FAQ and picks, because those are part of editing the product.
 
 ## Legacy compatibility
 
@@ -97,6 +119,7 @@ type by the enum key, and its JSON attribute values are still shown until it is 
   the transaction that adds it.
 - CI's deploy job runs `docker compose up -d --build` **before** `prisma migrate deploy`, so for a few seconds the new API code runs
   against the old schema. Product detail reads will 500 in that window; nothing is lost.
+- P4 adds `20260921180000_add_page_sections_faq_relations`: additive; nothing to backfill (no override rows means the old page).
 - P3 adds `20260921160000_add_variant_galleries_media_sku`: additive; each variant's existing image is copied into its gallery, built-in types get SKU codes.
 - P2 adds `20260921140000_add_product_status_seo_care_materials`: additive; inactive products backfill to `UNPUBLISHED`, everything else to
   `PUBLISHED` (the column default). `ProductMaterial` has CHECK constraints (a name is required; percentage in (0, 100]) that Prisma doesn't model.

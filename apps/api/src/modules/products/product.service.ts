@@ -126,7 +126,7 @@ const publicDetailRelations = {
 const relationOrder: Prisma.ProductRelationOrderByWithRelationInput[] = [{ kind: "asc" }, { sortOrder: "asc" }];
 const detailRelations = {
   ...publicDetailRelations,
-  relations: { orderBy: relationOrder },
+  relations: { orderBy: relationOrder, include: { related: { select: { id: true, name: true } } } },
 } as const;
 const detailInclude = { ...include, ...detailRelations };
 // What the product page itself needs beyond the shared public select: status-independent SEO overrides and
@@ -154,7 +154,7 @@ type PresentableRow = {
   materials: { materialId: string | null; customName: string | null; percentage: { toString(): string } | number | null; material: { name: string } | null }[];
   sections?: SectionRow[];
   faqs?: { question: string; answer: string }[];
-  relations?: { kind: string; relatedId: string }[];
+  relations?: { kind: string; relatedId: string; related?: { id: string; name: string } }[];
 };
 type Presented<T> = Omit<T, "attributeValues" | "type" | "attributes" | "typeId" | "carePreset" | "materials" | "sections" | "faqs" | "relations"> & {
   typeId: string | null;
@@ -216,14 +216,14 @@ interface AdminExtras {
   sectionOverrides: ReturnType<typeof overridesFromRows>;
   sectionsResolved: ResolvedSection[];
   faqs: { question: string; answer: string }[];
-  relations: { kind: string; productIds: string[] }[];
+  relations: { kind: string; productIds: string[]; products: { id: string; name: string }[] }[];
 }
 
 /** [{kind, relatedId}] in stored order -> [{kind, productIds}] — the shape the editor and the write API use. */
-function groupRelations(rows: { kind: string; relatedId: string }[] | undefined) {
-  const byKind = new Map<string, string[]>();
-  for (const r of rows ?? []) byKind.set(r.kind, [...(byKind.get(r.kind) ?? []), r.relatedId]);
-  return [...byKind.entries()].map(([kind, productIds]) => ({ kind, productIds }));
+function groupRelations(rows: { kind: string; relatedId: string; related?: { id: string; name: string } }[] | undefined) {
+  const byKind = new Map<string, { id: string; name: string }[]>();
+  for (const r of rows ?? []) byKind.set(r.kind, [...(byKind.get(r.kind) ?? []), { id: r.relatedId, name: r.related?.name ?? r.relatedId }]);
+  return [...byKind.entries()].map(([kind, products]) => ({ kind, productIds: products.map((p) => p.id), products }));
 }
 
 async function presentProduct<T extends PresentableRow>(row: T): Promise<Presented<T>> {
@@ -1851,7 +1851,11 @@ export const isRailKey = (key: string): key is RailKey => key in RAILS;
 export async function getRail(productId: string, key: RailKey) {
   const { kind, fallback } = RAILS[key];
   const picks = await prisma.productRelation.findMany({ where: { productId, kind }, orderBy: { sortOrder: "asc" }, select: { relatedId: true } });
-  if (picks.length) return { source: "curated" as const, items: await getProductsByIds(picks.map((p) => p.relatedId)) };
+  if (picks.length) {
+    // Picks that were since unpublished or deleted drop out; if none are left the section must not go blank.
+    const items = await getProductsByIds(picks.map((p) => p.relatedId));
+    if (items.length) return { source: "curated" as const, items };
+  }
   return { source: "auto" as const, items: await fallback(productId) };
 }
 

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, LayoutTemplate, Pencil, Plus, Trash2, X } from "lucide-react";
-import { ATTRIBUTE_DATA_TYPE_LABELS, COMPLETENESS_CHECKS, OPTIONAL_COMPLETENESS_KEYS, type SizeGuideMode, type VariantDimension } from "@clothing-brand/shared";
+import { SectionSettingsEditor, layerOf } from "@/components/admin/section-settings-editor";
+import { ATTRIBUTE_DATA_TYPE_LABELS, COMPLETENESS_CHECKS, OPTIONAL_COMPLETENESS_KEYS, type SectionOverrideInput, type SizeGuideMode, type VariantDimension } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -45,6 +46,7 @@ interface Draft {
   sizeGuidePresetId: string;
   carePresetId: string;
   requiredChecks: string[];
+  sections: SectionOverrideInput[];
   attributes: AttributeDraft[];
   isArchived: boolean;
 }
@@ -58,6 +60,7 @@ const EMPTY: Draft = {
   sizeGuidePresetId: "",
   carePresetId: "",
   requiredChecks: [],
+  sections: [],
   attributes: [],
   isArchived: false,
 };
@@ -87,6 +90,7 @@ export default function TemplatesPage() {
   const { data: groupsData } = useQuery({ queryKey: ["catalog-spec-groups"], queryFn: catalogApi.listSpecGroups });
   const { data: guidesData } = useQuery({ queryKey: ["catalog-size-guides"], queryFn: catalogApi.listSizeGuides });
   const { data: careData } = useQuery({ queryKey: ["catalog-care-guides"], queryFn: catalogApi.listCareGuides });
+  const { data: globalSectionsData } = useQuery({ queryKey: ["catalog-sections"], queryFn: catalogApi.getGlobalSections });
   const templates = data?.templates ?? [];
   const definitions = defsData?.attributes ?? [];
   const specGroups = groupsData?.specGroups ?? [];
@@ -115,6 +119,7 @@ export default function TemplatesPage() {
         sizeGuidePresetId: draft.sizeGuideMode === "NOT_APPLICABLE" ? "" : draft.sizeGuidePresetId,
         carePresetId: draft.carePresetId,
         requiredChecks: draft.requiredChecks,
+        sections: draft.sections,
         attributes: draft.attributes,
         isArchived: draft.isArchived,
       };
@@ -144,6 +149,7 @@ export default function TemplatesPage() {
       sizeGuidePresetId: target.sizeGuidePresetId ?? "",
       carePresetId: target.carePresetId ?? "",
       requiredChecks: target.requiredChecks,
+      sections: target.sections as SectionOverrideInput[],
       attributes: target.attributes.map((a) => ({
         definitionId: a.definitionId,
         required: a.required,
@@ -365,6 +371,18 @@ export default function TemplatesPage() {
                 </label>
               ))}
             </div>
+          </FormSection>
+
+          <FormSection
+            title="Page sections"
+            description="How the product page is laid out for products of this template. Anything left as Inherit follows the store settings; a product can still override it."
+          >
+            <SectionSettingsEditor
+              level="template"
+              base={{ global: layerOf((globalSectionsData?.overrides ?? []) as SectionOverrideInput[]) }}
+              value={draft.sections}
+              onChange={(sections) => setDraft({ ...draft, sections })}
+            />
           </FormSection>
 
           <FormSection title="Attributes" description="The fields products of this type collect, in display order.">

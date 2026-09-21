@@ -177,7 +177,7 @@ export interface Product {
   sectionOverrides?: (SectionOverride & { sectionKey: string })[];
   sectionsResolved?: ResolvedSection[];
   faqs?: { question: string; answer: string }[];
-  relations?: { kind: "RELATED" | "CROSS_SELL" | "UPSELL" | "FREQUENTLY_BOUGHT" | "RECOMMENDED"; productIds: string[] }[];
+  relations?: { kind: "RELATED" | "CROSS_SELL" | "UPSELL" | "FREQUENTLY_BOUGHT" | "RECOMMENDED"; productIds: string[]; products?: { id: string; name: string }[] }[];
   deletedAt: string | null;
   variants: ProductVariant[];
   images: ProductImage[];
