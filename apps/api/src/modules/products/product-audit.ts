@@ -42,6 +42,9 @@ export interface AuditSnapshot {
   carePresetId?: string | null;
   careOverride?: unknown;
   attributes: Record<string, unknown>;
+  sectionOverrides?: { sectionKey: string; enabled?: unknown; sortOrder?: unknown; title?: unknown; content?: unknown }[];
+  faqs?: { question: string; answer: string }[];
+  relations?: { kind: string; productIds: string[] }[];
   materials?: { materialId: string | null; customName: string | null; percentage: unknown }[];
   variants: {
     id: string;
@@ -132,6 +135,27 @@ export function diffProduct(before: AuditSnapshot, after: AuditSnapshot): AuditE
     if (!same(beforeAttrs[key], afterAttrs[key])) attrChanges.push({ field: key, from: short(beforeAttrs[key] ?? null), to: short(afterAttrs[key] ?? null) });
   }
   push("product.attributes_updated", attrChanges);
+
+  // Page sections: reported per section that changed, so "hid Care, moved FAQ up" reads as such.
+  const sectionMap = (s: AuditSnapshot) => Object.fromEntries((s.sectionOverrides ?? []).map((o) => [o.sectionKey, JSON.stringify({ enabled: o.enabled, sortOrder: o.sortOrder, title: o.title, content: o.content ? "(own text)" : null })]));
+  const beforeSections = sectionMap(before);
+  const afterSections = sectionMap(after);
+  push(
+    "product.sections_updated",
+    [...new Set([...Object.keys(beforeSections), ...Object.keys(afterSections)])]
+      .filter((k) => beforeSections[k] !== afterSections[k])
+      .map((k) => ({ field: `section ${k}`, from: beforeSections[k] ?? "default", to: afterSections[k] ?? "default" })),
+  );
+  if (!same(before.faqs ?? [], after.faqs ?? [])) {
+    push("product.faq_updated", [{ field: "faq", from: `${before.faqs?.length ?? 0} question(s)`, to: `${after.faqs?.length ?? 0} question(s)` }]);
+  }
+  const relCount = (s: AuditSnapshot, kind: string) => s.relations?.find((r) => r.kind === kind)?.productIds ?? [];
+  push(
+    "product.related_updated",
+    [...new Set([...(before.relations ?? []), ...(after.relations ?? [])].map((r) => r.kind))]
+      .filter((k) => !same(relCount(before, k), relCount(after, k)))
+      .map((k) => ({ field: `${k.toLowerCase().replace(/_/g, " ")} products`, from: relCount(before, k).length, to: relCount(after, k).length })),
+  );
 
   push("product.seo_updated", pick(before, after, ["seoTitle", "seoDescription", "focusKeyword", "ogTitle", "ogDescription", "ogImageUrl", "canonicalUrl", "slug"]));
   push("product.care_updated", pick(before, after, ["carePresetId", "careOverride"]));

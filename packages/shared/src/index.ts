@@ -38,5 +38,6 @@ export * from "./config/product-types";
 export * from "./completeness";
 export * from "./sku";
 export * from "./gallery";
+export * from "./sections";
 
 export * from "./types";
