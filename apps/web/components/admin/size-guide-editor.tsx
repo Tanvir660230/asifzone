@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import type { ProductTypeConfig } from "@clothing-brand/shared";
+import { DEFAULT_SIZE_GUIDE, type ProductTypeConfig } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,12 +17,11 @@ interface SizeGuideEditorProps {
 }
 
 export function SizeGuideEditor({ config, watch, setValue }: SizeGuideEditorProps) {
-  const sg = watch("attributes.sizeGuide") || {
+  // With nothing saved yet the storefront shows DEFAULT_SIZE_GUIDE (when the type enables it by
+  // default), so the editor starts from that same table; the first edit saves it onto the product.
+  const sg = watch("attributes.sizeGuide") ?? {
+    ...DEFAULT_SIZE_GUIDE,
     enabled: config.sizeGuide?.defaultEnabled ?? false,
-    title: `${config.label} Size Guide`,
-    unit: "inch",
-    columns: ["Size", "Chest", "Length"],
-    rows: [["S", "38", "40"], ["M", "40", "41"], ["L", "42", "42"], ["XL", "44", "43"]]
   };
 
   if (!config.sizeGuide?.supported) {
