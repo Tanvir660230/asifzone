@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel } from "@clothing-brand/shared";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
@@ -88,7 +89,7 @@ export function CartDrawer() {
                         {item.productName}
                       </Link>
                       <p className="mt-0.5 text-xs text-ink-400">
-                        {[item.size, item.color].filter(Boolean).join(" / ")}
+                        {formatVariantLabel(item.size, item.color)}
                       </p>
                     </div>
                     <div className="flex items-center justify-between">

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel } from "@clothing-brand/shared";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -159,7 +160,7 @@ export default function InventoryPage() {
                       <>
                         <div>{m.variant.product.name}</div>
                         <div className="text-xs text-ink-400">
-                          {m.variant.sku} · {m.variant.size}/{m.variant.color}
+                          {[m.variant.sku, formatVariantLabel(m.variant.size, m.variant.color, "/")].filter(Boolean).join(" · ")}
                         </div>
                       </>
                     ) : (
@@ -209,7 +210,7 @@ export default function InventoryPage() {
                   <>
                     <p className="truncate font-medium text-ink-900">{m.variant.product.name}</p>
                     <p className="truncate text-xs text-ink-400">
-                      {m.variant.sku} · {m.variant.size}/{m.variant.color}
+                      {[m.variant.sku, formatVariantLabel(m.variant.size, m.variant.color, "/")].filter(Boolean).join(" · ")}
                     </p>
                   </>
                 ) : (

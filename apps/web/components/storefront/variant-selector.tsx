@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
-import { getProductTypeConfig, type ProductVariant, type SizeGuideData } from "@clothing-brand/shared";
+import { NO_SIZE_VALUE, getProductTypeConfig, type ProductVariant, type SizeGuideData } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { cn, isPaleColor } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
@@ -70,8 +70,10 @@ export function VariantSelector({
   const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))).filter(Boolean), [variants]);
   // A picker is shown when the type has that dimension (Volume, Case Size, Color, ...) or when the
   // data really offers a choice. A single value (e.g. "Standard", or no color at all) is
-  // auto-selected below and needs no picker.
-  const showSizes = sizes.length > 0 && (Boolean(sizeDim) || sizes.length > 1);
+  // auto-selected below and needs no picker — a lone "Standard" size is a placeholder, not a value
+  // worth showing, even on a type that has a size dimension.
+  const onlyPlaceholderSize = sizes.length === 1 && sizes[0] === NO_SIZE_VALUE;
+  const showSizes = sizes.length > 0 && !onlyPlaceholderSize && (Boolean(sizeDim) || sizes.length > 1);
   const showColors = colors.length > 0 && (Boolean(colorDim) || colors.length > 1);
   const sizeLabel = sizeDim?.label ?? "Size";
   const colorLabel = colorDim?.label ?? "Color";

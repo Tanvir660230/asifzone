@@ -1,3 +1,4 @@
+import { formatVariantSuffix } from "@clothing-brand/shared";
 import type { Order, StoreSettings } from "@clothing-brand/shared";
 import { formatPrice } from "@/lib/format";
 
@@ -59,7 +60,7 @@ export function InvoiceDocument({ order, store }: InvoiceDocumentProps) {
               // concern left specific to a variable-length table.
               <tr key={item.id} className="border-b border-ink-50 print:break-inside-avoid">
                 <td className="py-2">
-                  {item.productNameSnapshot} ({item.sizeSnapshot}/{item.colorSnapshot})
+                  {item.productNameSnapshot}{formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)}
                 </td>
                 <td className="py-2 text-ink-500">{item.skuSnapshot}</td>
                 <td className="py-2 text-right">{item.quantity}</td>

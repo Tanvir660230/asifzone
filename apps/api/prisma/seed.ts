@@ -146,7 +146,7 @@ async function seedDemoCatalog() {
       isFeatured: true,
       brandTier: "PREMIUM" as const,
       variants: [
-        { sku: "DEMO-WAL-TAN", size: "One Size", color: "Tan", colorHex: "#D2B48C", stock: 50 },
+        { sku: "DEMO-WAL-TAN", size: "Standard", color: "Tan", colorHex: "#D2B48C", stock: 50 },
       ],
     },
     {

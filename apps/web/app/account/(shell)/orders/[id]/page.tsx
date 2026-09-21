@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel, formatVariantSuffix } from "@clothing-brand/shared";
 import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -259,7 +260,7 @@ export default function AccountOrderDetailPage() {
               <div key={item.id} className="flex items-center justify-between text-sm">
                 <div>
                   <p className="text-ink-900">
-                    {item.productNameSnapshot} ({item.sizeSnapshot}/{item.colorSnapshot}) × {item.quantity}
+                    {item.productNameSnapshot}{formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} × {item.quantity}
                   </p>
                   {!item.live && <p className="text-xs text-ink-400">No longer available</p>}
                 </div>
@@ -406,7 +407,7 @@ export default function AccountOrderDetailPage() {
                   >
                     {itemsEligibleForExchange.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.productNameSnapshot} ({item.sizeSnapshot}/{item.colorSnapshot})
+                        {item.productNameSnapshot}{formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)}
                       </option>
                     ))}
                   </Select>
@@ -479,7 +480,7 @@ export default function AccountOrderDetailPage() {
                       </option>
                       {exchangeVariantOptions.map((v) => (
                         <option key={v.id} value={v.id}>
-                          {[v.size, v.color].filter(Boolean).join("/")}
+                          {formatVariantLabel(v.size, v.color, "/")}
                         </option>
                       ))}
                     </Select>

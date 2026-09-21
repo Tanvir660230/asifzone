@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel } from "@clothing-brand/shared";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AdjustStockInput } from "@clothing-brand/shared";
@@ -147,7 +148,7 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
                   <option value="">Select a variant…</option>
                   {selectedProduct.variants.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {v.sku} — {v.size}/{v.color} (current: {v.stock})
+                      {v.sku} — {formatVariantLabel(v.size, v.color, "/") || "Default"} (current: {v.stock})
                     </option>
                   ))}
                 </Select>

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { formatVariantSuffix } from "@clothing-brand/shared";
 import type { CreateReturnRequestInput, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -198,14 +199,14 @@ async function createExchangeOrder(
     });
     if (decremented.count === 0) {
       throw AppError.conflict(
-        `Not enough stock left for ${requestedVariant.product.name} (${requestedVariant.size}/${requestedVariant.color}) to fulfil this exchange`,
+        `Not enough stock left for ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)} to fulfil this exchange`,
       );
     }
 
     const exchangeNote =
       amountDue > 0
-        ? `Exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot} ${originalItem.sizeSnapshot}/${originalItem.colorSnapshot} → ${requestedVariant.product.name} ${requestedVariant.size}/${requestedVariant.color}) — BDT ${amountDue} due COD on delivery for the price difference`
-        : `Free exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot} ${originalItem.sizeSnapshot}/${originalItem.colorSnapshot} → ${requestedVariant.product.name} ${requestedVariant.size}/${requestedVariant.color})`;
+        ? `Exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot}${formatVariantSuffix(originalItem.sizeSnapshot, originalItem.colorSnapshot)} → ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)}) — BDT ${amountDue} due COD on delivery for the price difference`
+        : `Free exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot}${formatVariantSuffix(originalItem.sizeSnapshot, originalItem.colorSnapshot)} → ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)})`;
 
     const exchangeOrder = await tx.order.create({
       data: {

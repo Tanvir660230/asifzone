@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel } from "@clothing-brand/shared";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -452,7 +453,7 @@ export default function NewOrderPage() {
                                 )}
                               >
                                 <span>
-                                  {v.sizeLabel ?? v.size} / {v.color}{" "}
+                                  {formatVariantLabel(v.sizeLabel ?? v.size, v.color)}{" "}
                                   <span className="text-ink-400">
                                     — {v.stock > 0 ? `${v.stock} in stock` : "out of stock"}
                                   </span>
@@ -483,7 +484,7 @@ export default function NewOrderPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-ink-900">{item.productName}</p>
                       <p className="text-xs text-ink-400">
-                        {item.size} / {item.color} · {formatPrice(item.price)} each
+                        {[formatVariantLabel(item.size, item.color), `${formatPrice(item.price)} each`].filter(Boolean).join(" · ")}
                       </p>
                     </div>
                     <Input

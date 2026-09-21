@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel } from "@clothing-brand/shared";
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -327,7 +328,7 @@ export default function ProductIntelligencePage() {
                       <td className="py-2 pr-4 font-mono text-xs text-ink-500">{v.sku}</td>
                       <td className="py-2 pr-4 text-ink-800">{v.productName}</td>
                       <td className="py-2 pr-4 text-ink-600">
-                        {v.size} / {v.color}
+                        {formatVariantLabel(v.size, v.color)}
                       </td>
                       <td className="py-2 pr-4 text-ink-600">{v.unitsSold}</td>
                       <td className="py-2 text-ink-800">{formatPrice(v.revenue)}</td>

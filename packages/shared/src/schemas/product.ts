@@ -1,27 +1,19 @@
 import { z } from "zod";
 import { blankToNull, nullableCuid, nullableDate, nullableNumber, nullableString, paginationQuerySchema, slugSchema } from "./common";
-import { getProductTypeConfig } from "../config/product-types";
+import { NO_SIZE_VALUE, PRODUCT_TYPE_KEYS, getProductTypeConfig } from "../config/product-types";
 
 export const brandTierEnum = z.enum(["PREMIUM", "PLATINUM", "LUXURY"]);
 
-export const productTypeEnum = z.enum([
-  "CLOTHING",
-  "FRAGRANCE",
-  "ACCESSORY",
-  "WATCH",
-  "SHOES",
-  "COSMETICS",
-  "ISLAMIC_PRODUCT",
-  "HOME",
-]);
+export const productTypeEnum = z.enum(PRODUCT_TYPE_KEYS);
 
 export const createVariantSchema = z.object({
   id: z.string().cuid().optional(),
   sku: z.string().min(1).max(64),
   barcode: nullableString(64),
-  // Blank is allowed here: whether a size is required depends on the product type, which
-  // refineProductByType enforces (types without a size dimension fall back to "Standard").
-  size: z.string().max(32).default(""),
+  // Optional here: whether a size is required depends on the product type, which refineProductByType
+  // enforces (types without a size dimension fall back to NO_SIZE_VALUE). Left undefined — not
+  // defaulted to "" — so a partial variant update can't be mistaken for "clear the size".
+  size: z.string().max(32).optional(),
   sizeLabel: nullableString(32),
   color: nullableString(48),
   colorHex: z.preprocess(
@@ -117,7 +109,7 @@ function refineProductByType(data: ProductTypeRefineInput, ctx: z.RefinementCtx)
         path: ["variants", idx, "size"],
       });
     } else if (!v.size) {
-      v.size = "Standard";
+      v.size = NO_SIZE_VALUE;
     }
 
     if (needsColor && (!v.color || v.color.trim() === "")) {
