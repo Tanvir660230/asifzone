@@ -1,3 +1,4 @@
+import os
 import paramiko
 import sys
 
@@ -6,7 +7,9 @@ sys.stdout.reconfigure(encoding='utf-8')
 HOST = "178.16.136.125"
 PORT = 65002
 USER = "u139868009"
-PASSWORD = "NnE85.J?w&LXcqM8"
+# This repo is public: never hard-code the password. Set it in your shell before running.
+#   PowerShell: $env:DEPLOY_SSH_PASSWORD = (Read-Host)     bash: export DEPLOY_SSH_PASSWORD
+PASSWORD = os.environ.get("DEPLOY_SSH_PASSWORD") or sys.exit("Set the DEPLOY_SSH_PASSWORD environment variable first.")
 
 def inspect():
     ssh = paramiko.SSHClient()
