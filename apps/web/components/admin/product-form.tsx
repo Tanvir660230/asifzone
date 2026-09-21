@@ -1,21 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import {
-  PRODUCT_TYPE_CONFIGS,
-  PRODUCT_TYPE_KEYS,
   createProductSchema,
-  getProductTypeConfig,
+  validateProductAgainstConfig,
   type Category,
   type CreateProductInput,
   type Product,
-  type ProductTypeConfig,
+  type ResolvedTypeConfig,
 } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/admin/form-section";
 import { VariantEditor } from "./variant-editor";
 import { SizeGuideEditor } from "./size-guide-editor";
+import { AttributeFields } from "./attribute-fields";
 import type { StagedImage } from "./image-uploader";
 import { cn } from "@/lib/utils";
 
@@ -68,34 +67,51 @@ const RichTextEditor = dynamic(
   { ssr: false },
 );
 import * as attributesApi from "@/lib/api/attributes";
-function DynamicProductFields({ config, register }: { config: ProductTypeConfig; register: any }) {
-  if (!config.fields || config.fields.length === 0) return null;
-  return (
-    <FormSection title={`${config.label} specifications`} description={config.description}>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {config.fields.map((field) => {
-          const fieldName = `attributes.${field.key}` as const;
-          const isFullWidth = field.type === "TEXTAREA" || field.type === "RICH_TEXT";
-          return (
-            <div key={field.key} className={cn(isFullWidth && "sm:col-span-2")}>
-              <Label htmlFor={`attr-${field.key}`}>{field.label}</Label>
-              {field.type === "SELECT" && field.options ? (
-                <Select id={`attr-${field.key}`} {...register(fieldName)}>
-                  <option value="">Select {field.label}…</option>
-                  {field.options.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </Select>
-              ) : field.type === "TEXTAREA" ? (
-                <Textarea id={`attr-${field.key}`} placeholder={field.placeholder} rows={3} {...register(fieldName)} />
-              ) : (
-                <Input id={`attr-${field.key}`} placeholder={field.placeholder} {...register(fieldName)} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </FormSection>
+import * as catalogApi from "@/lib/api/catalog";
+
+/** Sets `value` at a nested path, creating containers as needed — used to add template-validation errors
+ * next to the ones zod already produced, in the shape react-hook-form reads them (errors.attributes.fit). */
+function setNestedError(target: Record<string, any>, path: (string | number)[], value: unknown) {
+  let node = target;
+  path.slice(0, -1).forEach((key) => {
+    node[key] ??= {};
+    node = node[key];
+  });
+  node[path[path.length - 1]!] = value;
+}
+
+/** zod checks the payload's shape; the product type's template (fetched, so it can be data) adds the rules
+ * zod can't know — required attributes, option lists, per-type variant dimensions. */
+function buildResolver(getConfig: () => ResolvedTypeConfig | undefined): Resolver<CreateProductInput> {
+  const zod = zodResolver(createProductSchema);
+  return async (values, context, options) => {
+    const result = await zod(values, context, options);
+    const config = getConfig();
+    const issues = config
+      ? validateProductAgainstConfig({ attributes: values.attributes, variants: values.variants }, config)
+      : [{ path: ["typeId"], message: "Select a product type" }];
+    if (issues.length === 0) return result;
+
+    const errors: Record<string, any> = "errors" in result ? { ...(result.errors as object) } : {};
+    for (const issue of issues) setNestedError(errors, issue.path, { type: "validate", message: issue.message });
+    return { values: {}, errors } as never;
+  };
+}
+
+/** Keeps only the attribute keys the server will accept: the selected type's fields, the size guide, and
+ * legacy keys this product already had that no type defines. Fields of the type it just left are dropped
+ * from the payload on purpose — the server keeps those values (hidden), so switching back restores them. */
+function pruneAttributes(
+  attributes: Record<string, unknown> | null | undefined,
+  config: ResolvedTypeConfig,
+  allFieldKeys: Set<string>,
+  initialKeys: Set<string>,
+) {
+  const fieldKeys = new Set(config.fields.map((f) => f.key));
+  return Object.fromEntries(
+    Object.entries(attributes ?? {}).filter(
+      ([key]) => fieldKeys.has(key) || key === "sizeGuide" || (initialKeys.has(key) && !allFieldKeys.has(key)),
+    ),
   );
 }
 
@@ -152,6 +168,9 @@ export function ProductForm({
   onVariantImageKeyChange,
 }: ProductFormProps) {
   const [tab, setTab] = useState<ProductFormTab>("basic");
+  // Includes archived types so a product already on one still shows it; they're just not offered for new choices.
+  const { data: typesData } = useQuery({ queryKey: ["catalog-types", "all"], queryFn: () => catalogApi.listTypes(true) });
+  const types = useMemo(() => typesData?.types ?? [], [typesData]);
   const { data: attributesData } = useQuery({ queryKey: ["attributes"], queryFn: attributesApi.listAttributes });
   const attributes = attributesData?.attributes ?? [];
   const categoryOptions = buildCategoryOptions(categories);
@@ -162,6 +181,8 @@ export function ProductForm({
   const { data: currentAdmin } = useCurrentAdmin();
   const canUseAi = aiStatus?.configured && currentAdmin?.admin.role === "OWNER";
 
+  const selectedConfigRef = useRef<ResolvedTypeConfig | undefined>(undefined);
+
   const {
     register,
     control,
@@ -170,7 +191,7 @@ export function ProductForm({
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<CreateProductInput>({
-    resolver: zodResolver(createProductSchema),
+    resolver: buildResolver(() => selectedConfigRef.current),
     defaultValues: initial
       ? {
           name: initial.name,
@@ -179,9 +200,9 @@ export function ProductForm({
           shortDescription: initial.shortDescription,
           sortOrder: initial.sortOrder,
           categoryId: initial.categoryId,
-          // Without these the form re-submits the select's first option ("CLOTHING") and blank
-          // spec fields, so saving any edit would reset the product's type and wipe its attributes.
-          productType: initial.productType,
+          // Without these the form would re-submit a default type and blank spec fields, so saving
+          // any edit would reset the product's type and wipe its attributes.
+          typeId: initial.typeId ?? initial.resolved?.type?.id ?? "",
           attributes: initial.attributes ?? {},
           brand: initial.brand,
           brandTier: initial.brandTier,
@@ -212,7 +233,7 @@ export function ProductForm({
           })),
         }
       : {
-          productType: "CLOTHING",
+          typeId: "",
           attributes: {},
           brandTier: "PREMIUM",
           isActive: true,
@@ -223,6 +244,20 @@ export function ProductForm({
           variants: [{ sku: "", size: "", color: "", stock: 0, attributeValueIds: [] }],
         },
   });
+
+  const typeId = watch("typeId");
+  const selectedConfig = types.find((t) => t.typeId === typeId);
+  selectedConfigRef.current = selectedConfig;
+  const allFieldKeys = new Set(types.flatMap((t) => t.fields.map((f) => f.key)));
+  const initialAttributeKeys = new Set(Object.keys(initial?.attributes ?? {}));
+
+  // A new product starts on the first active type (Clothing, unless an admin reordered them).
+  useEffect(() => {
+    if (!initial && !typeId) {
+      const first = types.find((t) => t.isActive);
+      if (first) setValue("typeId", first.typeId);
+    }
+  }, [initial, typeId, types, setValue]);
 
   const basePrice = watch("basePrice");
   const costPrice = watch("costPrice");
@@ -235,7 +270,7 @@ export function ProductForm({
   const aiProductContext = { productName: productName || undefined, category: categoryName, brand: brandName ?? undefined };
 
   const TAB_FIELDS: Record<ProductFormTab, string[]> = {
-    basic: ["name", "categoryId", "brand", "brandTier", "sortOrder", "shortDescription", "description"],
+    basic: ["name", "categoryId", "typeId", "attributes", "brand", "brandTier", "sortOrder", "shortDescription", "description"],
     pricing: ["basePrice", "compareAtPrice", "costPrice", "taxRate", "trackInventory", "lowStockThreshold", "restockDate"],
     variants: ["variants"],
     seo: ["seoTitle", "seoDescription"],
@@ -243,7 +278,12 @@ export function ProductForm({
   const tabHasError = (t: ProductFormTab) => TAB_FIELDS[t].some((f) => f in errors);
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form
+      onSubmit={handleSubmit((values) =>
+        onSubmit(selectedConfig ? { ...values, attributes: pruneAttributes(values.attributes, selectedConfig, allFieldKeys, initialAttributeKeys) } : values),
+      )}
+      className="space-y-6"
+    >
       <div className="mb-2 flex flex-wrap gap-1 border-b border-ink-100">
         {TABS.map((t) => (
           <button
@@ -285,14 +325,34 @@ export function ProductForm({
               </div>
 
               <div>
-                <Label htmlFor="productType">Product type</Label>
-                <Select id="productType" {...register("productType")}>
-                  {PRODUCT_TYPE_KEYS.map((key) => (
-                    <option key={key} value={key}>
-                      {PRODUCT_TYPE_CONFIGS[key].label} — {PRODUCT_TYPE_CONFIGS[key].description}
-                    </option>
-                  ))}
-                </Select>
+                <Label htmlFor="typeId">Product type</Label>
+                {/* Controlled on purpose: the options arrive after the form mounts, and an uncontrolled
+                    select registered before then keeps the browser's "first option" instead of the
+                    product's saved type. */}
+                <Controller
+                  control={control}
+                  name="typeId"
+                  render={({ field }) => (
+                    <Select id="typeId" ref={field.ref} value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} onBlur={field.onBlur}>
+                      {types.length === 0 && <option value="">Loading types…</option>}
+                      {types
+                        .filter((t) => t.isActive || t.typeId === typeId)
+                        .map((t) => (
+                          <option key={t.typeId} value={t.typeId}>
+                            {t.name}
+                            {t.isActive ? "" : " (archived)"}
+                          </option>
+                        ))}
+                    </Select>
+                  )}
+                />
+                {selectedConfig?.description && <p className="mt-1 text-xs text-ink-400">{selectedConfig.description}</p>}
+                {initial && typeId && typeId !== initial.typeId && (
+                  <p className="mt-1 text-xs text-brass-700">
+                    Changing the type changes which fields appear. Values for fields the new type doesn&rsquo;t have are kept and come back if you switch back.
+                  </p>
+                )}
+                {errors.typeId && <p className="mt-1 text-xs text-danger-600">{errors.typeId.message}</p>}
               </div>
 
               <div>
@@ -367,8 +427,18 @@ export function ProductForm({
               />
             </div>
           </FormSection>
-          <DynamicProductFields config={getProductTypeConfig(watch("productType"))} register={register} />
-          <SizeGuideEditor config={getProductTypeConfig(watch("productType"))} control={control} register={register} watch={watch} setValue={setValue} />
+          {selectedConfig && (
+            <>
+              <AttributeFields
+                fields={selectedConfig.fields}
+                control={control}
+                errors={errors}
+                title={`${selectedConfig.name} details`}
+                description={selectedConfig.description ?? undefined}
+              />
+              <SizeGuideEditor typeName={selectedConfig.name} sizeGuide={selectedConfig.sizeGuide} watch={watch} setValue={setValue} />
+            </>
+          )}
         </>
       )}
 
@@ -478,7 +548,8 @@ export function ProductForm({
           watch={watch}
           setValue={setValue}
           attributes={attributes}
-          productType={watch("productType")}
+          variantDimensions={selectedConfig?.variantDimensions}
+          typeName={selectedConfig?.name}
           productImages={initial?.images ?? []}
           stagedImages={stagedImages}
           variantImageKeys={variantImageKeys}

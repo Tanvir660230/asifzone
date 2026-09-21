@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
-import { NO_SIZE_VALUE, getProductTypeConfig, type ProductVariant, type SizeGuideData } from "@clothing-brand/shared";
+import { NO_SIZE_VALUE, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { cn, isPaleColor } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
@@ -25,7 +25,9 @@ interface VariantSelectorProps {
   basePrice: string;
   lowStockThreshold: number;
   restockDate: string | null;
-  productType?: string;
+  /** The type's variant dimensions (labels and which of size/colour it uses), from the product's
+   * resolved view. Empty = no opinion: pickers show only when the data really offers a choice. */
+  variantDimensions?: VariantDimension[];
   /** The product's saved size guide, if any. Undefined means "use the default chart". */
   sizeGuide?: SizeGuideData;
   /** Whether to offer the size guide at all — decided by the parent from the type config and the
@@ -54,7 +56,7 @@ export function VariantSelector({
   basePrice,
   lowStockThreshold,
   restockDate,
-  productType = "CLOTHING",
+  variantDimensions = [],
   sizeGuide,
   showSizeGuide = false,
   onVariantChange,
@@ -62,9 +64,8 @@ export function VariantSelector({
   highlightMissing,
   onRequireSelection,
 }: VariantSelectorProps) {
-  const config = getProductTypeConfig(productType);
-  const sizeDim = config.variantDimensions.find((d) => d.targetField === "size");
-  const colorDim = config.variantDimensions.find((d) => d.targetField === "color");
+  const sizeDim = variantDimensions.find((d) => d.targetField === "size");
+  const colorDim = variantDimensions.find((d) => d.targetField === "color");
 
   const sizes = useMemo(() => Array.from(new Set(variants.map((v) => v.size))), [variants]);
   const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))).filter(Boolean), [variants]);

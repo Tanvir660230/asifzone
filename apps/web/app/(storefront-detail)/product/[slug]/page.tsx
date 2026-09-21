@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import type { Product } from "@clothing-brand/shared";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import DOMPurify from "isomorphic-dompurify";
@@ -31,6 +32,22 @@ interface Props {
   // Next.js 15: params is a Promise on server components (was a plain object pre-15) — must be
   // awaited before use.
   params: Promise<{ slug: string }>;
+}
+
+/** RICH_TEXT attribute values are admin-authored HTML. They are sanitized here, on the server — the client
+ * component that renders them can't do it (isomorphic-dompurify's jsdom fallback breaks in the browser). */
+function sanitizeRichTextSpecs<P extends Product>(product: P): P {
+  if (!product.resolved) return product;
+  return {
+    ...product,
+    resolved: {
+      ...product.resolved,
+      specGroups: product.resolved.specGroups.map((group) => ({
+        ...group,
+        items: group.items.map((item) => (item.dataType === "RICH_TEXT" ? { ...item, value: DOMPurify.sanitize(String(item.value)) } : item)),
+      })),
+    },
+  };
 }
 
 async function loadProduct(slug: string) {
@@ -126,7 +143,8 @@ export default async function ProductPage({ params }: Props) {
   const data = await loadProduct(slug);
   if (!data) notFound();
 
-  const { product } = data;
+  const { product: rawProduct } = data;
+  const product = sanitizeRichTextSpecs(rawProduct);
   const [urgencySignals, { settings }] = await Promise.all([
     getUrgencySignals(product.id),
     getSiteSettings(),

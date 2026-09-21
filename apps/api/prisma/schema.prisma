@@ -20,6 +20,29 @@ enum ProductType {
   COSMETICS
   ISLAMIC_PRODUCT
   HOME
+  /// Legacy mirror for admin-created types: the real type is Product.typeId -> ProductTypeDef. The enum
+  /// itself can't grow at runtime, which is exactly why types moved into a table.
+  CUSTOM
+}
+
+enum AttributeDataType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  MEASUREMENT
+  BOOLEAN
+  SELECT
+  MULTI_SELECT
+  DATE
+  URL
+  RICH_TEXT
+}
+
+/// Whether a template's products offer a size guide, and whether it starts switched on.
+enum SizeGuideMode {
+  NOT_APPLICABLE
+  OFF_BY_DEFAULT
+  ON_BY_DEFAULT
 }
 
 enum BrandTier {
@@ -321,27 +344,35 @@ model AttributeValue {
 }
 
 model Product {
-  id                String           @id @default(cuid())
+  id                String                  @id @default(cuid())
   name              String
-  slug              String           @unique
-  description       String           @default("")
+  slug              String                  @unique
+  description       String                  @default("")
   shortDescription  String?
-  sortOrder         Int              @default(0)
+  sortOrder         Int                     @default(0)
   categoryId        String
-  category          Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  productType       ProductType      @default(CLOTHING)
+  category          Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  /// Deprecated mirror of typeId's legacy enum value — kept so a rollback and any stale client keep working.
+  productType       ProductType             @default(CLOTHING)
+  /// Real product type (admin-managed). Nullable so rows written by older code still load; the service
+  /// resolves `typeId ?? ProductTypeDef.key = productType`.
+  typeId            String?
+  type              ProductTypeDef?         @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  /// Now only holds what has no attribute definition: the product's own sizeGuide and any legacy key
+  /// nobody has defined. Values for defined attributes live in ProductAttributeValue.
   attributes        Json?
+  attributeValues   ProductAttributeValue[]
   brand             String?
-  brandTier         BrandTier        @default(PREMIUM)
-  basePrice         Decimal          @db.Decimal(10, 2)
-  compareAtPrice    Decimal?         @db.Decimal(10, 2)
-  costPrice         Decimal?         @db.Decimal(10, 2)
-  taxRate           Decimal?         @db.Decimal(5, 2)
-  trackInventory    Boolean          @default(true)
-  lowStockThreshold Int              @default(5)
+  brandTier         BrandTier               @default(PREMIUM)
+  basePrice         Decimal                 @db.Decimal(10, 2)
+  compareAtPrice    Decimal?                @db.Decimal(10, 2)
+  costPrice         Decimal?                @db.Decimal(10, 2)
+  taxRate           Decimal?                @db.Decimal(5, 2)
+  trackInventory    Boolean                 @default(true)
+  lowStockThreshold Int                     @default(5)
   restockDate       DateTime?
-  isActive          Boolean          @default(true)
-  isFeatured        Boolean          @default(false)
+  isActive          Boolean                 @default(true)
+  isFeatured        Boolean                 @default(false)
   seoTitle          String?
   seoDescription    String?
   deletedAt         DateTime?
@@ -355,13 +386,14 @@ model Product {
   /// Denormalized from ProductReview (APPROVED only) so every product listing can show a rating
   /// without an aggregate join on every request — recomputed whenever a review is approved,
   /// rejected (after having been approved), or deleted.
-  avgRating         Float            @default(0)
-  reviewCount       Int              @default(0)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  avgRating         Float                   @default(0)
+  reviewCount       Int                     @default(0)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
   @@index([categoryId, isActive])
   @@index([deletedAt])
+  @@index([typeId])
 }
 
 /// Anonymous, aggregate-only log of storefront product-page views — same spirit as SearchLog.
@@ -383,18 +415,18 @@ model ProductViewLog {
 /// without a second query. Powers traffic sources, conversion rate, bounce rate, and campaign
 /// performance; joined to Order.sessionId for revenue attribution.
 model PageView {
-  id          String   @id @default(cuid())
-  sessionId   String
+  id             String   @id @default(cuid())
+  sessionId      String
   /// Persistent (1yr cookie) visitor id, distinct from `sessionId` (a browser-session cookie
   /// cleared on close) — lets BI metrics recognize the same person across visits. Nullable since
   /// rows recorded before this column existed have no value here.
-  visitorId   String?
-  path        String
-  referrer    String?
-  utmSource   String?
-  utmMedium   String?
-  utmCampaign String?
-  userAgent   String?
+  visitorId      String?
+  path           String
+  referrer       String?
+  utmSource      String?
+  utmMedium      String?
+  utmCampaign    String?
+  userAgent      String?
   /// Filled by a second "exit" beacon (navigator.sendBeacon) fired when the visitor leaves this
   /// page — null until then, and forever null for a row whose exit beacon never arrived (tab
   /// killed, browser crash, etc.), which is expected and excluded from engagement averages.
@@ -403,16 +435,16 @@ model PageView {
   clickCount     Int?
   /// Derived server-side from whether a valid customer session cookie rode along with the beacon —
   /// never trusted from the request body. Defaults false (guest) since most pageviews are.
-  isLoggedIn  Boolean  @default(false)
+  isLoggedIn     Boolean  @default(false)
   /// Primary Accept-Language tag (e.g. "en-US"), read server-side from the request header.
-  language    String?
+  language       String?
   /// geoip-lite lookup off the request IP — offline/free, so accuracy (esp. city-level) is rough,
   /// particularly for mobile-carrier IPs common in this store's market. Null on a lookup miss
   /// (private/local IPs in dev, or an address geoip-lite's bundled database doesn't cover).
-  countryCode String?
-  region      String?
-  city        String?
-  createdAt   DateTime @default(now())
+  countryCode    String?
+  region         String?
+  city           String?
+  createdAt      DateTime @default(now())
 
   @@index([sessionId, createdAt])
   @@index([createdAt])
@@ -535,39 +567,39 @@ model ProductImage {
 }
 
 model Customer {
-  id                      String                   @id @default(cuid())
-  name                    String
+  id                       String                   @id @default(cuid())
+  name                     String
   /// Nullable because a guest checkout with only a phone number (very common for COD orders) still
   /// creates a Customer row — see findOrCreateGuestCustomer in customer.service.ts. Postgres allows
   /// multiple NULLs under a unique constraint, so uniqueness among real emails still holds.
-  email                   String?                  @unique
+  email                    String?                  @unique
   /// Set once the email-verification link is clicked, or immediately for Google/phone-OTP signups
   /// (Google verifies email ownership itself; phone-OTP accounts skip email verification entirely).
-  emailVerifiedAt         DateTime?
-  phone                   String?
-  passwordHash            String?
+  emailVerifiedAt          DateTime?
+  phone                    String?
+  passwordHash             String?
   /// Google "sub" claim — set for accounts created or linked via Google sign-in. Null for
   /// email/password-only or phone-OTP-only accounts.
-  googleId                String?                  @unique
-  rewardPoints            Int                      @default(0)
+  googleId                 String?                  @unique
+  rewardPoints             Int                      @default(0)
   /// Bumped on password reset so every refresh token issued before the reset is rejected —
   /// refresh tokens are stateless JWTs, so this is what lets a reset actually revoke a stolen one.
-  tokenVersion            Int                      @default(0)
+  tokenVersion             Int                      @default(0)
   /// Explicit consent for SMS marketing sends (Campaign channel SMS) — separate from `phone` itself,
   /// since phone is collected for account/contact purposes and isn't consent on its own.
-  smsMarketingOptIn       Boolean                  @default(false)
+  smsMarketingOptIn        Boolean                  @default(false)
   /// Consent for email marketing sends (Campaign channel EMAIL). Defaults to true — unlike SMS,
   /// which is opt-in from zero, existing/new customers already expect order and account emails,
   /// and marketing email was already going out to everyone before this flag existed. Every
   /// marketing send carries a one-click unsubscribe link (see lib/token-hash.ts's signPayload)
   /// that flips this to false, so the opt-out is real even though the default is opt-in.
-  emailMarketingOptIn     Boolean                  @default(true)
+  emailMarketingOptIn      Boolean                  @default(true)
   /// Admin-only freeform notes (never shown to the customer) — same convention as Order.adminNotes.
-  adminNotes              String?
+  adminNotes               String?
   /// Manually set by an admin from the customer drawer — not derived from any order/payment data.
-  isBlocked               Boolean                  @default(false)
+  isBlocked                Boolean                  @default(false)
   /// Manually flagged by an admin (e.g. repeated COD refusals) — informational only, doesn't block checkout.
-  codRisk                 Boolean                  @default(false)
+  codRisk                  Boolean                  @default(false)
   /// Cached result of Steadfast's fraud_check API for this customer's phone — refreshed on demand
   /// via the "Check delivery score" bulk action on the admin order list (checkDeliveryScoresBulk in
   /// courier.service.ts), never on a schedule, since a phone's delivery history doesn't change fast
@@ -580,20 +612,20 @@ model Customer {
   /// (no delivery history yet — not the same as a bad score, so the UI must not treat null as 0%).
   deliverySuccessRate      Float?
   deliveryScoreCheckedAt   DateTime?
-  addresses               Address[]
-  orders                  Order[]
-  wishlistItems           WishlistItem[]
-  passwordResetTokens     PasswordResetToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  pointsLedger            RewardPointsEntry[]
-  cart                    Cart?
-  stockAlerts             StockAlert[]
-  returnRequests          ReturnRequest[]
-  reviews                 ProductReview[]
-  campaignRecipients      CampaignRecipient[]
-  pushSubscriptions       PushSubscription[]
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
+  addresses                Address[]
+  orders                   Order[]
+  wishlistItems            WishlistItem[]
+  passwordResetTokens      PasswordResetToken[]
+  emailVerificationTokens  EmailVerificationToken[]
+  pointsLedger             RewardPointsEntry[]
+  cart                     Cart?
+  stockAlerts              StockAlert[]
+  returnRequests           ReturnRequest[]
+  reviews                  ProductReview[]
+  campaignRecipients       CampaignRecipient[]
+  pushSubscriptions        PushSubscription[]
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
 
   @@index([phone])
 }
@@ -802,47 +834,47 @@ model Order {
   bundle         Bundle? @relation(fields: [bundleId], references: [id], onDelete: SetNull)
   bundleDiscount Decimal @default(0) @db.Decimal(10, 2)
 
-  items                OrderItem[]
-  statusHistory        OrderStatusHistory[]
-  returnRequests       ReturnRequest[]
+  items                  OrderItem[]
+  statusHistory          OrderStatusHistory[]
+  returnRequests         ReturnRequest[]
   /// Reverse side of ReturnRequest.exchangeOrderId — an approved EXCHANGE request creates a new,
   /// separate Order (the replacement shipment) and links back here; at most one element in
   /// practice (one exchange request produces one exchange order), kept as an array only because
   /// Prisma requires a matching relation field on both sides.
-  exchangeReturnRequests ReturnRequest[] @relation("ReturnRequestExchangeOrder")
-  courierLossEvents    CourierLossEvent[]
-  notes                String?
-  adminNotes           String?
-  trackingNumber       String?
-  carrier              String?
+  exchangeReturnRequests ReturnRequest[]      @relation("ReturnRequestExchangeOrder")
+  courierLossEvents      CourierLossEvent[]
+  notes                  String?
+  adminNotes             String?
+  trackingNumber         String?
+  carrier                String?
   /// @deprecated superseded by PaymentSession.gatewayTransactionRef/providerTransactionId — kept
   /// only until the follow-up migration that drops it (see PaymentSession's doc comment); nothing
   /// reads or writes these two fields any more once payment.service.ts's cutover lands.
-  paymentSessionKey    String?
+  paymentSessionKey      String?
   /// @deprecated superseded by Payment.providerTransactionId.
-  paymentTransactionId String?
-  paymentSessions      PaymentSession[]
-  payments             Payment[]
-  refunds              Refund[]
+  paymentTransactionId   String?
+  paymentSessions        PaymentSession[]
+  payments               Payment[]
+  refunds                Refund[]
 
   /// Steadfast's internal id for the booked consignment — the key used to poll status and to
   /// match incoming webhooks back to this order. Null until "Book with Steadfast" is used.
-  courierConsignmentId String?
+  courierConsignmentId  String?
   /// Raw delivery_status string from Steadfast (e.g. "in_review", "delivered", "cancelled"),
   /// shown to the admin as-is; see mapSteadfastStatusToOrderStatus for how it affects `status`.
-  courierStatus        String?
-  courierBookedAt      DateTime?
+  courierStatus         String?
+  courierBookedAt       DateTime?
   /// Steadfast's own trackable URL (https://steadfast.com.bd/tl/{opaque-token}) — only present in
   /// the create_order/bulk-order response body, not derivable from tracking_code and not returned
   /// by status_by_cid, so bookings made before this field existed will have it null forever.
-  courierTrackingLink  String?
+  courierTrackingLink   String?
   /// Last time `courierStatus` was confirmed against Steadfast's API (webhook, cron sweep, or a
   /// manual/bulk sync) — null until the first successful sync. Drives the admin UI's "last synced"
   /// label and the staleness check in getOrderByIdWithAutoSync.
   courierStatusSyncedAt DateTime?
   /// Message from the most recent failed sync attempt; cleared on the next successful one. Lets the
   /// admin UI show "sync failed" instead of silently displaying a possibly-stale courierStatus.
-  courierSyncError     String?
+  courierSyncError      String?
 
   /// Set once an admin has reconciled a PARTIALLY_DELIVERED order — picked which items actually
   /// came back (OrderItem.returnedQuantity) and had them restocked. Status stays
@@ -902,41 +934,41 @@ model OrderStatusHistory {
 /// tracking a parallel status of its own — there's no payment-gateway refund API integrated, so
 /// "refund status" is just the order's existing status/paymentStatus shown alongside this record.
 model ReturnRequest {
-  id                String              @id @default(cuid())
-  orderId           String
-  order             Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  customerId        String
-  customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  reason            String
-  note              String?
+  id                     String              @id @default(cuid())
+  orderId                String
+  order                  Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId             String
+  customer               Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  reason                 String
+  note                   String?
   /// RETURN (default) is the original refund/restock flow. EXCHANGE is a same-order size/color
   /// swap: the fields below are only populated (and only required by the Zod schema) when this is
   /// EXCHANGE — see reviewReturnRequest in return-request.service.ts for how approval branches.
-  type              ReturnRequestType   @default(RETURN)
+  type                   ReturnRequestType   @default(RETURN)
   // EXCHANGE only, from here down. orderItemId/requestedVariantId are plain id columns with no FK
   // relation (same "no FK guarantee it still exists" reasoning as OrderItem.variantId) — the
   // Snapshot fields alongside them keep the request displayable even if the variant/product is
   // later deleted.
-  orderItemId          String?
-  originalSizeSnapshot  String?
-  originalColorSnapshot String?
+  orderItemId            String?
+  originalSizeSnapshot   String?
+  originalColorSnapshot  String?
   requestedVariantId     String?
   requestedSizeSnapshot  String?
   requestedColorSnapshot String?
   /// The free replacement Order created when an EXCHANGE request is approved — see
   /// createExchangeOrder in return-request.service.ts. Null until approved (or always, for RETURN).
-  exchangeOrderId   String?
-  exchangeOrder     Order?              @relation("ReturnRequestExchangeOrder", fields: [exchangeOrderId], references: [id], onDelete: SetNull)
+  exchangeOrderId        String?
+  exchangeOrder          Order?              @relation("ReturnRequestExchangeOrder", fields: [exchangeOrderId], references: [id], onDelete: SetNull)
   // At most one PENDING request per order is also enforced at the DB level by a raw partial unique
   // index (see migrations/..._return_request_one_pending_per_order) — Prisma's schema DSL can't
   // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
-  status            ReturnRequestStatus @default(PENDING)
-  adminNote         String?
-  reviewedAt        DateTime?
-  reviewedByAdminId String?
-  reviewedByAdmin   AdminUser?          @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  status                 ReturnRequestStatus @default(PENDING)
+  adminNote              String?
+  reviewedAt             DateTime?
+  reviewedByAdminId      String?
+  reviewedByAdmin        AdminUser?          @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
   @@index([orderId])
   @@index([customerId])
@@ -1128,12 +1160,12 @@ model StockMovement {
 /// the order's shippingDivision) rather than a real figure from Steadfast — their API exposes no
 /// per-order fee, only a merchant wallet balance (see lib/steadfast.ts).
 model CourierLossEvent {
-  id        String             @id @default(cuid())
+  id        String            @id @default(cuid())
   orderId   String
-  order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  amount    Decimal            @db.Decimal(10, 2)
+  order     Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount    Decimal           @db.Decimal(10, 2)
   reason    CourierLossReason
-  createdAt DateTime           @default(now())
+  createdAt DateTime          @default(now())
 
   @@index([orderId])
   @@index([createdAt])
@@ -1265,17 +1297,17 @@ model Notification {
 /// Single-row store configuration — always read/written via id "singleton". Fields not yet wired
 /// into a live consumer are documented at the call site, not silently unused.
 model StoreSetting {
-  id                      String   @id @default("singleton")
-  storeName               String   @default("Store")
-  tagline                 String?
-  logoUrl                 String?
-  logoOnDarkUrl           String?
-  faviconUrl              String?
-  currency                String   @default("BDT")
-  contactEmail            String?
-  contactPhone            String?
-  shippingFeeDhaka        Decimal  @default(60) @db.Decimal(10, 2)
-  shippingFeeOutsideDhaka Decimal  @default(120) @db.Decimal(10, 2)
+  id                           String   @id @default("singleton")
+  storeName                    String   @default("Store")
+  tagline                      String?
+  logoUrl                      String?
+  logoOnDarkUrl                String?
+  faviconUrl                   String?
+  currency                     String   @default("BDT")
+  contactEmail                 String?
+  contactPhone                 String?
+  shippingFeeDhaka             Decimal  @default(60) @db.Decimal(10, 2)
+  shippingFeeOutsideDhaka      Decimal  @default(120) @db.Decimal(10, 2)
   /// Estimated round-trip courier fee lost on a post-booking cancellation or partial-delivery
   /// return, zone-matched the same way as shippingFeeDhaka/OutsideDhaka above — Steadfast's API
   /// never exposes a real per-order fee (see lib/steadfast.ts), so this is an admin-entered
@@ -1283,74 +1315,74 @@ model StoreSetting {
   /// dashboard's "courier cancellation loss" figure, not billed or charged anywhere.
   courierReturnFeeDhaka        Decimal  @default(60) @db.Decimal(10, 2)
   courierReturnFeeOutsideDhaka Decimal  @default(120) @db.Decimal(10, 2)
-  taxEnabled              Boolean  @default(false)
-  defaultTaxRate          Decimal? @db.Decimal(5, 2)
-  rewardPointsPerCurrency Decimal  @default(0) @db.Decimal(10, 4)
+  taxEnabled                   Boolean  @default(false)
+  defaultTaxRate               Decimal? @db.Decimal(5, 2)
+  rewardPointsPerCurrency      Decimal  @default(0) @db.Decimal(10, 4)
   /// Prefill text appended to the active WHATSAPP SocialLink's URL as a `text` query param — the
   /// number/enable-state itself stays sourced from SocialLink (see comment above SocialLink) so
   /// there's exactly one place admins manage the WhatsApp destination.
-  whatsappMessage         String?
-  whatsappLabel           String   @default("WhatsApp")
-  callEnabled             Boolean  @default(false)
-  callLabel               String   @default("Call Us")
+  whatsappMessage              String?
+  whatsappLabel                String   @default("WhatsApp")
+  callEnabled                  Boolean  @default(false)
+  callLabel                    String   @default("Call Us")
   /// Live Chat: Tawk.to. Kept DB-driven (unlike the old NEXT_PUBLIC_TAWKTO_* env vars) so it can be
   /// toggled without a rebuild; see apps/web/components/storefront/live-chat-widget.tsx.
-  liveChatEnabled         Boolean  @default(false)
-  liveChatLabel           String   @default("Live Chat")
-  tawkPropertyId          String?
-  tawkWidgetId            String?
+  liveChatEnabled              Boolean  @default(false)
+  liveChatLabel                String   @default("Live Chat")
+  tawkPropertyId               String?
+  tawkWidgetId                 String?
   /// A single combined "we accept" graphic (all payment logos already laid out in one image) as an
   /// alternative to managing individual PaymentMethodOption rows — when set, the footer/checkout
   /// show this instead of the per-method list, since some admins would rather upload one banner
   /// than add each logo separately.
-  paymentMethodsImageUrl  String?
+  paymentMethodsImageUrl       String?
   /// Per-method checkout toggles — lets the store owner turn Cash on Delivery or the online gateway
   /// off entirely (e.g. during a COD abuse spike, or while SSLCommerz credentials are being rotated)
   /// without touching code. Both default on; enforced both in the checkout UI and server-side in
   /// order.service.ts so a stale page can't submit a disabled method.
-  codEnabled              Boolean  @default(true)
-  onlinePaymentEnabled    Boolean  @default(true)
+  codEnabled                   Boolean  @default(true)
+  onlinePaymentEnabled         Boolean  @default(true)
   /// Gates the EPS-PG checkout option, kept separate from onlinePaymentEnabled (which gates
   /// SSLCommerz) so either gateway can be toggled independently — e.g. turning EPS off while its
   /// credentials are being rotated without touching SSLCommerz or COD. Defaults off since it stays
   /// unusable until EPS sandbox/live credentials are entered via the EPS_* env vars.
-  epsPaymentEnabled      Boolean  @default(false)
+  epsPaymentEnabled            Boolean  @default(false)
   /// The content= value Google Search Console gives you for the HTML-tag verification method —
   /// pasted here and rendered as a <meta name="google-site-verification"> tag on every page,
   /// rather than requiring a file upload or DNS change to prove domain ownership.
-  googleSiteVerification  String?
-  updatedAt               DateTime @updatedAt
+  googleSiteVerification       String?
+  updatedAt                    DateTime @updatedAt
 }
 
 /// Admin-only SMS notification config — kept separate from StoreSetting because settingsRouter's
 /// GET / is public (the storefront reads it directly) and adminAlertPhones must never be exposed
 /// through that endpoint. Same lazy-create singleton pattern as StoreSetting.
 model SmsNotificationSetting {
-  id                             String   @id @default("singleton")
+  id                                   String   @id @default("singleton")
   /// Comma-separated local "01XXXXXXXXX" numbers — a shop owner may want alerts on more than one
   /// phone, so this stays one column rather than a related table (same simplicity level as other
   /// single-purpose fields on StoreSetting).
-  adminAlertPhones               String   @default("")
-  adminOrderAlertEnabled         Boolean  @default(true)
-  customerOrderPlacedEnabled     Boolean  @default(true)
-  customerOrderConfirmedEnabled  Boolean  @default(true)
-  customerOrderShippedEnabled    Boolean  @default(true)
-  customerOrderDeliveredEnabled  Boolean  @default(true)
-  customerOrderCancelledEnabled  Boolean  @default(true)
+  adminAlertPhones                     String   @default("")
+  adminOrderAlertEnabled               Boolean  @default(true)
+  customerOrderPlacedEnabled           Boolean  @default(true)
+  customerOrderConfirmedEnabled        Boolean  @default(true)
+  customerOrderShippedEnabled          Boolean  @default(true)
+  customerOrderDeliveredEnabled        Boolean  @default(true)
+  customerOrderCancelledEnabled        Boolean  @default(true)
   /// Separate from the SMS toggles above (this one gates an email, not an SMS) but kept on this
   /// same admin-only settings row rather than the public StoreSetting — same non-public reasoning
   /// as adminAlertPhones. Fires from settlePaymentSession's success branch (payment.service.ts),
   /// gated on both this flag and Order.customerEmail being present.
-  customerPaymentConfirmedEmailEnabled Boolean @default(true)
+  customerPaymentConfirmedEmailEnabled Boolean  @default(true)
   /// Admin-editable message text, with {customerName}/{orderNumber}/{total}/{storeName}
   /// placeholders — null means "use the built-in default" (packages/shared/src/sms-templates.ts),
   /// not "send nothing" (that's what the matching *Enabled toggle above is for).
-  customerOrderPlacedTemplate    String?
-  customerOrderConfirmedTemplate String?
-  customerOrderShippedTemplate   String?
-  customerOrderDeliveredTemplate String?
-  customerOrderCancelledTemplate String?
-  updatedAt                      DateTime @updatedAt
+  customerOrderPlacedTemplate          String?
+  customerOrderConfirmedTemplate       String?
+  customerOrderShippedTemplate         String?
+  customerOrderDeliveredTemplate       String?
+  customerOrderCancelledTemplate       String?
+  updatedAt                            DateTime @updatedAt
 }
 
 /// Reusable marketing SMS templates (Welcome, Eid Offer, ...) an admin picks from when messaging a
@@ -1509,4 +1541,159 @@ model PushSubscription {
   createdAt  DateTime @default(now())
 
   @@index([customerId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catalog configuration: product types, templates, attribute definitions, presets.
+// Everything below is admin-editable data — adding a product type needs no code change.
+// (`Attribute`/`AttributeValue` above are the *variant option* system — Color, Fabric — and are unrelated.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A kind of product ("Panjabi", "Watch"). Identity and grouping only — the fields, size guide and variant
+/// dimensions come from its template, so several types can share one.
+model ProductTypeDef {
+  id          String           @id @default(cuid())
+  /// Stable machine key. System types use their legacy enum value ("CLOTHING"); admin-created ones a slug.
+  key         String           @unique
+  name        String
+  description String?
+  /// Optional family ("Apparel" -> "Panjabi"); purely organisational.
+  parentId    String?
+  parent      ProductTypeDef?  @relation("ProductTypeFamily", fields: [parentId], references: [id], onDelete: SetNull)
+  children    ProductTypeDef[] @relation("ProductTypeFamily")
+  templateId  String
+  template    ProductTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  /// Value mirrored into Product.productType (CUSTOM for admin-created types).
+  legacyType  ProductType      @default(CUSTOM)
+  /// Seeded from the original hard-coded list. Can be edited or archived, never deleted.
+  isSystem    Boolean          @default(false)
+  isActive    Boolean          @default(true)
+  sortOrder   Int              @default(0)
+  products    Product[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([templateId])
+  @@index([parentId])
+}
+
+/// The reusable bundle of configuration a type points at: which attributes it collects, how variants are
+/// dimensioned, and which size guide it uses.
+model ProductTemplate {
+  id                String              @id @default(cuid())
+  name              String              @unique
+  description       String?
+  /// At most two entries — [{ targetField: "size" | "color", label, options[] }]. They map onto the
+  /// denormalised ProductVariant.size / .color columns that carts, orders and storefront filters read.
+  variantDimensions Json                @default("[]")
+  sizeGuideMode     SizeGuideMode       @default(NOT_APPLICABLE)
+  sizeGuidePresetId String?
+  sizeGuidePreset   SizeGuidePreset?    @relation(fields: [sizeGuidePresetId], references: [id], onDelete: SetNull)
+  isArchived        Boolean             @default(false)
+  attributes        TemplateAttribute[]
+  types             ProductTypeDef[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([sizeGuidePresetId])
+}
+
+/// A reusable product field ("Embroidery Type", "Movement").
+model AttributeDefinition {
+  id          String                      @id @default(cuid())
+  /// The key values are stored and served under (`attributes.embroideryType`). Immutable once created.
+  key         String                      @unique
+  label       String
+  dataType    AttributeDataType
+  /// Shown next to MEASUREMENT / NUMBER values ("cm", "ATM").
+  unit        String?
+  placeholder String?
+  helpText    String?
+  isArchived  Boolean                     @default(false)
+  options     AttributeDefinitionOption[]
+  templates   TemplateAttribute[]
+  values      ProductAttributeValue[]
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+}
+
+model AttributeDefinitionOption {
+  id           String              @id @default(cuid())
+  definitionId String
+  definition   AttributeDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  value        String
+  sortOrder    Int                 @default(0)
+
+  @@unique([definitionId, value])
+}
+
+/// A named block of specification rows on the product page ("Watch Details"). Reusable across templates.
+model SpecGroup {
+  id        String              @id @default(cuid())
+  name      String              @unique
+  sortOrder Int                 @default(0)
+  items     TemplateAttribute[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+}
+
+/// Puts an attribute definition on a template, with its per-template settings.
+model TemplateAttribute {
+  id               String              @id @default(cuid())
+  templateId       String
+  template         ProductTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  definitionId     String
+  definition       AttributeDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  required         Boolean             @default(false)
+  sortOrder        Int                 @default(0)
+  specGroupId      String?
+  specGroup        SpecGroup?          @relation(fields: [specGroupId], references: [id], onDelete: SetNull)
+  /// Overrides the definition's placeholder for this template only ("Genuine Leather" vs "100% Cotton").
+  placeholder      String?
+  showOnStorefront Boolean             @default(true)
+
+  @@unique([templateId, definitionId])
+  @@index([definitionId])
+  @@index([specGroupId])
+}
+
+/// One product's value for one attribute. Typed columns (not a JSON blob) so values can be filtered,
+/// faceted and validated against the definition.
+model ProductAttributeValue {
+  id           String              @id @default(cuid())
+  productId    String
+  product      Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  definitionId String
+  definition   AttributeDefinition @relation(fields: [definitionId], references: [id], onDelete: Restrict)
+  /// TEXT, TEXTAREA, RICH_TEXT, URL and the chosen SELECT option.
+  valueText    String?
+  /// NUMBER and MEASUREMENT (the unit comes from the definition).
+  valueNumber  Decimal?            @db.Decimal(14, 4)
+  valueBoolean Boolean?
+  valueDate    DateTime?
+  /// MULTI_SELECT: string[].
+  valueJson    Json?
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([productId, definitionId])
+  @@index([definitionId, valueText])
+}
+
+/// A reusable size chart. Columns and rows are JSON because their shape genuinely differs per product
+/// kind (cap: head circumference; shoe: EU/UK/US + foot length; apparel: chest/waist/length).
+model SizeGuidePreset {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  /// e.g. "inch", "cm (foot length)".
+  unit        String?
+  /// string[] — column headings.
+  columns     Json
+  /// string[][] — every row has exactly columns.length cells (enforced on write).
+  rows        Json
+  notes       String?
+  isArchived  Boolean           @default(false)
+  templates   ProductTemplate[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 }

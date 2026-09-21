@@ -13,7 +13,7 @@ import { ProductForm } from "@/components/admin/product-form";
 import { ImageUploader } from "@/components/admin/image-uploader";
 import * as categoriesApi from "@/lib/api/categories";
 import * as productsApi from "@/lib/api/products";
-import { ApiError } from "@/lib/api-client";
+import { describeApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 
 export default function EditProductPage() {
@@ -35,7 +35,7 @@ export default function EditProductPage() {
       await queryClient.invalidateQueries({ queryKey: ["products"] });
       toast.success("Product saved");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update product");
+      setError(describeApiError(err, "Failed to update product"));
     }
   }
 
