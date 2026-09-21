@@ -14,7 +14,10 @@ import {
   computeCompleteness,
   describeBlockers,
   isBlankAttributeValue,
+  resolveSections,
   validateProductAgainstConfig,
+  type ProductRelationsInput,
+  type ResolvedSection,
   NO_SIZE_VALUE,
   type AttributeDataType,
   type CompletenessResult,
@@ -45,6 +48,7 @@ import {
   type TypeWithTemplate,
 } from "../catalog/catalog.presenter";
 import { recordAudit } from "../../lib/audit";
+import { layerFromRows, loadGlobalRows, overridesFromRows, saveProductSections, type SectionRow } from "../catalog/sections.service";
 import { PRODUCT_CACHE_PREFIX, invalidateProductCache } from "./product.cache";
 import { diffProduct, type AuditSnapshot } from "./product-audit";
 
@@ -109,11 +113,20 @@ type PublicProduct = Prisma.ProductGetPayload<{ select: typeof PUBLIC_PRODUCT_SE
 /** Detail reads (admin editor, storefront product page) also need the typed attribute values and the
  * product's type with its template. List reads deliberately don't load them — a page of 20 cards has no
  * use for spec groups, and the extra joins would multiply. */
-const detailRelations = {
+const publicDetailRelations = {
   attributeValues: { include: { definition: { select: { key: true, dataType: true } } } },
   type: { include: TYPE_INCLUDE },
   carePreset: { select: { name: true, steps: true } },
   materials: { include: { material: { select: { name: true } } }, orderBy: { sortOrder: "asc" as const } },
+  sections: true,
+  faqs: { orderBy: { sortOrder: "asc" as const } },
+} as const;
+// The hand-picked lists are only needed to edit them; the storefront fetches each list through /rail/:key.
+// Not `as const`: Prisma wants a mutable array here.
+const relationOrder: Prisma.ProductRelationOrderByWithRelationInput[] = [{ kind: "asc" }, { sortOrder: "asc" }];
+const detailRelations = {
+  ...publicDetailRelations,
+  relations: { orderBy: relationOrder },
 } as const;
 const detailInclude = { ...include, ...detailRelations };
 // What the product page itself needs beyond the shared public select: status-independent SEO overrides and
@@ -121,12 +134,13 @@ const detailInclude = { ...include, ...detailRelations };
 const PUBLIC_DETAIL_SELECT = {
   ...PUBLIC_PRODUCT_SELECT,
   typeId: true,
+  status: true, // the admin preview labels drafts; on the public read it is always PUBLISHED
   ogTitle: true,
   ogDescription: true,
   ogImageUrl: true,
   canonicalUrl: true,
   careOverride: true,
-  ...detailRelations,
+  ...publicDetailRelations,
 } as const;
 
 type PresentableRow = {
@@ -138,8 +152,11 @@ type PresentableRow = {
   careOverride?: unknown;
   carePreset: { name: string; steps: unknown } | null;
   materials: { materialId: string | null; customName: string | null; percentage: { toString(): string } | number | null; material: { name: string } | null }[];
+  sections?: SectionRow[];
+  faqs?: { question: string; answer: string }[];
+  relations?: { kind: string; relatedId: string }[];
 };
-type Presented<T> = Omit<T, "attributeValues" | "type" | "attributes" | "typeId" | "carePreset" | "materials"> & {
+type Presented<T> = Omit<T, "attributeValues" | "type" | "attributes" | "typeId" | "carePreset" | "materials" | "sections" | "faqs" | "relations"> & {
   typeId: string | null;
   attributes: Record<string, unknown>;
   materials: { materialId: string | null; customName: string | null; percentage: number | null }[];
@@ -155,7 +172,9 @@ async function typeForRow(row: Pick<PresentableRow, "type" | "productType">): Pr
  * remainder), the editable `materials` list, and a `resolved` view (spec groups, size guide, care, materials,
  * variant dimensions) computed from the template. Also hands back the resolved type config for callers that
  * need to score the product against it. */
-async function presentWithConfig<T extends PresentableRow>(row: T): Promise<{ presented: Presented<T>; config: ResolvedTypeConfig | null }> {
+async function presentWithConfig<T extends PresentableRow>(
+  row: T,
+): Promise<{ presented: Presented<T>; config: ResolvedTypeConfig | null; admin: AdminExtras }> {
   const type = await typeForRow(row);
   const config = type ? toResolvedTypeConfig(type) : null;
   const attributes = presentAttributes(row, config?.fields ?? []);
@@ -164,13 +183,47 @@ async function presentWithConfig<T extends PresentableRow>(row: T): Promise<{ pr
     customName: m.customName,
     percentage: m.percentage === null ? null : Number(m.percentage.toString()),
   }));
+  // Sections: product override → template override → store-wide override → default, field by field.
+  const sectionsResolved = resolveSections({
+    global: layerFromRows(await loadGlobalRows()),
+    template: layerFromRows(type?.template.sections),
+    product: layerFromRows(row.sections),
+  });
+  const faqs = (row.faqs ?? []).map((f) => ({ question: f.question, answer: f.answer }));
   const resolved = buildResolvedView(config, attributes, {
     care: buildCareView({ careOverride: row.careOverride, carePreset: row.carePreset }, config),
     materials: row.materials.map((m, i) => ({ name: m.material?.name ?? m.customName ?? "", percentage: materials[i]!.percentage })),
+    // Only what the page will render: enabled sections, in order. Text is sent only for the text-type ones.
+    sections: sectionsResolved
+      .filter((s) => s.enabled)
+      .map((s) => ({ key: s.key, title: s.title, order: s.order, area: s.area, content: s.contentType === "none" ? null : s.content })),
+    faqs,
   });
-  const { attributeValues: _values, type: _type, attributes: _attrs, typeId: _typeId, carePreset: _care, materials: _materials, ...rest } = row;
-  void _values; void _type; void _attrs; void _typeId; void _care; void _materials;
-  return { presented: { ...rest, typeId: type?.id ?? null, attributes, materials, resolved } as unknown as Presented<T>, config };
+  const relations = groupRelations(row.relations);
+  const {
+    attributeValues: _values, type: _type, attributes: _attrs, typeId: _typeId, carePreset: _care, materials: _materials,
+    sections: _sections, faqs: _faqs, relations: _relations, ...rest
+  } = row;
+  void _values; void _type; void _attrs; void _typeId; void _care; void _materials; void _sections; void _faqs; void _relations;
+  return {
+    presented: { ...rest, typeId: type?.id ?? null, attributes, materials, resolved } as unknown as Presented<T>,
+    config,
+    admin: { sectionOverrides: overridesFromRows(row.sections), sectionsResolved, faqs, relations },
+  };
+}
+
+interface AdminExtras {
+  sectionOverrides: ReturnType<typeof overridesFromRows>;
+  sectionsResolved: ResolvedSection[];
+  faqs: { question: string; answer: string }[];
+  relations: { kind: string; productIds: string[] }[];
+}
+
+/** [{kind, relatedId}] in stored order -> [{kind, productIds}] — the shape the editor and the write API use. */
+function groupRelations(rows: { kind: string; relatedId: string }[] | undefined) {
+  const byKind = new Map<string, string[]>();
+  for (const r of rows ?? []) byKind.set(r.kind, [...(byKind.get(r.kind) ?? []), r.relatedId]);
+  return [...byKind.entries()].map(([kind, productIds]) => ({ kind, productIds }));
 }
 
 async function presentProduct<T extends PresentableRow>(row: T): Promise<Presented<T>> {
@@ -202,8 +255,8 @@ function completenessOf(presented: Presented<DetailRow>, config: ResolvedTypeCon
 
 /** Admin detail read: the presented product plus its completeness (never sent to the storefront). */
 async function presentForAdmin(row: DetailRow) {
-  const { presented, config } = await presentWithConfig(row);
-  return { ...presented, completeness: completenessOf(presented, config) };
+  const { presented, config, admin } = await presentWithConfig(row);
+  return { ...presented, completeness: completenessOf(presented, config), ...admin };
 }
 
 /** JSON column input: `undefined` leaves the column alone, `null` clears it (Prisma needs the JsonNull
@@ -1183,6 +1236,28 @@ async function replaceMaterials(
   }
 }
 
+/** The product's FAQ is sent whole and replaces the stored one; order is the array order. */
+async function replaceFaqs(tx: Prisma.TransactionClient, productId: string, faqs: { question: string; answer: string }[]) {
+  await tx.productFaq.deleteMany({ where: { productId } });
+  if (faqs.length) await tx.productFaq.createMany({ data: faqs.map((f, sortOrder) => ({ productId, question: f.question, answer: f.answer, sortOrder })) });
+}
+
+/** Replaces only the kinds sent. Every product must exist (and be undeleted); a product can't recommend itself. */
+async function replaceRelations(tx: Prisma.TransactionClient, productId: string, relations: ProductRelationsInput) {
+  const ids = [...new Set(relations.flatMap((r) => r.productIds))];
+  if (ids.includes(productId)) throw AppError.badRequest("A product can't be its own related product");
+  if (ids.length) {
+    const found = await tx.product.count({ where: { id: { in: ids }, deletedAt: null } });
+    if (found !== ids.length) throw AppError.badRequest("One of the selected related products no longer exists");
+  }
+  for (const { kind, productIds } of relations) {
+    await tx.productRelation.deleteMany({ where: { productId, kind } });
+    if (productIds.length) {
+      await tx.productRelation.createMany({ data: productIds.map((relatedId, sortOrder) => ({ productId, relatedId, kind, sortOrder })) });
+    }
+  }
+}
+
 /** Replaces a variant's gallery with `imageIds` (in order) and points its primary image at the first. Every image
  * must belong to this product — a variant can't be given another product's photo. */
 async function syncVariantGallery(tx: Prisma.TransactionClient, productId: string, variantId: string, imageIds: string[]) {
@@ -1210,7 +1285,7 @@ function careOverrideInput(value: string[] | null | undefined) {
   return value && value.length ? (value as Prisma.InputJsonArray) : Prisma.DbNull;
 }
 
-const toSnapshot = (p: Awaited<ReturnType<typeof getProductById>>): AuditSnapshot => p as unknown as AuditSnapshot;
+const toSnapshot = (p: Awaited<ReturnType<typeof getProductById>>): AuditSnapshot => p as unknown as AuditSnapshot; // includes sectionOverrides / faqs / relations from the admin presentation
 
 function recordProductAudit(adminId: string, productId: string, ip: string | undefined, events: ReturnType<typeof diffProduct>) {
   for (const event of events) {
@@ -1236,6 +1311,9 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
     isActive: legacyIsActive,
     materials,
     careOverride,
+    sections,
+    faqs,
+    relations,
     ...productData
   } = input;
   void _typeId; void _productType;
@@ -1275,6 +1353,9 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
         .map((f) => ({ productId: created.id, definitionId: f.definitionId, ...attributeRowData(f, defined[f.key]) }));
       if (rows.length) await tx.productAttributeValue.createMany({ data: rows });
       if (materials?.length) await replaceMaterials(tx, created.id, materials);
+      if (sections?.length) await saveProductSections(tx, created.id, sections);
+      if (faqs?.length) await replaceFaqs(tx, created.id, faqs);
+      if (relations?.length) await replaceRelations(tx, created.id, relations);
 
       // Every variant starts life with a real stock number but no history explaining it — log it
       // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
@@ -1364,6 +1445,9 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     isActive: legacyIsActive,
     materials,
     careOverride,
+    sections,
+    faqs,
+    relations,
     ...rest
   } = input;
   void _typeId; void _productType; void _attributes; void _variants;
@@ -1409,6 +1493,9 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     await prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id }, data });
       if (materials !== undefined) await replaceMaterials(tx, id, materials);
+      if (sections !== undefined) await saveProductSections(tx, id, sections);
+      if (faqs !== undefined) await replaceFaqs(tx, id, faqs);
+      if (relations !== undefined) await replaceRelations(tx, id, relations);
 
       if (attributeSplit) {
         for (const field of config.fields) {
@@ -1743,4 +1830,36 @@ export async function reorderProductImages(productId: string, imageIds: string[]
   );
   await invalidateCache();
   return getProductById(productId);
+}
+
+/* ───────────────────────── recommendation lists ───────────────────────── */
+
+type RailKey = "related" | "frequentlyBought" | "crossSell" | "upsell" | "recommended";
+
+/** For each hand-pickable list: the relation kind that feeds it, and the algorithm it falls back to when none are picked. */
+const RAILS: Record<RailKey, { kind: "RELATED" | "FREQUENTLY_BOUGHT" | "CROSS_SELL" | "UPSELL" | "RECOMMENDED"; fallback: (productId: string) => Promise<unknown[]> }> = {
+  related: { kind: "RELATED", fallback: (id) => getSimilarProducts(id) },
+  frequentlyBought: { kind: "FREQUENTLY_BOUGHT", fallback: (id) => getFrequentlyBoughtTogether(id) },
+  crossSell: { kind: "CROSS_SELL", fallback: (id) => getCompleteYourLook(id) },
+  upsell: { kind: "UPSELL", fallback: (id) => getUpgradeOptions(id) },
+  recommended: { kind: "RECOMMENDED", fallback: () => getTrendingProducts({ limit: 8 }) },
+};
+export const isRailKey = (key: string): key is RailKey => key in RAILS;
+
+/** The products for one list: the admin's picks, in order (unpublished or trashed ones silently skipped), or — when
+ * nothing is picked — the algorithm that always fed it, so an untouched product looks exactly as before. */
+export async function getRail(productId: string, key: RailKey) {
+  const { kind, fallback } = RAILS[key];
+  const picks = await prisma.productRelation.findMany({ where: { productId, kind }, orderBy: { sortOrder: "asc" }, select: { relatedId: true } });
+  if (picks.length) return { source: "curated" as const, items: await getProductsByIds(picks.map((p) => p.relatedId)) };
+  return { source: "auto" as const, items: await fallback(productId) };
+}
+
+/** What the storefront would show for this product, whatever its status — for the admin preview. Same select and
+ * presentation as the public read, so the preview can't drift from the real page. */
+export async function getProductForPreview(id: string) {
+  const row = await prisma.product.findUnique({ where: { id }, select: PUBLIC_DETAIL_SELECT });
+  if (!row) throw AppError.notFound("Product not found");
+  const [withFlash] = await withFlashSaleInfo([await presentProduct(row)]);
+  return { ...withFlash, previewStatus: row.status };
 }

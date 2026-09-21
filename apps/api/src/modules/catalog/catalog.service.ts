@@ -16,6 +16,7 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { invalidateProductCache } from "../products/product.cache";
+import { saveTemplateSections } from "./sections.service";
 import { TYPE_INCLUDE, toResolvedTypeConfig, type TypeWithTemplate } from "./catalog.presenter";
 
 /** Any catalog edit changes how products of the affected types are presented (spec groups, size guide,
@@ -311,6 +312,7 @@ export async function deleteSizeGuidePreset(id: string) {
 const TEMPLATE_INCLUDE = {
   sizeGuidePreset: { select: { id: true, name: true } },
   carePreset: { select: { id: true, name: true } },
+  sections: true,
   attributes: {
     orderBy: { sortOrder: "asc" as const },
     include: { definition: { select: { id: true, key: true, label: true, dataType: true, isArchived: true } }, specGroup: { select: { id: true, name: true } } },
@@ -365,14 +367,18 @@ async function assertTemplateReferences(
 
 export async function createTemplate(input: TemplateInput) {
   await assertTemplateReferences(input);
-  const { attributes, ...data } = input;
+  const { attributes, sections, ...data } = input;
   try {
-    const created = await prisma.productTemplate.create({
-      data: {
-        ...data,
-        variantDimensions: data.variantDimensions as Prisma.InputJsonValue,
-        attributes: { create: attributes.map((a, sortOrder) => ({ ...a, sortOrder })) },
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.productTemplate.create({
+        data: {
+          ...data,
+          variantDimensions: data.variantDimensions as Prisma.InputJsonValue,
+          attributes: { create: attributes.map((a, sortOrder) => ({ ...a, sortOrder })) },
+        },
+      });
+      if (sections?.length) await saveTemplateSections(tx, row.id, sections);
+      return row;
     });
     await afterConfigChange();
     return getTemplate(created.id);
@@ -389,9 +395,10 @@ export async function updateTemplate(id: string, input: Partial<TemplateInput>) 
     carePresetId: existing.carePresetId,
   });
 
-  const { attributes, variantDimensions, ...data } = input;
+  const { attributes, variantDimensions, sections, ...data } = input;
   try {
     await prisma.$transaction(async (tx) => {
+      if (sections) await saveTemplateSections(tx, id, sections);
       await tx.productTemplate.update({
         where: { id },
         data: { ...data, ...(variantDimensions !== undefined ? { variantDimensions: variantDimensions as Prisma.InputJsonValue } : {}) },

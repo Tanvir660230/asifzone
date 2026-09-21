@@ -61,6 +61,7 @@ productRouter.get(
 );
 productRouter.get("/slug/:slug", productController.getBySlug);
 productRouter.get("/:id/similar", productController.similar);
+productRouter.get("/:id/rail/:key", productController.rail);
 productRouter.get("/:id/frequently-bought-together", productController.frequentlyBoughtTogether);
 productRouter.get("/:id/complete-your-look", productController.completeYourLook);
 productRouter.get("/:id/budget-alternatives", productController.budgetAlternatives);
@@ -75,6 +76,7 @@ productRouter.get("/export/csv", requireAdmin, productController.exportCsv);
 productRouter.get("/", requireAdmin, validate(productListQuerySchema, "query"), productController.list);
 productRouter.get("/:id", requireAdmin, productController.getOne);
 productRouter.get("/:id/history", requireAdmin, productController.history);
+productRouter.get("/:id/preview", requireAdmin, productController.preview);
 
 productRouter.post("/bulk/delete", requireAdmin, validate(bulkProductIdsSchema), productController.bulkDelete);
 productRouter.post("/bulk/status", requireAdmin, validate(bulkProductStatusSchema), productController.bulkStatus);

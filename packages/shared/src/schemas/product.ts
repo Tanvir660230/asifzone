@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { blankToNull, nullableCuid, nullableDate, nullableNumber, nullableString, paginationQuerySchema, slugSchema } from "./common";
 import { PRODUCT_TYPE_KEYS } from "../config/product-types";
+import { productFaqsSchema, productRelationsSchema, sectionLayerSchema } from "../sections";
 
 export const brandTierEnum = z.enum(["PREMIUM", "PLATINUM", "LUXURY"]);
 
@@ -113,6 +114,13 @@ export const baseProductSchema = z.object({
   carePresetId: z.preprocess(blankToNull, z.string().min(1).nullable().optional()),
   /** The product's own care steps; when set (non-empty) they replace the preset's. null/[] clears the override. */
   careOverride: z.array(z.string().trim().min(1).max(300)).max(30).nullable().optional(),
+  /** This product's page-section overrides (and its own highlights / what's included / video / warranty text). Sent
+   * whole: sections not listed lose their override and inherit again. Omit to leave them alone. */
+  sections: sectionLayerSchema.optional(),
+  /** The product's FAQ, in order. Sent whole; omit to leave it alone. */
+  faqs: productFaqsSchema.optional(),
+  /** Hand-picked recommendation lists. Only the kinds sent are replaced; omit to leave them all alone. */
+  relations: productRelationsSchema.optional(),
   materials: z
     .array(productMaterialSchema)
     .max(12)

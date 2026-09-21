@@ -34,6 +34,15 @@ enum ProductStatus {
   UNPUBLISHED
 }
 
+/// How a curated product list relates to the product it is attached to.
+enum ProductRelationKind {
+  RELATED
+  CROSS_SELL
+  UPSELL
+  FREQUENTLY_BOUGHT
+  RECOMMENDED
+}
+
 enum AttributeDataType {
   TEXT
   TEXTAREA
@@ -398,6 +407,12 @@ model Product {
   /// string[] — the product's own care steps; wins over the preset.
   careOverride      Json?
   materials         ProductMaterial[]
+  /// Per-product page-section overrides (on/off, order, title, own text) — see PageSectionFields below.
+  sections          ProductSection[]
+  faqs              ProductFaq[]
+  /// Curated lists this product owns ("related", "cross-sell", ...), and the reverse side.
+  relations         ProductRelation[]       @relation("ProductRelations")
+  relatedTo         ProductRelation[]       @relation("RelatedToProducts")
   deletedAt         DateTime?
   variants          ProductVariant[]
   images            ProductImage[]
@@ -1649,6 +1664,7 @@ model ProductTemplate {
   requiredChecks    String[]            @default([])
   isArchived        Boolean             @default(false)
   attributes        TemplateAttribute[]
+  sections          TemplateSection[]
   types             ProductTypeDef[]
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
@@ -1812,4 +1828,79 @@ model CatalogSetting {
 model SkuCounter {
   scope String @id
   next  Int    @default(1)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Product-page sections. The set of sections is a code registry (each has a renderer); these tables only hold the
+// admin's choices. Every field is nullable so a row can override just one thing (say, the title) and inherit the
+// rest: resolution is product -> template -> global -> the registry default, field by field. Three tables rather than
+// one polymorphic one so a deleted product/template takes its rows with it (real foreign keys).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Store-wide defaults ("Shipping & Returns" text, which sections are on, their order).
+model GlobalSection {
+  sectionKey String   @id
+  enabled    Boolean?
+  sortOrder  Int?
+  title      String?
+  /// Text or HTML for text-type sections (shipping, returns, warranty), one-per-line for list-type ones, a URL for video.
+  content    String?  @db.Text
+  updatedAt  DateTime @updatedAt
+}
+
+/// Overrides for every product of a template.
+model TemplateSection {
+  id         String          @id @default(cuid())
+  templateId String
+  template   ProductTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sectionKey String
+  enabled    Boolean?
+  sortOrder  Int?
+  title      String?
+  content    String?         @db.Text
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([templateId, sectionKey])
+}
+
+/// Overrides for one product — and the home of that product's own text (highlights, what's included, video URL, warranty).
+model ProductSection {
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sectionKey String
+  enabled    Boolean?
+  sortOrder  Int?
+  title      String?
+  content    String?  @db.Text
+  updatedAt  DateTime @updatedAt
+
+  @@unique([productId, sectionKey])
+}
+
+model ProductFaq {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  question  String
+  answer    String  @db.Text
+  sortOrder Int     @default(0)
+
+  @@index([productId, sortOrder])
+}
+
+/// A hand-picked product shown in one of a product's recommendation lists. When a list has none, the storefront
+/// falls back to the existing algorithm for that list, so an untouched product looks exactly as before.
+model ProductRelation {
+  id        String              @id @default(cuid())
+  productId String
+  product   Product             @relation("ProductRelations", fields: [productId], references: [id], onDelete: Cascade)
+  relatedId String
+  related   Product             @relation("RelatedToProducts", fields: [relatedId], references: [id], onDelete: Cascade)
+  kind      ProductRelationKind
+  sortOrder Int                 @default(0)
+
+  @@unique([productId, relatedId, kind])
+  @@index([productId, kind, sortOrder])
+  @@index([relatedId])
 }
