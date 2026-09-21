@@ -1,3 +1,4 @@
+import { formatVariantLabel } from "@clothing-brand/shared";
 import Link from "next/link";
 import { AlertTriangle, ArrowUpRight, CheckCircle2, Package } from "lucide-react";
 import type { LowStockVariant } from "@/lib/api/admin-analytics";
@@ -66,7 +67,7 @@ export function LowStockTable({ variants }: { variants: LowStockVariant[] }) {
                 {v.product.name}
               </Link>
               <p className="mt-0.5 truncate text-xs text-ink-400">
-                {v.size} / {v.color} · {v.sku}
+                {[formatVariantLabel(v.size, v.color), v.sku].filter(Boolean).join(" · ")}
               </p>
               <div className="mt-1.5 h-1.5 w-24 max-w-full overflow-hidden rounded-full bg-ink-100">
                 <div className={cn("h-full rounded-full", toneClass.bar)} style={{ width: `${barPct}%` }} />

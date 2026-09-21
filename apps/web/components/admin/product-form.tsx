@@ -8,6 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import {
+  PRODUCT_TYPE_CONFIGS,
+  PRODUCT_TYPE_KEYS,
   createProductSchema,
   getProductTypeConfig,
   type Category,
@@ -285,14 +287,11 @@ export function ProductForm({
               <div>
                 <Label htmlFor="productType">Product type</Label>
                 <Select id="productType" {...register("productType")}>
-                  <option value="CLOTHING">Clothing (Panjabi, Shirt, etc.)</option>
-                  <option value="FRAGRANCE">Fragrance (Attar, Perfume, etc.)</option>
-                  <option value="ACCESSORY">Accessory</option>
-                  <option value="WATCH">Watch</option>
-                  <option value="SHOES">Shoes</option>
-                  <option value="COSMETICS">Cosmetics</option>
-                  <option value="ISLAMIC_PRODUCT">Islamic Product</option>
-                  <option value="HOME">Home</option>
+                  {PRODUCT_TYPE_KEYS.map((key) => (
+                    <option key={key} value={key}>
+                      {PRODUCT_TYPE_CONFIGS[key].label} — {PRODUCT_TYPE_CONFIGS[key].description}
+                    </option>
+                  ))}
                 </Select>
               </div>
 

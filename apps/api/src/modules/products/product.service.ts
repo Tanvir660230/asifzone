@@ -7,7 +7,7 @@ import type {
   StorefrontProductQuery,
   StorefrontFacetsQuery,
 } from "@clothing-brand/shared";
-import { slugify, expandSearchTerms, findClosestVocabularyTerm } from "@clothing-brand/shared";
+import { slugify, expandSearchTerms, findClosestVocabularyTerm, NO_SIZE_VALUE } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
@@ -72,6 +72,14 @@ const PUBLIC_PRODUCT_SELECT = {
  * needs this instead of `Awaited<ReturnType<typeof getProductById>>`. */
 type PublicProduct = Prisma.ProductGetPayload<{ select: typeof PUBLIC_PRODUCT_SELECT }>;
 
+/** JSON column input: `undefined` leaves the column alone, `null` clears it (Prisma needs the JsonNull
+ * sentinel for that — a bare `undefined`/`null` would silently do nothing / be rejected). */
+function toJsonInput(value: Record<string, unknown> | null | undefined) {
+  if (value === undefined) return undefined;
+  if (value === null) return Prisma.JsonNull;
+  return value as Prisma.InputJsonObject;
+}
+
 /** Nested-create shape for a variant's attribute links — `attributeValueIds` isn't a real column, it drives this join table instead.
  * `sortOrder` comes from the variant's position in the submitted array: the storefront shows `variants[0]`'s color/size as the
  * default selection, so reordering variants in the admin form is how "which color is the main one" gets set. */
@@ -79,7 +87,7 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   const { attributeValueIds = [], ...rest } = variant;
   return {
     ...rest,
-    size: rest.size || "Standard",
+    size: rest.size || NO_SIZE_VALUE,
     color: rest.color || "",
     sortOrder,
     attributeValues: { create: attributeValueIds.map((attributeValueId) => ({ attributeValueId })) },
@@ -412,13 +420,15 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
   };
 
   const [sizes, colors, priceRange] = await Promise.all([
+    // "Standard" (no size) and blank colours are placeholders for types without that dimension — offering
+    // them as filter chips would be meaningless (or an empty swatch).
     prisma.productVariant.findMany({
-      where: { product: where },
+      where: { product: where, size: { not: NO_SIZE_VALUE } },
       distinct: ["size"],
       select: { size: true },
     }),
     prisma.productVariant.findMany({
-      where: { product: where },
+      where: { product: where, color: { not: "" } },
       distinct: ["color"],
       select: { color: true, colorHex: true },
     }),
@@ -930,22 +940,22 @@ export async function createProduct(input: CreateProductInput, adminId: string) 
   let product;
   try {
     product = await prisma.$transaction(async (tx) => {
-      const created = (await tx.product.create({
+      const created = await tx.product.create({
         data: {
           ...productData,
-          attributes: (productData.attributes ?? undefined) as Prisma.InputJsonValue,
+          attributes: toJsonInput(productData.attributes),
           slug,
           variants: { create: variants.map((v, i) => toVariantCreateData(v, i)) },
         },
         include,
-      })) as any;
+      });
 
       // Every variant starts life with a real stock number but no history explaining it — log it
       // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
-      const stocked = created.variants.filter((v: any) => v.stock > 0);
+      const stocked = created.variants.filter((v) => v.stock > 0);
       if (stocked.length) {
         await tx.stockMovement.createMany({
-          data: stocked.map((v: any) => ({
+          data: stocked.map((v) => ({
             variantId: v.id,
             change: v.stock,
             reason: "RESTOCK" as const,
@@ -985,7 +995,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
   delete data.variants;
 
   if (data.attributes !== undefined) {
-    data.attributes = (data.attributes ?? undefined) as Prisma.InputJsonValue;
+    data.attributes = toJsonInput(data.attributes as Record<string, unknown> | null);
   }
 
   if (input.name && !input.slug) {
@@ -1048,8 +1058,10 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
               where: { id: variantId },
               data: {
                 ...updateData,
-                size: updateData.size || "Standard",
-                color: updateData.color || "",
+                // Only touch size/color when the payload carries them — omitting a field on a partial
+                // variant update must keep the stored value, not reset it to the blank fallback.
+                size: updateData.size === undefined ? undefined : updateData.size || NO_SIZE_VALUE,
+                color: updateData.color === undefined ? undefined : updateData.color || "",
                 sortOrder: index,
               },
             });

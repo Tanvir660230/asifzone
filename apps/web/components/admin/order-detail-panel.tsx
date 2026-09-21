@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel, formatVariantSuffix } from "@clothing-brand/shared";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -876,7 +877,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                       <div className="min-w-0">
                         <p className="truncate font-medium text-ink-900">{item.productNameSnapshot}</p>
                         <p className="text-xs text-ink-400">
-                          {item.sizeSnapshot}/{item.colorSnapshot} · Ordered {item.quantity}
+                          {[formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/"), `Ordered ${item.quantity}`].filter(Boolean).join(" · ")}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
@@ -1258,7 +1259,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                         <span className="font-medium text-ink-900">{item.productNameSnapshot}</span>
                       )}
                       <div className="text-xs text-ink-400">
-                        {item.sizeSnapshot}/{item.colorSnapshot} · SKU {item.skuSnapshot}
+                        {[formatVariantLabel(item.sizeSnapshot, item.colorSnapshot, "/"), `SKU ${item.skuSnapshot}`].filter(Boolean).join(" · ")}
                       </div>
                     </div>
                     <div className="shrink-0 text-right text-sm font-medium tabular-nums text-ink-900">
@@ -1308,7 +1309,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                         ) : (
                           item.productNameSnapshot
                         )}
-                        <span className="text-ink-400"> ({item.sizeSnapshot}/{item.colorSnapshot})</span>
+                        <span className="text-ink-400">{formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)}</span>
                       </div>
                     </div>
                   </td>

@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel } from "@clothing-brand/shared";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
@@ -91,7 +92,7 @@ export default function InventoryIntelligencePage() {
                         </Link>
                       </td>
                       <td className="py-2 pr-4 text-ink-600">
-                        {v.size} / {v.color}
+                        {formatVariantLabel(v.size, v.color)}
                       </td>
                       <td className={cn("py-2 font-medium", v.stock === 0 ? "text-danger-600" : "text-warning-600")}>{v.stock}</td>
                     </tr>

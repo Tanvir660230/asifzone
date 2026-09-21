@@ -4,6 +4,7 @@
 // rather than redeclared, to avoid a duplicate-export collision via the package's barrel index.ts.
 import type { CustomerTag } from "./schemas/customer";
 import type { HomepageSectionType } from "./schemas/homepage-section";
+import type { ProductType } from "./config/product-types";
 
 export interface StockMovement {
   id: string;
@@ -79,15 +80,6 @@ export interface Attribute {
   updatedAt: string;
 }
 
-export type ProductType =
-  | "CLOTHING"
-  | "FRAGRANCE"
-  | "ACCESSORY"
-  | "WATCH"
-  | "SHOES"
-  | "COSMETICS"
-  | "ISLAMIC_PRODUCT"
-  | "HOME";
 
 export interface VariantAttributeValue {
   id: string;

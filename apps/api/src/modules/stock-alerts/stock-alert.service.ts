@@ -1,3 +1,4 @@
+import { formatVariantSuffix } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
@@ -44,7 +45,7 @@ export async function notifyBackInStock(variantId: string) {
         html: renderEmailLayout({
           bodyHtml: `
             <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Back in stock</p>
-            <p style="margin:0;">Hi ${escapeHtml(alert.customer.name)}, good news — <strong>${escapeHtml(alert.variant.product.name)}</strong> (${escapeHtml(alert.variant.size)}/${escapeHtml(alert.variant.color)}) is available again.</p>
+            <p style="margin:0;">Hi ${escapeHtml(alert.customer.name)}, good news — <strong>${escapeHtml(alert.variant.product.name)}</strong>${escapeHtml(formatVariantSuffix(alert.variant.size, alert.variant.color))} is available again.</p>
           `,
           ctaLabel: "Shop now",
           ctaUrl: productUrl,

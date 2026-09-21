@@ -1,3 +1,23 @@
+/** The one list of product types. The zod enum, the `ProductType` union and the admin type picker are
+ * all derived from it; the Prisma `ProductType` enum must match it (checked by a test, since a DB enum
+ * can't be generated from TS — adding a type means: add it here + a config below + a migration). */
+export const PRODUCT_TYPE_KEYS = [
+  "CLOTHING",
+  "FRAGRANCE",
+  "ACCESSORY",
+  "WATCH",
+  "SHOES",
+  "COSMETICS",
+  "ISLAMIC_PRODUCT",
+  "HOME",
+] as const;
+
+export type ProductType = (typeof PRODUCT_TYPE_KEYS)[number];
+
+/** Stored in `size` when a product type has no size dimension (or the admin left it blank). Storefront
+ * pickers and filters treat it as "no choice", not as a real size. */
+export const NO_SIZE_VALUE = "Standard";
+
 export type FieldType = "TEXT" | "TEXTAREA" | "NUMBER" | "SELECT" | "MULTI_SELECT" | "BOOLEAN" | "DATE" | "RICH_TEXT" | "IMAGE" | "URL";
 
 export interface ProductFieldConfig {
@@ -9,8 +29,10 @@ export interface VariantDimensionConfig {
 }
 
 export interface ProductTypeConfig {
-  type: string; label: string; description: string; fields: ProductFieldConfig[]; variantDimensions: VariantDimensionConfig[]; sections: { key: string; label: string }[];
-  sizeGuide?: { supported: boolean; defaultEnabled: boolean };
+  type: ProductType; label: string; description: string; fields: ProductFieldConfig[]; variantDimensions: VariantDimensionConfig[]; sections: { key: string; label: string }[];
+  /** `defaultChart` is what the storefront and the admin editor start from when the product has no
+   * saved guide; it falls back to the generic apparel chart. */
+  sizeGuide?: { supported: boolean; defaultEnabled: boolean; defaultChart?: SizeGuideData };
 }
 
 export interface SizeGuideData {
@@ -36,7 +58,22 @@ export const DEFAULT_SIZE_GUIDE: SizeGuideData = {
   ],
 };
 
-export const PRODUCT_TYPE_CONFIGS: Record<string, ProductTypeConfig> = {
+/** General reference for men's shoes; sizing varies by brand, so admins are expected to edit it. */
+export const DEFAULT_SHOE_SIZE_GUIDE: SizeGuideData = {
+  title: "Shoe size guide",
+  unit: "cm (foot length)",
+  columns: ["EU", "UK", "US", "Foot length"],
+  rows: [
+    ["39", "6", "7", "24.5"],
+    ["40", "7", "8", "25.4"],
+    ["41", "7.5", "8.5", "26"],
+    ["42", "8", "9", "26.7"],
+    ["43", "9", "10", "27.3"],
+    ["44", "10", "11", "28"],
+  ],
+};
+
+export const PRODUCT_TYPE_CONFIGS: Record<ProductType, ProductTypeConfig> = {
   CLOTHING: {
     type: "CLOTHING", label: "Clothing", description: "Apparel items with size & color.",
     fields: [
@@ -107,7 +144,7 @@ export const PRODUCT_TYPE_CONFIGS: Record<string, ProductTypeConfig> = {
       { key: "color", label: "Color", targetField: "color", options: ["Black", "Brown", "Tan"] },
     ],
     sections: [{ key: "description", label: "Description" }, { key: "spec", label: "Specifications" }],
-    sizeGuide: { supported: true, defaultEnabled: true },
+    sizeGuide: { supported: true, defaultEnabled: true, defaultChart: DEFAULT_SHOE_SIZE_GUIDE },
   },
   COSMETICS: {
     type: "COSMETICS", label: "Cosmetics", description: "Skincare and makeup items.",
@@ -147,7 +184,36 @@ export const PRODUCT_TYPE_CONFIGS: Record<string, ProductTypeConfig> = {
   },
 };
 
+/** Unknown types (e.g. a value from a newer/older deploy) fall back to Clothing rather than crashing. */
 export function getProductTypeConfig(productType: string): ProductTypeConfig {
-  return PRODUCT_TYPE_CONFIGS[productType] || PRODUCT_TYPE_CONFIGS["CLOTHING"]!;
+  return PRODUCT_TYPE_CONFIGS[productType as ProductType] ?? PRODUCT_TYPE_CONFIGS.CLOTHING;
 }
 
+/** The chart a product of this type starts from: the type's own default, else the generic apparel one. */
+export function getDefaultSizeGuide(productType: string): SizeGuideData {
+  return getProductTypeConfig(productType).sizeGuide?.defaultChart ?? DEFAULT_SIZE_GUIDE;
+}
+
+/** "M / Black", "12ml", "Black" — joins whichever of size/colour is a real value. `Standard` (no size)
+ * and blanks are dropped, so products without a colour or size never print a dangling separator. */
+export function formatVariantLabel(
+  size: string | null | undefined,
+  color: string | null | undefined,
+  separator = " / ",
+): string {
+  const parts = [size, color]
+    .map((v) => (v ?? "").trim())
+    .filter((v) => v !== "" && v !== NO_SIZE_VALUE);
+  return parts.join(separator);
+}
+
+/** Same as formatVariantLabel but as a ready-to-append " (M/Black)" suffix — empty when there is nothing
+ * to show, so "Classic Tee (/)" / "Royal Oud ()" can't happen. */
+export function formatVariantSuffix(
+  size: string | null | undefined,
+  color: string | null | undefined,
+  separator = "/",
+): string {
+  const label = formatVariantLabel(size, color, separator);
+  return label ? ` (${label})` : "";
+}

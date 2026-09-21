@@ -1,3 +1,4 @@
+import { formatVariantSuffix } from "@clothing-brand/shared";
 import type { Order } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
@@ -14,7 +15,7 @@ export function OrderSummaryCard({ order }: { order: Order }) {
         {order.items.map((item) => (
           <div key={item.id} className="flex justify-between text-ink-600">
             <span>
-              {item.productNameSnapshot} ({item.sizeSnapshot}/{item.colorSnapshot}) × {item.quantity}
+              {item.productNameSnapshot}{formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} × {item.quantity}
             </span>
             <span>{formatPrice(Number(item.priceSnapshot) * item.quantity)}</span>
           </div>

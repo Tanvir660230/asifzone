@@ -1,5 +1,6 @@
 "use client";
 
+import { formatVariantLabel } from "@clothing-brand/shared";
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -179,7 +180,7 @@ export default function CartPage() {
                     {item.productName}
                   </Link>
                   <p className="mt-1 text-xs text-ink-400">
-                    {[item.size, item.color].filter(Boolean).join(" / ")} · SKU {item.sku}
+                    {[formatVariantLabel(item.size, item.color), `SKU ${item.sku}`].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <div className="flex items-center justify-between">

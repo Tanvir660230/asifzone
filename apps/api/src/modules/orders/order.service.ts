@@ -1,4 +1,4 @@
-import { orderStatusEnum } from "@clothing-brand/shared";
+import { formatVariantLabel, formatVariantSuffix, orderStatusEnum } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
@@ -66,7 +66,7 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
     const variant = variantById.get(item.variantId)!;
     if (!variant.product.isActive) throw AppError.badRequest(`${variant.product.name} is no longer available`);
     if (variant.stock < item.quantity) {
-      throw AppError.conflict(`Not enough stock for ${variant.product.name} (${variant.size}/${variant.color})`);
+      throw AppError.conflict(`Not enough stock for ${variant.product.name}${formatVariantSuffix(variant.size, variant.color)}`);
     }
   }
 
@@ -255,7 +255,7 @@ export async function insertOrderRecord(
     notify({
       type: "product.low_stock",
       title: `Oversold on paid order ${order.orderNumber}`,
-      body: oversoldItems.map((i) => `${i.name} (${i.size}/${i.color})`).join(", "),
+      body: oversoldItems.map((i) => `${i.name}${formatVariantSuffix(i.size, i.color)}`).join(", "),
       link: `/admin/orders/${order.id}`,
     });
   }
@@ -285,7 +285,7 @@ export async function insertOrderRecord(
       notify({
         type: "product.low_stock",
         title: `Low stock: ${variant.product.name}`,
-        body: `${variant.size}/${variant.color} — ${Math.max(0, remaining)} left`,
+        body: `${formatVariantLabel(variant.size, variant.color, "/") || variant.sku} — ${Math.max(0, remaining)} left`,
         link: `/admin/products/${variant.productId}/edit`,
       });
     }
@@ -1252,7 +1252,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
     if (returnedEntries.length > 0 && existing.customerId) {
       const itemLines = returnedEntries.map((entry) => {
         const item = itemById.get(entry.orderItemId)!;
-        return `${item.productNameSnapshot} (${item.sizeSnapshot}/${item.colorSnapshot}) x${entry.returnedQuantity}`;
+        return `${item.productNameSnapshot}${formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} x${entry.returnedQuantity}`;
       });
       await tx.returnRequest.create({
         data: {

@@ -1,4 +1,4 @@
-import { getProductTypeConfig, type SizeGuideData } from "@clothing-brand/shared";
+import { getDefaultSizeGuide, getProductTypeConfig, type SizeGuideData } from "@clothing-brand/shared";
 
 type Attributes = Record<string, unknown> | null | undefined;
 
@@ -24,8 +24,9 @@ function readAttribute(attrs: Record<string, unknown>, key: string): string {
   return value === undefined || value === null ? "" : String(value).trim();
 }
 
-/** Whether the product page offers a size guide, and the product's own chart (undefined = show the
- * default chart). Types that don't support a guide never show one, whatever is stored on the product. */
+/** Whether the product page offers a size guide, and the chart to show — the product's own if it has one,
+ * else the type's default (footwear gets a shoe chart, not the apparel one). Types that don't support a
+ * guide never show one, whatever is stored on the product. */
 export function getSizeGuideDisplay(
   productType: string,
   attributes: Attributes,
@@ -37,7 +38,7 @@ export function getSizeGuideDisplay(
   if (saved && typeof saved === "object") {
     return { show: (saved as SizeGuideData).enabled === true, sizeGuide: saved as SizeGuideData };
   }
-  return { show: support.defaultEnabled, sizeGuide: undefined };
+  return { show: support.defaultEnabled, sizeGuide: getDefaultSizeGuide(productType) };
 }
 
 /** Accordion sections built only from what the admin actually filled in for this product type —
