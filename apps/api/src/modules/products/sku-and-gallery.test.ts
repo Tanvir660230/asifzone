@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { abbreviateForSku, defaultTypeCode, pickGalleryImages, renderSkuPattern, validateSkuPattern } from "@clothing-brand/shared";
+import { abbreviateForSku, defaultTypeCode, findDuplicateSkus, pickGalleryImages, renderSkuPattern, validateSkuPattern } from "@clothing-brand/shared";
 
 describe("SKU patterns", () => {
   const ctx = { prefix: "AZ", typeCode: "PNJ", color: "Black", size: "M", seq: 1 };
@@ -30,6 +30,20 @@ describe("SKU patterns", () => {
     expect(validateSkuPattern("AZ {SEQ}")).toMatch(/only letters/);
     expect(validateSkuPattern("{SEQ:9}")).toMatch(/token|SEQ/);
     expect(validateSkuPattern("x".repeat(90) + "{SEQ}")).toMatch(/too long/);
+  });
+});
+
+describe("findDuplicateSkus", () => {
+  it("flags every row that shares a SKU, not just the second one", () => {
+    expect([...findDuplicateSkus(["A", "B", "A", "C", "B"])].sort()).toEqual([0, 1, 2, 4]);
+  });
+
+  it("compares trimmed values, so a stray space doesn't hide a clash", () => {
+    expect([...findDuplicateSkus(["AZ-1", "AZ-1 ", " AZ-2"])]).toEqual([0, 1]);
+  });
+
+  it("leaves blanks to the required-field check", () => {
+    expect(findDuplicateSkus(["", "  ", undefined, null, "X"]).size).toBe(0);
   });
 });
 
