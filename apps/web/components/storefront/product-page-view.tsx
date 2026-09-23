@@ -21,6 +21,7 @@ import { formatPrice } from "@/lib/format";
 import { buildAccordionItems } from "@/lib/product-specs";
 import { buildProductJsonLd } from "@/lib/structured-data";
 import { getSiteUrl } from "@/lib/seo";
+import { jsonLdString } from "@clothing-brand/shared";
 
 /** RICH_TEXT attribute values are admin-authored HTML. They are sanitized here, on the server — the client
  * component that renders them can't do it (isomorphic-dompurify's jsdom fallback breaks in the browser). */
@@ -122,13 +123,13 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
       {live && <TrackProductView productId={product.id} productName={product.name} categoryId={product.categoryId} price={Number(product.basePrice)} />}
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {live && (
-          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(buildProductJsonLd(product, siteUrl, settings)) }} />
+          <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(buildProductJsonLd(product, siteUrl, settings)) }} />
         )}
         {live && faqEnabled && faqs.length > 0 && (
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{
-              __html: JSON.stringify({
+              __html: jsonLdString({
                 "@context": "https://schema.org",
                 "@type": "FAQPage",
                 mainEntity: faqs.map((f) => ({ "@type": "Question", name: f.question, acceptedAnswer: { "@type": "Answer", text: f.answer } })),

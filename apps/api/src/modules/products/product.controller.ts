@@ -99,6 +99,12 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   res.status(201).json({ product });
 });
 
+/** Admin-only figures for the panel shown on the storefront product page while an admin is logged in. */
+export const salesSummary = asyncHandler(async (req: Request, res: Response) => {
+  res.locals.auditHandled = true; // a read
+  res.json(await productService.getProductSalesSummary(req.params.id!));
+});
+
 export const duplicate = asyncHandler(async (req: Request, res: Response) => {
   // duplicateProduct records its own events (on the copy and on the original).
   res.locals.auditHandled = true;

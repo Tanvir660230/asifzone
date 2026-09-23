@@ -12,6 +12,7 @@ import { getCategoryBySlug, getCategoryStockOverview, getStorefrontFacets, listS
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
 import { resolveImageUrl } from "@/lib/image-url";
+import { jsonLdString } from "@clothing-brand/shared";
 
 const PAGE_SIZE = 12;
 
@@ -100,7 +101,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             {result.items.length > 0 && (
               <script
                 type="application/ld+json"
-                dangerouslySetInnerHTML={{ __html: JSON.stringify(buildItemListJsonLd(result.items, getSiteUrl())) }}
+                dangerouslySetInnerHTML={{ __html: jsonLdString(buildItemListJsonLd(result.items, getSiteUrl())) }}
               />
             )}
             <ProductGrid products={result.items} priority />

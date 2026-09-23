@@ -74,6 +74,21 @@ const variantWithRules = createVariantSchema.refine(
   { message: "Compare-at price must be higher than the variant price", path: ["compareAtPrice"] },
 );
 
+/** A variant in a product update. Same rules, but `stock` and `attributeValueIds` are optional *without* defaults: with the create
+ * schema's defaults, a variant listed without them was written back as stock 0 and with its option links cleared. An existing
+ * variant (`id`) may also omit `sku`; a new one still needs it. */
+const updateVariantSchema = createVariantSchema.extend({
+  sku: z.string().min(1).max(64).optional(),
+  stock: z.number().int().min(0).optional(),
+  attributeValueIds: z.array(z.string().cuid()).optional(),
+});
+const variantUpdateWithRules = updateVariantSchema
+  .refine((v) => v.price == null || v.compareAtPrice == null || v.compareAtPrice > v.price, {
+    message: "Compare-at price must be higher than the variant price",
+    path: ["compareAtPrice"],
+  })
+  .refine((v) => Boolean(v.id) || Boolean(v.sku), { message: "A new variant needs a SKU", path: ["sku"] });
+
 export const baseProductSchema = z.object({
   name: z.string().min(1).max(200),
   slug: z.preprocess((v) => (v === "" ? undefined : v), slugSchema.optional()),
@@ -139,7 +154,9 @@ export const createProductSchema = baseProductSchema;
 // Every field is optional on update, defaults included. A field that keeps its `.default()` here is *filled in* when a client leaves
 // it out, so a partial update (say, just a new price) would silently reset the description to "", the brand tier, the low-stock
 // threshold, the "featured" flag and so on. The editor always sends the whole form, which hid this from it.
-export const updateProductSchema = baseProductSchema.partial();
+export const updateProductSchema = baseProductSchema.partial().extend({
+  variants: z.array(variantUpdateWithRules).min(1, "At least one variant is required").optional(),
+});
 
 export const productListQuerySchema = paginationQuerySchema.extend({
   categoryId: z.string().cuid().optional(),

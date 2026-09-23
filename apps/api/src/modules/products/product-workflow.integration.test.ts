@@ -155,6 +155,40 @@ describe("product workflow: status, completeness, SEO, care, materials, history"
       expect(Number(res.body.product.basePrice)).toBe(640);
     });
 
+    it("a variant listed without stock or option links keeps them (and an existing variant needn't repeat its SKU)", async () => {
+      const attr = await prisma.attribute.create({ data: { name: `Vitest Option ${RUN}`, slug: `vitest-option-${RUN}` } });
+      const value = await prisma.attributeValue.create({ data: { attributeId: attr.id, value: "Tall" } });
+      try {
+        const q = await createProduct({
+          variants: [
+            { sku: `VT-KEEP-${RUN}-1`, size: "M", color: "Black", stock: 9, attributeValueIds: [value.id] },
+            { sku: `VT-KEEP-${RUN}-2`, size: "L", color: "Black", stock: 4 },
+          ],
+        });
+        const [a, b] = (await owner().get(`/api/products/${q.id}`)).body.product.variants as { id: string; sku: string }[];
+        // Change only a price on the first; the second is listed by id alone (it must stay).
+        const res = await owner().patch(`/api/products/${q.id}`, { variants: [{ id: a!.id, price: 777 }, { id: b!.id }] });
+        expect(res.status, JSON.stringify(res.body)).toBe(200);
+        const after = res.body.product.variants as { id: string; sku: string; stock: number; price: string | null; attributeValues: { attributeValueId: string }[] }[];
+        const first = after.find((v) => v.id === a!.id)!;
+        expect(Number(first.price)).toBe(777);
+        expect(first.stock).toBe(9); // not reset to 0
+        expect(first.sku).toBe(`VT-KEEP-${RUN}-1`);
+        expect(first.attributeValues.map((x) => x.attributeValueId)).toEqual([value.id]); // links not cleared
+        expect(after.find((v) => v.id === b!.id)!.stock).toBe(4);
+
+        // Sending the links explicitly still replaces them, and [] still clears them.
+        const cleared = await owner().patch(`/api/products/${q.id}`, { variants: [{ id: a!.id, attributeValueIds: [] }, { id: b!.id }] });
+        expect(cleared.body.product.variants.find((v: { id: string }) => v.id === a!.id).attributeValues).toEqual([]);
+
+        // A new variant still needs a SKU.
+        const noSku = await owner().patch(`/api/products/${q.id}`, { variants: [{ id: a!.id }, { id: b!.id }, { size: "XL", color: "Black" }] });
+        expect(noSku.status).toBe(400);
+      } finally {
+        await prisma.attribute.delete({ where: { id: attr.id } });
+      }
+    });
+
     it("saving an already-live product never re-checks it", async () => {
       await owner().patch(`/api/products/${p.id}`, { status: "PUBLISHED" });
       await prisma.productImage.deleteMany({ where: { productId: p.id } }); // e.g. an image removed after publishing

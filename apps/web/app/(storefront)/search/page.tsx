@@ -10,6 +10,7 @@ import { SearchSessionTracker } from "@/components/analytics/search-session-trac
 import { getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
+import { jsonLdString } from "@clothing-brand/shared";
 
 const PAGE_SIZE = 24;
 
@@ -101,7 +102,7 @@ export default async function SearchPage({ searchParams }: Props) {
             {result.items.length > 0 && (
               <script
                 type="application/ld+json"
-                dangerouslySetInnerHTML={{ __html: JSON.stringify(buildItemListJsonLd(result.items, getSiteUrl())) }}
+                dangerouslySetInnerHTML={{ __html: jsonLdString(buildItemListJsonLd(result.items, getSiteUrl())) }}
               />
             )}
             <ProductGrid

@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // Refuses cleanup calls whose filter is empty (an undefined id would otherwise delete every row): see src/test-guard.ts.
+    setupFiles: ["./src/test-setup.ts"],
     testTimeout: 15000,
     // Tests must never call a real mail provider: with a live RESEND_API_KEY in a developer's .env, the customer tests
     // hit Resend over the network (which rejects example.com and is timing-dependent). An empty key — dotenv won't

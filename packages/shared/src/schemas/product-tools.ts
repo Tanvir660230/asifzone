@@ -111,3 +111,18 @@ export interface ProductImportResult {
   /** The batch id recorded in the audit trail. */
   batchId: string;
 }
+
+/* ───────────────────────── sales summary (admin only) ───────────────────────── */
+
+/** What the admin-only panel on the product page shows: units sold in the last `days` days, by the same rule as the storefront's
+ * "N sold in the last 7 days" line (every order except cancelled and refunded ones). */
+export interface ProductSalesSummary {
+  productId: string;
+  days: number;
+  /** Start of the window (ISO). */
+  since: string;
+  unitsSold: number;
+  /** Orders that contained this product. */
+  orders: number;
+  byVariant: { variantId: string; sku: string; size: string; color: string; units: number }[];
+}

@@ -9,6 +9,7 @@ import { env } from "@/lib/env";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
 import { MetaPixelScript } from "@/components/analytics/meta-pixel-script";
+import { jsonLdString } from "@clothing-brand/shared";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -80,11 +81,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="preconnect" href={env.apiUrl} />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdString(organizationJsonLd) }}
         />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: jsonLdString(websiteJsonLd) }}
         />
         <PageViewTracker />
         <HeatmapScript />
