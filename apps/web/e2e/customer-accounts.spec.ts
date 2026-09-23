@@ -4,12 +4,15 @@ import path from "path";
 
 const devMailDir = path.join(__dirname, "..", "..", "api", ".devmail");
 
+const TRACKING_BEACON = /\/api\/(analytics\/|products\/[^/]+\/view$)/;
+
 function trackConsoleErrors(page: Page) {
   const errors: string[] = [];
   page.on("console", (msg) => {
-    // Analytics beacons are rate-limited per IP; a long e2e run from one machine can exhaust that budget,
-    // and a throttled beacon is invisible to the shopper — not an error in the journey under test.
-    if (msg.type() === "error" && !msg.location().url.includes("/api/analytics/")) errors.push(msg.text());
+    // Tracking beacons (analytics, product views) are rate-limited per IP; a long e2e run from one machine
+    // can exhaust that budget, and a throttled beacon is invisible to the shopper — not an error in the
+    // journey under test.
+    if (msg.type() === "error" && !TRACKING_BEACON.test(msg.location().url)) errors.push(msg.text());
   });
   page.on("pageerror", (err) => errors.push(err.message));
   return errors;
