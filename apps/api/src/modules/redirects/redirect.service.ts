@@ -64,3 +64,23 @@ export async function listActiveRedirects() {
     select: { fromPath: true, toPath: true, statusCode: true },
   });
 }
+
+/** Creates or updates a 301 from `fromPath` to `toPath` — used when a published product's (or category's)
+ * slug changes, so the old URL keeps working. Takes a `TransactionClient` so callers that change the slug
+ * and the redirect together (e.g. product.service.ts's `updateProduct`) can pass their own `tx` and get one
+ * atomic commit; pass the plain `prisma` client for a standalone call.
+ *
+ * Also keeps the redirect table from growing chains or loops: any existing redirect that pointed *at* the
+ * old path is repointed straight to the new one (so A→old, old→new becomes A→new, not a two-hop chain), and
+ * any redirect that started *from* the new path is removed (the new path is live now — it can't also redirect
+ * away from itself). */
+export async function upsertSlugRedirect(client: Prisma.TransactionClient, fromPath: string, toPath: string) {
+  if (fromPath === toPath) return;
+  await client.redirect.updateMany({ where: { toPath: fromPath }, data: { toPath } });
+  await client.redirect.deleteMany({ where: { fromPath: toPath } });
+  await client.redirect.upsert({
+    where: { fromPath },
+    create: { fromPath, toPath, statusCode: 301 },
+    update: { toPath, statusCode: 301, isActive: true },
+  });
+}

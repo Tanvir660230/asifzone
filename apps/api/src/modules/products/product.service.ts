@@ -37,6 +37,7 @@ import { deleteProductImageFiles } from "../uploads/upload.service";
 import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
 import { computeFlashPrice, getActiveFlashInfoByProduct } from "../flash-sales/flash-sale-pricing";
 import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
+import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
 import {
@@ -1515,11 +1516,26 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     data.slug = await ensureUniqueSlug(slugify(input.name), async (candidate) => {
       return Boolean(await prisma.product.findFirst({ where: { slug: candidate, NOT: { id } } }));
     });
+  } else if (input.slug) {
+    // `data.slug` already carries this from `...rest` above — unlike the name-derived branch, nothing had
+    // checked it for a collision. Fail fast with a clean conflict instead of leaning on the P2002 catch below.
+    const candidate = slugify(input.slug);
+    if (await prisma.product.findFirst({ where: { slug: candidate, NOT: { id } } })) {
+      throw AppError.conflict("A product with this slug already exists");
+    }
+    data.slug = candidate;
   }
+  // A product that was already live keeps working at its old URL: redirect it to the new one. A product
+  // that was never published had nothing to protect (nobody could have bookmarked or indexed the old slug).
+  const newSlug = typeof data.slug === "string" ? data.slug : undefined;
+  const slugRedirect = newSlug && newSlug !== existing.slug && existing.status === "PUBLISHED"
+    ? { from: `/product/${existing.slug}`, to: `/product/${newSlug}` }
+    : null;
 
   try {
     await prisma.$transaction(async (tx) => {
       await tx.product.update({ where: { id }, data });
+      if (slugRedirect) await upsertSlugRedirect(tx, slugRedirect.from, slugRedirect.to);
       if (materials !== undefined) await replaceMaterials(tx, id, materials);
       if (sections !== undefined) await saveProductSections(tx, id, sections);
       if (faqs !== undefined) await replaceFaqs(tx, id, faqs);
