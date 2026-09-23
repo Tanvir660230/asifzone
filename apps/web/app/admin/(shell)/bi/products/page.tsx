@@ -13,6 +13,7 @@ import { ProductSalesHeatmap } from "@/components/admin/product-sales-heatmap";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { productEditHref } from "@/lib/admin-routes";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -24,7 +25,6 @@ function toBarItems<T>(
   return (rows ?? []).map((r) => ({ key: opts.key(r), label: opts.label(r), value: opts.value(r), valueLabel: opts.valueLabel(r), href: opts.href?.(r) ?? undefined }));
 }
 
-const productEditHref = (id: string) => `/admin/products/${id}/edit`;
 
 export default function ProductIntelligencePage() {
   const [range, setRange] = useState<RangeOption>(30);
