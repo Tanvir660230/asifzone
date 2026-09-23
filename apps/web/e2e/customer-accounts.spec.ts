@@ -7,7 +7,9 @@ const devMailDir = path.join(__dirname, "..", "..", "api", ".devmail");
 function trackConsoleErrors(page: Page) {
   const errors: string[] = [];
   page.on("console", (msg) => {
-    if (msg.type() === "error") errors.push(msg.text());
+    // Analytics beacons are rate-limited per IP; a long e2e run from one machine can exhaust that budget,
+    // and a throttled beacon is invisible to the shopper — not an error in the journey under test.
+    if (msg.type() === "error" && !msg.location().url.includes("/api/analytics/")) errors.push(msg.text());
   });
   page.on("pageerror", (err) => errors.push(err.message));
   return errors;

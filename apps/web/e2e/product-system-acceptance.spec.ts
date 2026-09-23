@@ -125,6 +125,7 @@ test.describe("product management system — the brief's acceptance tests", () =
   test("0. the starter presets are installed", async ({ page }) => {
     await login(page);
     await page.goto("/admin/products/new");
+    await expect(page.getByLabel("Product type").locator("option", { hasText: "Loading types" })).toHaveCount(0);
     const options = await page.getByLabel("Product type").locator("option").allTextContents();
     for (const t of ["Panjabi", "Cap", "Shoes", "Watch"]) {
       expect(options, `product type "${t}" is missing — run: pnpm --filter api db:seed:presets`).toContain(t);

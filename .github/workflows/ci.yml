@@ -35,6 +35,8 @@ jobs:
       WEB_ORIGIN: http://localhost:3000
       SEED_ADMIN_EMAIL: admin@example.com
       SEED_ADMIN_PASSWORD: ChangeMe123!
+      E2E_STAFF_EMAIL: staff@example.com
+      E2E_STAFF_PASSWORD: ChangeMe123!
 
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +76,13 @@ jobs:
 
       - name: Seed admin + demo catalog
         run: pnpm --filter api db:seed
+
+      # The acceptance spec builds products from the starter types (Panjabi, Cap, Shoes, Watch), and
+      # the builder's test matrix signs in as a STAFF admin to check what staff can and can't do.
+      - name: Seed starter presets + e2e staff account
+        run: |
+          pnpm --filter api db:seed:presets
+          pnpm --filter api exec tsx scripts/create-e2e-staff.ts
 
       - name: Typecheck API
         run: pnpm --filter api exec tsc --noEmit -p tsconfig.json
