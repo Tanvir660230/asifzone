@@ -142,6 +142,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
     // New products are drafts. Publishing needs an image, so upload one and go live.
     const panel = page.getByTestId("product-status-panel");
     await expect(panel).toContainText("Draft");
+    await page.getByTestId("wizard-step-media").click(); // the list opens the step-by-step editor; photos are on its Media step
     await page.locator('input[type="file"]').first().setInputFiles({ name: "cap.png", mimeType: "image/png", buffer: PNG });
     await expect(panel.getByRole("button", { name: "Publish" })).toBeEnabled({ timeout: 30_000 });
     await panel.getByRole("button", { name: "Publish" }).click();

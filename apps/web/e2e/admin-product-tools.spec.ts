@@ -101,9 +101,10 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     await page.waitForURL((url) => /\/admin\/products\/.+\/edit$/.test(url.pathname) && url.pathname !== editUrl); // the copy's page, not the source's
     await expect(page.getByLabel("Product name")).toHaveValue(`${SOURCE} (copy)`);
     await expect(page.getByTestId("product-status-panel")).toContainText("Draft");
+    await page.getByTestId("wizard-step-media").click(); // "Open the copy" goes to the step-by-step editor
     await expect(page.getByLabel("Image caption")).toHaveCount(1); // its own copy of the photo
 
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await page.getByTestId("wizard-step-variants").click();
     const skus = [await page.locator('input[name="variants.0.sku"]').inputValue(), await page.locator('input[name="variants.1.sku"]').inputValue()];
     expect(skus[0]).toBeTruthy();
     expect(new Set(skus).size).toBe(2);
@@ -112,7 +113,7 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     await expect(page.locator('input[name="variants.0.stock"]')).toHaveValue("0"); // stock is not counted twice
     await expect(page.locator('input[name="variants.1.stock"]')).toHaveValue("0");
 
-    await page.getByRole("button", { name: "Page content" }).click();
+    await page.getByTestId("wizard-step-content").click();
     await expect(page.getByLabel("Question 1", { exact: true })).toHaveValue("Is it the original?");
 
     await page.getByRole("button", { name: "History" }).click();
@@ -132,8 +133,9 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     await dialog.getByRole("link", { name: "Open the copy" }).click();
 
     await expect(page.getByLabel("Product name")).toHaveValue(`${SOURCE} second copy`);
+    await page.getByTestId("wizard-step-media").click();
     await expect(page.getByLabel("Image caption")).toHaveCount(0);
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await page.getByTestId("wizard-step-variants").click();
     await expect(page.locator('input[name="variants.0.stock"]')).toHaveValue("8");
     await expect(page.locator('input[name="variants.1.stock"]')).toHaveValue("6");
   });

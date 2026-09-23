@@ -18,11 +18,13 @@ import { FaqEditor, RelatedProductsEditor } from "@/components/admin/product-con
 import { ImageUploader } from "@/components/admin/image-uploader";
 import { AiGenerateButton } from "@/components/admin/product-form";
 import { buildCategoryOptions } from "@/components/admin/product-form-state";
-import type { WizardState } from "./types";
+import type { WizardActions, WizardState } from "./types";
 import * as aiApi from "@/lib/api/ai";
 import { stripHtml } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { slugify, type Category } from "@clothing-brand/shared";
+import { isBlankAttributeValue, slugify, type Category } from "@clothing-brand/shared";
+import { AlertTriangle, Check, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 /** Every step pane needs the shared form state; most add a couple of step-specific props on top. */
 interface StepProps {
@@ -30,7 +32,7 @@ interface StepProps {
 }
 
 export function BasicsStep({ state, categories }: StepProps & { categories: Category[] }) {
-  const { form, selectedConfig, canUseAi, initial, typeId, types } = state;
+  const { form, selectedConfig, canUseAi, typeId, types } = state;
   const { register, control, watch, setValue, formState: { errors } } = form;
   const categoryOptions = buildCategoryOptions(categories);
   const productName = watch("name");
@@ -77,11 +79,7 @@ export function BasicsStep({ state, categories }: StepProps & { categories: Cate
               )}
             />
             {selectedConfig?.description && <p className="mt-1 text-xs text-ink-400">{selectedConfig.description}</p>}
-            {initial && typeId && typeId !== initial.typeId && (
-              <p className="mt-1 text-xs text-brass-700">
-                Changing the type changes which fields (and which later steps) appear. Values the new type doesn&rsquo;t use are kept and come back if you switch back.
-              </p>
-            )}
+            <TypeChangeImpact state={state} />
             {errors.typeId && <p className="mt-1 text-xs text-danger-600">{errors.typeId.message}</p>}
           </div>
 
@@ -143,6 +141,46 @@ export function BasicsStep({ state, categories }: StepProps & { categories: Cate
   );
 }
 
+/** Spec: changing a saved product's type must never silently destroy data — say exactly what the switch does before
+ * it's saved. Attribute values the new type doesn't use are kept (hidden) by the API and come back on switching back;
+ * variant values are never touched, but a newly required option has to be filled before the next save succeeds. */
+function TypeChangeImpact({ state }: StepProps) {
+  const { initial, types, selectedConfig, form } = state;
+  const previous = initial ? types.find((t) => t.typeId === initial.typeId) : undefined;
+  if (!previous || !selectedConfig || previous.typeId === selectedConfig.typeId) return null;
+
+  const attributes = (form.watch("attributes") ?? {}) as Record<string, unknown>;
+  const hidden = previous.fields.filter((f) => !selectedConfig.fields.some((n) => n.key === f.key) && !isBlankAttributeValue(attributes[f.key]));
+  const newlyRequired = selectedConfig.fields.filter((f) => f.required && isBlankAttributeValue(attributes[f.key]));
+  const dims = (c: typeof selectedConfig) => new Map(c.variantDimensions.map((d) => [d.targetField, d.label]));
+  const before = dims(previous);
+  const after = dims(selectedConfig);
+  const added = [...after].filter(([field]) => !before.has(field)).map(([, label]) => label);
+  const removed = [...before].filter(([field]) => !after.has(field)).map(([, label]) => label);
+
+  return (
+    <div className="mt-2 space-y-1 rounded-md border border-brass-200 bg-brass-50 px-3 py-2 text-xs text-brass-900" role="status" data-testid="type-change-impact">
+      <p className="font-medium">Switching from {previous.name} to {selectedConfig.name}:</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {hidden.length > 0 && (
+          <li>
+            Kept but hidden: {hidden.map((f) => f.label).join(", ")} — {selectedConfig.name} doesn&rsquo;t use {hidden.length === 1 ? "it" : "them"}, and{" "}
+            {hidden.length === 1 ? "it comes" : "they come"} back if you switch back.
+          </li>
+        )}
+        {added.map((label) => (
+          <li key={label}>{selectedConfig.name} asks for a {label} on every variant — add one to each before the next save can go through.</li>
+        ))}
+        {removed.map((label) => (
+          <li key={label}>{label} is no longer an option for {selectedConfig.name}; variants keep the values they have.</li>
+        ))}
+        {newlyRequired.length > 0 && <li>Required for {selectedConfig.name}: {newlyRequired.map((f) => f.label).join(", ")}.</li>}
+        {hidden.length + added.length + removed.length + newlyRequired.length === 0 && <li>Nothing you&rsquo;ve entered is affected.</li>}
+      </ul>
+    </div>
+  );
+}
+
 // Tiptap is large and admin-only — lazy-load it the same way product-form.tsx does, without pulling
 // next/dynamic into every step file.
 import dynamic from "next/dynamic";
@@ -162,7 +200,11 @@ export function MediaStep({ state }: StepProps) {
 }
 
 export function PricingStep({ state }: StepProps) {
-  const { form, initial } = state;
+  const { form, initial, selectedConfig } = state;
+  const variantRows = (form.watch("variants") ?? []) as unknown[];
+  // Spec §16/§24: a product with no size/colour options is a first-class simple product — its SKU and stock belong
+  // with its price, not behind a Variants step it doesn't have.
+  const simple = Boolean(selectedConfig) && selectedConfig!.variantDimensions.length === 0;
   const { register, formState: { errors } } = form;
   const basePrice = form.watch("basePrice");
   const costPrice = form.watch("costPrice");
@@ -214,6 +256,23 @@ export function PricingStep({ state }: StepProps) {
           </div>
         </div>
       </FormSection>
+
+      {simple && (
+        <FormSection title="SKU & stock" description="This product has no size or colour options, so its SKU and stock are set here.">
+          {variantRows.map((_, i) => (
+            <div key={i} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <Label htmlFor={`simple-sku-${i}`}>{variantRows.length > 1 ? `SKU (${i + 1})` : "SKU"}</Label>
+                <Input id={`simple-sku-${i}`} placeholder={initial ? "SKU-001" : "Generated when the draft is created"} {...form.register(`variants.${i}.sku`)} />
+              </div>
+              <div>
+                <Label htmlFor={`simple-stock-${i}`}>{variantRows.length > 1 ? `Stock (${i + 1})` : "Stock"}</Label>
+                <Input id={`simple-stock-${i}`} type="number" min={0} {...form.register(`variants.${i}.stock`, { valueAsNumber: true })} />
+              </div>
+            </div>
+          ))}
+        </FormSection>
+      )}
     </>
   );
 }
@@ -303,7 +362,7 @@ export function ContentStep({ state, relationNames, onRelationNames }: StepProps
   );
 }
 
-export function SeoStep({ state }: StepProps) {
+export function SeoStep({ state, actions }: StepProps & { actions: WizardActions }) {
   const { form, initial, canUseAi } = state;
   const { register, watch, setValue, formState: { errors } } = form;
   const productName = watch("name");
@@ -326,9 +385,7 @@ export function SeoStep({ state }: StepProps) {
               <Input id="slug" placeholder="auto-generated from the name" {...register("slug")} />
             </div>
             {errors.slug && <p className="mt-1 text-xs text-danger-600">{errors.slug.message as string}</p>}
-            {initial && initial.status === "PUBLISHED" && (
-              <p className="mt-1 text-xs text-brass-700">This product is live — saving a new slug automatically redirects the old URL here, so existing links keep working.</p>
-            )}
+            <LiveSlugChange state={state} actions={actions} />
           </div>
 
           <div>
@@ -421,6 +478,33 @@ export function SeoStep({ state }: StepProps) {
   );
 }
 
+/** A live product's URL isn't autosaved (every keystroke would otherwise become a live URL and a redirect): the new
+ * slug is shown with exactly what saving it does, and only changes when the admin confirms. */
+function LiveSlugChange({ state, actions }: StepProps & { actions: WizardActions }) {
+  const { initial, form } = state;
+  if (!initial || initial.status !== "PUBLISHED") return null;
+  const typed = slugify(form.watch("slug") || "");
+  if (!typed || typed === initial.slug) {
+    return <p className="mt-1 text-xs text-ink-500">This product is live. Its URL only changes when you confirm it here — the old address will then redirect to the new one.</p>;
+  }
+  return (
+    <div className="mt-2 space-y-2 rounded-md border border-brass-200 bg-brass-50 px-3 py-2 text-xs text-brass-900" role="alert" data-testid="slug-change-notice">
+      <p>
+        This product is live at <code>/product/{initial.slug}</code>. Changing its URL to <code>/product/{typed}</code> adds a permanent (301) redirect from
+        the old address, so links and search results that point there keep working.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="brass" disabled={actions.applyingSlug} onClick={() => actions.applySlug(typed)}>
+          {actions.applyingSlug ? "Changing…" : "Change URL"}
+        </Button>
+        <Button type="button" size="sm" variant="outline" disabled={actions.applyingSlug} onClick={() => form.setValue("slug", initial.slug, { shouldDirty: true })}>
+          Keep current URL
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** The live preview itself sits beside every step (see PreviewPane); this step is the moment to look at it on purpose,
  * and — once saved — to open the full page, which also fills in reviews and recommendations from live store data. */
 export function PreviewStep({ state }: StepProps) {
@@ -446,44 +530,135 @@ export function PreviewStep({ state }: StepProps) {
   );
 }
 
-export function ReviewStep({ state }: StepProps) {
-  const { completeness, initial } = state;
-  const id = initial?.id;
+export function ReviewStep({ state, actions }: StepProps & { actions: WizardActions }) {
+  const { completeness } = state;
+  // Only what applies to this product: a check that doesn't apply (no size guide on this type, Care switched off, ...)
+  // isn't listed at all, rather than shown as a pass or a gap.
+  const checks = completeness.checks.filter((c) => c.status !== "na");
+  const blockers = completeness.blockers;
+  const suggestions = checks.filter((c) => c.status === "missing" && !c.required);
+
   return (
-    <FormSection title="Final Review" description="Everything the publish gate checks, in one place.">
-      <ul className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-        {completeness.checks.map((c) => (
-          <li key={c.key} className="flex items-center gap-2 text-sm">
-            <span className={cn("h-1.5 w-1.5 rounded-full", c.status === "ok" ? "bg-success-500" : c.status === "na" ? "bg-ink-200" : c.required ? "bg-danger-500" : "bg-brass-500")} />
-            <span className={c.status === "ok" ? "text-ink-700" : "text-ink-900"}>{c.label}</span>
-            {c.status === "missing" && c.required && <span className="text-[11px] font-medium uppercase tracking-wide text-danger-600">required</span>}
+    <FormSection title="Final Review" description="Everything the publish gate checks for this product, and anything worth another look.">
+      <p className={cn("text-sm font-medium", blockers.length ? "text-danger-700" : "text-success-700")} data-testid="review-summary">
+        {blockers.length
+          ? `${blockers.length} ${blockers.length === 1 ? "thing needs" : "things need"} attention before this can go live`
+          : "Everything required is complete"}
+        {suggestions.length > 0 && <span className="font-normal text-ink-500"> · {suggestions.length} optional {suggestions.length === 1 ? "suggestion" : "suggestions"}</span>}
+      </p>
+      <ul className="divide-y divide-ink-100 rounded-lg border border-ink-100">
+        {checks.map((c) => (
+          <li key={c.key} className="flex items-center gap-3 px-3 py-2 text-sm" data-testid={`review-check-${c.key}`} data-status={c.status}>
+            {c.status === "ok" ? (
+              <Check size={15} className="shrink-0 text-success-600" aria-label="Complete" />
+            ) : (
+              <AlertTriangle size={15} className={cn("shrink-0", c.required ? "text-danger-600" : "text-brass-600")} aria-label={c.required ? "Required" : "Suggested"} />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-ink-900">
+                {c.label}
+                {c.status === "missing" && c.required && <span className="ml-2 text-[11px] font-medium uppercase tracking-wide text-danger-600">required</span>}
+              </p>
+              {c.status === "missing" && <p className="text-xs text-ink-500">{c.detail ?? c.hint}</p>}
+            </div>
+            {c.status === "missing" && (
+              <Button type="button" size="sm" variant="outline" onClick={() => actions.fix(c.key)}>
+                Fix
+              </Button>
+            )}
           </li>
         ))}
       </ul>
-      {id && (
-        <Link href={`/preview/${id}`} target="_blank" rel="noreferrer" className="inline-block text-sm text-brass-600 hover:text-brass-700">
-          Open the customer preview →
-        </Link>
-      )}
+      <p className="text-xs text-ink-400">The customer preview beside this form shows the product as it will appear — switch device and surface there.</p>
     </FormSection>
   );
 }
 
-export function PublishStep({ state }: StepProps) {
-  const { completeness, initial } = state;
-  const blocked = completeness.blockers.length > 0;
-  return (
-    <FormSection
-      title="Publish"
-      description={
-        blocked
-          ? "Not ready yet — use the panel above to fix what's missing, or Save Draft and come back."
-          : initial?.status === "PUBLISHED"
-            ? "This product is already live. Use the panel above to save changes or unpublish it."
-            : "Ready to publish? Use the panel above — it always shows this product's status and the right action for it."
-      }
+export function PublishStep({ state, actions }: StepProps & { actions: WizardActions }) {
+  const { completeness, initial, form } = state;
+  if (!initial) return null;
+  const blockers = completeness.blockers;
+  const name = form.watch("name") || initial.name;
+  const live = initial.status === "PUBLISHED";
+  const viewLink = (
+    <a
+      href={`/product/${initial.slug}`}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1.5 rounded-full border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 hover:border-ink-400 hover:text-ink-900"
     >
-      <p className="text-sm text-ink-500">{initial?.name ?? "This product"} {blocked ? "still needs a few things before it can go live." : "is ready to go live whenever you are."}</p>
+      <ExternalLink size={14} /> View product
+    </a>
+  );
+
+  if (live) {
+    return (
+      <FormSection title="Publish">
+        <div className="space-y-3 rounded-xl border border-success-200 bg-success-50 p-5" role="status" data-testid="publish-live">
+          <p className="flex items-center gap-2 text-base font-medium text-success-800">
+            <Check size={18} /> {actions.justPublished ? "Product published" : "This product is live"}
+          </p>
+          <p className="text-sm text-success-800">{actions.justPublished ? "Your product is now live on the store." : `${name} is on the store now. Changes save as you make them.`}</p>
+          <div className="flex flex-wrap gap-2">
+            {viewLink}
+            <Button type="button" variant="outline" onClick={() => actions.goTo("basics")}>
+              Continue editing
+            </Button>
+            {!actions.justPublished && (
+              <Button type="button" variant="outline" disabled={actions.busy} onClick={() => void actions.saveWithStatus("UNPUBLISHED")}>
+                Unpublish
+              </Button>
+            )}
+          </div>
+        </div>
+      </FormSection>
+    );
+  }
+
+  if (blockers.length) {
+    return (
+      <FormSection title="Publish">
+        <div className="space-y-3 rounded-xl border border-danger-200 bg-danger-50 p-5" data-testid="publish-blocked">
+          <p className="text-base font-medium text-danger-800">
+            {blockers.length} {blockers.length === 1 ? "thing needs" : "things need"} attention
+          </p>
+          <ol className="space-y-2">
+            {blockers.map((b, i) => (
+              <li key={b.key} className="flex items-center justify-between gap-3 text-sm text-danger-900">
+                <span>
+                  {i + 1}. {b.detail ?? b.label}
+                </span>
+                <Button type="button" size="sm" variant="outline" onClick={() => actions.fix(b.key)}>
+                  Fix
+                </Button>
+              </li>
+            ))}
+          </ol>
+          <Button type="button" variant="brass" disabled title="Fix the items above first">
+            Publish product
+          </Button>
+        </div>
+      </FormSection>
+    );
+  }
+
+  return (
+    <FormSection title="Publish">
+      <div className="space-y-3 rounded-xl border border-ink-100 bg-cream-50 p-5" data-testid="publish-ready">
+        <p className="text-base font-medium text-ink-900">Ready to publish?</p>
+        <p className="text-sm text-ink-600">
+          Product: <span className="font-medium text-ink-900">{name}</span>
+        </p>
+        <p className="text-sm text-ink-600">All required information is complete. Publishing puts it on the store straight away.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" disabled={actions.busy} onClick={() => void actions.saveWithStatus()}>
+            Save draft
+          </Button>
+          <Button type="button" variant="brass" disabled={actions.busy} onClick={() => void actions.saveWithStatus("PUBLISHED")}>
+            {actions.busy ? "Publishing…" : "Publish product"}
+          </Button>
+        </div>
+      </div>
     </FormSection>
   );
 }

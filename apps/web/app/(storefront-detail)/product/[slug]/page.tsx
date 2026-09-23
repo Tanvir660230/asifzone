@@ -1,7 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import type { Metadata } from "next";
 import { ProductPageView } from "@/components/storefront/product-page-view";
-import { getProductBySlug } from "@/lib/api/storefront";
+import { findProductRedirect, getProductBySlug } from "@/lib/api/storefront";
 import { buildOpenGraph, productSeoFields } from "@/lib/seo";
 
 interface Props {
@@ -35,7 +35,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductPage({ params }: Props) {
   const { slug } = await params;
   const data = await loadProduct(slug);
-  if (!data) notFound();
+  if (!data) {
+    // A renamed product's old URL: redirect straight away rather than 404 until the middleware's list refreshes.
+    const to = await findProductRedirect(slug).catch(() => null);
+    if (to) permanentRedirect(to);
+    notFound();
+  }
 
   return <ProductPageView product={data.product} mode="live" />;
 }

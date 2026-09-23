@@ -21,6 +21,7 @@ import { buildAccordionItems, productPageLayout, sanitizeRichTextSpecs } from "@
 import { buildProductJsonLd } from "@/lib/structured-data";
 import { getSiteUrl } from "@/lib/seo";
 import { jsonLdString } from "@clothing-brand/shared";
+import { productEditHref } from "@/lib/admin-routes";
 
 // Each list fetches and streams independently via its own Suspense boundary, instead of the whole page waiting on
 // every recommendation endpoint before it can paint — the above-the-fold product info is only blocked on what it needs.
@@ -97,7 +98,7 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
       {!live && (
         <div className="sticky top-0 z-40 border-b border-brass-300 bg-brass-100 px-4 py-2 text-center text-sm text-brass-900" role="status" data-testid="preview-banner">
           <strong>Preview</strong> — this is how customers will see it{previewStatus && previewStatus !== "PUBLISHED" ? `. It is a ${previewStatus.toLowerCase()} and not visible on the store yet` : ""}. It shows the saved product.{" "}
-          <Link href={`/admin/products/${product.id}/edit`} className="underline">
+          <Link href={productEditHref(product.id)} className="underline">
             Back to editor
           </Link>
         </div>

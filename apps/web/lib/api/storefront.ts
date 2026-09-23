@@ -80,6 +80,20 @@ export function getProductBySlug(slug: string) {
   return storefrontFetch<{ product: Product }>(`/api/products/slug/${encodeURIComponent(slug)}`, REVALIDATE_SECONDS, [`product:${slug}`]);
 }
 
+/** Where an unknown product slug now lives, if a redirect covers it (a published product was renamed).
+ * The middleware already redirects, but it re-reads the list only every few minutes; this lookup is
+ * tagged `product:<slug>` — the tag the API busts for the old slug on a rename — so the old URL
+ * redirects as soon as the rename lands. The query string only gives each slug its own cache entry. */
+export async function findProductRedirect(slug: string): Promise<string | null> {
+  const fromPath = `/product/${slug}`;
+  const { redirects } = await storefrontFetch<{ redirects: { fromPath: string; toPath: string }[] }>(
+    `/api/redirects/active?for=${encodeURIComponent(slug)}`,
+    REVALIDATE_SECONDS,
+    [`product:${slug}`],
+  );
+  return redirects.find((r) => r.fromPath === fromPath)?.toPath ?? null;
+}
+
 export function listStorefrontProducts(params: Partial<StorefrontProductQuery> = {}) {
   const query = new URLSearchParams();
   if (params.category) query.set("category", params.category);

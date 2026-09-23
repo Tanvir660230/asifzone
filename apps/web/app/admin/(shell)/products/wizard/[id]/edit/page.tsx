@@ -11,6 +11,7 @@ import { ProductWizard } from "@/components/admin/product-wizard/wizard-shell";
 import { DuplicateProductDialog } from "@/components/admin/duplicate-product-dialog";
 import * as categoriesApi from "@/lib/api/categories";
 import * as productsApi from "@/lib/api/products";
+import { classicProductEditHref } from "@/lib/admin-routes";
 
 export default function EditProductWizardPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,6 +60,9 @@ export default function EditProductWizardPage() {
               <Copy size={13} />
               Duplicate
             </button>
+            <Link href={classicProductEditHref(product.id)} className="text-xs text-ink-500 underline hover:text-ink-900">
+              Classic editor
+            </Link>
             <BackLink href="/admin/products" label="Back to Products" />
           </div>
         }

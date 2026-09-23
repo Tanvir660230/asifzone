@@ -125,6 +125,7 @@ test.describe("product management system — the brief's acceptance tests", () =
   test("0. the starter presets are installed", async ({ page }) => {
     await login(page);
     await page.goto("/admin/products/new");
+    await expect(page.getByLabel("Product type").locator("option", { hasText: "Loading types" })).toHaveCount(0);
     const options = await page.getByLabel("Product type").locator("option").allTextContents();
     for (const t of ["Panjabi", "Cap", "Shoes", "Watch"]) {
       expect(options, `product type "${t}" is missing — run: pnpm --filter api db:seed:presets`).toContain(t);
@@ -488,10 +489,11 @@ test.describe("product management system — the brief's acceptance tests", () =
     await expect(page.getByTestId("product-status-panel")).toContainText("Draft");
     // Type attributes and care came along.
     await expect(page.getByLabel(EMBROIDERY, { exact: true })).toHaveValue("Hand embroidery");
-    await page.getByRole("button", { name: "Care & Material" }).click();
+    // "Open the copy" goes to the step-by-step editor: move between its steps, not the classic tabs.
+    await page.getByTestId("wizard-step-care").click();
     await expect(page.getByLabel("Care guide").locator("option:checked")).toHaveText(CARE_A);
 
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await page.getByTestId("wizard-step-variants").click();
     const copySkus = await Promise.all([0, 1, 2, 3].map((i) => page.locator(`input[name="variants.${i}.sku"]`).inputValue()));
     const original = (await apiProduct(slug.panjabi)).variants.map((v: any) => v.sku);
     expect(new Set(copySkus).size).toBe(4);
@@ -499,7 +501,8 @@ test.describe("product management system — the brief's acceptance tests", () =
     for (let i = 0; i < 4; i++) await expect(page.locator(`input[name="variants.${i}.stock"]`)).toHaveValue("0"); // stock is not doubled
     await expect(page.locator('input[name="variants.2.price"]')).toHaveValue("1400"); // prices are
 
-    const slugOfCopy = await slugFrom(page);
+    await page.getByTestId("wizard-step-seo").click();
+    const slugOfCopy = await page.getByLabel("URL slug").inputValue();
     expect(slugOfCopy).not.toBe(SLUG.panjabi);
     expect((await fetch(`${API}/api/products/slug/${slugOfCopy}`)).status).toBe(404); // a draft is not public
 
