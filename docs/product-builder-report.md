@@ -32,7 +32,7 @@ The gaps were almost all in the admin editor, plus three in the backend:
 | #14 P10 | `feat/pim-p10-wizard-shell` | The step-by-step builder: Basics, Media, Pricing, Options & Variants, Content, Care & Material, Size Guide, SEO, Preview, Final Review, Publish. Steps a product doesn't need don't appear at all. The draft is created once Basics/Pricing are done, then saved automatically 0.9 s after each change. |
 | #15 P11 | `feat/pim-p11-live-preview` | A live preview beside the form, fed from what is typed (not from the last save). It renders at real desktop, tablet and mobile widths, in five views: product page, listing card, search result, social share card, Google result. It uses the storefront's own components; the live product page's HTML was checked byte-identical before and after the split. |
 | #16 P12 | `feat/pim-p12-variants-uploads` | Bulk stock/price edits for variants; duplicate SKUs highlighted as you type and refused by the API; "Generate missing SKUs". Uploads show progress, run one at a time, and a failed file can be retried without losing the others. |
-| P13 (this PR) | `feat/pim-p13-final-review` | Final Review and Publish steps, the URL-change confirmation, recovery of unsaved new drafts, simple-product SKU/stock, type-change explanation, history in the builder, cutover, and the test matrix. Details in section 3. |
+| #17 P13 | `feat/pim-p13-final-review` | Final Review and Publish steps, the URL-change confirmation, recovery of unsaved new drafts, simple-product SKU/stock, type-change explanation, history in the builder, cutover, and the test matrix. Details in section 3. |
 
 ## 3. P13 in detail
 
@@ -121,7 +121,7 @@ The builder, preview, autosave, redirects and permissions are covered by passing
 
 ## 9. Commands that must be run
 
-1. Merge the stacked PRs in order: #11 → #12 → #13 → #14 → #15 → #16 → P13. Each is based on the previous one, after the earlier product-management PRs.
+1. Merge the stacked PRs in order: #11 → #12 → #13 → #14 → #15 → #16 → #17. Each is based on the previous one, after the earlier product-management PRs.
 2. Add the GitHub Actions secret `REVALIDATE_SECRET`: any long random string, e.g. the output of `openssl rand -hex 32`. `ci.yml` writes it into `docker/.env` for both containers.
 3. No migrations and no new dependencies.
 4. To re-run the checks: `pnpm --filter api test`, and in `apps/web` run `npx playwright test` against a running stack, with `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` for an owner account. The matrix spec also needs a staff account in `E2E_STAFF_EMAIL`/`E2E_STAFF_PASSWORD`.
