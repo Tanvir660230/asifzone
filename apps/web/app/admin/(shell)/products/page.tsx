@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX, Copy, FileSpreadsheet } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX, Copy, FileSpreadsheet, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -254,6 +254,11 @@ export default function ProductsPage() {
             <Link href="/admin/products/import">
               <Button variant="outline">
                 <FileSpreadsheet size={16} /> Import / export
+              </Button>
+            </Link>
+            <Link href="/admin/products/wizard/new">
+              <Button variant="outline">
+                <Sparkles size={16} /> Try the step-by-step builder
               </Button>
             </Link>
             <Link href="/admin/products/new">
