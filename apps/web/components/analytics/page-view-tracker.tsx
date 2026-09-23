@@ -75,6 +75,10 @@ export function PageViewTracker() {
     // Close out the previous page's engagement stats before starting the new one.
     flushExitRef.current();
 
+    // An admin looking at a draft (/preview/:id) or the product wizard's embedded live preview frame, which reloads
+    // with every editor visit — never a shopper, so neither should show up as storefront traffic.
+    if (pathname.startsWith("/preview") || pathname === "/admin/product-preview-frame") return;
+
     trackPageView(`${pathname}${window.location.search}`).then((id) => {
       currentRef.current = { id, startedAt: Date.now() };
     });

@@ -1,11 +1,12 @@
 import type { Prisma } from "@prisma/client";
 import {
+  buildCareView,
+  buildResolvedView,
+  buildSizeGuideView,
   buildSpecGroups,
-  DEFAULT_SIZE_GUIDE,
   DEFAULT_SPEC_GROUP_NAME,
   isBlankAttributeValue,
   type AttributeDataType,
-  type ProductResolvedView,
   type ResolvedAttributeField,
   type ResolvedTypeConfig,
   type SizeGuideData,
@@ -13,10 +14,10 @@ import {
   type VariantDimension,
 } from "@clothing-brand/shared";
 
-// Re-exported so existing local imports (e.g. this module's own tests) keep working — the implementation
-// now lives in packages/shared/src/spec-groups.ts so the admin wizard's live preview can call the same
-// pure function client-side instead of re-deriving the grouping rules.
-export { buildSpecGroups, DEFAULT_SPEC_GROUP_NAME };
+// Re-exported so existing local imports (this module's tests, product.service.ts) keep working — the
+// implementations live in packages/shared (spec-groups.ts, resolved-view.ts) so the admin wizard's live
+// preview resolves a draft with the very same rules instead of re-deriving them client-side.
+export { buildCareView, buildResolvedView, buildSizeGuideView, buildSpecGroups, DEFAULT_SPEC_GROUP_NAME };
 
 /** Everything needed to turn a ProductTypeDef into a ResolvedTypeConfig — see catalog.service.ts. */
 export const TYPE_INCLUDE = {
@@ -182,48 +183,4 @@ export function presentAttributes(product: ProductForPresentation, fields: Resol
     if (!isBlankAttributeValue(value)) result[field.key] = value;
   }
   return result;
-}
-
-/** Whether the product page offers a size guide, and which chart: the product's own saved guide wins;
- * otherwise the template's preset (or the generic chart when the template has none). */
-export function buildSizeGuideView(
-  config: Pick<ResolvedTypeConfig, "sizeGuide"> | null,
-  attributes: Record<string, unknown>,
-): ProductResolvedView["sizeGuide"] {
-  if (!config || config.sizeGuide.mode === "NOT_APPLICABLE") return { show: false, chart: null };
-  const saved = attributes.sizeGuide;
-  if (saved && typeof saved === "object") {
-    return { show: (saved as SizeGuideData).enabled === true, chart: saved as SizeGuideData };
-  }
-  return { show: config.sizeGuide.mode === "ON_BY_DEFAULT", chart: config.sizeGuide.chart ?? DEFAULT_SIZE_GUIDE };
-}
-
-/** What care steps to show, most specific first: the product's own list, its chosen preset, then the template's default. */
-export function buildCareView(
-  product: { careOverride: unknown; carePreset: { name: string; steps: unknown } | null },
-  config: Pick<ResolvedTypeConfig, "care"> | null,
-): ProductResolvedView["care"] {
-  const own = Array.isArray(product.careOverride) ? (product.careOverride as string[]).filter(Boolean) : [];
-  if (own.length) return { title: "Care", steps: own, source: "product" };
-  const steps = product.carePreset ? (product.carePreset.steps as string[]) : [];
-  if (product.carePreset && steps.length) return { title: product.carePreset.name, steps, source: "preset" };
-  if (config && config.care.steps.length) return { title: config.care.name ?? "Care", steps: config.care.steps, source: "template" };
-  return null;
-}
-
-export function buildResolvedView(
-  config: ResolvedTypeConfig | null,
-  attributes: Record<string, unknown>,
-  extras: Pick<ProductResolvedView, "care" | "materials" | "sections" | "faqs"> = { care: null, materials: [], sections: [], faqs: [] },
-): ProductResolvedView {
-  return {
-    type: config ? { id: config.typeId, key: config.key, name: config.name } : null,
-    variantDimensions: config?.variantDimensions ?? [],
-    specGroups: config ? buildSpecGroups(config.fields, attributes) : [],
-    sizeGuide: buildSizeGuideView(config, attributes),
-    care: extras.care,
-    materials: extras.materials,
-    sections: extras.sections,
-    faqs: extras.faqs,
-  };
 }

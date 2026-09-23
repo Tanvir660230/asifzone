@@ -4,5 +4,7 @@ import { env } from "./env";
  * absolute URL directly (matching banner/category/logo images). Handles both so older rows
  * keep rendering correctly after the switch. */
 export function resolveImageUrl(url: string): string {
-  return url.startsWith("http") ? url : `${env.apiUrl}${url}`;
+  // blob:/data: are in-browser images not uploaded yet (the admin wizard's preview of staged photos) — already usable as-is.
+  if (url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")) return url;
+  return `${env.apiUrl}${url}`;
 }
