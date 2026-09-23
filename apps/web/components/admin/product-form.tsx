@@ -10,6 +10,7 @@ import { Sparkles } from "lucide-react";
 import {
   computeCompleteness,
   createProductSchema,
+  resolveSections,
   validateProductAgainstConfig,
   type Category,
   type CreateProductInput,
@@ -300,6 +301,14 @@ export function ProductForm({
   // Live completeness from what's in the form right now — the very function the server gates publishing with.
   const live = watch();
   const savedSizeGuide = (live.attributes as Record<string, any> | null | undefined)?.sizeGuide;
+  // Same store → template → product resolution the section editor and the storefront use, so "this section is
+  // off" means the same thing here as it does everywhere else.
+  const resolvedSections = resolveSections({
+    global: layerOf((globalSections?.overrides ?? []) as SectionOverrideInput[]),
+    template: layerOf((selectedConfig?.sectionOverrides ?? []) as SectionOverrideInput[]),
+    product: layerOf((live.sections ?? []) as SectionOverrideInput[]),
+  });
+  const sectionEnabled = (key: string) => resolvedSections.find((s) => s.key === key)?.enabled ?? true;
   const completeness = computeCompleteness(
     {
       name: live.name,
@@ -320,6 +329,8 @@ export function ProductForm({
           : savedSizeGuide
             ? savedSizeGuide.enabled === true
             : selectedConfig.sizeGuide.mode === "ON_BY_DEFAULT",
+      materialEnabled: sectionEnabled("material"),
+      careEnabled: sectionEnabled("care"),
     },
     selectedConfig ?? null,
   );

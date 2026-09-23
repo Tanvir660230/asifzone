@@ -1,6 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import {
+  buildSpecGroups,
   DEFAULT_SIZE_GUIDE,
+  DEFAULT_SPEC_GROUP_NAME,
   isBlankAttributeValue,
   type AttributeDataType,
   type ProductResolvedView,
@@ -8,9 +10,13 @@ import {
   type ResolvedTypeConfig,
   type SizeGuideData,
   type SizeGuideMode,
-  type SpecItemView,
   type VariantDimension,
 } from "@clothing-brand/shared";
+
+// Re-exported so existing local imports (e.g. this module's own tests) keep working — the implementation
+// now lives in packages/shared/src/spec-groups.ts so the admin wizard's live preview can call the same
+// pure function client-side instead of re-deriving the grouping rules.
+export { buildSpecGroups, DEFAULT_SPEC_GROUP_NAME };
 
 /** Everything needed to turn a ProductTypeDef into a ResolvedTypeConfig — see catalog.service.ts. */
 export const TYPE_INCLUDE = {
@@ -31,9 +37,6 @@ export const TYPE_INCLUDE = {
 } satisfies Prisma.ProductTypeDefInclude;
 
 export type TypeWithTemplate = Prisma.ProductTypeDefGetPayload<{ include: typeof TYPE_INCLUDE }>;
-
-/** Grouping used for fields an admin left out of any spec group. */
-export const DEFAULT_SPEC_GROUP_NAME = "Specifications";
 
 export function presetToChart(preset: {
   name: string;
@@ -179,21 +182,6 @@ export function presentAttributes(product: ProductForPresentation, fields: Resol
     if (!isBlankAttributeValue(value)) result[field.key] = value;
   }
   return result;
-}
-
-export function buildSpecGroups(fields: ResolvedAttributeField[], attributes: Record<string, unknown>): ProductResolvedView["specGroups"] {
-  const groups = new Map<string, SpecItemView[]>();
-  for (const field of fields) {
-    if (!field.showOnStorefront) continue;
-    const value = attributes[field.key];
-    if (isBlankAttributeValue(value)) continue;
-    const name = field.specGroupName ?? DEFAULT_SPEC_GROUP_NAME;
-    const items = groups.get(name) ?? [];
-    items.push({ key: field.key, label: field.label, dataType: field.dataType, unit: field.unit, value: value as SpecItemView["value"] });
-    groups.set(name, items);
-  }
-  // Groups appear in the order their first field appears in the template.
-  return [...groups.entries()].map(([name, items]) => ({ name, items }));
 }
 
 /** Whether the product page offers a size guide, and which chart: the product's own saved guide wins;
