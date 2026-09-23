@@ -84,6 +84,7 @@ productRouter.post("/import/commit", requireAdmin, requireRole("OWNER"), validat
 productRouter.get("/", requireAdmin, validate(productListQuerySchema, "query"), productController.list);
 productRouter.get("/:id", requireAdmin, productController.getOne);
 productRouter.get("/:id/history", requireAdmin, productController.history);
+productRouter.get("/:id/sales-summary", requireAdmin, productController.salesSummary);
 productRouter.get("/:id/preview", requireAdmin, productController.preview);
 
 productRouter.post("/bulk/delete", requireAdmin, validate(bulkProductIdsSchema), productController.bulkDelete);

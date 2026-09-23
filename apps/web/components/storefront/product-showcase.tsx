@@ -7,6 +7,7 @@ import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
 import { UrgencySignals } from "@/components/storefront/urgency-signals";
+import { AdminSalesBadge } from "@/components/storefront/admin-sales-badge";
 import { CountdownTimer } from "@/components/storefront/countdown-timer";
 import { ProductAccordion } from "@/components/storefront/product-accordion";
 import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
@@ -126,6 +127,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         )}
 
         <UrgencySignals signals={urgencySignals} />
+        <AdminSalesBadge productId={product.id} />
 
         <div className="mt-8" ref={buttonsRef}>
           <VariantSelector

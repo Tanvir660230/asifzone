@@ -3,17 +3,21 @@ import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
+import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "../products/product-public-select";
 
-const productInclude = {
-  variants: true,
+// A customer's wishlist shows the storefront's view of each product. (`include: { product: … }` used to return the whole row,
+// including the product's cost price and tax rate, and every variant's cost price.)
+const productSelect = {
+  ...PUBLIC_PRODUCT_SCALARS,
+  variants: { select: PUBLIC_VARIANT_FIELDS, where: { isActive: true }, orderBy: { sortOrder: "asc" as const } },
   images: { orderBy: { sortOrder: "asc" as const } },
   category: true,
-};
+} as const;
 
 export async function listWishlist(customerId: string) {
   const items = await prisma.wishlistItem.findMany({
     where: { customerId },
-    include: { product: { include: productInclude } },
+    include: { product: { select: productSelect } },
     orderBy: { createdAt: "desc" },
   });
   return items;

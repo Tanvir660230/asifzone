@@ -6,6 +6,7 @@ import { buildFaqJsonLd } from "@/lib/structured-data";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { FaqAccordion, type FaqGroup } from "@/components/storefront/faq-accordion";
+import { jsonLdString } from "@clothing-brand/shared";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
 // `next build` would try to statically prerender the page and fail (the api container isn't
@@ -110,7 +111,7 @@ export default function FaqPage() {
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(buildFaqJsonLd(FAQ_GROUPS)) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdString(buildFaqJsonLd(FAQ_GROUPS)) }}
       />
       <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
         <Breadcrumb trail={[{ name: "FAQ" }]} />
