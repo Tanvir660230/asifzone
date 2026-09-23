@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
@@ -19,14 +19,15 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { X, Upload, Sparkles, Star, GripVertical } from "lucide-react";
+import { X, Upload, Sparkles, Star, GripVertical, RotateCw } from "lucide-react";
 import type { ProductImage } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { resolveImageUrl } from "@/lib/image-url";
 import * as productsApi from "@/lib/api/products";
 import * as aiApi from "@/lib/api/ai";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, getErrorMessage } from "@/lib/api-client";
+import { takePendingUploads } from "@/lib/wizard/pending-uploads";
 import { toast } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,16 @@ interface ImageUploaderProps {
   images?: ProductImage[];
   staged?: StagedImage[];
   onStagedChange?: (next: StagedImage[]) => void;
+}
+
+/** A file on its way up (live mode): shown in the grid with its progress, or with its error and a Retry. */
+interface UploadItem {
+  key: string;
+  file: File;
+  previewUrl: string;
+  progress: number;
+  status: "queued" | "uploading" | "failed";
+  error?: string;
 }
 
 function filesToStaged(files: File[]): StagedImage[] {
@@ -75,10 +86,55 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
   const { data: currentAdmin } = useCurrentAdmin();
   const canUseAi = aiStatus?.configured && currentAdmin?.admin.role === "OWNER";
 
-  const uploadMutation = useMutation({
-    mutationFn: (files: File[]) => productsApi.uploadProductImages(productId!, files),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["product", productId] }),
-  });
+  // Live mode uploads one file per request, one at a time: a bad or failed file only fails itself (and can be
+  // retried), and the server appends each image after the last, so going one by one keeps the order they were added.
+  const [queue, setQueue] = useState<UploadItem[]>([]);
+  const uploadingRef = useRef(false);
+
+  function enqueue(files: File[]) {
+    setQueue((q) => [...q, ...filesToStaged(files).map((f) => ({ ...f, progress: 0, status: "queued" as const }))]);
+  }
+
+  const patchItem = (key: string, change: Partial<UploadItem>) => setQueue((q) => q.map((i) => (i.key === key ? { ...i, ...change } : i)));
+
+  useEffect(() => {
+    if (staticMode || uploadingRef.current) return;
+    const next = queue.find((q) => q.status === "queued");
+    if (!next) return;
+    uploadingRef.current = true;
+    patchItem(next.key, { status: "uploading", progress: 0, error: undefined });
+    productsApi
+      .uploadProductImage(productId!, next.file, (fraction) => patchItem(next.key, { progress: fraction }))
+      .then(async () => {
+        await queryClient.invalidateQueries({ queryKey: ["product", productId] });
+        URL.revokeObjectURL(next.previewUrl);
+        setQueue((q) => q.filter((i) => i.key !== next.key));
+      })
+      .catch((err) => patchItem(next.key, { status: "failed", error: getErrorMessage(err, "Upload failed") }))
+      .finally(() => {
+        uploadingRef.current = false;
+        setQueue((q) => [...q]); // look for the next queued file
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue, staticMode, productId]);
+
+  // Photos staged before this product existed (the new-product wizard hands them over on creation) go up here, through
+  // the same queue — so if one fails, it's right here with a Retry, not lost.
+  useEffect(() => {
+    if (!productId) return;
+    const files = takePendingUploads(productId);
+    if (files.length) enqueue(files);
+  }, [productId]);
+
+  const failedCount = queue.filter((q) => q.status === "failed").length;
+  const inFlightCount = queue.length - failedCount;
+  const retryItem = (key: string) => patchItem(key, { status: "queued", progress: 0, error: undefined });
+  const retryAllFailed = () => setQueue((q) => q.map((i) => (i.status === "failed" ? { ...i, status: "queued", progress: 0, error: undefined } : i)));
+  function discardItem(key: string) {
+    const item = queue.find((i) => i.key === key);
+    if (item) URL.revokeObjectURL(item.previewUrl);
+    setQueue((q) => q.filter((i) => i.key !== key));
+  }
   const deleteMutation = useMutation({
     mutationFn: (imageId: string) => productsApi.deleteProductImage(productId!, imageId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["product", productId] }),
@@ -125,13 +181,8 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
       return;
     }
 
-    try {
-      await uploadMutation.mutateAsync(files);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Upload failed");
-    } finally {
-      if (inputRef.current) inputRef.current.value = "";
-    }
+    enqueue(files);
+    if (inputRef.current) inputRef.current.value = "";
   }
 
   function handleDrop(e: DragEvent<HTMLDivElement>) {
@@ -174,7 +225,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
   }
 
   const sortableIds = staticMode ? staged.map((s) => s.key) : images.map((img) => img.id);
-  const count = sortableIds.length;
+  const count = sortableIds.length + (staticMode ? 0 : queue.length);
 
   return (
     <div>
@@ -270,6 +321,35 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
           </SortableContext>
         </DndContext>
 
+        {!staticMode &&
+          queue.map((item) => (
+            <div key={item.key} className="relative aspect-square overflow-hidden rounded border border-ink-100" data-testid="upload-item" data-status={item.status}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.previewUrl} alt="" className={cn("h-full w-full object-cover", item.status !== "failed" && "opacity-50")} />
+              {item.status === "failed" ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-cream-50/90 p-2 text-center" role="alert">
+                  <p className="text-[11px] font-medium text-danger-700">Couldn&rsquo;t upload {item.file.name}</p>
+                  <p className="line-clamp-2 text-[10px] text-ink-500">{item.error}</p>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => retryItem(item.key)}>
+                      <RotateCw size={12} /> Retry
+                    </Button>
+                    <button type="button" onClick={() => discardItem(item.key)} className="text-[11px] text-ink-500 underline hover:text-ink-900">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="absolute inset-x-2 bottom-2">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-ink-900/20" role="progressbar" aria-valuenow={Math.round(item.progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={`Uploading ${item.file.name}`}>
+                    <div className="h-full rounded-full bg-ink-900 transition-all duration-150" style={{ width: `${Math.round(item.progress * 100)}%` }} />
+                  </div>
+                  <p className="mt-1 text-center text-[10px] font-medium text-ink-900">{item.status === "queued" ? "Waiting…" : `${Math.round(item.progress * 100)}%`}</p>
+                </div>
+              )}
+            </div>
+          ))}
+
         {count === 0 && (
           <div className="col-span-2 flex aspect-square items-center justify-center rounded border border-dashed border-ink-200 text-center text-xs text-ink-400 sm:col-span-4 sm:aspect-[4/1]">
             Drag &amp; drop images here, or use the button below
@@ -285,15 +365,26 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
         className="hidden"
         onChange={(e) => handleFilesSelected(e.target.files)}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => inputRef.current?.click()}
-        disabled={!staticMode && uploadMutation.isPending}
-      >
-        <Upload size={14} /> {!staticMode && uploadMutation.isPending ? "Uploading…" : "Upload images"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+          <Upload size={14} /> Upload images
+        </Button>
+        {inFlightCount > 0 && (
+          <span className="text-xs text-ink-500" role="status" data-testid="upload-status">
+            Uploading {inFlightCount} image{inFlightCount === 1 ? "" : "s"}…
+          </span>
+        )}
+        {failedCount > 0 && (
+          <span className="flex items-center gap-2 text-xs text-danger-700" data-testid="upload-failed-summary">
+            {failedCount} failed
+            {failedCount > 1 && (
+              <button type="button" onClick={retryAllFailed} className="underline hover:text-danger-900">
+                Retry all
+              </button>
+            )}
+          </span>
+        )}
+      </div>
       {error && <p className="mt-2 text-xs text-danger-600">{error}</p>}
     </div>
   );

@@ -64,3 +64,17 @@ export function renderSkuPattern(pattern: string, ctx: SkuContext): string {
 
 /** The type code used when a type has no explicit one: its name's first letters ("Panjabi" → "PAN"). */
 export const defaultTypeCode = (name: string) => abbreviateForSku(name) || "GEN";
+
+/** Indexes of the rows whose SKU is also used by another row in the same list (compared trimmed — "AZ-1" and "AZ-1 "
+ * look identical on a label). Blank SKUs are left to the "required" check. The API refuses a save with any of these;
+ * the variant editor highlights the same rows while the admin types. */
+export function findDuplicateSkus(skus: (string | null | undefined)[]): Set<number> {
+  const rowsBySku = new Map<string, number[]>();
+  skus.forEach((sku, i) => {
+    const key = (sku ?? "").trim();
+    if (key) rowsBySku.set(key, [...(rowsBySku.get(key) ?? []), i]);
+  });
+  const duplicates = new Set<number>();
+  for (const rows of rowsBySku.values()) if (rows.length > 1) rows.forEach((i) => duplicates.add(i));
+  return duplicates;
+}
