@@ -68,6 +68,24 @@ describe("computeCompleteness", () => {
     expect(computeCompleteness(complete({ materialCount: 0, attributes: { material: "Linen" } }), config()).checks.find((c) => c.key === "material")?.status).toBe("ok");
     expect(computeCompleteness(complete({ materialCount: 0, attributes: {} }), config()).checks.find((c) => c.key === "material")?.status).toBe("missing");
   });
+
+  it("treats a disabled Material/Care section as not-applicable, out of the score, never a blocker", () => {
+    const noMaterial = computeCompleteness(complete({ materialCount: 0, attributes: {}, materialEnabled: false }), config({ requiredChecks: ["material", "care"] }));
+    expect(noMaterial.checks.find((c) => c.key === "material")?.status).toBe("na");
+    expect(noMaterial.blockers.map((b) => b.key)).not.toContain("material");
+
+    const noCare = computeCompleteness(complete({ hasCare: false, careEnabled: false }), config({ requiredChecks: ["material", "care"] }));
+    expect(noCare.checks.find((c) => c.key === "care")?.status).toBe("na");
+    expect(noCare.blockers.map((b) => b.key)).not.toContain("care");
+
+    // Omitting the flags (existing callers) keeps today's behaviour: still scored, still missing.
+    const omitted = computeCompleteness(complete({ materialCount: 0, attributes: {}, hasCare: false }), config());
+    expect(omitted.checks.find((c) => c.key === "material")?.status).toBe("missing");
+    expect(omitted.checks.find((c) => c.key === "care")?.status).toBe("missing");
+
+    // A fully-complete product scores 100 whether or not the disabled sections are also absent.
+    expect(computeCompleteness(complete({ materialEnabled: false, careEnabled: false, materialCount: 0, attributes: {}, hasCare: false }), config()).score).toBe(100);
+  });
 });
 
 const snap = (over: Partial<AuditSnapshot> = {}): AuditSnapshot => ({
