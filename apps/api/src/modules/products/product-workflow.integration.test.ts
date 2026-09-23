@@ -66,6 +66,7 @@ describe("product workflow: status, completeness, SEO, care, materials, history"
   });
 
   afterAll(async () => {
+    await prisma.redirect.deleteMany({ where: { OR: [{ fromPath: { contains: String(RUN) } }, { toPath: { contains: String(RUN) } }] } });
     await prisma.product.deleteMany({ where: { OR: [{ id: { in: made.products } }, { categoryId }] } });
     await prisma.productTypeDef.deleteMany({ where: { id: { in: made.types } } });
     await prisma.productTemplate.deleteMany({ where: { id: { in: made.templates } } });
@@ -467,6 +468,72 @@ describe("product workflow: status, completeness, SEO, care, materials, history"
     it("requires an admin session and an existing product", async () => {
       expect((await request(app).get(`/api/products/x/history`)).status).toBe(401);
       expect((await owner().get(`/api/products/nope/history`)).status).toBe(404);
+    });
+  });
+
+  describe("slug redirects", () => {
+    it("changing a published product's slug (via name) creates a 301 old → new", async () => {
+      const p = await createProduct();
+      await addImage(p.id);
+      await owner().patch(`/api/products/${p.id}`, { status: "PUBLISHED" });
+      const oldSlug = p.slug;
+
+      const renamed = await owner().patch(`/api/products/${p.id}`, { name: `Vitest Renamed ${RUN}` });
+      expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+      const newSlug = renamed.body.product.slug;
+      expect(newSlug).not.toBe(oldSlug);
+
+      const redirect = await prisma.redirect.findUnique({ where: { fromPath: `/product/${oldSlug}` } });
+      expect(redirect).toMatchObject({ toPath: `/product/${newSlug}`, statusCode: 301, isActive: true });
+
+      expect((await request(app).get(`/api/products/slug/${newSlug}`)).status).toBe(200);
+      expect((await request(app).get(`/api/products/slug/${oldSlug}`)).status).toBe(404);
+    });
+
+    it("does not create a redirect when a never-published product's slug changes", async () => {
+      const p = await createProduct(); // still DRAFT — nothing was live at the old slug
+      const oldSlug = p.slug;
+      await owner().patch(`/api/products/${p.id}`, { name: `Vitest Draft Renamed ${RUN}` });
+      expect(await prisma.redirect.findUnique({ where: { fromPath: `/product/${oldSlug}` } })).toBeNull();
+    });
+
+    it("an explicit slug PATCH is checked for collisions up front, with a clean 409 (not a raw DB error)", async () => {
+      const a = await createProduct();
+      const b = await createProduct();
+      const res = await owner().patch(`/api/products/${b.id}`, { slug: a.slug });
+      expect(res.status).toBe(409);
+      expect(res.body.error.toLowerCase()).toContain("slug");
+    });
+
+    it("collapses a redirect chain and never lets the live slug also redirect away from itself", async () => {
+      const p = await createProduct();
+      await addImage(p.id);
+      await owner().patch(`/api/products/${p.id}`, { status: "PUBLISHED" });
+      const slugV1 = p.slug;
+
+      const r2 = await owner().patch(`/api/products/${p.id}`, { slug: `vt-wf-chain-${RUN}-v2` });
+      const slugV2 = r2.body.product.slug;
+      const r3 = await owner().patch(`/api/products/${p.id}`, { slug: `vt-wf-chain-${RUN}-v3` });
+      const slugV3 = r3.body.product.slug;
+
+      // v1 and v2 both land on v3 in one hop — v1 must not still point at v2 (a two-hop chain).
+      const fromV1 = await prisma.redirect.findUnique({ where: { fromPath: `/product/${slugV1}` } });
+      const fromV2 = await prisma.redirect.findUnique({ where: { fromPath: `/product/${slugV2}` } });
+      expect(fromV1?.toPath).toBe(`/product/${slugV3}`);
+      expect(fromV2?.toPath).toBe(`/product/${slugV3}`);
+
+      // The current live slug must never itself be a redirect source.
+      expect(await prisma.redirect.findUnique({ where: { fromPath: `/product/${slugV3}` } })).toBeNull();
+    });
+
+    it("re-saving a published product with the same slug does not touch the redirect table", async () => {
+      const p = await createProduct();
+      await addImage(p.id);
+      await owner().patch(`/api/products/${p.id}`, { status: "PUBLISHED" });
+      const before = await prisma.redirect.count();
+      const res = await owner().patch(`/api/products/${p.id}`, { slug: p.slug, basePrice: 555 });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(await prisma.redirect.count()).toBe(before);
     });
   });
 });
