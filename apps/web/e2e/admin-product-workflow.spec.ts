@@ -137,7 +137,9 @@ test.describe("product workflow: draft → ready → published → unpublished",
     await expect(history).toContainText("Product created");
     await expect(history).toContainText("Published");
     await expect(history).toContainText("status:");
-    await expect(history).toContainText("Claude E2E (temporary)");
+    const cookie = (await page.context().cookies()).map((c) => `${c.name}=${c.value}`).join("; ");
+    const me = await (await page.request.get(`${process.env.E2E_API_URL ?? "http://localhost:4000"}/api/auth/me`, { headers: { Cookie: cookie } })).json();
+    await expect(history).toContainText(me.admin.name); // whoever is signed in made these changes
   });
 
   test("5. the storefront shows the SEO, care and material data", async ({ page }) => {
