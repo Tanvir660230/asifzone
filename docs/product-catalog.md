@@ -154,6 +154,25 @@ Prisma's `include` returns every scalar of a relation, so a public read written 
 `product-security.integration.test.ts` checks that every product route is either on an explicit public list or behind an admin session, that catalog writes are owner-only, that extra request fields are ignored, and that these
 public reads carry no cost.
 
+## Running tests against their own database
+
+`pnpm test` (and every integration test file) creates and deletes real rows in whatever `DATABASE_URL` is active. Against a shared dev
+database, a bug in a test's own cleanup can be destructive: `deleteMany({ where: { categoryId } })` with an `undefined` id (a failed
+`beforeAll`) is read by Prisma as "no filter" and deletes every row of the table — this happened once during this program and took a
+dev database's products, categories, types and templates with it.
+
+Two independent defences:
+
+1. **`src/test-guard.ts`**, installed for every test file via `vitest.config.ts`'s `setupFiles`, refuses a `deleteMany`/`updateMany`
+   whose filter is effectively empty, so a broken setup fails loudly at cleanup instead of taking the data with it.
+2. **A dedicated test database.** If `apps/api/.env.test` exists (git-ignored, like `.env`; see `.env.test.example`), `vitest.config.ts`
+   points every test run at the database it names instead of whatever `DATABASE_URL` a developer's own `.env` or shell already has —
+   `pnpm dev` and everything else are unaffected. One-time setup: create a database, `cp .env.test.example .env.test`, then
+   `pnpm run db:test:migrate` and `pnpm run db:test:seed` (a few pre-existing tests assume a seeded admin/category exist, matching
+   CI's own job order of migrate → seed → test against its own disposable Postgres container). With no `.env.test`, tests fall back to
+   the ambient `DATABASE_URL` exactly as before this existed — CI is unaffected either way, since it sets `DATABASE_URL` directly on
+   the job and has no `.env.test` file to read.
+
 ## Known limits
 
 - The storefront caches product pages for up to **60 seconds** (`REVALIDATE_SECONDS` in `apps/web/lib/api/storefront.ts`), so an unpublished product
