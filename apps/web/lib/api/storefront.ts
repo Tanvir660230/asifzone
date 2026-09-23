@@ -22,9 +22,17 @@ const REVALIDATE_SECONDS = 60;
  * handful of endpoints that already sit behind their own short-lived Redis cache on the API side,
  * so this second layer only adds staleness (up to `revalidate` seconds) without buying anything;
  * the homepage route is already `force-dynamic`, so this doesn't change when the page itself
- * renders, just removes a redundant cache in front of the real one. */
-async function storefrontFetch<T>(path: string, revalidate: number | false = REVALIDATE_SECONDS): Promise<T> {
-  const res = await fetch(`${env.apiUrl}${path}`, revalidate === false ? { cache: "no-store" } : { next: { revalidate } });
+ * renders, just removes a redundant cache in front of the real one.
+ *
+ * `tags` lets a product mutation bust this specific cache entry on demand (see app/api/revalidate/
+ * route.ts and the API's product.cache.ts) instead of waiting out `revalidate` seconds — `revalidate`
+ * stays in place regardless, as the fallback for whenever the on-demand call doesn't fire (the secret
+ * isn't configured yet, the request fails, ...). */
+async function storefrontFetch<T>(path: string, revalidate: number | false = REVALIDATE_SECONDS, tags?: string[]): Promise<T> {
+  const res = await fetch(
+    `${env.apiUrl}${path}`,
+    revalidate === false ? { cache: "no-store" } : { next: { revalidate, tags } },
+  );
   if (!res.ok) throw new Error(`Storefront fetch failed (${res.status}): ${path}`);
   return res.json();
 }
@@ -69,7 +77,7 @@ export function getCategoryStockOverview(slug: string) {
 }
 
 export function getProductBySlug(slug: string) {
-  return storefrontFetch<{ product: Product }>(`/api/products/slug/${encodeURIComponent(slug)}`);
+  return storefrontFetch<{ product: Product }>(`/api/products/slug/${encodeURIComponent(slug)}`, REVALIDATE_SECONDS, [`product:${slug}`]);
 }
 
 export function listStorefrontProducts(params: Partial<StorefrontProductQuery> = {}) {
@@ -85,7 +93,7 @@ export function listStorefrontProducts(params: Partial<StorefrontProductQuery> =
   if (params.minPrice !== undefined) query.set("minPrice", String(params.minPrice));
   if (params.maxPrice !== undefined) query.set("maxPrice", String(params.maxPrice));
 
-  return storefrontFetch<StorefrontProductResult>(`/api/products/storefront?${query.toString()}`);
+  return storefrontFetch<StorefrontProductResult>(`/api/products/storefront?${query.toString()}`, REVALIDATE_SECONDS, ["products:listing"]);
 }
 
 export interface StorefrontFacets {
@@ -99,7 +107,7 @@ export function getStorefrontFacets(params: { category?: string; search?: string
   const query = new URLSearchParams();
   if (params.category) query.set("category", params.category);
   if (params.search) query.set("search", params.search);
-  return storefrontFetch<StorefrontFacets>(`/api/products/storefront/facets?${query.toString()}`, 60);
+  return storefrontFetch<StorefrontFacets>(`/api/products/storefront/facets?${query.toString()}`, 60, ["products:listing"]);
 }
 
 export function getActiveFlashSale() {
@@ -176,29 +184,31 @@ export function getActivePaymentMethodsSafe() {
 }
 
 export function getSimilarProducts(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/similar`);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/similar`, REVALIDATE_SECONDS, [`product:${productId}`]);
 }
 
 export function getFrequentlyBoughtTogether(productId: string) {
   return storefrontFetch<{ items: Product[] }>(
     `/api/products/${encodeURIComponent(productId)}/frequently-bought-together`,
+    REVALIDATE_SECONDS,
+    [`product:${productId}`],
   );
 }
 
 export function getCompleteYourLook(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/complete-your-look`);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/complete-your-look`, REVALIDATE_SECONDS, [`product:${productId}`]);
 }
 
 export function getBudgetAlternatives(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/budget-alternatives`);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/budget-alternatives`, REVALIDATE_SECONDS, [`product:${productId}`]);
 }
 
 export function getUpgradeOptions(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/upgrade-options`);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/upgrade-options`, REVALIDATE_SECONDS, [`product:${productId}`]);
 }
 
 export function getPremiumAlternatives(productId: string) {
-  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/premium-alternatives`);
+  return storefrontFetch<{ items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/premium-alternatives`, REVALIDATE_SECONDS, [`product:${productId}`]);
 }
 
 /** The active cross-sell bundle (if any) anchored on this product's category, plus the live
@@ -206,6 +216,8 @@ export function getPremiumAlternatives(productId: string) {
 export function getBundleForProduct(productId: string) {
   return storefrontFetch<{ result: BundleForProduct | null }>(
     `/api/bundles/for-product/${encodeURIComponent(productId)}`,
+    REVALIDATE_SECONDS,
+    [`product:${productId}`],
   );
 }
 
@@ -217,7 +229,7 @@ export function getTrendingProducts() {
 
 /** Real, aggregate urgency signals (views/purchases/velocity) for a single product's PDP. */
 export function getUrgencySignals(productId: string) {
-  return storefrontFetch<UrgencySignals>(`/api/products/${encodeURIComponent(productId)}/urgency-signals`);
+  return storefrontFetch<UrgencySignals>(`/api/products/${encodeURIComponent(productId)}/urgency-signals`, REVALIDATE_SECONDS, [`product:${productId}`]);
 }
 
 /** Client-side, fire-and-forget page-view beacon — not `storefrontFetch` since it's a POST
@@ -281,5 +293,5 @@ export async function fetchPopularSearches(limit = 8) {
 /** One of the hand-pickable lists (related / frequentlyBought / crossSell / upsell / recommended): the admin's picks, or
  * the automatic list when none are picked. Short cache like the other recommendation calls. */
 export function getProductRail(productId: string, key: "related" | "frequentlyBought" | "crossSell" | "upsell" | "recommended") {
-  return storefrontFetch<{ source: "curated" | "auto"; items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/rail/${key}`);
+  return storefrontFetch<{ source: "curated" | "auto"; items: Product[] }>(`/api/products/${encodeURIComponent(productId)}/rail/${key}`, REVALIDATE_SECONDS, [`product:${productId}`]);
 }

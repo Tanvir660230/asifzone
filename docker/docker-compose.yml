@@ -40,6 +40,12 @@ services:
       JWT_CUSTOMER_ACCESS_SECRET: ${JWT_CUSTOMER_ACCESS_SECRET}
       JWT_CUSTOMER_REFRESH_SECRET: ${JWT_CUSTOMER_REFRESH_SECRET}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      # The api container reaches the web container over the compose network by service name, not
+      # through the public domain (WEB_ORIGIN) — a request from api to its own public URL would
+      # depend on the VPS's NAT hairpinning back to itself. Used only for the on-demand storefront
+      # cache revalidation call (see apps/api/src/modules/products/product.cache.ts).
+      WEB_INTERNAL_URL: http://web:3000
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
       # Baked directly into the URL for category/banner/logo/editor image uploads (see
       # apps/api/src/modules/uploads/upload.service.ts's processSiteImage) — must be the public
       # origin a browser can actually reach, not an internal Docker hostname. Behind the nginx
@@ -103,6 +109,7 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     ports:
       - "127.0.0.1:3000:3000"
 

@@ -28,6 +28,16 @@ export const env = {
   refreshTokenTtl: "7d",
   webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:3000",
   apiOrigin: process.env.API_ORIGIN ?? "http://localhost:4000",
+  // Where THIS container reaches the web app server-to-server (the on-demand revalidate call). Behind
+  // docker-compose that's the internal service DNS name (`http://web:3000`, set in docker-compose.yml)
+  // — WEB_ORIGIN is the *public* domain (used in emails etc.) and calling it from inside the api
+  // container would depend on the VPS's NAT hairpinning back to itself, which isn't guaranteed to work.
+  // Falls back to WEB_ORIGIN for local dev, where both apps run directly on the host and there's no
+  // internal/public split.
+  webInternalUrl: process.env.WEB_INTERNAL_URL ?? process.env.WEB_ORIGIN ?? "http://localhost:3000",
+  // Optional — without it, a product change relies on the storefront's own 60s ISR window to show up
+  // instead of appearing immediately. Must match the web app's REVALIDATE_SECRET (apps/web/.env).
+  revalidateSecret: process.env.REVALIDATE_SECRET ?? "",
   uploadsDir: process.env.UPLOADS_DIR ?? "uploads",
   sslcommerz: {
     storeId: process.env.SSLCOMMERZ_STORE_ID ?? "",
