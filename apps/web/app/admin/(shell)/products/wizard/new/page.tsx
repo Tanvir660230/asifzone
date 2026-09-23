@@ -10,7 +10,7 @@ export default function NewProductWizardPage() {
   const { data } = useQuery({ queryKey: ["categories"], queryFn: () => categoriesApi.listCategories() });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-[1600px] space-y-6">
       <PageHeader title="Add product" action={<BackLink href="/admin/products" label="Back to Products" />} />
       <ProductWizard categories={data?.categories ?? []} />
     </div>

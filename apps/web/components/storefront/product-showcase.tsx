@@ -23,9 +23,8 @@ const TRUST_ITEMS = [
 interface ProductShowcaseProps {
   product: Product;
   urgencySignals: React.ComponentProps<typeof UrgencySignals>["signals"];
-  /** The accordion rows, built and sanitized on the server from the resolved page sections — sanitizing here in a
-   * client component would bundle isomorphic-dompurify's jsdom fallback into the browser, where it has no
-   * real filesystem and throws trying to read its default stylesheet. */
+  /** The accordion rows, already sanitized by the caller: on the server for the live page (ProductPageView), in the
+   * browser for the admin wizard's live preview (isomorphic-dompurify's browser build) — see buildAccordionItems. */
   accordionItems: SpecAccordionItem[];
   /** Whether the size-guide link is switched on for this product's page sections. */
   showSizeGuideLink: boolean;

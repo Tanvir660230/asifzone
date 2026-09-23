@@ -15,6 +15,7 @@ import {
   describeBlockers,
   isBlankAttributeValue,
   resolveSections,
+  toPublicSections,
   validateProductAgainstConfig,
   type ProductRelationsInput,
   type ProductSalesSummary,
@@ -178,10 +179,7 @@ async function presentWithConfig<T extends PresentableRow>(
   const resolved = buildResolvedView(config, attributes, {
     care: buildCareView({ careOverride: row.careOverride, carePreset: row.carePreset }, config),
     materials: row.materials.map((m, i) => ({ name: m.material?.name ?? m.customName ?? "", percentage: materials[i]!.percentage })),
-    // Only what the page will render: enabled sections, in order. Text is sent only for the text-type ones.
-    sections: sectionsResolved
-      .filter((s) => s.enabled)
-      .map((s) => ({ key: s.key, title: s.title, order: s.order, area: s.area, content: s.contentType === "none" ? null : s.content })),
+    sections: toPublicSections(sectionsResolved),
     faqs,
   });
   const relations = groupRelations(row.relations);

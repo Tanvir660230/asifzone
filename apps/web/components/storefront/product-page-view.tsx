@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import DOMPurify from "isomorphic-dompurify";
 import type { Product, PublicSection } from "@clothing-brand/shared";
-import { Breadcrumb } from "@/components/storefront/breadcrumb";
-import { ProductShowcase } from "@/components/storefront/product-showcase";
+import { ProductPageBody } from "@/components/storefront/product-page-body";
 import { ProductCarousel } from "@/components/storefront/product-carousel";
 import { ProductCarouselSkeleton } from "@/components/storefront/skeletons/product-carousel-skeleton";
 import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
@@ -18,26 +17,10 @@ import {
   getUrgencySignals,
 } from "@/lib/api/storefront";
 import { formatPrice } from "@/lib/format";
-import { buildAccordionItems } from "@/lib/product-specs";
+import { buildAccordionItems, productPageLayout, sanitizeRichTextSpecs } from "@/lib/product-specs";
 import { buildProductJsonLd } from "@/lib/structured-data";
 import { getSiteUrl } from "@/lib/seo";
 import { jsonLdString } from "@clothing-brand/shared";
-
-/** RICH_TEXT attribute values are admin-authored HTML. They are sanitized here, on the server — the client
- * component that renders them can't do it (isomorphic-dompurify's jsdom fallback breaks in the browser). */
-function sanitizeRichTextSpecs<P extends Product>(product: P): P {
-  if (!product.resolved) return product;
-  return {
-    ...product,
-    resolved: {
-      ...product.resolved,
-      specGroups: product.resolved.specGroups.map((group) => ({
-        ...group,
-        items: group.items.map((item) => (item.dataType === "RICH_TEXT" ? { ...item, value: DOMPurify.sanitize(String(item.value)) } : item)),
-      })),
-    },
-  };
-}
 
 // Each list fetches and streams independently via its own Suspense boundary, instead of the whole page waiting on
 // every recommendation endpoint before it can paint — the above-the-fold product info is only blocked on what it needs.
@@ -98,16 +81,15 @@ interface ProductPageViewProps {
 
 /** The whole product page. The live route and the admin preview both render this, so the preview can't drift. */
 export async function ProductPageView({ product: rawProduct, mode, previewStatus }: ProductPageViewProps) {
-  const product = sanitizeRichTextSpecs(rawProduct);
+  // RICH_TEXT values are admin-authored HTML, sanitized here on the server before the client showcase renders them.
+  const sanitize = (html: string) => DOMPurify.sanitize(html);
+  const product = sanitizeRichTextSpecs(rawProduct, sanitize);
   const live = mode === "live";
   const [urgencySignals, { settings }] = await Promise.all([live ? getUrgencySignals(product.id) : Promise.resolve(NO_SIGNALS), getSiteSettings()]);
 
-  const sections = product.resolved?.sections ?? [];
-  const accordionItems = buildAccordionItems(product, (html) => DOMPurify.sanitize(html));
-  const showSizeGuideLink = sections.length === 0 || sections.some((s) => s.key === "sizeGuide");
-  const blocks = sections.filter((s) => s.area === "block");
+  const accordionItems = buildAccordionItems(product, sanitize);
+  const { showSizeGuideLink, blocks, faqEnabled } = productPageLayout(product);
   const faqs = product.resolved?.faqs ?? [];
-  const faqEnabled = sections.some((s) => s.key === "faq");
   const siteUrl = getSiteUrl();
 
   return (
@@ -137,9 +119,7 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
             }}
           />
         )}
-        <Breadcrumb trail={[{ name: product.category.name, href: `/category/${product.category.slug}` }, { name: product.name }]} />
-
-        <ProductShowcase product={product} urgencySignals={urgencySignals} accordionItems={accordionItems} showSizeGuideLink={showSizeGuideLink} />
+        <ProductPageBody product={product} urgencySignals={urgencySignals} accordionItems={accordionItems} showSizeGuideLink={showSizeGuideLink} />
       </div>
 
       {blocks.map((section) => (
