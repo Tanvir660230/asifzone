@@ -37,6 +37,11 @@ export interface CompletenessInput {
   hasCare: boolean;
   /** Whether the product page will offer a size guide; null when the type has none at all. */
   sizeGuideShown: boolean | null;
+  /** Whether this product's resolved page sections include Material / Care. Defaults to true (most products
+   * do) so existing callers that don't pass these keep today's behavior. False means the admin (or the
+   * template/store default) turned the section off for this product — it's an intentional absence, not a gap. */
+  materialEnabled?: boolean;
+  careEnabled?: boolean;
 }
 
 const stripTags = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
@@ -74,8 +79,11 @@ export function computeCompleteness(
     description: { ok: stripTags(input.description ?? "").length > 0, detail: "Write a description" },
     seo: { ok: Boolean(input.seoDescription?.trim()), detail: "Add a meta description" },
     sizeGuide: input.sizeGuideShown === null ? "na" : { ok: input.sizeGuideShown, detail: "Enable a size guide" },
-    material: { ok: input.materialCount > 0 || !isBlankAttributeValue(attrs.material), detail: "Add at least one material" },
-    care: { ok: input.hasCare, detail: "Choose or write care instructions" },
+    material:
+      input.materialEnabled === false
+        ? "na"
+        : { ok: input.materialCount > 0 || !isBlankAttributeValue(attrs.material), detail: "Add at least one material" },
+    care: input.careEnabled === false ? "na" : { ok: input.hasCare, detail: "Choose or write care instructions" },
   };
 
   const requiredByTemplate = new Set(config?.requiredChecks ?? []);

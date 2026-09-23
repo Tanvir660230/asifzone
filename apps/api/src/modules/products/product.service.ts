@@ -218,6 +218,9 @@ type DetailRow = Prisma.ProductGetPayload<{ include: typeof detailInclude }>;
 
 /** Scores a detail row against its type's template — the same function the editor runs on live form values. */
 function completenessOf(presented: Presented<DetailRow>, config: ResolvedTypeConfig | null): CompletenessResult {
+  // `resolved.sections` is already filtered to enabled-only (see presentWithConfig) — the same signal the
+  // storefront uses to decide whether to render the Material/Care accordion items at all.
+  const enabledSectionKeys = new Set(presented.resolved.sections.map((s) => s.key));
   return computeCompleteness(
     {
       name: presented.name,
@@ -232,6 +235,8 @@ function completenessOf(presented: Presented<DetailRow>, config: ResolvedTypeCon
       materialCount: presented.materials.length,
       hasCare: presented.resolved.care !== null,
       sizeGuideShown: !config || config.sizeGuide.mode === "NOT_APPLICABLE" ? null : presented.resolved.sizeGuide.show,
+      materialEnabled: enabledSectionKeys.has("material"),
+      careEnabled: enabledSectionKeys.has("care"),
     },
     config,
   );

@@ -41,5 +41,7 @@ export * from "./sku";
 export * from "./gallery";
 export * from "./json-ld";
 export * from "./sections";
+export * from "./spec-groups";
+export * from "./wizard-steps";
 
 export * from "./types";
