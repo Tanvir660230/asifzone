@@ -141,6 +141,38 @@ Importing a CSV and permanently deleting a product are owner-only.
 type by the enum key, and its JSON attribute values are still shown until it is next saved.
 `PRODUCT_TYPE_CONFIGS` in `packages/shared` is now only the source the seed migration was rendered from, plus a last-resort fallback.
 
+## Starter presets
+
+`pnpm --filter api db:seed:presets` (`prisma/seed-presets.ts`) is an **optional**, idempotent script: nothing runs it automatically. It uses the same service functions the admin screens use and only ever adds: four care guides (Cotton, Leather, Shoe, Watch), nine materials,
+a Cap size guide, the attribute definitions the brief's templates need (collar, sleeve, pattern, closure type, adjustable, dial size, case/strap material, glass, shoe type, sole material),
+the **Panjabi** and **Cap** types with their templates, and the extra optional fields plus a default care guide on the existing **Watch** and **Shoes** templates. Running it twice changes nothing.
+
+## What a customer may read
+
+Prisma's `include` returns every scalar of a relation, so a public read written as `variants: true` or `include: { product }` also returns cost prices and tax rate. Anything a customer or anonymous visitor can reach
+(the storefront product reads, the flash-sale feed, the wishlist) must select its columns from `product-public-select.ts` (`PUBLIC_PRODUCT_SCALARS`, `PUBLIC_VARIANT_FIELDS`) and add a column there only when a storefront screen renders it.
+`product-security.integration.test.ts` checks that every product route is either on an explicit public list or behind an admin session, that catalog writes are owner-only, that extra request fields are ignored, and that these
+public reads carry no cost.
+
+## Running tests against their own database
+
+`pnpm test` (and every integration test file) creates and deletes real rows in whatever `DATABASE_URL` is active. Against a shared dev
+database, a bug in a test's own cleanup can be destructive: `deleteMany({ where: { categoryId } })` with an `undefined` id (a failed
+`beforeAll`) is read by Prisma as "no filter" and deletes every row of the table — this happened once during this program and took a
+dev database's products, categories, types and templates with it.
+
+Two independent defences:
+
+1. **`src/test-guard.ts`**, installed for every test file via `vitest.config.ts`'s `setupFiles`, refuses a `deleteMany`/`updateMany`
+   whose filter is effectively empty, so a broken setup fails loudly at cleanup instead of taking the data with it.
+2. **A dedicated test database.** If `apps/api/.env.test` exists (git-ignored, like `.env`; see `.env.test.example`), `vitest.config.ts`
+   points every test run at the database it names instead of whatever `DATABASE_URL` a developer's own `.env` or shell already has —
+   `pnpm dev` and everything else are unaffected. One-time setup: create a database, `cp .env.test.example .env.test`, then
+   `pnpm run db:test:migrate` and `pnpm run db:test:seed` (a few pre-existing tests assume a seeded admin/category exist, matching
+   CI's own job order of migrate → seed → test against its own disposable Postgres container). With no `.env.test`, tests fall back to
+   the ambient `DATABASE_URL` exactly as before this existed — CI is unaffected either way, since it sets `DATABASE_URL` directly on
+   the job and has no `.env.test` file to read.
+
 ## Known limits
 
 - The storefront caches product pages for up to **60 seconds** (`REVALIDATE_SECONDS` in `apps/web/lib/api/storefront.ts`), so an unpublished product
@@ -148,9 +180,10 @@ type by the enum key, and its JSON attribute values are still shown until it is 
 - Variant galleries are set per variant, not per colour: give each variant of a colour the same images (the picker makes that quick). The storefront
   already falls back to a same-colour sibling's gallery when the chosen size has none.
 - A template supports at most two variant dimensions (size-like and colour-like), because variants are still unique on `(productId, size, color)`.
-- **Variants in a partial update.** A product PATCH that lists a variant must send its `sku` and, to keep them, its `stock` and `attributeValueIds`: those two
-  fields keep their `.default()` in the variant schema, so leaving them out sets stock to 0 and clears the variant's option links. (The product's own fields no longer
-  behave this way: a partial update changes only what it sends.) The editor and the CSV import always send them.
+- **Variants in an update.** A product PATCH that includes `variants` sends the *whole* list: a variant left out is deleted (or, if it has order history, zeroed).
+  Inside the list a variant is judged as it will be saved: an existing variant (`id`) may leave out `sku`, `stock`, its sizes/colour and `attributeValueIds`, and keeps
+  the stored values; `attributeValueIds: []` clears its option links; a new variant needs a `sku`. (Before this release those two fields defaulted to 0 and `[]`, so an
+  omitted stock reset to zero. The product's own fields have the same rule: a partial update changes only what it sends.)
 - **CSV import cannot clear a value or delete anything.** A blank cell leaves the stored value as it is; to remove a value or a variant use the editor. Images are not
   part of the file. Text is trimmed at both ends.
 - **Order and analytics exports** now share the CSV guard, but only the shared writer is unit-tested; there is no order-export integration test.

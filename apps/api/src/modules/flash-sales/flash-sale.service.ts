@@ -4,6 +4,7 @@ import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { computeFlashPrice } from "./flash-sale-pricing";
+import { PUBLIC_VARIANT_FIELDS } from "../products/product-public-select";
 
 const include = {
   items: { include: { product: { include: { images: { orderBy: { sortOrder: "asc" as const }, take: 1 } } } } },
@@ -38,7 +39,7 @@ const PUBLIC_PRODUCT_SELECT = {
   createdAt: true,
   updatedAt: true,
   category: true,
-  variants: true,
+  variants: { select: PUBLIC_VARIANT_FIELDS }, // not `true`: that would include each variant's cost price
   images: { orderBy: { sortOrder: "asc" as const } },
 } as const;
 

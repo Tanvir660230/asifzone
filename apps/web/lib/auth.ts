@@ -6,6 +6,7 @@ import type {
   GoogleLoginInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
+import { clearAdminHint } from "./admin-hint";
 
 export interface AdminUser {
   id: string;
@@ -41,10 +42,12 @@ export function loginAdminWithGoogle(input: GoogleLoginInput) {
 }
 
 export function logoutAdmin() {
+  clearAdminHint();
   return apiFetch<void>("/api/auth/logout", { method: "POST" });
 }
 
 export function logoutAllDevices() {
+  clearAdminHint();
   return apiFetch<void>("/api/auth/logout-all", { method: "POST" });
 }
 

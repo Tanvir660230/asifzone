@@ -82,7 +82,7 @@ describe("variant galleries, image metadata, variant status, SKU generator", () 
     await prisma.productTypeDef.deleteMany({ where: { id: testTypeId } });
     await prisma.productTemplate.deleteMany({ where: { name: `Media template ${RUN}` } });
     await prisma.skuCounter.deleteMany({ where: { scope: TYPE_CODE } });
-    await prisma.catalogSetting.updateMany({ data: { skuPrefix: "AZ", skuPattern: "{PREFIX}-{TYPE}-{COLOR}-{SIZE}-{SEQ:3}" } });
+    await prisma.catalogSetting.updateMany({ where: { id: "singleton" }, data: { skuPrefix: "AZ", skuPattern: "{PREFIX}-{TYPE}-{COLOR}-{SIZE}-{SEQ:3}" } }); // the one settings row, named explicitly
     await prisma.category.deleteMany({ where: { id: categoryId } });
     await prisma.stockMovement.deleteMany({ where: { adminId: { in: [ownerId, staffId] } } });
     await prisma.auditLog.deleteMany({ where: { adminId: { in: [ownerId, staffId] } } });

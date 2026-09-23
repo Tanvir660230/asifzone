@@ -3,13 +3,14 @@ import { ChevronRight } from "lucide-react";
 import type { Category } from "@clothing-brand/shared";
 import { getSiteUrl } from "@/lib/seo";
 import { buildBreadcrumbJsonLd } from "@/lib/structured-data";
+import { jsonLdString } from "@clothing-brand/shared";
 
 export function Breadcrumb({ trail }: { trail: Array<{ name: string; href?: string }> }) {
   const jsonLd = buildBreadcrumbJsonLd(trail, getSiteUrl());
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(jsonLd) }} />
       <nav className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-400">
         <Link href="/" className="hover:text-ink-900">Home</Link>
         {trail.map((item, i) => (

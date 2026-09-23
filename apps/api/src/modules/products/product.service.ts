@@ -17,6 +17,7 @@ import {
   resolveSections,
   validateProductAgainstConfig,
   type ProductRelationsInput,
+  type ProductSalesSummary,
   type ResolvedSection,
   NO_SIZE_VALUE,
   type AttributeDataType,
@@ -52,6 +53,7 @@ import { recordAudit } from "../../lib/audit";
 import { layerFromRows, loadGlobalRows, overridesFromRows, saveProductSections, type SectionRow } from "../catalog/sections.service";
 import { PRODUCT_CACHE_PREFIX, invalidateProductCache } from "./product.cache";
 import { diffProduct, type AuditSnapshot } from "./product-audit";
+import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "./product-public-select";
 
 const CACHE_PREFIX = PRODUCT_CACHE_PREFIX;
 const CACHE_TTL_SECONDS = 120;
@@ -76,34 +78,15 @@ const include = {
  * this exclusion, but it requires an unstable/preview client feature this project doesn't enable;
  * an explicit `select` has the same effect with zero extra risk.) */
 const PUBLIC_PRODUCT_SELECT = {
-  id: true,
-  name: true,
-  slug: true,
-  description: true,
-  shortDescription: true,
-  sortOrder: true,
-  categoryId: true,
-  productType: true,
-  attributes: true,
-  brand: true,
-  brandTier: true,
-  basePrice: true,
-  compareAtPrice: true,
-  trackInventory: true,
-  lowStockThreshold: true,
-  restockDate: true,
-  isActive: true,
-  isFeatured: true,
-  seoTitle: true,
-  seoDescription: true,
-  deletedAt: true,
-  avgRating: true,
-  reviewCount: true,
-  createdAt: true,
-  updatedAt: true,
-  ...include,
-  // The storefront never sees an inactive variant (the admin reads use `include` and see them all).
-  variants: { ...include.variants, where: { isActive: true } },
+  ...PUBLIC_PRODUCT_SCALARS,
+  images: include.images,
+  category: include.category,
+  // The storefront never sees an inactive variant (the admin reads use `include` and see them all), nor a variant's cost.
+  variants: {
+    select: { ...PUBLIC_VARIANT_FIELDS, attributeValues: include.variants.include.attributeValues, images: include.variants.include.images },
+    where: { isActive: true },
+    orderBy: include.variants.orderBy,
+  },
 } as const;
 
 /** The shape returned by every query above that uses PUBLIC_PRODUCT_SELECT — distinct from (and
@@ -273,8 +256,10 @@ function toJsonInput(value: Record<string, unknown> | null | undefined) {
  * default selection, so reordering variants in the admin form is how "which color is the main one" gets set. */
 function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   // `imageIds` isn't a column: galleries are written after the variant exists (see syncVariantGallery).
-  const { attributeValueIds = [], imageIds: _imageIds, ...rest } = variant;
+  // `id` is dropped on purpose: a variant's primary key is the database's to choose, not the client's.
+  const { id: _id, attributeValueIds = [], imageIds: _imageIds, ...rest } = variant;
   void _imageIds;
+  void _id;
   return {
     ...rest,
     size: rest.size || NO_SIZE_VALUE,
@@ -1064,6 +1049,38 @@ const URGENCY_CACHE_TTL_SECONDS = 60;
 
 /** Every field here is a real, currently-true count (or null/0/false) — never fabricated.
  * Redis-cached briefly since it's read on every PDP load but only needs to feel "recent". */
+/** Orders that do not count as a sale. One definition, shared by the customer-facing urgency line and the admin sales panel,
+ * so the two numbers can never disagree. */
+const NOT_A_SALE = ["CANCELLED", "REFUNDED"] as const;
+
+/** Admin-only: how many units of a product sold in the last `days` days, and in how many orders. Not cached (few readers). */
+export async function getProductSalesSummary(productId: string, days = 7): Promise<ProductSalesSummary> {
+  if (!(await prisma.product.findUnique({ where: { id: productId }, select: { id: true } }))) throw AppError.notFound("Product not found");
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const variantIds = (await prisma.productVariant.findMany({ where: { productId }, select: { id: true } })).map((v) => v.id);
+  const items = variantIds.length
+    ? await prisma.orderItem.findMany({
+        where: { variantId: { in: variantIds }, order: { status: { notIn: [...NOT_A_SALE] }, createdAt: { gte: since } } },
+        select: { orderId: true, variantId: true, quantity: true, skuSnapshot: true, sizeSnapshot: true, colorSnapshot: true },
+      })
+    : [];
+
+  const byVariant = new Map<string, ProductSalesSummary["byVariant"][number]>();
+  for (const i of items) {
+    const row = byVariant.get(i.variantId) ?? { variantId: i.variantId, sku: i.skuSnapshot, size: i.sizeSnapshot, color: i.colorSnapshot, units: 0 };
+    row.units += i.quantity;
+    byVariant.set(i.variantId, row);
+  }
+  return {
+    productId,
+    days,
+    since: since.toISOString(),
+    unitsSold: items.reduce((sum, i) => sum + i.quantity, 0),
+    orders: new Set(items.map((i) => i.orderId)).size,
+    byVariant: [...byVariant.values()].sort((a, b) => b.units - a.units),
+  };
+}
+
 export async function getUrgencySignals(productId: string) {
   const cacheKey = `${CACHE_PREFIX}urgency:${productId}`;
   const cached = await cacheGet<{
@@ -1090,7 +1107,7 @@ export async function getUrgencySignals(productId: string) {
       ? prisma.orderItem.findMany({
           where: {
             variantId: { in: variantIds },
-            order: { status: { notIn: ["CANCELLED", "REFUNDED"] }, createdAt: { gte: since7d } },
+            order: { status: { notIn: [...NOT_A_SALE] }, createdAt: { gte: since7d } },
           },
           select: { quantity: true, order: { select: { createdAt: true } } },
         })
@@ -1430,9 +1447,14 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     }
   }
   const mergedAttributes = { ...restored, ...existing.attributes, ...(input.attributes ?? {}) };
+  // A variant listed by id without its size or colour keeps the stored one, so it is judged as it will be saved.
+  const variantsToCheck = input.variants?.map((v) => {
+    const before = v.id ? existing.variants.find((e) => e.id === v.id) : undefined;
+    return { size: v.size ?? before?.size, color: v.color ?? before?.color };
+  });
   throwIfInvalid(
     validateProductAgainstConfig(
-      { attributes: attributesTouched ? mergedAttributes : undefined, variants: input.variants },
+      { attributes: attributesTouched ? mergedAttributes : undefined, variants: variantsToCheck },
       { ...config, fields: attributesTouched ? config.fields : [] },
     ),
   );
@@ -1561,7 +1583,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
 
         for (const [index, variant] of input.variants.entries()) {
           if (variant.id) {
-            const { id: variantId, attributeValueIds = [], imageIds, ...updateData } = variant;
+            const { id: variantId, attributeValueIds, imageIds, ...updateData } = variant;
             // The gallery is authoritative when sent; an old client that only sends `imageId` means "exactly this one image".
             const gallery = imageIds ?? (updateData.imageId !== undefined ? (updateData.imageId ? [updateData.imageId] : []) : undefined);
             if (gallery) delete updateData.imageId; // syncVariantGallery sets it, from an image that is verified to belong here
@@ -1577,11 +1599,14 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
               },
             });
             if (gallery) await syncVariantGallery(tx, id, variantId, gallery);
-            await tx.variantAttributeValue.deleteMany({ where: { variantId } });
-            if (attributeValueIds.length) {
-              await tx.variantAttributeValue.createMany({
-                data: attributeValueIds.map((attributeValueId) => ({ variantId, attributeValueId })),
-              });
+            // Option links are replaced only when the payload carries them; leaving them out keeps the stored ones.
+            if (attributeValueIds !== undefined) {
+              await tx.variantAttributeValue.deleteMany({ where: { variantId } });
+              if (attributeValueIds.length) {
+                await tx.variantAttributeValue.createMany({
+                  data: attributeValueIds.map((attributeValueId) => ({ variantId, attributeValueId })),
+                });
+              }
             }
             // The plain Stock field on the product-edit form is the primary way admins change
             // stock day-to-day — diff it against the pre-update value so every save stays
@@ -1596,7 +1621,9 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
               }
             }
           } else {
-            const created = await tx.productVariant.create({ data: { ...toVariantCreateData(variant, index), productId: id } });
+            const created = await tx.productVariant.create({
+              data: { ...toVariantCreateData({ ...variant, sku: variant.sku!, stock: variant.stock ?? 0, attributeValueIds: variant.attributeValueIds ?? [] }, index), productId: id },
+            });
             if (variant.imageIds?.length) await syncVariantGallery(tx, id, created.id, variant.imageIds);
             if (created.stock > 0) {
               await tx.stockMovement.create({
@@ -1628,7 +1655,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     for (const variant of input.variants) {
       if (!variant.id) continue;
       const before = existing.variants.find((v) => v.id === variant.id);
-      if (before && before.stock === 0 && variant.stock > 0) {
+      if (before && before.stock === 0 && variant.stock !== undefined && variant.stock > 0) {
         notifyBackInStock(variant.id).catch((err) => console.error("[stock-alert] notify failed:", err));
       }
     }
