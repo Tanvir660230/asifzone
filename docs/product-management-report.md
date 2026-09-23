@@ -22,7 +22,7 @@ Scope: turn the product system into a configurable, production-grade catalog (ty
 | #7 | P3 | Per-variant galleries, image alt/caption/size, variant status and compare-at price, configurable SKU generator |
 | #8 | P4 | Configurable page sections (store → template → product), FAQ, video, hand-picked related lists, draft preview through the real page |
 | #9 | P5 | Duplicate a product, CSV export/import with a no-write check, history polish, owner-only permanent delete |
-| #10 | P6 | Starter presets script, variant partial-update fix, security fixes and tests, acceptance tests, this report |
+| #10 | P6 | Starter presets script, variant partial-update fix, security review with fixes and tests, an admin-only "sold in the last 7 days" panel on the product page, a guard that stops test cleanup from deleting whole tables, acceptance tests, this report |
 
 **Against the brief's 20 features**
 
@@ -70,7 +70,9 @@ The legacy `Product.productType` enum and `attributes` JSON are kept as fallback
   - a partial product PATCH reset description, brand tier, low-stock threshold, "featured", sort order, "track inventory" (and `isActive`, republishing it);
   - a variant listed in an update without `stock` or `attributeValueIds` had them reset;
   - public product reads, the public flash-sale feed and a customer's wishlist exposed cost prices and tax rate;
-  - a client could choose a new variant's primary key on create.
+  - a client could choose a new variant's primary key on create;
+  - admin-written text containing `</script>` (a FAQ answer, a product description, a category name) closed the page's structured-data `<script>` early and put the rest of the text into the live storefront as HTML: a stored script-injection risk. All eight structured-data scripts now go through one escaping helper (`jsonLdString`).
+- **New:** `GET /api/products/:id/sales-summary` (any admin): units sold in the last 7 days, the number of orders, and a per-variant breakdown, using the same rule as the customer-facing "N sold in the last 7 days" line so the two always agree.
 
 ## 5. Admin UI changes
 
@@ -85,6 +87,7 @@ The legacy `Product.productType` enum and `attributes` JSON are kept as fallback
 - Specification groups, size guide (type default or product override), care, material composition, FAQ and video come from data.
 - Selecting a colour switches the gallery; selecting a full colour + size combination shows that variant's own price and compare-at price; the cart charges the same price.
 - Hand-picked related lists replace the automatic ones, falling back to them when empty.
+- **Admin-only sales panel:** while an admin is logged in, the product page (and the preview) shows "Admin only: sold in the last 7 days: N units in M orders" with a per-variant breakdown, even at 0. It renders nothing for anyone else. The admin area marks the browser (a small non-secret cookie, set while a session is verified and cleared on logout) so ordinary customers' browsers never make the request; the API refuses anyone without a valid admin session, so a forged marker only produces a 401. Separately, customers already see "N sold in the last 7 days" whenever N is above zero; that line is unchanged.
 - `<title>`, meta description, canonical and Open Graph tags come from the SEO fields; `Product` and `FAQPage` structured data.
 
 ## 7. New reusable systems
@@ -119,15 +122,32 @@ The legacy `Product.productType` enum and `attributes` JSON are kept as fallback
 | 9 Duplication | Data copied, every SKU new, stock 0, slug new, draft, original untouched |
 | 10 Publishing | Draft → Ready → Published → Unpublished (gone from the API at once) → Published |
 
+- **Test-safety guard:** every test file now runs behind a guard that refuses a `deleteMany` / `updateMany` whose filter is effectively empty (see section 11 for why).
 - **Security review** (automated where possible): every product route is either on an explicit public list or requires an admin session (checked from the route files, so a new unguarded route fails the test); every catalog write is owner-only except SKU generation; sampled admin routes answer 401 without a session; staff are refused on import, permanent delete and every catalog write; extra fields on create/update are ignored; public reads carry no cost or admin content; script and event-handler payloads in admin-written text don't execute in the browser (sanitised server-side); the video field accepts only YouTube, Vimeo or a direct https media file.
 - **Performance**, measured on a scratch database with 500 products (3 variants, 2 images each): admin list page 4 ms and storefront list 4 ms (2–3 queries); one product page's data 5 ms (3 queries); full CSV export 35 ms (1 query); checking a 500-product import file 450–800 ms. That last one is the only N+1 (about 2 reads per existing product, capped at 500 products), accepted for an admin-only bulk action.
 - **Final QA commands**: `tsc --noEmit` (api, shared, web), eslint (api, web), `npm run build` (api), `next build`, fresh-database `migrate deploy` + drift check + seed, seed-presets twice on a scratch database.
 
 ## 10. Test results
 
-FINAL_RESULTS_PLACEHOLDER
+| Check | Result |
+|---|---|
+| API unit + integration tests (23 files, real Postgres) | **277 of 277 passed**, two consecutive full runs, with the test-safety guard active |
+| `tsc --noEmit` (api, shared, web) | clean |
+| ESLint | api clean; web 0 errors (the same 2 old `<img>` warnings) |
+| `npm run build` (api) | passes |
+| `next build` | compiles, type-checks and generates all 11 static pages; then fails at standalone tracing with the Windows-only `EPERM: symlink`. **Not verified here** |
+| Fresh database: `migrate deploy`, drift check, seed | all pass, no drift |
+| Starter presets on a scratch database | first run adds 31 rows, second run adds nothing; resulting fields checked against the brief's Panjabi, Cap, Watch and Shoe lists |
+| Browser suite, desktop + mobile, all specs (128 tests) | **126 passed, 2 failed, 0 skipped.** Both failures are `customer-accounts` (desktop and mobile), which fails in this environment because the dev `.env` holds a live Resend key that rejects example.com addresses; it fails before reaching anything this work touched |
+| Acceptance spec (brief's Tests 1-5 and 7-10, plus security and sales-panel checks) | 19 tests x 2 projects, all passed |
+| Real dev catalog round trip through CSV export and the import check | 7 products, 0 errors, 7 unchanged |
+| Performance (500 products, scratch DB) | see section 9 |
+
+Two problems were found on the way that earlier passing tests had not caught, and both were fixed: (1) the existing-products regression run failed on a hydration mismatch, which turned out to be the structured-data script-injection bug described in section 4, exposed by a test payload on a page the preview view does not render; the acceptance spec now checks the live page and was shown to fail without the fix. (2) The wishlist and flash-sale cost leaks were found by writing the security tests, and each test was confirmed to fail against the old code.
 
 ## 11. Remaining issues
+
+**An incident during this work, and what it changed.** While running the API tests at the end, the local dev database lost its products, categories, product types and templates. The test suites run against the developer's own database and clean up with `deleteMany({ where: { categoryId } })`; if a test's setup fails halfway, that variable is `undefined`, Prisma treats an `undefined` filter as "no filter", and the cleanup deletes every row. I could not reproduce the exact triggering failure, so this is the mechanism that fits the evidence. I restored the seeded rows (an insert-only copy from a freshly migrated database) and verified the result matches a fresh seed. Old ids were not recoverable, and every order in that database had been created by the browser tests and was removed in cleanup. **Fix:** a guard, active for every test file, that refuses an unfiltered `deleteMany`/`updateMany` (one test cleanup that relied on that was given an explicit filter). **Recommendation, not done:** run the tests against a separate test database so they can never touch development data; that needs a second database and CI wiring, so it is left to the owner.
 
 **Things that are not verified**
 - `next build` compiles, type-checks and generates all pages here, then fails at standalone tracing with a Windows-only `EPERM: symlink`. CI/Docker should confirm.
@@ -155,11 +175,23 @@ FINAL_RESULTS_PLACEHOLDER
 
 ## 12. Potential future improvements
 
-On-demand storefront revalidation instead of the 60-second cache; store the completeness score; per-colour galleries; a live-linked size-guide preset per product; ad-hoc specifications; Excel import; batching the import check's reads; turning the trust strip into a section; a content-hash dedupe of uploaded images; letting staff import (with an approval step); reviewing other customer-facing endpoints that use `include` for the same cost-price exposure (the ones found are fixed; the rest were not audited beyond product, wishlist and flash-sale reads).
+Run the tests against their own database (see section 11); on-demand storefront revalidation instead of the 60-second cache; store the completeness score; per-colour galleries; a live-linked size-guide preset per product; ad-hoc specifications; Excel import; batching the import check's reads; turning the trust strip into a section; a content-hash dedupe of uploaded images; letting staff import (with an approval step); reviewing other customer-facing endpoints that use `include` for the same cost-price exposure (the ones found are fixed; the rest were not audited beyond product, wishlist and flash-sale reads).
 
 ## 13. Files changed
 
-FILES_PLACEHOLDER
+140 files changed against `main` (about 16,650 lines added, 870 removed) across the seven pull requests; the last one (P6) is 35 files. By area:
+
+- `apps/api/prisma/`: five migrations, `schema.prisma`, `seed-presets.ts` (new, opt-in).
+- `apps/api/src/modules/catalog/`: the catalog service, routes, presenter, sections and SKU services and their tests.
+- `apps/api/src/modules/products/`: the product service (workflow, gate, history, sections, duplicate, CSV, public select, sales summary) and its integration tests.
+- `apps/api/src/lib/`: `csv.ts` and tests; `apps/api/src/test-guard.ts` and `test-setup.ts` (the test-safety guard).
+- `packages/shared/src/`: schemas (catalog, product, product-tools), completeness, sections, SKU, gallery, JSON-LD helper.
+- `apps/web/app/admin/(shell)/`: Catalog setup pages, products list, editor, import/export page.
+- `apps/web/components/`: admin editors (product form, variant editor, section editor, status panel, history, duplicate dialog), storefront `ProductPageView` and the admin sales panel.
+- `apps/web/e2e/`: specs for catalog, workflow, variants and media, page sections, duplicate and CSV, existing products, acceptance.
+- `docs/`: `product-catalog.md`, this report.
+
+The exact list is `git diff --stat main...HEAD`.
 
 ## 14. Commands that must be run
 
