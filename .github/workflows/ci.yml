@@ -150,6 +150,10 @@ jobs:
           echo "WEB_ORIGIN=${{ secrets.WEB_ORIGIN }}" >> docker/.env
           echo "NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> docker/.env
           echo "NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker/.env
+          # Optional — the api container skips the on-demand revalidate call entirely when this is
+          # empty (see product.cache.ts's triggerStorefrontRevalidation), falling back to the
+          # storefront's normal ~60s ISR window, so this isn't in the required-secrets check above.
+          echo "REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}" >> docker/.env
           # Optional — docker-compose.yml build arg falls back to empty, which keeps
           # MetaPixelScript inert, so this isn't in the required-secrets check above.
           echo "NEXT_PUBLIC_META_PIXEL_ID=${{ secrets.NEXT_PUBLIC_META_PIXEL_ID }}" >> docker/.env
