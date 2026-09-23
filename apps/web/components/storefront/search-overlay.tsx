@@ -436,20 +436,7 @@ export function SearchOverlay() {
                             isHighlighted && "bg-ink-50",
                           )}
                         >
-                          {product.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element -- small suggestion thumbnail, not worth next/image here
-                            <img src={product.imageUrl} alt={product.name} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
-                          ) : (
-                            <div className="h-12 w-12 shrink-0 rounded-lg bg-ink-100" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm text-ink-900">{product.name}</p>
-                            <p className="text-xs text-ink-400">{formatPrice(product.price)}</p>
-                          </div>
-                          <ArrowUpRight
-                            size={15}
-                            className={cn("shrink-0 text-ink-300 transition-opacity duration-150 ease-smooth", isHighlighted ? "opacity-100" : "opacity-0")}
-                          />
+                          <SearchSuggestionProductContent product={product} highlighted={isHighlighted} />
                         </Link>
                       </li>
                     );
@@ -504,5 +491,28 @@ export function SearchOverlay() {
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** One product row in the instant-search dropdown (the link around it belongs to the overlay). Exported so the admin
+ * wizard's "Search result" preview shows the product exactly as a shopper typing its name would see it. */
+export function SearchSuggestionProductContent({ product, highlighted }: { product: SearchSuggestionProduct; highlighted: boolean }) {
+  return (
+    <>
+      {product.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- small suggestion thumbnail, not worth next/image here
+        <img src={product.imageUrl} alt={product.name} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+      ) : (
+        <div className="h-12 w-12 shrink-0 rounded-lg bg-ink-100" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-ink-900">{product.name}</p>
+        <p className="text-xs text-ink-400">{formatPrice(product.price)}</p>
+      </div>
+      <ArrowUpRight
+        size={15}
+        className={cn("shrink-0 text-ink-300 transition-opacity duration-150 ease-smooth", highlighted ? "opacity-100" : "opacity-0")}
+      />
+    </>
   );
 }

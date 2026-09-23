@@ -421,26 +421,27 @@ export function SeoStep({ state }: StepProps) {
   );
 }
 
-/** Placeholder until the embedded live preview lands — links out to the existing full-page preview
- * (real storefront components, works for any status) rather than duplicating that rendering here. */
+/** The live preview itself sits beside every step (see PreviewPane); this step is the moment to look at it on purpose,
+ * and — once saved — to open the full page, which also fills in reviews and recommendations from live store data. */
 export function PreviewStep({ state }: StepProps) {
   const { initial } = state;
-  const id = initial?.id;
   return (
-    <FormSection title="Live Preview" description="How customers will see this product.">
-      {id ? (
+    <FormSection title="Live Preview" description="Check how customers will see this product before you review and publish.">
+      <ul className="list-disc space-y-1 pl-5 text-sm text-ink-600">
+        <li>The preview beside this form updates as you type — nothing has to be saved first.</li>
+        <li>Switch between Product page, Listing, Search, Social and Google, and between desktop, tablet and mobile.</li>
+        <li>Sections you turned off (care, size guide, FAQ, …) don&rsquo;t appear there, just as they won&rsquo;t on the store.</li>
+      </ul>
+      {initial?.id && (
         <Link
-          href={`/preview/${id}`}
+          href={`/preview/${initial.id}`}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-full border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400 hover:text-ink-900"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-ink-200 px-4 py-2 text-sm font-medium text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400 hover:text-ink-900"
         >
-          Open preview in a new tab →
+          Open the full saved page, with reviews and recommendations →
         </Link>
-      ) : (
-        <p className="text-sm text-ink-400">Fill in Basics and Pricing first — the preview needs a saved draft to render.</p>
       )}
-      <p className="mt-2 text-xs text-ink-400">An embedded, live-updating preview alongside this wizard is coming in a later phase of this program.</p>
     </FormSection>
   );
 }

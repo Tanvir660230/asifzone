@@ -161,3 +161,30 @@ export function buildAccordionItems(product: Product, sanitize: (html: string) =
   }
   return items;
 }
+
+/** RICH_TEXT attribute values are admin-authored HTML; sanitize them before they reach the accordion. `sanitize` is
+ * passed in (DOMPurify on the server page, the browser build in the admin's live preview) so this stays pure. */
+export function sanitizeRichTextSpecs<P extends Product>(product: P, sanitize: (html: string) => string): P {
+  if (!product.resolved) return product;
+  return {
+    ...product,
+    resolved: {
+      ...product.resolved,
+      specGroups: product.resolved.specGroups.map((group) => ({
+        ...group,
+        items: group.items.map((item) => (item.dataType === "RICH_TEXT" ? { ...item, value: sanitize(String(item.value)) } : item)),
+      })),
+    },
+  };
+}
+
+/** How the page lays out for this product's resolved sections — shared by the live page and the admin's live
+ * preview so a toggled-off size guide link or block can't show in one and not the other. */
+export function productPageLayout(product: Product) {
+  const sections = product.resolved?.sections ?? [];
+  return {
+    showSizeGuideLink: sections.length === 0 || sections.some((s) => s.key === "sizeGuide"),
+    blocks: sections.filter((s) => s.area === "block"),
+    faqEnabled: sections.some((s) => s.key === "faq"),
+  };
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { computeWizardSteps, type Category, type CreateProductInput, type Product, type ProductStatus, type WizardStepId } from "@clothing-brand/shared";
 import { useProductFormState } from "@/components/admin/product-form-state";
 import { ProductStatusPanel, type FixTarget } from "@/components/admin/product-status-panel";
@@ -12,7 +12,10 @@ import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
+import { resolvePreviewProduct } from "@/lib/wizard/resolve-preview";
+import { cn } from "@/lib/utils";
 import { ProgressHeader } from "./progress-header";
+import { PreviewPane } from "./preview-pane";
 import {
   BasicsStep,
   MediaStep,
@@ -305,11 +308,31 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
     if (visibleSteps.some((s) => s.id === stepId)) goTo(stepId);
   }
 
+  // Same query keys CareMaterialSection uses, so these are the lists it already loaded — nothing extra is fetched.
+  const { data: careData } = useQuery({ queryKey: ["catalog-care-guides"], queryFn: catalogApi.listCareGuides });
+  const { data: materialsData } = useQuery({ queryKey: ["catalog-materials"], queryFn: catalogApi.listMaterials });
+  const [showPreview, setShowPreview] = useState(true);
+  const previewProduct = resolvePreviewProduct(
+    form.watch(),
+    { config: selectedConfig ?? null, resolvedSections, categories, careGuides: careData?.careGuides ?? [], materials: materialsData?.materials ?? [] },
+    {
+      initial,
+      // Before creation the photos only exist in this browser (staged object URLs) — the preview shows them anyway.
+      images: initial ? initial.images : stagedImages.map((s, i) => ({ id: s.key, productId: "preview", url: s.previewUrl, altText: null, sortOrder: i })),
+    },
+  );
+
   const productName = form.watch("name");
   const percentComplete = completeness.score;
 
   return (
-    <div className="space-y-6">
+    <div className={cn("grid grid-cols-1 items-start gap-6", showPreview && "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")}>
+    <div className="min-w-0 space-y-6">
+      <div className="flex justify-end">
+        <button type="button" onClick={() => setShowPreview((v) => !v)} className="text-xs text-ink-500 underline hover:text-ink-900" data-testid="toggle-preview">
+          {showPreview ? "Hide preview" : "Show preview"}
+        </button>
+      </div>
       {mode === "edit" && (
         <ProductStatusPanel
           status={initial!.status}
@@ -353,6 +376,12 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
           </Button>
         )}
       </div>
+    </div>
+    {showPreview && (
+      <aside className="min-w-0 xl:sticky xl:top-4" aria-label="Live preview">
+        <PreviewPane product={previewProduct} height={720} />
+      </aside>
+    )}
     </div>
   );
 }
