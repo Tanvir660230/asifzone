@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { computeWizardSteps, type Category, type CreateProductInput, type Product, type ProductStatus, type WizardStepId } from "@clothing-brand/shared";
 import { useProductFormState } from "@/components/admin/product-form-state";
@@ -13,6 +13,7 @@ import { describeApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { resolvePreviewProduct } from "@/lib/wizard/resolve-preview";
+import { setPendingUploads } from "@/lib/wizard/pending-uploads";
 import { cn } from "@/lib/utils";
 import { ProgressHeader } from "./progress-header";
 import { PreviewPane } from "./preview-pane";
@@ -118,6 +119,7 @@ interface ProductWizardProps {
 
 export function ProductWizard({ categories, initial }: ProductWizardProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const mode = initial ? "edit" : "new";
 
@@ -138,7 +140,22 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
   const preCreateSteps = allSteps.filter((s) => PRE_CREATE_ELIGIBLE.includes(s.id));
   const visibleSteps = mode === "new" ? preCreateSteps : allSteps;
   const lastPreCreateStepId = preCreateSteps[preCreateSteps.length - 1]!.id;
-  const [currentStepId, setCurrentStepId] = useState<WizardStepId>(visibleSteps[0]!.id);
+  // `?step=` lets a redirect land on a specific step — e.g. Media right after creation, where the photos picked
+  // before the product existed are uploading.
+  const requestedStep = searchParams.get("step") as WizardStepId | null;
+  const [currentStepId, setCurrentStepId] = useState<WizardStepId>(
+    requestedStep && visibleSteps.some((s) => s.id === requestedStep) ? requestedStep : visibleSteps[0]!.id,
+  );
+  // A requested dynamic step (Variants, Care, Size Guide) only exists once the type config has loaded, after the
+  // first render — honour the request when it appears, once, rather than silently landing on Basics.
+  const [pendingStep, setPendingStep] = useState<WizardStepId | null>(requestedStep);
+  useEffect(() => {
+    if (pendingStep && visibleSteps.some((s) => s.id === pendingStep)) {
+      setCurrentStepId(pendingStep);
+      setPendingStep(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingStep, visibleSteps.map((s) => s.id).join(",")]);
   // In "edit" mode every step already has real, saved data behind it — there's no "haven't gotten
   // there yet" to gate, so every step starts reachable (spec: completed steps are directly
   // accessible). "new" mode keeps the guided, one-at-a-time gating: nothing exists to jump to yet.
@@ -217,6 +234,7 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
   }, [mode, initial?.id]);
 
   function goTo(id: WizardStepId) {
+    setPendingStep(null); // the admin chose where to be — a ?step= request still waiting mustn't override that
     setCurrentStepId(id);
     setVisitedIds((prev) => new Set(prev).add(id));
   }
@@ -251,17 +269,17 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
         variants[0] = { ...variants[0], sku };
       }
       const { product } = await productsApi.createProduct({ ...values, variants, status: "DRAFT" });
-      if (stagedImages.length) {
-        try {
-          await productsApi.uploadProductImages(product.id, stagedImages.map((s) => s.file));
-        } catch {
-          // The draft exists either way — never leave the admin unsure whether anything was saved.
-          toast.error("Product created, but image upload failed — try uploading again from the Media step.");
-        }
-      }
       clearLocalDraft();
-      toast.success(`"${product.name}" saved as a draft — continue filling it in`);
-      router.push(`/admin/products/wizard/${product.id}/edit`);
+      if (stagedImages.length) {
+        // The edit page's Media step uploads them one by one with progress, and any that fail stay there with a
+        // Retry — rather than a batch upload here whose failure could only be reported as "try again later".
+        setPendingUploads(product.id, stagedImages.map((s) => s.file));
+        toast.success(`"${product.name}" saved as a draft — uploading its photos`);
+        router.push(`/admin/products/wizard/${product.id}/edit?step=media`);
+      } else {
+        toast.success(`"${product.name}" saved as a draft — continue filling it in`);
+        router.push(`/admin/products/wizard/${product.id}/edit`);
+      }
     } catch (err) {
       setError(describeApiError(err, "Failed to create product"));
     } finally {

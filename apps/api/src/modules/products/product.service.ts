@@ -13,6 +13,7 @@ import {
   findClosestVocabularyTerm,
   computeCompleteness,
   describeBlockers,
+  findDuplicateSkus,
   isBlankAttributeValue,
   resolveSections,
   toPublicSections,
@@ -1324,8 +1325,7 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
   const category = await prisma.category.findUnique({ where: { id: input.categoryId } });
   if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
 
-  const skus = input.variants.map((v) => v.sku);
-  if (new Set(skus).size !== skus.length) throw AppError.badRequest("Duplicate SKU in variants");
+  if (findDuplicateSkus(input.variants.map((v) => v.sku)).size) throw AppError.badRequest("Duplicate SKU in variants");
 
   const type = await resolveTypeForWrite(input);
   const config: ResolvedTypeConfig = toResolvedTypeConfig(type);
@@ -1428,6 +1428,12 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
 
 export async function updateProduct(id: string, input: UpdateProductInput, adminId: string, ip?: string, options: { stockNote?: string } = {}) {
   const existing = await getProductById(id);
+  // Same rule as create, checked up front: otherwise two rows sharing a SKU only fail at the DB unique index, as a
+  // generic conflict that doesn't say which rows clash. A row listed by id without a SKU keeps its stored one.
+  if (input.variants) {
+    const resultingSkus = input.variants.map((v) => v.sku ?? existing.variants.find((e) => e.id === v.id)?.sku);
+    if (findDuplicateSkus(resultingSkus).size) throw AppError.badRequest("Duplicate SKU in variants");
+  }
 
   if (input.categoryId) {
     const category = await prisma.category.findUnique({ where: { id: input.categoryId } });

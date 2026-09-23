@@ -190,6 +190,14 @@ describe("product workflow: status, completeness, SEO, care, materials, history"
       }
     });
 
+    it("refuses two variants with the same SKU on update with a clear 400, not the DB's generic conflict", async () => {
+      const q = await createProduct();
+      const [v] = (await owner().get(`/api/products/${q.id}`)).body.product.variants as { id: string; sku: string }[];
+      const res = await owner().patch(`/api/products/${q.id}`, { variants: [{ id: v!.id }, { sku: `${v!.sku} `, size: "L", color: "Black", stock: 1 }] });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Duplicate SKU in variants");
+    });
+
     it("saving an already-live product never re-checks it", async () => {
       await owner().patch(`/api/products/${p.id}`, { status: "PUBLISHED" });
       await prisma.productImage.deleteMany({ where: { productId: p.id } }); // e.g. an image removed after publishing

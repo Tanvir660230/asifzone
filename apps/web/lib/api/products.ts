@@ -9,7 +9,7 @@ import type {
   ProductImportReport,
   ProductImportResult,
 } from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
+import { apiFetch, apiUploadWithProgress } from "../api-client";
 import { env } from "../env";
 
 export interface ProductListParams {
@@ -131,6 +131,13 @@ export function uploadProductImages(id: string, files: File[]) {
     body: formData,
     isFormData: true,
   });
+}
+
+/** One file per request, with upload progress — so one bad file can't sink a whole batch, and each can be retried. */
+export function uploadProductImage(id: string, file: File, onProgress?: (fraction: number) => void) {
+  const formData = new FormData();
+  formData.append("images", file);
+  return apiUploadWithProgress<{ product: Product }>(`/api/products/${id}/images`, formData, onProgress);
 }
 
 export function deleteProductImage(productId: string, imageId: string) {

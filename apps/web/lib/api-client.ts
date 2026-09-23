@@ -124,3 +124,35 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
 
   return data as T;
 }
+
+/** apiFetch's contract (credentials, CSRF header, one silent session refresh on a 401, ApiError on failure) for a
+ * multipart POST — over XHR, because fetch can't report upload progress. `onProgress` gets 0–1 as bytes go out. */
+export function apiUploadWithProgress<T>(path: string, body: FormData, onProgress?: (fraction: number) => void, _retried = false): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${env.apiUrl}${path}`);
+    xhr.withCredentials = true;
+    const csrfToken = readCsrfCookie();
+    if (csrfToken) xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+    };
+    xhr.onload = async () => {
+      if (xhr.status === 401 && !_retried && (await refreshSession())) {
+        apiUploadWithProgress<T>(path, body, onProgress, true).then(resolve, reject);
+        return;
+      }
+      let data: { error?: string; details?: unknown } = {};
+      try {
+        data = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        // non-JSON error page (proxy timeout, too-large body rejected upstream) — fall through to the generic message
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as T);
+      else reject(new ApiError(xhr.status, data.error ?? (xhr.status === 413 ? "File is too large" : "Upload failed"), data.details));
+    };
+    xhr.onerror = () => reject(new ApiError(0, "Network error — check the connection and retry"));
+    xhr.onabort = () => reject(new ApiError(0, "Upload cancelled"));
+    xhr.send(body);
+  });
+}

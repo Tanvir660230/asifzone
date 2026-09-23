@@ -20,7 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, GripVertical, History, Sparkles, Star, Trash2, Wand2 } from "lucide-react";
-import type { Attribute, AttributeValue, CreateProductInput, ProductImage, VariantDimension } from "@clothing-brand/shared";
+import { findDuplicateSkus, type Attribute, type AttributeValue, type CreateProductInput, type ProductImage, type VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/components/ui/toast";
@@ -52,6 +52,16 @@ interface VariantEditorProps {
   /** The product's type — the SKU generator numbers per type. */
   typeId?: string;
 }
+
+/** Fields the bulk bar can set on many variants at once. Prices can also be cleared (the variant then sells at the
+ * product's base price); stock can't be blank. */
+const BULK_FIELDS = [
+  { key: "stock", label: "Stock" },
+  { key: "price", label: "Price override" },
+  { key: "compareAtPrice", label: "Compare-at price" },
+  { key: "costPrice", label: "Cost price" },
+] as const;
+type BulkField = (typeof BULK_FIELDS)[number]["key"];
 
 function slugPart(s: string) {
   return s
@@ -85,6 +95,71 @@ export function VariantEditor({
 }: VariantEditorProps) {
   const { fields, append, remove, move } = useFieldArray({ control, name: "variants" });
   const [generatingSku, setGeneratingSku] = useState<number | null>(null);
+  // Keyed by the field-array row id, so a selection survives drag-reordering.
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkField, setBulkField] = useState<BulkField>("stock");
+  const [bulkValue, setBulkValue] = useState("");
+  const [generatingAll, setGeneratingAll] = useState(false);
+
+  const liveVariants = (watch("variants") ?? []) as { sku?: string; color?: string | null; size?: string | null }[];
+  // Same rule the API applies on save — shown while typing instead of as a failed save.
+  const duplicateSkuRows = findDuplicateSkus(liveVariants.map((v) => v?.sku));
+  const targetIndexes = selectedRows.size ? fields.map((f, i) => (selectedRows.has(f.id) ? i : -1)).filter((i) => i >= 0) : fields.map((_, i) => i);
+
+  function toggleRow(rowId: string) {
+    setSelectedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }
+
+  function applyBulk() {
+    const raw = bulkValue.trim();
+    let value: number | null;
+    if (bulkField === "stock") {
+      const n = Number(raw);
+      if (raw === "" || !Number.isInteger(n) || n < 0) {
+        toast.error("Stock must be a whole number, 0 or more");
+        return;
+      }
+      value = n;
+    } else if (raw === "") {
+      value = null; // clears the override on those variants
+    } else {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) {
+        toast.error("Prices must be above zero (leave it empty to clear)");
+        return;
+      }
+      value = n;
+    }
+    for (const i of targetIndexes) setValue(`variants.${i}.${bulkField}`, value as number, { shouldDirty: true });
+    const label = BULK_FIELDS.find((f) => f.key === bulkField)!.label.toLowerCase();
+    const what = value === null ? `Cleared ${label}` : `Set ${label} to ${value}`;
+    toast.success(`${what} on ${targetIndexes.length} variant${targetIndexes.length === 1 ? "" : "s"}`);
+  }
+
+  /** One request at a time, each told about every SKU already in the form (including ones just generated), so the
+   * server's atomic counter never hands two rows the same number. */
+  async function generateMissingSkus() {
+    if (!typeId) return;
+    setGeneratingAll(true);
+    try {
+      const taken = liveVariants.map((v) => v?.sku ?? "").filter(Boolean);
+      for (const [i, row] of liveVariants.entries()) {
+        if (row?.sku?.trim()) continue;
+        const { sku } = await catalogApi.generateSku({ typeId, color: row?.color, size: row?.size, taken });
+        taken.push(sku);
+        setValue(`variants.${i}.sku`, sku, { shouldDirty: true, shouldValidate: true });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't generate SKUs");
+    } finally {
+      setGeneratingAll(false);
+    }
+  }
 
   /** Asks the server for the next SKU from the configured pattern, telling it which SKUs this form already holds
    * so two unsaved rows can't be handed the same one. */
@@ -229,6 +304,45 @@ export function VariantEditor({
         </div>
       )}
 
+      {duplicateSkuRows.size > 0 && (
+        <p className="mb-2 rounded-md bg-danger-50 px-3 py-2 text-xs text-danger-700" role="alert" data-testid="duplicate-sku-warning">
+          {duplicateSkuRows.size} variants share a SKU — each variant needs its own before this can be saved.
+        </p>
+      )}
+
+      {fields.length > 1 && (
+        <div className="mb-3 flex flex-wrap items-end gap-2 rounded-lg border border-ink-100 bg-white p-3" data-testid="variant-bulk-bar">
+          <div>
+            <Label className="text-[11px]" htmlFor="bulk-field">Set</Label>
+            <Select id="bulk-field" value={bulkField} onChange={(e) => setBulkField(e.target.value as BulkField)} className="h-9 text-xs">
+              {BULK_FIELDS.map((f) => (
+                <option key={f.key} value={f.key}>{f.label}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label className="text-[11px]" htmlFor="bulk-value">to</Label>
+            <Input
+              id="bulk-value"
+              type="number"
+              step={bulkField === "stock" ? "1" : "0.01"}
+              value={bulkValue}
+              onChange={(e) => setBulkValue(e.target.value)}
+              placeholder={bulkField === "stock" ? "e.g. 10" : "empty clears"}
+              className="h-9 w-32 text-xs"
+            />
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={applyBulk}>
+            Apply to {selectedRows.size ? `${targetIndexes.length} selected` : `all ${fields.length}`}
+          </Button>
+          {selectedRows.size > 0 && (
+            <button type="button" onClick={() => setSelectedRows(new Set())} className="pb-2 text-xs text-ink-500 underline hover:text-ink-900">
+              Clear selection
+            </button>
+          )}
+        </div>
+      )}
+
       {fields.length > 1 && (
         <p className="mb-2 text-xs text-ink-400">
           Drag <GripVertical size={11} className="inline -mt-0.5" /> to reorder — the top variant&rsquo;s color and size are what
@@ -258,6 +372,9 @@ export function VariantEditor({
                 <SortableVariantRow key={field.id} id={field.id} isDefault={index === 0}>
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-1">
+                      {fields.length > 1 && (
+                        <Checkbox className="mr-1" checked={selectedRows.has(field.id)} onChange={() => toggleRow(field.id)} aria-label={`Select variant ${index + 1}`} />
+                      )}
                       {chips.map((chip) => (
                         <span key={chip} className="rounded-full bg-ink-100 px-2 py-0.5 text-[11px] text-ink-600">
                           {chip}
@@ -300,7 +417,8 @@ export function VariantEditor({
                           <Wand2 size={11} /> {generatingSku === index ? "…" : "Generate"}
                         </button>
                       </div>
-                      <Input placeholder="SKU-001" {...register(`variants.${index}.sku`)} />
+                      <Input placeholder="SKU-001" aria-invalid={duplicateSkuRows.has(index) || undefined} {...register(`variants.${index}.sku`)} />
+                      {duplicateSkuRows.has(index) && <p className="mt-0.5 text-[11px] text-danger-600">Same SKU as another variant</p>}
                     </div>
                     <div>
                       <Label className="text-[11px]">Barcode</Label>
@@ -432,15 +550,22 @@ export function VariantEditor({
         </SortableContext>
       </DndContext>
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="mt-3"
-        onClick={() => append({ sku: "", size: "", color: "", stock: 0, isActive: true, attributeValueIds: [] })}
-      >
-        Add variant manually
-      </Button>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => append({ sku: "", size: "", color: "", stock: 0, isActive: true, attributeValueIds: [] })}
+        >
+          Add variant manually
+        </Button>
+        {/* After the rows, not in the bulk bar above them: each row's own "Generate" keeps its place in the page order. */}
+        {typeId && fields.length > 1 && liveVariants.some((v) => !v?.sku?.trim()) && (
+          <Button type="button" variant="outline" size="sm" onClick={generateMissingSkus} disabled={generatingAll}>
+            <Wand2 size={14} /> {generatingAll ? "Generating…" : "Generate missing SKUs"}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
