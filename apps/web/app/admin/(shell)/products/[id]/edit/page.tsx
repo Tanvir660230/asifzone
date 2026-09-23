@@ -16,6 +16,7 @@ import * as categoriesApi from "@/lib/api/categories";
 import * as productsApi from "@/lib/api/products";
 import { describeApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
+import { productEditHref } from "@/lib/admin-routes";
 
 export default function EditProductPage() {
   const { id } = useParams<{ id: string }>();
@@ -93,6 +94,9 @@ export default function EditProductPage() {
               <Copy size={13} />
               Duplicate
             </button>
+            <Link href={productEditHref(product.id)} className="text-xs text-ink-500 underline hover:text-ink-900">
+              Step-by-step editor
+            </Link>
             <BackLink href="/admin/products" label="Back to Products" />
           </div>
         }

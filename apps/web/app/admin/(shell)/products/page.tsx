@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX, Copy, FileSpreadsheet, Sparkles } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX, Copy, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -26,6 +26,7 @@ import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 import { DuplicateProductDialog } from "@/components/admin/duplicate-product-dialog";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { CLASSIC_PRODUCT_NEW_HREF, PRODUCT_NEW_HREF, productEditHref } from "@/lib/admin-routes";
 
 function ProductRowCardSkeleton({ first = false }: { first?: boolean }) {
   return (
@@ -213,7 +214,7 @@ export default function ProductsPage() {
     ) : (
       <>
         <Link
-          href={`/admin/products/${p.id}/edit`}
+          href={productEditHref(p.id)}
           className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
           aria-label="Edit"
           title="Edit"
@@ -256,12 +257,10 @@ export default function ProductsPage() {
                 <FileSpreadsheet size={16} /> Import / export
               </Button>
             </Link>
-            <Link href="/admin/products/wizard/new">
-              <Button variant="outline">
-                <Sparkles size={16} /> Try the step-by-step builder
-              </Button>
+            <Link href={CLASSIC_PRODUCT_NEW_HREF} className="text-xs text-ink-500 underline hover:text-ink-900">
+              Classic editor
             </Link>
-            <Link href="/admin/products/new">
+            <Link href={PRODUCT_NEW_HREF}>
               <Button variant="brass">
                 <Plus size={16} /> Add product
               </Button>

@@ -4,6 +4,7 @@ import type { TopProduct } from "@/lib/api/admin-analytics";
 import { formatPrice } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
+import { productEditHref } from "@/lib/admin-routes";
 
 // First three get a graded dark-to-light badge so #1 reads unmistakably as #1; everything past
 // that is a neutral tie rather than an arbitrary shade.
@@ -64,7 +65,7 @@ export function TopProductsChart({ products }: { products: TopProduct[] }) {
         return p.productId ? (
           <Link
             key={p.name}
-            href={`/admin/products/${p.productId}/edit`}
+            href={productEditHref(p.productId)}
             className="-mx-1 block rounded-xl px-1 transition-colors duration-150 ease-smooth hover:bg-ink-50/60"
           >
             {row}

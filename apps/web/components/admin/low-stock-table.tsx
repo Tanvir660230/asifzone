@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowUpRight, CheckCircle2, Package } from "lucide-react
 import type { LowStockVariant } from "@/lib/api/admin-analytics";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
+import { productEditHref } from "@/lib/admin-routes";
 
 // Matches the API's default low-stock query threshold (`getLowStockVariants(threshold = 5)`) —
 // used only to size the stock bar, not to decide which variants show up here.
@@ -36,7 +37,7 @@ export function LowStockTable({ variants }: { variants: LowStockVariant[] }) {
         const imageUrl = v.image?.url ?? v.product.images[0]?.url ?? null;
         const { label, tone } = severity(v.stock);
         const toneClass = TONE_CLASS[tone];
-        const editHref = `/admin/products/${v.product.id}/edit`;
+        const editHref = productEditHref(v.product.id);
         const barPct = Math.max(6, (Math.min(v.stock, STOCK_REFERENCE) / STOCK_REFERENCE) * 100);
 
         return (

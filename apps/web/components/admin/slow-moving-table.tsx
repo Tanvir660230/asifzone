@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { SlowMovingProduct } from "@/lib/api/admin-analytics";
+import { productEditHref } from "@/lib/admin-routes";
 
 export function SlowMovingTable({ products }: { products: SlowMovingProduct[] }) {
   if (products.length === 0) {
@@ -19,7 +20,7 @@ export function SlowMovingTable({ products }: { products: SlowMovingProduct[] })
         {products.map((p) => (
           <tr key={p.id} className="border-t border-ink-100">
             <td className="py-2">
-              <Link href={`/admin/products/${p.id}/edit`} className="text-ink-800 hover:text-brass-600">
+              <Link href={productEditHref(p.id)} className="text-ink-800 hover:text-brass-600">
                 {p.name}
               </Link>
             </td>

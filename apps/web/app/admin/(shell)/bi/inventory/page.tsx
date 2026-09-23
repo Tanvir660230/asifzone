@@ -12,6 +12,7 @@ import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as inventoryApi from "@/lib/api/inventory";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { productEditHref } from "@/lib/admin-routes";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -87,7 +88,7 @@ export default function InventoryIntelligencePage() {
                   {lowStock.variants.slice(0, 10).map((v) => (
                     <tr key={v.id} className="border-b border-ink-50 last:border-0">
                       <td className="py-2 pr-4">
-                        <Link href={`/admin/products/${v.product.id}/edit`} className="text-ink-800 hover:text-brass-600">
+                        <Link href={productEditHref(v.product.id)} className="text-ink-800 hover:text-brass-600">
                           {v.product.name}
                         </Link>
                       </td>
@@ -132,7 +133,7 @@ export default function InventoryIntelligencePage() {
                   {deadStock.variants.map((v) => (
                     <tr key={v.variantId} className="border-b border-ink-50 last:border-0">
                       <td className="py-2 pr-4">
-                        <Link href={`/admin/products/${v.productId}/edit`} className="text-ink-800 hover:text-brass-600">
+                        <Link href={productEditHref(v.productId)} className="text-ink-800 hover:text-brass-600">
                           {v.name}
                         </Link>
                       </td>

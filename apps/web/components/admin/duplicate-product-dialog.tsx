@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import * as productsApi from "@/lib/api/products";
 import { describeApiError } from "@/lib/api-client";
+import { productEditHref } from "@/lib/admin-routes";
 
 interface DuplicateProductDialogProps {
   product: { id: string; name: string } | null;
@@ -67,7 +68,7 @@ export function DuplicateProductDialog({ product, onClose }: DuplicateProductDia
             <Button type="button" variant="outline" onClick={onClose}>
               Close
             </Button>
-            <Link href={`/admin/products/${result.productId}/edit`}>
+            <Link href={productEditHref(result.productId)}>
               <Button type="button" variant="brass">
                 Open the copy
               </Button>
