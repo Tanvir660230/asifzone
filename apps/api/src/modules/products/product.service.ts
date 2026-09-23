@@ -52,7 +52,7 @@ import {
 } from "../catalog/catalog.presenter";
 import { recordAudit } from "../../lib/audit";
 import { layerFromRows, loadGlobalRows, overridesFromRows, saveProductSections, type SectionRow } from "../catalog/sections.service";
-import { PRODUCT_CACHE_PREFIX, invalidateProductCache } from "./product.cache";
+import { PRODUCT_CACHE_PREFIX, invalidateProductCache, triggerStorefrontRevalidation, type RevalidationContext } from "./product.cache";
 import { diffProduct, type AuditSnapshot } from "./product-audit";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "./product-public-select";
 
@@ -295,8 +295,13 @@ async function withFlashSaleInfo<T extends { id: string; basePrice: unknown }>(p
   });
 }
 
-export async function invalidateCache() {
+/** Invalidates the API's own Redis read cache (immediate, always) and, best-effort and non-blocking,
+ * asks the storefront to drop the specific Next.js fetch-cache tags this change affects (see
+ * product.cache.ts). `context` is optional so every existing call site keeps compiling as-is — pass
+ * it wherever the affected product(s) are already known, which is every call site below. */
+export async function invalidateCache(context?: RevalidationContext) {
   await invalidateProductCache();
+  void triggerStorefrontRevalidation(context).catch((err) => console.error("[revalidate] unexpected failure:", err));
 }
 
 const SORT_ORDER_BY: Record<string, object> = {
@@ -1411,7 +1416,7 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
     throw err;
   }
 
-  await invalidateCache();
+  await invalidateCache({ productId: product.id, slug: product.slug });
   recordAudit({
     adminId,
     action: "product.created",
@@ -1668,7 +1673,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
     throw err;
   }
 
-  await invalidateCache();
+  await invalidateCache({ productId: id, slug: newSlug ?? existing.slug, previousSlug: newSlug && newSlug !== existing.slug ? existing.slug : undefined });
 
   // Fire-and-forget: real stock/price changes trigger real customer notifications — never
   // allowed to block or fail the admin's product save.
@@ -1710,15 +1715,15 @@ export async function getProductHistory(id: string, page = 1, pageSize = 30) {
 /** Soft delete — moves the product to Trash instead of destroying it, so wishlist/flash-sale
  * associations and image files survive an accidental click. Use `permanentlyDeleteProduct` to purge. */
 export async function deleteProduct(id: string) {
-  await getProductById(id);
+  const existing = await getProductById(id);
   await prisma.product.update({ where: { id }, data: { deletedAt: new Date() } });
-  await invalidateCache();
+  await invalidateCache({ productId: id, slug: existing.slug });
 }
 
 export async function restoreProduct(id: string) {
-  await getProductById(id);
+  const existing = await getProductById(id);
   await prisma.product.update({ where: { id }, data: { deletedAt: null } });
-  await invalidateCache();
+  await invalidateCache({ productId: id, slug: existing.slug });
   return getProductById(id);
 }
 
@@ -1736,12 +1741,13 @@ export async function permanentlyDeleteProduct(id: string) {
   if (!product.deletedAt) throw AppError.badRequest("Move the product to Trash before deleting it permanently");
   await prisma.product.delete({ where: { id } });
   await removeImageFilesIfUnused(product.images.map((img) => img.url));
-  await invalidateCache();
+  // The row is gone by now — pass the slug directly (this is the one call site resolveSlugs() can't help).
+  await invalidateCache({ productId: id, slug: product.slug });
 }
 
 export async function bulkDeleteProducts(ids: string[]) {
   await prisma.product.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
-  await invalidateCache();
+  await invalidateCache({ productIds: ids });
 }
 
 /** Moves many products to a status. Going READY/PUBLISHED is gated per product: the ones that pass move, the ones that
@@ -1776,7 +1782,7 @@ export async function bulkUpdateProductStatus(ids: string[], target: ProductStat
         metadata: { changes: [{ field: "status", from: row.status, to: target }], bulk: true },
       });
     }
-    await invalidateCache();
+    await invalidateCache({ productIds: movable.map((r) => r.id) });
   }
   return { updated: movable.length, unchanged: rows.length - movable.length - blocked.length, blocked };
 }
@@ -1785,7 +1791,7 @@ export async function bulkUpdateProductCategory(ids: string[], categoryId: strin
   const category = await prisma.category.findUnique({ where: { id: categoryId } });
   if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
   await prisma.product.updateMany({ where: { id: { in: ids } }, data: { categoryId } });
-  await invalidateCache();
+  await invalidateCache({ productIds: ids });
 }
 
 /** Product-level summary export (one row per product, not per variant) — stock is the sum across variants. */
@@ -1842,7 +1848,7 @@ export async function addProductImages(productId: string, images: Array<{ url: s
   await prisma.productImage.createMany({
     data: images.map((img, i) => ({ ...img, productId, sortOrder: existingCount + i })),
   });
-  await invalidateCache();
+  await invalidateCache({ productId });
   return getProductById(productId);
 }
 
@@ -1857,14 +1863,14 @@ export async function deleteProductImage(productId: string, imageId: string) {
   });
   for (const v of orphaned) await prisma.productVariant.update({ where: { id: v.id }, data: { imageId: v.images[0]!.imageId } });
   await removeImageFilesIfUnused([image.url]);
-  await invalidateCache();
+  await invalidateCache({ productId });
 }
 
 export async function updateProductImage(productId: string, imageId: string, input: { altText?: string; caption?: string | null }) {
   const image = await prisma.productImage.findUnique({ where: { id: imageId } });
   if (!image || image.productId !== productId) throw AppError.notFound("Image not found");
   await prisma.productImage.update({ where: { id: imageId }, data: input });
-  await invalidateCache();
+  await invalidateCache({ productId });
 }
 
 /** Reorders a product's images to match `imageIds` — index 0 becomes the main/featured image
@@ -1880,7 +1886,7 @@ export async function reorderProductImages(productId: string, imageIds: string[]
   await prisma.$transaction(
     imageIds.map((id, sortOrder) => prisma.productImage.update({ where: { id }, data: { sortOrder } })),
   );
-  await invalidateCache();
+  await invalidateCache({ productId });
   return getProductById(productId);
 }
 

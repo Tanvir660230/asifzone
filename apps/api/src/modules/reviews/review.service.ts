@@ -23,7 +23,7 @@ async function recomputeProductRating(productId: string) {
   // The storefront's getProductBySlug/listStorefrontProducts reads go through a Redis cache
   // keyed by product — without this, an approved review's rating stays stale on the storefront
   // for the rest of the cache TTL.
-  await invalidateProductCache();
+  await invalidateProductCache({ productId });
 }
 
 async function getRatingBreakdown(productId: string) {

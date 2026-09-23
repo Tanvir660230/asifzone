@@ -157,7 +157,7 @@ export async function duplicateProduct(sourceId: string, input: DuplicateProduct
     }
   }
 
-  await invalidateCache();
+  await invalidateCache({ productId: created.id, slug: created.slug });
   recordAudit({
     adminId,
     action: "product.duplicated",
