@@ -16,6 +16,7 @@ import {
   SHIPPING_FEE_DHAKA_FALLBACK,
   SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK,
   estimateDelivery,
+  isInsideDhaka,
   type BundleCartPreview,
   type CheckoutInput,
 } from "@clothing-brand/shared";
@@ -179,7 +180,6 @@ function CheckoutForm() {
     if (fallback) setValue("paymentMethod", fallback);
   }, [codEnabled, onlinePaymentEnabled, epsPaymentEnabled, paymentMethod, setValue]);
 
-  const shippingDivision = watch("shippingDivision");
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
   // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a
@@ -200,7 +200,7 @@ function CheckoutForm() {
   }
 
   // Division is derived from the chosen district rather than picked separately — it's only needed
-  // internally for the Dhaka/outside-Dhaka shipping-fee and delivery-estimate split.
+  // for the order record; the Dhaka/outside-Dhaka fee split goes by district (isInsideDhaka).
   useEffect(() => {
     setValue("shippingDivision", (BD_DIVISION_BY_DISTRICT[shippingDistrict] ?? "") as CheckoutFormValues["shippingDivision"]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,14 +217,15 @@ function CheckoutForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
 
+  const insideDhaka = isInsideDhaka(shippingDistrict);
   const shippingFee = settingsData
     ? Number(
-        shippingDivision === "Dhaka" ? settingsData.settings.shippingFeeDhaka : settingsData.settings.shippingFeeOutsideDhaka,
+        insideDhaka ? settingsData.settings.shippingFeeDhaka : settingsData.settings.shippingFeeOutsideDhaka,
       )
-    : shippingDivision === "Dhaka"
+    : insideDhaka
       ? SHIPPING_FEE_DHAKA_FALLBACK
       : SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK;
-  const deliveryEstimate = estimateDelivery(shippingDivision);
+  const deliveryEstimate = estimateDelivery(shippingDistrict);
 
   useEffect(() => {
     if (!customer) return;
@@ -446,7 +447,7 @@ function CheckoutForm() {
                   </div>
                 )}
                 <div className="flex justify-between text-ink-600">
-                  <span>Shipping ({shippingDivision === "Dhaka" ? "Dhaka" : "Outside Dhaka"})</span>
+                  <span>Shipping ({insideDhaka ? "Inside Dhaka" : "Outside Dhaka"})</span>
                   {freeShipping ? (
                     <span>
                       <span className="mr-1.5 text-ink-400 line-through">{formatPrice(shippingFee)}</span>

@@ -1,4 +1,4 @@
-import { formatVariantLabel, formatVariantSuffix, orderStatusEnum } from "@clothing-brand/shared";
+import { formatVariantLabel, formatVariantSuffix, isInsideDhaka, orderStatusEnum } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
@@ -103,7 +103,7 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
     throw AppError.badRequest("Online payment is currently unavailable — please choose Cash on Delivery instead");
   }
   const shippingFee =
-    input.shippingDivision === "Dhaka" ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
+    isInsideDhaka(input.shippingDistrict) ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
   const total = subtotal - discount + (couponFreeShipping ? 0 : shippingFee);
 
   return { customerId, variantById, flashByProduct, subtotal, discount, couponId, couponFreeShipping, bundleId, bundleDiscount, shippingFee, total };
@@ -828,9 +828,9 @@ export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
  * an admin-entered estimate of their return-leg fee (StoreSetting.courierReturnFeeDhaka/
  * OutsideDhaka), zone-matched the same way shippingFee is at checkout. Only called from the two
  * places that actually log a CourierLossEvent, not on every order lookup. */
-async function getCourierReturnFee(shippingDivision: string): Promise<number> {
+async function getCourierReturnFee(shippingDistrict: string): Promise<number> {
   const settings = await getSettings();
-  return shippingDivision === "Dhaka" ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
+  return isInsideDhaka(shippingDistrict) ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
 }
 
 export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
@@ -844,7 +844,7 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
   // a genuine new transition into CANCELLED, not a re-save of an already-cancelled order.
   const courierLossFee =
     input.status === "CANCELLED" && existing.courierConsignmentId
-      ? await getCourierReturnFee(existing.shippingDivision)
+      ? await getCourierReturnFee(existing.shippingDistrict)
       : null;
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -1208,7 +1208,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   }
 
   const returnedEntries = input.items.filter((entry) => entry.returnedQuantity > 0);
-  const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDivision) : null;
+  const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDistrict) : null;
 
   return prisma.$transaction(async (tx) => {
     for (const entry of returnedEntries) {
