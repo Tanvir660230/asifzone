@@ -605,6 +605,8 @@ test.describe("product management system — the brief's acceptance tests", () =
     await expect(vp.getByRole("heading", { level: 1, name: N.panjabi })).toBeVisible();
     await vp.waitForTimeout(800);
     await expect(vp.getByTestId("admin-sales-7d")).toHaveCount(0);
+    await expect(vp.getByText(/sold in the last 7 days/i)).toHaveCount(0);
+    await expect(vp.getByText(/in the last 24 hours/i)).toHaveCount(0);
     expect(asked, "customers make no request for admin figures").toEqual([]);
 
     // Someone who forges the browser marker without a session gets nothing: the API refuses, and the marker is dropped.

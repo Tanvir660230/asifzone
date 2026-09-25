@@ -178,7 +178,7 @@ export default function OrderConfirmationPage() {
     );
   }
 
-  const deliveryEstimate = estimateDelivery(order.shippingDivision, new Date(order.createdAt));
+  const deliveryEstimate = estimateDelivery(order.shippingDistrict, new Date(order.createdAt));
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">

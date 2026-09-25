@@ -1,4 +1,5 @@
 import paramiko
+import os
 import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -6,7 +7,9 @@ sys.stdout.reconfigure(encoding='utf-8')
 HOST = "178.16.136.125"
 PORT = 65002
 USER = "u139868009"
-PASSWORD = "NnE85.J?w&LXcqM8"
+# Never commit the password: set it in the shell before running, e.g.
+#   VPS_SSH_PASSWORD=... python inspect_vps.py
+PASSWORD = os.environ.get("VPS_SSH_PASSWORD") or sys.exit("Set VPS_SSH_PASSWORD first")
 
 def inspect():
     ssh = paramiko.SSHClient()

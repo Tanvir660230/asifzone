@@ -477,7 +477,7 @@ export default function SettingsPage() {
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="shippingFeeDhaka">Shipping fee — inside Dhaka (BDT)</Label>
+              <Label htmlFor="shippingFeeDhaka">Shipping fee — inside Dhaka district (BDT)</Label>
               <Input id="shippingFeeDhaka" type="number" step="0.01" {...register("shippingFeeDhaka", { valueAsNumber: true })} />
               {errors.shippingFeeDhaka && <p className="mt-1 text-xs text-danger-600">{errors.shippingFeeDhaka.message}</p>}
             </div>
@@ -494,7 +494,7 @@ export default function SettingsPage() {
               )}
             </div>
             <div>
-              <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka (BDT)</Label>
+              <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka district (BDT)</Label>
               <Input
                 id="courierReturnFeeDhaka"
                 type="number"

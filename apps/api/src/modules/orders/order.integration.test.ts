@@ -11,9 +11,10 @@ import { generateOrderNumber } from "../../lib/order-number";
 // here rather than reusing seed data, so stock levels are exact and predictable across tests.
 const suffix = Date.now();
 const UNIT_PRICE = 500;
-// Enough for every successful-checkout test below (4: base order, coupon order, tracking order,
-// markOrderPaid order) plus headroom — the insufficient-stock test itself never decrements.
-const INITIAL_STOCK = 6;
+// Enough for every successful-checkout test below (5: base order, coupon order, tracking order,
+// markOrderPaid order, outside-Dhaka-district order) plus headroom — the insufficient-stock test
+// itself never decrements.
+const INITIAL_STOCK = 7;
 const couponCode = `VITEST${suffix}`;
 
 let productId: string;
@@ -249,5 +250,17 @@ describe("checkout & payment", () => {
       orderBy: { createdAt: "desc" },
     });
     expect(alert).not.toBeNull();
+  });
+
+  it("charges the outside-Dhaka fee for a Dhaka-division district other than Dhaka itself", async () => {
+    const settings = await getSettings();
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send(checkoutBody({ shippingDivision: "Dhaka", shippingDistrict: "Gazipur", shippingArea: "Tongi East" }));
+    expect(res.status).toBe(201);
+    orderIds.push(res.body.order.id);
+
+    expect(Number(res.body.order.shippingFee)).toBe(Number(settings.shippingFeeOutsideDhaka));
   });
 });
