@@ -1,4 +1,4 @@
-import { Eye, Flame, ShoppingBag } from "lucide-react";
+import { Eye, Flame } from "lucide-react";
 import type { UrgencySignals as UrgencySignalsData } from "@clothing-brand/shared";
 
 interface UrgencySignalsProps {
@@ -13,11 +13,10 @@ interface UrgencySignalsProps {
  *
  * Views are a lifetime total, not "today" — a per-day count resets to a small number every
  * midnight and can look like nobody's interested on a slow morning; the running total only ever
- * climbs. Recency is shown as real purchase activity in the last 24h rather than a bare "last
- * purchased 3 days ago" timestamp, which read as a problem/gap rather than a signal. The
- * units-sold-in-7-days figure is admin-only (AdminSalesBadge), never shown to shoppers. */
+ * climbs. Purchase counts (last 24h, last 7 days) are deliberately never shown to shoppers — the
+ * shop doesn't reveal its sales volume; the units-sold figure is admin-only (AdminSalesBadge). */
 export function UrgencySignals({ signals }: UrgencySignalsProps) {
-  const hasAny = signals.totalViews > 0 || signals.recentPurchaseCount > 0 || signals.isFastSelling;
+  const hasAny = signals.totalViews > 0 || signals.isFastSelling;
   if (!hasAny) return null;
 
   return (
@@ -26,13 +25,6 @@ export function UrgencySignals({ signals }: UrgencySignalsProps) {
         <p className="flex items-center gap-1.5">
           <Eye size={14} className="shrink-0 text-ink-400" />
           {signals.totalViews} total view{signals.totalViews === 1 ? "" : "s"}
-        </p>
-      )}
-      {signals.recentPurchaseCount > 0 && (
-        <p className="flex items-center gap-1.5">
-          <ShoppingBag size={14} className="shrink-0 text-ink-400" />
-          Purchased {signals.recentPurchaseCount} time{signals.recentPurchaseCount === 1 ? "" : "s"} in the last 24
-          hours
         </p>
       )}
       {signals.isFastSelling && (
