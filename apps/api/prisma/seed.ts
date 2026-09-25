@@ -201,10 +201,22 @@ async function seedDemoCustomer() {
   console.log(`Seeded demo customer: ${email}`);
 }
 
+/** Demo data — the demo catalog (7 featured products) and the demo customer (a fixed password that is
+ * visible in this public repo) — is for dev/CI only. In production it must never appear just because
+ * someone ran `db:seed`, which the README tells you to do for the admin account. Staging boxes that
+ * really want it opt in explicitly with SEED_DEMO_DATA=true. */
+function demoDataAllowed() {
+  return process.env.NODE_ENV !== "production" || process.env.SEED_DEMO_DATA === "true";
+}
+
 async function main() {
   await seedAdmin();
-  await seedDemoCatalog();
-  await seedDemoCustomer();
+  if (demoDataAllowed()) {
+    await seedDemoCatalog();
+    await seedDemoCustomer();
+  } else {
+    console.log("NODE_ENV=production: skipping demo catalog and demo customer (set SEED_DEMO_DATA=true to force)");
+  }
 }
 
 main()
