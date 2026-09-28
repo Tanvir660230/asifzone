@@ -3,7 +3,7 @@
 **Status:** Phase 0 baseline, 2026-09-28 (`main` @ `35a9604`).
 **Rule:** before adding a field, calculation, service or endpoint, find the fact here. Reuse its authority. If you must add a projection, add or update its row in the same PR (authority, writer, sync, reconciler). Evidence for every "today" statement: [MASTER_ARCHITECTURE_AUDIT.md](MASTER_ARCHITECTURE_AUDIT.md). Target services and engines: [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md).
 
-**Approved business decisions (2026-09-28):** D1 revenue recognition (COD is realised at `DELIVERED`; returns and refunds subtracted separately; creation is never cash collection), D2 bundles on the post-flash price, D3 tax-inclusive prices with an inclusive VAT component. Details and the Phase 1 changes: [TARGET_ARCHITECTURE.md §16–16a](TARGET_ARCHITECTURE.md), [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md), [INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md), [PRICING_PIPELINE.md](PRICING_PIPELINE.md).
+**Approved business decisions (2026-09-28):** all of D1–D10 — the register is [BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md). Highlights: D1 revenue recognition (COD is realised at `DELIVERED`; returns and refunds subtracted separately; creation is never cash collection), D2 bundles on the post-flash price, D3 tax-inclusive prices with an inclusive VAT component. Details and the Phase 1 changes: [TARGET_ARCHITECTURE.md §16–16a](TARGET_ARCHITECTURE.md), [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md), [INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md), [PRICING_PIPELINE.md](PRICING_PIPELINE.md).
 
 **Legend.** *Status today*: ✅ single authority and single writer · ⚠️ authority clear but duplicated logic or a writer outside the owner · ❌ conflicting definitions or known drift path. *Class*: **M** master data · **S** transaction snapshot (immutable history — not duplication) · **P** projection/cache (derivable, must be reconciled) · **D** computed on demand (never stored).
 
@@ -75,7 +75,7 @@
 7. **API:** `activeFlashSale` in product DTOs; pricing reads `enabled` + window directly (no scheduler lag). Deterministic tie-break for overlapping sales is Phase 2. Status: ✅ after Phase 1 (lifecycle table in TARGET_ARCHITECTURE §16a).
 
 ### A8. Coupon usage — `Coupon.usedCount` vs redemptions
-1. **Authority:** orders carrying `couponId` that satisfy the *redemption predicate* (target: `deletedAt IS NULL AND status <> CANCELLED` — decision D7).
+1. **Authority:** orders carrying `couponId` that satisfy the *redemption predicate* (`deletedAt IS NULL` and not cancelled before shipping — decision D7, approved; implemented in Phase 2).
 2. **Projection:** `Coupon.usedCount` (P, counter used for atomic limit enforcement).
 3. **Writer:** `incrementCouponUsage` inside the order transaction ([coupon.service.ts:166](../apps/api/src/modules/coupons/coupon.service.ts#L166)). Never decremented today. Target: promotion service also releases on cancellation/trash (event-driven, idempotent per order).
 4. **Recalculation:** increment in-transaction (conditional raw UPDATE — keep).
@@ -125,14 +125,14 @@
 | Cost price | M | `ProductVariant.costPrice ?? Product.costPrice` | product.service | — | margin UI, BI COGS | product write | — | ⚠️ not snapshotted at sale (M7) |
 | Selling (flash) price | D | pricing engine over list price + live flash offer | PricingService | target `minSellingPrice` | PDP, cards, cart, checkout, orders, feeds | — | A3 | ❌ |
 | Flash sale live | M/P | `enabled` + window | flash-sale service | `isActive` | pricing, homepage | admin writes `enabled`; service + scheduler derive `isActive` | A7 | ✅ Phase 1 |
-| Flash stock limit | M | `FlashSaleItem.stockLimit` | flash-sale service | — | *none today* | admin | — | ❌ dead (D4) |
+| Flash stock limit | M | `FlashSaleItem.stockLimit` (limit) + order-line applied-promotion snapshot (units sold, Phase 2) | flash-sale service / PromotionEngine | — | pricing | admin | count vs snapshot | ❌ not enforced yet (D4 approved: enforce, Phase 2) |
 | Coupon rules | M | `Coupon`, `CouponProduct`, `CouponCategory` | coupon.service | — | checkout, best-coupon, listing | `/api/coupons` | business-rule validation on write | ✅ |
 | Coupon discount | D | promotion engine | PromotionService | order snapshot `discount` (+ target `couponDiscount`) | checkout, order | — | — | ⚠️ preview trusts client subtotal |
 | Coupon usage | P | redemption predicate over `Order` | coupon.service | `Coupon.usedCount` | limit checks, admin | order txn | A8 | ❌ |
-| Bundle discount | D | bundle.service (post-flash line amounts, D2) | PromotionService | `Order.bundleDiscount` snapshot | cart preview, checkout | — | — | ✅ Phase 1 (base fixed; sequencing vs coupon is D9) |
+| Bundle discount | D | bundle.service (post-flash line amounts, D2) | PromotionService | `Order.bundleDiscount` snapshot | cart preview, checkout | — | — | ✅ Phase 1 (post-flash base); D9 approved: bundle before coupon, Phase 2 |
 | Shipping fee | D | `ShippingEngine` over zones (today `StoreSetting.shippingFee*` + `isInsideDhaka`) | ShippingService | `Order.shippingFee` snapshot | checkout, order, courier loss | settings | — | ⚠️ client duplicate + hard-coded fallback |
 | Shipping waived | S | coupon result at checkout | order service | *not stored today* (re-derived from live coupon) | price adjustment, metrics | — | M7 backfill | ❌ |
-| Tax (VAT component) | D | prices are tax-inclusive (D3); `taxIncludedIn()` in `packages/shared` | PricingService | target `Order.taxAmount` (Phase 2, new orders only) | analytics estimate, invoices (Phase 2) | — | — | ⚠️ helper in place; analytics fixed to inclusive formula; no snapshot yet |
+| Tax (VAT component) | D | prices tax-inclusive (D3); shipping VAT-inclusive by default, configurable in the same tax configuration (D10); `taxIncludedIn()` in `packages/shared` | PricingService | target `Order.taxAmount` (Phase 2, new orders only) | analytics estimate, invoices (Phase 2) | — | — | ⚠️ helper in place; analytics fixed to inclusive formula; no snapshot yet |
 | Rounding policy | M | target `CommerceSettings` | ConfigService | — | all engines | settings | golden tests | ❌ 3 policies today |
 
 ### B3. Inventory
@@ -141,8 +141,8 @@
 |---|---|---|---|---|---|---|---|---|
 | Stock on hand | P (balance) | `StockMovement` Σ | inventory.service | `ProductVariant.stock` | checkout, PDP, admin, analytics | inventory.service commands only | A4 | ✅ Phase 1 |
 | Stock history | M | `StockMovement` | InventoryService | — | admin movements, audits | same | append-only | ⚠️ reasons too coarse (M2) |
-| Available to sell | D | `InventoryRules.availableToSell` | InventoryService | — | checkout, PDP, cart quote | — | — | ❌ `trackInventory` ignored (D5) |
-| Purchasable | D | published ∧ ¬deleted ∧ variant active (`isPurchasable`) | shared predicate | — | checkout, exchanges, wishlist, stock alerts, flash sales, bundles | — | regression tests | ✅ Phase 1 (availability/`trackInventory` is D5) |
+| Available to sell | D | `InventoryRules.availableToSell` | InventoryService | — | checkout, PDP, cart quote | — | — | ❌ `trackInventory` ignored (D5 approved: untracked = unlimited, Phase 2) |
+| Purchasable | D | published ∧ ¬deleted ∧ variant active (`isPurchasable`) | shared predicate | — | checkout, exchanges, wishlist, stock alerts, flash sales, bundles | — | regression tests | ✅ Phase 1 (availability for untracked products: D5, Phase 2) |
 | Low stock | D | `InventoryRules.isLowStock` (threshold per product) | InventoryService | `stock.low` event | alerts, dashboard, reports | — | — | ❌ three definitions |
 | Back-in-stock subscriptions | M | `StockAlert` | stock-alert.service | `notifiedAt` | email sender | subscribe endpoint | — | ⚠️ triggered only from product form (target: `stock.replenished`) |
 | Stock value | D | metrics registry | MetricsService | — | BI | — | — | ⚠️ |
@@ -183,7 +183,7 @@
 | Lifetime spend / orders / AOV / last order | D | metrics registry over `Order` | MetricsService (target `CustomerStats` P) | — | CRM list, drawer, segments, SMS vars, RFM | — | cross-surface test | ❌ list excludes trashed, drawer spend includes them |
 | Tags / risk signals | D | `computeCustomerTags`, `computeRiskSignals` | CustomerService | — | CRM, BI | — | — | ✅ (single function) but loads all customers in memory |
 | Delivery score | P (external) | courier fraud check | CustomerService + FraudCheckProvider | `Customer.delivery*` | admin | checkout, bulk | A6 | ✅ |
-| Reward points balance | P | `RewardPointsEntry` Σ | LoyaltyService | `Customer.rewardPoints` | account, admin, BI | `awardDeliveryPoints`, `adjustRewardPoints` | report Σ vs balance | ⚠️ no reversal (D8); manual adjust check not atomic |
+| Reward points balance | P | `RewardPointsEntry` Σ | LoyaltyService | `Customer.rewardPoints` | account, admin, BI | `awardDeliveryPoints`, `adjustRewardPoints` | report Σ vs balance | ⚠️ D8 approved (discounted merchandise base, reversal on return/refund) — Phase 2; manual adjust check not atomic |
 | Marketing consent | M | `smsMarketingOptIn`, `emailMarketingOptIn`, `NewsletterSubscriber` | CustomerService | — | campaigns | account, unsubscribe link | — | ✅ |
 | Blocked / COD risk flags | M | `Customer.isBlocked`, `codRisk` | CustomerService | — | checkout, admin | admin | — | ✅ |
 | Server cart mirror | P | browser cart (authoritative) | cart.service | `Cart`, `CartItem` | abandonment analytics | debounced sync | — | ⚠️ `reminderSentAt` unused, recovery job missing |

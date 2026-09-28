@@ -70,13 +70,22 @@ is computed from `basePrice`, not the variant price. The checkout page recompute
 localStorage prices. The server remains the authority for what is charged. Phase 2 replaces all of these
 with one pure pricing engine in `packages/shared` and a server `quote` endpoint (TARGET_ARCHITECTURE §5.1).
 
-## 5. Phase 2 target (approved direction, not yet implemented)
+## 5. Phase 2 target (approved 2026-09-28, not yet implemented)
 
 ```
-Regular price → Variant price → Flash sale price → Bundle discount → Coupon / other promotions
-(centralised stacking rules) → Final price (tax-inclusive) → Shipping → Total
+List Price → Variant Price → Flash Sale → Bundle Discount → Coupon Discount → Tax → Shipping → Final Total
 ```
 
-Changing coupons from *side-by-side* to *after the bundle* changes the coupon amount on carts that
-qualify for both (a percentage coupon would apply to a smaller base). That changes what customers pay,
-so it needs an explicit owner rule before Phase 2 implements it (listed under open decisions).
+Approved rules that change the pipeline in Phase 2 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)):
+
+| ID | Pipeline effect |
+|---|---|
+| D4 | Flash price applies to at most `FlashSaleItem.stockLimit` units; further units in the same line use the normal effective price (line split). |
+| D5 | `trackInventory = false` skips the stock-availability rejection. |
+| D6 | Exchange quotes use the current effective selling price; the difference may be collected or refunded. |
+| D7 | Coupon usage is released by a cancellation before shipping (order effect, not a price step). |
+| D8 | Loyalty base = merchandise after discounts, excluding shipping (order effect, not a price step). |
+| D9 | Coupon is computed on the amount **after** the bundle discount — replaces today's side-by-side stacking (step 7 above). This changes coupon amounts on carts that qualify for both. |
+| D10 | Shipping is VAT-inclusive by default; its VAT treatment comes from the centralised tax configuration. |
+
+Until Phase 2 ships them, §1 describes what the system actually charges.

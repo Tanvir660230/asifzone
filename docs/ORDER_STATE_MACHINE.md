@@ -92,8 +92,9 @@ recorded refund.
   are not revenue and not cash; `DELIVERED` is the recognition point for COD; returns and refunds are
   subtracted separately. The metric definitions live in [TARGET_ARCHITECTURE.md §11](TARGET_ARCHITECTURE.md);
   the state machine supplies the facts they need (`DELIVERED`, `returnedQuantity`, `Refund`, `paymentStatus`).
-- **Coupon usage on cancellation (D7)** and **points reversal on return (D8)** are still owner decisions;
-  Phase 1 keeps current behaviour (usage not released, points not reversed).
+- **Coupon usage on cancellation (D7)** and **points reversal on return/refund (D8)** were approved on 2026-09-28
+  ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)) and are implemented in Phase 2 as effects of T6 (pre-shipment
+  only) and T7/T8. Until then the Phase 1 behaviour stands: usage not released, points not reversed.
 
 ## 6. Tests
 

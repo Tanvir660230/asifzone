@@ -123,7 +123,7 @@ Current order of operations, reconstructed from `cart-lines.ts`, `flash-sale-pri
 | 4 Line total | `unit × qty` | same |
 | 5 Subtotal | Σ lines (post-flash) | same |
 | 6 Coupon | on eligible lines (scope) using post-flash prices; % rounded to whole units; capped by `maxDiscountAmount` and eligible amount; FREE_SHIPPING sets a flag | same, rounding from settings |
-| 7 Bundle | on matched categories using **pre-flash** prices; stacks with coupon | **post-flash** prices (decision D2) |
+| 7 Bundle | on matched categories; post-flash since Phase 1 (D2); side by side with the coupon | applied **before** the coupon (D9) |
 | 8 Discount clamp | `min(coupon + bundle, subtotal)` | same, and record the split (`couponDiscount`, `bundleDiscount`) |
 | 9 Tax | not applied anywhere (`Product.taxRate`, `StoreSetting.taxEnabled/defaultTaxRate` unused at checkout) | `TaxEngine` with mode `INCLUSIVE` (default, preserves today) or `EXCLUSIVE`; snapshot `taxAmount` (decision D3) |
 | 10 Shipping | `isInsideDhaka(district) ? fee A : fee B`; waived by FREE_SHIPPING (fee still stored) | `ShippingEngine` over configured zones/rates; snapshot `shippingWaived` |
@@ -164,7 +164,7 @@ API resolver: `domain/pricing/pricing.service.ts` loads variants, active flash o
 | Checkout summary | client math | same quote, including coupon, bundle, shipping, tax, total |
 | Order creation (COD, gateway initiation, admin manual order) | `deriveOrderPricing` | `PricingService.quote()` then persist snapshot |
 | Price adjustment | bespoke formula | `computeOrderTotals` with snapshot inputs |
-| Exchange orders | bespoke | `PricingService.quoteExchange()` (policy D6) |
+| Exchange orders | bespoke (regular price, no refund on downgrade) | `PricingService.quoteExchange()` at the current effective price (D6) |
 | Invoice / order view / exports | read snapshot | read snapshot (unchanged) |
 | Analytics | snapshot fields | via metrics registry |
 | Storefront facets & price filter/sort | `basePrice` | a maintained `Product.minSellingPrice` projection (or view) refreshed on price/flash events |
@@ -211,7 +211,7 @@ Key Phase 1 semantics (superseding the sketch in the Phase 0 draft):
 
 - `CustomerMetrics` (spend, order count, AOV, last order, RFM, tags) computed from the metrics registry predicates, not ad-hoc filters. Later materialised to `CustomerStats` updated by events.
 - `ProductMetrics` (units sold 7/30 days, views, conversion) from the same predicates; urgency signals and admin sales panel use the same function (today they share `NOT_A_SALE`, which diverges from analytics).
-- Reward points: earned on `OrderDelivered` from a configurable base (`merchandise` or `total`), reversed (`PointsReversed` ledger row) on return/refund of that order.
+- Reward points (D8): earned on `OrderDelivered` from merchandise value after discounts, excluding shipping; reversed by a negative `RewardPointsEntry` on return/refund of that merchandise.
 
 ## 6. Event architecture
 
@@ -441,19 +441,21 @@ Post-migration verification after every step: counts of products, variants, orde
 | D2 | **Bundle + flash sale.** Bundle discounts operate on the effective selling price after the flash sale unless an explicit promotion rule says otherwise. Target order: regular → variant → flash → bundle → coupon/other (central stacking) → final. | Bundle matched amount now uses the post-flash price. Coupon-vs-bundle sequencing unchanged (side by side) — see [PRICING_PIPELINE.md](PRICING_PIPELINE.md) §5. |
 | D3 | **Tax.** Storefront prices are tax-inclusive. Preserve subtotal, taxable amount, tax/VAT component and total; never double-charge; never recalculate historical orders. | No change to charging (tax was never added). Shared `taxIncludedIn()` helper; analytics VAT estimate corrected from the exclusive to the inclusive formula. `Order.taxAmount` snapshot for new orders is Phase 2. |
 
-**Still open:**
+**Approved 2026-09-28 (implementation in Phase 2):** full definitions and representation notes in
+[BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md), the authoritative register.
 
-| ID | Question | Current behaviour | Proposed default |
-|---|---|---|---|
-| D9 | Coupon vs. bundle sequencing: should a coupon apply to the amount *after* the bundle discount (changes coupon amounts on carts qualifying for both)? | Side by side on the same base, added | Sequential per D2 pipeline, starting Phase 2 |
-| D10 | Which amount carries VAT: merchandise only, or merchandise + shipping? | n/a (no tax computed) | Merchandise after discounts; shipping VAT configurable |
-| D4 | Should `FlashSaleItem.stockLimit` cap flash-priced units? | Stored, ignored | Enforce: units beyond the limit sell at regular price |
-| D5 | Does "Don't track inventory" mean unlimited sales? | Still blocks at 0 stock | Yes, unlimited; stock still decremented for reporting |
-| D6 | Exchanges: charge price difference at current price or flash price; refund downgrades? | Regular current price; no refund on downgrade | Keep; make it a configurable policy |
-| D7 | Should a coupon's usage be released when its order is cancelled? | Never released | Release on cancellation before shipping |
-| D8 | Reward points on `total` (incl. shipping) or merchandise only; reversed on return? | `total`, never reversed | Merchandise after discounts; reverse on return/refund |
+| ID | Decision |
+|---|---|
+| D4 | Enforce `FlashSaleItem.stockLimit`; units beyond the limit use the normal effective selling price. |
+| D5 | `trackInventory = false` = unlimited sellable availability; checkout never rejects for zero stock; stock/ledger still kept. |
+| D6 | Exchanges priced at the current effective selling price at quote time; difference collected or refunded centrally. |
+| D7 | Coupon usage released when an order is cancelled before shipping; never after shipping. |
+| D8 | Reward points on merchandise value after discounts, excluding shipping; reversed on return/refund. |
+| D9 | Bundle discount first, then coupon on the resulting eligible amount (List → Variant → Flash → Bundle → Coupon → Tax → Shipping → Total). |
+| D10 | Shipping VAT-inclusive by default; configurable through the centralised tax configuration only. |
 
-Until a decision is recorded here (with date and who decided), engines implement **current behaviour** and the metric carries a "definition pending" note.
+No business decision is pending. Until a Phase 2 decision ships, engines keep the current behaviour documented in
+[PRICING_PIPELINE.md §1](PRICING_PIPELINE.md).
 
 ## 16a. Phase 1 scope and invariants
 
