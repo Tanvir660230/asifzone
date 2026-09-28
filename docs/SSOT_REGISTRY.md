@@ -36,7 +36,7 @@
 4. **Recalculation:** on demand; projection refreshed on `product.price_changed`, `flash_sale.started/ended`.
 5. **Drift detection:** contract test "PDP price = quote price = order line price"; projection report comparing stored min/max with engine output.
 6. **Repair:** rebuild projection job.
-7. **API:** `ProductView.variants[].price {list, selling, compareAt, flash}` and `ProductView.priceRange`; `POST /v1/checkout/quote`. Status: ❌ — 11 implementations disagree (audit §7.1).
+7. **API:** `ProductView.variants[].price {list, selling, compareAt, flash}` and `ProductView.priceRange`; `POST /v1/checkout/quote`. Status: ✅ Phase 2 — one implementation (`resolveUnitPrice`); read model `product.pricing {from,to,listFrom,compareAt,flash,variants[id]{list,selling,compareAt,flash}}`; `POST /api/v1/checkout/quote` live; contract test PDP = quote = order in `pricing.integration.test.ts`. Still open: the `minSellingPrice` projection for sort/filter.
 
 ### A4. Stock — `ProductVariant.stock` vs `StockMovement`
 1. **Authority:** `StockMovement` ledger is the authoritative history; `ProductVariant.stock` is the transactional balance used for atomic conditional decrements. Invariant: `stock = Σ change`.
@@ -77,11 +77,11 @@
 ### A8. Coupon usage — `Coupon.usedCount` vs redemptions
 1. **Authority:** orders carrying `couponId` that satisfy the *redemption predicate* (`deletedAt IS NULL` and not cancelled before shipping — decision D7, approved; implemented in Phase 2).
 2. **Projection:** `Coupon.usedCount` (P, counter used for atomic limit enforcement).
-3. **Writer:** `incrementCouponUsage` inside the order transaction ([coupon.service.ts:166](../apps/api/src/modules/coupons/coupon.service.ts#L166)). Never decremented today. Target: promotion service also releases on cancellation/trash (event-driven, idempotent per order).
+3. **Writer:** `incrementCouponUsage` inside the order transaction ([coupon.service.ts](../apps/api/src/modules/coupons/coupon.service.ts)); since Phase 2, decremented once by the T6 pre-shipment cancellation (`releasesCouponUsage`, guarded by `Order.couponReleasedAt`). Trash does not release (not a D7 case).
 4. **Recalculation:** increment in-transaction (conditional raw UPDATE — keep).
 5. **Drift detection:** report `usedCount` vs. predicate count per coupon.
 6. **Repair:** set `usedCount` to predicate count (logged).
-7. **API:** admin coupon DTO `usage {count, limit, perCustomerLimit}`; per-customer and first-order checks use the same predicate, including in `findBestCoupon`. Status: ❌ (three predicates: counter, `order.count(deletedAt null)` for per-customer, none for best-coupon).
+7. **API:** admin coupon DTO `usage {count, limit, perCustomerLimit}`; per-customer and first-order checks use the same predicate, including in `findBestCoupon`. Status: ⚠️ Phase 2 — one predicate for per-customer checks and best-coupon (`couponId ∧ deletedAt IS NULL ∧ couponReleasedAt IS NULL`, evaluated by the one coupon engine); the `usedCount`-vs-predicate drift report is still to build.
 
 ### A9. Analytics / BI numbers vs order, payment and product truth
 1. **Authority:** transaction snapshots (`Order`, `OrderItem`, `Payment`, `Refund`, `StockMovement`, `PageView`, `FunnelEvent`) — never live catalog prices.
@@ -121,19 +121,26 @@
 | Fact | Class | Authoritative source | Authoritative service | Projection / cache | Consumers | Mutation path | Reconciliation | Status |
 |---|---|---|---|---|---|---|---|---|
 | List price | M | `ProductVariant.price ?? Product.basePrice` | product.service | — | pricing engine | product write | — | ✅ |
-| Compare-at price | M | `ProductVariant.compareAtPrice ?? Product.compareAtPrice` | product.service | — | PDP, badges | product write | validation `compareAt > price` | ⚠️ resolved in UI |
+| Compare-at price | M | `ProductVariant.compareAtPrice ?? Product.compareAtPrice` | product.service | resolved by `resolveUnitPrice` into `product.pricing` | PDP, badges | product write | validation `compareAt > price` | ✅ Phase 2 (server-resolved) |
 | Cost price | M | `ProductVariant.costPrice ?? Product.costPrice` | product.service | — | margin UI, BI COGS | product write | — | ⚠️ not snapshotted at sale (M7) |
-| Selling (flash) price | D | pricing engine over list price + live flash offer | PricingService | target `minSellingPrice` | PDP, cards, cart, checkout, orders, feeds | — | A3 | ❌ |
+| Selling (flash) price | D | `resolveUnitPrice` (`packages/shared/src/engines/pricing.ts`) over list price + live flash offer | PricingService (`domain/pricing/pricing.service.ts`) | `product.pricing` read model (`priceProductsForDisplay`); compat `activeFlashSale.flashPrice = pricing.from`; `OrderItem.priceSnapshot` S; target `minSellingPrice` for filter/sort | PDP, cards, search, suggestions, homepage, flash feed, cart, checkout, orders, reorder | — | A3; PDP = quote = order test | ✅ Phase 2 (filter/sort still on `basePrice` — PRICING_INVARIANTS §12) |
 | Flash sale live | M/P | `enabled` + window | flash-sale service | `isActive` | pricing, homepage | admin writes `enabled`; service + scheduler derive `isActive` | A7 | ✅ Phase 1 |
-| Flash stock limit | M | `FlashSaleItem.stockLimit` (limit) + order-line applied-promotion snapshot (units sold, Phase 2) | flash-sale service / PromotionEngine | — | pricing | admin | count vs snapshot | ❌ not enforced yet (D4 approved: enforce, Phase 2) |
+| Flash stock limit | M | `FlashSaleItem.stockLimit` (limit) | flash-sale service | — | pricing | admin | — | ✅ Phase 2 (D4 enforced) |
+| Flash units sold | D | Σ (`OrderItem.quantity − restockedQuantity`) over lines with `flashSaleItemId` | PricingService `flashUnitsSold` | — (no counter) | quote, order claim (`FOR UPDATE`) | order creation writes attribution; release/return write `restockedQuantity` | derived, nothing to drift | ✅ Phase 2 |
+| Flash attribution of a line | S | `OrderItem.flashSaleId`, `flashSaleItemId` (NULL = not flash-priced / pre-Phase-2) | OrderService (`insertOrderRecord`), ReturnService (exchange) | — | flash units sold, analytics | creation only | verification query (PRICING_INVARIANTS §10) | ✅ Phase 2 |
 | Coupon rules | M | `Coupon`, `CouponProduct`, `CouponCategory` | coupon.service | — | checkout, best-coupon, listing | `/api/coupons` | business-rule validation on write | ✅ |
-| Coupon discount | D | promotion engine | PromotionService | order snapshot `discount` (+ target `couponDiscount`) | checkout, order | — | — | ⚠️ preview trusts client subtotal |
-| Coupon usage | P | redemption predicate over `Order` | coupon.service | `Coupon.usedCount` | limit checks, admin | order txn | A8 | ❌ |
-| Bundle discount | D | bundle.service (post-flash line amounts, D2) | PromotionService | `Order.bundleDiscount` snapshot | cart preview, checkout | — | — | ✅ Phase 1 (post-flash base); D9 approved: bundle before coupon, Phase 2 |
-| Shipping fee | D | `ShippingEngine` over zones (today `StoreSetting.shippingFee*` + `isInsideDhaka`) | ShippingService | `Order.shippingFee` snapshot | checkout, order, courier loss | settings | — | ⚠️ client duplicate + hard-coded fallback |
-| Shipping waived | S | coupon result at checkout | order service | *not stored today* (re-derived from live coupon) | price adjustment, metrics | — | M7 backfill | ❌ |
-| Tax (VAT component) | D | prices tax-inclusive (D3); shipping VAT-inclusive by default, configurable in the same tax configuration (D10); `taxIncludedIn()` in `packages/shared` | PricingService | target `Order.taxAmount` (Phase 2, new orders only) | analytics estimate, invoices (Phase 2) | — | — | ⚠️ helper in place; analytics fixed to inclusive formula; no snapshot yet |
-| Rounding policy | M | target `CommerceSettings` | ConfigService | — | all engines | settings | golden tests | ❌ 3 policies today |
+| Coupon discount | D | `evaluateCoupon` (`engines/promotion.ts`), after the bundle (D9) | PricingService | `Order.couponDiscount` S, `OrderItem.couponDiscountAllocated` S | quote, checkout, validate/best, admin order, coupon-form preview | — | backfilled from own snapshot (`discount − bundleDiscount`) | ✅ Phase 2 (client subtotal ignored) |
+| Coupon usage | P | redemption predicate: orders with `couponId` and `couponReleasedAt IS NULL` | coupon.service / OrderService | `Coupon.usedCount` (+1 at creation, −1 once on D7 release) | limit checks, admin | order txn; T6 pre-shipment cancel (`releasesCouponUsage`) | A8 (report still to build) | ⚠️ Phase 2: D7 release implemented; usedCount-vs-predicate report pending |
+| Coupon release | S | `Order.couponReleasedAt` | OrderService `applyOrderTransition` | — | per-customer redemption count, release idempotency | T6 from PENDING/CONFIRMED/PROCESSING/PACKED | set once, never cleared | ✅ Phase 2 |
+| Bundle discount | D | `evaluateBundles` (`engines/promotion.ts`) on post-flash line amounts (D2), before the coupon (D9) | PricingService | `Order.bundleDiscount` S, `OrderItem.bundleDiscountAllocated` S | quote, cart/checkout, bundle preview endpoint | — | — | ✅ Phase 2 |
+| Shipping zones & rates | M | `ShippingZone` (key, priority, isDefault, isActive), `ShippingZoneMatch` (POSTCODE/DISTRICT/DIVISION), `ShippingRate` (fee, freeOverAmount) | pricing-config (`loadShippingZones`) | legacy mirrors `StoreSetting.shippingFeeDhaka/OutsideDhaka` = rates of zones `dhaka-district` / `default` (dual-written by settings.service) | quote, courier return fee zone, JSON-LD (mirror) | settings PATCH (dual-write, one txn) | `pricingConfigDrift` / `GET /api/settings/pricing-config-drift` | ✅ Phase 2 (no zone admin UI yet) |
+| Shipping fee | D | `resolveShipping` (`engines/shipping.ts`) over zones | PricingService | `Order.shippingFee` S, `Order.shippingZoneKey` S | quote, checkout, order, courier loss | — | — | ✅ Phase 2 (client duplicate + fallbacks removed) |
+| Shipping waived | S | quote result (FREE_SHIPPING coupon or zone `freeOverAmount`) | OrderService | `Order.shippingWaived` (NULL = unproven pre-Phase-2 row) | price adjustment, metrics | creation only; backfill only where own arithmetic proves it | verification query | ✅ Phase 2 |
+| Tax configuration | M | `TaxSetting` singleton (enabled, mode INCLUSIVE/EXCLUSIVE, defaultRate, shippingTaxable (D10, default true), shippingRate) | pricing-config (`loadTaxConfig`) | legacy mirrors `StoreSetting.taxEnabled/defaultTaxRate` (dual-written) | quote, exchange, analytics estimate (mirror) | settings PATCH (dual-write; `shippingTaxable` only on TaxSetting) | `pricingConfigDrift` | ✅ Phase 2 |
+| Tax (VAT component) | D | `computeTax` (`engines/tax.ts`); `taxIncludedIn()` delegates to it | PricingService | `Order.taxMode, taxRate, shippingTaxRate, taxableAmount, taxAmount, shippingTaxAmount` S (new orders only; NULL = not recorded) | quote, invoices (to adopt), analytics estimate | creation only | never recomputed (I17) | ✅ Phase 2 |
+| Rounding policy | M | `DEFAULT_ROUNDING_POLICY` (`engines/rounding.ts`) — flash MINOR, % discounts MAJOR, tax MINOR | pricing engines | — | all engines | code (target: `CommerceSettings`) | engine tests | ✅ Phase 2 (one policy; not yet configurable) |
+| Quote | D | `buildQuote` via `quoteCart` | PricingService | none stored; token = sha256(fingerprint)[:40], `expiresAt` +15 min advisory | cart, checkout, admin order, coupon/bundle endpoints, order creation | `POST /api/v1/checkout/quote` | stale token → 409 `QUOTE_CHANGED` | ✅ Phase 2 |
+| Cart line price (web) | P (display cache) | the quote | web `store/cart.ts` | `CartItem.price` | pixel value only | add to cart | re-quoted on every render | ✅ Phase 2 (never summed) |
 
 ### B3. Inventory
 
@@ -151,8 +158,11 @@
 
 | Fact | Class | Authoritative source | Authoritative service | Projection / cache | Consumers | Mutation path | Reconciliation | Status |
 |---|---|---|---|---|---|---|---|---|
-| Order money (subtotal, discount, bundleDiscount, shippingFee, priceAdjustment, total) | S | `Order` columns | OrderService | — | invoices, courier COD, metrics, customer views | written at creation; `adjustOrderPrice` rewrites total/adjustment | invariant `total = f(snapshot)` | ⚠️ formula duplicated |
-| Line snapshot | S | `OrderItem.*Snapshot`, `priceSnapshot`, `quantity` | OrderService | — | everything historical | creation only | — | ✅ |
+| Order money (subtotal, discount, bundleDiscount, shippingFee, priceAdjustment, total) | S | `Order` columns | OrderService | — | invoices, courier COD, metrics, customer views | written at creation from the quote; `adjustOrderPrice` rewrites total/adjustment via `computeOrderTotals` over the snapshot | I8 | ✅ Phase 2 (one formula) |
+| Order pricing breakdown | S | `Order.pricingVersion, flashDiscount, couponDiscount, shippingWaived, shippingZoneKey` + tax fields (B2) | OrderService (`insertOrderRecord`), ReturnService (exchange) | — | price adjustment, analytics, support | creation only | verification queries (PRICING_INVARIANTS §10); NULL = pre-Phase-2 | ✅ Phase 2 |
+| Line snapshot | S | `OrderItem.*Snapshot`, `priceSnapshot`, `quantity`, `listPriceSnapshot` | OrderService | — | everything historical | creation only | — | ✅ |
+| Line discount allocation | S | `OrderItem.bundleDiscountAllocated`, `couponDiscountAllocated` (exact largest-remainder split) | OrderService | — | exchange paid value (D6), refunds, analytics | creation only | Σ allocations = order discounts | ✅ Phase 2 |
+| Order idempotency key | S | `Order.idempotencyKey` (unique) | OrderService | Redis lock `order-idem-lock:<key>` | retrying clients | `Idempotency-Key` header on order create | unique index | ✅ Phase 2 |
 | Returned quantity | S | `OrderItem.returnedQuantity` | inventory.service `releaseOrderLines` | — | units sold, returns metric | RETURNED transition, partial-delivery reconcile, exchange | INV-2 | ✅ Phase 1 |
 | Restocked quantity | P (per-line idempotency) | `OrderItem.restockedQuantity` (Phase 1) | inventory.service | — | every release/return/trash/restore | same | INV-2, INV-3; backfilled from ledger | ✅ Phase 1 |
 | Order status | M | `Order.status` + `OrderStatusHistory` | order.service `applyOrderTransition` (matrix in `packages/shared/src/order-state.ts`) | — | all | admin, bulk, courier, returns, gateway settlement — all through the matrix | history is append-only | ✅ Phase 1 ([ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md)) |
@@ -166,7 +176,7 @@
 
 | Fact | Class | Authoritative source | Authoritative service | Projection / cache | Consumers | Mutation path | Reconciliation | Status |
 |---|---|---|---|---|---|---|---|---|
-| Payment attempt | M | `PaymentSession` (+ `checkoutPayload` S) | PaymentService | — | callbacks, retry, reconciliation | initiate / callbacks / cron | expiry sweep | ✅ |
+| Payment attempt | M | `PaymentSession` (+ `checkoutPayload` S — carries the full quote pricing snapshot and split line snapshots since Phase 2; + `idempotencyKey` unique) | PaymentService | — | callbacks, retry, reconciliation | initiate / callbacks / cron | expiry sweep | ✅ |
 | Settlement | S | `Payment` (+ `rawResponse`) | PaymentService | — | refunds, overview | `settlePaymentSession` atomic claim | amount re-verified | ✅ |
 | Payment timeline | S | `PaymentEvent` | PaymentService | — | admin | fire-and-forget writes | — | ⚠️ fire-and-forget (target: outbox) |
 | Refund | S | `Refund` | PaymentService | — | order, BI, overview | `refundOrderPayment` | — | ⚠️ no partial state; STAFF can create |
@@ -183,7 +193,7 @@
 | Lifetime spend / orders / AOV / last order | D | metrics registry over `Order` | MetricsService (target `CustomerStats` P) | — | CRM list, drawer, segments, SMS vars, RFM | — | cross-surface test | ❌ list excludes trashed, drawer spend includes them |
 | Tags / risk signals | D | `computeCustomerTags`, `computeRiskSignals` | CustomerService | — | CRM, BI | — | — | ✅ (single function) but loads all customers in memory |
 | Delivery score | P (external) | courier fraud check | CustomerService + FraudCheckProvider | `Customer.delivery*` | admin | checkout, bulk | A6 | ✅ |
-| Reward points balance | P | `RewardPointsEntry` Σ | LoyaltyService | `Customer.rewardPoints` | account, admin, BI | `awardDeliveryPoints`, `adjustRewardPoints` | report Σ vs balance | ⚠️ D8 approved (discounted merchandise base, reversal on return/refund) — Phase 2; manual adjust check not atomic |
+| Reward points balance | P | `RewardPointsEntry` Σ | LoyaltyService | `Customer.rewardPoints` | account, admin, BI | `awardDeliveryPoints` (base `loyaltyBase` = subtotal − discount), `reverseDeliveryPoints` (T7 full, refund proportional), `adjustRewardPoints` | report Σ vs balance | ✅ D8 Phase 2; ⚠️ manual adjust check not atomic |
 | Marketing consent | M | `smsMarketingOptIn`, `emailMarketingOptIn`, `NewsletterSubscriber` | CustomerService | — | campaigns | account, unsubscribe link | — | ✅ |
 | Blocked / COD risk flags | M | `Customer.isBlocked`, `codRisk` | CustomerService | — | checkout, admin | admin | — | ✅ |
 | Server cart mirror | P | browser cart (authoritative) | cart.service | `Cart`, `CartItem` | abandonment analytics | debounced sync | — | ⚠️ `reminderSentAt` unused, recovery job missing |
@@ -204,7 +214,7 @@
 | Low-stock count | `InventoryRules.isLowStock` | MetricsService | dashboard (`≤ 5`) | ❌ |
 | Stock value | `stock × cost` purchasable | MetricsService | BI | ⚠️ |
 | Courier loss | `CourierLossEvent` | MetricsService | dashboard | ✅ |
-| Estimated tax | `TaxEngine` / snapshot | MetricsService | analytics estimate | ⚠️ |
+| Estimated tax | `TaxEngine` / snapshot (`Order.taxAmount` for orders with `pricingVersion`) | MetricsService | analytics estimate (inclusive formula over revenue; PRICING_INVARIANTS §9) | ⚠️ switch to Σ snapshot in Phase 5 |
 | Business day / timezone | `CommerceSettings.timezone` | ConfigService | server-local, UTC and Asia/Dhaka in different places | ❌ |
 
 ### B8. Settings, content, notifications, audit
@@ -248,4 +258,11 @@
 | I16 | COD ∧ status `DELIVERED` ⇒ `paymentStatus ∈ {PAID, REFUNDED}`; status `REFUNDED` ⇒ `paymentStatus = REFUNDED` (for transitions made from Phase 1 on) | Payments |
 | I17 | historical `Order` money fields and `OrderItem` snapshots are never recomputed | Orders |
 
-Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17.
+| I18 | an order line priced at a flash price has `flashSaleItemId`; per `FlashSaleItem`: net units sold ≤ `stockLimit` (except paid settlements) | Promotion |
+| I19 | `Σ OrderItem.bundleDiscountAllocated = Order.bundleDiscount` and `Σ couponDiscountAllocated = Order.couponDiscount` for orders with `pricingVersion` | Orders |
+| I20 | the quote shown, the order charged and the PDP price agree for the same cart and time | Pricing |
+| I21 | legacy `StoreSetting` tax/shipping mirrors equal `TaxSetting` / legacy zone rates (`pricingConfigDrift` empty) | Pricing |
+| I22 | no client-supplied price or subtotal influences a quote or an order | Pricing |
+
+Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
+`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`).

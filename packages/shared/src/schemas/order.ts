@@ -656,6 +656,21 @@ export const checkoutSchema = z.object({
   /// The storefront analytics session id (see PageView) — lets revenue be attributed back to a
   /// traffic source/campaign. Optional: omitted for old clients or if tracking failed to init.
   sessionId: z.string().max(64).optional(),
+  /** The token of the quote the customer was shown (POST /api/v1/checkout/quote). When present, the order is refused
+   * with 409 QUOTE_CHANGED if the server's price no longer matches it — a stale price is never charged. Never a price. */
+  quoteToken: z.string().max(128).optional(),
+});
+
+/** The canonical quote request (POST /api/v1/checkout/quote): what to price, never a price. Address fields are
+ * optional — without them the quote says shipping is calculated once an address is chosen. */
+export const quoteRequestSchema = z.object({
+  items: z.array(checkoutItemSchema).min(1, "Cart is empty").max(100),
+  couponCode: z.preprocess((v) => (v === "" || v === null ? undefined : v), z.string().min(1).max(64).optional()),
+  shippingDivision: z.string().max(120).optional(),
+  shippingDistrict: z.string().max(120).optional(),
+  shippingPostcode: z.string().max(20).optional(),
+  /** Lets the admin "Create order" page quote for a specific customer (per-customer coupon limits). Admin only. */
+  customerId: z.string().cuid().optional(),
 });
 
 /** Powers the admin "Create order" page (phone/Facebook orders entered by staff) — reuses the same
@@ -680,6 +695,8 @@ export const adminCreateOrderSchema = z.object({
   markPaid: z.boolean().optional(),
   couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
   notes: nullableString(500),
+  /** Same stale-quote guard as checkout (see checkoutSchema.quoteToken). */
+  quoteToken: z.string().max(128).optional(),
 });
 
 function csvToStatusArray(value: unknown) {
@@ -812,6 +829,7 @@ export interface BulkOrderStatusResult {
 }
 export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;
 export type BulkDeliveryScoreCheckInput = z.infer<typeof bulkDeliveryScoreCheckSchema>;
+export type QuoteRequestInput = z.infer<typeof quoteRequestSchema>;
 export type ValidateCouponInput = z.infer<typeof validateCouponSchema>;
 export type TrackOrderInput = z.infer<typeof trackOrderSchema>;
 export type RetryPaymentInput = z.infer<typeof retryPaymentSchema>;

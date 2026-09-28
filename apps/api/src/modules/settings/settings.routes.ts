@@ -12,6 +12,9 @@ export const settingsRouter = Router();
 settingsRouter.get("/", settingsController.get);
 // Store-wide config (payment/shipping/tax) — OWNER-only; a STAFF account shouldn't be able to
 // change what the whole store charges or how it's branded.
+// Reconciliation: do the legacy StoreSetting mirrors still match the TaxSetting / ShippingZone authorities?
+// (docs/PRICING_INVARIANTS.md §10). Empty `drift` = consistent.
+settingsRouter.get("/pricing-config-drift", requireAdmin, settingsController.pricingDrift);
 settingsRouter.patch("/", requireAdmin, requireRole("OWNER"), validate(updateSettingsSchema), settingsController.update);
 settingsRouter.post(
   "/upload-logo",

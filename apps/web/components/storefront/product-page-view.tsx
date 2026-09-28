@@ -22,6 +22,7 @@ import { buildProductJsonLd } from "@/lib/structured-data";
 import { getSiteUrl } from "@/lib/seo";
 import { jsonLdString } from "@clothing-brand/shared";
 import { productEditHref } from "@/lib/admin-routes";
+import { productDisplayPrice } from "@/lib/pricing-display";
 
 // Each list fetches and streams independently via its own Suspense boundary, instead of the whole page waiting on
 // every recommendation endpoint before it can paint — the above-the-fold product info is only blocked on what it needs.
@@ -103,7 +104,7 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
           </Link>
         </div>
       )}
-      {live && <TrackProductView productId={product.id} productName={product.name} categoryId={product.categoryId} price={Number(product.basePrice)} />}
+      {live && <TrackProductView productId={product.id} productName={product.name} categoryId={product.categoryId} price={Number(productDisplayPrice(product).price)} />}
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {live && (
           <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(buildProductJsonLd(product, siteUrl, settings)) }} />

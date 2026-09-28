@@ -12,6 +12,7 @@ import { CountdownTimer } from "@/components/storefront/countdown-timer";
 import { ProductAccordion } from "@/components/storefront/product-accordion";
 import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { formatPrice } from "@/lib/format";
+import { variantDisplayPrice } from "@/lib/pricing-display";
 import type { SpecAccordionItem } from "@/lib/product-specs";
 
 const TRUST_ITEMS = [
@@ -78,13 +79,10 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
   // or the whole gallery until they pick / when no variant of that colour has images of its own.
   const galleryImages = useMemo(() => pickGalleryImages(product.images, product.variants, selection), [product.images, product.variants, selection]);
 
-  // A flash sale is "the price right now"; otherwise a chosen variant may sell for its own price (which is also what
-  // the cart charges), with its own compare-at price.
-  const variantPrice = selectedVariant?.price ?? null;
-  const activePrice = product.activeFlashSale?.flashPrice ?? variantPrice ?? product.basePrice;
-  const compareAt = product.activeFlashSale
-    ? null
-    : (selectedVariant?.compareAtPrice ?? (variantPrice ? null : product.compareAtPrice));
+  // The price shown is the SERVER-resolved price of the chosen variant (or the product's "from" price before a choice):
+  // the canonical pricing engine already applied the variant's own price and any live flash sale — exactly what the
+  // cart and checkout will charge. Formatting only here.
+  const shown = variantDisplayPrice(product, selectedVariant?.id);
 
   return (
     <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
@@ -105,23 +103,16 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           </a>
         )}
         <div className="mt-3 flex items-center gap-3">
-          {product.activeFlashSale ? (
-            <>
-              <span className="text-lg font-bold text-ink-900">{formatPrice(product.activeFlashSale.flashPrice)}</span>
-              <span className="text-sm text-ink-400 line-through">{formatPrice(product.basePrice)}</span>
-            </>
-          ) : (
-            <>
-              <span className="text-lg font-semibold text-ink-900" data-testid="product-price">{formatPrice(activePrice)}</span>
-              {compareAt && Number(compareAt) > Number(activePrice) && (
-                <span className="text-sm text-ink-400 line-through" data-testid="product-compare-price">{formatPrice(compareAt)}</span>
-              )}
-            </>
+          <span className={shown.flash ? "text-lg font-bold text-ink-900" : "text-lg font-semibold text-ink-900"} data-testid="product-price">
+            {formatPrice(shown.price)}
+          </span>
+          {shown.was !== null && Number(shown.was) > Number(shown.price) && (
+            <span className="text-sm text-ink-400 line-through" data-testid="product-compare-price">{formatPrice(shown.was)}</span>
           )}
         </div>
-        {product.activeFlashSale && (
+        {shown.flash && (
           <p className="mt-1 text-xs uppercase tracking-wide text-sale-500">
-            Flash sale ends in <CountdownTimer endsAt={product.activeFlashSale.endsAt} className="font-medium" />
+            Flash sale ends in <CountdownTimer endsAt={shown.flash.endsAt} className="font-medium" />
           </p>
         )}
 
@@ -135,7 +126,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             productSlug={product.slug}
             productName={product.name}
             imageUrl={product.images[0]?.url ?? null}
-            basePrice={product.activeFlashSale?.flashPrice ?? product.basePrice}
+            product={product}
             lowStockThreshold={product.lowStockThreshold}
             restockDate={product.restockDate}
             variantDimensions={resolved?.variantDimensions}
@@ -167,8 +158,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         productSlug={product.slug}
         productName={product.name}
         imageUrl={product.images[0]?.url ?? null}
-        basePrice={activePrice}
-        price={selectedVariant ? String(selectedVariant.price ?? activePrice) : activePrice}
+        product={product}
         onRequireSelection={handleRequireSelection}
       />
     </div>

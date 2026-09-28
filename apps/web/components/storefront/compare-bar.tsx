@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useCompareStore, MAX_COMPARE_ITEMS } from "@/store/compare";
 import { formatPrice } from "@/lib/format";
+import { productDisplayPrice } from "@/lib/pricing-display";
 import { resolveImageUrl } from "@/lib/image-url";
 
 function attributeList(values: (string | null)[]): string {
@@ -91,7 +92,7 @@ export function CompareBar() {
                 <td className="py-2 text-xs uppercase tracking-wide text-ink-400">Price</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2 text-ink-900">
-                    {formatPrice(product.activeFlashSale?.flashPrice ?? product.basePrice)}
+                    {formatPrice(productDisplayPrice(product).price)}
                   </td>
                 ))}
               </tr>

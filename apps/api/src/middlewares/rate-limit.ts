@@ -114,3 +114,13 @@ export const otpRequestRateLimit = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many codes requested, please try again later" },
 });
+
+/** The canonical quote (POST /api/v1/checkout/quote) is re-requested on every cart/checkout change — its own, much
+ * larger budget so browsing a cart never eats into order placement's. It writes nothing, so a high ceiling is safe. */
+export const quoteRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many price checks, please slow down and try again shortly" },
+});

@@ -1,9 +1,10 @@
 "use client";
 
-import type { ProductVariant } from "@clothing-brand/shared";
+import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/format";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
+import { variantDisplayPrice } from "@/lib/pricing-display";
 
 interface StickyAddToCartProps {
   visible: boolean;
@@ -12,8 +13,7 @@ interface StickyAddToCartProps {
   productSlug: string;
   productName: string;
   imageUrl: string | null;
-  basePrice: string;
-  price: string;
+  product: Pick<Product, "pricing" | "basePrice" | "compareAtPrice" | "trackInventory">;
   /** Called when tapped with no variant selected yet, so the page can scroll up to the size/color
    * picker and highlight what's still missing, instead of the button just doing nothing. */
   onRequireSelection?: () => void;
@@ -30,17 +30,17 @@ export function StickyAddToCart({
   productSlug,
   productName,
   imageUrl,
-  basePrice,
-  price,
+  product,
   onRequireSelection,
 }: StickyAddToCartProps) {
-  const { addToCart, buyNow } = useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, basePrice });
+  const { addToCart, buyNow } = useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, product });
+  const price = variantDisplayPrice(product, selectedVariant?.id).price;
 
   if (!visible) return null;
 
   // Genuinely out of stock is a hard stop; a not-yet-finished selection isn't — tapping it instead
   // scrolls up to the size/color picker so the shopper can see what's still needed.
-  const outOfStock = !!selectedVariant && selectedVariant.stock === 0;
+  const outOfStock = !!selectedVariant && maxSellableQuantity(product.trackInventory, selectedVariant.stock) === 0;
 
   function handleAddToCart() {
     if (!selectedVariant) return onRequireSelection?.();

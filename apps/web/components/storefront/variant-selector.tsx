@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
-import { NO_SIZE_VALUE, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
+import { NO_SIZE_VALUE, type ProductVariant, type SizeGuideData, type VariantDimension, isAvailable, maxSellableQuantity, type Product } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { cn, isPaleColor } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
@@ -22,7 +22,8 @@ interface VariantSelectorProps {
   productSlug: string;
   productName: string;
   imageUrl: string | null;
-  basePrice: string;
+  /** Server-resolved prices + whether stock is tracked (D5: untracked = always available). */
+  product: Pick<Product, "pricing" | "basePrice" | "compareAtPrice" | "trackInventory">;
   lowStockThreshold: number;
   restockDate: string | null;
   /** The type's variant dimensions (labels and which of size/colour it uses), from the product's
@@ -55,7 +56,7 @@ export function VariantSelector({
   productSlug,
   productName,
   imageUrl,
-  basePrice,
+  product,
   lowStockThreshold,
   restockDate,
   variantDimensions = [],
@@ -96,7 +97,7 @@ export function VariantSelector({
     productSlug,
     productName,
     imageUrl,
-    basePrice,
+    product,
   });
   const openCartDrawer = useCartDrawerStore((s) => s.open);
 
@@ -124,9 +125,11 @@ export function VariantSelector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusImageId]);
 
-  const sizeHasStock = (size: string) => variants.some((v) => v.size === size && v.stock > 0);
-  const comboHasStock = (size: string, color: string) =>
-    variants.some((v) => v.size === size && v.color === color && v.stock > 0);
+  // Availability is the shared rule (D5): an untracked product is always sellable.
+  const sellable = (v: ProductVariant) => isAvailable(product.trackInventory, v.stock);
+  const maxQty = selectedVariant ? maxSellableQuantity(product.trackInventory, selectedVariant.stock) : 0;
+  const sizeHasStock = (size: string) => variants.some((v) => v.size === size && sellable(v));
+  const comboHasStock = (size: string, color: string) => variants.some((v) => v.size === size && v.color === color && sellable(v));
 
   const sizeMissing = showSizes && !selectedSize;
   const colorMissing = showColors && !selectedColor;
@@ -302,7 +305,9 @@ export function VariantSelector({
                         : "text-ink-500",
                 )}
               >
-                {selectedVariant.stock === 0
+                {!product.trackInventory
+                  ? "In stock"
+                  : selectedVariant.stock === 0
                   ? "Out of stock"
                   : selectedVariant.stock <= CRITICAL_STOCK_THRESHOLD
                     ? `Only ${selectedVariant.stock} left!`
@@ -311,10 +316,10 @@ export function VariantSelector({
                       : `${selectedVariant.stock} in stock`}{" "}
                 · SKU {selectedVariant.sku}
               </p>
-              {selectedVariant.stock === 0 && restockDate && (
+              {maxQty === 0 && restockDate && (
                 <p className="mt-1 text-sm text-ink-500">Expected back in stock: {formatDate(restockDate)}</p>
               )}
-              {selectedVariant.stock === 0 && <StockAlertButton variantId={selectedVariant.id} />}
+              {maxQty === 0 && <StockAlertButton variantId={selectedVariant.id} />}
             </motion.div>
           ) : (
             <motion.p
@@ -342,7 +347,7 @@ export function VariantSelector({
       </div>
 
       <AnimatePresence>
-        {selectedVariant && selectedVariant.stock > 0 && (
+        {selectedVariant && maxQty > 0 && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
@@ -361,7 +366,7 @@ export function VariantSelector({
               </button>
               <span className="w-10 text-center text-sm">{quantity}</span>
               <button
-                onClick={() => setQuantity((q) => Math.min(selectedVariant.stock, q + 1))}
+                onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
                 aria-label="Increase quantity"
               >
@@ -378,7 +383,7 @@ export function VariantSelector({
             variant="outline"
             size="lg"
             className="flex-1"
-            disabled={!!selectedVariant && selectedVariant.stock === 0}
+            disabled={!!selectedVariant && maxQty === 0}
             onClick={handleAddToCart}
           >
             Add to Cart
@@ -387,7 +392,7 @@ export function VariantSelector({
             variant="primary"
             size="lg"
             className="flex-1"
-            disabled={!!selectedVariant && selectedVariant.stock === 0}
+            disabled={!!selectedVariant && maxQty === 0}
             onClick={handleBuyNow}
           >
             Buy Now

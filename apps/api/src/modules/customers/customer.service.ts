@@ -948,9 +948,16 @@ export async function sendBulkSmsToCustomers(customerIds: string[], body: string
   return { sent, failed, skipped: customers.length - withPhone.length };
 }
 
+/** D8: the loyalty base of an order — merchandise after discounts, excluding shipping and the admin price adjustment —
+ * read from the order's own snapshot (subtotal − discount), never recomputed from current prices. */
+export function loyaltyBase(order: { subtotal: unknown; discount: unknown }): number {
+  return Math.max(0, Number(order.subtotal) - Number(order.discount));
+}
+
 /** Awards points for a delivered order — idempotent per order, so re-marking DELIVERED (e.g. after an
- * accidental status revert) never double-pays. No-ops while the store hasn't configured a reward rate. */
-export async function awardDeliveryPoints(customerId: string, orderId: string, orderTotal: number) {
+ * accidental status revert) never double-pays. No-ops while the store hasn't configured a reward rate.
+ * `merchandiseBase` is loyaltyBase(order) (D8). */
+export async function awardDeliveryPoints(customerId: string, orderId: string, merchandiseBase: number) {
   const settings = await getSettings();
   const rate = Number(settings.rewardPointsPerCurrency);
   if (rate <= 0) return;
@@ -958,13 +965,33 @@ export async function awardDeliveryPoints(customerId: string, orderId: string, o
   const already = await prisma.rewardPointsEntry.findFirst({ where: { orderId, reason: "order_delivered" } });
   if (already) return;
 
-  const points = Math.floor(orderTotal * rate);
+  const points = Math.floor(merchandiseBase * rate);
   if (points <= 0) return;
 
   await prisma.$transaction([
     prisma.rewardPointsEntry.create({ data: { customerId, orderId, points, reason: "order_delivered" } }),
     prisma.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } }),
   ]);
+}
+
+/** D8: reverses the points an order earned, in proportion to the merchandise that came back or was refunded
+ * (`fraction` 1 = all). Never reverses more than the order earned in total, however many returns/refunds follow, and
+ * never takes the balance below zero; the ledger row records exactly what was reversed. */
+export async function reverseDeliveryPoints(customerId: string, orderId: string, fraction: number) {
+  const f = Math.min(1, Math.max(0, fraction));
+  if (f <= 0) return;
+  await prisma.$transaction(async (tx) => {
+    const [customer] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+    if (!customer) return;
+    const entries = await tx.rewardPointsEntry.findMany({ where: { orderId, reason: { in: ["order_delivered", "order_reversed"] } } });
+    const earned = entries.filter((e) => e.reason === "order_delivered").reduce((a, e) => a + e.points, 0);
+    const reversed = -entries.filter((e) => e.reason === "order_reversed").reduce((a, e) => a + e.points, 0);
+    const wanted = Math.min(earned - reversed, Math.floor(earned * f));
+    const points = Math.min(wanted, Math.max(0, customer.rewardPoints));
+    if (points <= 0) return;
+    await tx.rewardPointsEntry.create({ data: { customerId, orderId, points: -points, reason: "order_reversed" } });
+    await tx.customer.update({ where: { id: customerId }, data: { rewardPoints: { decrement: points } } });
+  });
 }
 
 /** One Steadfast fraud_check call for a customer, cached onto their Customer row (fraud_check is

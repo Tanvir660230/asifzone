@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { ProductVariant } from "@clothing-brand/shared";
+import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { pixelAddToCart } from "@/lib/meta-pixel";
 import { trackFunnelEvent } from "@/lib/analytics";
+import { variantDisplayPrice } from "@/lib/pricing-display";
 
 interface UseAddToCartParams {
   selectedVariant: ProductVariant | undefined;
@@ -14,13 +15,15 @@ interface UseAddToCartParams {
   productSlug: string;
   productName: string;
   imageUrl: string | null;
-  basePrice: string;
+  /** The product's server-resolved prices and stored prices — the cart line's price is a display cache of the server
+   * price only; every total is re-quoted by the server (PRICING_INVARIANTS §7). */
+  product: Pick<Product, "pricing" | "basePrice" | "compareAtPrice" | "trackInventory">;
 }
 
 /** Shared "add this variant to the cart" / "buy it now" logic — used by both the inline PDP buttons
  * (VariantSelector) and the mobile sticky bar (StickyAddToCart), so there's one place that knows how
  * to turn a selected variant into a cart line item instead of two copies drifting apart. */
-export function useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, basePrice }: UseAddToCartParams) {
+export function useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, product }: UseAddToCartParams) {
   const router = useRouter();
   const addItem = useCartStore((s) => s.addItem);
   const setExpressItem = useExpressCheckoutStore((s) => s.setItem);
@@ -36,9 +39,10 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
       sku: selectedVariant.sku,
       size: selectedVariant.size,
       color: selectedVariant.color,
-      price: Number(selectedVariant.price ?? basePrice),
+      price: Number(variantDisplayPrice(product, selectedVariant.id).price),
       imageUrl,
-      maxStock: selectedVariant.stock,
+      // D5: an untracked product has no stock ceiling (only the per-line maximum).
+      maxStock: maxSellableQuantity(product.trackInventory, selectedVariant.stock),
     };
   }
 

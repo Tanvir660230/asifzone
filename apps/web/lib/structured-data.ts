@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { BD_DIVISIONS, type Product, type StoreSettings } from "@clothing-brand/shared";
+import { BD_DIVISIONS, type Product, type StoreSettings, isAvailable } from "@clothing-brand/shared";
 import { resolveImageUrl } from "./image-url";
 import { stripHtml } from "./format";
+import { productDisplayPrice } from "./pricing-display";
 
 const NON_DHAKA_DIVISIONS = BD_DIVISIONS.filter((d) => d !== "Dhaka");
 
@@ -46,8 +47,9 @@ function buildShippingDetails(settings: StoreSettings) {
 }
 
 export function buildProductJsonLd(product: Product, siteUrl: string, settings: StoreSettings) {
-  const price = product.activeFlashSale?.flashPrice ?? product.basePrice;
-  const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+  // The offer price is the server-resolved "from" price (canonical pricing engine), not a local calculation.
+  const price = productDisplayPrice(product).price;
+  const inStock = product.variants.some((v) => isAvailable(product.trackInventory, v.stock));
 
   return {
     "@context": "https://schema.org",
@@ -60,9 +62,9 @@ export function buildProductJsonLd(product: Product, siteUrl: string, settings: 
     offers: {
       "@type": "Offer",
       url: `${siteUrl}/product/${product.slug}`,
-      priceCurrency: "BDT",
+      priceCurrency: product.pricing?.currency ?? "BDT",
       price,
-      availability: totalStock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      availability: inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       // Every product in the catalog is new stock — there's no used/refurbished concept anywhere
       // in the data model, so this is always accurate rather than an assumed default.
       itemCondition: "https://schema.org/NewCondition",

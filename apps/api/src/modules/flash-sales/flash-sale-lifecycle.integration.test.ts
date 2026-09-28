@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "../../config/prisma";
 import { RUN, asOwner, cleanupFixtures, createStockedProduct } from "../../test-fixtures";
 import { syncFlashSaleActivation } from "./flash-sale.service";
-import { getActiveFlashInfoByProduct } from "./flash-sale-pricing";
+import { loadFlashOffers } from "../../domain/pricing/pricing.service";
+import { isOfferLive } from "@clothing-brand/shared";
 
 // TARGET_ARCHITECTURE §16a — the admin's switch (`enabled`) is separate from the schedule window, and the
 // scheduler only ever derives `isActive` from both. Before Phase 1 the admin API dropped `isActive` (it wasn't in
@@ -27,7 +28,9 @@ async function state(id: string) {
   return { enabled: s.enabled, isActive: s.isActive };
 }
 async function pricedLive() {
-  return (await getActiveFlashInfoByProduct([productId])).size > 0;
+  // What the pricing engine would apply right now (the same loader every quote uses).
+  const now = new Date();
+  return ((await loadFlashOffers([productId], now)).get(productId) ?? []).some((o) => isOfferLive(o, now));
 }
 
 beforeAll(async () => {

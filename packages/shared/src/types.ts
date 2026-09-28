@@ -134,6 +134,26 @@ export interface ActiveFlashSale {
   flashPrice: string;
 }
 
+/** One variant's server-resolved price (canonical pricing engine): list → variant → live flash sale. */
+export interface VariantPricing {
+  list: number;
+  selling: number;
+  compareAt: number | null;
+  flash: { flashSaleId: string; name: string; endsAt: string; discountType: "PERCENTAGE" | "FIXED"; discountValue: number; remaining: number | null } | null;
+}
+
+/** Server-resolved display prices of a product (PRICING_INVARIANTS §3). The storefront formats these; it never computes
+ * a price itself. `from`/`to` span the active variants' current selling prices. */
+export interface ProductPricing {
+  currency: string;
+  from: number;
+  to: number;
+  listFrom: number;
+  compareAt: number | null;
+  flash: VariantPricing["flash"];
+  variants: Record<string, VariantPricing>;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -184,6 +204,9 @@ export interface Product {
   /** Present on detail reads (admin editor, storefront product page), computed server-side from the
    * product's type template. Absent on list rows. */
   resolved?: ProductResolvedView;
+  /** Server-resolved prices on every storefront read (PDP, listings, search, homepage, flash feed). */
+  pricing?: ProductPricing;
+  /** Deprecated compat view of `pricing.flash` (its flashPrice is `pricing.from`). */
   activeFlashSale?: ActiveFlashSale | null;
   avgRating: number;
   reviewCount: number;
@@ -669,6 +692,8 @@ export interface CustomerStats {
 }
 
 export interface StoreSettings {
+  /** D10 — from the TaxSetting authority. */
+  shippingTaxable?: boolean;
   id: string;
   storeName: string;
   tagline: string | null;

@@ -2,7 +2,14 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "../../config/prisma";
 import { RUN, asOwner, cleanupFixtures, placeOrder } from "../../test-fixtures";
 import { recordInitialStock } from "../inventory/inventory.service";
-import { evaluateBundleForItems } from "./bundle.service";
+import { quoteCart } from "../../domain/pricing/pricing.service";
+import { toMajor } from "@clothing-brand/shared";
+
+/** The bundle part of the canonical quote (the one bundle evaluation left in the system). */
+async function evaluateBundleForItems(items: Array<{ variantId: string; quantity: number }>) {
+  const { quote } = await quoteCart({ items });
+  return quote.bundle ? { discount: toMajor(quote.bundle.discount) } : null;
+}
 
 // D2 (docs/PRICING_PIPELINE.md §2): a bundle discount works on the effective selling price after any flash sale —
 // the same price the subtotal and the charged order lines use. It used to price lines at the regular price, so a

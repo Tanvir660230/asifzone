@@ -113,6 +113,10 @@ All engines work in **integer minor units** (`Money = { amount: number /* minor 
 
 ### 5.1 Pricing pipeline (derived from current behaviour)
 
+> **Phase 2 status:** implemented. The "Today" columns below describe the pre-Phase-2 code and are kept as the
+> audit trail. The implemented engines, consumers and remaining gap (a `minSellingPrice` projection for storefront
+> filter/sort) are in §16b, [PRICING_PIPELINE.md](PRICING_PIPELINE.md) and [PRICING_INVARIANTS.md](PRICING_INVARIANTS.md).
+
 Current order of operations, reconstructed from `cart-lines.ts`, `flash-sale-pricing.ts`, `coupon.service.ts`, `bundle.service.ts` and `order.service.deriveOrderPricing`:
 
 | Step | Today | Target rule |
@@ -454,8 +458,8 @@ Post-migration verification after every step: counts of products, variants, orde
 | D9 | Bundle discount first, then coupon on the resulting eligible amount (List → Variant → Flash → Bundle → Coupon → Tax → Shipping → Total). |
 | D10 | Shipping VAT-inclusive by default; configurable through the centralised tax configuration only. |
 
-No business decision is pending. Until a Phase 2 decision ships, engines keep the current behaviour documented in
-[PRICING_PIPELINE.md §1](PRICING_PIPELINE.md).
+No business decision is pending. D3–D10 are implemented in Phase 2 (§16b); the live pipeline is
+[PRICING_PIPELINE.md](PRICING_PIPELINE.md).
 
 ## 16a. Phase 1 scope and invariants
 
@@ -478,6 +482,35 @@ Before Phase 1 the admin API silently dropped any `isActive` it was sent (the Zo
 **Deleted products.** `purchasable = product.isActive (status PUBLISHED) ∧ product.deletedAt IS NULL ∧ variant.isActive`: one shared predicate (`isPurchasable` in `packages/shared`, `PURCHASABLE_PRODUCT_WHERE` for queries), enforced at checkout and order creation (incl. admin manual orders), exchanges, wishlist add/list, stock-alert subscribe/notify, flash-sale item add and homepage feed, and bundle evaluation. A stale cart line for a trashed product fails at checkout with "no longer available".
 
 **Phase 1 invariants** (tested): order-state matrix enforced for every caller; INV-1..INV-7 in INVENTORY_INVARIANTS.md; `isActive = (status = PUBLISHED)`; `deletedAt ≠ null ⇒ not purchasable`; `FlashSale.isActive = enabled ∧ in window` after every write/scheduler tick; COD `DELIVERED ⇒ paymentStatus ∈ {PAID, REFUNDED}`; historical order money snapshots never rewritten.
+
+## 16b. Phase 2 scope — central pricing & quote SSOT
+
+**One pipeline.** Pure engines in `packages/shared/src/engines` (`money`, `rounding`, `availability`, `pricing`,
+`promotion`, `shipping`, `tax`, `order-totals`, `quote`) — integer minor units, no I/O, no clock. The only
+orchestrator is `apps/api/src/domain/pricing/pricing.service.ts` (`quoteCart`, `priceProductsForDisplay`), with
+configuration loading in `domain/pricing/pricing-config.ts`. This is the first `domain/` module of the §3 layout;
+the rest of the modules keep their Phase 1 layout.
+
+**One quote.** `POST /api/v1/checkout/quote` (+ `/quote/best-coupon`), rate-limited 120/min, optional customer /
+admin identity. Every money-bearing consumer uses it or the read model built from the same engines: storefront reads,
+cart, checkout, COD orders, gateway initiation (snapshot frozen for settlement), admin manual orders, exchanges,
+coupon validate/best, bundle preview, price adjustment (`computeOrderTotals` over the snapshot).
+
+**New authorities (additive).** `TaxSetting` (tax mode/rate, D10 shipping VAT) and `ShippingZone` / `ShippingZoneMatch`
+/ `ShippingRate` replace the legacy `StoreSetting` tax and shipping fields as the source pricing reads. The legacy
+fields stay as dual-written mirrors with a drift check (`GET /api/settings/pricing-config-drift`). They go away in a
+later contract step, not in Phase 2 (rule 9).
+
+**Snapshots.** Orders created since Phase 2 carry `pricingVersion`, the flash/coupon split, `shippingWaived`, the
+shipping zone, a full tax snapshot, per-line list price, flash attribution and discount allocations. Pre-Phase-2
+orders keep NULLs where history was never recorded. Registry: [SSOT_REGISTRY.md](SSOT_REGISTRY.md) B2/B4.
+
+**Stale prices.** Clients send `quoteToken`. A changed quote at order time → 409 `QUOTE_CHANGED` with the new quote.
+The flash quota is re-checked under row locks. `Idempotency-Key` makes order creation retry-safe.
+
+**Not in Phase 2 (recorded):** `minSellingPrice` projection for filter/sort (PRICING_INVARIANTS §12); zone/rate admin
+UI; configurable rounding policy (`CommerceSettings`); coupon `usedCount` drift report; invoices and analytics
+switching to the tax snapshot (Phase 5 metrics).
 
 ## 17. Definition of done for each phase
 

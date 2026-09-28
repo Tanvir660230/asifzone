@@ -8,6 +8,7 @@ import { VariantSelector } from "./variant-selector";
 import { CountdownTimer } from "./countdown-timer";
 import { useQuickViewStore } from "@/store/quick-view";
 import { formatPrice } from "@/lib/format";
+import { productDisplayPrice } from "@/lib/pricing-display";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 
@@ -60,19 +61,16 @@ export function QuickViewModal() {
           <p className="text-xs uppercase tracking-wide text-ink-400">{product.brandTier}</p>
           <h3 className="mt-1 font-display text-xl font-medium tracking-wide text-ink-900">{product.name}</h3>
           <div className="mt-2 flex items-center gap-3">
-            {product.activeFlashSale ? (
-              <>
-                <span className="text-lg font-bold text-ink-900">{formatPrice(product.activeFlashSale.flashPrice)}</span>
-                <span className="text-sm text-ink-400 line-through">{formatPrice(product.basePrice)}</span>
-              </>
-            ) : (
-              <>
-                <span className="text-lg font-semibold text-ink-900">{formatPrice(product.basePrice)}</span>
-                {product.compareAtPrice && (
-                  <span className="text-sm text-ink-400 line-through">{formatPrice(product.compareAtPrice)}</span>
-                )}
-              </>
-            )}
+            {(() => {
+              // Server-resolved "from" price (canonical pricing engine) — formatted, never computed here.
+              const shown = productDisplayPrice(product);
+              return (
+                <>
+                  <span className={shown.flash ? "text-lg font-bold text-ink-900" : "text-lg font-semibold text-ink-900"}>{formatPrice(shown.price)}</span>
+                  {shown.was !== null && <span className="text-sm text-ink-400 line-through">{formatPrice(shown.was)}</span>}
+                </>
+              );
+            })()}
           </div>
           {product.activeFlashSale && (
             <p className="mt-1 text-xs uppercase tracking-wide text-sale-500">
@@ -87,7 +85,7 @@ export function QuickViewModal() {
               productSlug={product.slug}
               productName={product.name}
               imageUrl={images[0]?.url ?? null}
-              basePrice={product.activeFlashSale?.flashPrice ?? product.basePrice}
+              product={product}
               lowStockThreshold={product.lowStockThreshold}
               restockDate={product.restockDate}
             />

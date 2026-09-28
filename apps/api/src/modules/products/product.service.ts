@@ -37,7 +37,7 @@ import { csvCell } from "../../lib/csv";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteProductImageFiles } from "../uploads/upload.service";
 import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
-import { computeFlashPrice, getActiveFlashInfoByProduct } from "../flash-sales/flash-sale-pricing";
+import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../../domain/pricing/pricing.service";
 import { notifyReplenished, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
@@ -279,25 +279,31 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   };
 }
 
-/** Attaches `activeFlashSale` (flash-discounted price, if any is currently running) to each product — storefront-facing reads only. */
-async function withFlashSaleInfo<T extends { id: string; basePrice: unknown }>(products: T[]) {
-  const flashByProduct = await getActiveFlashInfoByProduct(products.map((p) => p.id));
+/** Server-resolved prices for storefront reads (PRICING_INVARIANTS §3): `pricing` comes from the canonical pricing
+ * engine — variant override, the best live flash sale (deterministic, stock-limit aware) — so the PDP, listings, search,
+ * homepage and the cart can never disagree with checkout. `activeFlashSale` is kept for older clients; its `flashPrice`
+ * is the engine's "from" price (never recomputed from the product base price any more). */
+async function withFlashSaleInfo<T extends PriceableProduct>(products: T[]) {
+  const pricing = await priceProductsForDisplay(products);
   return products.map((product) => {
-    const flash = flashByProduct.get(product.id);
-    if (!flash) return { ...product, activeFlashSale: null };
+    const p = pricing.get(product.id)!;
     return {
       ...product,
-      activeFlashSale: {
-        flashSaleId: flash.flashSaleId,
-        flashSaleName: flash.flashSaleName,
-        endsAt: flash.endsAt,
-        discountType: flash.discountType,
-        discountValue: flash.discountValue,
-        flashPrice: computeFlashPrice(Number(product.basePrice), flash),
-      },
+      pricing: p,
+      activeFlashSale: p.flash
+        ? {
+            flashSaleId: p.flash.flashSaleId,
+            flashSaleName: p.flash.name,
+            endsAt: p.flash.endsAt,
+            discountType: p.flash.discountType,
+            discountValue: p.flash.discountValue,
+            flashPrice: String(p.from),
+          }
+        : null,
     };
   });
 }
+
 
 /** Invalidates the API's own Redis read cache (immediate, always) and, best-effort and non-blocking,
  * asks the storefront to drop the specific Next.js fetch-cache tags this change affects (see
@@ -641,6 +647,9 @@ const SUGGEST_SELECT = {
   name: true,
   slug: true,
   basePrice: true,
+  // compareAtPrice/variants feed the canonical display pricing (priceProductsForDisplay) for the suggestion's price.
+  compareAtPrice: true,
+  variants: { select: { id: true, price: true, compareAtPrice: true, isActive: true } },
   // description/brand/category/createdAt exist only to feed computeRelevanceScore below — never
   // sent to the client, see toSuggestionProduct's much narrower return shape.
   description: true,
@@ -652,14 +661,13 @@ const SUGGEST_SELECT = {
 
 const SUGGEST_CANDIDATE_CAP = 40;
 
-function toSuggestionProduct(p: {
-  id: string;
-  name: string;
-  slug: string;
-  basePrice: unknown;
-  images: { url: string }[];
-}) {
-  return { id: p.id, name: p.name, slug: p.slug, price: Number(p.basePrice), imageUrl: p.images[0]?.url ?? null };
+/** `price` is the server-resolved "from" price (list → variant → live flash sale) — the same number the PDP shows. */
+function toSuggestionProduct(
+  p: { id: string; name: string; slug: string; basePrice: unknown; images: { url: string }[] },
+  pricing: Map<string, ProductPricingDto>,
+) {
+  const price = pricing.get(p.id)?.from ?? Number(p.basePrice);
+  return { id: p.id, name: p.name, slug: p.slug, price, imageUrl: p.images[0]?.url ?? null };
 }
 
 /** Typeahead dropdown data: a handful of matching products plus "prediction" query-completion
@@ -733,7 +741,8 @@ export async function suggestSearch(query: string, limit = 6) {
 
   const didYouMean = productRows.length === 0 && predictions.length === 0 ? await findDidYouMean(query) : undefined;
 
-  return { products: productRows.map(toSuggestionProduct), predictions, didYouMean };
+  const pricing = await priceProductsForDisplay(productRows);
+  return { products: productRows.map((p) => toSuggestionProduct(p, pricing)), predictions, didYouMean };
 }
 
 const POPULAR_SEARCHES_CACHE_KEY = `${CACHE_PREFIX}popular-searches`;

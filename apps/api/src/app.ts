@@ -40,6 +40,7 @@ import { smsTemplateRouter } from "./modules/sms-templates/sms-template.routes";
 import { aiRouter } from "./modules/ai/ai.routes";
 import { campaignRouter } from "./modules/campaigns/campaign.routes";
 import { courierRouter } from "./modules/courier/courier.routes";
+import { checkoutV1Router } from "./modules/checkout/checkout.routes";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
@@ -100,6 +101,9 @@ app.use("/api/sms-templates", smsTemplateRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/campaigns", campaignRouter);
 app.use("/api/courier", courierRouter);
+
+// Versioned API (TARGET_ARCHITECTURE §13): new endpoints land under /api/v1; existing /api routes are unchanged.
+app.use("/api/v1/checkout", checkoutV1Router);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

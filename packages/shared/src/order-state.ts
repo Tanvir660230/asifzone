@@ -27,6 +27,10 @@ export interface OrderTransitionRule {
   customerSms: OrderStatusSmsTouchpoint | null;
   /** Award loyalty points (idempotent per order). */
   awardPoints: boolean;
+  /** D7: release the order's coupon usage (only a cancellation BEFORE shipping). */
+  releasesCouponUsage: boolean;
+  /** D8: reverse the loyalty points earned on this order's merchandise (returns). */
+  reversesPoints: boolean;
 }
 
 export const PRE_SHIPMENT_STATUSES: readonly OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED"];
@@ -40,6 +44,8 @@ const NONE = {
   alertIfPaid: null,
   customerSms: null,
   awardPoints: false,
+  releasesCouponUsage: false,
+  reversesPoints: false,
 } as const satisfies Omit<OrderTransitionRule, "id" | "event">;
 
 /** A transition to the order's current status: nothing happens except (optionally) a timeline note. */
@@ -60,10 +66,20 @@ function rule(from: OrderStatus, to: OrderStatus): OrderTransitionRule | null {
   }
   if (preOrShipped && to === "PARTIALLY_DELIVERED") return { ...NONE, id: "T5", event: "order.partially_delivered" };
   if (preOrShipped && to === "CANCELLED") {
-    return { ...NONE, id: "T6", event: "order.cancelled", stock: "release", courierLoss: true, alertIfPaid: "order.cancelled_but_paid", customerSms: "CANCELLED" };
+    return {
+      ...NONE,
+      id: "T6",
+      event: "order.cancelled",
+      stock: "release",
+      courierLoss: true,
+      alertIfPaid: "order.cancelled_but_paid",
+      customerSms: "CANCELLED",
+      // D7: usage comes back only when the goods never left.
+      releasesCouponUsage: isPreShipment(from),
+    };
   }
   if ((from === "DELIVERED" || from === "PARTIALLY_DELIVERED") && to === "RETURNED") {
-    return { ...NONE, id: "T7", event: "order.returned", stock: "return", alertIfPaid: "order.returned_refund_due" };
+    return { ...NONE, id: "T7", event: "order.returned", stock: "return", alertIfPaid: "order.returned_refund_due", reversesPoints: true };
   }
   if ((from === "DELIVERED" || from === "PARTIALLY_DELIVERED" || from === "CANCELLED" || from === "RETURNED") && to === "REFUNDED") {
     return { ...NONE, id: "T8", event: "order.refunded", requiresRecordedRefund: true };

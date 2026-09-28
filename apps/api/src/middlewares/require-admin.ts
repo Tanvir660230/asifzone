@@ -31,3 +31,17 @@ export function requireRole(...roles: Array<"OWNER" | "STAFF">) {
     next();
   };
 }
+
+/** Soft variant for public routes that offer extra options to staff (e.g. quoting for a specific customer): attaches
+ * req.admin when a valid admin session is present, otherwise continues as an anonymous request — never rejects. */
+export function attachAdminIfPresent(req: Request, _res: Response, next: NextFunction) {
+  const token = req.cookies?.access_token as string | undefined;
+  if (token) {
+    try {
+      req.admin = verifyAccessToken(token);
+    } catch {
+      // expired/invalid admin token on a public route — proceed anonymously
+    }
+  }
+  next();
+}

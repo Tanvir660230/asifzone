@@ -1,91 +1,76 @@
 # Pricing Pipeline
 
-**Status:** Phase 1 — documents the pipeline *as implemented* (discovered from the code), the one
-Phase 1 change (bundle base, D2), the tax model (D3), and the Phase 2 target. The single place this
-pipeline is assembled today is `deriveOrderPricing` in `apps/api/src/modules/orders/order.service.ts`.
+**Status:** Phase 2 — the pipeline below is **implemented** as one canonical pipeline: pure engines in
+`packages/shared/src/engines` orchestrated by `apps/api/src/domain/pricing/pricing.service.ts` (`quoteCart`), exposed
+as `POST /api/v1/checkout/quote`. Invariants, snapshot fields and the duplicate-calculation audit:
+[PRICING_INVARIANTS.md](PRICING_INVARIANTS.md). Business rules: [BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md).
 
-## 1. Current pipeline (server, authoritative)
+## 1. Pipeline (server, authoritative)
 
-| Step | What happens | Code | Rounding |
+```
+List Price → Variant Price → Flash Sale (D4 stock limit, line split) → Subtotal
+  → Bundle Discount (D2 post-flash) → Coupon Discount (D9 after bundle) → Discount clamp
+    → Shipping (zones; waived by FREE_SHIPPING coupon or free-over threshold)
+      → Tax (D3 inclusive by default; D10 shipping VAT from the tax configuration)
+        → Final Total   (→ optional admin price adjustment after placement, from the snapshot)
+```
+
+| Step | Rule | Engine | Rounding |
 |---|---|---|---|
-| 1. List price | `ProductVariant.price` if set, else `Product.basePrice` | `effectivePrice` in `orders/cart-lines.ts` | stored 2 dp |
-| 2. Flash sale | if the product is in a live flash sale (enabled and `startsAt ≤ now ≤ endsAt`): `PERCENTAGE` → `list × (1 − v/100)`, `FIXED` → `list − v`, floor 0 | `computeFlashPrice` in `flash-sales/flash-sale-pricing.ts` | 2 dp |
-| 3. Line total | `unit × quantity`; the unit price is snapshotted to `OrderItem.priceSnapshot` | `resolveCartLines` | — |
-| 4. Subtotal | Σ line totals (after flash) | `resolveCartLines` | — |
-| 5. Coupon | validity window, usage limit, per-customer / first-order limits, `minOrderAmount` (vs. step-4 subtotal), scope → eligible lines; `PERCENTAGE` on eligible amount, capped by `maxDiscountAmount` and by the eligible amount; `FIXED` capped by eligible amount; `FREE_SHIPPING` → discount 0 + waive flag | `evaluateCoupon` in `coupons/coupon.service.ts` | percentage rounded to whole currency units |
-| 6. Bundle | best eligible category bundle; discount on the matched lines (anchor + matched suggestion categories); `PERCENTAGE` or `FIXED`, capped by matched amount | `evaluateBundleForItems` in `bundles/bundle.service.ts` | percentage rounded to whole currency units |
-| 7. Stacking | coupon and bundle are computed **independently** from the same step-4 line amounts and **added**: `discount = min(coupon + bundle, subtotal)`; `Order.bundleDiscount` stores the bundle part | `deriveOrderPricing` | — |
-| 8. Tax | **not added** — catalogue prices are tax-inclusive (D3) | — | — |
-| 9. Shipping | `isInsideDhaka(district) ? shippingFeeDhaka : shippingFeeOutsideDhaka` from `StoreSetting`; a `FREE_SHIPPING` coupon waives it (the fee is still stored in `Order.shippingFee`) | `deriveOrderPricing`, `packages/shared/src/delivery.ts` | stored 2 dp |
-| 10. Total | `subtotal − discount + (waived ? 0 : shippingFee)` | `deriveOrderPricing` | — |
-| 11. After placement | admin *price adjustment* (signed) replaces `priceAdjustment` and recomputes `total = subtotal − discount + shippingOwed + priceAdjustment` | `adjustOrderPrice` | — |
+| 1. List price | `ProductVariant.price ?? Product.basePrice` | `resolveUnitPrice` (`engines/pricing.ts`) | stored 2 dp |
+| 2. Compare-at | flash → list; else `variant.compareAt ?? (variant.price ? null : product.compareAt)` if > list | `resolveUnitPrice` | — |
+| 3. Flash sale | live = `enabled ∧ window`; deterministic pick (best price, earliest `endsAt`, smallest item id); `PERCENTAGE` → `list × (1 − v/100)`, `FIXED` → `list − v`, floor 0; at most `stockLimit − unitsSold` units (D4) — the rest of the line at the list price | `selectFlashOffer`, `flashUnitPrice`, `priceLineSegments` | price to paisa |
+| 4. Line / subtotal | Σ segments (post-flash) | `buildQuote` | — |
+| 5. Bundle | best eligible category bundle on post-flash line amounts (D2); tie: discount, `sortOrder`, id; allocated to matched lines | `evaluateBundles` (`engines/promotion.ts`) | % to whole taka |
+| 6. Coupon | validity, usage (D7 redemption predicate), per-customer / first-order; `minOrderAmount` and the discount base are merchandise **after the bundle** (D9); scope → eligible lines; `PERCENTAGE` capped by `maxDiscountAmount` and eligible amount; `FIXED` capped; `FREE_SHIPPING` waives shipping | `evaluateCoupon` | % to whole taka |
+| 7. Discount clamp | `discount = min(bundle + coupon, subtotal)`; split recorded (`bundleDiscount`, `couponDiscount`) | `computeOrderTotals` | — |
+| 8. Shipping | zone by priority, then specificity (POSTCODE > DISTRICT > DIVISION), else default zone; fee from `ShippingRate`; waived by coupon or `freeOverAmount` on merchandise after discounts | `resolveShipping` (`engines/shipping.ts`) | stored 2 dp |
+| 9. Tax | `TaxSetting`: INCLUSIVE (default) → VAT inside merchandise and (if `shippingTaxable`) shipping, total unchanged; EXCLUSIVE → VAT added | `computeTax` (`engines/tax.ts`) | paisa |
+| 10. Total | `max(0, subtotal − discount + shippingCharged + taxAdded)` | `computeOrderTotals` | — |
+| 11. After placement | `adjustOrderPrice`: the same `computeOrderTotals` over the order's snapshot + signed adjustment | `computeOrderTotals` | — |
 
-Gateway payments snapshot steps 1–10 into `PaymentSession.checkoutPayload` at initiation and charge
-exactly that at settlement (never recomputed).
+All steps run in integer minor units (`Money`). Rounding policy: PRICING_INVARIANTS §2.
 
-### Precedence summary (today, after Phase 1)
+**Order note (tax vs shipping).** The approved target lists `… Coupon → Tax → Shipping → Final Total`. Merchandise
+tax is computed on merchandise after bundle and coupon, exactly as listed; it doesn't depend on shipping. Shipping VAT
+(D10) has to be computed on the fee actually charged, so the engine resolves shipping first and then runs one
+`computeTax` over both parts. The merchandise VAT is the same either way. The only effect of the ordering is that
+shipping VAT exists at all.
 
-```
-List price (variant override → product base)
-  → Flash sale (per product, replaces the unit price)
-    → Subtotal
-      → Coupon  ┐ computed side by side on the post-flash line amounts,
-      → Bundle  ┘ then added and clamped to the subtotal
-        → Tax: included in the price (not added)
-          → Shipping (zone fee, or waived by FREE_SHIPPING)
-            → Total   (→ optional admin price adjustment after placement)
-```
+## 2. Consumers (all on the one pipeline)
 
-## 2. Phase 1 change — D2: bundles use the effective (post-flash) price
-
-**Before:** `getCandidateBundleMatches` priced cart lines as `variant.price ?? basePrice`, ignoring any
-running flash sale, while the subtotal, the coupon and the charged line prices all used the flash price.
-A bundle discount could therefore be larger than what the customer was actually paying for the matched
-items. **Now:** the bundle's matched amount uses the same `effectivePrice` (list → flash) as the subtotal.
-Regression test: `apps/api/src/modules/bundles/bundle.integration.test.ts`.
-
-Nothing else in the stacking order changed in Phase 1.
-
-## 3. Tax model — D3: tax-inclusive prices
-
-- The customer-facing price is the tax-inclusive selling price. Checkout adds **no** tax line, and the
-  total is never increased by tax. This was already true; Phase 1 does not change what anyone is charged.
-- VAT contained in an amount `A` at rate `r%` is `A × r / (100 + r)`; the taxable (net) amount is `A − VAT`.
-  The shared helper `taxIncludedIn(amount, ratePct)` (`packages/shared/src/tax.ts`) is the only
-  implementation.
-- **Contradictions found and how Phase 1 handles them**
-
-  | Where | Assumption | Phase 1 action |
-  |---|---|---|
-  | `StoreSetting.taxEnabled`, `defaultTaxRate` | a store-wide rate | unchanged; read by the helper |
-  | `Product.taxRate` | per-product rate; stored, exported, audited, never used in any calculation | unchanged (documented as unused) |
-  | `analytics.getEstimatedTaxCollected` | computed `revenue × rate/100` — the *tax-exclusive* formula applied to tax-inclusive revenue, overstating VAT by a factor of `(100 + r)/100` | **fixed** to `taxIncludedIn(revenue, rate)`; regression test in `apps/api/src/lib/order-state.test.ts` ("tax-inclusive VAT") |
-  | `OrderItem`, `Order` | no tax snapshot | unchanged — historical orders are not recalculated. Phase 2 adds `Order.taxAmount` for new orders only |
-
-## 4. Known duplicates still present (Phase 2 scope, not changed in Phase 1)
-
-The storefront and admin still compute display prices themselves (`product-showcase.tsx`,
-`use-add-to-cart.ts`, the admin *New order* page, product cards) and the storefront `activeFlashSale.flashPrice`
-is computed from `basePrice`, not the variant price. The checkout page recomputes the total from
-localStorage prices. The server remains the authority for what is charged. Phase 2 replaces all of these
-with one pure pricing engine in `packages/shared` and a server `quote` endpoint (TARGET_ARCHITECTURE §5.1).
-
-## 5. Phase 2 target (approved 2026-09-28, not yet implemented)
-
-```
-List Price → Variant Price → Flash Sale → Bundle Discount → Coupon Discount → Tax → Shipping → Final Total
-```
-
-Approved rules that change the pipeline in Phase 2 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)):
-
-| ID | Pipeline effect |
+| Consumer | How |
 |---|---|
-| D4 | Flash price applies to at most `FlashSaleItem.stockLimit` units; further units in the same line use the normal effective price (line split). |
-| D5 | `trackInventory = false` skips the stock-availability rejection. |
-| D6 | Exchange quotes use the current effective selling price; the difference may be collected or refunded. |
-| D7 | Coupon usage is released by a cancellation before shipping (order effect, not a price step). |
-| D8 | Loyalty base = merchandise after discounts, excluding shipping (order effect, not a price step). |
-| D9 | Coupon is computed on the amount **after** the bundle discount — replaces today's side-by-side stacking (step 7 above). This changes coupon amounts on carts that qualify for both. |
-| D10 | Shipping is VAT-inclusive by default; its VAT treatment comes from the centralised tax configuration. |
+| PDP, product cards, listings, search results and suggestions, homepage, flash-sale feed, quick view, compare bar, JSON-LD, reorder | `product.pricing` read model from `priceProductsForDisplay` (same `resolveUnitPrice`) |
+| Cart page, cart drawer, sticky cart bar | `useCartQuote()` → `POST /api/v1/checkout/quote` |
+| Checkout | quote with coupon + address; coupon apply = requote; best coupon = `/quote/best-coupon`; submits `quoteToken`; 409 `QUOTE_CHANGED` → shows the new quote |
+| Storefront order (COD), gateway initiation | `deriveOrderPricing` → `quoteCart` inside the order path; token check; snapshot written |
+| Gateway settlement | charges the quote frozen in `PaymentSession.checkoutPayload` (never recomputed) |
+| Admin manual order | same quote (staff may pass `customerId` for coupon limits); page renders the quote |
+| Exchange (D6) | `quoteCart` with `promotions: "FLASH_ONLY"`, current prices; difference collected or refunded |
+| Coupon validate / best, bundle preview | read the quote; client `subtotal` ignored |
+| Price adjustment | `computeOrderTotals` from the snapshot |
+| Invoices, order views, analytics | read the snapshot (PRICING_INVARIANTS §8–§9) |
 
-Until Phase 2 ships them, §1 describes what the system actually charges.
+## 3. Behaviour changes vs Phase 1 (approved decisions)
+
+| ID | Change | Customer-visible effect |
+|---|---|---|
+| D4 | Flash price limited to `stockLimit` units; extra units at list price; lines split | a cart can mix flash and list units of one variant |
+| D5 | `trackInventory = false` never blocks on stock | untracked products always purchasable (max 20 per line) |
+| D6 | Exchange at the current effective price; cheaper replacement → refund requested | downgrades now owe money back |
+| D7 | Pre-shipment cancellation releases coupon usage | a cancelled order no longer burns a limited coupon |
+| D8 | Points on merchandise after discounts (excl. shipping); reversed on return / proportionally on refund | fewer points on discounted orders; returns remove points |
+| D9 | Coupon after bundle | coupon amount smaller on carts that also get a bundle |
+| D10 | Shipping VAT from the tax configuration (inclusive by default) | none in inclusive mode (breakdown only) |
+| D3 | Tax snapshot on each new order | invoices/analytics can read VAT exactly |
+
+Phase 1's D2 (bundle on the post-flash price) is preserved. Rounding changed only where the old code had no policy:
+`taxIncludedIn` now returns paisa (130.43, not 130.4348). Prices charged are otherwise identical to Phase 1 for carts
+without the D4/D9 situations — covered by the PDP = quote = order test in `pricing.integration.test.ts`.
+
+## 4. Known remaining duplicate
+
+Storefront price **filter/sort/facets** and similar-price recommendations still use `Product.basePrice`. Replacing
+them needs a maintained `minSellingPrice` projection (TARGET_ARCHITECTURE §5.1) — deferred, recorded in
+PRICING_INVARIANTS §12. They affect ordering/filtering only, never an amount shown or charged.

@@ -1,37 +1,40 @@
 import type { Request, Response } from "express";
+import { toMajor } from "@clothing-brand/shared";
 import { asyncHandler } from "../../lib/async-handler";
-import { resolveCartLines } from "../orders/cart-lines";
+import { AppError } from "../../lib/app-error";
+import { bestCouponFor, quoteCart } from "../../domain/pricing/pricing.service";
 import * as couponService from "./coupon.service";
 
+/** Coupon preview, answered by the canonical quote (the client's `subtotal`, if sent, is ignored — never trusted). */
 export const validate = asyncHandler(async (req: Request, res: Response) => {
-  const { code, subtotal, items } = req.body;
-  const cartLines = items?.length ? (await resolveCartLines(items)).lines : undefined;
-  const { coupon, discount, freeShipping, eligibleProductIds } = await couponService.evaluateCoupon(code, subtotal, {
-    cartLines,
-    customerId: req.customer?.customerId,
+  const { code, items } = req.body as { code: string; items?: Array<{ variantId: string; quantity: number }> };
+  if (!items?.length) throw AppError.badRequest("This coupon can't be applied without your cart details");
+  const { quote } = await quoteCart({ items, couponCode: code, customerId: req.customer?.customerId ?? null });
+  const rejected = quote.rejectedPromotions.find((r) => r.kind === "COUPON");
+  if (rejected || !quote.coupon) throw AppError.badRequest(rejected?.message ?? "Coupon not found");
+  const coupon = await couponService.getCouponByCode(quote.coupon.code);
+  res.json({
+    code: quote.coupon.code,
+    type: quote.coupon.type,
+    value: coupon?.value ?? null,
+    discount: toMajor(quote.coupon.discount),
+    freeShipping: quote.coupon.freeShipping,
+    eligibleProductIds: quote.coupon.eligibleProductIds,
   });
-  res.json({ code: coupon.code, type: coupon.type, value: coupon.value, discount, freeShipping, eligibleProductIds });
 });
 
 export const active = asyncHandler(async (_req: Request, res: Response) => {
   res.json({ coupons: await couponService.listActiveCoupons() });
 });
 
+/** Best coupon suggestion — the same engine and the same stacking (after the bundle) as checkout. */
 export const best = asyncHandler(async (req: Request, res: Response) => {
-  const { subtotal, items } = req.body;
-  const cartLines = items?.length ? (await resolveCartLines(items)).lines : undefined;
-  const match = await couponService.findBestCoupon(subtotal, cartLines);
-  res.json({
-    result: match
-      ? {
-          code: match.coupon.code,
-          type: match.coupon.type,
-          value: match.coupon.value,
-          discount: match.discount,
-          freeShipping: match.freeShipping,
-        }
-      : null,
-  });
+  const { items } = req.body as { items?: Array<{ variantId: string; quantity: number }> };
+  if (!items?.length) return res.json({ result: null });
+  const priced = await bestCouponFor({ items, customerId: req.customer?.customerId ?? null });
+  const c = priced?.quote.coupon;
+  const coupon = c ? await couponService.getCouponByCode(c.code) : null;
+  res.json({ result: c ? { code: c.code, type: c.type, value: coupon?.value ?? null, discount: toMajor(c.discount), freeShipping: c.freeShipping } : null });
 });
 
 export const list = asyncHandler(async (req: Request, res: Response) => {

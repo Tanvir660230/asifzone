@@ -4,7 +4,8 @@ import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { isFlashSaleLive } from "@clothing-brand/shared";
-import { computeFlashPrice, liveFlashSaleWhere } from "./flash-sale-pricing";
+import { liveFlashSaleWhere } from "./flash-sale-pricing";
+import { priceProductsForDisplay } from "../../domain/pricing/pricing.service";
 import { PUBLIC_VARIANT_FIELDS } from "../products/product-public-select";
 
 const include = {
@@ -69,28 +70,33 @@ export async function getActiveFlashSaleForHomepage() {
   });
   if (!flashSale) return null;
 
+  // A trashed or unpublished product stays attached to the sale but is never advertised (or sold).
+  const items = flashSale.items.filter((item) => item.product.isActive && item.product.deletedAt === null);
+  // Prices from the canonical engine — variant prices, the stock limit and overlapping sales all respected; the feed
+  // shows exactly what the cart will charge.
+  const pricing = await priceProductsForDisplay(items.map((i) => i.product));
   return {
     ...flashSale,
-    // A trashed or unpublished product stays attached to the sale but is never advertised (or sold).
-    items: flashSale.items.filter((item) => item.product.isActive && item.product.deletedAt === null).map((item) => ({
-      ...item,
-      product: {
-        ...item.product,
-        activeFlashSale: {
-          flashSaleId: flashSale.id,
-          flashSaleName: flashSale.name,
-          endsAt: flashSale.endsAt,
-          // FlashSaleItem.discountType shares its Prisma enum with Coupon.type (which also allows
-          // FREE_SHIPPING), but addFlashSaleItemSchema restricts flash-sale items to PERCENTAGE/FIXED only.
-          discountType: item.discountType as "PERCENTAGE" | "FIXED",
-          discountValue: Number(item.discountValue),
-          flashPrice: computeFlashPrice(Number(item.product.basePrice), {
-            discountType: item.discountType as "PERCENTAGE" | "FIXED",
-            discountValue: Number(item.discountValue),
-          }),
+    items: items.map((item) => {
+      const p = pricing.get(item.product.id)!;
+      return {
+        ...item,
+        product: {
+          ...item.product,
+          pricing: p,
+          activeFlashSale: p.flash
+            ? {
+                flashSaleId: p.flash.flashSaleId,
+                flashSaleName: p.flash.name,
+                endsAt: p.flash.endsAt,
+                discountType: p.flash.discountType,
+                discountValue: p.flash.discountValue,
+                flashPrice: String(p.from),
+              }
+            : null,
         },
-      },
-    })),
+      };
+    }),
   };
 }
 

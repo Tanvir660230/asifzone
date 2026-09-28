@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
+import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import {
@@ -12,6 +13,15 @@ import {
   unlinkCourierBooking,
 } from "../courier/courier.service";
 
+/** The Idempotency-Key header (PRICING_INVARIANTS §11): printable, bounded, or absent. */
+function idempotencyKeyOf(req: Request): string | null {
+  const raw = req.get("Idempotency-Key");
+  if (!raw) return null;
+  const key = raw.trim();
+  if (!/^[!-~]{8,128}$/.test(key)) throw AppError.badRequest("Idempotency-Key must be 8–128 printable characters");
+  return key;
+}
+
 export const create = asyncHandler(async (req: Request, res: Response) => {
   // COD has no gateway step — the order is real (and collectable) the instant it's placed, exactly
   // as before. Every other payment method must NOT create an Order yet: initiatePendingPayment only
@@ -19,11 +29,11 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   // settlePaymentSession, only once the gateway confirms success — a failed/cancelled attempt never
   // produces an Order at all, only the Payment FAILED row that already serves as its payment log.
   if (req.body.paymentMethod === "COD") {
-    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null);
+    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { idempotencyKey: idempotencyKeyOf(req) });
     return res.status(201).json({ order });
   }
 
-  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip);
+  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req));
   res.status(201).json({ gatewayUrl });
 });
 
@@ -40,7 +50,7 @@ export const retryPayment = asyncHandler(async (req: Request, res: Response) => 
 // --- admin ---
 
 export const createManual = asyncHandler(async (req: Request, res: Response) => {
-  const order = await orderService.createManualOrder(req.body, req.admin!.adminId);
+  const order = await orderService.createManualOrder(req.body, req.admin!.adminId, idempotencyKeyOf(req));
   res.status(201).json({ order });
 });
 

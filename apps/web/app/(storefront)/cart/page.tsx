@@ -9,7 +9,8 @@ import type { BundleCartPreview, Product } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { ProductCarousel } from "@/components/storefront/product-carousel";
 import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
-import { useCartStore, useCartSubtotal } from "@/store/cart";
+import { useCartStore } from "@/store/cart";
+import { useCartQuote, quoteLineAmount } from "@/hooks/use-quote";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
@@ -22,7 +23,8 @@ export default function CartPage() {
   const items = useCartStore((s) => s.items);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
-  const subtotal = useCartSubtotal();
+  // Server quote — the only source of the money shown here.
+  const { data: quote } = useCartQuote();
   const { data: customerData } = useOptionalCustomer();
   const isLoggedIn = Boolean(customerData?.customer);
 
@@ -203,7 +205,10 @@ export default function CartPage() {
                       +
                     </button>
                   </div>
-                  <span className="text-sm text-ink-900">{formatPrice(item.price * item.quantity)}</span>
+                  <span className="text-sm text-ink-900">{(() => {
+                    const amount = quoteLineAmount(quote, item.variantId);
+                    return amount === null ? "…" : formatPrice(amount);
+                  })()}</span>
                 </div>
                 {isLoggedIn && (
                   <button
@@ -256,7 +261,7 @@ export default function CartPage() {
 
       <div className="mt-6 flex items-center justify-between">
         <span className="text-sm uppercase tracking-wide text-ink-500">Subtotal</span>
-        <span className="text-lg text-ink-900">{formatPrice(subtotal)}</span>
+        <span className="text-lg text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
       </div>
       <p className="mt-1 text-xs text-ink-400">Shipping and any discount are calculated at checkout.</p>
 

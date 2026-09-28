@@ -67,17 +67,20 @@ export interface SaleResult {
 }
 
 /** Takes an order's units out of stock (`ORDER` movements). Without `allowOversell`, any line short of stock
- * aborts the whole transaction with a 409; with it (a paid gateway settlement only), stock may go negative. */
+ * aborts the whole transaction with a 409; with it (a paid gateway settlement only), stock may go negative.
+ * D5: a product with trackInventory = false has unlimited availability — its units are still recorded (ledger and
+ * balance, for reporting) but never rejected, and never reported as oversold. */
 export async function recordSale(
   tx: Tx,
   orderId: string,
   items: Array<{ variantId: string; quantity: number }>,
-  opts: { allowOversell?: boolean } & Actor = {},
+  opts: { allowOversell?: boolean; untrackedVariantIds?: Set<string> } & Actor = {},
 ): Promise<SaleResult> {
   const oversold: string[] = [];
   const stockAfter = new Map<string, number>();
   // Distinct variant rows are independent — run the guarded decrements concurrently (checkout latency).
-  const results = await Promise.all(items.map((item) => applyDelta(tx, item.variantId, -item.quantity, true)));
+  const untracked = opts.untrackedVariantIds ?? new Set<string>();
+  const results = await Promise.all(items.map((item) => applyDelta(tx, item.variantId, -item.quantity, !untracked.has(item.variantId))));
   for (const [i, item] of items.entries()) {
     let after = results[i];
     if (after === null || after === undefined) {
