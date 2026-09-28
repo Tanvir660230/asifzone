@@ -508,7 +508,14 @@ orders keep NULLs where history was never recorded. Registry: [SSOT_REGISTRY.md]
 **Stale prices.** Clients send `quoteToken`. A changed quote at order time → 409 `QUOTE_CHANGED` with the new quote.
 The flash quota is re-checked under row locks. `Idempotency-Key` makes order creation retry-safe.
 
-**Not in Phase 2 (recorded):** `minSellingPrice` projection for filter/sort (PRICING_INVARIANTS §12); zone/rate admin
+**Tax ⇄ shipping** is specified as a dependency graph ([PRICING_PIPELINE.md §1a](PRICING_PIPELINE.md)): merchandise tax
+depends on merchandise only, shipping tax on the resolved shipping charge only, aggregated once; the total is computed
+once by `computeOrderTotals`.
+
+**Phase 3 / read-model follow-up:** *Create canonical Product.minSellingPrice projection/read model* (storefront
+filter/sort and similar-price recommendations still read `basePrice`; they never determine a charged price).
+
+**Not in Phase 2 (recorded):** the `minSellingPrice` projection above (PRICING_INVARIANTS §12); zone/rate admin
 UI; configurable rounding policy (`CommerceSettings`); coupon `usedCount` drift report; invoices and analytics
 switching to the tax snapshot (Phase 5 metrics).
 

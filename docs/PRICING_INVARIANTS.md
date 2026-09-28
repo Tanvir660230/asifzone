@@ -64,8 +64,25 @@ engine (`inclusiveTaxOf`) and returns paisa (e.g. VAT in 1000 at 15 % = 130.43, 
 - PI-4.1 An offer is live iff `sale.enabled ∧ startsAt ≤ now ≤ endsAt` (Phase 1 lifecycle; `isActive` is a cache).
 - PI-4.2 Deterministic selection among live offers with remaining units: lowest price for the customer, then earliest
   `endsAt`, then smallest `flashSaleItemId`.
-- PI-4.3 Units sold under an offer = Σ (`OrderItem.quantity − restockedQuantity`) over order items attributed to that
-  `flashSaleItemId`. **Interpretation (recorded):** units returned or cancelled back to stock free their flash quota.
+- PI-4.3 **Quota = currently consumed eligible units** (approved rule, BUSINESS_DECISIONS D4 clarification
+  2026-09-29): consumed units of an offer = Σ (`OrderItem.quantity − restockedQuantity`) over order lines attributed to
+  that `flashSaleItemId`. Remaining = `stockLimit − consumed`. It is derived from order-line attribution only — never
+  inferred from current `FlashSale`/`FlashSaleItem` rows and never kept in a separate mutable counter.
+  - A unit consumes quota from order creation, and keeps consuming it through fulfilment: a completed sale stays
+    consumed.
+  - **Cancellation before fulfilment** (T6 from a pre-shipment status, or `SHIPPED → CANCELLED` when the parcel comes
+    back undelivered; trashing a pre-shipment order) puts the unit back in stock and releases its quota.
+  - **Returns** release quota only per the return policy: when the returned unit is received back into stock — the
+    `RETURNED` transition (T7), partial-delivery reconciliation, or an approved exchange's return of the original item.
+    A refund without the goods coming back releases nothing.
+  - Restoring a trashed order from Trash re-consumes its units (the order keeps its historical price; while
+    consumption is at or above the limit no new flash units are sold).
+  - Released quota is available to a new customer's quote/order only after the release has happened; order creation
+    re-checks it under lock (PI-4.5).
+- PI-4.3a **History is permanent:** an order line's `flashSaleId`, `flashSaleItemId`, `priceSnapshot` and
+  `listPriceSnapshot` are written once and never changed — not by cancellation, return, refund, or by editing,
+  disabling or deleting the sale (`OrderItem.flashSaleItemId` has no foreign key, so deleting a sale can't null it).
+  Releasing quota changes only future availability; it never reprices an existing order.
 - PI-4.4 `stockLimit` is enforced per unit: a line is split into segments (flash units up to the remaining quota,
   then list-price units), and each segment becomes its own `OrderItem` row with `flashSaleId`/`flashSaleItemId`
   attribution. **Interpretation:** when overlapping sales cover a product, exhausted units fall back to the list
@@ -77,7 +94,11 @@ engine (`inclusiveTaxOf`) and returns paisa (e.g. VAT in 1000 at 15 % = 130.43, 
 - PI-4.6 Pricing never writes inventory: flash attribution is read from order lines; stock movements remain the
   inventory service's (INVENTORY_INVARIANTS INV-1).
 
-Tests: `pricing.integration.test.ts` (D4 split, cancel/return frees quota, concurrent orders), engine tests.
+Tests (`pricing.integration.test.ts`, *flash-sale stock limit (D4)* and *flash-sale quota lifecycle*): a sale consumes
+quota; exhaustion prices further units at the regular price; cancellation releases quota; a return releases it only
+when the goods come back (a refund alone does not); historical orders keep their attribution and price after the sale
+is edited, disabled and deleted; a later quote and a later customer's order use the released quota; concurrent orders
+cannot exceed the quota. Engine tests: limit not reached / exact / exceeded, shared across lines.
 
 ## §5 Tax (D3, D10)
 
@@ -144,9 +165,24 @@ at initiation):
 - PI-9.3 D6 exchange: the replacement is quoted at the current effective price (flash only; no bundle/coupon/shipping);
   what the customer paid for the returned units is read from the original line snapshot net of its allocations
   (pre-Phase-2 lines: plain line value). Difference > 0 → the exchange order's COD total; < 0 → a `REQUESTED` Refund.
-- PI-9.4 D8 loyalty base = `max(0, subtotal − discount)` from the snapshot (merchandise after discounts, excluding
-  shipping, tax-exclusive adjustments and the admin price adjustment — **interpretation recorded**). Awarded on delivery;
-  fully reversed on return (T7); reversed proportionally (refund / loyalty base) on a refund; never below zero.
+- PI-9.4 **D8 rewardable merchandise value** (approved rule, BUSINESS_DECISIONS D8):
+
+  ```text
+  rewardable = merchandise subtotal − bundle discounts − coupon discounts        (never below zero)
+  ```
+
+  Excluded: shipping, shipping VAT, tax itself, the admin price adjustment. The one implementation is
+  `rewardableMerchandiseValue` (`packages/shared/src/engines/loyalty.ts`); its only inputs are `Order.subtotal`,
+  `bundleDiscount` and `couponDiscount` from the order snapshot, so excluded amounts cannot enter it. `loyaltyBase`
+  (customer.service) is its only caller-facing wrapper. Pre-Phase-2 orders use the backfilled coupon split
+  (`discount − bundleDiscount`). An exchange replacement order also subtracts its exchange credit: the credit is
+  the returned item's value, and that value was already rewarded on the original order.
+  Points = ⌊rewardable × `rewardPointsPerCurrency`⌋, awarded once on delivery. Reversal: a return (T7) reverses all
+  of the order's points; a refund reverses `min(1, refund ÷ rewardable)` of them (a refund counts against merchandise
+  first). Total reversal is capped at what was earned, and the balance never goes below zero.
+  Tests: engine *rewardable merchandise value (D8)*; integration *loyalty points (D8)*, which uses exclusive VAT,
+  taxable shipping and a +500 admin adjustment. It earns exactly (1000 − 200) × 0.1 = 80, and a refund of half the
+  rewardable value reverses 40.
 - PI-9.5 D7: a transition flagged `releasesCouponUsage` (cancellation from a pre-shipment state) decrements
   `Coupon.usedCount` once (guarded by `couponReleasedAt`) and stamps `couponReleasedAt`; per-customer redemption counts
   exclude released orders.
@@ -209,10 +245,10 @@ authorities.
 | product/search/suggestion/homepage/flash feed/reorder reads | `priceProductsForDisplay` | CANONICAL consumers |
 | admin coupon form preview | runs `evaluateCoupon` on a sample line | CANONICAL consumer (illustration) |
 | invoices, order views, admin order panel, account orders (`priceSnapshot × quantity`) | line totals of a placed order | HISTORICAL SNAPSHOT (display) |
-| `customer.service.loyaltyBase` | `subtotal − discount` of a snapshot | HISTORICAL SNAPSHOT |
+| `engines/loyalty.ts` `rewardableMerchandiseValue` (via `customer.service.loyaltyBase`) | D8 over snapshot fields | CANONICAL (D8) |
 | web `pricing-display.ts`, `formatPrice` everywhere | formats server numbers | DISPLAY/FORMATTING |
 | admin product list/picker/CSV/audit/duplicate, wishlist `priceAtAdd`, price-drop notice | the stored list price as a catalog attribute | DISPLAY (list price is the fact shown) |
-| storefront price filter/sort/facets, similar-price recommendations | `basePrice` | DUPLICATE (known) — needs a `minSellingPrice` projection (TARGET_ARCHITECTURE §5.1); not changed in Phase 2 |
+| storefront price filter/sort/facets, similar-price recommendations | `basePrice` | DUPLICATE (known, non-charging) — **Phase 3 / read-model follow-up: "Create canonical Product.minSellingPrice projection/read model."** Not implemented in Phase 2 |
 | JSON-LD `shippingDetails` | legacy `StoreSetting.shippingFee*` mirrors (dual-written, drift-checked) | DISPLAY of a mirror |
 | `getEstimatedTaxCollected`, abandoned-cart `potentialRevenue` | analytics estimates | see §9 PI-9.6 |
 | admin wizard live preview | typed-in values of an unsaved product | DISPLAY |

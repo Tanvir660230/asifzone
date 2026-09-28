@@ -60,6 +60,20 @@ decided, and the owner may overrule any of them with a new dated entry.
   Phase 2 must add an additive order-line snapshot of the applied promotion (one field, written at order creation)
   and count against it; it must not add a separate mutable counter without a registered reconciliation.
   A cart line crossing the limit is split into flash-priced and regular-priced units.
+- **Clarification — quota release (approved 2026-09-29, Phase 2 sign-off):**
+  - The flash-sale quota represents the **currently consumed** eligible units: order lines attributed to the sale
+    item, minus units that have come back into stock.
+  - Cancellation before fulfilment releases the consumed quota. This covers cancellation from a pre-shipment
+    status, an undelivered parcel cancelled back from `SHIPPED`, and trashing a pre-shipment order.
+  - Returned units release the quota only per the return policy, i.e. when they are received back into stock
+    (`RETURNED`, partial-delivery reconciliation, an approved exchange). A refund without the goods coming back does
+    not release quota.
+  - Completed sales are never rewritten. A historical order keeps its original flash-sale attribution and price
+    forever, even if the sale is later edited, disabled or deleted.
+  - A new customer can receive a flash-sale allocation only after quota has actually been released. Order creation
+    re-checks the quota under a row lock.
+  - Usage is derived from order-line attribution. It is never inferred from current `FlashSale` rows.
+  Invariant: [PRICING_INVARIANTS.md](PRICING_INVARIANTS.md) PI-4.3, PI-4.3a.
 
 ## D5 — Inventory not tracked
 - **Decision:** `trackInventory = false` means unlimited sellable availability. Checkout must not reject a purchase
@@ -90,7 +104,17 @@ decided, and the owner may overrule any of them with a new dated entry.
 - **Approved:** 2026-09-28 · **Status:** APPROVED · IMPLEMENTED (Phase 2) · **Implementation:** Phase 2 (loyalty effect of the DELIVERED and
   RETURNED/refund transitions).
 - **Authority:** the `RewardPointsEntry` ledger (existing; reversals are negative entries linked to the order).
-  The earning base is computed from order snapshots (`Σ priceSnapshot × qty − discount`), never from `Order.total`.
+  The earning base is computed from order snapshots, never from `Order.total`.
+- **Rewardable merchandise value (explicit rule, confirmed 2026-09-29):**
+
+  ```text
+  Merchandise subtotal − bundle discounts − coupon discounts
+  ```
+
+  Excluded: shipping, shipping VAT, tax itself, and the admin price adjustment. Points are calculated from this
+  canonical value (`rewardableMerchandiseValue`); returns and refunds reverse the corresponding points. Invariant:
+  [PRICING_INVARIANTS.md](PRICING_INVARIANTS.md) PI-9.4. This is consistent with the original wording. For a
+  pre-Phase-2 order, `Σ priceSnapshot × qty − discount` equals the same value, since `discount` = bundle + coupon.
 
 ## D9 — Bundle and coupon stacking
 - **Decision:** The bundle discount is calculated first; the coupon discount is then calculated on the resulting
@@ -130,14 +154,14 @@ All registered in [SSOT_REGISTRY.md](SSOT_REGISTRY.md) (B2, B4).
 
 | Decision | Interpretation | Why |
 |---|---|---|
-| D4 | Units cancelled or returned back to stock free their flash quota (sold = quantity − restockedQuantity). | Otherwise a cancelled order would permanently consume promotional stock that is physically back. |
+| D4 | Quota release on cancellation/return — **now an approved rule** (see the D4 clarification above). | Approved at Phase 2 sign-off, 2026-09-29. |
 | D4 | With overlapping sales on one product, units beyond the chosen sale's limit fall back to the **list** price, not to another sale's price. | One offer per line keeps attribution to one sale per segment. Rare configuration. |
 | D4 | A gateway payment that succeeds after the limit ran out is still settled at the price paid (may exceed the limit). | The customer has paid; refusing would need a refund flow. Admin alert as for stock oversell. |
 | D5 | Untracked lines are capped at 20 units per line (`MAX_LINE_QUANTITY`, the existing checkout limit). | Existing schema limit, not a stock rule. |
 | D6 | "What the customer paid" = the returned line's snapshot price × quantity minus its allocated bundle and coupon discounts. Pre-Phase-2 lines have no allocation, so their plain line value is used. Shipping is not part of an exchange. | Exchange compares merchandise value to merchandise value. |
 | D7 | Release happens on the transition out of a pre-shipment status (`PENDING`, `CONFIRMED`, `PROCESSING`, `PACKED`) to `CANCELLED`. Historical cancellations are not retroactively released. | Decision text. No historical rewrite (rule 5). |
-| D8 | Loyalty base = `subtotal − discount` from the order snapshot. It excludes shipping, and it also excludes the admin price adjustment and any exclusive-mode tax. A return (T7) reverses all of the order's delivery points. A refund reverses them in proportion (refund ÷ loyalty base, capped at what was awarded). | "Merchandise after applicable discounts". A price adjustment is not a discount rule. |
+| D8 | The formula is now explicit and approved (see D8). Remaining interpretations: (a) an exchange replacement also subtracts its exchange credit, because that value was already rewarded on the original order; (b) a refund counts against merchandise first, reversing `min(1, refund ÷ rewardable)` of the points; (c) a return (T7) reverses all of the order's points. | (a) prevents rewarding the same merchandise twice. (b) and (c) follow from "reversed when returned or refunded". |
 | D9 | The coupon's `minOrderAmount` is compared with merchandise **after** the bundle. | Same base as the coupon discount itself. |
-| D10 | Shipping is resolved before tax so its VAT can be computed on the fee actually charged. Merchandise VAT is unaffected by the order. | See PRICING_PIPELINE §1 note. |
+| D10 | Shipping is resolved before tax so its VAT can be computed on the fee actually charged. Merchandise VAT is unaffected by the order. | See PRICING_PIPELINE §1a (dependency graph). |
 | D3 | `Product.taxRate` remains unused; tax uses the store rate only. | No decision asks for per-product rates. |
 

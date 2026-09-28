@@ -3,6 +3,11 @@ import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { OAuth2Client } from "google-auth-library";
 import {
+  clampNonNegative,
+  fromMajor,
+  rewardableMerchandiseValue,
+  subtract,
+  toMajor,
   renderCustomerSmsTemplate,
   looksLikeFakePhone,
   normalizeBdPhone,
@@ -948,10 +953,20 @@ export async function sendBulkSmsToCustomers(customerIds: string[], body: string
   return { sent, failed, skipped: customers.length - withPhone.length };
 }
 
-/** D8: the loyalty base of an order — merchandise after discounts, excluding shipping and the admin price adjustment —
- * read from the order's own snapshot (subtotal − discount), never recomputed from current prices. */
-export function loyaltyBase(order: { subtotal: unknown; discount: unknown }): number {
-  return Math.max(0, Number(order.subtotal) - Number(order.discount));
+/** D8: the order's rewardable merchandise value (`rewardableMerchandiseValue`, PRICING_INVARIANTS PI-9.4) from its own
+ * snapshot: subtotal − bundle discount − coupon discount (− exchange credit on an exchange replacement order). Shipping,
+ * shipping VAT, tax and the admin price adjustment are not inputs, so they can never be rewarded. */
+export function loyaltyBase(
+  order: { subtotal: unknown; discount: unknown; bundleDiscount: unknown; couponDiscount: unknown | null },
+  currency: string,
+): number {
+  const m = (v: unknown) => fromMajor(String(v ?? 0), currency);
+  const bundle = m(order.bundleDiscount);
+  // Pre-Phase-2 rows without a coupon split: the coupon's share is the rest of `discount` (the migration backfill rule).
+  const coupon = order.couponDiscount === null || order.couponDiscount === undefined ? clampNonNegative(subtract(m(order.discount), bundle)) : m(order.couponDiscount);
+  // Whatever `discount` holds beyond bundle + coupon is an exchange replacement's credit (see return-request.service).
+  const exchangeCredit = clampNonNegative(subtract(subtract(m(order.discount), bundle), coupon));
+  return toMajor(rewardableMerchandiseValue({ subtotal: m(order.subtotal), bundleDiscount: bundle, couponDiscount: coupon, exchangeCredit }));
 }
 
 /** Awards points for a delivered order — idempotent per order, so re-marking DELIVERED (e.g. after an

@@ -31,11 +31,36 @@ List Price → Variant Price → Flash Sale (D4 stock limit, line split) → Sub
 
 All steps run in integer minor units (`Money`). Rounding policy: PRICING_INVARIANTS §2.
 
-**Order note (tax vs shipping).** The approved target lists `… Coupon → Tax → Shipping → Final Total`. Merchandise
-tax is computed on merchandise after bundle and coupon, exactly as listed; it doesn't depend on shipping. Shipping VAT
-(D10) has to be computed on the fee actually charged, so the engine resolves shipping first and then runs one
-`computeTax` over both parts. The merchandise VAT is the same either way. The only effect of the ordering is that
-shipping VAT exists at all.
+### 1a. Dependency graph (tax ⇄ shipping)
+
+The approved business sequence is `List → Variant → Flash → Bundle → Coupon → Tax → Shipping → Total`. What the
+engine guarantees is the **business result and the data dependencies** below, not a literal execution order:
+
+```
+ list/variant price ─► flash ─► subtotal ─► bundle ─► coupon ─► merchandise after discounts ──┬──► MERCHANDISE TAX
+                                                                                               │   (merchandise only)
+ address + zones + coupon FREE_SHIPPING + merchandise after discounts (free-over) ──► SHIPPING  │
+                                                            RESOLUTION ─► shipping charged ───┼──► SHIPPING TAX (D10)
+                                                                                               │   (shipping charge only)
+                                                              TAX AGGREGATION (one computeTax) ◄┘
+                                                                        │
+                    computeOrderTotals (OrderTotalsEngine) — the final total, computed once
+```
+
+1. Merchandise pricing and merchandise tax are one concern: merchandise VAT depends only on merchandise after bundle
+   and coupon discounts, never on shipping.
+2. Shipping resolution (zone, fee, waiver) determines the actual shipping charge.
+3. Shipping tax depends only on that resolved charge (0 when waived or unresolved), under the central tax
+   configuration (`TaxSetting.shippingTaxable`, `shippingRate`).
+4. Tax aggregation (`computeTax`, the only tax calculation) therefore runs after shipping resolution, over the two
+   independent parts. There is no second tax calculation anywhere.
+5. The final total is computed once, by `computeOrderTotals`, from subtotal, discounts, shipping charged, tax added
+   (exclusive mode only) and any price adjustment.
+
+Tests (`apps/api/src/lib/pricing-engines.test.ts`, *tax ⇄ shipping dependency*): merchandise tax is the same for any
+shipping fee; shipping VAT is correct on the resolved charge (0 when waived or unresolved); changing the shipping fee
+changes only the shipping-tax component (inclusive and exclusive modes); the final total is deterministic and equals
+`computeOrderTotals` over the quote's parts.
 
 ## 2. Consumers (all on the one pipeline)
 
@@ -69,8 +94,13 @@ Phase 1's D2 (bundle on the post-flash price) is preserved. Rounding changed onl
 `taxIncludedIn` now returns paisa (130.43, not 130.4348). Prices charged are otherwise identical to Phase 1 for carts
 without the D4/D9 situations — covered by the PDP = quote = order test in `pricing.integration.test.ts`.
 
-## 4. Known remaining duplicate
+## 4. Known remaining duplicate — Phase 3 / read-model follow-up
 
-Storefront price **filter/sort/facets** and similar-price recommendations still use `Product.basePrice`. Replacing
-them needs a maintained `minSellingPrice` projection (TARGET_ARCHITECTURE §5.1) — deferred, recorded in
-PRICING_INVARIANTS §12. They affect ordering/filtering only, never an amount shown or charged.
+Storefront price **filter/sort/facets** and similar-price recommendations still use `Product.basePrice`. They affect
+ordering and filtering only, never an amount shown or charged, so they do not block Phase 2. Recorded follow-up:
+
+```text
+Create canonical Product.minSellingPrice projection/read model.
+```
+
+(Phase 3 / read-model work; not implemented in Phase 2. See PRICING_INVARIANTS §12, TARGET_ARCHITECTURE §5.1.)

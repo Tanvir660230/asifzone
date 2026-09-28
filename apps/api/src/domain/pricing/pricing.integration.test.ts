@@ -283,6 +283,61 @@ describe("flash-sale stock limit (D4)", () => {
   });
 });
 
+describe("flash-sale quota lifecycle (D4, PRICING_INVARIANTS §4)", () => {
+  const line = (items: Array<{ priceSnapshot: unknown; flashSaleItemId: string | null }>) => items.map((i) => [Number(i.priceSnapshot), i.flashSaleItemId]);
+
+  it("consumed → exhausted (regular price) → released by cancellation → re-sold to a later customer; history never changes", async () => {
+    const { product, variants } = await createStockedProduct({ stocks: [20], basePrice: 1000 });
+    const v = variants[0]!.id;
+    const sale = await flashSale(product.id, { discountValue: 20, stockLimit: 1 });
+    const itemId = sale.items[0]!.id;
+
+    const first = await placeOrder([{ variantId: v, quantity: 1 }], { customerPhone: "01755500001" });
+    expect(line(first.items)).toEqual([[800, itemId]]); // 1. the sale consumes the quota
+    const second = await placeOrder([{ variantId: v, quantity: 1 }], { customerPhone: "01755500002" });
+    expect(line(second.items)).toEqual([[1000, null]]); // 2. exhausted → regular price
+
+    await updateOrderStatus(first.id, { status: "CANCELLED" }, admin); // 3. cancellation releases it
+    const later = (await quote({ items: [{ variantId: v, quantity: 1 }], shippingDistrict: "Dhaka" })).body.quote;
+    expect([later.lines[0].segments[0].flash?.flashSaleItemId, later.subtotal]).toEqual([itemId, 800]); // 6. a later quote can use it
+    const third = await placeOrder([{ variantId: v, quantity: 1 }], { customerPhone: "01755500003" });
+    expect(line(third.items)).toEqual([[800, itemId]]);
+
+    // 5. Historical orders keep their attribution and price, whatever happens to the sale afterwards (edited, switched
+    // off, deleted) — usage is never inferred from the current FlashSale rows.
+    await prisma.flashSaleItem.update({ where: { id: itemId }, data: { discountValue: 50 } });
+    await prisma.flashSale.update({ where: { id: sale.id }, data: { enabled: false, isActive: false } });
+    await prisma.flashSale.delete({ where: { id: sale.id } });
+    const history = await prisma.orderItem.findMany({
+      where: { orderId: { in: [first.id, second.id, third.id] } },
+      select: { orderId: true, priceSnapshot: true, listPriceSnapshot: true, flashSaleId: true, flashSaleItemId: true },
+    });
+    const byOrder = (id: string) => history.filter((h) => h.orderId === id).map((h) => [Number(h.priceSnapshot), Number(h.listPriceSnapshot), h.flashSaleId, h.flashSaleItemId]);
+    expect(byOrder(first.id)).toEqual([[800, 1000, sale.id, itemId]]);
+    expect(byOrder(second.id)).toEqual([[1000, 1000, null, null]]);
+    expect(byOrder(third.id)).toEqual([[800, 1000, sale.id, itemId]]);
+    const totals = await prisma.order.findMany({ where: { id: { in: [first.id, third.id] } }, select: { subtotal: true, flashDiscount: true } });
+    for (const t of totals) expect([Number(t.subtotal), Number(t.flashDiscount)]).toEqual([800, 200]);
+  });
+
+  it("4. a return releases the quota only when the goods come back; a refund alone does not", async () => {
+    const { product, variants } = await createStockedProduct({ stocks: [20], basePrice: 1000 });
+    const v = variants[0]!.id;
+    await flashSale(product.id, { discountValue: 20, stockLimit: 1 });
+    const flashOf = async () => (await quote({ items: [{ variantId: v, quantity: 1 }], shippingDistrict: "Dhaka" })).body.quote.lines[0].segments[0].flash;
+
+    const order = await placeOrder([{ variantId: v, quantity: 1 }], { customerPhone: "01755500004" });
+    await updateOrderStatus(order.id, { status: "DELIVERED" }, admin);
+    expect(await flashOf()).toBeNull(); // a completed sale keeps consuming the quota
+    await refundOrderPayment(order.id, { amount: 100 }, admin); // money back, goods not back
+    expect(await flashOf()).toBeNull();
+    await updateOrderStatus(order.id, { status: "RETURNED" }, admin); // goods back in stock
+    expect((await flashOf())?.remaining).toBe(1);
+    const kept = await prisma.orderItem.findMany({ where: { orderId: order.id } });
+    expect(kept.map((i) => [Number(i.priceSnapshot), i.flashSaleItemId !== null, i.returnedQuantity])).toEqual([[800, true, 1]]);
+  });
+});
+
 describe("promotion order and coupons (D9, D7)", () => {
   it("coupon after bundle: 10% of what remains after the bundle discount", async () => {
     const anchorCat = await prisma.category.create({
@@ -658,5 +713,34 @@ describe("loyalty points (D8)", () => {
       _sum: { points: true },
     });
     expect(net._sum.points).toBe(0);
+  });
+  it("the rewardable value can't include shipping, shipping VAT, tax or the admin price adjustment", async () => {
+    await prisma.storeSetting.update({ where: { id: "singleton" }, data: { rewardPointsPerCurrency: 0.1 } });
+    try {
+      // Exclusive VAT so tax visibly adds to the total, shipping taxable (D10), and an admin adjustment on top.
+      await prisma.taxSetting.update({ where: { id: "singleton" }, data: { enabled: true, mode: "EXCLUSIVE", defaultRate: 15, shippingTaxable: true } });
+      const { variants } = await createStockedProduct({ stocks: [5], basePrice: 1000 });
+      const cp = await coupon({ type: "FIXED", value: 200 });
+      const placed = await placeOrder([{ variantId: variants[0]!.id, quantity: 1 }], { couponCode: cp.code, customerPhone: "01744400001" });
+      await adjustOrderPrice(placed.id, { priceAdjustment: 500, note: null }, admin);
+      const order = await prisma.order.findUniqueOrThrow({ where: { id: placed.id } });
+      expect(Number(order.shippingFee)).toBeGreaterThan(0);
+      expect([Number(order.taxAmount), Number(order.shippingTaxAmount) > 0]).toEqual([120 + Number(order.shippingTaxAmount), true]);
+      expect(Number(order.total)).toBe(800 + Number(order.shippingFee) + Number(order.taxAmount) + 500);
+
+      await updateOrderStatus(order.id, { status: "DELIVERED" }, admin);
+      const earned = await prisma.rewardPointsEntry.findFirstOrThrow({ where: { orderId: order.id, reason: "order_delivered" } });
+      expect(earned.points).toBe(80); // (1000 − 200) × 0.1 — not the total (1000+ with shipping, VAT and adjustment)
+
+      await refundOrderPayment(order.id, { amount: 400 }, admin); // half the rewardable value
+      const net = await prisma.rewardPointsEntry.aggregate({ where: { orderId: order.id }, _sum: { points: true } });
+      expect(net._sum.points).toBe(40);
+    } finally {
+      if (originalTax)
+        await prisma.taxSetting.update({
+          where: { id: "singleton" },
+          data: { enabled: originalTax.enabled, mode: originalTax.mode, defaultRate: originalTax.defaultRate, shippingTaxable: originalTax.shippingTaxable },
+        });
+    }
   });
 });

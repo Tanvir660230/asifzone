@@ -16,6 +16,7 @@ import {
   quoteFingerprint,
   resolveShipping,
   resolveUnitPrice,
+  rewardableMerchandiseValue,
   selectFlashOffer,
   toMajor,
   type BundleRule,
@@ -368,5 +369,79 @@ describe("determinism", () => {
     const q2 = buildQuote(inputs({ variants: [variant({ offers: [o2, o1] })] }));
     expect(JSON.stringify(q1)).toBe(JSON.stringify(q2));
     expect(evaluateBundles([], [], "BDT", R)).toEqual({ applied: null, nearMiss: null, candidates: [] });
+  });
+});
+
+// PRICING_PIPELINE §1a — the tax/shipping dependency graph: merchandise tax depends only on merchandise after
+// discounts; shipping tax depends only on the resolved shipping charge; both are aggregated once, after shipping is
+// resolved; the total is computed once by computeOrderTotals.
+describe("tax ⇄ shipping dependency (D3, D10)", () => {
+  const vat = (over: Partial<TaxConfig> = {}): TaxConfig => ({ enabled: true, mode: "INCLUSIVE", ratePct: 15, shippingTaxable: true, shippingRatePct: null, ...over });
+  const zones = (fee: number): ShippingZoneRule[] => ZONES.map((z) => ({ ...z, fee: T(fee) }));
+  const q = (fee: number, tax = vat(), extra: Partial<QuoteInputs> = {}) =>
+    buildQuote(inputs({ variants: [variant({ basePrice: T(1150) })], shippingZones: zones(fee), tax, ...extra }));
+
+  it("merchandise tax is correct and does not depend on shipping", () => {
+    for (const fee of [0, 60, 115, 300]) {
+      const t = q(fee).tax;
+      expect([toMajor(t.merchandise.taxAmount), toMajor(t.merchandise.taxableAmount)]).toEqual([150, 1000]);
+    }
+    // After a coupon: merchandise tax follows merchandise after discounts only.
+    const withCoupon = q(60, vat(), { coupon: { code: "SAVE", rule: coupon({ type: "FIXED", value: 115 }) } });
+    expect(toMajor(withCoupon.tax.merchandise.taxAmount)).toBe(135); // VAT inside 1035
+  });
+
+  it("shipping VAT is computed on the resolved shipping charge", () => {
+    expect(toMajor(q(115).tax.shipping.taxAmount)).toBe(15); // 115 × 15 / 115
+    expect(toMajor(q(60).tax.shipping.taxAmount)).toBe(7.83);
+    // A waived fee carries no VAT (the charge is 0).
+    const free = q(115, vat(), { coupon: { code: "SHIP", rule: coupon({ type: "FREE_SHIPPING", value: null }) } });
+    expect([free.shipping.resolved && toMajor(free.shipping.charged), toMajor(free.tax.shipping.taxAmount)]).toEqual([0, 0]);
+    // No address → no shipping charge → no shipping VAT; merchandise VAT still correct.
+    const none = q(115, vat(), { address: null });
+    expect([toMajor(none.tax.shipping.taxAmount), toMajor(none.tax.merchandise.taxAmount)]).toEqual([0, 150]);
+  });
+
+  it("changing the shipping fee changes only the shipping-tax component", () => {
+    for (const mode of ["INCLUSIVE", "EXCLUSIVE"] as const) {
+      const a = q(60, vat({ mode }));
+      const b = q(115, vat({ mode }));
+      expect(b.tax.merchandise).toEqual(a.tax.merchandise);
+      expect(b.tax.shipping.taxAmount).not.toEqual(a.tax.shipping.taxAmount);
+      expect(b.tax.taxAmount.amount - a.tax.taxAmount.amount).toBe(b.tax.shipping.taxAmount.amount - a.tax.shipping.taxAmount.amount);
+      expect([b.subtotal, b.discount, b.merchandiseTotal]).toEqual([a.subtotal, a.discount, a.merchandiseTotal]);
+    }
+  });
+
+  it("the final total is deterministic and equals the one totals formula", () => {
+    for (const mode of ["INCLUSIVE", "EXCLUSIVE"] as const) {
+      const a = q(60, vat({ mode }));
+      expect(JSON.stringify(q(60, vat({ mode })))).toBe(JSON.stringify(a));
+      const charged = a.shipping.resolved ? a.shipping.charged : T(0);
+      const once = computeOrderTotals({ subtotal: a.subtotal, bundleDiscount: a.bundleDiscount, couponDiscount: a.couponDiscount, shippingCharged: charged, taxAdded: a.tax.addedToTotal, priceAdjustment: T(0) });
+      expect(a.total).toEqual(once.total);
+    }
+    // Inclusive: tax never changes the total. Exclusive: merchandise VAT (150 on 1150) + shipping VAT (9 on 60) added once.
+    expect(toMajor(q(60).total)).toBe(1210);
+    expect(toMajor(q(60, vat({ mode: "EXCLUSIVE" })).total)).toBe(1150 + 60 + 172.5 + 9);
+  });
+});
+
+describe("rewardable merchandise value (D8)", () => {
+  it("subtotal − bundle − coupon, never below zero", () => {
+    expect(toMajor(rewardableMerchandiseValue({ subtotal: T(1500), bundleDiscount: T(100), couponDiscount: T(140) }))).toBe(1260);
+    expect(toMajor(rewardableMerchandiseValue({ subtotal: T(100), bundleDiscount: T(80), couponDiscount: T(80) }))).toBe(0);
+  });
+  it("an exchange replacement is rewarded only on value beyond the credited returned item", () => {
+    expect(toMajor(rewardableMerchandiseValue({ subtotal: T(1200), bundleDiscount: T(0), couponDiscount: T(0), exchangeCredit: T(1000) }))).toBe(200);
+  });
+  it("a quote's shipping, tax and totals are not inputs: the value is the same whatever they are", () => {
+    const vatCfg: TaxConfig = { enabled: true, mode: "EXCLUSIVE", ratePct: 15, shippingTaxable: true, shippingRatePct: null };
+    const values = [inputs(), inputs({ tax: vatCfg }), inputs({ address: { district: "Sylhet" }, tax: vatCfg })].map((i) => {
+      const quote = buildQuote({ ...i, coupon: { code: "SAVE", rule: coupon({ type: "FIXED", value: 200 }) } });
+      expect(quote.total.amount).toBeGreaterThan(0);
+      return toMajor(rewardableMerchandiseValue({ subtotal: quote.subtotal, bundleDiscount: quote.bundleDiscount, couponDiscount: quote.couponDiscount }));
+    });
+    expect(values).toEqual([800, 800, 800]);
   });
 });

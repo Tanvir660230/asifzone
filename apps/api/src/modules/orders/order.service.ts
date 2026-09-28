@@ -1081,7 +1081,7 @@ export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, 
 
   // D8: points on merchandise after discounts, excluding shipping (and the admin adjustment) — from the order snapshot.
   if (rule.awardPoints && order.customerId) {
-    await awardDeliveryPoints(order.customerId, order.id, loyaltyBase(order)).catch((err) =>
+    await awardDeliveryPoints(order.customerId, order.id, loyaltyBase(order, (await getSettings()).currency || "BDT")).catch((err) =>
       console.error(`[loyalty] points for ${order.orderNumber} failed:`, err),
     );
   }

@@ -11,6 +11,7 @@ import { sendPaymentConfirmationEmail } from "../../lib/order-mailer";
 import { applyOrderTransition, deriveOrderPricing, insertOrderRecord, type OrderItemSnapshot, type OrderPricingSnapshot } from "../orders/order.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loyaltyBase, reverseDeliveryPoints } from "../customers/customer.service";
+import { getSettings } from "../settings/settings.service";
 import { initEpsSession, verifyEpsTransaction } from "./eps.service";
 import { initSslcommerzSession } from "./sslcommerz.service";
 
@@ -566,7 +567,8 @@ export async function refundOrderPayment(
   // D8: reverse the loyalty points on the refunded share of the merchandise (capped at what the order earned, so a
   // refund after a return that already reversed them takes nothing more).
   if (order.customerId) {
-    const base = loyaltyBase(order);
+    // A refund is attributed to merchandise first (PI-9.4): fraction = refund ÷ rewardable value, capped at 1.
+    const base = loyaltyBase(order, (await getSettings()).currency || "BDT");
     if (base > 0) {
       await reverseDeliveryPoints(order.customerId, order.id, input.amount / base).catch((err) =>
         console.error(`[loyalty] refund reversal for ${order.orderNumber} failed:`, err),
