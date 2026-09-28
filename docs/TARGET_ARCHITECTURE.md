@@ -193,22 +193,13 @@ Rules:
 
 ### 5.3 Order state machine
 
-`packages/shared/src/engines/order-state.ts` — a transition table the API enforces and the admin UI reads to show only legal actions.
+✅ Phase 1. Full specification: [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md). The transition table lives in `packages/shared/src/order-state.ts` (pure, shared with the admin UI, which only offers legal targets) and is enforced by one transactional function in the order service; every caller (admin, bulk, courier, returns, gateway settlement) goes through it.
 
-| From ↓ / To → | CONFIRMED | PROCESSING | PACKED | SHIPPED | DELIVERED | PARTIALLY_DELIVERED | CANCELLED | RETURNED |
-|---|---|---|---|---|---|---|---|---|
-| PENDING | ✓ | ✓ | | | | | ✓ release | |
-| CONFIRMED | | ✓ | ✓ | ✓ | | | ✓ release | |
-| PROCESSING | | | ✓ | ✓ | | | ✓ release | |
-| PACKED | | | | ✓ | | | ✓ release (+courier loss if booked) | |
-| SHIPPED | | | | | ✓ | ✓ | ✓ release (+courier loss) | ✓ restock |
-| DELIVERED | | | | | | | | ✓ restock (via return) |
-| PARTIALLY_DELIVERED | | | | | | | | reconcile only |
-| CANCELLED, RETURNED | terminal — "Reopen" is a separate command that re-reserves stock through `reserveForOrder` and fails if stock is insufficient |
-
-- `REFUNDED` stops being an order status for new writes: refund is a **payment** fact (`Refund` rows → `paymentStatus`). Existing `REFUNDED` rows stay readable and are treated as "cancelled/returned + refunded" by metrics (decision D1 confirms).
-- Stock effects are declared per transition in the table and executed by `InventoryService`; the order service no longer contains restock loops.
-- Courier updates, bulk actions and return approvals all go through the same `transition(orderId, to, actor, note)` command.
+Key Phase 1 semantics (superseding the sketch in the Phase 0 draft):
+- Pre-shipment statuses move freely among themselves; closed statuses (`CANCELLED`, `RETURNED`, `REFUNDED`) never reopen. No "reopen" command exists in Phase 1.
+- `REFUNDED` remains an order status for compatibility but has **no stock effect** and requires a recorded refund (`paymentStatus = REFUNDED`) first.
+- `RETURNED` always restocks (idempotently), whichever path sets it.
+- COD `DELIVERED` sets `paymentStatus = PAID` (D1).
 
 ### 5.4 Payment state
 
@@ -365,24 +356,24 @@ defineMetric({
 });
 ```
 
-**Proposed canonical definitions** (owner must confirm D1):
+**Canonical definitions** (D1 approved; implementation in Phase 5):
 
 | Metric | Definition |
 |---|---|
 | `SALE_ORDER` predicate | `deletedAt IS NULL AND status <> 'CANCELLED'` and not an exchange replacement order |
-| Orders | count of `SALE_ORDER` |
-| Gross merchandise value | Σ `OrderItem.priceSnapshot × quantity` over `SALE_ORDER` |
-| Discounts | Σ `Order.discount` (split coupon / bundle via snapshot) |
-| Shipping charged | Σ shipping actually charged (`shippingWaived` snapshot) |
-| Gross sales | Σ `Order.total` over `SALE_ORDER` (= GMV − discounts + shipping + adjustments + tax if exclusive) |
-| Returns | Σ value of returned units (`returnedQuantity × priceSnapshot`, pro-rated discount) |
+| Orders (placed) | count of `SALE_ORDER` by `createdAt` — an operational count, **not** revenue |
+| Gross sales | Σ `OrderItem.priceSnapshot × quantity` of *realised* orders (COD: reached `DELIVERED`/`PARTIALLY_DELIVERED`/`RETURNED`; online: `paymentStatus` reached `PAID`), by realisation date |
+| Discounts | Σ `Order.discount` (coupon + bundle split via snapshot) of realised orders |
+| Returns | Σ value of returned units (`returnedQuantity × priceSnapshot`, pro-rated discount), by return date |
 | Refunds | Σ `Refund.amount` where `status = COMPLETED`, by `completedAt` |
-| Net sales | Gross sales − Returns − Refunds not already counted as returns |
-| Collected revenue | Σ successful `Payment.verifiedAmount` + COD totals of DELIVERED orders − refunds |
-| AOV | Gross sales ÷ Orders |
-| Units sold | Σ (`quantity − returnedQuantity`) over `SALE_ORDER` excluding RETURNED |
+| Realised revenue | Gross sales − Discounts + shipping charged + adjustments − Returns − Refunds not already counted as returns |
+| Collected cash | Σ successful `Payment.verifiedAmount` + COD totals of delivered orders − refunds paid out |
+| Outstanding COD | Σ `total` of COD orders placed and not yet delivered, cancelled or returned |
+| AOV | Realised revenue ÷ realised orders |
+| Units sold | Σ (`quantity − returnedQuantity`) over realised orders |
 | COGS | Σ units × `OrderItem.unitCostSnapshot` (new snapshot column; historical rows fall back to current cost, flagged "estimated") |
-| Gross profit | Net sales − COGS − courier loss |
+| Gross profit | Realised revenue − COGS − courier loss |
+| VAT (inclusive) | `taxIncludedIn(taxable amount, rate)` = `amount × r / (100 + r)` |
 | Conversion rate | sessions with a `SALE_ORDER` ÷ sessions with ≥1 PageView |
 | Stock value | Σ `stock × cost` over purchasable variants |
 | Low-stock count | variants matching `InventoryRules.isLowStock` |
@@ -440,13 +431,22 @@ Post-migration verification after every step: counts of products, variants, orde
 - Rate limiting backed by Redis (`rate-limit-redis`) so limits survive restarts and replicas.
 - Secrets: provider credentials encrypted at rest; never returned by the API after save (masked).
 
-## 16. Decisions required from the store owner
+## 16. Decisions from the store owner
+
+**Approved 2026-09-28 (Phase 1 baseline):**
+
+| ID | Decision | Applied in Phase 1 |
+|---|---|---|
+| D1 | **Revenue.** COD: placed / confirmed / shipped are *not* revenue; `DELIVERED` counts toward realised (gross) revenue; `RETURNED` reverses the returned amount; refunds subtract the refunded amount. Keep **Gross Sales, Discounts, Returns, Refunds, Realised Revenue, Collected Cash, Outstanding COD** as separate metrics. COD order creation is never cash collection. | State machine: COD becomes `PAID` on `DELIVERED`; returned units tracked per line (`returnedQuantity`); refunds stay in `Refund`. Metric definitions updated in §11; dashboards migrate in Phase 5. |
+| D2 | **Bundle + flash sale.** Bundle discounts operate on the effective selling price after the flash sale unless an explicit promotion rule says otherwise. Target order: regular → variant → flash → bundle → coupon/other (central stacking) → final. | Bundle matched amount now uses the post-flash price. Coupon-vs-bundle sequencing unchanged (side by side) — see [PRICING_PIPELINE.md](PRICING_PIPELINE.md) §5. |
+| D3 | **Tax.** Storefront prices are tax-inclusive. Preserve subtotal, taxable amount, tax/VAT component and total; never double-charge; never recalculate historical orders. | No change to charging (tax was never added). Shared `taxIncludedIn()` helper; analytics VAT estimate corrected from the exclusive to the inclusive formula. `Order.taxAmount` snapshot for new orders is Phase 2. |
+
+**Still open:**
 
 | ID | Question | Current behaviour | Proposed default |
 |---|---|---|---|
-| D1 | Is a COD order revenue when placed, when delivered, or when cash is remitted? Are RETURNED/REFUNDED orders revenue? Should COD become PAID on DELIVERED? | Placed; returned/refunded count as revenue; COD never PAID | Report both *Gross sales (placed)* and *Collected revenue*; returns/refunds subtracted in *Net sales*; mark COD PAID on DELIVERED |
-| D2 | Do bundle discounts apply to flash-sale prices or regular prices? | Regular (pre-flash) prices | Post-flash prices (what the customer actually pays) |
-| D3 | Are catalogue prices tax-inclusive? Should tax appear on invoices? | No tax anywhere | Inclusive, tax shown as "incl. VAT" only if `taxEnabled` |
+| D9 | Coupon vs. bundle sequencing: should a coupon apply to the amount *after* the bundle discount (changes coupon amounts on carts qualifying for both)? | Side by side on the same base, added | Sequential per D2 pipeline, starting Phase 2 |
+| D10 | Which amount carries VAT: merchandise only, or merchandise + shipping? | n/a (no tax computed) | Merchandise after discounts; shipping VAT configurable |
 | D4 | Should `FlashSaleItem.stockLimit` cap flash-priced units? | Stored, ignored | Enforce: units beyond the limit sell at regular price |
 | D5 | Does "Don't track inventory" mean unlimited sales? | Still blocks at 0 stock | Yes, unlimited; stock still decremented for reporting |
 | D6 | Exchanges: charge price difference at current price or flash price; refund downgrades? | Regular current price; no refund on downgrade | Keep; make it a configurable policy |
@@ -454,6 +454,28 @@ Post-migration verification after every step: counts of products, variants, orde
 | D8 | Reward points on `total` (incl. shipping) or merchandise only; reversed on return? | `total`, never reversed | Merchandise after discounts; reverse on return/refund |
 
 Until a decision is recorded here (with date and who decided), engines implement **current behaviour** and the metric carries a "definition pending" note.
+
+## 16a. Phase 1 scope and invariants
+
+Phase 1 fixes financial, inventory and lifecycle correctness inside the existing module layout (no `domain/` restructuring yet). Specifications: [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md), [INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md), [PRICING_PIPELINE.md](PRICING_PIPELINE.md).
+
+**Flash sale lifecycle.** `FlashSale.enabled` (admin intent) is separated from the schedule window (`startsAt`/`endsAt`); `FlashSale.isActive` becomes a derived cache of *live* = `enabled ∧ startsAt ≤ now ≤ endsAt`, written only by the flash-sale service (on every admin write) and the scheduler. Pricing reads `enabled` + window directly, so a sale is live the moment its window opens, with no scheduler lag.
+
+| Situation | Semantics |
+|---|---|
+| Scheduled activation | enabled sale whose window opens → live (scheduler refreshes `isActive`) |
+| Manual activation | set `enabled = true`: live now if inside the window, *scheduled* if before it, *ended* if after it |
+| Manual disable | `enabled = false` → not live immediately; the scheduler never re-enables it |
+| Expired | `now > endsAt` → not live, whatever `enabled` says |
+| Reactivation after expiry | move `endsAt` into the future (with `enabled` on) |
+| Editing `startsAt`/`endsAt` | live state recomputed on save; `enabled` unchanged |
+| Restart after manual disable | set `enabled = true` again (only an admin can) |
+
+Before Phase 1 the admin API silently dropped any `isActive` it was sent (the Zod schema had no such field) and only the scheduler wrote it, so a running sale could not be switched off at all.
+
+**Deleted products.** `purchasable = product.isActive (status PUBLISHED) ∧ product.deletedAt IS NULL ∧ variant.isActive`: one shared predicate (`isPurchasable` in `packages/shared`, `PURCHASABLE_PRODUCT_WHERE` for queries), enforced at checkout and order creation (incl. admin manual orders), exchanges, wishlist add/list, stock-alert subscribe/notify, flash-sale item add and homepage feed, and bundle evaluation. A stale cart line for a trashed product fails at checkout with "no longer available".
+
+**Phase 1 invariants** (tested): order-state matrix enforced for every caller; INV-1..INV-7 in INVENTORY_INVARIANTS.md; `isActive = (status = PUBLISHED)`; `deletedAt ≠ null ⇒ not purchasable`; `FlashSale.isActive = enabled ∧ in window` after every write/scheduler tick; COD `DELIVERED ⇒ paymentStatus ∈ {PAID, REFUNDED}`; historical order money snapshots never rewritten.
 
 ## 17. Definition of done for each phase
 

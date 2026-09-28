@@ -3,6 +3,8 @@
 **Status:** Phase 0 baseline, 2026-09-28 (`main` @ `35a9604`).
 **Rule:** before adding a field, calculation, service or endpoint, find the fact here. Reuse its authority. If you must add a projection, add or update its row in the same PR (authority, writer, sync, reconciler). Evidence for every "today" statement: [MASTER_ARCHITECTURE_AUDIT.md](MASTER_ARCHITECTURE_AUDIT.md). Target services and engines: [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md).
 
+**Approved business decisions (2026-09-28):** D1 revenue recognition (COD is realised at `DELIVERED`; returns and refunds subtracted separately; creation is never cash collection), D2 bundles on the post-flash price, D3 tax-inclusive prices with an inclusive VAT component. Details and the Phase 1 changes: [TARGET_ARCHITECTURE.md §16–16a](TARGET_ARCHITECTURE.md), [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md), [INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md), [PRICING_PIPELINE.md](PRICING_PIPELINE.md).
+
 **Legend.** *Status today*: ✅ single authority and single writer · ⚠️ authority clear but duplicated logic or a writer outside the owner · ❌ conflicting definitions or known drift path. *Class*: **M** master data · **S** transaction snapshot (immutable history — not duplication) · **P** projection/cache (derivable, must be reconciled) · **D** computed on demand (never stored).
 
 ---
@@ -25,7 +27,7 @@
 4. **Recalculation:** same statement as the status write.
 5. **Drift detection:** none; add invariant `isActive = (status='PUBLISHED')`.
 6. **Repair:** `UPDATE Product SET isActive = (status='PUBLISHED')`.
-7. **API:** DTO exposes `status` and a derived `purchasable` (= PUBLISHED ∧ ¬deleted ∧ ≥1 active variant). Status: ❌ — `deleteProduct` sets only `deletedAt` and checkout ignores it ([product.service.ts:1721](../apps/api/src/modules/products/product.service.ts#L1721), [order.service.ts:68](../apps/api/src/modules/orders/order.service.ts#L68)). Target: trashing sets `status = UNPUBLISHED`; purchase guard uses `InventoryRules.isPurchasable`.
+7. **API:** DTO exposes `status` and a derived `purchasable` (= PUBLISHED ∧ ¬deleted ∧ ≥1 active variant). Status before Phase 1: ❌ — `deleteProduct` set only `deletedAt` and checkout ignored it. **Phase 1:** one predicate `isPurchasable` (shared) / `PURCHASABLE_PRODUCT_WHERE` (queries) = published ∧ not trashed ∧ variant active, enforced at checkout, order creation, exchanges, wishlist, stock alerts, flash-sale feed/items and bundles. Trashing still leaves `status` untouched so *Restore* returns the product exactly as it was.
 
 ### A3. Unit price — `Product.basePrice` vs `ProductVariant.price`
 1. **Authority:** list price = `ProductVariant.price` when set, else `Product.basePrice` (both M). Selling price = list price after the active flash offer (D).
@@ -43,7 +45,7 @@
 4. **Recalculation:** each movement writes both in one transaction.
 5. **Drift detection:** `GET /api/inventory/reconciliation` (`getStockDiscrepancies`, [inventory.service.ts:63](../apps/api/src/modules/inventory/inventory.service.ts#L63)) — read-only, manual. Target: nightly job + over-restock check per order line (Σ restock ≤ Σ sold).
 6. **Repair:** admin adjustment with reason (never silent); M4/M5 scripts for historical gaps.
-7. **API:** `ProductView.variants[].availability {state: in_stock|low|out, quantity?}` (quantity exposure governed by setting); admin inventory endpoints. Status: ❌ — double-restock, resurrection and lost-update paths (audit R1, R4).
+7. **API:** `ProductView.variants[].availability {state: in_stock|low|out, quantity?}` (quantity exposure governed by setting); admin inventory endpoints. Status before Phase 1: ❌ — double-restock, resurrection and lost-update paths (audit R1, R4). **Phase 1:** single writer `inventory.service.ts` (architecture test), per-line idempotency via `OrderItem.restockedQuantity`, compare-and-set form edits, new reasons `CANCELLATION`/`IMPORT`/`DAMAGED`/`LOST`. Rules: [INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md).
 
 ### A5. Rating — `Product.avgRating/reviewCount` vs `ProductReview`
 1. **Authority:** `ProductReview` rows with `status = APPROVED` (M).
@@ -66,11 +68,11 @@
 ### A7. Flash sale live state — `FlashSale.isActive` vs `startsAt/endsAt`
 1. **Authority:** target — `FlashSale.enabled` (M, admin switch) **and** the window `startsAt ≤ now ≤ endsAt` (M). Live = enabled ∧ in window (D).
 2. **Projection:** `FlashSale.isActive` (P, cache of "live" for indexing).
-3. **Writer:** today both admin PATCH and `syncFlashSaleActivation` cron write `isActive` ([flash-sale.service.ts:153](../apps/api/src/modules/flash-sales/flash-sale.service.ts#L153)) — the cron re-activates sales the admin turned off. Target: admin writes `enabled`; only the worker writes `isActive`.
+3. **Writer:** before Phase 1 only the `syncFlashSaleActivation` cron wrote `isActive` ([flash-sale.service.ts:153](../apps/api/src/modules/flash-sales/flash-sale.service.ts#L153)); the admin API silently dropped `isActive` (not in the Zod schema), so a running sale could not be switched off at all. **Phase 1:** admin writes `enabled`; the flash-sale service (on every write) and the scheduler derive `isActive`; the scheduler never touches `enabled`.
 4. **Recalculation:** every minute and on every flash-sale write.
 5. **Drift detection:** report rows where `isActive ≠ (enabled ∧ in window)`.
 6. **Repair:** re-run sync.
-7. **API:** `activeFlashSale` in product DTOs is resolved by the pricing engine (deterministic tie-break for overlapping sales). Status: ❌.
+7. **API:** `activeFlashSale` in product DTOs; pricing reads `enabled` + window directly (no scheduler lag). Deterministic tie-break for overlapping sales is Phase 2. Status: ✅ after Phase 1 (lifecycle table in TARGET_ARCHITECTURE §16a).
 
 ### A8. Coupon usage — `Coupon.usedCount` vs redemptions
 1. **Authority:** orders carrying `couponId` that satisfy the *redemption predicate* (target: `deletedAt IS NULL AND status <> CANCELLED` — decision D7).
@@ -122,25 +124,25 @@
 | Compare-at price | M | `ProductVariant.compareAtPrice ?? Product.compareAtPrice` | product.service | — | PDP, badges | product write | validation `compareAt > price` | ⚠️ resolved in UI |
 | Cost price | M | `ProductVariant.costPrice ?? Product.costPrice` | product.service | — | margin UI, BI COGS | product write | — | ⚠️ not snapshotted at sale (M7) |
 | Selling (flash) price | D | pricing engine over list price + live flash offer | PricingService | target `minSellingPrice` | PDP, cards, cart, checkout, orders, feeds | — | A3 | ❌ |
-| Flash sale live | M/P | `enabled` + window | flash-sale service | `isActive` | pricing, homepage | admin + worker | A7 | ❌ |
+| Flash sale live | M/P | `enabled` + window | flash-sale service | `isActive` | pricing, homepage | admin writes `enabled`; service + scheduler derive `isActive` | A7 | ✅ Phase 1 |
 | Flash stock limit | M | `FlashSaleItem.stockLimit` | flash-sale service | — | *none today* | admin | — | ❌ dead (D4) |
 | Coupon rules | M | `Coupon`, `CouponProduct`, `CouponCategory` | coupon.service | — | checkout, best-coupon, listing | `/api/coupons` | business-rule validation on write | ✅ |
 | Coupon discount | D | promotion engine | PromotionService | order snapshot `discount` (+ target `couponDiscount`) | checkout, order | — | — | ⚠️ preview trusts client subtotal |
 | Coupon usage | P | redemption predicate over `Order` | coupon.service | `Coupon.usedCount` | limit checks, admin | order txn | A8 | ❌ |
-| Bundle discount | D | promotion engine | PromotionService | `Order.bundleDiscount` snapshot | cart preview, checkout | — | — | ❌ uses pre-flash prices (D2) |
+| Bundle discount | D | bundle.service (post-flash line amounts, D2) | PromotionService | `Order.bundleDiscount` snapshot | cart preview, checkout | — | — | ✅ Phase 1 (base fixed; sequencing vs coupon is D9) |
 | Shipping fee | D | `ShippingEngine` over zones (today `StoreSetting.shippingFee*` + `isInsideDhaka`) | ShippingService | `Order.shippingFee` snapshot | checkout, order, courier loss | settings | — | ⚠️ client duplicate + hard-coded fallback |
 | Shipping waived | S | coupon result at checkout | order service | *not stored today* (re-derived from live coupon) | price adjustment, metrics | — | M7 backfill | ❌ |
-| Tax | D | `TaxEngine` (settings + product rate) | PricingService | target `Order.taxAmount` | invoice, metrics | — | — | ❌ not implemented; analytics estimates it |
+| Tax (VAT component) | D | prices are tax-inclusive (D3); `taxIncludedIn()` in `packages/shared` | PricingService | target `Order.taxAmount` (Phase 2, new orders only) | analytics estimate, invoices (Phase 2) | — | — | ⚠️ helper in place; analytics fixed to inclusive formula; no snapshot yet |
 | Rounding policy | M | target `CommerceSettings` | ConfigService | — | all engines | settings | golden tests | ❌ 3 policies today |
 
 ### B3. Inventory
 
 | Fact | Class | Authoritative source | Authoritative service | Projection / cache | Consumers | Mutation path | Reconciliation | Status |
 |---|---|---|---|---|---|---|---|---|
-| Stock on hand | P (balance) | `StockMovement` Σ | InventoryService | `ProductVariant.stock` | checkout, PDP, admin, analytics | InventoryService commands only | A4 | ❌ |
+| Stock on hand | P (balance) | `StockMovement` Σ | inventory.service | `ProductVariant.stock` | checkout, PDP, admin, analytics | inventory.service commands only | A4 | ✅ Phase 1 |
 | Stock history | M | `StockMovement` | InventoryService | — | admin movements, audits | same | append-only | ⚠️ reasons too coarse (M2) |
 | Available to sell | D | `InventoryRules.availableToSell` | InventoryService | — | checkout, PDP, cart quote | — | — | ❌ `trackInventory` ignored (D5) |
-| Purchasable | D | status ∧ ¬deleted ∧ variant active ∧ available | InventoryRules | — | checkout, PDP | — | — | ❌ `deletedAt` ignored |
+| Purchasable | D | published ∧ ¬deleted ∧ variant active (`isPurchasable`) | shared predicate | — | checkout, exchanges, wishlist, stock alerts, flash sales, bundles | — | regression tests | ✅ Phase 1 (availability/`trackInventory` is D5) |
 | Low stock | D | `InventoryRules.isLowStock` (threshold per product) | InventoryService | `stock.low` event | alerts, dashboard, reports | — | — | ❌ three definitions |
 | Back-in-stock subscriptions | M | `StockAlert` | stock-alert.service | `notifiedAt` | email sender | subscribe endpoint | — | ⚠️ triggered only from product form (target: `stock.replenished`) |
 | Stock value | D | metrics registry | MetricsService | — | BI | — | — | ⚠️ |
@@ -151,8 +153,9 @@
 |---|---|---|---|---|---|---|---|---|
 | Order money (subtotal, discount, bundleDiscount, shippingFee, priceAdjustment, total) | S | `Order` columns | OrderService | — | invoices, courier COD, metrics, customer views | written at creation; `adjustOrderPrice` rewrites total/adjustment | invariant `total = f(snapshot)` | ⚠️ formula duplicated |
 | Line snapshot | S | `OrderItem.*Snapshot`, `priceSnapshot`, `quantity` | OrderService | — | everything historical | creation only | — | ✅ |
-| Returned quantity | S | `OrderItem.returnedQuantity` | InventoryService (target) | — | stock idempotency, units sold | partial-delivery reconciliation only today | M5 | ❌ not set by return approval |
-| Order status | M | `Order.status` + `OrderStatusHistory` | OrderService state machine | — | all | `updateOrderStatus` (admin, bulk, courier, returns) | history is append-only | ❌ no transition rules |
+| Returned quantity | S | `OrderItem.returnedQuantity` | inventory.service `releaseOrderLines` | — | units sold, returns metric | RETURNED transition, partial-delivery reconcile, exchange | INV-2 | ✅ Phase 1 |
+| Restocked quantity | P (per-line idempotency) | `OrderItem.restockedQuantity` (Phase 1) | inventory.service | — | every release/return/trash/restore | same | INV-2, INV-3; backfilled from ledger | ✅ Phase 1 |
+| Order status | M | `Order.status` + `OrderStatusHistory` | order.service `applyOrderTransition` (matrix in `packages/shared/src/order-state.ts`) | — | all | admin, bulk, courier, returns, gateway settlement — all through the matrix | history is append-only | ✅ Phase 1 ([ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md)) |
 | Courier status | P (external cache) | Steadfast | CourierService | `Order.courierStatus`, `courierStatusSyncedAt`, `courierSyncError` | admin, filters, auto-status | webhook, 15-min cron, manual | staleness timestamp | ✅ |
 | Courier loss | S | `CourierLossEvent` | OrderService | — | dashboard | cancel-after-booking, partial return | — | ✅ (amount is a configured estimate) |
 | Return / exchange request | M | `ReturnRequest` | ReturnService | — | admin, customer | review endpoint | one-PENDING partial index | ⚠️ approval not atomic |
@@ -167,7 +170,7 @@
 | Settlement | S | `Payment` (+ `rawResponse`) | PaymentService | — | refunds, overview | `settlePaymentSession` atomic claim | amount re-verified | ✅ |
 | Payment timeline | S | `PaymentEvent` | PaymentService | — | admin | fire-and-forget writes | — | ⚠️ fire-and-forget (target: outbox) |
 | Refund | S | `Refund` | PaymentService | — | order, BI, overview | `refundOrderPayment` | — | ⚠️ no partial state; STAFF can create |
-| Order payment status | P | Payment + Refund (+ COD collection rule D1) | PaymentService | `Order.paymentStatus` | filters, courier COD, BI | `syncOrderPaymentStatus`, `refundOrderPayment`, `createManualOrder(markPaid)` | target report | ⚠️ third writer + `Order.status=REFUNDED` overlap |
+| Order payment status | P | Payment + Refund + COD collected on `DELIVERED` (D1) | PaymentService; the DELIVERED transition for COD | `Order.paymentStatus` | filters, courier COD, BI | `syncOrderPaymentStatus` (no longer revives a cancelled order), `refundOrderPayment`, `createManualOrder(markPaid)`, T4 | target report | ⚠️ `REFUNDED` order status now requires `paymentStatus = REFUNDED` |
 | Payment method enablement | M | `StoreSetting.codEnabled/onlinePaymentEnabled/epsPaymentEnabled` → target `ProviderConfig.enabled` | Config / Payment | settings cache 300 s | checkout UI + server guard | settings PATCH | — | ⚠️ `updateSettings` guard ignores EPS |
 | Provider credentials | M | env vars → target `ProviderConfig` (encrypted) | Config | — | providers | deploy / setup wizard | — | ❌ env only |
 
@@ -238,3 +241,11 @@
 | I9 | `Order.paymentStatus` consistent with Payment/Refund rows | Payments |
 | I10 | every `Product.typeId` not null | Catalog |
 | I11 | same metric id returns the same value on every surface for the same range | Metrics |
+| I12 | every `Order.status` change satisfies the transition matrix; no transition out of `CANCELLED`/`RETURNED`/`REFUNDED` except `→ REFUNDED` | Orders |
+| I13 | per order line: `0 ≤ returnedQuantity ≤ quantity`, `0 ≤ restockedQuantity ≤ quantity`; Σ order-linked movements = `−quantity + restockedQuantity` | Inventory |
+| I14 | only `inventory.service.ts` writes `ProductVariant.stock` / `StockMovement` | Inventory (architecture test) |
+| I15 | `deletedAt IS NOT NULL ⇒` never purchasable | Catalog |
+| I16 | COD ∧ status `DELIVERED` ⇒ `paymentStatus ∈ {PAID, REFUNDED}`; status `REFUNDED` ⇒ `paymentStatus = REFUNDED` (for transitions made from Phase 1 on) | Payments |
+| I17 | historical `Order` money fields and `OrderItem` snapshots are never recomputed | Orders |
+
+Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17.
