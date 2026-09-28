@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useFeedbackForm } from "@/hooks/use-feedback-form";
+import { pixelContact } from "@/lib/meta-pixel";
 
 /** Inline (non-modal) version of the same message-us form the floating contact widget offers —
  * embedded directly on the Contact page so a visitor who lands here from search/a footer link
@@ -17,7 +18,10 @@ export function ContactForm() {
   function onSubmit(e: FormEvent) {
     // Cleared immediately on success (unlike FeedbackModal, which defers this until its close
     // transition finishes) — there's no transition here for an emptied form to flash through.
-    submit(e, resetForm);
+    submit(e, () => {
+      resetForm();
+      pixelContact("form");
+    });
   }
 
   if (status === "done") {

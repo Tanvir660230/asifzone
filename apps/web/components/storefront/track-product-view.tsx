@@ -19,7 +19,7 @@ export function TrackProductView({ productId, productName, categoryId, price }: 
   useEffect(() => {
     addRecentlyViewed({ productId, categoryId, price });
     logProductView(productId);
-    pixelViewContent({ contentId: productId, contentName: productName, value: price });
+    pixelViewContent({ productId, productName, price });
   }, [productId, productName, categoryId, price]);
 
   return null;

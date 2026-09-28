@@ -5,6 +5,8 @@ import { prisma } from "../../config/prisma";
 import { getSettings } from "../settings/settings.service";
 import { retryPayment, updateOrderStatus, getOrderStats } from "./order.service";
 import { generateOrderNumber } from "../../lib/order-number";
+import { buildPurchaseEvent } from "../../lib/meta/purchase";
+import { metaPurchaseEventId } from "@clothing-brand/shared";
 
 // Money-critical path: checkout (stock decrement, coupon math, order totals) and payment
 // confirmation (amount verification, idempotency). A dedicated product/variant/coupon are created
@@ -85,6 +87,26 @@ describe("checkout & payment", () => {
 
     const variant = await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } });
     expect(variant.stock).toBe(INITIAL_STOCK - 1);
+  });
+
+  it("builds the Meta CAPI Purchase from the stored order, with the event_id the browser Pixel uses", async () => {
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: orderIds[0]! } });
+    const event = await buildPurchaseEvent(order.id, { clientUserAgent: "Vitest", fbp: "fb.1.1700000000000.42" });
+
+    expect(event!.event_id).toBe(metaPurchaseEventId(order.orderNumber));
+    expect(event!.action_source).toBe("website");
+    expect(event!.custom_data).toMatchObject({
+      currency: "BDT",
+      value: Number(order.total),
+      order_id: order.orderNumber,
+      content_ids: [variantId],
+      contents: [{ id: variantId, quantity: 1, item_price: UNIT_PRICE }],
+      num_items: 1,
+    });
+    expect(event!.user_data.ph).toHaveLength(1);
+    expect(event!.user_data.ph![0]).not.toContain("1712345678");
+    expect(event!.user_data.fbp).toBe("fb.1.1700000000000.42");
+    expect(await buildPurchaseEvent("missing-order-id", {})).toBeNull();
   });
 
   it("rejects checkout when the requested quantity exceeds available stock, without changing stock", async () => {

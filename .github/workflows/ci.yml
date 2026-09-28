@@ -163,9 +163,16 @@ jobs:
           # empty (see product.cache.ts's triggerStorefrontRevalidation), falling back to the
           # storefront's normal ~60s ISR window, so this isn't in the required-secrets check above.
           echo "REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}" >> docker/.env
-          # Optional — docker-compose.yml build arg falls back to empty, which keeps
-          # MetaPixelScript inert, so this isn't in the required-secrets check above.
+          # Optional — empty keeps the whole Meta integration inert (the storefront pixel in
+          # apps/web/lib/meta-pixel.ts and, since docker-compose.yml reuses this value as the api's
+          # META_PIXEL_ID, the server-side Conversions API too), so none of these are in the
+          # required-secrets check above. META_ACCESS_TOKEN is server-only — never NEXT_PUBLIC_.
+          # META_TEST_EVENT_CODE routes every server event to Events Manager's Test Events tab
+          # instead of real reporting: set it only while testing, then delete it.
           echo "NEXT_PUBLIC_META_PIXEL_ID=${{ secrets.NEXT_PUBLIC_META_PIXEL_ID }}" >> docker/.env
+          echo "META_ACCESS_TOKEN=${{ secrets.META_ACCESS_TOKEN }}" >> docker/.env
+          echo "META_API_VERSION=${{ secrets.META_API_VERSION }}" >> docker/.env
+          echo "META_TEST_EVENT_CODE=${{ secrets.META_TEST_EVENT_CODE }}" >> docker/.env
           # Optional — docker-compose.yml already defaults both to empty, which keeps the Google
           # button/One Tap prompt hidden on both admin and customer login (GoogleButton renders
           # nothing without a client ID) rather than failing, so neither is in the required-secrets
