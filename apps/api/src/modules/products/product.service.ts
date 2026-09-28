@@ -38,7 +38,7 @@ import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteProductImageFiles } from "../uploads/upload.service";
 import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
 import { computeFlashPrice, getActiveFlashInfoByProduct } from "../flash-sales/flash-sale-pricing";
-import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
+import { notifyReplenished, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
@@ -262,11 +262,16 @@ function toJsonInput(value: Record<string, unknown> | null | undefined) {
 function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   // `imageIds` isn't a column: galleries are written after the variant exists (see syncVariantGallery).
   // `id` is dropped on purpose: a variant's primary key is the database's to choose, not the client's.
-  const { id: _id, attributeValueIds = [], imageIds: _imageIds, ...rest } = variant;
+  // `stock`/`expectedStock` aren't written here either: a variant is created at 0 and its opening stock is recorded by
+  // inventory.service (recordInitialStock) so the ledger explains every unit (docs/INVENTORY_INVARIANTS.md).
+  const { id: _id, attributeValueIds = [], imageIds: _imageIds, stock: _stock, expectedStock: _expected, ...rest } = variant;
   void _imageIds;
   void _id;
+  void _stock;
+  void _expected;
   return {
     ...rest,
+    stock: 0,
     size: rest.size || NO_SIZE_VALUE,
     color: rest.color || "",
     sortOrder,
@@ -1321,7 +1326,12 @@ function recordProductAudit(adminId: string, productId: string, ip: string | und
   }
 }
 
-export async function createProduct(input: CreateProductInput, adminId: string, ip?: string) {
+export async function createProduct(
+  input: CreateProductInput,
+  adminId: string,
+  ip?: string,
+  options: { stockReason?: "RESTOCK" | "IMPORT" } = {},
+) {
   const category = await prisma.category.findUnique({ where: { id: input.categoryId } });
   if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
 
@@ -1384,18 +1394,13 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
       if (faqs?.length) await replaceFaqs(tx, created.id, faqs);
       if (relations?.length) await replaceRelations(tx, created.id, relations);
 
-      // Every variant starts life with a real stock number but no history explaining it — log it
-      // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
-      const stocked = created.variants.filter((v) => v.stock > 0);
-      if (stocked.length) {
-        await tx.stockMovement.createMany({
-          data: stocked.map((v) => ({
-            variantId: v.id,
-            change: v.stock,
-            reason: "RESTOCK" as const,
-            adminId,
-            note: "Initial stock on product creation",
-          })),
+      // Opening stock: each variant was created at 0; its initial quantity lands through the inventory service as an
+      // opening RESTOCK (or IMPORT from a CSV) movement, so the ledger accounts for stock from the moment it exists.
+      const stockBySku = new Map(variants.map((v) => [v.sku, v.stock ?? 0]));
+      for (const v of created.variants) {
+        await recordInitialStock(tx, v.id, stockBySku.get(v.sku) ?? 0, options.stockReason ?? "RESTOCK", {
+          adminId,
+          note: options.stockReason === "IMPORT" ? "Initial stock from CSV import" : "Initial stock on product creation",
         });
       }
 
@@ -1426,7 +1431,16 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
   return getProductById(product.id);
 }
 
-export async function updateProduct(id: string, input: UpdateProductInput, adminId: string, ip?: string, options: { stockNote?: string } = {}) {
+export async function updateProduct(
+  id: string,
+  input: UpdateProductInput,
+  adminId: string,
+  ip?: string,
+  // `stockMode: "count"` (CSV import) treats a variant's stock as a declared count; the default treats it as a
+  // compare-and-set edit against `expectedStock` (docs/INVENTORY_INVARIANTS.md rule 6).
+  options: { stockNote?: string; stockMode?: "form" | "count" } = {},
+) {
+  const replenished: string[] = [];
   const existing = await getProductById(id);
   // Same rule as create, checked up front: otherwise two rows sharing a SKU only fail at the DB unique index, as a
   // generic conflict that doesn't say which rows clash. A row listed by id without a SKU keeps its stored one.
@@ -1591,29 +1605,13 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
           // silently erase that order's stock audit trail. Zero its stock instead: it drops out of
           // checkout the same as a delete would, without destroying history.
           if (mustKeep.length) {
-            const keptVariants = await tx.productVariant.findMany({
-              where: { id: { in: mustKeep } },
-              select: { id: true, stock: true },
-            });
-            await tx.productVariant.updateMany({ where: { id: { in: mustKeep } }, data: { stock: 0 } });
-            const nonZero = keptVariants.filter((v) => v.stock !== 0);
-            if (nonZero.length) {
-              await tx.stockMovement.createMany({
-                data: nonZero.map((v) => ({
-                  variantId: v.id,
-                  change: -v.stock,
-                  reason: "ADJUSTMENT" as const,
-                  adminId,
-                  note: "Variant removed from product — had order history, stock zeroed instead of deleted",
-                })),
-              });
-            }
+            await zeroVariantStock(tx, mustKeep, { adminId, note: "Variant removed from product — had order history, stock zeroed instead of deleted" });
           }
         }
 
         for (const [index, variant] of input.variants.entries()) {
           if (variant.id) {
-            const { id: variantId, attributeValueIds, imageIds, ...updateData } = variant;
+            const { id: variantId, attributeValueIds, imageIds, stock: desiredStock, expectedStock, ...updateData } = variant;
             // The gallery is authoritative when sent; an old client that only sends `imageId` means "exactly this one image".
             const gallery = imageIds ?? (updateData.imageId !== undefined ? (updateData.imageId ? [updateData.imageId] : []) : undefined);
             if (gallery) delete updateData.imageId; // syncVariantGallery sets it, from an image that is verified to belong here
@@ -1638,28 +1636,25 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
                 });
               }
             }
-            // The plain Stock field on the product-edit form is the primary way admins change
-            // stock day-to-day — diff it against the pre-update value so every save stays
-            // ledger-complete without the form itself needing a reason/note prompt.
-            if (updateData.stock !== undefined) {
-              const before = existing.variants.find((v) => v.id === variantId);
-              const delta = before ? updateData.stock - before.stock : 0;
-              if (delta !== 0) {
-                await tx.stockMovement.create({
-                  data: { variantId, change: delta, reason: "ADJUSTMENT", adminId, note: options.stockNote ?? "Manual edit via product form" },
-                });
-              }
+            // Stock is never overwritten here: a form edit is a compare-and-set against what the editor last saw, a
+            // CSV import is a declared count — both applied by the inventory service under a row lock, ledger-complete.
+            if (desiredStock !== undefined) {
+              const actor = { adminId, note: options.stockNote ?? (options.stockMode === "count" ? "Changed by CSV import" : "Manual edit via product form") };
+              const delta =
+                options.stockMode === "count"
+                  ? await setVariantStockCount(tx, variantId, desiredStock, "IMPORT", actor)
+                  : await setVariantStockFromForm(tx, variantId, desiredStock, expectedStock, actor);
+              if (delta > 0 && desiredStock - delta <= 0) replenished.push(variantId);
             }
           } else {
             const created = await tx.productVariant.create({
               data: { ...toVariantCreateData({ ...variant, sku: variant.sku!, stock: variant.stock ?? 0, attributeValueIds: variant.attributeValueIds ?? [] }, index), productId: id },
             });
             if (variant.imageIds?.length) await syncVariantGallery(tx, id, created.id, variant.imageIds);
-            if (created.stock > 0) {
-              await tx.stockMovement.create({
-                data: { variantId: created.id, change: created.stock, reason: "RESTOCK", adminId, note: "Initial stock on variant creation" },
-              });
-            }
+            await recordInitialStock(tx, created.id, variant.stock ?? 0, options.stockMode === "count" ? "IMPORT" : "RESTOCK", {
+              adminId,
+              note: "Initial stock on variant creation",
+            });
           }
         }
       }
@@ -1681,15 +1676,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
 
   // Fire-and-forget: real stock/price changes trigger real customer notifications — never
   // allowed to block or fail the admin's product save.
-  if (input.variants) {
-    for (const variant of input.variants) {
-      if (!variant.id) continue;
-      const before = existing.variants.find((v) => v.id === variant.id);
-      if (before && before.stock === 0 && variant.stock !== undefined && variant.stock > 0) {
-        notifyBackInStock(variant.id).catch((err) => console.error("[stock-alert] notify failed:", err));
-      }
-    }
-  }
+  notifyReplenished(replenished);
   if (input.basePrice !== undefined && input.basePrice < Number(existing.basePrice)) {
     notifyPriceDrop(id, input.basePrice).catch((err) => console.error("[price-drop] notify failed:", err));
   }

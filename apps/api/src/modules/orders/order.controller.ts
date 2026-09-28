@@ -94,7 +94,7 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const restore = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ order: await orderService.restoreOrder(req.params.id!) });
+  res.json({ order: await orderService.restoreOrder(req.params.id!, req.admin!.adminId) });
 });
 
 export const permanentlyRemove = asyncHandler(async (req: Request, res: Response) => {
@@ -114,8 +114,7 @@ export const exportCsv = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const bulkStatus = asyncHandler(async (req: Request, res: Response) => {
-  await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId);
-  res.status(204).send();
+  res.json(await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId));
 });
 
 export const bulkDelete = asyncHandler(async (req: Request, res: Response) => {

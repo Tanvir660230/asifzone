@@ -273,6 +273,8 @@ export interface OrderItem {
   priceSnapshot: string;
   quantity: number;
   returnedQuantity: number;
+  /** Units of this line already put back into stock (cancellation, return, trash, ...). */
+  restockedQuantity: number;
   live?: OrderItemLiveInfo | null;
 }
 
@@ -429,6 +431,9 @@ export interface FlashSale {
   name: string;
   startsAt: string;
   endsAt: string;
+  /** The admin's switch. */
+  enabled: boolean;
+  /** Derived: enabled and inside its window right now (maintained by the server). */
   isActive: boolean;
   bannerImageUrl: string | null;
   items: FlashSaleItem[];

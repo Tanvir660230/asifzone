@@ -3,7 +3,8 @@ import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
-import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "../products/product-public-select";
+import { AppError } from "../../lib/app-error";
+import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS, PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
 
 // A customer's wishlist shows the storefront's view of each product. (`include: { product: … }` used to return the whole row,
 // including the product's cost price and tax rate, and every variant's cost price.)
@@ -16,7 +17,8 @@ const productSelect = {
 
 export async function listWishlist(customerId: string) {
   const items = await prisma.wishlistItem.findMany({
-    where: { customerId },
+    // A trashed or unpublished product stays saved (it reappears if restored) but is never shown as buyable.
+    where: { customerId, product: PURCHASABLE_PRODUCT_WHERE },
     include: { product: { select: productSelect } },
     orderBy: { createdAt: "desc" },
   });
@@ -24,12 +26,13 @@ export async function listWishlist(customerId: string) {
 }
 
 export async function addToWishlist(customerId: string, productId: string) {
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { basePrice: true } });
+  const product = await prisma.product.findFirst({ where: { id: productId, ...PURCHASABLE_PRODUCT_WHERE }, select: { basePrice: true } });
+  if (!product) throw AppError.notFound("Product not found");
   return prisma.wishlistItem.upsert({
     where: { customerId_productId: { customerId, productId } },
     // priceAtAdd is the real baseline a future price drop is measured against — captured once,
     // at the moment of wishlisting, not touched on repeat adds (upsert's update leaves it alone).
-    create: { customerId, productId, priceAtAdd: product?.basePrice ?? null },
+    create: { customerId, productId, priceAtAdd: product.basePrice },
     update: {},
   });
 }

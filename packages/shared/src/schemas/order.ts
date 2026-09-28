@@ -803,6 +803,13 @@ export type AdjustOrderPriceInput = z.infer<typeof adjustOrderPriceSchema>;
 export type ReconcilePartialDeliveryInput = z.infer<typeof reconcilePartialDeliverySchema>;
 export type BulkOrderIdsInput = z.infer<typeof bulkOrderIdsSchema>;
 export type BulkOrderStatusInput = z.infer<typeof bulkOrderStatusSchema>;
+
+/** Result of a bulk status change: each order goes through the state machine on its own, so some can be refused. */
+export interface BulkOrderStatusResult {
+  updated: string[];
+  unchanged: string[];
+  failed: Array<{ id: string; orderNumber: string | null; reason: string }>;
+}
 export type BulkCourierBookInput = z.infer<typeof bulkCourierBookSchema>;
 export type BulkDeliveryScoreCheckInput = z.infer<typeof bulkDeliveryScoreCheckSchema>;
 export type ValidateCouponInput = z.infer<typeof validateCouponSchema>;

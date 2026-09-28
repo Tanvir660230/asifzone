@@ -8,15 +8,20 @@ export interface ActiveFlashInfo {
   discountValue: number;
 }
 
-/** Currently-active (isActive + within time window) flash sale, keyed by productId — active items only, so callers never need to re-check the time window. */
+/** "Live right now": the admin's switch plus the schedule window, read directly — never the scheduler-maintained
+ * `isActive` cache, so a sale starts/stops exactly on time and a disabled sale never prices anything. */
+export function liveFlashSaleWhere(now: Date = new Date()) {
+  return { enabled: true, startsAt: { lte: now }, endsAt: { gte: now } };
+}
+
+/** Currently-live flash sale, keyed by productId — live items only, so callers never need to re-check the window. */
 export async function getActiveFlashInfoByProduct(productIds: string[]): Promise<Map<string, ActiveFlashInfo>> {
   if (productIds.length === 0) return new Map();
 
-  const now = new Date();
   const items = await prisma.flashSaleItem.findMany({
     where: {
       productId: { in: productIds },
-      flashSale: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
+      flashSale: liveFlashSaleWhere(),
     },
     include: { flashSale: true },
   });

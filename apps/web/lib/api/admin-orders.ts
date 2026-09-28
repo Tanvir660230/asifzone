@@ -2,6 +2,7 @@ import type {
   Order,
   AdminOrderListItem,
   OrderStatus,
+  BulkOrderStatusResult,
   PaymentStatus,
   PaymentMethod,
   PaginatedResult,
@@ -148,7 +149,7 @@ export function permanentlyDeleteOrder(id: string) {
 }
 
 export function bulkUpdateOrderStatus(ids: string[], status: OrderStatus) {
-  return apiFetch<void>("/api/orders/bulk/status", { method: "POST", body: { ids, status } });
+  return apiFetch<BulkOrderStatusResult>("/api/orders/bulk/status", { method: "POST", body: { ids, status } });
 }
 
 export function bulkDeleteOrders(ids: string[]) {

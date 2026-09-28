@@ -3,7 +3,8 @@ import type { AddFlashSaleItemInput, CreateFlashSaleInput, UpdateFlashSaleInput 
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
-import { computeFlashPrice } from "./flash-sale-pricing";
+import { isFlashSaleLive } from "@clothing-brand/shared";
+import { computeFlashPrice, liveFlashSaleWhere } from "./flash-sale-pricing";
 import { PUBLIC_VARIANT_FIELDS } from "../products/product-public-select";
 
 const include = {
@@ -61,9 +62,8 @@ export async function listFlashSales() {
 
 /** Public homepage feed: the currently-running sale ending soonest (there's usually only one at a time), with each item's product enriched with `activeFlashSale` so it can render through the normal ProductCard. */
 export async function getActiveFlashSaleForHomepage() {
-  const now = new Date();
   const flashSale = await prisma.flashSale.findFirst({
-    where: { isActive: true, startsAt: { lte: now }, endsAt: { gte: now } },
+    where: liveFlashSaleWhere(),
     orderBy: { endsAt: "asc" },
     include: fullProductInclude,
   });
@@ -71,7 +71,8 @@ export async function getActiveFlashSaleForHomepage() {
 
   return {
     ...flashSale,
-    items: flashSale.items.map((item) => ({
+    // A trashed or unpublished product stays attached to the sale but is never advertised (or sold).
+    items: flashSale.items.filter((item) => item.product.isActive && item.product.deletedAt === null).map((item) => ({
       ...item,
       product: {
         ...item.product,
@@ -99,15 +100,19 @@ export async function getFlashSaleById(id: string) {
   return flashSale;
 }
 
+/** `isActive` is derived — enabled && inside the window — and written here on every admin write (and by the
+ * scheduler each minute), never taken from input. See the lifecycle table in TARGET_ARCHITECTURE §16a. */
 export async function createFlashSale(input: CreateFlashSaleInput) {
-  const flashSale = await prisma.flashSale.create({ data: input, include });
+  const flashSale = await prisma.flashSale.create({ data: { ...input, isActive: isFlashSaleLive(input) }, include });
   await invalidateProductCache();
   return flashSale;
 }
 
 export async function updateFlashSale(id: string, input: UpdateFlashSaleInput) {
-  await getFlashSaleById(id);
-  const flashSale = await prisma.flashSale.update({ where: { id }, data: input, include });
+  const existing = await getFlashSaleById(id);
+  const next = { enabled: input.enabled ?? existing.enabled, startsAt: input.startsAt ?? existing.startsAt, endsAt: input.endsAt ?? existing.endsAt };
+  if (next.endsAt <= next.startsAt) throw AppError.badRequest("End time must be after start time");
+  const flashSale = await prisma.flashSale.update({ where: { id }, data: { ...input, isActive: isFlashSaleLive(next) }, include });
   await invalidateProductCache();
   return flashSale;
 }
@@ -122,7 +127,7 @@ export async function addFlashSaleItem(flashSaleId: string, input: AddFlashSaleI
   await getFlashSaleById(flashSaleId);
 
   const product = await prisma.product.findUnique({ where: { id: input.productId } });
-  if (!product) throw AppError.badRequest("Product does not exist");
+  if (!product || product.deletedAt) throw AppError.badRequest("Product does not exist");
 
   const existing = await prisma.flashSaleItem.findUnique({
     where: { flashSaleId_productId: { flashSaleId, productId: input.productId } },
@@ -149,17 +154,18 @@ export async function removeFlashSaleItem(flashSaleId: string, itemId: string) {
   return getFlashSaleById(flashSaleId);
 }
 
-/** Flips FlashSale.isActive to match the current time window — called by the cron job every minute. Returns how many rows changed, purely for logging. */
+/** Refreshes the derived FlashSale.isActive cache (enabled && inside the window) — called by the scheduler every
+ * minute. Never touches `enabled`: a sale an admin switched off stays off. Returns how many rows changed. */
 export async function syncFlashSaleActivation(): Promise<number> {
   const now = new Date();
 
   const [activated, deactivated] = await Promise.all([
     prisma.flashSale.updateMany({
-      where: { isActive: false, startsAt: { lte: now }, endsAt: { gte: now } },
+      where: { isActive: false, enabled: true, startsAt: { lte: now }, endsAt: { gte: now } },
       data: { isActive: true },
     }),
     prisma.flashSale.updateMany({
-      where: { isActive: true, endsAt: { lt: now } },
+      where: { isActive: true, OR: [{ enabled: false }, { endsAt: { lt: now } }, { startsAt: { gt: now } }] },
       data: { isActive: false },
     }),
   ]);

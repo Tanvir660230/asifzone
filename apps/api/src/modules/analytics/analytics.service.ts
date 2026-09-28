@@ -6,6 +6,7 @@ import { cacheGet, cacheSet } from "../../config/redis";
 import { ABANDONMENT_THRESHOLD_MS } from "../cart/cart.service";
 import { loadCustomersWithComputedFields } from "../customers/customer.service";
 import { getSettings } from "../settings/settings.service";
+import { taxIncludedIn } from "@clothing-brand/shared";
 
 const CACHE_TTL_SECONDS = 300;
 const NON_REVENUE_STATUSES: OrderStatus[] = ["CANCELLED"];
@@ -2695,7 +2696,9 @@ export async function getFinancialCostBreakdown(days?: number) {
   return result;
 }
 
-/** Estimated tax on windowed revenue from StoreSetting's flat `defaultTaxRate` — Order never
+/** Estimated VAT contained in windowed revenue at StoreSetting's flat `defaultTaxRate`. Prices are tax-inclusive
+ * (D3, docs/PRICING_PIPELINE.md §3), so the VAT is the inclusive share `revenue × r / (100 + r)` — this used to
+ * apply the exclusive formula `revenue × r / 100`, overstating it. Order never
  * snapshots a tax amount per line, so this can only ever be a forward estimate against the
  * store's *current* rate, not a real historical figure; zero (with `taxEnabled: false`) when tax
  * collection isn't turned on. */
@@ -2712,7 +2715,7 @@ export async function getEstimatedTaxCollected(days?: number) {
   `;
   const revenue = rows[0]?.revenue ?? 0;
   const rate = settings.taxEnabled && settings.defaultTaxRate ? Number(settings.defaultTaxRate) : 0;
-  const result = { taxEnabled: settings.taxEnabled, defaultTaxRatePct: rate, estimatedTax: revenue * (rate / 100), revenue };
+  const result = { taxEnabled: settings.taxEnabled, defaultTaxRatePct: rate, estimatedTax: taxIncludedIn(revenue, rate), revenue };
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
   return result;
 }

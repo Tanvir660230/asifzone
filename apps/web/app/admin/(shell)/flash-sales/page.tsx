@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
-import { addFlashSaleItemSchema, type AddFlashSaleItemInput, type CreateFlashSaleInput, type FlashSale } from "@clothing-brand/shared";
+import { addFlashSaleItemSchema, flashSalePhase, type AddFlashSaleItemInput, type CreateFlashSaleInput, type FlashSale } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,13 +23,18 @@ import * as flashSalesApi from "@/lib/api/admin-flash-sales";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
+/** Same rule the server prices with (packages/shared flashSalePhase): live = switched on and inside the window. */
 function statusOf(fs: FlashSale): { label: string; className: string } {
-  const now = Date.now();
-  if (fs.isActive && new Date(fs.startsAt).getTime() <= now && new Date(fs.endsAt).getTime() >= now) {
-    return { label: "Live", className: "bg-success-100 text-success-700" };
+  switch (flashSalePhase(fs)) {
+    case "LIVE":
+      return { label: "Live", className: "bg-success-100 text-success-700" };
+    case "SCHEDULED":
+      return { label: "Scheduled", className: "bg-info-100 text-info-700" };
+    case "DISABLED":
+      return { label: "Off", className: "bg-warning-100 text-warning-700" };
+    default:
+      return { label: "Ended", className: "bg-ink-200 text-ink-700" };
   }
-  if (new Date(fs.startsAt).getTime() > now) return { label: "Scheduled", className: "bg-info-100 text-info-700" };
-  return { label: "Ended", className: "bg-ink-200 text-ink-700" };
 }
 
 function toLocalInputValue(iso?: string) {
@@ -51,6 +56,14 @@ export default function FlashSalesPage() {
     mutationFn: flashSalesApi.createFlashSale,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["flash-sales"] }),
   });
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => flashSalesApi.updateFlashSale(id, { enabled }),
+    onSuccess: (_data, { enabled }) => {
+      queryClient.invalidateQueries({ queryKey: ["flash-sales"] });
+      toast.success(enabled ? "Flash sale switched on" : "Flash sale switched off — it stays off until you switch it on");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to update flash sale"),
+  });
   const deleteMutation = useMutation({
     mutationFn: flashSalesApi.deleteFlashSale,
     onSuccess: () => {
@@ -68,6 +81,7 @@ export default function FlashSalesPage() {
       name: String(form.get("name")),
       startsAt: new Date(String(form.get("startsAt"))),
       endsAt: new Date(String(form.get("endsAt"))),
+      enabled: true,
     };
     try {
       await createMutation.mutateAsync(input);
@@ -132,6 +146,15 @@ export default function FlashSalesPage() {
                   <td className="px-4 py-3">{fs.items.length}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-3">
+                      {new Date(fs.endsAt).getTime() >= Date.now() && (
+                        <button
+                          onClick={() => toggleMutation.mutate({ id: fs.id, enabled: !fs.enabled })}
+                          disabled={toggleMutation.isPending}
+                          className="text-ink-600 hover:underline disabled:opacity-50"
+                        >
+                          {fs.enabled ? "Switch off" : "Switch on"}
+                        </button>
+                      )}
                       <button onClick={() => setManagingId(fs.id)} className="text-brass-600 hover:underline">
                         Manage
                       </button>

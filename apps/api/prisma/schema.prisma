@@ -173,11 +173,18 @@ enum ReviewStatus {
   REJECTED
 }
 
+/// Why a variant's stock changed. Every change is written by inventory.service.ts, the only stock writer
+/// (docs/INVENTORY_INVARIANTS.md). Older rows keep their original reason — cancellations before Phase 1 are
+/// ADJUSTMENT rows carrying an orderId.
 enum StockMovementReason {
   ORDER
   RESTOCK
   ADJUSTMENT
   RETURN
+  CANCELLATION
+  IMPORT
+  DAMAGED
+  LOST
 }
 
 /// The two purchase-funnel steps that have no other trace anywhere in the schema — everything
@@ -1198,6 +1205,11 @@ model OrderItem {
   /// customer kept the full quantity. Set once by reconcilePartialDelivery in order.service.ts,
   /// which also restocks exactly this many units via a matching StockMovement.
   returnedQuantity    Int     @default(0)
+  /// How many units of this line have been put back into stock by any path — cancellation, return,
+  /// partial-delivery reconciliation, exchange, or moving the order to Trash. Releasing stock for a line
+  /// never exceeds `quantity - restockedQuantity`, which is what makes every restock path idempotent
+  /// (docs/INVENTORY_INVARIANTS.md). Only inventory.service.ts writes it.
+  restockedQuantity   Int     @default(0)
 
   @@index([orderId])
 }
@@ -1241,6 +1253,10 @@ model FlashSale {
   name           String
   startsAt       DateTime
   endsAt         DateTime
+  /// The admin's switch. A disabled sale is never live, whatever its window; the scheduler never changes this.
+  enabled        Boolean         @default(true)
+  /// Derived cache of "live right now" = enabled && startsAt <= now <= endsAt, written only by
+  /// flash-sale.service.ts (on every admin write, and by the scheduler each minute). Never set it by hand.
   isActive       Boolean         @default(false)
   bannerImageUrl String?
   items          FlashSaleItem[]

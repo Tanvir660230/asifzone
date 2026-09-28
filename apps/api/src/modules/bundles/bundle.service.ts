@@ -3,6 +3,8 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { getRecommendedByCategories } from "../products/product.service";
+import { PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
+import { computeFlashPrice, getActiveFlashInfoByProduct } from "../flash-sales/flash-sale-pricing";
 
 const include = {
   anchorCategory: true,
@@ -71,7 +73,7 @@ const SUGGESTED_PRODUCTS_LIMIT = 8;
 /** The active bundle (if any) anchored on this product's category, plus live products drawn from
  * its suggestion categories — powers the PDP's "Complete the Bundle" section. */
 export async function getBundleForProduct(productId: string) {
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { categoryId: true } });
+  const product = await prisma.product.findFirst({ where: { id: productId, ...PURCHASABLE_PRODUCT_WHERE }, select: { categoryId: true } });
   if (!product) return null;
 
   const bundle = await prisma.bundle.findFirst({
@@ -97,11 +99,15 @@ export async function getBundleForProduct(productId: string) {
  * isn't discounted just because it happens to contain a Panjabi. */
 async function getCandidateBundleMatches(items: { variantId: string; quantity: number }[]) {
   const variantIds = items.map((i) => i.variantId);
+  // Only purchasable lines count (a trashed product in a stale cart can't unlock a discount — checkout refuses it anyway).
   const variants = await prisma.productVariant.findMany({
-    where: { id: { in: variantIds } },
-    select: { id: true, price: true, product: { select: { categoryId: true, basePrice: true } } },
+    where: { id: { in: variantIds }, isActive: true, product: PURCHASABLE_PRODUCT_WHERE },
+    select: { id: true, price: true, productId: true, product: { select: { categoryId: true, basePrice: true } } },
   });
   const variantById = new Map(variants.map((v) => [v.id, v]));
+  // D2 (docs/PRICING_PIPELINE.md §2): the bundle works on the effective selling price — after any live flash sale —
+  // the same unit price the subtotal and the charged order lines use (orders/cart-lines.ts effectivePrice).
+  const flashByProduct = await getActiveFlashInfoByProduct([...new Set(variants.map((v) => v.productId))]);
 
   const categoryIdsInCart = new Set<string>();
   const lineTotalByCategory = new Map<string, number>();
@@ -109,7 +115,9 @@ async function getCandidateBundleMatches(items: { variantId: string; quantity: n
     const variant = variantById.get(item.variantId);
     if (!variant) continue;
     const categoryId = variant.product.categoryId;
-    const price = variant.price !== null ? Number(variant.price) : Number(variant.product.basePrice);
+    const listPrice = variant.price !== null ? Number(variant.price) : Number(variant.product.basePrice);
+    const flash = flashByProduct.get(variant.productId);
+    const price = flash ? computeFlashPrice(listPrice, flash) : listPrice;
     categoryIdsInCart.add(categoryId);
     lineTotalByCategory.set(categoryId, (lineTotalByCategory.get(categoryId) ?? 0) + price * item.quantity);
   }

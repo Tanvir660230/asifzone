@@ -329,7 +329,7 @@ describe("CSV export and import", () => {
       expect(Number(variants[sku("upd-M")].price)).toBe(900); // untouched fields of a touched variant
       expect(variants[sku("upd-L")].stock).toBe(6);
 
-      const moves = await prisma.stockMovement.findMany({ where: { variantId: variants[sku("upd-M")].id, reason: "ADJUSTMENT" } });
+      const moves = await prisma.stockMovement.findMany({ where: { variantId: variants[sku("upd-M")].id, reason: "IMPORT" } });
       expect(moves.map((m) => [m.change, m.note])).toEqual([[4, "Changed by CSV import"]]);
     });
 

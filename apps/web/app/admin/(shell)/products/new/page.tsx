@@ -48,6 +48,8 @@ export default function NewProductPage() {
               price: v.price ? Number(v.price) : undefined,
               costPrice: v.costPrice ? Number(v.costPrice) : undefined,
               stock: v.stock,
+              // The value just read back from the server — a compare-and-set no-op for stock (docs/INVENTORY_INVARIANTS.md).
+              expectedStock: v.stock,
               weight: v.weight ? Number(v.weight) : undefined,
               ...(variantImageKeys[index] && stagedKeyToImageId.get(variantImageKeys[index]!)
                 ? { imageIds: [stagedKeyToImageId.get(variantImageKeys[index]!)!] }

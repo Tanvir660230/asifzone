@@ -42,7 +42,7 @@ List price (variant override → product base)
 running flash sale, while the subtotal, the coupon and the charged line prices all used the flash price.
 A bundle discount could therefore be larger than what the customer was actually paying for the matched
 items. **Now:** the bundle's matched amount uses the same `effectivePrice` (list → flash) as the subtotal.
-Regression test: `bundle.integration.test.ts`.
+Regression test: `apps/api/src/modules/bundles/bundle.integration.test.ts`.
 
 Nothing else in the stacking order changed in Phase 1.
 
@@ -59,7 +59,7 @@ Nothing else in the stacking order changed in Phase 1.
   |---|---|---|
   | `StoreSetting.taxEnabled`, `defaultTaxRate` | a store-wide rate | unchanged; read by the helper |
   | `Product.taxRate` | per-product rate; stored, exported, audited, never used in any calculation | unchanged (documented as unused) |
-  | `analytics.getEstimatedTaxCollected` | computed `revenue × rate/100` — the *tax-exclusive* formula applied to tax-inclusive revenue, overstating VAT by a factor of `(100 + r)/100` | **fixed** to `taxIncludedIn(revenue, rate)`; regression test in `tax.test.ts` |
+  | `analytics.getEstimatedTaxCollected` | computed `revenue × rate/100` — the *tax-exclusive* formula applied to tax-inclusive revenue, overstating VAT by a factor of `(100 + r)/100` | **fixed** to `taxIncludedIn(revenue, rate)`; regression test in `apps/api/src/lib/order-state.test.ts` ("tax-inclusive VAT") |
   | `OrderItem`, `Order` | no tax snapshot | unchanged — historical orders are not recalculated. Phase 2 adds `Order.taxAmount` for new orders only |
 
 ## 4. Known duplicates still present (Phase 2 scope, not changed in Phase 1)

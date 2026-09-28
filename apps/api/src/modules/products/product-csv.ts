@@ -612,10 +612,10 @@ export async function runProductImport(csv: string, opts: { skipInvalid?: boolea
         taken.push(v.sku);
       }
       if (p.action === "create") {
-        await createProduct(input as CreateProductInput, adminId, ip);
+        await createProduct(input as CreateProductInput, adminId, ip, { stockReason: "IMPORT" });
         result.created++;
       } else {
-        await updateProduct(p.existingId!, input as UpdateProductInput, adminId, ip, { stockNote: "Changed by CSV import" });
+        await updateProduct(p.existingId!, input as UpdateProductInput, adminId, ip, { stockNote: "Changed by CSV import", stockMode: "count" });
         result.updated++;
       }
     } catch (err) {

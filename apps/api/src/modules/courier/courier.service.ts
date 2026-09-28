@@ -1,4 +1,4 @@
-import { normalizeBdPhone, type OrderStatus } from "@clothing-brand/shared";
+import { canTransitionOrder, normalizeBdPhone, type OrderStatus } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
@@ -94,7 +94,9 @@ async function applyCourierStatus(order: { id: string; orderNumber: string; stat
   });
 
   const mapped = mapSteadfastStatusToOrderStatus(status);
-  if (!mapped || mapped === order.status || TERMINAL_ORDER_STATUSES.includes(order.status)) return;
+  // Only moves the order state machine allows (docs/ORDER_STATE_MACHINE.md) — e.g. a late "cancelled" report for an
+  // order already DELIVERED/RETURNED just updates courierStatus above; it never rewinds or reopens the order.
+  if (!mapped || mapped === order.status || TERMINAL_ORDER_STATUSES.includes(order.status) || !canTransitionOrder(order.status, mapped)) return;
 
   // Steadfast reports both "we voided this before pickup" and "delivery failed and the parcel came
   // back to you" as the same "cancelled" delivery_status — but by the time this fires the order has

@@ -1,4 +1,14 @@
-import { formatVariantLabel, formatVariantSuffix, isInsideDhaka, orderStatusEnum } from "@clothing-brand/shared";
+import {
+  describeRefusedTransition,
+  formatVariantLabel,
+  formatVariantSuffix,
+  getOrderTransition,
+  isInsideDhaka,
+  isPurchasable,
+  orderStatusEnum,
+  PRE_SHIPMENT_STATUSES,
+  type OrderTransitionRule,
+} from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
@@ -13,7 +23,9 @@ import type {
   HoldOrderInput,
   AdjustOrderPriceInput,
   ReconcilePartialDeliveryInput,
+  BulkOrderStatusResult,
 } from "@clothing-brand/shared";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
@@ -29,19 +41,11 @@ import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryS
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
+import { notifyReplenished, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
 
 const include = {
   items: true,
   statusHistory: { orderBy: { createdAt: "asc" as const }, include: { changedByAdmin: { select: { name: true } } } },
-};
-
-/** PENDING/PROCESSING/PACKED/RETURNED/REFUNDED intentionally have no SMS — only the touchpoints an
- * admin can toggle in the dashboard trigger one. */
-const STATUS_SMS_TOUCHPOINT: Partial<Record<OrderStatus, CustomerTouchpoint>> = {
-  CONFIRMED: "CONFIRMED",
-  SHIPPED: "SHIPPED",
-  DELIVERED: "DELIVERED",
-  CANCELLED: "CANCELLED",
 };
 
 export type DerivedOrderPricing = Awaited<ReturnType<typeof deriveOrderPricing>>;
@@ -65,7 +69,8 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
 
   for (const item of input.items) {
     const variant = variantById.get(item.variantId)!;
-    if (!variant.product.isActive || !variant.isActive) throw AppError.badRequest(`${variant.product.name} is no longer available`);
+    // Published, not in Trash, variant active — a stale cart line for a trashed product must never be bought.
+    if (!isPurchasable(variant.product, variant)) throw AppError.badRequest(`${variant.product.name} is no longer available`);
     if (variant.stock < item.quantity) {
       throw AppError.conflict(`Not enough stock for ${variant.product.name}${formatVariantSuffix(variant.size, variant.color)}`);
     }
@@ -150,37 +155,9 @@ export async function insertOrderRecord(
   const { customerId, variantById, flashByProduct, subtotal, discount, couponId, bundleId, bundleDiscount, shippingFee, total } = pricing;
   const itemSnapshotByVariantId = opts.itemSnapshots ? new Map(opts.itemSnapshots.map((s) => [s.variantId, s])) : null;
   const oversoldItems: { name: string; size: string; color: string }[] = [];
+  let stockAfter = new Map<string, number>();
 
   const order = await prisma.$transaction(async (tx) => {
-    // Each item's conditional decrement is independent (distinct variantId rows) — running them
-    // concurrently instead of one-at-a-time cuts checkout latency roughly in proportion to cart size.
-    const results = await Promise.all(
-      input.items.map((item) =>
-        tx.productVariant.updateMany({
-          where: { id: item.variantId, stock: { gte: item.quantity } },
-          data: { stock: { decrement: item.quantity } },
-        }),
-      ),
-    );
-    const shortfalls = input.items.filter((_, i) => results[i]!.count === 0);
-    if (shortfalls.length > 0) {
-      if (!opts.allowOversell) {
-        throw AppError.conflict("Stock changed while placing your order — please review your cart");
-      }
-      // Payment already succeeded for this order — decrement unconditionally (stock can go
-      // negative) rather than lose a paid customer's order to a late stock race.
-      for (const item of shortfalls) {
-        await tx.productVariant.update({ where: { id: item.variantId }, data: { stock: { decrement: item.quantity } } });
-        const variant = variantById.get(item.variantId);
-        const snapshot = itemSnapshotByVariantId?.get(item.variantId);
-        oversoldItems.push({
-          name: variant?.product.name ?? snapshot?.productNameSnapshot ?? item.variantId,
-          size: variant?.size ?? snapshot?.sizeSnapshot ?? "",
-          color: variant?.color ?? snapshot?.colorSnapshot ?? "",
-        });
-      }
-    }
-
     const created = await tx.order.create({
       data: {
         orderNumber: generateOrderNumber(),
@@ -231,14 +208,19 @@ export async function insertOrderRecord(
       include,
     });
 
-    await tx.stockMovement.createMany({
-      data: input.items.map((item) => ({
-        variantId: item.variantId,
-        change: -item.quantity,
-        reason: "ORDER" as const,
-        orderId: created.id,
-      })),
-    });
+    // A short line aborts the whole order with a 409 — unless payment already succeeded (allowOversell, gateway
+    // settlement only), where stock may go negative rather than lose a paid customer's order to a late race.
+    const sale = await recordSale(tx, created.id, input.items, { allowOversell: opts.allowOversell });
+    stockAfter = sale.stockAfter;
+    for (const variantId of sale.oversold) {
+      const variant = variantById.get(variantId);
+      const snapshot = itemSnapshotByVariantId?.get(variantId);
+      oversoldItems.push({
+        name: variant?.product.name ?? snapshot?.productNameSnapshot ?? variantId,
+        size: variant?.size ?? snapshot?.sizeSnapshot ?? "",
+        color: variant?.color ?? snapshot?.colorSnapshot ?? "",
+      });
+    }
 
     if (couponId) await incrementCouponUsage(tx, couponId);
 
@@ -281,7 +263,8 @@ export async function insertOrderRecord(
   for (const item of input.items) {
     const variant = variantById.get(item.variantId);
     if (!variant) continue;
-    const remaining = variant.stock - item.quantity;
+    // The balance returned by the sale itself, not the pre-transaction read (a concurrent sale would make that stale).
+    const remaining = stockAfter.get(item.variantId) ?? variant.stock - item.quantity;
     if (variant.product.trackInventory && remaining <= variant.product.lowStockThreshold) {
       notify({
         type: "product.low_stock",
@@ -833,110 +816,128 @@ async function getCourierReturnFee(shippingDistrict: string): Promise<number> {
   return isInsideDhaka(shippingDistrict) ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
 }
 
-export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
-  const existing = await getOrderById(id);
-  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+type OrderWithHistory = Prisma.OrderGetPayload<{ include: typeof include }>;
 
-  // Computed up front (doesn't depend on the row lock below) and only when it might actually be
-  // needed — a plain settings lookup on every single status change would otherwise be wasted for
-  // the overwhelming majority of updates that aren't "cancel an order that already has a courier
-  // booked". Still gated on restockNeeded inside the transaction, since that's what proves this is
-  // a genuine new transition into CANCELLED, not a re-save of an already-cancelled order.
-  const courierLossFee =
-    input.status === "CANCELLED" && existing.courierConsignmentId
-      ? await getCourierReturnFee(existing.shippingDistrict)
-      : null;
+/** What a committed transition did — handed to runTransitionSideEffects once the transaction is over. */
+export interface OrderTransitionOutcome {
+  order: OrderWithHistory;
+  previousStatus: OrderStatus;
+  previousPaymentStatus: PaymentStatus;
+  rule: OrderTransitionRule;
+  /** False for a same-status call (a no-op apart from an optional note). */
+  changed: boolean;
+  /** Variants whose stock went from 0 to positive (back-in-stock emails). */
+  replenished: string[];
+}
 
-  const updated = await prisma.$transaction(async (tx) => {
-    // Row-locked re-read of status, not the pre-transaction snapshot above — two concurrent status
-    // changes on the same order (e.g. one to CANCELLED, one to SHIPPED) would otherwise both compute
-    // restockNeeded from the same stale `existing.status`, and whichever transaction commits last
-    // wins on `status` while restock bookkeeping reflects only whichever transaction saw it first.
-    // FOR UPDATE blocks the second transaction until the first commits, so it sees the real prior status.
-    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus }>>`
-      SELECT status FROM "Order" WHERE id = ${id} FOR UPDATE
-    `;
-    // existing (fetched moments ago, same id) already proved this row exists.
-    if (!locked) throw AppError.notFound("Order not found");
+/** The order state machine (docs/ORDER_STATE_MACHINE.md) — the ONLY code that changes Order.status after an order
+ * exists. Runs inside the caller's transaction: row-locks the order, validates `from → to` against the shared
+ * matrix using the *locked* status (so concurrent transitions serialise and the loser sees the winner's result),
+ * applies the stock/payment/courier-loss effects the matrix declares, and writes the status + timeline row.
+ * Messages and loyalty points are post-commit (runTransitionSideEffects). */
+export async function applyOrderTransition(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  input: UpdateOrderStatusInput,
+  actor: { adminId?: string | null } = {},
+): Promise<OrderTransitionOutcome> {
+  const [locked] = await tx.$queryRaw<
+    Array<{ status: OrderStatus; paymentStatus: PaymentStatus; paymentMethod: string; courierConsignmentId: string | null; deletedAt: Date | null; shippingDistrict: string }>
+  >`
+    SELECT status, "paymentStatus", "paymentMethod", "courierConsignmentId", "deletedAt", "shippingDistrict"
+    FROM "Order" WHERE id = ${orderId} FOR UPDATE
+  `;
+  if (!locked) throw AppError.notFound("Order not found");
+  if (locked.deletedAt) throw AppError.badRequest("Restore this order before making changes");
 
-    // CANCELLED/REFUNDED are treated everywhere else (deleteOrder) as "this order's reserved stock
-    // has already been put back" — but until now this was the one path that
-    // could land an order on either status (an admin picking it from the dropdown, a bulk update, or
-    // Steadfast reporting a parcel as cancelled) without actually restocking it, silently leaving the
-    // units stuck as "sold". Guarded on the *previous* status so re-saving an already-cancelled/
-    // refunded order (or the reverse transition never happening twice) can't double-credit inventory.
-    const restockNeeded =
-      (input.status === "CANCELLED" || input.status === "REFUNDED") &&
-      locked.status !== "CANCELLED" &&
-      locked.status !== "REFUNDED";
+  const from = locked.status;
+  const to = input.status;
+  const rule = getOrderTransition(from, to);
+  if (!rule) throw AppError.badRequest(describeRefusedTransition(from, to));
 
-    if (restockNeeded) {
-      for (const item of existing.items) {
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { stock: { increment: item.quantity } },
-        });
-      }
-      await tx.stockMovement.createMany({
-        data: existing.items.map((item) => ({
-          variantId: item.variantId,
-          change: item.quantity,
-          reason: "ADJUSTMENT" as const,
-          orderId: id,
-          adminId: changedByAdminId ?? null,
-        })),
-      });
+  const base = { previousStatus: from, previousPaymentStatus: locked.paymentStatus, rule };
 
-      if (courierLossFee !== null) {
-        await tx.courierLossEvent.create({
-          data: { orderId: id, amount: courierLossFee, reason: "CANCELLED_POST_BOOKING" },
-        });
-      }
-    }
+  // Same status: nothing happens — no stock, SMS, points or courier loss (so a re-applied bulk action or a
+  // double-clicked button is harmless). A note still lands on the timeline so admins can annotate.
+  if (from === to) {
+    const order = input.note
+      ? await tx.order.update({
+          where: { id: orderId },
+          data: { statusHistory: { create: { status: to, note: input.note, changedByAdminId: actor.adminId ?? null } } },
+          include,
+        })
+      : await tx.order.findUniqueOrThrow({ where: { id: orderId }, include });
+    return { ...base, order, changed: false, replenished: [] };
+  }
 
-    const order = await tx.order.update({
-      where: { id },
-      data: {
-        status: input.status,
-        // Leaving PENDING means the confirmation call finally resolved (confirmed, cancelled, or
-        // otherwise moved on — including Steadfast auto-resolving it) — any outstanding follow-up
-        // hold is now stale. Moving *to* PENDING leaves followUpAt untouched (undefined = no-op in
-        // Prisma); only the explicit hold action (holdOrderForFollowUp) ever sets it.
-        followUpAt: input.status === "PENDING" ? undefined : null,
-        statusHistory: {
-          create: { status: input.status, note: input.note ?? null, changedByAdminId: changedByAdminId ?? null },
-        },
-      },
-      include,
-    });
-    return order;
+  if (rule.requiresRecordedRefund && locked.paymentStatus !== "REFUNDED") {
+    throw AppError.badRequest("Record the refund first (Payments → Record refund) — an order is marked refunded only once money has actually gone back");
+  }
+
+  let replenished: string[] = [];
+  if (rule.stock !== "none") {
+    const note = rule.stock === "return" ? `Stock restored — order returned` : `Stock released — order cancelled`;
+    const result = await releaseOrderLines(tx, orderId, rule.stock, { adminId: actor.adminId, note });
+    replenished = result.replenished;
+  }
+
+  if (rule.courierLoss && locked.courierConsignmentId) {
+    const amount = await getCourierReturnFee(locked.shippingDistrict);
+    await tx.courierLossEvent.create({ data: { orderId, amount, reason: "CANCELLED_POST_BOOKING" } });
+  }
+
+  // D1: Cash on Delivery money is collected by the courier at the door — delivery is the collection point.
+  const codCollected = rule.codCollected && locked.paymentMethod === "COD" && locked.paymentStatus === "UNPAID";
+
+  const order = await tx.order.update({
+    where: { id: orderId },
+    data: {
+      status: to,
+      ...(codCollected ? { paymentStatus: "PAID" as const } : {}),
+      // Leaving PENDING means the confirmation call resolved — an outstanding follow-up hold is stale. Moving *to*
+      // PENDING leaves it alone; only the explicit hold action sets it.
+      followUpAt: to === "PENDING" ? undefined : null,
+      statusHistory: { create: { status: to, note: input.note ?? null, changedByAdminId: actor.adminId ?? null } },
+    },
+    include,
   });
+  return { ...base, order, changed: true, replenished };
+}
 
-  if (input.status === "DELIVERED" && updated.customerId) {
-    await awardDeliveryPoints(updated.customerId, updated.id, Number(updated.total));
+/** Post-commit effects of a transition: customer SMS, loyalty points, admin alerts, back-in-stock emails. Never
+ * run inside the transaction — a slow SMS gateway must not hold the order row lock, and a rolled-back
+ * transition must not have messaged anyone. */
+export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, opts: { sms?: boolean } = {}) {
+  const { order, rule, changed, previousPaymentStatus } = outcome;
+  if (!changed) return;
+
+  if (rule.awardPoints && order.customerId) {
+    await awardDeliveryPoints(order.customerId, order.id, Number(order.total)).catch((err) =>
+      console.error(`[loyalty] points for ${order.orderNumber} failed:`, err),
+    );
   }
 
-  // A cancellation on an order that was actually already paid is a real money-risk case — EPS/
-  // SSLCommerz already took the payment, and nothing else in this function initiates a refund, so an
-  // admin has to see this and act rather than the order silently sitting cancelled with money still
-  // collected. Checked against the pre-transaction snapshot, not `updated` — paymentStatus isn't
-  // part of what this function changes, so it can't have been affected by the update itself. Gated on
-  // the *previous* status (same guard shape as restockNeeded above) so re-saving an already-cancelled
-  // order — e.g. a bulk-status action re-applied over a mixed selection — doesn't refire this alert
-  // for every order that was cancelled-but-paid before this call ever started.
-  if (input.status === "CANCELLED" && existing.status !== "CANCELLED" && existing.paymentStatus === "PAID") {
+  // Money-risk alerts: the payment was already collected, and nothing here sends it back.
+  if (rule.alertIfPaid && previousPaymentStatus === "PAID") {
     notify({
-      type: "order.cancelled_but_paid",
-      title: `Cancelled but paid: ${updated.orderNumber}`,
-      body: `${updated.customerName} · ${formatBdt(Number(updated.total))} — refund may be owed`,
-      link: `/admin/orders/${updated.id}`,
+      type: rule.alertIfPaid,
+      title: rule.alertIfPaid === "order.cancelled_but_paid" ? `Cancelled but paid: ${order.orderNumber}` : `Returned — refund may be owed: ${order.orderNumber}`,
+      body: `${order.customerName} · ${formatBdt(Number(order.total))} — refund may be owed`,
+      link: `/admin/orders/${order.id}`,
     });
   }
 
-  const touchpoint = STATUS_SMS_TOUCHPOINT[input.status];
-  if (touchpoint) sendCustomerOrderSms(updated, touchpoint);
+  if (rule.customerSms && opts.sms !== false) sendCustomerOrderSms(order, rule.customerSms as CustomerTouchpoint);
+  notifyReplenished(outcome.replenished);
+}
 
-  return updated;
+/** The one command every status change goes through (admin picker, bulk, courier, returns): its own transaction +
+ * post-commit side effects. Throws 400 for a transition the matrix doesn't allow. */
+export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
+  const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, input, { adminId: changedByAdminId }));
+  await runTransitionSideEffects(outcome);
+  const items = await attachLiveItemInfo(outcome.order.items, { requireAvailable: false });
+  return { ...outcome.order, items };
 }
 
 const ORDER_DETAIL_FIELD_LABELS = {
@@ -1103,89 +1104,41 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
 // used to live here too — no longer reachable now that a digital-payment checkout never creates an
 // Order before settlement in the first place (see order.controller.ts's create).
 
-/** Soft-deletes an order (OWNER-only, see order.routes.ts) — hides it from every default query but
- * never physically removes the row, since it's a financial/audit record. Restocks the items first,
- * the same way cancelUnstartedOrder does, unless the order was already CANCELLED/REFUNDED (which
- * already restocked, so doing it again would double-credit the inventory). Restocks
- * `quantity - returnedQuantity`, not the full original quantity — a reconciled PARTIALLY_DELIVERED
- * order already put the returned units back via reconcilePartialDelivery, so restocking the full
- * amount here again would double-credit exactly those units a second time. */
+/** Soft-deletes an order (OWNER-only, see order.routes.ts) — hides it from every default query but never
+ * physically removes the row, since it's a financial/audit record. A pre-shipment order still holds its stock
+ * reservation, so its outstanding units are released (CANCELLATION); an order whose goods already left
+ * (shipped/delivered/closed) changes no stock — trashing is record-keeping, not a return. Idempotent per line
+ * (inventory.service releaseOrderLines), so an already-cancelled or already-returned order puts nothing back. */
 export async function deleteOrder(orderId: string, adminId: string) {
-  const order = await getOrderById(orderId);
-  if (order.deletedAt) return order;
+  const { order, replenished } = await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
+      SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `;
+    if (!locked) throw AppError.notFound("Order not found");
+    if (locked.deletedAt) return { order: await tx.order.findUniqueOrThrow({ where: { id: orderId }, include }), replenished: [] as string[] };
 
-  return prisma.$transaction(async (tx) => {
-    if (order.status !== "CANCELLED" && order.status !== "REFUNDED") {
-      const toRestock = order.items
-        .map((item) => ({ variantId: item.variantId, amount: item.quantity - item.returnedQuantity }))
-        .filter((entry) => entry.amount > 0);
-
-      for (const entry of toRestock) {
-        await tx.productVariant.update({
-          where: { id: entry.variantId },
-          data: { stock: { increment: entry.amount } },
-        });
-      }
-      await tx.stockMovement.createMany({
-        data: toRestock.map((entry) => ({
-          variantId: entry.variantId,
-          change: entry.amount,
-          reason: "ADJUSTMENT" as const,
-          orderId: order.id,
-          adminId,
-        })),
-      });
+    let released: string[] = [];
+    if (PRE_SHIPMENT_STATUSES.includes(locked.status)) {
+      const result = await releaseOrderLines(tx, orderId, "release", { adminId, note: "Stock released — order moved to Trash" });
+      released = result.replenished;
     }
-
-    return tx.order.update({
-      where: { id: orderId },
-      data: { deletedAt: new Date(), deletedByAdminId: adminId },
-      include,
-    });
+    const updated = await tx.order.update({ where: { id: orderId }, data: { deletedAt: new Date(), deletedByAdminId: adminId }, include });
+    return { order: updated, replenished: released };
   });
-}
-
-/** Restores stock for a RETURNED order's items and logs a matching RETURN-reason StockMovement —
- * called right after a return request is approved. Uses `updateMany` (not `update`) per item since
- * a variant referenced only by OrderItem has no FK guarantee it still exists (its Product could
- * have been permanently deleted, cascading the variant away with it) — silently skips restock+
- * logging for any variant that's actually gone rather than throwing mid-loop and leaving some
- * items restocked and others not. */
-export async function restockReturnedOrderItems(
-  orderId: string,
-  items: Array<{ variantId: string; quantity: number }>,
-  adminId: string,
-) {
-  await prisma.$transaction(async (tx) => {
-    for (const item of items) {
-      const result = await tx.productVariant.updateMany({
-        where: { id: item.variantId },
-        data: { stock: { increment: item.quantity } },
-      });
-      if (result.count === 0) continue;
-      await tx.stockMovement.create({
-        data: {
-          variantId: item.variantId,
-          change: item.quantity,
-          reason: "RETURN",
-          orderId,
-          adminId,
-          note: "Stock restored — return approved",
-        },
-      });
-    }
-  });
+  notifyReplenished(replenished);
+  return order;
 }
 
 /** Resolves a PARTIALLY_DELIVERED order (Steadfast reported "partial_delivered" — the customer
  * accepted only some of the parcel) by having an admin declare how many units of each line item
  * actually came back; anything not listed (or listed as 0) is assumed kept by the customer.
- * Restocks exactly those units and logs a PARTIAL_RETURN CourierLossEvent if anything came back —
- * the return leg cost the same courier round trip as a full cancellation. Status deliberately
- * stays PARTIALLY_DELIVERED afterward (never rewritten to DELIVERED): the exact COD amount actually
- * collected on a partial delivery isn't knowable from Steadfast's API, so `total`/delivery-points/
- * the DELIVERED SMS are all intentionally left untouched rather than guessed at — this only fixes
- * the stock-accuracy gap, not the order's financial record. */
+ * Restocks exactly those units (capped at what is still outstanding for the line) and logs a
+ * PARTIAL_RETURN CourierLossEvent if anything came back — the return leg cost the same courier round
+ * trip as a full cancellation. Status deliberately stays PARTIALLY_DELIVERED afterward (never
+ * rewritten to DELIVERED): the exact COD amount actually collected on a partial delivery isn't
+ * knowable from Steadfast's API, so `total`/delivery-points/the DELIVERED SMS are all intentionally
+ * left untouched rather than guessed at — this only fixes the stock-accuracy gap, not the order's
+ * financial record. */
 export async function reconcilePartialDelivery(orderId: string, input: ReconcilePartialDeliveryInput, adminId: string) {
   const existing = await getOrderById(orderId);
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
@@ -1210,27 +1163,20 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   const returnedEntries = input.items.filter((entry) => entry.returnedQuantity > 0);
   const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDistrict) : null;
 
-  return prisma.$transaction(async (tx) => {
-    for (const entry of returnedEntries) {
-      const item = itemById.get(entry.orderItemId)!;
-      const result = await tx.productVariant.updateMany({
-        where: { id: item.variantId },
-        data: { stock: { increment: entry.returnedQuantity } },
-      });
-      if (result.count > 0) {
-        await tx.stockMovement.create({
-          data: {
-            variantId: item.variantId,
-            change: entry.returnedQuantity,
-            reason: "RETURN",
-            orderId,
-            adminId,
-            note: "Stock restored — partial delivery reconciliation",
-          },
-        });
-      }
-      await tx.orderItem.update({ where: { id: entry.orderItemId }, data: { returnedQuantity: entry.returnedQuantity } });
-    }
+  const { order, replenished } = await prisma.$transaction(async (tx) => {
+    // Row lock + re-check: two admins reconciling at once must not both restock.
+    const [locked] = await tx.$queryRaw<Array<{ partialDeliveryReconciledAt: Date | null }>>`
+      SELECT "partialDeliveryReconciledAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `;
+    if (locked?.partialDeliveryReconciledAt) throw AppError.conflict("This order has already been reconciled");
+
+    const result = returnedEntries.length
+      ? await releaseOrderLines(tx, orderId, "return", {
+          adminId,
+          note: "Stock restored — partial delivery reconciliation",
+          lines: returnedEntries.map((entry) => ({ orderItemId: entry.orderItemId, quantity: entry.returnedQuantity })),
+        })
+      : { released: [], replenished: [] };
 
     if (courierLossFee !== null) {
       await tx.courierLossEvent.create({ data: { orderId, amount: courierLossFee, reason: "PARTIAL_RETURN" } });
@@ -1265,7 +1211,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
       });
     }
 
-    return tx.order.update({
+    const updated = await tx.order.update({
       where: { id: orderId },
       data: {
         partialDeliveryReconciledAt: new Date(),
@@ -1273,30 +1219,36 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
       },
       include,
     });
+    return { order: updated, replenished: result.replenished };
   });
+  notifyReplenished(replenished);
+  return order;
 }
 
-/** Un-hides a soft-deleted order. Deliberately does not re-decrement stock — the units restored at
- * delete time may already have been sold to someone else in the meantime, and blindly re-reserving
- * them could take stock negative. Restoring is a correction of the record, not a re-placement of
- * the order. */
-export async function restoreOrder(orderId: string) {
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
-  if (!order) throw AppError.notFound("Order not found");
-  if (!order.deletedAt) return getOrderById(orderId);
+/** Un-hides a soft-deleted order. A pre-shipment order had its reservation released when it was trashed, so
+ * restoring takes those units back (all-or-nothing — 409 if they have been sold since, so the order can never
+ * come back active without the stock it needs). Closed or shipped orders changed no stock when trashed, so
+ * restoring them is purely a record correction. */
+export async function restoreOrder(orderId: string, adminId?: string) {
+  return prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
+      SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `;
+    if (!locked) throw AppError.notFound("Order not found");
+    if (!locked.deletedAt) return tx.order.findUniqueOrThrow({ where: { id: orderId }, include });
 
-  return prisma.order.update({
-    where: { id: orderId },
-    data: { deletedAt: null, deletedByAdminId: null },
-    include,
+    if (PRE_SHIPMENT_STATUSES.includes(locked.status)) {
+      await reReserveOrderLines(tx, orderId, { adminId, note: "Stock re-reserved — order restored from Trash" });
+    }
+    return tx.order.update({ where: { id: orderId }, data: { deletedAt: null, deletedByAdminId: null }, include });
   });
 }
 
 /** Irreversible — only meaningful for an order already in Trash (mirrors permanentlyDeleteCategory).
  * OrderItem/OrderStatusHistory/ReturnRequest all cascade-delete with the order. StockMovement.orderId
- * is a plain historical column with no FK relation to Order (it's an append-only ledger, see
- * restockReturnedOrderItems), so it's untouched and simply keeps a now-orphaned reference — by design,
- * an audit ledger is meant to outlive the order it references. */
+ * is a plain historical column with no FK relation to Order (it's an append-only ledger), so it's
+ * untouched and simply keeps a now-orphaned reference — by design, an audit ledger is meant to
+ * outlive the order it references. */
 export async function permanentlyDeleteOrder(orderId: string) {
   const order = await getOrderById(orderId);
   if (!order.deletedAt) throw AppError.badRequest("Move the order to Trash before deleting it permanently");
@@ -1304,11 +1256,23 @@ export async function permanentlyDeleteOrder(orderId: string) {
   await prisma.order.delete({ where: { id: orderId } });
 }
 
-/** Bulk actions run each order through the same single-order function used elsewhere (not a raw
- * `updateMany`), so every side effect a normal status change carries — status-history row, delivery
- * points on DELIVERED, the customer SMS touchpoint — still fires for each order in the batch. */
-export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, adminId: string) {
-  await Promise.all(ids.map((id) => updateOrderStatus(id, { status }, adminId)));
+/** Bulk status change: every order goes through the same state machine as a single change (its own transaction,
+ * validation and side effects), one at a time so a batch touching the same variants doesn't contend. An order the
+ * matrix refuses is reported, not fatal to the rest of the batch. */
+export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, adminId: string): Promise<BulkOrderStatusResult> {
+  const result: BulkOrderStatusResult = { updated: [], unchanged: [], failed: [] };
+  for (const id of ids) {
+    try {
+      const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, { status }, { adminId }));
+      await runTransitionSideEffects(outcome);
+      (outcome.changed ? result.updated : result.unchanged).push(id);
+    } catch (err) {
+      const orderNumber = (await prisma.order.findUnique({ where: { id }, select: { orderNumber: true } }))?.orderNumber ?? null;
+      result.failed.push({ id, orderNumber, reason: err instanceof AppError ? err.message : "Unexpected error" });
+      if (!(err instanceof AppError)) console.error(`[orders] bulk status ${id} failed:`, err);
+    }
+  }
+  return result;
 }
 
 export async function bulkDeleteOrders(ids: string[], adminId: string) {

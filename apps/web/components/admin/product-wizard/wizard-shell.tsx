@@ -141,7 +141,7 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
   const [showHistory, setShowHistory] = useState(false);
 
   const formState = useProductFormState({ initial, stagedImages });
-  const { form, selectedConfig, resolvedSections, completeness, withPrunedAttributes } = formState;
+  const { form, selectedConfig, resolvedSections, completeness, withPrunedAttributes, withStockExpectations, acknowledgeSavedStock } = formState;
   const wizardState: WizardState = { ...formState, stagedImages, onStagedChange: setStagedImages };
 
   const allSteps = computeWizardSteps(selectedConfig ?? null, resolvedSections);
@@ -233,7 +233,7 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
   /** A live product's URL changes only through the explicit "Change URL" confirmation in the SEO step — never as a
    * side effect of autosave (which would publish every half-typed slug and leave a redirect for each). */
   function forSave(values: CreateProductInput): CreateProductInput {
-    const pruned = withPrunedAttributes(values);
+    const pruned = withStockExpectations(withPrunedAttributes(values));
     if (initial?.status !== "PUBLISHED") return pruned;
     const { slug: _slug, ...rest } = pruned;
     void _slug;
@@ -252,9 +252,11 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
           writeLocalDraft(values as Partial<CreateProductInput>, currentStepRef.current);
         } else if (initial) {
           setSaveState("saving");
+          const payload = forSave(values as CreateProductInput);
           productsApi
-            .updateProduct(initial.id, forSave(values as CreateProductInput))
+            .updateProduct(initial.id, payload)
             .then(() => {
+              acknowledgeSavedStock(payload);
               setSaveState("saved");
               void queryClient.invalidateQueries({ queryKey: ["product", initial.id] });
             })
@@ -345,7 +347,9 @@ export function ProductWizard({ categories, initial }: ProductWizardProps) {
     setBusy(true);
     try {
       // The server re-runs the full completeness gate on a move to READY/PUBLISHED — it's the authority, not this page.
-      const { product } = await productsApi.updateProduct(initial.id, { ...forSave(form.getValues()), ...(status ? { status } : {}) });
+      const payload = forSave(form.getValues());
+      const { product } = await productsApi.updateProduct(initial.id, { ...payload, ...(status ? { status } : {}) });
+      acknowledgeSavedStock(payload);
       await queryClient.invalidateQueries({ queryKey: ["product", initial.id] });
       setSaveState("saved");
       setJustPublished(status === "PUBLISHED");

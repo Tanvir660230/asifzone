@@ -5,9 +5,10 @@ import type { CheckoutInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
+import { notify } from "../../lib/notify";
 import { sendCustomerOrderSms } from "../../lib/order-sms";
 import { sendPaymentConfirmationEmail } from "../../lib/order-mailer";
-import { deriveOrderPricing, insertOrderRecord, type DerivedOrderPricing, type OrderItemSnapshot } from "../orders/order.service";
+import { applyOrderTransition, deriveOrderPricing, insertOrderRecord, type DerivedOrderPricing, type OrderItemSnapshot } from "../orders/order.service";
 import { resolveCartLines, effectivePrice } from "../orders/cart-lines";
 import { initEpsSession, verifyEpsTransaction } from "./eps.service";
 import { initSslcommerzSession } from "./sslcommerz.service";
@@ -58,17 +59,28 @@ function recordEvent(paymentSessionId: string, type: string, note?: string, rawR
  * aggregates, courier's COD check) keeps reading this denormalized column unchanged; none of them
  * need to join through Payment. Never touches a REFUNDED order — refundOrderPayment sets that
  * status directly, and a late settle/fail callback on some other session must not un-refund it. */
-async function syncOrderPaymentStatus(orderId: string, outcome: "PAID" | "FAILED") {
+async function syncOrderPaymentStatus(orderId: string, outcome: "PAID" | "FAILED"): Promise<{ count: number; confirmed: boolean }> {
   if (outcome === "PAID") {
-    return prisma.order.updateMany({
-      where: { id: orderId, paymentStatus: { notIn: ["PAID", "REFUNDED"] } },
-      data: { paymentStatus: "PAID", status: "CONFIRMED" },
+    // The money arrived: record it — but only a still-PENDING order moves on to CONFIRMED, through the order state
+    // machine. A late success on a CANCELLED order must not revive it (its stock was already released); it stays
+    // cancelled, now PAID, and surfaces in the "cancelled but paid" refund queue instead.
+    return prisma.$transaction(async (tx) => {
+      const paid = await tx.order.updateMany({
+        where: { id: orderId, paymentStatus: { notIn: ["PAID", "REFUNDED"] } },
+        data: { paymentStatus: "PAID" },
+      });
+      if (paid.count === 0) return { count: 0, confirmed: false };
+      const current = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
+      if (current.status !== "PENDING") return { count: 1, confirmed: false };
+      await applyOrderTransition(tx, orderId, { status: "CONFIRMED", note: "Payment received" });
+      return { count: 1, confirmed: true };
     });
   }
-  return prisma.order.updateMany({
+  const failed = await prisma.order.updateMany({
     where: { id: orderId, paymentStatus: "UNPAID" },
     data: { paymentStatus: "FAILED" },
   });
+  return { count: failed.count, confirmed: false };
 }
 
 /** Creates a PaymentSession for this order and starts the gateway's hosted-checkout flow — the
@@ -377,11 +389,18 @@ export async function settlePaymentSession(
   // SMS the customer already received for the first one. A session that just materialized its own
   // order above is already PAID/CONFIRMED and already got its SMS/email from insertOrderRecord, so
   // this is deliberately a no-op for it (syncOrderPaymentStatus's own paymentStatus guard matches 0 rows).
-  const syncResult = session.orderId ? await syncOrderPaymentStatus(orderId, "PAID") : { count: 0 };
+  const syncResult = session.orderId ? await syncOrderPaymentStatus(orderId, "PAID") : { count: 0, confirmed: false };
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-  if (syncResult.count > 0) {
+  if (syncResult.confirmed) {
     sendCustomerOrderSms(order, "CONFIRMED");
     sendPaymentConfirmationEmail(order);
+  } else if (syncResult.count > 0 && order.status === "CANCELLED") {
+    notify({
+      type: "order.cancelled_but_paid",
+      title: `Cancelled but paid: ${order.orderNumber}`,
+      body: `${order.customerName} paid after the order was cancelled — refund may be owed`,
+      link: `/admin/orders/${order.id}`,
+    });
   }
 
   return { order, justSettled: true };
@@ -533,7 +552,12 @@ export async function refundOrderPayment(
 ) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order || order.deletedAt) throw AppError.notFound("Order not found");
-  if (order.paymentStatus !== "PAID") throw AppError.badRequest("Only a paid order can be refunded");
+  // D1: a COD order's cash was collected once the courier delivered it (orders delivered before Phase 1 were
+  // backfilled to PAID; returned/partially-delivered ones may still read UNPAID).
+  const codCollected = order.paymentMethod === "COD" && ["DELIVERED", "PARTIALLY_DELIVERED", "RETURNED"].includes(order.status);
+  if (order.paymentStatus !== "PAID" && !(codCollected && order.paymentStatus === "UNPAID")) {
+    throw AppError.badRequest("Only a paid order can be refunded");
+  }
   if (input.amount > Number(order.total) + 0.01) {
     throw AppError.badRequest("Refund amount cannot exceed the order total");
   }

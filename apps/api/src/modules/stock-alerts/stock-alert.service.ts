@@ -4,8 +4,13 @@ import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
+import { AppError } from "../../lib/app-error";
+import { PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
 
 export async function subscribe(customerId: string, variantId: string) {
+  // No restock alerts for something that can't be bought (trashed/unpublished product, inactive variant).
+  const variant = await prisma.productVariant.findFirst({ where: { id: variantId, isActive: true, product: PURCHASABLE_PRODUCT_WHERE }, select: { id: true } });
+  if (!variant) throw AppError.notFound("Product not found");
   await prisma.stockAlert.upsert({
     where: { customerId_variantId: { customerId, variantId } },
     create: { customerId, variantId },
@@ -24,7 +29,7 @@ export async function notifyBackInStock(variantId: string) {
   const alerts = await prisma.stockAlert.findMany({
     // Only customers with an email on file can be notified this way — phone-only guests/customers
     // just never get picked up here (no per-item try/catch below, so this must be filtered up front).
-    where: { variantId, notifiedAt: null, customer: { email: { not: null } } },
+    where: { variantId, notifiedAt: null, customer: { email: { not: null } }, variant: { isActive: true, product: PURCHASABLE_PRODUCT_WHERE } },
     include: {
       customer: { select: { email: true, name: true } },
       variant: { include: { product: true } },
