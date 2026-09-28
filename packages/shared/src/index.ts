@@ -44,5 +44,6 @@ export * from "./sections";
 export * from "./spec-groups";
 export * from "./resolved-view";
 export * from "./wizard-steps";
+export * from "./meta";
 
 export * from "./types";

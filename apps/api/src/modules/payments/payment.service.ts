@@ -11,6 +11,7 @@ import { deriveOrderPricing, insertOrderRecord, type DerivedOrderPricing, type O
 import { resolveCartLines, effectivePrice } from "../orders/cart-lines";
 import { initEpsSession, verifyEpsTransaction } from "./eps.service";
 import { initSslcommerzSession } from "./sslcommerz.service";
+import type { MetaRequestContext } from "../../lib/meta/capi";
 
 /** What's snapshotted onto PaymentSession.checkoutPayload when a storefront digital-payment
  * checkout starts a session with no Order yet (see initiatePendingPayment). `pricing`/
@@ -31,6 +32,10 @@ export interface PendingCheckoutPayload {
     total: number;
   };
   itemSnapshots: OrderItemSnapshot[];
+  /** The shopper's browser signals for the Meta Purchase event, captured at checkout because the
+   * settlement that finally writes the Order may be an IPN/cron with no browser behind it. Absent on
+   * sessions started before this existed. */
+  metaContext?: MetaRequestContext;
 }
 
 // Same lookback bound the EPS reconciliation sweep already used before this table existed.
@@ -150,6 +155,7 @@ export async function initiatePendingPayment(
   input: CheckoutInput,
   customerId: string | null,
   ipAddress?: string,
+  metaContext?: MetaRequestContext,
 ): Promise<{ gatewayUrl: string; sessionId: string }> {
   if (input.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
 
@@ -180,6 +186,7 @@ export async function initiatePendingPayment(
       total: pricing.total,
     },
     itemSnapshots,
+    metaContext,
   };
 
   // Same double-submit guard as createOrder's sessionLockKey (order.service.ts) — a double-click on
@@ -351,6 +358,8 @@ export async function settlePaymentSession(
       customerSmsTouchpoint: "CONFIRMED",
       allowOversell: true,
       itemSnapshots: payload!.itemSnapshots,
+      // Only a storefront checkout ever has a checkoutPayload, so this is always a website purchase.
+      metaContext: payload!.metaContext ?? {},
     });
     orderId = created.id;
     await prisma.paymentSession.update({ where: { id: session.id }, data: { orderId } });

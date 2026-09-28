@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,7 +32,7 @@ import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
 import { createOrder } from "@/lib/api/orders";
 import { getSessionId } from "@/lib/analytics";
-import { pixelInitiateCheckout } from "@/lib/meta-pixel";
+import { pixelAddPaymentInfo, pixelInitiateCheckout, type MetaLineItem } from "@/lib/meta-pixel";
 import { validateCoupon, getBestCoupon, type CouponPreview } from "@/lib/api/coupons";
 import { previewBundle } from "@/lib/api/bundles";
 import { listAddresses } from "@/lib/api/customers";
@@ -67,6 +67,7 @@ function CheckoutForm() {
   const isExpress = expressItem !== null;
   const items = isExpress ? [expressItem] : cartItems;
   const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const metaItems = (): MetaLineItem[] => items.map((i) => ({ id: i.variantId, quantity: i.quantity, price: i.price }));
 
   // A "Buy Now" express item is meant to be one-shot. It's cleared explicitly on successful order
   // below, and the cart page clears any leftover one when the shopper visits their full cart —
@@ -76,17 +77,12 @@ function CheckoutForm() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // Fires once per page load, not once per render — items/subtotal change as coupons/bundles
-  // are applied, but that's still the same checkout attempt, not a new one.
-  const initiateCheckoutFired = useRef(false);
+  // Waits for `mounted` so the persisted cart has rehydrated. pixelInitiateCheckout dedupes per cart
+  // contents per tab session itself, so a refresh or a coupon re-render of the same checkout
+  // doesn't count as a new one.
   useEffect(() => {
-    if (!mounted || items.length === 0 || initiateCheckoutFired.current) return;
-    initiateCheckoutFired.current = true;
-    pixelInitiateCheckout({
-      contentIds: items.map((i) => i.productId),
-      value: subtotal,
-      numItems: items.reduce((sum, i) => sum + i.quantity, 0),
-    });
+    if (!mounted || items.length === 0) return;
+    pixelInitiateCheckout(metaItems());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, items.length]);
 
@@ -314,6 +310,10 @@ function CheckoutForm() {
     try {
       const { order, gatewayUrl } = await createOrder(payload);
       sessionStorage.setItem("lastOrderPhone", values.customerPhone);
+      // Only now that the server has accepted the checkout — a validation/stock error above never
+      // gets here. Purchase is NOT fired here: it fires on the confirmation page once the backend
+      // reports a real order (and server-side from the API), never from this optimistic step.
+      pixelAddPaymentInfo(metaItems(), values.paymentMethod);
       if (gatewayUrl) {
         // No Order exists yet for this attempt — it's only created once the gateway confirms
         // success (order.controller.ts / payment.service.ts's settlePaymentSession). Cart is left

@@ -29,6 +29,8 @@ import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryS
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
+import { enqueueMetaPurchase } from "../../lib/meta/purchase";
+import type { MetaRequestContext } from "../../lib/meta/capi";
 
 const include = {
   items: true,
@@ -145,6 +147,10 @@ export async function insertOrderRecord(
     // `pricing.variantById` so a paid order's line items always match exactly what the customer was
     // quoted and charged, immune to any catalog/flash-sale drift while they were on the gateway page.
     itemSnapshots?: OrderItemSnapshot[];
+    // Set only by the two storefront paths (COD checkout, settled gateway payment) — its presence is
+    // what marks this as a website conversion to report to Meta. An admin-entered phone/Facebook
+    // order never passes it: that sale didn't happen on the website.
+    metaContext?: MetaRequestContext;
   } = {},
 ) {
   const { customerId, variantById, flashByProduct, subtotal, discount, couponId, bundleId, bundleDiscount, shippingFee, total } = pricing;
@@ -264,6 +270,8 @@ export async function insertOrderRecord(
   sendCustomerOrderSms(order, opts.customerSmsTouchpoint ?? "PLACED");
   sendAdminOrderAlertSms(order);
 
+  if (opts.metaContext) enqueueMetaPurchase(order.id, opts.metaContext);
+
   // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
   // abandonment sweep must not fire on it.
   if (customerId) {
@@ -302,7 +310,7 @@ export async function createOrder(
   // statusHistory entry to the staff member who entered it, so the order-detail timeline reads
   // "PENDING · <time> · <admin name> — Order manually entered..." for free, same as any other
   // admin-driven status change.
-  opts: { changedByAdminId?: string; statusNote?: string } = {},
+  opts: { changedByAdminId?: string; statusNote?: string; metaContext?: MetaRequestContext } = {},
 ) {
   // A double-click / double-submit on the checkout button fires two POST /orders before the first
   // one's response ever comes back — without a guard, each call independently decrements stock and

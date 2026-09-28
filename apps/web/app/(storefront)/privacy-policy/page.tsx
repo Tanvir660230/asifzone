@@ -67,8 +67,13 @@ const SECTIONS = [
     body: (
       <p>
         We use essential cookies to keep you signed in and remember your cart between visits, and limited analytics
-        to understand which pages are useful so we can improve them. You can disable cookies in your browser
-        settings, though some parts of checkout may not work correctly without them.
+        to understand which pages are useful so we can improve them. We also use the Meta (Facebook) Pixel and
+        Meta&rsquo;s Conversions API to measure how our ads perform: they record events such as products viewed,
+        items added to cart and completed orders, and for orders we share your email, phone number, name and
+        city with Meta only in hashed (irreversibly encoded) form, so they can be matched to a Meta account.
+        We never share payment details or passwords. You can disable cookies in your browser settings, though
+        some parts of checkout may not work correctly without them, and manage ad preferences in your Facebook
+        account settings.
       </p>
     ),
   },
