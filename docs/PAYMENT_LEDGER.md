@@ -1,6 +1,7 @@
 # Payment Ledger — Phase 4 (Order Payment & Refund SSOT)
 
-**Status:** Phase 4 architecture contract (2026-09-29), branch `phase-4/payment-ledger`. Evidence and scope selection:
+**Status:** Phase 4 — **implemented** (2026-09-29), branch `phase-4/payment-ledger`, awaiting owner sign-off. Test
+evidence: §15. Evidence and scope selection:
 [PHASE_4_AUDIT.md](PHASE_4_AUDIT.md). It builds on D1, D6 and D8 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)), the
 order state machine ([ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md)) and the Phase 2 totals formula
 ([PRICING_INVARIANTS.md](PRICING_INVARIANTS.md) §6). It changes none of them.
@@ -16,7 +17,7 @@ database truth   Payment rows (every settlement: gateway, COD collected, manual)
                     and the Order.paymentStatus projection; every command runs under the order row lock)
    → read model     OrderPaymentSummary (position + payments + refunds), attached to admin order DTOs
    → API            /api/orders/:id/payment · /payments · /refunds · /refunds/:id/complete
-                    /api/payments/admin/ledger/drift · /repair
+                    /api/payment-admin/ledger/drift · /repair
    → consumers      courier booking (Steadfast cod_amount), admin order page, shipping labels, order list/stats
                     queue, payments overview, the order state machine (T4 COD collection, T8 guard), loyalty (D8)
 ```
@@ -166,10 +167,11 @@ paymentStatus ∈ {PAID, PARTIALLY_REFUNDED} }`, used by the order list filter, 
 | `POST /api/orders/:id/refunds/:refundId/complete` | admin | `{ method?, note? }` | `200 { refund, summary }` | 409 `REFUND_NOT_REQUESTED` (already completed), 409 `REFUND_EXCEEDS_PAID`, 404 |
 | `GET /api/orders/:id/refunds` | admin | — | `200 { refunds }` (unchanged) | — |
 | `PATCH /api/orders/:id/price` | admin | unchanged | unchanged | + 409 `ORDER_ALREADY_PAID` |
-| `GET /api/payments/admin/ledger/drift` | admin | — | `200 { checked, drift[], violations[] }` | — |
-| `POST /api/payments/admin/ledger/repair` | OWNER | `{ apply: boolean }` (default dry run) | `200 { checked, changed[], applied }` | — |
+| `GET /api/payment-admin/ledger/drift` | admin | — | `200 { checked, drift[], violations[] }` | — |
+| `POST /api/payment-admin/ledger/repair` | OWNER | `{ apply: boolean }` (default dry run) | `200 { checked, changed[], applied }` | — |
 
-Errors use the existing envelope `{ error: { message, code, details } }` (`AppError`).
+Errors use the existing envelope `{ error: "<message>", details: { code, … } }` (`AppError`, the same shape as
+Phase 2's `QUOTE_CHANGED`).
 
 ## 9. Idempotency
 
@@ -228,7 +230,7 @@ new enum value in the same transaction that adds it.
 
 ## 12. Reconciliation
 
-`paymentLedgerDrift()` (API `GET /api/payments/admin/ledger/drift`, CLI `pnpm --filter api payment-ledger:reconcile`)
+`paymentLedgerDrift()` (API `GET /api/payment-admin/ledger/drift`, CLI `pnpm --filter api payment-ledger:reconcile`)
 scans orders in batches and reports:
 - **drift:** stored `paymentStatus` ≠ derived status (PL-1).
 - **violations:** Σ completed refunds > Σ paid (PL-2); a COD order in `DELIVERED` whose derived status isn't
@@ -270,3 +272,22 @@ threshold, COD scope, due floor) and assert that the invariant tests detect the 
 | `payment.succeeded`, `refund.recorded` outbox events (post-commit calls today) | 8 |
 | Permission for refunds and manual payments (`refunds.create`) | 10 |
 | Cancelling a `REQUESTED` refund (no business rule asks for it yet) | — |
+
+## 15. Verification (Phase 4 sign-off run, 2026-09-29)
+
+| Gate | Result |
+|---|---|
+| Engine unit tests (`lib/payment-ledger-engine.test.ts`) | 15 passed |
+| Mutation tests (`lib/payment-ledger.mutation.test.ts`) | 12 passed: canonical engine clean, 11/11 mutants killed |
+| Source mutations (run by hand against the integration suite, then reverted) | 5/5 killed: courier COD = total; T4 without COD collection; projection never written; refund cap removed; price-adjustment guard removed (both the pre-check and the in-lock re-check — either one alone still blocks it) |
+| Architecture guard (`domain/payments/payment-ledger-writer.guard.test.ts`) | 2 passed |
+| Integration + HTTP contract (`domain/payments/payment-ledger.integration.test.ts`) | 18 passed |
+| Full API suite | 41 files, 500 tests passed |
+| Playwright desktop + mobile | 194 passed, 2 skipped (viewport-scoped by the specs), 0 failed |
+| TypeScript (api, web) · ESLint (api, web) · API build | clean |
+| Next.js build | compiled, type-checked, 12/12 pages generated; the standalone copy step fails with the known Windows symlink `EPERM` (not a code error) |
+| Test DB (`clothing_brand_test`) | reset + all 78 migrations from zero, seeded; `migrate status` up to date; `migrate diff` (datasource → datamodel, read-only) no drift; ledger drift report 0 |
+
+The one integration fixture that changed (`payment.integration.test.ts`) had built a `REFUNDED` order by writing the
+status directly with no payment or refund rows. It now builds the order through a real settlement and refund, because
+the status is derived from those rows.
