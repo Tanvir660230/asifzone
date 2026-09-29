@@ -3,15 +3,6 @@ import type { CouponListQuery, CreateCouponInput, UpdateCouponInput } from "@clo
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
-import type { CartLine } from "../orders/cart-lines";
-
-const couponWithTargets = Prisma.validator<Prisma.CouponDefaultArgs>()({
-  include: {
-    products: { select: { productId: true } },
-    categories: { select: { categoryId: true } },
-  },
-});
-type CouponWithTargets = Prisma.CouponGetPayload<typeof couponWithTargets>;
 
 const couponWithTargetDetails = Prisma.validator<Prisma.CouponDefaultArgs>()({
   include: {
@@ -20,144 +11,11 @@ const couponWithTargetDetails = Prisma.validator<Prisma.CouponDefaultArgs>()({
   },
 });
 
-export interface EvaluateCouponContext {
-  cartLines?: CartLine[];
-  customerId?: string;
-}
+// Coupon evaluation (eligibility, limits, discount math) lives in ONE place: the promotion engine
+// (packages/shared/src/engines/promotion.ts), run by the pricing service after the bundle discount (D9). This module
+// keeps coupon CRUD, the atomic usage counter, and the customer-facing listing.
 
-export interface CouponEvaluation {
-  coupon: CouponWithTargets;
-  discount: number;
-  freeShipping: boolean;
-  /** Product ids the discount actually matched — empty for an ALL_PRODUCTS coupon with no cart context. */
-  eligibleProductIds: string[];
-}
-
-// findBestCoupon/listActiveCoupons scan every active, non-expired coupon in application code (the
-// "best fit" and usage-limit checks aren't expressible as a single WHERE) — fine at realistic
-// coupon-catalog sizes, but capped so a runaway number of active coupons can't turn either into an
-// unbounded full-table load.
 const MAX_ACTIVE_COUPONS_SCANNED = 500;
-
-async function findActiveCoupon(code: string) {
-  return prisma.coupon.findUnique({ where: { code: code.toUpperCase() }, ...couponWithTargets });
-}
-
-/** Cart lines this coupon's targeting actually matches — every line, unfiltered, for an ALL_PRODUCTS
- * coupon (no cart context needed at all in that case). */
-function eligibleLines(coupon: CouponWithTargets, cartLines: CartLine[]): CartLine[] {
-  if (coupon.scope === "ALL_PRODUCTS") return cartLines;
-  if (coupon.scope === "SPECIFIC_PRODUCTS") {
-    const productIds = new Set(coupon.products.map((p) => p.productId));
-    return cartLines.filter((l) => productIds.has(l.productId));
-  }
-  const categoryIds = new Set(coupon.categories.map((c) => c.categoryId));
-  return cartLines.filter((l) => categoryIds.has(l.categoryId));
-}
-
-/** Pure discount math, shared by `evaluateCoupon` (a known code) and `findBestCoupon` (scanning every
- * eligible code) — does not check expiry/usage/min-order/targeting eligibility, only computes the
- * amount against whatever `eligibleAmount` it's handed. */
-function computeCouponDiscount(
-  coupon: { type: string; value: unknown; maxDiscountAmount: unknown },
-  eligibleAmount: number,
-): { discount: number; freeShipping: boolean } {
-  if (coupon.type === "FREE_SHIPPING") return { discount: 0, freeShipping: true };
-
-  let discount = coupon.type === "PERCENTAGE" ? Math.round((eligibleAmount * Number(coupon.value)) / 100) : Number(coupon.value);
-  if (coupon.maxDiscountAmount) discount = Math.min(discount, Number(coupon.maxDiscountAmount));
-  return { discount: Math.min(discount, eligibleAmount), freeShipping: false };
-}
-
-/** Validates a coupon against a cart and returns the discount — throws with a customer-facing message
- * if it can't be applied. `ctx.cartLines` is required for a product/category-restricted coupon (its
- * targeting can't be checked against a bare subtotal); `ctx.customerId`, when known, additionally
- * enforces per-customer/first-order limits. */
-export async function evaluateCoupon(code: string, subtotal: number, ctx: EvaluateCouponContext = {}): Promise<CouponEvaluation> {
-  const coupon = await findActiveCoupon(code);
-  if (!coupon || !coupon.isActive || coupon.deletedAt) throw AppError.badRequest("Coupon not found");
-
-  const now = new Date();
-  if (coupon.startsAt && coupon.startsAt > now) throw AppError.badRequest("This coupon isn't active yet");
-  if (coupon.expiresAt && coupon.expiresAt < now) throw AppError.badRequest("Coupon has expired");
-  if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) {
-    throw AppError.badRequest("Coupon usage limit reached");
-  }
-  if (coupon.minOrderAmount && subtotal < Number(coupon.minOrderAmount)) {
-    throw AppError.badRequest(`Minimum order amount for this coupon is ৳${coupon.minOrderAmount}`);
-  }
-  if (coupon.scope !== "ALL_PRODUCTS" && !ctx.cartLines) {
-    throw AppError.badRequest("This coupon can't be applied without your cart details");
-  }
-
-  const matched = ctx.cartLines ? eligibleLines(coupon, ctx.cartLines) : null;
-  const eligibleAmount = matched ? matched.reduce((sum, l) => sum + l.lineTotal, 0) : subtotal;
-  const eligibleQuantity = matched ? matched.reduce((sum, l) => sum + l.quantity, 0) : null;
-
-  if (coupon.scope !== "ALL_PRODUCTS" && eligibleAmount <= 0) {
-    throw AppError.badRequest("This coupon doesn't apply to any items in your cart");
-  }
-  if (coupon.minQuantity && eligibleQuantity !== null && eligibleQuantity < coupon.minQuantity) {
-    throw AppError.badRequest(`This coupon needs at least ${coupon.minQuantity} eligible item(s) in your cart`);
-  }
-
-  if (ctx.customerId) {
-    if (coupon.perCustomerLimit) {
-      const used = await prisma.order.count({
-        where: { couponId: coupon.id, customerId: ctx.customerId, deletedAt: null },
-      });
-      if (used >= coupon.perCustomerLimit) {
-        throw AppError.badRequest("You've already used this coupon the maximum number of times");
-      }
-    }
-    if (coupon.firstOrderOnly) {
-      const priorOrders = await prisma.order.count({ where: { customerId: ctx.customerId, deletedAt: null } });
-      if (priorOrders > 0) throw AppError.badRequest("This coupon is only valid on your first order");
-    }
-  }
-
-  const { discount, freeShipping } = computeCouponDiscount(coupon, eligibleAmount);
-  return {
-    coupon,
-    discount,
-    freeShipping,
-    eligibleProductIds: matched ? [...new Set(matched.map((l) => l.productId))] : [],
-  };
-}
-
-/** The single best coupon a shopper already qualifies for, with no code needed — powers the checkout
- * page's auto-suggestion banner. Skips any product/category-restricted coupon that doesn't match the
- * current cart, so a shopper is never nudged toward a coupon that would apply to nothing. */
-export async function findBestCoupon(subtotal: number, cartLines?: CartLine[]) {
-  const now = new Date();
-  const candidates = await prisma.coupon.findMany({
-    where: { isActive: true, deletedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
-    orderBy: { createdAt: "desc" },
-    take: MAX_ACTIVE_COUPONS_SCANNED,
-    ...couponWithTargets,
-  });
-
-  let best: { coupon: CouponWithTargets; discount: number; freeShipping: boolean } | null = null;
-  for (const coupon of candidates) {
-    if (coupon.startsAt && coupon.startsAt > now) continue;
-    if (coupon.expiresAt && coupon.expiresAt < now) continue;
-    if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) continue;
-    if (coupon.minOrderAmount && subtotal < Number(coupon.minOrderAmount)) continue;
-    if (coupon.scope !== "ALL_PRODUCTS" && !cartLines) continue;
-
-    const matched = cartLines ? eligibleLines(coupon, cartLines) : null;
-    const eligibleAmount = matched ? matched.reduce((sum, l) => sum + l.lineTotal, 0) : subtotal;
-    const eligibleQuantity = matched ? matched.reduce((sum, l) => sum + l.quantity, 0) : null;
-    if (coupon.scope !== "ALL_PRODUCTS" && eligibleAmount <= 0) continue;
-    if (coupon.minQuantity && eligibleQuantity !== null && eligibleQuantity < coupon.minQuantity) continue;
-
-    const { discount, freeShipping } = computeCouponDiscount(coupon, eligibleAmount);
-    if (discount <= 0 && !freeShipping) continue;
-    if (!best || discount > best.discount) best = { coupon, discount, freeShipping };
-  }
-
-  return best;
-}
 
 /** Called inside the order-creation transaction — atomically increments usage so concurrent checkouts
  * can't both slip past a usage limit. Uses a conditional raw UPDATE (mirroring the stock-decrement
@@ -173,8 +31,8 @@ export async function incrementCouponUsage(tx: Prisma.TransactionClient, couponI
   }
 }
 
-/** Every currently-usable coupon, for a customer-facing "available coupons" listing — same
- * eligibility checks as `findBestCoupon` minus the subtotal filter (there's no cart to check against here). */
+/** Every currently-usable coupon, for a customer-facing "available coupons" listing (window and global usage only —
+ * whether it applies to a cart is the pricing service's job). */
 export async function listActiveCoupons() {
   const now = new Date();
   const candidates = await prisma.coupon.findMany({
@@ -201,6 +59,10 @@ export async function listCoupons(query: CouponListQuery) {
     (p) => prisma.coupon.findMany({ where, orderBy: { createdAt: "desc" }, ...couponWithTargetDetails, ...p }),
     () => prisma.coupon.count({ where }),
   );
+}
+
+export async function getCouponByCode(code: string) {
+  return prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
 }
 
 export async function getCouponById(id: string) {

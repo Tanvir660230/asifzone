@@ -1,6 +1,6 @@
 "use client";
 
-import { formatVariantLabel, formatVariantSuffix } from "@clothing-brand/shared";
+import { canTransitionOrder, formatVariantLabel, formatVariantSuffix } from "@clothing-brand/shared";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -124,14 +124,16 @@ const STATUS_OPTIONS: OrderStatus[] = [
   "REFUNDED",
 ];
 
-// The natural happy-path pipeline — used only to suggest the next status in the picker, not to
-// restrict which status can be picked (any status is still selectable, this just highlights one).
+// The natural happy-path pipeline — used only to suggest the next status in the picker. Which statuses can be
+// picked at all comes from the shared order state machine (docs/ORDER_STATE_MACHINE.md), the same table the API
+// enforces, so the picker never offers a move the server would refuse.
 const PIPELINE_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED", "SHIPPED", "DELIVERED"];
 
 function suggestedNextStatus(current: OrderStatus): OrderStatus | null {
   const idx = PIPELINE_STATUSES.indexOf(current);
   if (idx === -1 || idx === PIPELINE_STATUSES.length - 1) return null;
-  return PIPELINE_STATUSES[idx + 1] ?? null;
+  const next = PIPELINE_STATUSES[idx + 1] ?? null;
+  return next && canTransitionOrder(current, next) ? next : null;
 }
 
 function waLink(phone: string, message: string): string {
@@ -743,7 +745,8 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                   {STATUS_OPTIONS.map((s) => (
                     <button
                       key={s}
-                      disabled={s === order.status || statusMutation.isPending}
+                      disabled={s === order.status || !canTransitionOrder(order.status, s) || statusMutation.isPending}
+                      title={s !== order.status && !canTransitionOrder(order.status, s) ? `Not allowed from ${orderStatusLabel(order.status)}` : undefined}
                       onClick={() => pickStatus(s)}
                       className={cn(
                         "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150 ease-smooth disabled:cursor-default",

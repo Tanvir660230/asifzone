@@ -101,7 +101,7 @@ export function ProductForm({
     Object.fromEntries((initial?.relations ?? []).flatMap((r) => (r.products ?? []).map((p) => [p.id, p.name] as const))),
   );
 
-  const { form, types, attributes, canUseAi, globalSections, selectedConfig, completeness, withPrunedAttributes, typeId } = useProductFormState({
+  const { form, types, attributes, canUseAi, globalSections, selectedConfig, completeness, withPrunedAttributes, withStockExpectations, acknowledgeSavedStock, typeId } = useProductFormState({
     initial,
     stagedImages,
   });
@@ -117,7 +117,11 @@ export function ProductForm({
   /** `status` undefined = save without changing it. A new product is always created as a draft: its images are
    * uploaded after it exists, and publishing needs at least one. */
   function submitWith(status?: ProductStatus) {
-    return handleSubmit((values) => onSubmit({ ...withPrunedAttributes(values), ...(initial ? (status ? { status } : {}) : { status: "DRAFT" as const }) }))();
+    return handleSubmit(async (values) => {
+      const payload = withStockExpectations(withPrunedAttributes(values));
+      await onSubmit({ ...payload, ...(initial ? (status ? { status } : {}) : { status: "DRAFT" as const }) });
+      acknowledgeSavedStock(payload);
+    })();
   }
 
   function jumpToFix(target: FixTarget) {

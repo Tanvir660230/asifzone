@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ShoppingBag, Eye, Scale } from "lucide-react";
 import type { Product } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
+import { productDisplayPrice } from "@/lib/pricing-display";
+import { availabilityOf } from "@/lib/availability-display";
 import { cn, isPaleColor } from "@/lib/utils";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { useQuickViewStore } from "@/store/quick-view";
@@ -14,6 +16,7 @@ import { useCompareStore } from "@/store/compare";
 import { WishlistButton } from "./wishlist-button";
 import { PromoBadge, getProductBadge } from "./promo-badge";
 import { StarRating } from "./star-rating";
+import { VariantPickerDialog } from "./variant-picker-dialog";
 
 interface ProductCardProps {
   product: Product;
@@ -25,26 +28,32 @@ interface ProductCardProps {
 
 export function ProductCard({ product, priority }: ProductCardProps) {
   const [primaryImage, secondaryImage] = product.images;
-  const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
-  const flash = product.activeFlashSale;
+  // Server-derived availability (Storefront Read Model): D5 — an untracked product is never "sold out".
+  const availability = availabilityOf(product);
+  const sellableVariants = product.variants.filter((v) => availability.variants[v.id]?.sellable);
+  const soldOut = !availability.inStock;
+  const totalStock = availability.sellableUnits ?? Number.POSITIVE_INFINITY;
+  const shown = productDisplayPrice(product);
   const badge = getProductBadge(product, totalStock);
   const openQuickView = useQuickViewStore((s) => s.open);
   const toggleCompare = useCompareStore((s) => s.toggle);
   const isComparing = useCompareStore((s) => s.items.some((i) => i.id === product.id));
 
-  // Quick-add always targets the first in-stock variant (no size/color picker on a grid card) —
+  // Quick-add always targets the first sellable variant (no size/color picker on a grid card) —
   // routed through the same hook VariantSelector/StickyAddToCart use, rather than a separate
-  // hand-built cart item, so a future change to add-to-cart logic can't miss this path. basePrice
-  // mirrors ProductShowcase's own flash-sale fallback so a card's quick-add honors the same price
-  // the PDP would.
-  const firstInStockVariant = product.variants.find((v) => v.stock > 0);
+  // hand-built cart item, so a future change to add-to-cart logic can't miss this path. Its price is
+  // the server-resolved price, the same one the PDP and checkout use.
+  const firstInStockVariant = sellableVariants[0];
+  // More than one buyable option is a real choice: quick add asks (the options popup) instead of silently picking one.
+  const needsChoice = sellableVariants.length > 1;
+  const [pickerOpen, setPickerOpen] = useState(false);
   const { addToCart, justAdded } = useAddToCart({
     selectedVariant: firstInStockVariant,
     productId: product.id,
     productSlug: product.slug,
     productName: product.name,
     imageUrl: primaryImage?.url ?? null,
-    basePrice: flash?.flashPrice ?? product.basePrice,
+    product,
   });
 
   const colors = useMemo(() => {
@@ -68,7 +77,8 @@ export function ProductCard({ product, priority }: ProductCardProps) {
   function handleQuickAdd(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    addToCart(1);
+    if (needsChoice) setPickerOpen(true);
+    else addToCart(1);
   }
 
   return (
@@ -107,7 +117,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
             <PromoBadge>{badge}</PromoBadge>
           </span>
         )}
-        {totalStock === 0 && (
+        {soldOut && (
           <span className="absolute bottom-3 left-3 rounded-full bg-ink-900 px-2 py-1 text-xs uppercase tracking-wide text-cream-50">
             Sold out
           </span>
@@ -139,7 +149,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           </button>
         </div>
         <WishlistButton productId={product.id} className="absolute right-3 top-3 z-10 h-8 w-8" />
-        {totalStock > 0 && (
+        {!soldOut && (
           <button
             onClick={handleQuickAdd}
             aria-label="Quick add to cart"
@@ -163,18 +173,10 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           </div>
         )}
         <div className="flex items-center gap-2">
-          {flash ? (
-            <>
-              <span className="text-sm font-bold text-ink-900">{formatPrice(flash.flashPrice)}</span>
-              <span className="text-xs text-ink-400 line-through">{formatPrice(product.basePrice)}</span>
-            </>
-          ) : (
-            <>
-              <span className="text-sm font-semibold text-ink-900">{formatPrice(product.basePrice)}</span>
-              {product.compareAtPrice && (
-                <span className="text-xs text-ink-400 line-through">{formatPrice(product.compareAtPrice)}</span>
-              )}
-            </>
+          {/* Server-resolved "from" price — formatted, never computed here. */}
+          <span className={shown.flash ? "text-sm font-bold text-ink-900" : "text-sm font-semibold text-ink-900"}>{formatPrice(shown.price)}</span>
+          {shown.was !== null && Number(shown.was) > Number(shown.price) && (
+            <span className="text-xs text-ink-400 line-through">{formatPrice(shown.was)}</span>
           )}
         </div>
         {colors.length > 1 && (
@@ -194,6 +196,25 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           </div>
         )}
       </Link>
+      {/* Rendered outside both Links (and portalled to <body>), so a tap inside it can never navigate the card. Mounted
+          only while open — a listing has dozens of cards. */}
+      {pickerOpen && (
+        <VariantPickerDialog
+          open
+          intent="cart"
+          onClose={() => setPickerOpen(false)}
+          onConfirm={(variant, quantity) => {
+            setPickerOpen(false);
+            addToCart(quantity, variant);
+          }}
+          variants={product.variants}
+          product={product}
+          lowStockThreshold={product.lowStockThreshold}
+          productName={product.name}
+          imageUrl={primaryImage?.url ?? null}
+          variantDimensions={product.resolved?.variantDimensions}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Eye } from "lucide-react";
 import type { ProductSalesSummary } from "@clothing-brand/shared";
 import { clearAdminHint, hasAdminHint } from "@/lib/admin-hint";
 import { env } from "@/lib/env";
@@ -24,7 +24,7 @@ async function fetchSummary(productId: string): Promise<{ status: "ok"; summary:
   }
 }
 
-/** "Sold in the last 7 days", for the shop's own admins only. Renders nothing for everyone else and, because it only asks the API when
+/** "Sold in the last 7 days" and the lifetime view count, for the shop's own admins only. Renders nothing for everyone else and, because it only asks the API when
  * this browser carries the admin marker, costs customers no request at all. The API is what enforces who may see the numbers. */
 export function AdminSalesBadge({ productId }: { productId: string }) {
   const [summary, setSummary] = useState<ProductSalesSummary | null>(null);
@@ -57,6 +57,12 @@ export function AdminSalesBadge({ productId }: { productId: string }) {
               in {summary.orders} order{summary.orders === 1 ? "" : "s"}
             </span>
           )}
+        </span>
+      </p>
+      <p className="mt-1 flex items-center gap-1.5" data-testid="admin-product-views">
+        <Eye size={14} className="shrink-0 text-brass-700" />
+        <span>
+          <strong data-testid="admin-product-views-count">{summary.totalViews}</strong> total view{summary.totalViews === 1 ? "" : "s"}
         </span>
       </p>
       {summary.byVariant.length > 0 && (

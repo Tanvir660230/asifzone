@@ -5,10 +5,13 @@ import type { CheckoutInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
+import { notify } from "../../lib/notify";
 import { sendCustomerOrderSms } from "../../lib/order-sms";
 import { sendPaymentConfirmationEmail } from "../../lib/order-mailer";
-import { deriveOrderPricing, insertOrderRecord, type DerivedOrderPricing, type OrderItemSnapshot } from "../orders/order.service";
-import { resolveCartLines, effectivePrice } from "../orders/cart-lines";
+import { applyOrderTransition, deriveOrderPricing, insertOrderRecord, type OrderItemSnapshot, type OrderPricingSnapshot } from "../orders/order.service";
+import { quoteCart } from "../../domain/pricing/pricing.service";
+import { loyaltyBase, reverseDeliveryPoints } from "../customers/customer.service";
+import { getSettings } from "../settings/settings.service";
 import { initEpsSession, verifyEpsTransaction } from "./eps.service";
 import { initSslcommerzSession } from "./sslcommerz.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
@@ -21,16 +24,8 @@ import type { MetaRequestContext } from "../../lib/meta/capi";
 export interface PendingCheckoutPayload {
   input: CheckoutInput;
   customerId: string;
-  pricing: {
-    subtotal: number;
-    discount: number;
-    couponId: string | null;
-    couponFreeShipping: boolean;
-    bundleId: string | null;
-    bundleDiscount: number;
-    shippingFee: number;
-    total: number;
-  };
+  /** The canonical quote's order-level snapshot (Phase 2 fields optional: payloads from before Phase 2 still settle). */
+  pricing: OrderPricingSnapshot;
   itemSnapshots: OrderItemSnapshot[];
   /** The shopper's browser signals for the Meta Purchase event, captured at checkout because the
    * settlement that finally writes the Order may be an IPN/cron with no browser behind it. Absent on
@@ -63,17 +58,28 @@ function recordEvent(paymentSessionId: string, type: string, note?: string, rawR
  * aggregates, courier's COD check) keeps reading this denormalized column unchanged; none of them
  * need to join through Payment. Never touches a REFUNDED order — refundOrderPayment sets that
  * status directly, and a late settle/fail callback on some other session must not un-refund it. */
-async function syncOrderPaymentStatus(orderId: string, outcome: "PAID" | "FAILED") {
+async function syncOrderPaymentStatus(orderId: string, outcome: "PAID" | "FAILED"): Promise<{ count: number; confirmed: boolean }> {
   if (outcome === "PAID") {
-    return prisma.order.updateMany({
-      where: { id: orderId, paymentStatus: { notIn: ["PAID", "REFUNDED"] } },
-      data: { paymentStatus: "PAID", status: "CONFIRMED" },
+    // The money arrived: record it — but only a still-PENDING order moves on to CONFIRMED, through the order state
+    // machine. A late success on a CANCELLED order must not revive it (its stock was already released); it stays
+    // cancelled, now PAID, and surfaces in the "cancelled but paid" refund queue instead.
+    return prisma.$transaction(async (tx) => {
+      const paid = await tx.order.updateMany({
+        where: { id: orderId, paymentStatus: { notIn: ["PAID", "REFUNDED"] } },
+        data: { paymentStatus: "PAID" },
+      });
+      if (paid.count === 0) return { count: 0, confirmed: false };
+      const current = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
+      if (current.status !== "PENDING") return { count: 1, confirmed: false };
+      await applyOrderTransition(tx, orderId, { status: "CONFIRMED", note: "Payment received" });
+      return { count: 1, confirmed: true };
     });
   }
-  return prisma.order.updateMany({
+  const failed = await prisma.order.updateMany({
     where: { id: orderId, paymentStatus: "UNPAID" },
     data: { paymentStatus: "FAILED" },
   });
+  return { count: failed.count, confirmed: false };
 }
 
 /** Creates a PaymentSession for this order and starts the gateway's hosted-checkout flow — the
@@ -155,39 +161,25 @@ export async function initiatePendingPayment(
   input: CheckoutInput,
   customerId: string | null,
   ipAddress?: string,
+  idempotencyKey?: string | null,
   metaContext?: MetaRequestContext,
 ): Promise<{ gatewayUrl: string; sessionId: string }> {
   if (input.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
 
+  // Idempotency-Key (the same mechanism as createOrder): a repeat of a started checkout returns its live session.
+  if (idempotencyKey) {
+    const existing = await prisma.paymentSession.findUnique({ where: { idempotencyKey } });
+    if (existing?.status === "ACTIVE" && existing.gatewayUrl) return { gatewayUrl: existing.gatewayUrl, sessionId: existing.id };
+    if (existing) throw AppError.conflict("This checkout attempt has already finished — start a new checkout");
+  }
+
+  // The canonical quote (validates stock, promotions, shipping, tax; refuses a stale quoteToken) — the gateway is asked
+  // for exactly its total, and the lines/snapshot are locked in for settlement.
   const pricing = await deriveOrderPricing(input, customerId);
-  const itemSnapshots: OrderItemSnapshot[] = input.items.map((item) => {
-    const variant = pricing.variantById.get(item.variantId)!;
-    return {
-      variantId: item.variantId,
-      productNameSnapshot: variant.product.name,
-      skuSnapshot: variant.sku,
-      sizeSnapshot: variant.size,
-      colorSnapshot: variant.color,
-      priceSnapshot: effectivePrice(variant, pricing.flashByProduct),
-      quantity: item.quantity,
-    };
-  });
-  const checkoutPayload: PendingCheckoutPayload = {
-    input,
-    customerId: pricing.customerId,
-    pricing: {
-      subtotal: pricing.subtotal,
-      discount: pricing.discount,
-      couponId: pricing.couponId,
-      couponFreeShipping: pricing.couponFreeShipping,
-      bundleId: pricing.bundleId,
-      bundleDiscount: pricing.bundleDiscount,
-      shippingFee: pricing.shippingFee,
-      total: pricing.total,
-    },
-    itemSnapshots,
-    metaContext,
-  };
+  const itemSnapshots = pricing.itemSnapshots;
+  const { customerId: _c, quote: _q, quoteToken: _t, rows: _r, itemSnapshots: _i, ...snapshot } = pricing;
+  void _c; void _q; void _t; void _r; void _i;
+  const checkoutPayload: PendingCheckoutPayload = { input, customerId: pricing.customerId, pricing: snapshot, itemSnapshots, metaContext };
 
   // Same double-submit guard as createOrder's sessionLockKey (order.service.ts) — a double-click on
   // "Place Order" before the first request's response comes back would otherwise open two live
@@ -232,6 +224,7 @@ export async function initiatePendingPayment(
       provider: input.paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ",
       status: "ACTIVE",
       gatewayTransactionRef: attemptRef,
+      idempotencyKey: idempotencyKey ?? null,
       expiresAt: new Date(Date.now() + SESSION_TTL_MS),
       checkoutPayload: checkoutPayload as unknown as Prisma.InputJsonValue,
     },
@@ -341,19 +334,16 @@ export async function settlePaymentSession(
 
   let orderId = session.orderId;
   if (!orderId) {
-    // Live catalog data purely for informational display (an oversold-item admin alert, the
-    // low-stock check) — never for pricing. Best-effort: a variant hard-deleted between checkout
-    // and settlement must not cost a customer who already paid their order.
-    const liveVariants = await resolveCartLines(payload!.input.items).catch((err) => {
-      console.error(`[payment.service] failed to fetch live variant info for settlement of session ${session.id}:`, err);
-      return { variantById: new Map(), flashByProduct: new Map() } as Awaited<ReturnType<typeof resolveCartLines>>;
-    });
-    const finalPricing: DerivedOrderPricing = {
-      customerId: payload!.customerId,
-      variantById: liveVariants.variantById,
-      flashByProduct: liveVariants.flashByProduct,
-      ...payload!.pricing,
-    };
+    // Live catalog rows purely for stock bookkeeping (untracked products, D5) and the low-stock alert — never for
+    // pricing: the order is written with the snapshot the customer paid. Best-effort: a variant hard-deleted between
+    // checkout and settlement must not cost a customer who already paid their order.
+    const rows = await quoteCart({ items: payload!.input.items })
+      .then((p) => p.rows)
+      .catch((err) => {
+        console.error(`[payment.service] failed to fetch live variant info for settlement of session ${session.id}:`, err);
+        return undefined;
+      });
+    const finalPricing = { customerId: payload!.customerId, rows, ...payload!.pricing };
     const created = await insertOrderRecord(payload!.input, finalPricing, { status: "CONFIRMED", paymentStatus: "PAID" }, {
       customerSmsTouchpoint: "CONFIRMED",
       allowOversell: true,
@@ -386,11 +376,18 @@ export async function settlePaymentSession(
   // SMS the customer already received for the first one. A session that just materialized its own
   // order above is already PAID/CONFIRMED and already got its SMS/email from insertOrderRecord, so
   // this is deliberately a no-op for it (syncOrderPaymentStatus's own paymentStatus guard matches 0 rows).
-  const syncResult = session.orderId ? await syncOrderPaymentStatus(orderId, "PAID") : { count: 0 };
+  const syncResult = session.orderId ? await syncOrderPaymentStatus(orderId, "PAID") : { count: 0, confirmed: false };
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-  if (syncResult.count > 0) {
+  if (syncResult.confirmed) {
     sendCustomerOrderSms(order, "CONFIRMED");
     sendPaymentConfirmationEmail(order);
+  } else if (syncResult.count > 0 && order.status === "CANCELLED") {
+    notify({
+      type: "order.cancelled_but_paid",
+      title: `Cancelled but paid: ${order.orderNumber}`,
+      body: `${order.customerName} paid after the order was cancelled — refund may be owed`,
+      link: `/admin/orders/${order.id}`,
+    });
   }
 
   return { order, justSettled: true };
@@ -542,7 +539,12 @@ export async function refundOrderPayment(
 ) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order || order.deletedAt) throw AppError.notFound("Order not found");
-  if (order.paymentStatus !== "PAID") throw AppError.badRequest("Only a paid order can be refunded");
+  // D1: a COD order's cash was collected once the courier delivered it (orders delivered before Phase 1 were
+  // backfilled to PAID; returned/partially-delivered ones may still read UNPAID).
+  const codCollected = order.paymentMethod === "COD" && ["DELIVERED", "PARTIALLY_DELIVERED", "RETURNED"].includes(order.status);
+  if (order.paymentStatus !== "PAID" && !(codCollected && order.paymentStatus === "UNPAID")) {
+    throw AppError.badRequest("Only a paid order can be refunded");
+  }
   if (input.amount > Number(order.total) + 0.01) {
     throw AppError.badRequest("Refund amount cannot exceed the order total");
   }
@@ -569,6 +571,18 @@ export async function refundOrderPayment(
   ]);
 
   if (payment) recordEvent(payment.paymentSessionId, "REFUND_RECORDED", input.reason);
+
+  // D8: reverse the loyalty points on the refunded share of the merchandise (capped at what the order earned, so a
+  // refund after a return that already reversed them takes nothing more).
+  if (order.customerId) {
+    // A refund is attributed to merchandise first (PI-9.4): fraction = refund ÷ rewardable value, capped at 1.
+    const base = loyaltyBase(order, (await getSettings()).currency || "BDT");
+    if (base > 0) {
+      await reverseDeliveryPoints(order.customerId, order.id, input.amount / base).catch((err) =>
+        console.error(`[loyalty] refund reversal for ${order.orderNumber} failed:`, err),
+      );
+    }
+  }
 
   return refund;
 }

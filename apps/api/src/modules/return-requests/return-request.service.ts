@@ -1,11 +1,26 @@
 import { Prisma } from "@prisma/client";
-import { formatVariantSuffix } from "@clothing-brand/shared";
+import {
+  DEFAULT_ROUNDING_POLICY,
+  add,
+  clampNonNegative,
+  computeTax,
+  formatVariantSuffix,
+  fromMajor,
+  isPurchasable,
+  multiply,
+  subtract,
+  toMajor,
+  zero,
+} from "@clothing-brand/shared";
 import type { CreateReturnRequestInput, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { generateOrderNumber } from "../../lib/order-number";
-import { updateOrderStatus, restockReturnedOrderItems } from "../orders/order.service";
+import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.service";
+import { recordSale, releaseOrderLines } from "../inventory/inventory.service";
+import { quoteCart } from "../../domain/pricing/pricing.service";
+import { loadTaxConfig } from "../../domain/pricing/pricing-config";
 
 const include = {
   order: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
@@ -118,169 +133,190 @@ async function getReturnRequestById(id: string) {
   return request;
 }
 
-/** Approving a RETURN reuses the existing order-status machinery (transitions the order to
- * RETURNED, with its own status-history entry) rather than tracking a parallel status — there's no
- * refund-API integration, so "refund status" is just the order's own status/paymentStatus from
- * here on. Approving an EXCHANGE takes a different path entirely (createExchangeOrder below): the
- * original order is untouched (the sale stands, the customer already paid for it) and a new $0
- * replacement order is created instead. */
+/** Approving a RETURN moves the order to RETURNED through the order state machine (which also restocks the
+ * outstanding units, idempotently) in the SAME transaction as the request's own PENDING → APPROVED claim: if the
+ * order can't be returned (e.g. it isn't delivered), nothing changes and the request stays PENDING. There's no
+ * refund-API integration, so money is handled separately via Record refund. Approving an EXCHANGE takes a
+ * different path entirely (createExchangeOrder below): the original order's status is untouched (the sale
+ * stands) and a replacement order is created instead. */
 export async function reviewReturnRequest(id: string, input: ReviewReturnRequestInput, adminId: string) {
   const request = await getReturnRequestById(id);
   if (request.status !== "PENDING") throw AppError.conflict("This return request has already been reviewed");
 
-  // Conditional on status still being PENDING (not a plain update) — closes the race where two
-  // admins review the same request at once: only the update that actually flips PENDING wins,
-  // the loser's count is 0 and gets a clean conflict instead of both silently "succeeding" and
-  // potentially double-triggering the order-status transition below.
-  const result = await prisma.returnRequest.updateMany({
-    where: { id, status: "PENDING" },
-    data: { status: input.status, adminNote: input.adminNote ?? null, reviewedAt: new Date(), reviewedByAdminId: adminId },
-  });
-  if (result.count === 0) throw AppError.conflict("This return request has already been reviewed");
+  const outcome = await prisma.$transaction(async (tx) => {
+    // Conditional on status still being PENDING — two admins reviewing at once: only one claim wins.
+    const result = await tx.returnRequest.updateMany({
+      where: { id, status: "PENDING" },
+      data: { status: input.status, adminNote: input.adminNote ?? null, reviewedAt: new Date(), reviewedByAdminId: adminId },
+    });
+    if (result.count === 0) throw AppError.conflict("This return request has already been reviewed");
 
-  if (input.status === "APPROVED") {
+    if (input.status !== "APPROVED") return null;
     if (request.type === "EXCHANGE") {
-      await createExchangeOrder(request, adminId);
-    } else {
-      const order = await updateOrderStatus(
-        request.orderId,
-        { status: "RETURNED", note: `Return approved: ${request.reason}` },
-        adminId,
-      );
-      await restockReturnedOrderItems(order.id, order.items, adminId);
+      await createExchangeOrder(tx, request, adminId);
+      return null;
     }
-  }
+    return applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId });
+  });
+  if (outcome) await runTransitionSideEffects(outcome);
 
   return prisma.returnRequest.findUnique({ where: { id }, include });
 }
 
-/** Creates the replacement shipment for an approved EXCHANGE request: decrements stock for the
- * requested item (re-checked here, not trusted from request-creation time — it may have sold out
- * since), restocks the original item back to inventory, and opens a new companion Order — copying
- * the original's shipping/contact details, starting at CONFIRMED (an admin already approved it, so
- * it skips the confirmation-call queue). Since exchanges are no longer limited to a same-priced
- * same-product swap, the new item's price may exceed what the customer already paid: any positive
- * gap becomes a COD `total` collected by the courier on delivery, same as any other COD order —
- * there's no refund-API integration to pay out the other direction, so a downgrade stays free
- * rather than owing the customer a refund. Left for the admin to book with Steadfast the same way
- * any other order is booked. */
+/** Creates the replacement shipment for an approved EXCHANGE request, inside the approval's transaction.
+ *
+ * D6 — priced by the canonical pricing service at the CURRENT effective selling price (list → variant → live flash sale,
+ * stock-limit aware; no bundle or coupon, no shipping) and compared with what the customer actually paid for the item
+ * being returned (its order-line snapshot, net of the discounts allocated to it — history, not the current price).
+ *   • replacement costs more  → the difference is the new order's total, collected COD on delivery;
+ *   • replacement costs less  → the difference is owed back: a REQUESTED Refund on the original order for an admin to pay out;
+ *   • equal                   → a free exchange.
+ * Then: takes the replacement out of stock (re-checked — it may have sold out since the request), puts the original
+ * item back (a RETURN on the original order's line, so it can never be restocked twice), and opens the companion Order
+ * at CONFIRMED with its own pricing/tax snapshot. */
 async function createExchangeOrder(
+  tx: Prisma.TransactionClient,
   request: NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>,
   adminId: string,
 ) {
-  const originalOrder = await prisma.order.findUnique({ where: { id: request.orderId }, include: { items: true } });
+  const originalOrder = await tx.order.findUnique({ where: { id: request.orderId }, include: { items: true } });
   if (!originalOrder) throw AppError.notFound("Original order not found");
 
   const originalItem = originalOrder.items.find((i) => i.id === request.orderItemId);
   if (!originalItem) throw AppError.badRequest("The original item on this order could not be found");
   if (!request.requestedVariantId) throw AppError.badRequest("No replacement size/color was recorded for this exchange");
 
-  const requestedVariant = await prisma.productVariant.findUnique({
+  const requestedVariant = await tx.productVariant.findUnique({
     where: { id: request.requestedVariantId },
     include: { product: true },
   });
-  if (!requestedVariant) throw AppError.badRequest("The requested size/color is no longer available");
+  // A trashed/unpublished product or an inactive variant can't be shipped as a replacement.
+  if (!requestedVariant || !isPurchasable(requestedVariant.product, requestedVariant)) {
+    throw AppError.badRequest("The requested size/color is no longer available");
+  }
 
-  const price = Number(requestedVariant.price ?? requestedVariant.product.basePrice);
-  const subtotal = price * originalItem.quantity;
-  const alreadyPaidValue = Number(originalItem.priceSnapshot) * originalItem.quantity;
-  // Only ever collects more, never refunds — a cheaper replacement is still a free exchange (no
-  // refund path exists), an equal-or-pricier one bills the gap as COD on the new shipment.
-  const amountDue = Math.max(0, subtotal - alreadyPaidValue);
-  const discount = subtotal - amountDue;
+  // The exchange quote: the canonical pipeline, current prices, flash only.
+  const { quote } = await quoteCart(
+    { items: [{ variantId: requestedVariant.id, quantity: originalItem.quantity }], promotions: "FLASH_ONLY", customerId: originalOrder.customerId },
+    tx,
+  );
+  const line = quote.lines[0];
+  if (!line) throw AppError.badRequest("The requested size/color is no longer available");
+  const cur = quote.currency;
+  const newValue = quote.subtotal;
+  // What the customer paid for the returned units: the line's snapshot price net of its allocated discounts (orders
+  // placed before Phase 2 have no allocation snapshot — their plain line value is used, as before).
+  const paidValue = clampNonNegative(
+    subtract(
+      multiply(fromMajor(originalItem.priceSnapshot.toString(), cur), originalItem.quantity),
+      add(fromMajor(originalItem.bundleDiscountAllocated?.toString() ?? "0", cur), fromMajor(originalItem.couponDiscountAllocated?.toString() ?? "0", cur)),
+    ),
+  );
+  const amountDue = clampNonNegative(subtract(newValue, paidValue));
+  const refundDue = clampNonNegative(subtract(paidValue, newValue));
+  const credit = subtract(newValue, amountDue); // what the returned item's value covers (the new order's discount)
+  const tax = computeTax(await loadTaxConfig(tx), amountDue, zero(cur), DEFAULT_ROUNDING_POLICY);
 
-  return prisma.$transaction(async (tx) => {
-    // Conditional decrement, same "stock changed underneath us" guard createOrder uses at checkout
-    // — the requested size may have sold out in the time between the customer's request and this
-    // approval.
-    const decremented = await tx.productVariant.updateMany({
-      where: { id: requestedVariant.id, stock: { gte: originalItem.quantity } },
-      data: { stock: { decrement: originalItem.quantity } },
+  const label = `${originalItem.productNameSnapshot}${formatVariantSuffix(originalItem.sizeSnapshot, originalItem.colorSnapshot)} → ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)}`;
+  const exchangeNote =
+    amountDue.amount > 0
+      ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(amountDue)} due COD on delivery for the price difference`
+      : refundDue.amount > 0
+        ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(refundDue)} owed back to the customer (refund requested)`
+        : `Free exchange for order ${originalOrder.orderNumber} (${label})`;
+
+  const exchangeOrder = await tx.order.create({
+    data: {
+      orderNumber: generateOrderNumber(),
+      customerId: originalOrder.customerId,
+      status: "CONFIRMED",
+      paymentMethod: amountDue.amount > 0 ? "COD" : originalOrder.paymentMethod,
+      paymentStatus: amountDue.amount > 0 ? "UNPAID" : "PAID",
+      customerName: originalOrder.customerName,
+      customerEmail: originalOrder.customerEmail,
+      customerPhone: originalOrder.customerPhone,
+      shippingDivision: originalOrder.shippingDivision,
+      shippingDistrict: originalOrder.shippingDistrict,
+      shippingArea: originalOrder.shippingArea,
+      shippingAddressLine: originalOrder.shippingAddressLine,
+      adminNotes: exchangeNote,
+      subtotal: toMajor(newValue),
+      // Discount = the value the returned item already covers; the rest (if any) is `total`, collected COD. Keeps
+      // subtotal a real record of the new item's current value (useful for "cost of exchanges" reporting).
+      discount: toMajor(credit),
+      couponDiscount: 0,
+      flashDiscount: toMajor(quote.flashDiscount),
+      shippingFee: 0,
+      shippingWaived: false,
+      total: toMajor(amountDue),
+      pricingVersion: quote.pricingVersion,
+      taxMode: tax.mode,
+      taxRate: tax.ratePct,
+      shippingTaxRate: tax.shipping.ratePct,
+      taxableAmount: toMajor(tax.taxableAmount),
+      taxAmount: toMajor(tax.taxAmount),
+      shippingTaxAmount: toMajor(tax.shipping.taxAmount),
+      items: {
+        create: line.segments.map((seg) => ({
+          variantId: requestedVariant.id,
+          productNameSnapshot: requestedVariant.product.name,
+          skuSnapshot: requestedVariant.sku,
+          sizeSnapshot: requestedVariant.size,
+          colorSnapshot: requestedVariant.color,
+          priceSnapshot: toMajor(seg.unitPrice),
+          quantity: seg.quantity,
+          listPriceSnapshot: toMajor(seg.listUnitPrice),
+          flashSaleId: seg.flash?.flashSaleId ?? null,
+          flashSaleItemId: seg.flash?.flashSaleItemId ?? null,
+          bundleDiscountAllocated: 0,
+          couponDiscountAllocated: 0,
+        })),
+      },
+      statusHistory: {
+        create: {
+          status: "CONFIRMED",
+          note: `Exchange for order ${originalOrder.orderNumber} — original item restocked`,
+          changedByAdminId: adminId,
+        },
+      },
+    },
+  });
+
+  // Same "stock changed underneath us" guard checkout uses — a 409 here rolls the whole approval back.
+  try {
+    await recordSale(tx, exchangeOrder.id, [{ variantId: requestedVariant.id, quantity: originalItem.quantity }], {
+      adminId,
+      note: "Exchange shipment",
+      untrackedVariantIds: requestedVariant.product.trackInventory ? undefined : new Set([requestedVariant.id]),
     });
-    if (decremented.count === 0) {
+  } catch (err) {
+    if (err instanceof AppError && err.statusCode === 409) {
       throw AppError.conflict(
         `Not enough stock left for ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)} to fulfil this exchange`,
       );
     }
-
-    const exchangeNote =
-      amountDue > 0
-        ? `Exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot}${formatVariantSuffix(originalItem.sizeSnapshot, originalItem.colorSnapshot)} → ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)}) — BDT ${amountDue} due COD on delivery for the price difference`
-        : `Free exchange for order ${originalOrder.orderNumber} (${originalItem.productNameSnapshot}${formatVariantSuffix(originalItem.sizeSnapshot, originalItem.colorSnapshot)} → ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)})`;
-
-    const exchangeOrder = await tx.order.create({
-      data: {
-        orderNumber: generateOrderNumber(),
-        customerId: originalOrder.customerId,
-        status: "CONFIRMED",
-        paymentMethod: amountDue > 0 ? "COD" : originalOrder.paymentMethod,
-        paymentStatus: amountDue > 0 ? "UNPAID" : "PAID",
-        customerName: originalOrder.customerName,
-        customerEmail: originalOrder.customerEmail,
-        customerPhone: originalOrder.customerPhone,
-        shippingDivision: originalOrder.shippingDivision,
-        shippingDistrict: originalOrder.shippingDistrict,
-        shippingArea: originalOrder.shippingArea,
-        shippingAddressLine: originalOrder.shippingAddressLine,
-        adminNotes: exchangeNote,
-        subtotal,
-        // Discount covers whatever value the customer already paid via the original item — the
-        // rest (if any) is `total`, collected as COD. Keeps subtotal a real record of the new
-        // item's value (useful for "cost of exchanges" reporting) rather than always netting to 0.
-        discount,
-        shippingFee: 0,
-        total: amountDue,
-        items: {
-          create: {
-            variantId: requestedVariant.id,
-            productNameSnapshot: requestedVariant.product.name,
-            skuSnapshot: requestedVariant.sku,
-            sizeSnapshot: requestedVariant.size,
-            colorSnapshot: requestedVariant.color,
-            priceSnapshot: price,
-            quantity: originalItem.quantity,
-          },
-        },
-        statusHistory: {
-          create: {
-            status: "CONFIRMED",
-            note: `Exchange for order ${originalOrder.orderNumber} — original item restocked`,
-            changedByAdminId: adminId,
-          },
-        },
-      },
-    });
-
-    await tx.stockMovement.create({
-      data: {
-        variantId: requestedVariant.id,
-        change: -originalItem.quantity,
-        reason: "ORDER",
-        orderId: exchangeOrder.id,
-        adminId,
-        note: "Exchange shipment",
-      },
-    });
-
-    const restocked = await tx.productVariant.updateMany({
-      where: { id: originalItem.variantId },
-      data: { stock: { increment: originalItem.quantity } },
-    });
-    if (restocked.count > 0) {
-      await tx.stockMovement.create({
-        data: {
-          variantId: originalItem.variantId,
-          change: originalItem.quantity,
-          reason: "RETURN",
-          orderId: request.orderId,
-          adminId,
-          note: "Stock restored — exchange approved",
-        },
-      });
-    }
-
-    await tx.returnRequest.update({ where: { id: request.id }, data: { exchangeOrderId: exchangeOrder.id } });
-
-    return exchangeOrder;
+    throw err;
+  }
+  await releaseOrderLines(tx, originalOrder.id, "return", {
+    adminId,
+    note: "Stock restored — exchange approved",
+    lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }],
   });
+
+  // D6: a cheaper replacement means money is owed back — recorded as a refund to be paid out (no gateway refund API).
+  if (refundDue.amount > 0) {
+    await tx.refund.create({
+      data: {
+        orderId: originalOrder.id,
+        amount: toMajor(refundDue),
+        reason: `Exchange price difference — ${label}`,
+        status: "REQUESTED",
+        requestedByAdminId: adminId,
+      },
+    });
+  }
+
+  await tx.returnRequest.update({ where: { id: request.id }, data: { exchangeOrderId: exchangeOrder.id } });
+
+  return exchangeOrder;
 }

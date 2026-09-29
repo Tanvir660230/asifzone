@@ -19,13 +19,17 @@ import { AdjustStockModal, type AdjustStockPrefill } from "@/components/admin/ad
 import * as inventoryApi from "@/lib/api/inventory";
 import { cn } from "@/lib/utils";
 
-const REASONS = ["ORDER", "RESTOCK", "ADJUSTMENT", "RETURN"] as const;
+const REASONS = ["ORDER", "CANCELLATION", "RETURN", "RESTOCK", "ADJUSTMENT", "IMPORT", "DAMAGED", "LOST"] as const;
 
 const REASON_BADGE: Record<(typeof REASONS)[number], string> = {
   ORDER: "bg-ink-100 text-ink-700",
   RESTOCK: "bg-success-100 text-success-700",
   ADJUSTMENT: "bg-warning-100 text-warning-700",
   RETURN: "bg-info-100 text-info-700",
+  CANCELLATION: "bg-info-100 text-info-700",
+  IMPORT: "bg-ink-100 text-ink-700",
+  DAMAGED: "bg-danger-100 text-danger-700",
+  LOST: "bg-danger-100 text-danger-700",
 };
 
 export default function InventoryPage() {

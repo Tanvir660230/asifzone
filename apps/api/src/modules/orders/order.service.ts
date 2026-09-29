@@ -1,4 +1,20 @@
-import { formatVariantLabel, formatVariantSuffix, isInsideDhaka, orderStatusEnum } from "@clothing-brand/shared";
+import {
+  describeRefusedTransition,
+  formatVariantLabel,
+  formatVariantSuffix,
+  getOrderTransition,
+  allocateProportionally,
+  computeOrderTotals,
+  fromMajor,
+  isAvailable,
+  maxSellableQuantity,
+  resolveZone,
+  toMajor,
+  type Quote,
+  orderStatusEnum,
+  PRE_SHIPMENT_STATUSES,
+  type OrderTransitionRule,
+} from "@clothing-brand/shared";
 import type {
   CheckoutInput,
   AdminCreateOrderInput,
@@ -13,7 +29,9 @@ import type {
   HoldOrderInput,
   AdjustOrderPriceInput,
   ReconcilePartialDeliveryInput,
+  BulkOrderStatusResult,
 } from "@clothing-brand/shared";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
@@ -21,14 +39,15 @@ import { generateOrderNumber } from "../../lib/order-number";
 import { paginate } from "../../lib/paginate";
 import { notify } from "../../lib/notify";
 import { sendAdminOrderAlertSms, sendCustomerOrderSms, type CustomerTouchpoint } from "../../lib/order-sms";
-import { evaluateCoupon, incrementCouponUsage } from "../coupons/coupon.service";
-import { evaluateBundleForItems } from "../bundles/bundle.service";
-import { resolveCartLines, effectivePrice } from "./cart-lines";
+import { incrementCouponUsage } from "../coupons/coupon.service";
+import { flashUnitsSold, priceProductsForDisplay, quoteCart, toQuoteDto, type PricedQuote, type PriceableProduct } from "../../domain/pricing/pricing.service";
+import { LEGACY_ZONE_KEYS, loadShippingZones } from "../../domain/pricing/pricing-config";
 import { getSettings } from "../settings/settings.service";
-import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryScore } from "../customers/customer.service";
+import { awardDeliveryPoints, findOrCreateGuestCustomer, checkAndUpdateDeliveryScore, loyaltyBase, reverseDeliveryPoints } from "../customers/customer.service";
 import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
+import { notifyReplenished, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
 import { enqueueMetaPurchase } from "../../lib/meta/purchase";
 import type { MetaRequestContext } from "../../lib/meta/capi";
 
@@ -37,61 +56,110 @@ const include = {
   statusHistory: { orderBy: { createdAt: "asc" as const }, include: { changedByAdmin: { select: { name: true } } } },
 };
 
-/** PENDING/PROCESSING/PACKED/RETURNED/REFUNDED intentionally have no SMS — only the touchpoints an
- * admin can toggle in the dashboard trigger one. */
-const STATUS_SMS_TOUCHPOINT: Partial<Record<OrderStatus, CustomerTouchpoint>> = {
-  CONFIRMED: "CONFIRMED",
-  SHIPPED: "SHIPPED",
-  DELIVERED: "DELIVERED",
-  CANCELLED: "CANCELLED",
-};
+/** Order-level pricing facts snapshotted onto an Order (PRICING_INVARIANTS §8). Plain JSON (major units) so a gateway
+ * checkout can carry it through PaymentSession.checkoutPayload unchanged. New fields are optional because payloads
+ * written before Phase 2 may still settle. */
+export interface OrderPricingSnapshot {
+  subtotal: number;
+  discount: number;
+  couponId: string | null;
+  couponFreeShipping: boolean;
+  bundleId: string | null;
+  bundleDiscount: number;
+  shippingFee: number;
+  total: number;
+  pricingVersion?: number;
+  flashDiscount?: number;
+  couponDiscount?: number;
+  shippingWaived?: boolean;
+  shippingZoneKey?: string | null;
+  taxMode?: "INCLUSIVE" | "EXCLUSIVE";
+  taxRate?: number;
+  shippingTaxRate?: number;
+  taxableAmount?: number;
+  taxAmount?: number;
+  shippingTaxAmount?: number;
+}
 
-export type DerivedOrderPricing = Awaited<ReturnType<typeof deriveOrderPricing>>;
+/** One order line = one unit price. A cart line that is partly flash-priced (D4) becomes two snapshots. */
+export interface OrderItemSnapshot {
+  variantId: string;
+  productNameSnapshot: string;
+  skuSnapshot: string;
+  sizeSnapshot: string;
+  colorSnapshot: string;
+  priceSnapshot: number;
+  quantity: number;
+  listPriceSnapshot?: number | null;
+  flashSaleId?: string | null;
+  flashSaleItemId?: string | null;
+  bundleDiscountAllocated?: number | null;
+  couponDiscountAllocated?: number | null;
+}
 
-/** Everything about a checkout that can be computed without writing anything — cart-line pricing,
- * stock/active validation, coupon/bundle evaluation, shipping fee, and the final total. Shared by
- * createOrder (computes once, right before inserting) and the storefront digital-payment flow
- * (payment.service.ts's initiatePendingPayment computes it read-only to price the gateway session
- * and validate the cart before ever redirecting; settlePaymentSession recomputes it fresh at
- * settlement so a stale coupon/flash-sale price from sitting on the gateway page can't be
- * exploited). Never decrements stock — only insertOrderRecord's transaction does that. */
-export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null) {
+export interface DerivedOrderPricing extends OrderPricingSnapshot {
+  customerId: string;
+  quote: Quote;
+  quoteToken: string;
+  itemSnapshots: OrderItemSnapshot[];
+  /** Raw catalog rows (names, thresholds) for post-commit alerts. */
+  rows: PricedQuote["rows"];
+}
+
+/** Flattens a quote into the order's line snapshots: one per price segment, with the line's bundle/coupon allocation
+ * split across its segments in proportion to their amounts (sums exactly). */
+function toItemSnapshots(quote: Quote): OrderItemSnapshot[] {
+  return quote.lines.flatMap((line) => {
+    const bundleParts = allocateProportionally(line.bundleDiscount, line.segments.map((s) => s.total.amount));
+    const couponParts = allocateProportionally(line.couponDiscount, line.segments.map((s) => s.total.amount));
+    return line.segments.map((seg, i) => ({
+      variantId: line.variantId,
+      productNameSnapshot: line.productName,
+      skuSnapshot: line.sku,
+      sizeSnapshot: line.size,
+      colorSnapshot: line.color,
+      priceSnapshot: toMajor(seg.unitPrice),
+      quantity: seg.quantity,
+      listPriceSnapshot: toMajor(seg.listUnitPrice),
+      flashSaleId: seg.flash?.flashSaleId ?? null,
+      flashSaleItemId: seg.flash?.flashSaleItemId ?? null,
+      bundleDiscountAllocated: toMajor(bundleParts[i]!),
+      couponDiscountAllocated: toMajor(couponParts[i]!),
+    }));
+  });
+}
+
+/** Refuses an order whose quote can't be placed, with the same messages checkout has always used. */
+function assertOrderable(quote: Quote, input: CheckoutInput, rows: PricedQuote["rows"]) {
+  for (const w of quote.warnings) {
+    if (w.code === "UNKNOWN_ITEM") throw AppError.badRequest(w.message);
+    if (w.code === "UNAVAILABLE") throw AppError.badRequest(w.message);
+    if (w.code === "INSUFFICIENT_STOCK") {
+      const row = rows.get(w.variantId);
+      throw AppError.conflict(`Not enough stock for ${row?.product.name ?? "an item"}${row ? formatVariantSuffix(row.size, row.color) : ""}`);
+    }
+  }
+  if (input.couponCode) {
+    const rejected = quote.rejectedPromotions.find((r) => r.kind === "COUPON");
+    if (rejected) throw AppError.badRequest(rejected.message);
+  }
+  if (!quote.shipping.resolved) {
+    throw AppError.badRequest(quote.shipping.reason === "NO_ZONE" ? "We can't deliver to this address yet" : "A delivery address is required");
+  }
+}
+
+/** Everything about a checkout that can be computed without writing anything — ONE call to the canonical pricing
+ * service (docs/PRICING_INVARIANTS.md), plus payment-method availability. Shared by createOrder and the storefront
+ * gateway flow (payment.service.ts initiatePendingPayment prices the gateway session with it). Never writes stock.
+ *
+ * `input.quoteToken` (the quote the customer was shown): when present and no longer matching the server's price, the
+ * order is refused with 409 QUOTE_CHANGED carrying the fresh quote — a stale price is never charged. */
+export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null, db: Prisma.TransactionClient | typeof prisma = prisma): Promise<DerivedOrderPricing> {
   // A guest (no session cookie) still gets tied to a real Customer row, matched by email/phone —
   // see findOrCreateGuestCustomer for why (repeat-guest recognition, and a base to merge into once
   // they register/log in).
   if (!customerId) {
     customerId = await findOrCreateGuestCustomer(input.customerName, input.customerEmail ?? null, input.customerPhone);
-  }
-
-  const { subtotal, lines: cartLines, variantById, flashByProduct } = await resolveCartLines(input.items);
-
-  for (const item of input.items) {
-    const variant = variantById.get(item.variantId)!;
-    if (!variant.product.isActive || !variant.isActive) throw AppError.badRequest(`${variant.product.name} is no longer available`);
-    if (variant.stock < item.quantity) {
-      throw AppError.conflict(`Not enough stock for ${variant.product.name}${formatVariantSuffix(variant.size, variant.color)}`);
-    }
-  }
-
-  let discount = 0;
-  let couponId: string | null = null;
-  let couponFreeShipping = false;
-  if (input.couponCode) {
-    const evaluation = await evaluateCoupon(input.couponCode, subtotal, { cartLines, customerId });
-    discount = evaluation.discount;
-    couponFreeShipping = evaluation.freeShipping;
-    couponId = evaluation.coupon.id;
-  }
-
-  // Bundle discounts are detected automatically from cart contents, not opted into like a coupon —
-  // stacks additively with any coupon, clamped so the two together never exceed the subtotal.
-  let bundleId: string | null = null;
-  let bundleDiscount = 0;
-  const bundleMatch = await evaluateBundleForItems(input.items);
-  if (bundleMatch) {
-    bundleId = bundleMatch.bundle.id;
-    bundleDiscount = bundleMatch.discount;
-    discount = Math.min(discount + bundleDiscount, subtotal);
   }
 
   const settings = await getSettings();
@@ -104,11 +172,69 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
   if (input.paymentMethod === "EPS_PG" && !settings.epsPaymentEnabled) {
     throw AppError.badRequest("Online payment is currently unavailable — please choose Cash on Delivery instead");
   }
-  const shippingFee =
-    isInsideDhaka(input.shippingDistrict) ? Number(settings.shippingFeeDhaka) : Number(settings.shippingFeeOutsideDhaka);
-  const total = subtotal - discount + (couponFreeShipping ? 0 : shippingFee);
 
-  return { customerId, variantById, flashByProduct, subtotal, discount, couponId, couponFreeShipping, bundleId, bundleDiscount, shippingFee, total };
+  const priced = await quoteCart(
+    {
+      items: input.items,
+      couponCode: input.couponCode ?? null,
+      address: { district: input.shippingDistrict, division: input.shippingDivision },
+      customerId,
+    },
+    db,
+  );
+  const { quote } = priced;
+  assertOrderable(quote, input, priced.rows);
+  if (input.quoteToken && input.quoteToken !== priced.token) {
+    throw new AppError(409, "Prices in your cart have changed — please review the updated total", { code: "QUOTE_CHANGED", quote: toQuoteDto(priced) });
+  }
+
+  const shipping = quote.shipping.resolved ? quote.shipping : null;
+  return {
+    customerId,
+    quote,
+    quoteToken: priced.token,
+    rows: priced.rows,
+    itemSnapshots: toItemSnapshots(quote),
+    subtotal: toMajor(quote.subtotal),
+    discount: toMajor(quote.discount),
+    couponId: quote.coupon?.id ?? null,
+    couponFreeShipping: quote.coupon?.freeShipping ?? false,
+    bundleId: quote.bundle?.bundleId ?? null,
+    bundleDiscount: toMajor(quote.bundleDiscount),
+    shippingFee: shipping ? toMajor(shipping.fee) : 0,
+    total: toMajor(quote.total),
+    pricingVersion: quote.pricingVersion,
+    flashDiscount: toMajor(quote.flashDiscount),
+    couponDiscount: toMajor(quote.couponDiscount),
+    shippingWaived: shipping?.waived ?? false,
+    shippingZoneKey: shipping?.zoneKey ?? null,
+    taxMode: quote.tax.mode,
+    taxRate: quote.tax.ratePct,
+    shippingTaxRate: quote.tax.shipping.ratePct,
+    taxableAmount: toMajor(quote.tax.taxableAmount),
+    taxAmount: toMajor(quote.tax.taxAmount),
+    shippingTaxAmount: toMajor(quote.tax.shipping.taxAmount),
+  };
+}
+
+/** D4 at commit time: flash-priced units are re-checked under a row lock on each flash-sale item, so two concurrent
+ * checkouts can never both take the last flash unit. A shortfall means the price the customer saw no longer holds. */
+async function claimFlashUnits(tx: Prisma.TransactionClient, snapshots: OrderItemSnapshot[]) {
+  const claims = new Map<string, number>();
+  for (const s of snapshots) if (s.flashSaleItemId) claims.set(s.flashSaleItemId, (claims.get(s.flashSaleItemId) ?? 0) + s.quantity);
+  if (!claims.size) return;
+  const ids = [...claims.keys()];
+  const locked = await tx.$queryRaw<Array<{ id: string; stockLimit: number | null }>>`
+    SELECT id, "stockLimit" FROM "FlashSaleItem" WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE
+  `;
+  const sold = await flashUnitsSold(ids, tx);
+  for (const item of locked) {
+    if (item.stockLimit === null) continue;
+    // `sold` already includes this order's own lines (inserted above in the same transaction).
+    if ((sold.get(item.id) ?? 0) > item.stockLimit) {
+      throw new AppError(409, "The flash-sale price for an item in your cart has just sold out — please review the updated total", { code: "QUOTE_CHANGED" });
+    }
+  }
 }
 
 /** Inserts the actual Order row (+ items/statusHistory/StockMovement, coupon-usage increment) and
@@ -118,80 +244,44 @@ export async function deriveOrderPricing(input: CheckoutInput, customerId: strin
  * CONFIRMED/PAID for a storefront digital payment materializing its order only now that the
  * gateway has confirmed success (see payment.service.ts's settlePaymentSession).
  *
- * `allowOversell`, set only by that settlement path, governs what happens if stock ran out while
- * the customer was on the gateway page: since money has already changed hands, the order is still
- * created (never strand a paid customer with nothing) and stock is decremented unconditionally
- * (allowed to go to/below 0) with an admin alert instead of the AppError.conflict a pre-payment
- * checkout throws in the same situation. */
-export interface OrderItemSnapshot {
-  variantId: string;
-  productNameSnapshot: string;
-  skuSnapshot: string;
-  sizeSnapshot: string;
-  colorSnapshot: string;
-  priceSnapshot: number;
-  quantity: number;
-}
-
+ * Every price comes from `pricing` (the canonical quote, or — for a settling gateway payment — the snapshot of the quote
+ * the customer paid). Nothing here computes a price.
+ *
+ * `allowOversell`, set only by that settlement path, governs what happens if stock (or the flash-sale limit) ran out while
+ * the customer was on the gateway page: since money has already changed hands, the order is still created with the
+ * price that was paid, and stock may go below zero with an admin alert instead of the 409 a pre-payment checkout gets. */
 export async function insertOrderRecord(
   input: CheckoutInput,
-  pricing: DerivedOrderPricing,
+  pricing: OrderPricingSnapshot & { customerId: string | null; itemSnapshots?: OrderItemSnapshot[]; rows?: PricedQuote["rows"] },
   init: { status: OrderStatus; paymentStatus: PaymentStatus },
   opts: {
     changedByAdminId?: string;
     statusNote?: string;
     customerSmsTouchpoint?: CustomerTouchpoint;
     allowOversell?: boolean;
-    // Locked-in item snapshots from checkout-initiation time (payment.service.ts's
-    // initiatePendingPayment) — used instead of re-deriving productNameSnapshot/priceSnapshot from
-    // `pricing.variantById` so a paid order's line items always match exactly what the customer was
-    // quoted and charged, immune to any catalog/flash-sale drift while they were on the gateway page.
+    // Locked-in item snapshots from checkout-initiation time (payment.service.ts's initiatePendingPayment) — the lines
+    // exactly as the customer was quoted and charged.
     itemSnapshots?: OrderItemSnapshot[];
+    idempotencyKey?: string | null;
     // Set only by the two storefront paths (COD checkout, settled gateway payment) — its presence is
     // what marks this as a website conversion to report to Meta. An admin-entered phone/Facebook
     // order never passes it: that sale didn't happen on the website.
     metaContext?: MetaRequestContext;
   } = {},
 ) {
-  const { customerId, variantById, flashByProduct, subtotal, discount, couponId, bundleId, bundleDiscount, shippingFee, total } = pricing;
-  const itemSnapshotByVariantId = opts.itemSnapshots ? new Map(opts.itemSnapshots.map((s) => [s.variantId, s])) : null;
+  const snapshots = opts.itemSnapshots ?? pricing.itemSnapshots ?? [];
+  if (!snapshots.length) throw AppError.badRequest("Cart is empty");
   const oversoldItems: { name: string; size: string; color: string }[] = [];
+  let stockAfter = new Map<string, number>();
+  const untracked = new Set([...(pricing.rows?.values() ?? [])].filter((r) => !r.product.trackInventory).map((r) => r.id));
 
   const order = await prisma.$transaction(async (tx) => {
-    // Each item's conditional decrement is independent (distinct variantId rows) — running them
-    // concurrently instead of one-at-a-time cuts checkout latency roughly in proportion to cart size.
-    const results = await Promise.all(
-      input.items.map((item) =>
-        tx.productVariant.updateMany({
-          where: { id: item.variantId, stock: { gte: item.quantity } },
-          data: { stock: { decrement: item.quantity } },
-        }),
-      ),
-    );
-    const shortfalls = input.items.filter((_, i) => results[i]!.count === 0);
-    if (shortfalls.length > 0) {
-      if (!opts.allowOversell) {
-        throw AppError.conflict("Stock changed while placing your order — please review your cart");
-      }
-      // Payment already succeeded for this order — decrement unconditionally (stock can go
-      // negative) rather than lose a paid customer's order to a late stock race.
-      for (const item of shortfalls) {
-        await tx.productVariant.update({ where: { id: item.variantId }, data: { stock: { decrement: item.quantity } } });
-        const variant = variantById.get(item.variantId);
-        const snapshot = itemSnapshotByVariantId?.get(item.variantId);
-        oversoldItems.push({
-          name: variant?.product.name ?? snapshot?.productNameSnapshot ?? item.variantId,
-          size: variant?.size ?? snapshot?.sizeSnapshot ?? "",
-          color: variant?.color ?? snapshot?.colorSnapshot ?? "",
-        });
-      }
-    }
-
     const created = await tx.order.create({
       data: {
         orderNumber: generateOrderNumber(),
-        customerId,
+        customerId: pricing.customerId,
         sessionId: input.sessionId ?? null,
+        idempotencyKey: opts.idempotencyKey ?? null,
         paymentMethod: input.paymentMethod,
         customerName: input.customerName,
         customerEmail: input.customerEmail ?? null,
@@ -201,30 +291,42 @@ export async function insertOrderRecord(
         shippingArea: input.shippingArea,
         shippingAddressLine: input.shippingAddressLine,
         notes: input.notes ?? null,
-        subtotal,
-        discount,
-        shippingFee,
-        total,
-        couponId,
-        bundleId,
-        bundleDiscount,
+        subtotal: pricing.subtotal,
+        discount: pricing.discount,
+        shippingFee: pricing.shippingFee,
+        total: pricing.total,
+        couponId: pricing.couponId,
+        bundleId: pricing.bundleId,
+        bundleDiscount: pricing.bundleDiscount,
+        // Phase 2 snapshot (absent on a gateway payload written before Phase 2 → NULL = unknown).
+        pricingVersion: pricing.pricingVersion ?? null,
+        flashDiscount: pricing.flashDiscount ?? null,
+        couponDiscount: pricing.couponDiscount ?? null,
+        shippingWaived: pricing.shippingWaived ?? null,
+        shippingZoneKey: pricing.shippingZoneKey ?? null,
+        taxMode: pricing.taxMode ?? null,
+        taxRate: pricing.taxRate ?? null,
+        shippingTaxRate: pricing.shippingTaxRate ?? null,
+        taxableAmount: pricing.taxableAmount ?? null,
+        taxAmount: pricing.taxAmount ?? null,
+        shippingTaxAmount: pricing.shippingTaxAmount ?? null,
         status: init.status,
         paymentStatus: init.paymentStatus,
         items: {
-          create: input.items.map((item) => {
-            const snapshot = itemSnapshotByVariantId?.get(item.variantId);
-            if (snapshot) return snapshot;
-            const variant = variantById.get(item.variantId)!;
-            return {
-              variantId: item.variantId,
-              productNameSnapshot: variant.product.name,
-              skuSnapshot: variant.sku,
-              sizeSnapshot: variant.size,
-              colorSnapshot: variant.color,
-              priceSnapshot: effectivePrice(variant, flashByProduct),
-              quantity: item.quantity,
-            };
-          }),
+          create: snapshots.map((s) => ({
+            variantId: s.variantId,
+            productNameSnapshot: s.productNameSnapshot,
+            skuSnapshot: s.skuSnapshot,
+            sizeSnapshot: s.sizeSnapshot,
+            colorSnapshot: s.colorSnapshot,
+            priceSnapshot: s.priceSnapshot,
+            quantity: s.quantity,
+            listPriceSnapshot: s.listPriceSnapshot ?? null,
+            flashSaleId: s.flashSaleId ?? null,
+            flashSaleItemId: s.flashSaleItemId ?? null,
+            bundleDiscountAllocated: s.bundleDiscountAllocated ?? null,
+            couponDiscountAllocated: s.couponDiscountAllocated ?? null,
+          })),
         },
         statusHistory: {
           create: {
@@ -237,16 +339,26 @@ export async function insertOrderRecord(
       include,
     });
 
-    await tx.stockMovement.createMany({
-      data: input.items.map((item) => ({
-        variantId: item.variantId,
-        change: -item.quantity,
-        reason: "ORDER" as const,
-        orderId: created.id,
-      })),
-    });
+    // D4: flash-priced units claimed under a lock (a paid settlement keeps the price it paid).
+    if (!opts.allowOversell) await claimFlashUnits(tx, snapshots);
 
-    if (couponId) await incrementCouponUsage(tx, couponId);
+    // Stock: one sale per variant (a split line's segments add up). A short line aborts the whole order with a 409 —
+    // unless payment already succeeded (allowOversell). Untracked products (D5) never block on stock.
+    const perVariant = new Map<string, number>();
+    for (const s of snapshots) perVariant.set(s.variantId, (perVariant.get(s.variantId) ?? 0) + s.quantity);
+    const sale = await recordSale(
+      tx,
+      created.id,
+      [...perVariant].map(([variantId, quantity]) => ({ variantId, quantity })),
+      { allowOversell: opts.allowOversell, untrackedVariantIds: untracked },
+    );
+    stockAfter = sale.stockAfter;
+    for (const variantId of sale.oversold) {
+      const snapshot = snapshots.find((s) => s.variantId === variantId);
+      oversoldItems.push({ name: snapshot?.productNameSnapshot ?? variantId, size: snapshot?.sizeSnapshot ?? "", color: snapshot?.colorSnapshot ?? "" });
+    }
+
+    if (pricing.couponId) await incrementCouponUsage(tx, pricing.couponId);
 
     return created;
   });
@@ -254,7 +366,7 @@ export async function insertOrderRecord(
   notify({
     type: "order.created",
     title: `New order ${order.orderNumber}`,
-    body: `${order.customerName} · ${input.items.length} item(s)`,
+    body: `${order.customerName} · ${new Set(snapshots.map((s) => s.variantId)).size} item(s)`,
     link: `/admin/orders/${order.id}`,
   });
 
@@ -274,28 +386,27 @@ export async function insertOrderRecord(
 
   // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
   // abandonment sweep must not fire on it.
-  if (customerId) {
-    clearCart(customerId).catch((err) => console.error("[cart] clear after order failed:", err));
+  if (pricing.customerId) {
+    clearCart(pricing.customerId).catch((err) => console.error("[cart] clear after order failed:", err));
 
     // Same Steadfast fraud_check the admin used to trigger by hand with "Check score" on the order
     // list — fired automatically the moment the order lands, so the delivery-score badge is already
     // populated by the time anyone opens the order. Fire-and-forget: Steadfast being slow/down must
     // never delay or fail checkout.
-    checkAndUpdateDeliveryScore(customerId, order.customerPhone).catch((err) =>
+    checkAndUpdateDeliveryScore(pricing.customerId, order.customerPhone).catch((err) =>
       console.error(`[courier] auto delivery-score check failed for order ${order.orderNumber}:`, err),
     );
   }
 
-  for (const item of input.items) {
-    const variant = variantById.get(item.variantId);
-    if (!variant) continue;
-    const remaining = variant.stock - item.quantity;
-    if (variant.product.trackInventory && remaining <= variant.product.lowStockThreshold) {
+  for (const [variantId, remaining] of stockAfter) {
+    const row = pricing.rows?.get(variantId);
+    if (!row) continue;
+    if (row.product.trackInventory && remaining <= row.product.lowStockThreshold) {
       notify({
         type: "product.low_stock",
-        title: `Low stock: ${variant.product.name}`,
-        body: `${formatVariantLabel(variant.size, variant.color, "/") || variant.sku} — ${Math.max(0, remaining)} left`,
-        link: `/admin/products/${variant.productId}/edit`,
+        title: `Low stock: ${row.product.name}`,
+        body: `${formatVariantLabel(row.size, row.color, "/") || row.sku} — ${Math.max(0, remaining)} left`,
+        link: `/admin/products/${row.productId}/edit`,
       });
     }
   }
@@ -306,75 +417,79 @@ export async function insertOrderRecord(
 export async function createOrder(
   input: CheckoutInput,
   customerId: string | null = null,
-  // Only the admin "Create order" path sets these — attributes the order's opening PENDING
-  // statusHistory entry to the staff member who entered it, so the order-detail timeline reads
-  // "PENDING · <time> · <admin name> — Order manually entered..." for free, same as any other
-  // admin-driven status change.
-  opts: { changedByAdminId?: string; statusNote?: string; metaContext?: MetaRequestContext } = {},
+  // Only the admin "Create order" path sets changedByAdminId/statusNote — attributes the order's opening PENDING
+  // statusHistory entry to the staff member who entered it. idempotencyKey comes from the Idempotency-Key header;
+  // metaContext (storefront checkout only) marks a website conversion to report to Meta.
+  opts: { changedByAdminId?: string; statusNote?: string; idempotencyKey?: string | null; metaContext?: MetaRequestContext } = {},
 ) {
-  // A double-click / double-submit on the checkout button fires two POST /orders before the first
-  // one's response ever comes back — without a guard, each call independently decrements stock and
-  // inserts its own Order, so the customer (and, for online methods, EPS) ends up with two live
-  // payment sessions for one purchase. Matched on the storefront's own client-generated sessionId,
-  // never on phone number: a phone+total match was tried first and dropped, because it let anyone
-  // who merely knew a stranger's phone number and order total get that stranger's full order (name,
-  // address, items) echoed straight back in the response by submitting a matching checkout within
-  // the window. sessionId is an unguessable per-browser token, so this can only ever match the same
-  // browser's own in-flight request. Scoped to still-PENDING/UNPAID orders only — a genuine retry
-  // after FAILED/CANCELLED must still create a fresh attempt, not get stuck reusing a dead one.
-  // No sessionId on the request (shouldn't normally happen — the storefront always sends one) means
-  // there's no safe key to dedupe on, so the guard is skipped entirely rather than falling back to
-  // the leaky phone-based match.
+  // Idempotency: one lock-and-dedupe mechanism, keyed by the Idempotency-Key header when the client sends one (durable:
+  // Order.idempotencyKey is unique), else by the storefront's own client-generated sessionId (the pre-existing
+  // double-submit guard — never by phone: a phone+total match once let anyone who knew a stranger's phone number and
+  // order total get that stranger's order echoed back). Scoped to still-PENDING/UNPAID orders for the session fallback,
+  // so a genuine retry after FAILED/CANCELLED creates a fresh attempt.
+  const key = opts.idempotencyKey ?? null;
+  if (key) {
+    const existing = await prisma.order.findUnique({ where: { idempotencyKey: key }, include });
+    if (existing) return existing;
+  }
+
   const pricing = await deriveOrderPricing(input, customerId);
 
-  const sessionLockKey = input.sessionId ? `order-create-lock:${input.sessionId}` : null;
-  const findDuplicateForSession = () =>
-    prisma.order.findFirst({
-      where: {
-        deletedAt: null,
-        status: "PENDING",
-        paymentStatus: "UNPAID",
-        sessionId: input.sessionId,
-        total: pricing.total,
-        createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
-      },
-      orderBy: { createdAt: "desc" },
-      include,
-    });
+  const lockKey = key ? `order-idem-lock:${key}` : input.sessionId ? `order-create-lock:${input.sessionId}` : null;
+  const findDuplicate = () =>
+    key
+      ? prisma.order.findUnique({ where: { idempotencyKey: key }, include })
+      : prisma.order.findFirst({
+          where: {
+            deletedAt: null,
+            status: "PENDING",
+            paymentStatus: "UNPAID",
+            sessionId: input.sessionId,
+            total: pricing.total,
+            createdAt: { gte: new Date(Date.now() - 2 * 60 * 1000) },
+          },
+          orderBy: { createdAt: "desc" },
+          include,
+        });
 
-  if (sessionLockKey) {
-    // Closes the gap between checking for a duplicate and committing the new order — without this,
-    // two truly concurrent requests for the same session could both pass the check before either
-    // one inserts. Best-effort like every other use of this Redis client (config/redis.ts): if
-    // Redis is unreachable, fail open to the old race rather than block checkout entirely.
-    const acquired = await redis.set(sessionLockKey, "1", "PX", 10_000, "NX").catch(() => "OK");
-
+  if (lockKey) {
+    // Closes the gap between checking for a duplicate and committing the new order. Best-effort like every other use of
+    // this Redis client: if Redis is unreachable, fail open — with an Idempotency-Key the unique index is the backstop.
+    const acquired = await redis.set(lockKey, "1", "PX", 10_000, "NX").catch(() => "OK");
     if (!acquired) {
-      // Another request for this exact session already holds the lock — it's either about to
-      // insert or already has. Poll briefly for its row rather than racing a second insert.
+      // Another request for this exact key/session already holds the lock — poll briefly for its row.
       for (let attempt = 0; attempt < 10; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 300));
-        const existing = await findDuplicateForSession();
+        const existing = await findDuplicate();
         if (existing) return existing;
       }
-      // Lock holder never committed within ~3s (crashed mid-request?) — fall through and create a
-      // fresh order rather than leaving the customer stuck.
     } else {
-      const duplicate = await findDuplicateForSession();
+      const duplicate = await findDuplicate();
       if (duplicate) {
-        await redis.del(sessionLockKey).catch(() => {});
+        await redis.del(lockKey).catch(() => {});
         return duplicate;
       }
     }
   }
 
-  const order = await insertOrderRecord(input, pricing, { status: "PENDING", paymentStatus: "UNPAID" }, opts);
-
-  // The row is committed now, so any concurrent request polling findDuplicateForSession above will
-  // find it — safe to release the lock rather than wait out its full TTL.
-  if (sessionLockKey) await redis.del(sessionLockKey).catch(() => {});
-
-  return order;
+  try {
+    return await insertOrderRecord(input, pricing, { status: "PENDING", paymentStatus: "UNPAID" }, {
+      changedByAdminId: opts.changedByAdminId,
+      statusNote: opts.statusNote,
+      idempotencyKey: key,
+      metaContext: opts.metaContext,
+    });
+  } catch (err) {
+    // Two requests with the same key raced past the lock (Redis down): the unique index let exactly one in.
+    if (key && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const existing = await prisma.order.findUnique({ where: { idempotencyKey: key }, include });
+      if (existing) return existing;
+    }
+    throw err;
+  } finally {
+    // The row is committed (or the attempt failed) — release the lock rather than wait out its TTL.
+    if (lockKey) await redis.del(lockKey).catch(() => {});
+  }
 }
 
 /** The admin "Create order" page's entrypoint — for phone/Facebook orders a staff member types in
@@ -385,10 +500,11 @@ export async function createOrder(
  * as a separate, explicit follow-up write (never silently folded into createOrder) so a manual
  * order defaults to the same UNPAID-until-collected state as any other COD order unless staff
  * tick the box themselves. */
-export async function createManualOrder(input: AdminCreateOrderInput, adminId: string) {
+export async function createManualOrder(input: AdminCreateOrderInput, adminId: string, idempotencyKey?: string | null) {
   const order = await createOrder(input, input.customerId ?? null, {
     changedByAdminId: adminId,
     statusNote: "Order manually entered from the admin panel",
+    idempotencyKey,
   });
 
   if (input.markPaid) {
@@ -413,6 +529,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
     select: {
       id: true,
       price: true,
+      compareAtPrice: true,
       stock: true,
       isActive: true,
       product: {
@@ -421,6 +538,8 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
           slug: true,
           name: true,
           basePrice: true,
+          compareAtPrice: true,
+          trackInventory: true,
           isActive: true,
           deletedAt: true,
           images: { take: 1, orderBy: { sortOrder: "asc" }, select: { url: true } },
@@ -429,10 +548,20 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
     },
   });
   const variantById = new Map(variants.map((v) => [v.id, v]));
+  // The reorder price is the current server-resolved selling price (flash included) — a display cache for the cart,
+  // re-quoted at checkout like any other cart line (PRICING_INVARIANTS §7).
+  const byProduct = new Map<string, PriceableProduct>();
+  for (const v of variants) {
+    const entry = byProduct.get(v.product.id) ?? { id: v.product.id, basePrice: v.product.basePrice, compareAtPrice: v.product.compareAtPrice, variants: [] };
+    entry.variants!.push({ id: v.id, price: v.price, compareAtPrice: v.compareAtPrice, isActive: v.isActive });
+    byProduct.set(v.product.id, entry);
+  }
+  const pricing = await priceProductsForDisplay([...byProduct.values()]);
 
   return items.map((item) => {
     const variant = variantById.get(item.variantId);
-    const available = variant && variant.isActive && variant.product.isActive && !variant.product.deletedAt && variant.stock > 0;
+    const available =
+      variant && variant.isActive && variant.product.isActive && !variant.product.deletedAt && isAvailable(variant.product.trackInventory, variant.stock);
     const usable = opts.requireAvailable ? available : Boolean(variant);
     return {
       ...item,
@@ -443,8 +572,8 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
               productSlug: variant.product.slug,
               productName: variant.product.name,
               imageUrl: variant.product.images[0]?.url ?? null,
-              price: Number(variant.price ?? variant.product.basePrice),
-              maxStock: variant.stock,
+              price: pricing.get(variant.product.id)?.variants[variant.id]?.selling ?? Number(variant.price ?? variant.product.basePrice),
+              maxStock: maxSellableQuantity(variant.product.trackInventory, variant.stock),
             }
           : null,
     };
@@ -684,9 +813,13 @@ async function buildItemsSummary(orderIds: string[]) {
   });
 
   const firstItemByOrderId = new Map<string, (typeof items)[number]>();
+  // Distinct variants, not rows: a cart line split into a flash-priced and a regular-priced row (D4) is one product.
+  const variantsByOrder = new Map<string, Set<string>>();
   for (const item of items) {
-    const count = (summaries.get(item.orderId)?.totalItems ?? 0) + 1;
-    summaries.set(item.orderId, { totalItems: count, firstItem: null });
+    const seen = variantsByOrder.get(item.orderId) ?? new Set<string>();
+    seen.add(item.variantId);
+    variantsByOrder.set(item.orderId, seen);
+    summaries.set(item.orderId, { totalItems: seen.size, firstItem: null });
     if (!firstItemByOrderId.has(item.orderId)) firstItemByOrderId.set(item.orderId, item);
   }
 
@@ -836,115 +969,157 @@ export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
  * an admin-entered estimate of their return-leg fee (StoreSetting.courierReturnFeeDhaka/
  * OutsideDhaka), zone-matched the same way shippingFee is at checkout. Only called from the two
  * places that actually log a CourierLossEvent, not on every order lookup. */
-async function getCourierReturnFee(shippingDistrict: string): Promise<number> {
+async function getCourierReturnFee(shippingDistrict: string, shippingDivision?: string): Promise<number> {
   const settings = await getSettings();
-  return isInsideDhaka(shippingDistrict) ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
+  // Zone-matched by the same shipping-zone configuration that priced the delivery (no hard-coded geography): the
+  // estimate for the seeded "inside Dhaka district" zone, else the outside estimate.
+  const zone = resolveZone(await loadShippingZones(settings.currency || "BDT"), { district: shippingDistrict, division: shippingDivision });
+  return zone?.key === LEGACY_ZONE_KEYS.insideDhaka ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
 }
 
-export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
-  const existing = await getOrderById(id);
-  if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
+type OrderWithHistory = Prisma.OrderGetPayload<{ include: typeof include }>;
 
-  // Computed up front (doesn't depend on the row lock below) and only when it might actually be
-  // needed — a plain settings lookup on every single status change would otherwise be wasted for
-  // the overwhelming majority of updates that aren't "cancel an order that already has a courier
-  // booked". Still gated on restockNeeded inside the transaction, since that's what proves this is
-  // a genuine new transition into CANCELLED, not a re-save of an already-cancelled order.
-  const courierLossFee =
-    input.status === "CANCELLED" && existing.courierConsignmentId
-      ? await getCourierReturnFee(existing.shippingDistrict)
-      : null;
+/** What a committed transition did — handed to runTransitionSideEffects once the transaction is over. */
+export interface OrderTransitionOutcome {
+  order: OrderWithHistory;
+  previousStatus: OrderStatus;
+  previousPaymentStatus: PaymentStatus;
+  rule: OrderTransitionRule;
+  /** False for a same-status call (a no-op apart from an optional note). */
+  changed: boolean;
+  /** Variants whose stock went from 0 to positive (back-in-stock emails). */
+  replenished: string[];
+}
 
-  const updated = await prisma.$transaction(async (tx) => {
-    // Row-locked re-read of status, not the pre-transaction snapshot above — two concurrent status
-    // changes on the same order (e.g. one to CANCELLED, one to SHIPPED) would otherwise both compute
-    // restockNeeded from the same stale `existing.status`, and whichever transaction commits last
-    // wins on `status` while restock bookkeeping reflects only whichever transaction saw it first.
-    // FOR UPDATE blocks the second transaction until the first commits, so it sees the real prior status.
-    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus }>>`
-      SELECT status FROM "Order" WHERE id = ${id} FOR UPDATE
-    `;
-    // existing (fetched moments ago, same id) already proved this row exists.
-    if (!locked) throw AppError.notFound("Order not found");
+/** The order state machine (docs/ORDER_STATE_MACHINE.md) — the ONLY code that changes Order.status after an order
+ * exists. Runs inside the caller's transaction: row-locks the order, validates `from → to` against the shared
+ * matrix using the *locked* status (so concurrent transitions serialise and the loser sees the winner's result),
+ * applies the stock/payment/courier-loss effects the matrix declares, and writes the status + timeline row.
+ * Messages and loyalty points are post-commit (runTransitionSideEffects). */
+export async function applyOrderTransition(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+  input: UpdateOrderStatusInput,
+  actor: { adminId?: string | null } = {},
+): Promise<OrderTransitionOutcome> {
+  const [locked] = await tx.$queryRaw<
+    Array<{
+      status: OrderStatus;
+      paymentStatus: PaymentStatus;
+      paymentMethod: string;
+      courierConsignmentId: string | null;
+      deletedAt: Date | null;
+      shippingDistrict: string;
+      couponId: string | null;
+      couponReleasedAt: Date | null;
+    }>
+  >`
+    SELECT status, "paymentStatus", "paymentMethod", "courierConsignmentId", "deletedAt", "shippingDistrict", "couponId", "couponReleasedAt"
+    FROM "Order" WHERE id = ${orderId} FOR UPDATE
+  `;
+  if (!locked) throw AppError.notFound("Order not found");
+  if (locked.deletedAt) throw AppError.badRequest("Restore this order before making changes");
 
-    // CANCELLED/REFUNDED are treated everywhere else (deleteOrder) as "this order's reserved stock
-    // has already been put back" — but until now this was the one path that
-    // could land an order on either status (an admin picking it from the dropdown, a bulk update, or
-    // Steadfast reporting a parcel as cancelled) without actually restocking it, silently leaving the
-    // units stuck as "sold". Guarded on the *previous* status so re-saving an already-cancelled/
-    // refunded order (or the reverse transition never happening twice) can't double-credit inventory.
-    const restockNeeded =
-      (input.status === "CANCELLED" || input.status === "REFUNDED") &&
-      locked.status !== "CANCELLED" &&
-      locked.status !== "REFUNDED";
+  const from = locked.status;
+  const to = input.status;
+  const rule = getOrderTransition(from, to);
+  if (!rule) throw AppError.badRequest(describeRefusedTransition(from, to));
 
-    if (restockNeeded) {
-      for (const item of existing.items) {
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { stock: { increment: item.quantity } },
-        });
-      }
-      await tx.stockMovement.createMany({
-        data: existing.items.map((item) => ({
-          variantId: item.variantId,
-          change: item.quantity,
-          reason: "ADJUSTMENT" as const,
-          orderId: id,
-          adminId: changedByAdminId ?? null,
-        })),
-      });
+  const base = { previousStatus: from, previousPaymentStatus: locked.paymentStatus, rule };
 
-      if (courierLossFee !== null) {
-        await tx.courierLossEvent.create({
-          data: { orderId: id, amount: courierLossFee, reason: "CANCELLED_POST_BOOKING" },
-        });
-      }
-    }
+  // Same status: nothing happens — no stock, SMS, points or courier loss (so a re-applied bulk action or a
+  // double-clicked button is harmless). A note still lands on the timeline so admins can annotate.
+  if (from === to) {
+    const order = input.note
+      ? await tx.order.update({
+          where: { id: orderId },
+          data: { statusHistory: { create: { status: to, note: input.note, changedByAdminId: actor.adminId ?? null } } },
+          include,
+        })
+      : await tx.order.findUniqueOrThrow({ where: { id: orderId }, include });
+    return { ...base, order, changed: false, replenished: [] };
+  }
 
-    const order = await tx.order.update({
-      where: { id },
-      data: {
-        status: input.status,
-        // Leaving PENDING means the confirmation call finally resolved (confirmed, cancelled, or
-        // otherwise moved on — including Steadfast auto-resolving it) — any outstanding follow-up
-        // hold is now stale. Moving *to* PENDING leaves followUpAt untouched (undefined = no-op in
-        // Prisma); only the explicit hold action (holdOrderForFollowUp) ever sets it.
-        followUpAt: input.status === "PENDING" ? undefined : null,
-        statusHistory: {
-          create: { status: input.status, note: input.note ?? null, changedByAdminId: changedByAdminId ?? null },
-        },
-      },
-      include,
-    });
-    return order;
+  if (rule.requiresRecordedRefund && locked.paymentStatus !== "REFUNDED") {
+    throw AppError.badRequest("Record the refund first (Payments → Record refund) — an order is marked refunded only once money has actually gone back");
+  }
+
+  let replenished: string[] = [];
+  if (rule.stock !== "none") {
+    const note = rule.stock === "return" ? `Stock restored — order returned` : `Stock released — order cancelled`;
+    const result = await releaseOrderLines(tx, orderId, rule.stock, { adminId: actor.adminId, note });
+    replenished = result.replenished;
+  }
+
+  if (rule.courierLoss && locked.courierConsignmentId) {
+    const amount = await getCourierReturnFee(locked.shippingDistrict);
+    await tx.courierLossEvent.create({ data: { orderId, amount, reason: "CANCELLED_POST_BOOKING" } });
+  }
+
+  // D7: a cancellation before shipping gives the coupon use back — once, recorded on the order (couponReleasedAt), so the
+  // redemption predicate and Coupon.usedCount agree. After shipping the use stands.
+  const releaseCoupon = rule.releasesCouponUsage && locked.couponId !== null && locked.couponReleasedAt === null;
+  if (releaseCoupon) {
+    await tx.$executeRaw`UPDATE "Coupon" SET "usedCount" = GREATEST("usedCount" - 1, 0) WHERE id = ${locked.couponId}`;
+  }
+
+  // D1: Cash on Delivery money is collected by the courier at the door — delivery is the collection point.
+  const codCollected = rule.codCollected && locked.paymentMethod === "COD" && locked.paymentStatus === "UNPAID";
+
+  const order = await tx.order.update({
+    where: { id: orderId },
+    data: {
+      status: to,
+      ...(codCollected ? { paymentStatus: "PAID" as const } : {}),
+      ...(releaseCoupon ? { couponReleasedAt: new Date() } : {}),
+      // Leaving PENDING means the confirmation call resolved — an outstanding follow-up hold is stale. Moving *to*
+      // PENDING leaves it alone; only the explicit hold action sets it.
+      followUpAt: to === "PENDING" ? undefined : null,
+      statusHistory: { create: { status: to, note: input.note ?? null, changedByAdminId: actor.adminId ?? null } },
+    },
+    include,
   });
+  return { ...base, order, changed: true, replenished };
+}
 
-  if (input.status === "DELIVERED" && updated.customerId) {
-    await awardDeliveryPoints(updated.customerId, updated.id, Number(updated.total));
+/** Post-commit effects of a transition: customer SMS, loyalty points, admin alerts, back-in-stock emails. Never
+ * run inside the transaction — a slow SMS gateway must not hold the order row lock, and a rolled-back
+ * transition must not have messaged anyone. */
+export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, opts: { sms?: boolean } = {}) {
+  const { order, rule, changed, previousPaymentStatus } = outcome;
+  if (!changed) return;
+
+  // D8: points on merchandise after discounts, excluding shipping (and the admin adjustment) — from the order snapshot.
+  if (rule.awardPoints && order.customerId) {
+    await awardDeliveryPoints(order.customerId, order.id, loyaltyBase(order, (await getSettings()).currency || "BDT")).catch((err) =>
+      console.error(`[loyalty] points for ${order.orderNumber} failed:`, err),
+    );
+  }
+  if (rule.reversesPoints && order.customerId) {
+    await reverseDeliveryPoints(order.customerId, order.id, 1).catch((err) => console.error(`[loyalty] reversal for ${order.orderNumber} failed:`, err));
   }
 
-  // A cancellation on an order that was actually already paid is a real money-risk case — EPS/
-  // SSLCommerz already took the payment, and nothing else in this function initiates a refund, so an
-  // admin has to see this and act rather than the order silently sitting cancelled with money still
-  // collected. Checked against the pre-transaction snapshot, not `updated` — paymentStatus isn't
-  // part of what this function changes, so it can't have been affected by the update itself. Gated on
-  // the *previous* status (same guard shape as restockNeeded above) so re-saving an already-cancelled
-  // order — e.g. a bulk-status action re-applied over a mixed selection — doesn't refire this alert
-  // for every order that was cancelled-but-paid before this call ever started.
-  if (input.status === "CANCELLED" && existing.status !== "CANCELLED" && existing.paymentStatus === "PAID") {
+  // Money-risk alerts: the payment was already collected, and nothing here sends it back.
+  if (rule.alertIfPaid && previousPaymentStatus === "PAID") {
     notify({
-      type: "order.cancelled_but_paid",
-      title: `Cancelled but paid: ${updated.orderNumber}`,
-      body: `${updated.customerName} · ${formatBdt(Number(updated.total))} — refund may be owed`,
-      link: `/admin/orders/${updated.id}`,
+      type: rule.alertIfPaid,
+      title: rule.alertIfPaid === "order.cancelled_but_paid" ? `Cancelled but paid: ${order.orderNumber}` : `Returned — refund may be owed: ${order.orderNumber}`,
+      body: `${order.customerName} · ${formatBdt(Number(order.total))} — refund may be owed`,
+      link: `/admin/orders/${order.id}`,
     });
   }
 
-  const touchpoint = STATUS_SMS_TOUCHPOINT[input.status];
-  if (touchpoint) sendCustomerOrderSms(updated, touchpoint);
+  if (rule.customerSms && opts.sms !== false) sendCustomerOrderSms(order, rule.customerSms as CustomerTouchpoint);
+  notifyReplenished(outcome.replenished);
+}
 
-  return updated;
+/** The one command every status change goes through (admin picker, bulk, courier, returns): its own transaction +
+ * post-commit side effects. Throws 400 for a transition the matrix doesn't allow. */
+export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
+  const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, input, { adminId: changedByAdminId }));
+  await runTransitionSideEffects(outcome);
+  const items = await attachLiveItemInfo(outcome.order.items, { requireAvailable: false });
+  return { ...outcome.order, items };
 }
 
 const ORDER_DETAIL_FIELD_LABELS = {
@@ -1077,15 +1252,25 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   const previousAdjustment = Number(existing.priceAdjustment);
   if (previousAdjustment === input.priceAdjustment) return existing;
 
-  // A FREE_SHIPPING coupon waives the fee at checkout (see createOrder's `total` calc) even though
-  // `shippingFee` itself still holds the would-be fee for record-keeping — re-derive whether it
-  // actually applies here instead of assuming it's always owed.
-  const orderCoupon = existing.couponId
-    ? await prisma.coupon.findUnique({ where: { id: existing.couponId }, select: { type: true } })
-    : null;
-  const shippingOwed = orderCoupon?.type === "FREE_SHIPPING" ? 0 : Number(existing.shippingFee);
-  const newTotal = Number(existing.subtotal) - Number(existing.discount) + shippingOwed + input.priceAdjustment;
-  if (newTotal < 0) throw AppError.badRequest("Total cannot be negative");
+  // The one totals formula, fed ONLY by this order's own immutable snapshot (PRICING_INVARIANTS §9) — never the live
+  // coupon, flash sale, product price or tax setting. Whether shipping was charged is itself a snapshot
+  // (shippingWaived, backfilled from each old order's own arithmetic).
+  if (existing.shippingWaived === null) {
+    throw AppError.conflict("This order's pricing snapshot is incomplete (shipping waiver unknown) — it can't be adjusted automatically");
+  }
+  const cur = (await getSettings()).currency || "BDT";
+  const m = (v: unknown) => fromMajor(String(v ?? 0), cur);
+  const bundle = m(existing.bundleDiscount);
+  const totals = computeOrderTotals({
+    subtotal: m(existing.subtotal),
+    bundleDiscount: bundle,
+    couponDiscount: m(existing.couponDiscount ?? Math.max(0, Number(existing.discount) - Number(existing.bundleDiscount))),
+    shippingCharged: existing.shippingWaived ? m(0) : m(existing.shippingFee),
+    taxAdded: existing.taxMode === "EXCLUSIVE" ? m(existing.taxAmount) : m(0),
+    priceAdjustment: fromMajor(String(input.priceAdjustment), cur),
+  });
+  if (totals.negative) throw AppError.badRequest("Total cannot be negative");
+  const newTotal = toMajor(totals.total);
 
   const note =
     `Price adjustment: ${formatBdt(previousAdjustment)} -> ${formatBdt(input.priceAdjustment)} (total ${formatBdt(Number(existing.total))} -> ${formatBdt(newTotal)})` +
@@ -1111,89 +1296,41 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
 // used to live here too — no longer reachable now that a digital-payment checkout never creates an
 // Order before settlement in the first place (see order.controller.ts's create).
 
-/** Soft-deletes an order (OWNER-only, see order.routes.ts) — hides it from every default query but
- * never physically removes the row, since it's a financial/audit record. Restocks the items first,
- * the same way cancelUnstartedOrder does, unless the order was already CANCELLED/REFUNDED (which
- * already restocked, so doing it again would double-credit the inventory). Restocks
- * `quantity - returnedQuantity`, not the full original quantity — a reconciled PARTIALLY_DELIVERED
- * order already put the returned units back via reconcilePartialDelivery, so restocking the full
- * amount here again would double-credit exactly those units a second time. */
+/** Soft-deletes an order (OWNER-only, see order.routes.ts) — hides it from every default query but never
+ * physically removes the row, since it's a financial/audit record. A pre-shipment order still holds its stock
+ * reservation, so its outstanding units are released (CANCELLATION); an order whose goods already left
+ * (shipped/delivered/closed) changes no stock — trashing is record-keeping, not a return. Idempotent per line
+ * (inventory.service releaseOrderLines), so an already-cancelled or already-returned order puts nothing back. */
 export async function deleteOrder(orderId: string, adminId: string) {
-  const order = await getOrderById(orderId);
-  if (order.deletedAt) return order;
+  const { order, replenished } = await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
+      SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `;
+    if (!locked) throw AppError.notFound("Order not found");
+    if (locked.deletedAt) return { order: await tx.order.findUniqueOrThrow({ where: { id: orderId }, include }), replenished: [] as string[] };
 
-  return prisma.$transaction(async (tx) => {
-    if (order.status !== "CANCELLED" && order.status !== "REFUNDED") {
-      const toRestock = order.items
-        .map((item) => ({ variantId: item.variantId, amount: item.quantity - item.returnedQuantity }))
-        .filter((entry) => entry.amount > 0);
-
-      for (const entry of toRestock) {
-        await tx.productVariant.update({
-          where: { id: entry.variantId },
-          data: { stock: { increment: entry.amount } },
-        });
-      }
-      await tx.stockMovement.createMany({
-        data: toRestock.map((entry) => ({
-          variantId: entry.variantId,
-          change: entry.amount,
-          reason: "ADJUSTMENT" as const,
-          orderId: order.id,
-          adminId,
-        })),
-      });
+    let released: string[] = [];
+    if (PRE_SHIPMENT_STATUSES.includes(locked.status)) {
+      const result = await releaseOrderLines(tx, orderId, "release", { adminId, note: "Stock released — order moved to Trash" });
+      released = result.replenished;
     }
-
-    return tx.order.update({
-      where: { id: orderId },
-      data: { deletedAt: new Date(), deletedByAdminId: adminId },
-      include,
-    });
+    const updated = await tx.order.update({ where: { id: orderId }, data: { deletedAt: new Date(), deletedByAdminId: adminId }, include });
+    return { order: updated, replenished: released };
   });
-}
-
-/** Restores stock for a RETURNED order's items and logs a matching RETURN-reason StockMovement —
- * called right after a return request is approved. Uses `updateMany` (not `update`) per item since
- * a variant referenced only by OrderItem has no FK guarantee it still exists (its Product could
- * have been permanently deleted, cascading the variant away with it) — silently skips restock+
- * logging for any variant that's actually gone rather than throwing mid-loop and leaving some
- * items restocked and others not. */
-export async function restockReturnedOrderItems(
-  orderId: string,
-  items: Array<{ variantId: string; quantity: number }>,
-  adminId: string,
-) {
-  await prisma.$transaction(async (tx) => {
-    for (const item of items) {
-      const result = await tx.productVariant.updateMany({
-        where: { id: item.variantId },
-        data: { stock: { increment: item.quantity } },
-      });
-      if (result.count === 0) continue;
-      await tx.stockMovement.create({
-        data: {
-          variantId: item.variantId,
-          change: item.quantity,
-          reason: "RETURN",
-          orderId,
-          adminId,
-          note: "Stock restored — return approved",
-        },
-      });
-    }
-  });
+  notifyReplenished(replenished);
+  return order;
 }
 
 /** Resolves a PARTIALLY_DELIVERED order (Steadfast reported "partial_delivered" — the customer
  * accepted only some of the parcel) by having an admin declare how many units of each line item
  * actually came back; anything not listed (or listed as 0) is assumed kept by the customer.
- * Restocks exactly those units and logs a PARTIAL_RETURN CourierLossEvent if anything came back —
- * the return leg cost the same courier round trip as a full cancellation. Status deliberately
- * stays PARTIALLY_DELIVERED afterward (never rewritten to DELIVERED): the exact COD amount actually
- * collected on a partial delivery isn't knowable from Steadfast's API, so `total`/delivery-points/
- * the DELIVERED SMS are all intentionally left untouched rather than guessed at — this only fixes
- * the stock-accuracy gap, not the order's financial record. */
+ * Restocks exactly those units (capped at what is still outstanding for the line) and logs a
+ * PARTIAL_RETURN CourierLossEvent if anything came back — the return leg cost the same courier round
+ * trip as a full cancellation. Status deliberately stays PARTIALLY_DELIVERED afterward (never
+ * rewritten to DELIVERED): the exact COD amount actually collected on a partial delivery isn't
+ * knowable from Steadfast's API, so `total`/delivery-points/the DELIVERED SMS are all intentionally
+ * left untouched rather than guessed at — this only fixes the stock-accuracy gap, not the order's
+ * financial record. */
 export async function reconcilePartialDelivery(orderId: string, input: ReconcilePartialDeliveryInput, adminId: string) {
   const existing = await getOrderById(orderId);
   if (existing.deletedAt) throw AppError.badRequest("Restore this order before making changes");
@@ -1218,27 +1355,20 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
   const returnedEntries = input.items.filter((entry) => entry.returnedQuantity > 0);
   const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDistrict) : null;
 
-  return prisma.$transaction(async (tx) => {
-    for (const entry of returnedEntries) {
-      const item = itemById.get(entry.orderItemId)!;
-      const result = await tx.productVariant.updateMany({
-        where: { id: item.variantId },
-        data: { stock: { increment: entry.returnedQuantity } },
-      });
-      if (result.count > 0) {
-        await tx.stockMovement.create({
-          data: {
-            variantId: item.variantId,
-            change: entry.returnedQuantity,
-            reason: "RETURN",
-            orderId,
-            adminId,
-            note: "Stock restored — partial delivery reconciliation",
-          },
-        });
-      }
-      await tx.orderItem.update({ where: { id: entry.orderItemId }, data: { returnedQuantity: entry.returnedQuantity } });
-    }
+  const { order, replenished } = await prisma.$transaction(async (tx) => {
+    // Row lock + re-check: two admins reconciling at once must not both restock.
+    const [locked] = await tx.$queryRaw<Array<{ partialDeliveryReconciledAt: Date | null }>>`
+      SELECT "partialDeliveryReconciledAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `;
+    if (locked?.partialDeliveryReconciledAt) throw AppError.conflict("This order has already been reconciled");
+
+    const result = returnedEntries.length
+      ? await releaseOrderLines(tx, orderId, "return", {
+          adminId,
+          note: "Stock restored — partial delivery reconciliation",
+          lines: returnedEntries.map((entry) => ({ orderItemId: entry.orderItemId, quantity: entry.returnedQuantity })),
+        })
+      : { released: [], replenished: [] };
 
     if (courierLossFee !== null) {
       await tx.courierLossEvent.create({ data: { orderId, amount: courierLossFee, reason: "PARTIAL_RETURN" } });
@@ -1273,7 +1403,7 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
       });
     }
 
-    return tx.order.update({
+    const updated = await tx.order.update({
       where: { id: orderId },
       data: {
         partialDeliveryReconciledAt: new Date(),
@@ -1281,30 +1411,36 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
       },
       include,
     });
+    return { order: updated, replenished: result.replenished };
   });
+  notifyReplenished(replenished);
+  return order;
 }
 
-/** Un-hides a soft-deleted order. Deliberately does not re-decrement stock — the units restored at
- * delete time may already have been sold to someone else in the meantime, and blindly re-reserving
- * them could take stock negative. Restoring is a correction of the record, not a re-placement of
- * the order. */
-export async function restoreOrder(orderId: string) {
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
-  if (!order) throw AppError.notFound("Order not found");
-  if (!order.deletedAt) return getOrderById(orderId);
+/** Un-hides a soft-deleted order. A pre-shipment order had its reservation released when it was trashed, so
+ * restoring takes those units back (all-or-nothing — 409 if they have been sold since, so the order can never
+ * come back active without the stock it needs). Closed or shipped orders changed no stock when trashed, so
+ * restoring them is purely a record correction. */
+export async function restoreOrder(orderId: string, adminId?: string) {
+  return prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ status: OrderStatus; deletedAt: Date | null }>>`
+      SELECT status, "deletedAt" FROM "Order" WHERE id = ${orderId} FOR UPDATE
+    `;
+    if (!locked) throw AppError.notFound("Order not found");
+    if (!locked.deletedAt) return tx.order.findUniqueOrThrow({ where: { id: orderId }, include });
 
-  return prisma.order.update({
-    where: { id: orderId },
-    data: { deletedAt: null, deletedByAdminId: null },
-    include,
+    if (PRE_SHIPMENT_STATUSES.includes(locked.status)) {
+      await reReserveOrderLines(tx, orderId, { adminId, note: "Stock re-reserved — order restored from Trash" });
+    }
+    return tx.order.update({ where: { id: orderId }, data: { deletedAt: null, deletedByAdminId: null }, include });
   });
 }
 
 /** Irreversible — only meaningful for an order already in Trash (mirrors permanentlyDeleteCategory).
  * OrderItem/OrderStatusHistory/ReturnRequest all cascade-delete with the order. StockMovement.orderId
- * is a plain historical column with no FK relation to Order (it's an append-only ledger, see
- * restockReturnedOrderItems), so it's untouched and simply keeps a now-orphaned reference — by design,
- * an audit ledger is meant to outlive the order it references. */
+ * is a plain historical column with no FK relation to Order (it's an append-only ledger), so it's
+ * untouched and simply keeps a now-orphaned reference — by design, an audit ledger is meant to
+ * outlive the order it references. */
 export async function permanentlyDeleteOrder(orderId: string) {
   const order = await getOrderById(orderId);
   if (!order.deletedAt) throw AppError.badRequest("Move the order to Trash before deleting it permanently");
@@ -1312,11 +1448,23 @@ export async function permanentlyDeleteOrder(orderId: string) {
   await prisma.order.delete({ where: { id: orderId } });
 }
 
-/** Bulk actions run each order through the same single-order function used elsewhere (not a raw
- * `updateMany`), so every side effect a normal status change carries — status-history row, delivery
- * points on DELIVERED, the customer SMS touchpoint — still fires for each order in the batch. */
-export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, adminId: string) {
-  await Promise.all(ids.map((id) => updateOrderStatus(id, { status }, adminId)));
+/** Bulk status change: every order goes through the same state machine as a single change (its own transaction,
+ * validation and side effects), one at a time so a batch touching the same variants doesn't contend. An order the
+ * matrix refuses is reported, not fatal to the rest of the batch. */
+export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, adminId: string): Promise<BulkOrderStatusResult> {
+  const result: BulkOrderStatusResult = { updated: [], unchanged: [], failed: [] };
+  for (const id of ids) {
+    try {
+      const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, { status }, { adminId }));
+      await runTransitionSideEffects(outcome);
+      (outcome.changed ? result.updated : result.unchanged).push(id);
+    } catch (err) {
+      const orderNumber = (await prisma.order.findUnique({ where: { id }, select: { orderNumber: true } }))?.orderNumber ?? null;
+      result.failed.push({ id, orderNumber, reason: err instanceof AppError ? err.message : "Unexpected error" });
+      if (!(err instanceof AppError)) console.error(`[orders] bulk status ${id} failed:`, err);
+    }
+  }
+  return result;
 }
 
 export async function bulkDeleteOrders(ids: string[], adminId: string) {

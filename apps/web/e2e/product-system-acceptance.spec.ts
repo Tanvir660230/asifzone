@@ -586,6 +586,8 @@ test.describe("product management system — the brief's acceptance tests", () =
     await expect(panel).toBeVisible();
     await expect(panel).toContainText("Admin only");
     await expect(page.getByTestId("admin-sales-7d-units")).toHaveText("1");
+    // The view count is admin-only too: inside the admin panel, never in the public signals.
+    await expect(page.getByTestId("admin-product-views")).toContainText("total view");
     await panel.getByText("By variant").click();
     await expect(panel).toContainText("White"); // the variant that sold
     // Signing out removes it again.
@@ -607,6 +609,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     await expect(vp.getByTestId("admin-sales-7d")).toHaveCount(0);
     await expect(vp.getByText(/sold in the last 7 days/i)).toHaveCount(0);
     await expect(vp.getByText(/in the last 24 hours/i)).toHaveCount(0);
+    await expect(vp.getByText(/total views?/i)).toHaveCount(0); // the view count is admin-only
     expect(asked, "customers make no request for admin figures").toEqual([]);
 
     // Someone who forges the browser marker without a session gets nothing: the API refuses, and the marker is dropped.

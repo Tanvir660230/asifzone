@@ -1,7 +1,8 @@
 "use client";
 
 import { ShoppingBag } from "lucide-react";
-import { useCartCount, useCartSubtotal } from "@/store/cart";
+import { useCartCount } from "@/store/cart";
+import { useCartQuote } from "@/hooks/use-quote";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useBottomDockState } from "@/hooks/use-bottom-dock";
 import { formatPrice } from "@/lib/format";
@@ -13,7 +14,7 @@ import { formatPrice } from "@/lib/format";
 export function StickyCartBar() {
   const { showCartBar } = useBottomDockState();
   const count = useCartCount();
-  const subtotal = useCartSubtotal();
+  const { data: quote } = useCartQuote();
   const openCartDrawer = useCartDrawerStore((s) => s.open);
 
   if (!showCartBar) return null;
@@ -32,7 +33,7 @@ export function StickyCartBar() {
           </span>
         </div>
         <p className="flex-1 text-sm text-ink-700">
-          {count} item{count === 1 ? "" : "s"} · <span className="font-medium text-ink-900">{formatPrice(subtotal)}</span>
+          {count} item{count === 1 ? "" : "s"} · <span className="font-medium text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
         </p>
         <span className="glossy shrink-0 rounded-full bg-ink-900 px-4 py-2 text-xs uppercase tracking-wide text-cream-50">
           View Cart

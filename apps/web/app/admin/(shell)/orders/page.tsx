@@ -40,7 +40,7 @@ import type {
   OrderListItemSummary,
   AdminOrderListItem,
 } from "@clothing-brand/shared";
-import { BD_DIVISIONS, BD_DISTRICTS_BY_DIVISION, COURIER_DELIVERY_STATUSES } from "@clothing-brand/shared";
+import { BD_DIVISIONS, BD_DISTRICTS_BY_DIVISION, COURIER_DELIVERY_STATUSES, canTransitionOrder } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -277,7 +277,8 @@ function StatusPickerCell({
         {STATUS_OPTIONS.map((s) => (
           <button
             key={s}
-            disabled={s === order.status}
+            // Only moves the shared order state machine allows (the API refuses the rest).
+            disabled={s === order.status || !canTransitionOrder(order.status, s)}
             onClick={() => {
               onSelect(s);
               setOpen(false);
@@ -695,8 +696,14 @@ export default function OrdersPage() {
     const ids = Array.from(selected);
     if (!bulkStatusValue) return;
     try {
-      await bulkStatusMutation.mutateAsync({ ids, status: bulkStatusValue });
-      toast.success(`${ids.length} order(s) set to ${bulkStatusValue}`);
+      const result = await bulkStatusMutation.mutateAsync({ ids, status: bulkStatusValue });
+      // Each order goes through the state machine on its own — some can be refused (e.g. a cancelled order can't be confirmed).
+      const changed = result.updated.length + result.unchanged.length;
+      if (result.failed.length === 0) toast.success(`${changed} order(s) set to ${bulkStatusValue}`);
+      else {
+        const sample = result.failed.slice(0, 3).map((f) => `${f.orderNumber ?? f.id}: ${f.reason}`).join("; ");
+        toast.error(`${changed} updated, ${result.failed.length} refused — ${sample}${result.failed.length > 3 ? "; …" : ""}`);
+      }
       setBulkStatusValue("");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Bulk status update failed");

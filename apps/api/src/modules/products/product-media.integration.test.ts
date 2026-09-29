@@ -109,7 +109,7 @@ describe("variant galleries, image metadata, variant status, SKU generator", () 
       const [a, b] = await addImages(p.id, 2);
       const v0 = p.variants[0]!;
       await owner().patch(`/api/products/${p.id}`, { variants: [{ id: v0.id, sku: v0.sku, size: "M", color: "Black", stock: 5, imageIds: [a!.id, b!.id] }] });
-      const res = await owner().patch(`/api/products/${p.id}`, { variants: [{ id: v0.id, sku: v0.sku, size: "M", color: "Black", stock: 9 }] });
+      const res = await owner().patch(`/api/products/${p.id}`, { variants: [{ id: v0.id, sku: v0.sku, size: "M", color: "Black", stock: 9, expectedStock: 5 }] });
       expect(res.body.product.variants.find((x: { id: string }) => x.id === v0.id).images).toHaveLength(2);
     });
 

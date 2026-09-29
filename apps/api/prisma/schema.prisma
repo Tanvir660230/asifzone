@@ -173,11 +173,18 @@ enum ReviewStatus {
   REJECTED
 }
 
+/// Why a variant's stock changed. Every change is written by inventory.service.ts, the only stock writer
+/// (docs/INVENTORY_INVARIANTS.md). Older rows keep their original reason — cancellations before Phase 1 are
+/// ADJUSTMENT rows carrying an orderId.
 enum StockMovementReason {
   ORDER
   RESTOCK
   ADJUSTMENT
   RETURN
+  CANCELLATION
+  IMPORT
+  DAMAGED
+  LOST
 }
 
 /// The two purchase-funnel steps that have no other trace anywhere in the schema — everything
@@ -417,6 +424,8 @@ model Product {
   variants          ProductVariant[]
   images            ProductImage[]
   flashSaleItems    FlashSaleItem[]
+  /// Storefront read model (Phase 3) — a projection, never authoritative (docs/STOREFRONT_READ_MODEL.md).
+  readModel         ProductReadModel?
   couponProducts    CouponProduct[]
   wishlistItems     WishlistItem[]
   viewLogs          ProductViewLog[]
@@ -941,6 +950,35 @@ model Order {
   /// admin UI show "sync failed" instead of silently displaying a possibly-stale courierStatus.
   courierSyncError      String?
 
+  // ── Pricing snapshot (Phase 2, docs/PRICING_INVARIANTS.md §8). Immutable historical facts written once at order
+  // creation by the canonical pricing pipeline; never recomputed from current products, promotions or settings.
+  // NULL on orders placed before Phase 2 where the fact can't be reconstructed reliably (never invented).
+  /// Version of the pricing pipeline that priced this order (PRICING_VERSION); null = before Phase 2.
+  pricingVersion    Int?
+  /// Σ (list price − flash price) × units — what flash sales took off. Null before Phase 2.
+  flashDiscount     Decimal?  @db.Decimal(10, 2)
+  /// The coupon's part of `discount` (the rest is `bundleDiscount`). Backfilled from discount − bundleDiscount.
+  couponDiscount    Decimal?  @db.Decimal(10, 2)
+  /// True when `shippingFee` was not charged (free-shipping coupon or free-over threshold). Backfilled from the
+  /// order's own snapshot arithmetic; adjustOrderPrice reads this instead of the live coupon.
+  shippingWaived    Boolean?
+  /// Key of the ShippingZone that priced shipping. Null before Phase 2.
+  shippingZoneKey   String?
+  /// Tax snapshot (D3): the mode, rates and amounts in force when the order was placed. Null before Phase 2.
+  taxMode           TaxMode?
+  taxRate           Decimal?  @db.Decimal(5, 2)
+  shippingTaxRate   Decimal?  @db.Decimal(5, 2)
+  /// Net of VAT (merchandise after discounts + shipping charged).
+  taxableAmount     Decimal?  @db.Decimal(10, 2)
+  /// Total VAT (merchandise + shipping). Included in `total` when taxMode = INCLUSIVE, added to it when EXCLUSIVE.
+  taxAmount         Decimal?  @db.Decimal(10, 2)
+  shippingTaxAmount Decimal?  @db.Decimal(10, 2)
+  /// D7: when a pre-shipment cancellation released this order's coupon usage (Coupon.usedCount − 1). Null = the
+  /// order still counts as a redemption.
+  couponReleasedAt  DateTime?
+  /// Idempotency-Key the order was created with — a repeat request with the same key returns this order.
+  idempotencyKey    String?   @unique
+
   /// Set once an admin has reconciled a PARTIALLY_DELIVERED order — picked which items actually
   /// came back (OrderItem.returnedQuantity) and had them restocked. Status stays
   /// PARTIALLY_DELIVERED permanently after this (it never gets rewritten to DELIVERED, since the
@@ -1073,6 +1111,8 @@ model PaymentSession {
   /// it to materialize the real Order only once the gateway confirms success. Null for a session
   /// started against an order that already exists (retryPayment, admin-created orders).
   checkoutPayload       Json?
+  /// Idempotency-Key of the checkout that started this session — a repeat returns this session's gateway URL.
+  idempotencyKey        String?              @unique
   /// 48h out from creation — the same lookback bound the EPS reconciliation sweep already used
   /// before this table existed. The sweep flips any still-ACTIVE session past this to EXPIRED so it
   /// stops being polled and stops blocking a retry.
@@ -1183,23 +1223,39 @@ model ProductReview {
 }
 
 model OrderItem {
-  id                  String  @id @default(cuid())
-  orderId             String
-  order               Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variantId           String
-  productNameSnapshot String
-  skuSnapshot         String
-  sizeSnapshot        String
-  colorSnapshot       String
-  priceSnapshot       Decimal @db.Decimal(10, 2)
-  quantity            Int
+  id                      String   @id @default(cuid())
+  orderId                 String
+  order                   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId               String
+  productNameSnapshot     String
+  skuSnapshot             String
+  sizeSnapshot            String
+  colorSnapshot           String
+  priceSnapshot           Decimal  @db.Decimal(10, 2)
+  quantity                Int
   /// How many units of this line were reconciled as "came back to us" on a PARTIALLY_DELIVERED
   /// order (see Order.partialDeliveryReconciledAt) — 0 means either not yet reconciled or the
   /// customer kept the full quantity. Set once by reconcilePartialDelivery in order.service.ts,
   /// which also restocks exactly this many units via a matching StockMovement.
-  returnedQuantity    Int     @default(0)
+  returnedQuantity        Int      @default(0)
+  /// How many units of this line have been put back into stock by any path — cancellation, return,
+  /// partial-delivery reconciliation, exchange, or moving the order to Trash. Releasing stock for a line
+  /// never exceeds `quantity - restockedQuantity`, which is what makes every restock path idempotent
+  /// (docs/INVENTORY_INVARIANTS.md). Only inventory.service.ts writes it.
+  restockedQuantity       Int      @default(0)
+  /// Pricing snapshot (Phase 2). A line has ONE unit price: a cart line that is partly flash-priced (D4 stockLimit)
+  /// is stored as two OrderItem rows. Null before Phase 2.
+  /// The regular (pre-flash) unit price: the variant's own price, else the product base price.
+  listPriceSnapshot       Decimal? @db.Decimal(10, 2)
+  /// The flash sale that priced these units (snapshot ids, no FK — history outlives the sale). Null = regular price.
+  flashSaleId             String?
+  flashSaleItemId         String?
+  /// This line's share of the order's bundle / coupon discount (proportional allocation, sums to the order amount).
+  bundleDiscountAllocated Decimal? @db.Decimal(10, 2)
+  couponDiscountAllocated Decimal? @db.Decimal(10, 2)
 
   @@index([orderId])
+  @@index([flashSaleItemId])
 }
 
 model StockMovement {
@@ -1241,6 +1297,10 @@ model FlashSale {
   name           String
   startsAt       DateTime
   endsAt         DateTime
+  /// The admin's switch. A disabled sale is never live, whatever its window; the scheduler never changes this.
+  enabled        Boolean         @default(true)
+  /// Derived cache of "live right now" = enabled && startsAt <= now <= endsAt, written only by
+  /// flash-sale.service.ts (on every admin write, and by the scheduler each minute). Never set it by hand.
   isActive       Boolean         @default(false)
   bannerImageUrl String?
   items          FlashSaleItem[]
@@ -1608,6 +1668,70 @@ model PushSubscription {
   @@index([customerId])
 }
 
+enum TaxMode {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
+/// The centralised tax configuration (D3, D10) — the one authority the tax engine reads. Singleton "singleton".
+/// StoreSetting.taxEnabled/defaultTaxRate are legacy mirrors kept in sync by settings.service (dual-write) until the
+/// contract phase; nothing prices from them.
+model TaxSetting {
+  id              String   @id @default("singleton")
+  enabled         Boolean  @default(false)
+  mode            TaxMode  @default(INCLUSIVE)
+  /// Store VAT rate in percent.
+  defaultRate     Decimal? @db.Decimal(5, 2)
+  /// D10: shipping carries VAT (inclusive by default, at the store rate unless shippingRate is set).
+  shippingTaxable Boolean  @default(true)
+  shippingRate    Decimal? @db.Decimal(5, 2)
+  updatedAt       DateTime @updatedAt
+}
+
+enum ShippingZoneMatchField {
+  POSTCODE
+  DISTRICT
+  DIVISION
+}
+
+/// A delivery zone (Phase 2 — replaces the hard-coded "Dhaka district vs. elsewhere" rule). Resolution: the matching
+/// active zone with the highest priority, then the most specific match rule; else the default zone.
+model ShippingZone {
+  id        String              @id @default(cuid())
+  key       String              @unique
+  name      String
+  priority  Int                 @default(0)
+  isDefault Boolean             @default(false)
+  isActive  Boolean             @default(true)
+  matches   ShippingZoneMatch[]
+  rate      ShippingRate?
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+}
+
+model ShippingZoneMatch {
+  id     String                 @id @default(cuid())
+  zoneId String
+  zone   ShippingZone           @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  field  ShippingZoneMatchField
+  value  String
+
+  @@unique([zoneId, field, value])
+  @@index([field, value])
+}
+
+/// The authoritative shipping fee of a zone. StoreSetting.shippingFeeDhaka/OutsideDhaka are legacy mirrors of the two
+/// seeded zones, dual-written by settings.service until the contract phase.
+model ShippingRate {
+  id             String       @id @default(cuid())
+  zoneId         String       @unique
+  zone           ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  fee            Decimal      @db.Decimal(10, 2)
+  /// Free shipping when merchandise after discounts reaches this amount; null = never.
+  freeOverAmount Decimal?     @db.Decimal(10, 2)
+  updatedAt      DateTime     @updatedAt
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Catalog configuration: product types, templates, attribute definitions, presets.
 // Everything below is admin-editable data — adding a product type needs no code change.
@@ -1903,4 +2027,39 @@ model ProductRelation {
   @@unique([productId, relatedId, kind])
   @@index([productId, kind, sortOrder])
   @@index([relatedId])
+}
+
+/// Storefront read model (Phase 3, docs/STOREFRONT_READ_MODEL.md). A PROJECTION of the canonical pricing engine's
+/// display price (`priceProductsForDisplay` → `resolveUnitPrice`, the same function every quote uses), kept only so
+/// SQL can sort, filter and pick price-neighbours. Never authoritative: prices shown or charged are always computed
+/// live; this row is only ever written by domain/storefront/read-model.service.ts and can be rebuilt from scratch at
+/// any time. Staleness is detectable from the columns below (see the guard in read-model.service.ts).
+model ProductReadModel {
+  productId        String    @id
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Lowest current selling price over the product's active variants (= ProductPricing.from).
+  minSellingPrice  Decimal   @db.Decimal(10, 2)
+  /// Highest current selling price over the active variants (= ProductPricing.to).
+  maxSellingPrice  Decimal   @db.Decimal(10, 2)
+  /// List price of the variant that sets minSellingPrice (= ProductPricing.listFrom).
+  listPriceOfMin   Decimal   @db.Decimal(10, 2)
+  hasLiveFlashSale Boolean
+  currency         String
+  /// PRICING_VERSION the row was computed with — a mismatch marks it stale.
+  pricingVersion   Int
+  /// md5 fingerprint of every input that decides the selling price (base/compare-at price, each variant's price,
+  /// compare-at and active flag, each flash-sale item's terms and its sale's switch and window), computed by the same
+  /// SQL the freshness guard uses. Content-based on purpose: no clock (updatedAt is written in two timezones by
+  /// different code paths), and a deleted variant or flash item changes it too.
+  sourceHash       String
+  /// Next instant the price can change on the clock alone (a flash sale starting or ending); null = none scheduled.
+  validUntil       DateTime?
+  /// A live flash offer with a stock limit prices this product: quota can change with any order, so the row is
+  /// recomputed on every guarded read (D4).
+  volatile         Boolean   @default(false)
+  computedAt       DateTime
+
+  @@index([minSellingPrice])
+  @@index([validUntil])
+  @@index([volatile])
 }

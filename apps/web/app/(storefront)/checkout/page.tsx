@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, User, MapPin, Banknote, Smartphone } from "lucide-react";
 import {
   checkoutSchema,
@@ -13,12 +13,10 @@ import {
   BD_AREAS_BY_DISTRICT,
   BD_ALL_AREA_OPTIONS,
   parseAreaDistrictOption,
-  SHIPPING_FEE_DHAKA_FALLBACK,
-  SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK,
   estimateDelivery,
-  isInsideDhaka,
-  type BundleCartPreview,
   type CheckoutInput,
+  type QuoteDto,
+  type QuoteRequestInput,
 } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,8 +31,8 @@ import { formatPrice, formatDateShort } from "@/lib/format";
 import { createOrder } from "@/lib/api/orders";
 import { getSessionId } from "@/lib/analytics";
 import { pixelAddPaymentInfo, pixelInitiateCheckout, type MetaLineItem } from "@/lib/meta-pixel";
-import { validateCoupon, getBestCoupon, type CouponPreview } from "@/lib/api/coupons";
-import { previewBundle } from "@/lib/api/bundles";
+import { getQuote, getBestCouponQuote } from "@/lib/api/quote";
+import { useQuote, quoteLineAmount } from "@/hooks/use-quote";
 import { listAddresses } from "@/lib/api/customers";
 import { getSettings } from "@/lib/api/settings";
 import { getActivePaymentMethods } from "@/lib/api/payment-methods";
@@ -66,7 +64,8 @@ function CheckoutForm() {
   const clearExpressItem = useExpressCheckoutStore((s) => s.clear);
   const isExpress = expressItem !== null;
   const items = isExpress ? [expressItem] : cartItems;
-  const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  // Meta line items — a marketing signal from the cart's add-time display prices, never a charged amount
+  // (PRICING_INVARIANTS §9); every total on this page comes from the server quote.
   const metaItems = (): MetaLineItem[] => items.map((i) => ({ id: i.variantId, quantity: i.quantity, price: i.price }));
 
   // A "Buy Now" express item is meant to be one-shot. It's cleared explicitly on successful order
@@ -87,13 +86,14 @@ function CheckoutForm() {
   }, [mounted, items.length]);
 
   const [couponInput, setCouponInput] = useState("");
-  const [coupon, setCoupon] = useState<CouponPreview | null>(null);
+  // The applied coupon is just a code — its effect is whatever the server quote says it is.
+  const [couponCode, setCouponCode] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponChecking, setCouponChecking] = useState(false);
-  const [bestCoupon, setBestCoupon] = useState<CouponPreview | null>(null);
+  const [bestCoupon, setBestCoupon] = useState<NonNullable<QuoteDto["coupon"]> | null>(null);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [bundlePreview, setBundlePreview] = useState<BundleCartPreview | null>(null);
+  const queryClient = useQueryClient();
   const [selectedAddressId, setSelectedAddressId] = useState("");
   const [summaryOpen, setSummaryOpen] = useState(false);
 
@@ -107,19 +107,6 @@ function CheckoutForm() {
     else if (searchParams.get("paymentCancelled")) toast.error("Payment Cancelled. Your cart is unchanged — feel free to retry.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Bundle discounts are auto-detected from cart contents (no code to enter, unlike coupons) — this
-  // is a preview only, the authoritative amount is recomputed server-side when the order is created.
-  useEffect(() => {
-    if (!mounted || items.length === 0) {
-      setBundlePreview(null);
-      return;
-    }
-    previewBundle(items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })))
-      .then(setBundlePreview)
-      .catch(() => setBundlePreview(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, items.length]);
 
   const { data: settingsData } = useQuery({ queryKey: ["settings"], queryFn: getSettings, staleTime: 5 * 60 * 1000 });
   const { data: paymentMethodsData } = useQuery({
@@ -195,8 +182,8 @@ function CheckoutForm() {
     }
   }
 
-  // Division is derived from the chosen district rather than picked separately — it's only needed
-  // for the order record; the Dhaka/outside-Dhaka fee split goes by district (isInsideDhaka).
+  // Division is derived from the chosen district rather than picked separately; the shipping zone (and fee) is
+  // resolved by the server quote from the address.
   useEffect(() => {
     setValue("shippingDivision", (BD_DIVISION_BY_DISTRICT[shippingDistrict] ?? "") as CheckoutFormValues["shippingDivision"]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213,15 +200,19 @@ function CheckoutForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
 
-  const insideDhaka = isInsideDhaka(shippingDistrict);
-  const shippingFee = settingsData
-    ? Number(
-        insideDhaka ? settingsData.settings.shippingFeeDhaka : settingsData.settings.shippingFeeOutsideDhaka,
-      )
-    : insideDhaka
-      ? SHIPPING_FEE_DHAKA_FALLBACK
-      : SHIPPING_FEE_OUTSIDE_DHAKA_FALLBACK;
   const deliveryEstimate = estimateDelivery(shippingDistrict);
+
+  // The canonical server quote for exactly what will be submitted: items, applied coupon, address. Every amount on
+  // this page comes from it; the page never adds, discounts or ships anything itself (PRICING_INVARIANTS §7).
+  const shippingDivision = watch("shippingDivision");
+  const lineItems = items.map((i) => ({ variantId: i.variantId, quantity: i.quantity }));
+  const baseRequest: QuoteRequestInput = {
+    items: lineItems,
+    shippingDivision: shippingDivision || undefined,
+    shippingDistrict: shippingDistrict || undefined,
+  };
+  const quoteRequest: QuoteRequestInput = { ...baseRequest, couponCode: couponCode ?? undefined };
+  const { data: quote, refetch: refetchQuote } = useQuote(mounted ? quoteRequest : null);
 
   useEffect(() => {
     if (!customer) return;
@@ -257,41 +248,44 @@ function CheckoutForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressData]);
 
-  // Suggests the best coupon the shopper already qualifies for, so they don't need to know a code.
+  // Suggests the best coupon the shopper already qualifies for (server-evaluated), so they don't need to know a code.
+  const itemsKey = JSON.stringify(lineItems);
   useEffect(() => {
-    if (!mounted || items.length === 0 || coupon) {
+    if (!mounted || items.length === 0 || couponCode) {
       setBestCoupon(null);
       return;
     }
-    getBestCoupon(
-      subtotal,
-      items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
-    )
-      .then(({ result }) => setBestCoupon(result))
+    getBestCouponQuote(baseRequest)
+      .then(({ quote: best }) => setBestCoupon(best?.coupon ?? null))
       .catch(() => setBestCoupon(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, items.length, subtotal, coupon]);
+  }, [mounted, itemsKey, couponCode, shippingDistrict]);
 
   function handleApplySuggestedCoupon() {
     if (!bestCoupon) return;
-    setCoupon(bestCoupon);
+    setCouponCode(bestCoupon.code);
     setCouponInput(bestCoupon.code);
+    setCouponError(null);
     setBestCoupon(null);
   }
 
+  // Applying a coupon = asking the server to re-quote with it; the quote either applies it or says why not.
   async function handleApplyCoupon() {
-    if (!couponInput.trim()) return;
+    const code = couponInput.trim();
+    if (!code) return;
     setCouponChecking(true);
     setCouponError(null);
     try {
-      const result = await validateCoupon(
-        couponInput.trim(),
-        subtotal,
-        items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
-      );
-      setCoupon(result);
+      const { quote: withCoupon } = await getQuote({ ...baseRequest, couponCode: code });
+      if (withCoupon.coupon) {
+        queryClient.setQueryData(["quote", { ...baseRequest, couponCode: withCoupon.coupon.code }], withCoupon);
+        setCouponCode(withCoupon.coupon.code);
+      } else {
+        setCouponCode(null);
+        setCouponError(withCoupon.rejectedPromotions[0]?.message ?? "Could not apply coupon");
+      }
     } catch (err) {
-      setCoupon(null);
+      setCouponCode(null);
       setCouponError(err instanceof ApiError ? err.message : "Could not apply coupon");
     } finally {
       setCouponChecking(false);
@@ -302,9 +296,11 @@ function CheckoutForm() {
     setSubmitError(null);
     const payload: CheckoutInput = {
       ...values,
-      couponCode: coupon?.code,
-      items: items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      couponCode: couponCode ?? undefined,
+      items: lineItems,
       sessionId: getSessionId() || undefined,
+      // The quote the shopper is looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
+      quoteToken: quote?.token,
     };
 
     try {
@@ -326,6 +322,13 @@ function CheckoutForm() {
       else clearCart();
       router.push(`/order-confirmation/${order!.orderNumber}`);
     } catch (err) {
+      const details = err instanceof ApiError ? (err.details as { code?: string; quote?: QuoteDto } | undefined) : undefined;
+      if (details?.code === "QUOTE_CHANGED") {
+        // Prices moved between the quote and the order: show the new quote and let the shopper confirm again.
+        if (details.quote) queryClient.setQueryData(["quote", quoteRequest], details.quote);
+        else void refetchQuote();
+        toast.error("Prices in your cart have changed — please review the updated total.");
+      }
       setSubmitError(err instanceof ApiError ? err.message : "Could not place order, please try again");
     }
   }
@@ -340,11 +343,15 @@ function CheckoutForm() {
     );
   }
 
-  const couponDiscount = coupon?.discount ?? 0;
-  const bundleDiscount = bundlePreview?.eligible?.discount ?? 0;
-  const discount = couponDiscount + bundleDiscount;
-  const freeShipping = coupon?.freeShipping ?? false;
-  const total = Math.max(0, subtotal - discount) + (freeShipping ? 0 : shippingFee);
+  // Everything below is read straight off the server quote — no arithmetic here.
+  const coupon = quote?.coupon ?? null;
+  const couponDiscount = quote?.couponDiscount ?? 0;
+  const bundleDiscount = quote?.bundleDiscount ?? 0;
+  const shipping = quote?.shipping;
+  const stockWarnings = (quote?.warnings ?? []).filter(
+    (w) => w.code === "UNKNOWN_ITEM" || w.code === "UNAVAILABLE" || w.code === "INSUFFICIENT_STOCK" || w.code === "FLASH_LIMIT_PARTIAL",
+  );
+  const money = (value: number | undefined) => (value === undefined ? "…" : formatPrice(value));
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
@@ -366,7 +373,7 @@ function CheckoutForm() {
                 Order Summary <span className="font-sans text-sm font-normal text-ink-400">({items.length} item{items.length > 1 ? "s" : ""})</span>
               </span>
               <span className="flex items-center gap-2 lg:hidden">
-                <span className="text-sm font-medium text-ink-900">{formatPrice(total)}</span>
+                <span className="text-sm font-medium text-ink-900">{money(quote?.total)}</span>
                 <ChevronDown size={16} className={cn("text-ink-400 transition-transform duration-200", summaryOpen && "rotate-180")} />
               </span>
             </button>
@@ -385,7 +392,7 @@ function CheckoutForm() {
                           </span>
                         )}
                       </span>
-                      <span>{formatPrice(item.price * item.quantity)}</span>
+                      <span>{money(quoteLineAmount(quote, item.variantId) ?? undefined)}</span>
                     </div>
                   );
                 })}
@@ -422,9 +429,9 @@ function CheckoutForm() {
                     Coupon &ldquo;{coupon.code}&rdquo; applied{coupon.freeShipping ? " — free shipping" : ""}
                   </p>
                 )}
-                {bundlePreview?.eligible && (
+                {quote?.bundle && (
                   <p className="mt-1 text-xs text-success-600">
-                    {bundlePreview.eligible.bundle.name} bundle discount applied
+                    {quote.bundle.name} bundle discount applied
                   </p>
                 )}
               </div>
@@ -432,7 +439,7 @@ function CheckoutForm() {
               <div className="space-y-1.5 border-t border-ink-100 pt-4 text-sm">
                 <div className="flex justify-between text-ink-600">
                   <span>Subtotal</span>
-                  <span>{formatPrice(subtotal)}</span>
+                  <span>{money(quote?.subtotal)}</span>
                 </div>
                 {couponDiscount > 0 && (
                   <div className="flex justify-between text-success-600">
@@ -447,23 +454,39 @@ function CheckoutForm() {
                   </div>
                 )}
                 <div className="flex justify-between text-ink-600">
-                  <span>Shipping ({insideDhaka ? "Inside Dhaka" : "Outside Dhaka"})</span>
-                  {freeShipping ? (
+                  <span>Shipping{shipping?.resolved ? ` (${shipping.zoneName})` : ""}</span>
+                  {!shipping?.resolved ? (
+                    <span className="text-ink-400">Select district</span>
+                  ) : shipping.waived ? (
                     <span>
-                      <span className="mr-1.5 text-ink-400 line-through">{formatPrice(shippingFee)}</span>
+                      <span className="mr-1.5 text-ink-400 line-through">{formatPrice(shipping.fee)}</span>
                       <span className="font-medium text-success-600">Free</span>
                     </span>
                   ) : (
-                    <span>{formatPrice(shippingFee)}</span>
+                    <span>{formatPrice(shipping.charged)}</span>
                   )}
                 </div>
+                {quote && quote.tax.addedToTotal > 0 && (
+                  <div className="flex justify-between text-ink-600">
+                    <span>VAT ({quote.tax.ratePct}%)</span>
+                    <span>{formatPrice(quote.tax.addedToTotal)}</span>
+                  </div>
+                )}
                 <p className="text-xs text-ink-400">
                   Estimated delivery: {formatDateShort(deliveryEstimate.minDate)} – {formatDateShort(deliveryEstimate.maxDate)}
                 </p>
                 <div className="flex justify-between border-t border-ink-100 pt-1.5 text-base text-ink-900">
                   <span>Total</span>
-                  <span className="font-medium">{formatPrice(total)}</span>
+                  <span className="font-medium">{money(quote?.total)}</span>
                 </div>
+                {quote && quote.tax.inclusive && quote.tax.taxAmount > 0 && (
+                  <p className="text-xs text-ink-400">Includes VAT {formatPrice(quote.tax.taxAmount)}</p>
+                )}
+                {stockWarnings.map((w, i) => (
+                  <p key={i} className="text-xs text-danger-600">
+                    {w.message}
+                  </p>
+                ))}
               </div>
             </div>
           </div>
@@ -711,7 +734,7 @@ function CheckoutForm() {
             className="w-full"
             disabled={isSubmitting || !anyPaymentMethodEnabled}
           >
-            {isSubmitting ? "Placing order…" : `Place Order — ${formatPrice(total)}`}
+            {isSubmitting ? "Placing order…" : `Place Order — ${money(quote?.total)}`}
           </Button>
         </form>
       </div>

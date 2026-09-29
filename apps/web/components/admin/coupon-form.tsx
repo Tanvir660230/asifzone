@@ -4,7 +4,15 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
-import { createCouponSchema, type Coupon, type CreateCouponInput } from "@clothing-brand/shared";
+import {
+  createCouponSchema,
+  DEFAULT_ROUNDING_POLICY,
+  evaluateCoupon,
+  fromMajor,
+  toMajor,
+  type Coupon,
+  type CreateCouponInput,
+} from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -128,9 +136,22 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
   if (type === "FREE_SHIPPING") {
     previewLine = "Waives the shipping fee at checkout.";
   } else if (value && value > 0) {
-    let previewDiscount = type === "PERCENTAGE" ? Math.round((sampleSubtotal * value) / 100) : value;
-    if (maxDiscountAmount) previewDiscount = Math.min(previewDiscount, maxDiscountAmount);
-    previewDiscount = Math.min(previewDiscount, sampleSubtotal);
+    // Illustration only, but computed by the one coupon engine (no second discount formula in the UI).
+    const sample = fromMajor(String(sampleSubtotal), "BDT");
+    const result = evaluateCoupon(
+      {
+        id: "preview", code: "PREVIEW", type, value, scope: "ALL_PRODUCTS", productIds: [], categoryIds: [],
+        minOrderAmount: null, maxDiscountAmount: maxDiscountAmount ? fromMajor(String(maxDiscountAmount), "BDT") : null,
+        minQuantity: null, usageLimit: null, usedCount: 0, perCustomerLimit: null, firstOrderOnly: false,
+        startsAt: null, expiresAt: null, isActive: true, deleted: false,
+      },
+      [{ key: "sample", productId: "sample", categoryId: "sample", quantity: 1, amount: sample }],
+      {},
+      { now: new Date(), customerRedemptions: null, customerPriorOrders: null },
+      "BDT",
+      DEFAULT_ROUNDING_POLICY,
+    );
+    const previewDiscount = result.ok ? toMajor(result.discount) : 0;
     const scopeNote = scope === "ALL_PRODUCTS" ? "" : " of eligible items";
     previewLine = `On a ${formatPrice(sampleSubtotal)} order${scopeNote}: ${formatPrice(previewDiscount)} off`;
   }

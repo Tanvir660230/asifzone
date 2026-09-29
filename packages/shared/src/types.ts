@@ -1,3 +1,4 @@
+import type { ProductAvailability } from "./engines/availability";
 // Shapes returned by the API (JSON-serialized: Decimal/Date become strings).
 
 // CustomerTag is exported from schemas/customer.ts (derived from customerTagEnum) — imported here
@@ -134,6 +135,26 @@ export interface ActiveFlashSale {
   flashPrice: string;
 }
 
+/** One variant's server-resolved price (canonical pricing engine): list → variant → live flash sale. */
+export interface VariantPricing {
+  list: number;
+  selling: number;
+  compareAt: number | null;
+  flash: { flashSaleId: string; name: string; endsAt: string; discountType: "PERCENTAGE" | "FIXED"; discountValue: number; remaining: number | null } | null;
+}
+
+/** Server-resolved display prices of a product (PRICING_INVARIANTS §3). The storefront formats these; it never computes
+ * a price itself. `from`/`to` span the active variants' current selling prices. */
+export interface ProductPricing {
+  currency: string;
+  from: number;
+  to: number;
+  listFrom: number;
+  compareAt: number | null;
+  flash: VariantPricing["flash"];
+  variants: Record<string, VariantPricing>;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -184,7 +205,13 @@ export interface Product {
   /** Present on detail reads (admin editor, storefront product page), computed server-side from the
    * product's type template. Absent on list rows. */
   resolved?: ProductResolvedView;
+  /** Server-resolved prices on every storefront read (PDP, listings, search, homepage, flash feed). */
+  pricing?: ProductPricing;
+  /** Deprecated compat view of `pricing.flash` (its flashPrice is `pricing.from`). */
   activeFlashSale?: ActiveFlashSale | null;
+  /** Server-derived availability on every storefront read (docs/STOREFRONT_READ_MODEL.md §4): stock state from the
+   * canonical inventory state and the D5 rule — the storefront renders it, never recomputes it. */
+  availability?: ProductAvailability;
   avgRating: number;
   reviewCount: number;
   createdAt: string;
@@ -212,12 +239,10 @@ export interface RatingBreakdown {
   counts: Record<"5" | "4" | "3" | "2" | "1", number>;
 }
 
-/** Real, aggregate signals for a single product's PDP — never fabricated. Every field is a
- * genuine count (or null/0/false) derived from real orders, views, and stock. */
+/** Public product-page signals — never fabricated, and never a number: the shop doesn't publish its traffic or sales
+ * volume. Views and units sold are admin-only (ProductSalesSummary: totalViews, unitsSold). */
 export interface UrgencySignals {
-  totalViews: number;
-  recentPurchaseCount: number;
-  unitsSoldLast7Days: number;
+  /** Units sold in the last 7 days (same rule as the admin's unitsSold) ≥ current stock. */
   isFastSelling: boolean;
 }
 
@@ -273,6 +298,8 @@ export interface OrderItem {
   priceSnapshot: string;
   quantity: number;
   returnedQuantity: number;
+  /** Units of this line already put back into stock (cancellation, return, trash, ...). */
+  restockedQuantity: number;
   live?: OrderItemLiveInfo | null;
 }
 
@@ -429,6 +456,9 @@ export interface FlashSale {
   name: string;
   startsAt: string;
   endsAt: string;
+  /** The admin's switch. */
+  enabled: boolean;
+  /** Derived: enabled and inside its window right now (maintained by the server). */
   isActive: boolean;
   bannerImageUrl: string | null;
   items: FlashSaleItem[];
@@ -664,6 +694,8 @@ export interface CustomerStats {
 }
 
 export interface StoreSettings {
+  /** D10 — from the TaxSetting authority. */
+  shippingTaxable?: boolean;
   id: string;
   storeName: string;
   tagline: string | null;

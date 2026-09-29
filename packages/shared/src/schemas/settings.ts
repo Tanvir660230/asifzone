@@ -35,6 +35,8 @@ export const updateSettingsSchema = z.object({
     (v) => (v === "" || (typeof v === "number" && Number.isNaN(v)) ? null : v),
     z.number().min(0).max(100).nullable().optional(),
   ),
+  /** D10: shipping carries VAT (inclusive, at the store rate). Stored in the TaxSetting authority, not StoreSetting. */
+  shippingTaxable: z.boolean().optional(),
   rewardPointsPerCurrency: optionalNonNegativeNumber(),
   whatsappMessage: nullableString(500),
   whatsappLabel: z.string().min(1).max(40).optional(),

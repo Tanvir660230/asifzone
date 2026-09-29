@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
+import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import { metaContextFromRequest } from "../../lib/meta/capi";
@@ -13,6 +14,15 @@ import {
   unlinkCourierBooking,
 } from "../courier/courier.service";
 
+/** The Idempotency-Key header (PRICING_INVARIANTS §11): printable, bounded, or absent. */
+function idempotencyKeyOf(req: Request): string | null {
+  const raw = req.get("Idempotency-Key");
+  if (!raw) return null;
+  const key = raw.trim();
+  if (!/^[!-~]{8,128}$/.test(key)) throw AppError.badRequest("Idempotency-Key must be 8–128 printable characters");
+  return key;
+}
+
 export const create = asyncHandler(async (req: Request, res: Response) => {
   // COD has no gateway step — the order is real (and collectable) the instant it's placed, exactly
   // as before. Every other payment method must NOT create an Order yet: initiatePendingPayment only
@@ -24,11 +34,11 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   const metaContext = metaContextFromRequest(req);
 
   if (req.body.paymentMethod === "COD") {
-    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { metaContext });
+    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { idempotencyKey: idempotencyKeyOf(req), metaContext });
     return res.status(201).json({ order });
   }
 
-  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, metaContext);
+  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req), metaContext);
   res.status(201).json({ gatewayUrl });
 });
 
@@ -45,7 +55,7 @@ export const retryPayment = asyncHandler(async (req: Request, res: Response) => 
 // --- admin ---
 
 export const createManual = asyncHandler(async (req: Request, res: Response) => {
-  const order = await orderService.createManualOrder(req.body, req.admin!.adminId);
+  const order = await orderService.createManualOrder(req.body, req.admin!.adminId, idempotencyKeyOf(req));
   res.status(201).json({ order });
 });
 
@@ -99,7 +109,7 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const restore = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ order: await orderService.restoreOrder(req.params.id!) });
+  res.json({ order: await orderService.restoreOrder(req.params.id!, req.admin!.adminId) });
 });
 
 export const permanentlyRemove = asyncHandler(async (req: Request, res: Response) => {
@@ -119,8 +129,7 @@ export const exportCsv = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const bulkStatus = asyncHandler(async (req: Request, res: Response) => {
-  await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId);
-  res.status(204).send();
+  res.json(await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId));
 });
 
 export const bulkDelete = asyncHandler(async (req: Request, res: Response) => {

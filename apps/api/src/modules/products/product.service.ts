@@ -20,6 +20,7 @@ import {
   validateProductAgainstConfig,
   type ProductRelationsInput,
   type ProductSalesSummary,
+  type UrgencySignals,
   type ResolvedSection,
   NO_SIZE_VALUE,
   type AttributeDataType,
@@ -37,8 +38,16 @@ import { csvCell } from "../../lib/csv";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteProductImageFiles } from "../uploads/upload.service";
 import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
-import { computeFlashPrice, getActiveFlashInfoByProduct } from "../flash-sales/flash-sale-pricing";
-import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
+import { priceProductsForDisplay, type ProductPricingDto } from "../../domain/pricing/pricing.service";
+import {
+  ensureFreshReadModels,
+  presentStorefrontProducts,
+  projectedSellingPrice,
+  refreshReadModels,
+  sellingPriceOrderBy,
+  sellingPriceWhere,
+} from "../../domain/storefront/read-model.service";
+import { notifyReplenished, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
 import { getTypeByKey, getTypeWithTemplate } from "../catalog/catalog.service";
@@ -262,11 +271,16 @@ function toJsonInput(value: Record<string, unknown> | null | undefined) {
 function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   // `imageIds` isn't a column: galleries are written after the variant exists (see syncVariantGallery).
   // `id` is dropped on purpose: a variant's primary key is the database's to choose, not the client's.
-  const { id: _id, attributeValueIds = [], imageIds: _imageIds, ...rest } = variant;
+  // `stock`/`expectedStock` aren't written here either: a variant is created at 0 and its opening stock is recorded by
+  // inventory.service (recordInitialStock) so the ledger explains every unit (docs/INVENTORY_INVARIANTS.md).
+  const { id: _id, attributeValueIds = [], imageIds: _imageIds, stock: _stock, expectedStock: _expected, ...rest } = variant;
   void _imageIds;
   void _id;
+  void _stock;
+  void _expected;
   return {
     ...rest,
+    stock: 0,
     size: rest.size || NO_SIZE_VALUE,
     color: rest.color || "",
     sortOrder,
@@ -274,25 +288,11 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   };
 }
 
-/** Attaches `activeFlashSale` (flash-discounted price, if any is currently running) to each product — storefront-facing reads only. */
-async function withFlashSaleInfo<T extends { id: string; basePrice: unknown }>(products: T[]) {
-  const flashByProduct = await getActiveFlashInfoByProduct(products.map((p) => p.id));
-  return products.map((product) => {
-    const flash = flashByProduct.get(product.id);
-    if (!flash) return { ...product, activeFlashSale: null };
-    return {
-      ...product,
-      activeFlashSale: {
-        flashSaleId: flash.flashSaleId,
-        flashSaleName: flash.flashSaleName,
-        endsAt: flash.endsAt,
-        discountType: flash.discountType,
-        discountValue: flash.discountValue,
-        flashPrice: computeFlashPrice(Number(product.basePrice), flash),
-      },
-    };
-  });
-}
+/** Every storefront product read is presented by the Storefront Read Model (docs/STOREFRONT_READ_MODEL.md): canonical
+ * `pricing` (live, from the pricing engine), `availability` (from canonical inventory state + D5) and the deprecated
+ * `activeFlashSale` compat view — one DTO for PDP, listings, search, quick view, compare and recommendations. */
+const withStorefrontReadModel = presentStorefrontProducts;
+
 
 /** Invalidates the API's own Redis read cache (immediate, always) and, best-effort and non-blocking,
  * asks the storefront to drop the specific Next.js fetch-cache tags this change affects (see
@@ -300,14 +300,20 @@ async function withFlashSaleInfo<T extends { id: string; basePrice: unknown }>(p
  * it wherever the affected product(s) are already known, which is every call site below. */
 export async function invalidateCache(context?: RevalidationContext) {
   await invalidateProductCache();
+  // Eager projection refresh for the products this write touched (best-effort — the read-time freshness guard catches
+  // anything missed, e.g. a crash between the write and this line).
+  const touched = [...(context?.productId ? [context.productId] : []), ...(context?.productIds ?? [])];
+  if (touched.length) await refreshReadModels(touched).catch((err) => console.error("[read-model] eager refresh failed:", err));
   void triggerStorefrontRevalidation(context).catch((err) => console.error("[revalidate] unexpected failure:", err));
 }
 
+// Price sorts use the canonical selling price from the Storefront Read Model projection — never basePrice.
 const SORT_ORDER_BY: Record<string, object> = {
   newest: { createdAt: "desc" },
-  price_asc: { basePrice: "asc" },
-  price_desc: { basePrice: "desc" },
+  price_asc: sellingPriceOrderBy("asc"),
+  price_desc: sellingPriceOrderBy("desc"),
 };
+const PRICE_SORTS = new Set(["price_asc", "price_desc"]);
 
 const TYPO_FALLBACK_THRESHOLD = 3;
 const TYPO_SIMILARITY_THRESHOLD = 0.3;
@@ -490,12 +496,21 @@ export async function getProductBySlug(slug: string) {
     await cacheSet(cacheKey, product, CACHE_TTL_SECONDS);
   }
 
-  const [withFlash] = await withFlashSaleInfo([product]);
-  return withFlash;
+  // Stock is overlaid live from the canonical inventory state, so `availability` (and the variant stock the page shows)
+  // is never the cached copy's.
+  const liveStock = new Map(
+    (await prisma.productVariant.findMany({ where: { productId: product.id }, select: { id: true, stock: true } })).map((v) => [v.id, v.stock]),
+  );
+  const fresh = { ...product, variants: product.variants.map((v) => ({ ...v, stock: liveStock.get(v.id) ?? v.stock })) };
+  const [presented] = await withStorefrontReadModel([fresh]);
+  return presented;
 }
 
 /** Storefront browsing: active products only, optionally scoped to a category (and its subcategories), searched, sorted. */
 export async function listStorefrontProducts(query: StorefrontProductQuery) {
+  const now = new Date();
+  // Price sort/filter read the projection: make every row they read current first (freshness guard).
+  if (PRICE_SORTS.has(query.sort) || query.minPrice !== undefined || query.maxPrice !== undefined) await ensureFreshReadModels(now);
   let categoryIds: string[] | undefined;
   if (query.category) {
     const category = await getCategoryBySlug(query.category);
@@ -516,14 +531,8 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     ...(searchTerms.length ? buildFieldSearchOr(searchTerms) : {}),
     ...(query.sizes?.length ? { variants: { some: { size: { in: query.sizes } } } } : {}),
     ...(query.colors?.length ? { variants: { some: { color: { in: query.colors } } } } : {}),
-    ...(query.minPrice !== undefined || query.maxPrice !== undefined
-      ? {
-          basePrice: {
-            ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
-            ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
-          },
-        }
-      : {}),
+    // The price filter matches the canonical "from" price (what the card shows), not the stored base price.
+    ...sellingPriceWhere({ gte: query.minPrice, lte: query.maxPrice }),
   };
 
   const [rawItems, total] = await Promise.all([
@@ -559,7 +568,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     pageRaw = scored.slice(start, start + query.pageSize).map((s) => s.item);
   }
 
-  let items = await withFlashSaleInfo(pageRaw);
+  let items = await withStorefrontReadModel(pageRaw, now);
   let resultTotal = total;
 
   // Typo-tolerant fallback — only worth trying on page 1 of an actual search that came up short.
@@ -572,7 +581,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
         where: { id: { in: newIds }, isActive: true, deletedAt: null },
         select: PUBLIC_PRODUCT_SELECT,
       });
-      const fallbackItems = await withFlashSaleInfo(fallbackRaw);
+      const fallbackItems = await withStorefrontReadModel(fallbackRaw);
       const byId = new Map(fallbackItems.map((p) => [p.id, p]));
       const orderedFallback = newIds.map((id) => byId.get(id)).filter((p): p is (typeof fallbackItems)[number] => Boolean(p));
 
@@ -592,6 +601,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
 
 /** Available filter options (sizes/colors/price range) for the storefront's currently-scoped product set — recomputed per category/search so the panel never offers a facet with zero results. */
 export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
+  await ensureFreshReadModels();
   let categoryIds: string[] | undefined;
   if (query.category) {
     const category = await getCategoryBySlug(query.category);
@@ -620,14 +630,15 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
       distinct: ["color"],
       select: { color: true, colorHex: true },
     }),
-    prisma.product.aggregate({ where, _min: { basePrice: true }, _max: { basePrice: true } }),
+    // Bounds of the canonical "from" price across the scoped products — the same value the price filter matches.
+    prisma.productReadModel.aggregate({ where: { product: where }, _min: { minSellingPrice: true }, _max: { minSellingPrice: true } }),
   ]);
 
   return {
     sizes: sizes.map((s) => s.size).sort(),
     colors: colors.map((c) => ({ color: c.color, colorHex: c.colorHex })).sort((a, b) => a.color.localeCompare(b.color)),
-    minPrice: priceRange._min.basePrice ? Number(priceRange._min.basePrice) : 0,
-    maxPrice: priceRange._max.basePrice ? Number(priceRange._max.basePrice) : 0,
+    minPrice: priceRange._min.minSellingPrice ? Number(priceRange._min.minSellingPrice) : 0,
+    maxPrice: priceRange._max.minSellingPrice ? Number(priceRange._max.minSellingPrice) : 0,
   };
 }
 
@@ -636,6 +647,9 @@ const SUGGEST_SELECT = {
   name: true,
   slug: true,
   basePrice: true,
+  // compareAtPrice/variants feed the canonical display pricing (priceProductsForDisplay) for the suggestion's price.
+  compareAtPrice: true,
+  variants: { select: { id: true, price: true, compareAtPrice: true, isActive: true } },
   // description/brand/category/createdAt exist only to feed computeRelevanceScore below — never
   // sent to the client, see toSuggestionProduct's much narrower return shape.
   description: true,
@@ -647,14 +661,13 @@ const SUGGEST_SELECT = {
 
 const SUGGEST_CANDIDATE_CAP = 40;
 
-function toSuggestionProduct(p: {
-  id: string;
-  name: string;
-  slug: string;
-  basePrice: unknown;
-  images: { url: string }[];
-}) {
-  return { id: p.id, name: p.name, slug: p.slug, price: Number(p.basePrice), imageUrl: p.images[0]?.url ?? null };
+/** `price` is the server-resolved "from" price (list → variant → live flash sale) — the same number the PDP shows. */
+function toSuggestionProduct(
+  p: { id: string; name: string; slug: string; basePrice: unknown; images: { url: string }[] },
+  pricing: Map<string, ProductPricingDto>,
+) {
+  const price = pricing.get(p.id)?.from ?? Number(p.basePrice);
+  return { id: p.id, name: p.name, slug: p.slug, price, imageUrl: p.images[0]?.url ?? null };
 }
 
 /** Typeahead dropdown data: a handful of matching products plus "prediction" query-completion
@@ -728,7 +741,8 @@ export async function suggestSearch(query: string, limit = 6) {
 
   const didYouMean = productRows.length === 0 && predictions.length === 0 ? await findDidYouMean(query) : undefined;
 
-  return { products: productRows.map(toSuggestionProduct), predictions, didYouMean };
+  const pricing = await priceProductsForDisplay(productRows);
+  return { products: productRows.map((p) => toSuggestionProduct(p, pricing)), predictions, didYouMean };
 }
 
 const POPULAR_SEARCHES_CACHE_KEY = `${CACHE_PREFIX}popular-searches`;
@@ -766,7 +780,7 @@ export async function getProductsByIds(ids: string[]) {
   });
   const byId = new Map(products.map((p) => [p.id, p]));
   const ordered = ids.map((id) => byId.get(id)).filter((p): p is (typeof products)[number] => Boolean(p));
-  return withFlashSaleInfo(ordered);
+  return withStorefrontReadModel(ordered);
 }
 
 /** Same category, ranked by price-proximity to the target product — a lightweight stand-in for a
@@ -774,33 +788,33 @@ export async function getProductsByIds(ids: string[]) {
  * Pulls a bounded candidate pool (price-sorted both directions from the target) rather than every
  * active product in the category, so a large category doesn't turn this into a full-table scan. */
 export async function getSimilarProducts(productId: string, limit = 8) {
-  const target = await prisma.product.findUnique({ where: { id: productId }, select: { categoryId: true, basePrice: true } });
+  const target = await getTargetProductContext(productId);
   if (!target) return [];
 
   const candidatePoolSize = limit * 4;
   const baseWhere = { categoryId: target.categoryId, isActive: true, deletedAt: null, id: { not: productId } };
+  const select = { ...PUBLIC_PRODUCT_SELECT, readModel: { select: { minSellingPrice: true } } };
 
+  // Price proximity by the canonical selling price (projection), not the stored base price.
   const [cheaperOrEqual, pricier] = await Promise.all([
     prisma.product.findMany({
-      where: { ...baseWhere, basePrice: { lte: target.basePrice } },
-      select: PUBLIC_PRODUCT_SELECT,
-      orderBy: { basePrice: "desc" },
+      where: { ...baseWhere, ...sellingPriceWhere({ lte: target.sellingPrice }) },
+      select,
+      orderBy: sellingPriceOrderBy("desc"),
       take: candidatePoolSize,
     }),
     prisma.product.findMany({
-      where: { ...baseWhere, basePrice: { gt: target.basePrice } },
-      select: PUBLIC_PRODUCT_SELECT,
-      orderBy: { basePrice: "asc" },
+      where: { ...baseWhere, ...sellingPriceWhere({ gt: target.sellingPrice }) },
+      select,
+      orderBy: sellingPriceOrderBy("asc"),
       take: candidatePoolSize,
     }),
   ]);
 
-  const targetPrice = Number(target.basePrice);
-  const candidates = [...cheaperOrEqual, ...pricier].sort(
-    (a, b) => Math.abs(Number(a.basePrice) - targetPrice) - Math.abs(Number(b.basePrice) - targetPrice),
-  );
+  const distance = (p: { id: string; readModel: { minSellingPrice: unknown } | null }) => Math.abs(Number(p.readModel!.minSellingPrice) - target.sellingPrice);
+  const candidates = [...cheaperOrEqual, ...pricier].sort((a, b) => distance(a) - distance(b) || (a.id < b.id ? -1 : 1));
 
-  return withFlashSaleInfo(candidates.slice(0, limit));
+  return withStorefrontReadModel(candidates.slice(0, limit).map(({ readModel: _projection, ...product }) => product));
 }
 
 /** Products actually co-purchased with this one, ranked by how often they appear in the same order.
@@ -864,7 +878,7 @@ export async function getFrequentlyBoughtTogether(productId: string, limit = 4) 
     await cacheSet(cacheKey, ranked, 3600);
   }
 
-  return withFlashSaleInfo(ranked.slice(0, limit));
+  return withStorefrontReadModel(ranked.slice(0, limit));
 }
 
 const TRENDING_CACHE_KEY = `${CACHE_PREFIX}trending`;
@@ -923,14 +937,16 @@ export async function getTrendingProducts({
     await cacheSet(TRENDING_CACHE_KEY, pool, 900);
   }
 
-  const filtered = pool.filter((p) => {
-    const price = Number(p.basePrice);
+  // The budget filter matches the canonical "from" price (live, the same number the card shows).
+  const presented = await withStorefrontReadModel(pool);
+  const filtered = presented.filter((p) => {
+    const price = p.pricing.from;
     if (minPrice !== undefined && price < minPrice) return false;
     if (maxPrice !== undefined && price > maxPrice) return false;
     return true;
   });
 
-  return withFlashSaleInfo(filtered.slice(0, limit));
+  return filtered.slice(0, limit);
 }
 
 /** Plain category-scoped pick (newest/featured first) — used both for "Recommended For You" (fed the
@@ -951,7 +967,7 @@ export async function getRecommendedByCategories(
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Products from sibling categories (same parent) — e.g. a Shirt pairs with Trousers/Blazers under
@@ -968,11 +984,18 @@ export async function getCompleteYourLook(productId: string, limit = 8) {
 
 const BRAND_TIER_RANK: Record<BrandTier, number> = { PREMIUM: 0, PLATINUM: 1, LUXURY: 2 };
 
+/** The product a price-relative rail is built around, with its canonical selling price from the (fresh) projection. */
 async function getTargetProductContext(productId: string) {
-  return prisma.product.findUnique({
-    where: { id: productId },
-    select: { categoryId: true, basePrice: true, brandTier: true },
-  });
+  await ensureFreshReadModels();
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { categoryId: true, brandTier: true } });
+  if (!product) return null;
+  // A hidden/trashed target has no guarded row; project it on demand so its rails still have a reference price.
+  let sellingPrice = await projectedSellingPrice(productId);
+  if (sellingPrice === null) {
+    await refreshReadModels([productId]);
+    sellingPrice = await projectedSellingPrice(productId);
+  }
+  return sellingPrice === null ? null : { ...product, sellingPrice };
 }
 
 /** Same category, priced lower than the current product — nearest-cheaper first. */
@@ -986,14 +1009,14 @@ export async function getBudgetAlternatives(productId: string, limit = 8) {
       isActive: true,
       deletedAt: null,
       id: { not: productId },
-      basePrice: { lt: target.basePrice },
+      ...sellingPriceWhere({ lt: target.sellingPrice }),
     },
     select: PUBLIC_PRODUCT_SELECT,
-    orderBy: { basePrice: "desc" },
+    orderBy: sellingPriceOrderBy("desc"),
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Same category, priced higher than the current product — nearest-pricier first ("step up"). */
@@ -1007,14 +1030,14 @@ export async function getUpgradeOptions(productId: string, limit = 8) {
       isActive: true,
       deletedAt: null,
       id: { not: productId },
-      basePrice: { gt: target.basePrice },
+      ...sellingPriceWhere({ gt: target.sellingPrice }),
     },
     select: PUBLIC_PRODUCT_SELECT,
-    orderBy: { basePrice: "asc" },
+    orderBy: sellingPriceOrderBy("asc"),
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Same category, strictly higher brand tier than the current product (e.g. PREMIUM -> PLATINUM/LUXURY).
@@ -1038,11 +1061,11 @@ export async function getPremiumAlternatives(productId: string, limit = 8) {
       brandTier: { in: higherTiers },
     },
     select: PUBLIC_PRODUCT_SELECT,
-    orderBy: { basePrice: "desc" },
+    orderBy: sellingPriceOrderBy("desc"),
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Fire-and-forget — records an anonymous, aggregate-only storefront page view. Never tied
@@ -1063,7 +1086,8 @@ const URGENCY_CACHE_TTL_SECONDS = 60;
  * so the two numbers can never disagree. */
 const NOT_A_SALE = ["CANCELLED", "REFUNDED"] as const;
 
-/** Admin-only: how many units of a product sold in the last `days` days, and in how many orders. Not cached (few readers). */
+/** Admin-only: how many units of a product sold in the last `days` days, in how many orders, and its lifetime page views.
+ * Not cached (few readers). */
 export async function getProductSalesSummary(productId: string, days = 7): Promise<ProductSalesSummary> {
   if (!(await prisma.product.findUnique({ where: { id: productId }, select: { id: true } }))) throw AppError.notFound("Product not found");
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -1085,6 +1109,8 @@ export async function getProductSalesSummary(productId: string, days = 7): Promi
     productId,
     days,
     since: since.toISOString(),
+    // Views are the shop's own figure — shown to admins only, never to shoppers.
+    totalViews: await prisma.productViewLog.count({ where: { productId } }),
     unitsSold: items.reduce((sum, i) => sum + i.quantity, 0),
     orders: new Set(items.map((i) => i.orderId)).size,
     byVariant: [...byVariant.values()].sort((a, b) => b.units - a.units),
@@ -1092,52 +1118,34 @@ export async function getProductSalesSummary(productId: string, days = 7): Promi
 }
 
 export async function getUrgencySignals(productId: string) {
-  const cacheKey = `${CACHE_PREFIX}urgency:${productId}`;
-  const cached = await cacheGet<{
-    totalViews: number;
-    recentPurchaseCount: number;
-    unitsSoldLast7Days: number;
-    isFastSelling: boolean;
-  }>(cacheKey);
+  // Public: only the yes/no "selling fast" flag. View and sales counts are admin-only (getProductSalesSummary). v3 key so
+  // no cached older copy (which still carried the counts) is ever served.
+  const cacheKey = `${CACHE_PREFIX}urgency:v3:${productId}`;
+  const cached = await cacheGet<UrgencySignals>(cacheKey);
   if (cached) return cached;
 
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const variantIds = (await prisma.productVariant.findMany({ where: { productId }, select: { id: true } })).map(
     (v) => v.id,
   );
 
-  // Lifetime count rather than "today" — a per-day count resets to a small, unimpressive number
-  // every midnight and reads as "nobody's looking at this" on a slow morning; the running total
-  // only ever goes up.
-  const [totalViews, weekOrderItems, stockAgg] = await Promise.all([
-    prisma.productViewLog.count({ where: { productId } }),
+  const [weekOrderItems, stockAgg] = await Promise.all([
     variantIds.length
       ? prisma.orderItem.findMany({
           where: {
             variantId: { in: variantIds },
             order: { status: { notIn: [...NOT_A_SALE] }, createdAt: { gte: since7d } },
           },
-          select: { quantity: true, order: { select: { createdAt: true } } },
+          select: { quantity: true },
         })
       : [],
     prisma.productVariant.aggregate({ where: { productId }, _sum: { stock: true } }),
   ]);
 
   const unitsSoldLast7Days = weekOrderItems.reduce((sum, i) => sum + i.quantity, 0);
-  const recentPurchaseCount = weekOrderItems
-    .filter((i) => i.order.createdAt >= since24h)
-    .reduce((sum, i) => sum + i.quantity, 0);
   const stock = stockAgg._sum.stock ?? 0;
-  const isFastSelling = stock > 0 && unitsSoldLast7Days >= stock;
-
-  const signals = {
-    totalViews,
-    recentPurchaseCount,
-    unitsSoldLast7Days,
-    isFastSelling,
-  };
+  const signals: UrgencySignals = { isFastSelling: stock > 0 && unitsSoldLast7Days >= stock };
 
   await cacheSet(cacheKey, signals, URGENCY_CACHE_TTL_SECONDS);
   return signals;
@@ -1321,7 +1329,12 @@ function recordProductAudit(adminId: string, productId: string, ip: string | und
   }
 }
 
-export async function createProduct(input: CreateProductInput, adminId: string, ip?: string) {
+export async function createProduct(
+  input: CreateProductInput,
+  adminId: string,
+  ip?: string,
+  options: { stockReason?: "RESTOCK" | "IMPORT" } = {},
+) {
   const category = await prisma.category.findUnique({ where: { id: input.categoryId } });
   if (!category || category.deletedAt) throw AppError.badRequest("Category does not exist");
 
@@ -1384,18 +1397,13 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
       if (faqs?.length) await replaceFaqs(tx, created.id, faqs);
       if (relations?.length) await replaceRelations(tx, created.id, relations);
 
-      // Every variant starts life with a real stock number but no history explaining it — log it
-      // as an opening RESTOCK movement so the ledger accounts for stock from the moment it exists.
-      const stocked = created.variants.filter((v) => v.stock > 0);
-      if (stocked.length) {
-        await tx.stockMovement.createMany({
-          data: stocked.map((v) => ({
-            variantId: v.id,
-            change: v.stock,
-            reason: "RESTOCK" as const,
-            adminId,
-            note: "Initial stock on product creation",
-          })),
+      // Opening stock: each variant was created at 0; its initial quantity lands through the inventory service as an
+      // opening RESTOCK (or IMPORT from a CSV) movement, so the ledger accounts for stock from the moment it exists.
+      const stockBySku = new Map(variants.map((v) => [v.sku, v.stock ?? 0]));
+      for (const v of created.variants) {
+        await recordInitialStock(tx, v.id, stockBySku.get(v.sku) ?? 0, options.stockReason ?? "RESTOCK", {
+          adminId,
+          note: options.stockReason === "IMPORT" ? "Initial stock from CSV import" : "Initial stock on product creation",
         });
       }
 
@@ -1426,7 +1434,16 @@ export async function createProduct(input: CreateProductInput, adminId: string, 
   return getProductById(product.id);
 }
 
-export async function updateProduct(id: string, input: UpdateProductInput, adminId: string, ip?: string, options: { stockNote?: string } = {}) {
+export async function updateProduct(
+  id: string,
+  input: UpdateProductInput,
+  adminId: string,
+  ip?: string,
+  // `stockMode: "count"` (CSV import) treats a variant's stock as a declared count; the default treats it as a
+  // compare-and-set edit against `expectedStock` (docs/INVENTORY_INVARIANTS.md rule 6).
+  options: { stockNote?: string; stockMode?: "form" | "count" } = {},
+) {
+  const replenished: string[] = [];
   const existing = await getProductById(id);
   // Same rule as create, checked up front: otherwise two rows sharing a SKU only fail at the DB unique index, as a
   // generic conflict that doesn't say which rows clash. A row listed by id without a SKU keeps its stored one.
@@ -1591,29 +1608,13 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
           // silently erase that order's stock audit trail. Zero its stock instead: it drops out of
           // checkout the same as a delete would, without destroying history.
           if (mustKeep.length) {
-            const keptVariants = await tx.productVariant.findMany({
-              where: { id: { in: mustKeep } },
-              select: { id: true, stock: true },
-            });
-            await tx.productVariant.updateMany({ where: { id: { in: mustKeep } }, data: { stock: 0 } });
-            const nonZero = keptVariants.filter((v) => v.stock !== 0);
-            if (nonZero.length) {
-              await tx.stockMovement.createMany({
-                data: nonZero.map((v) => ({
-                  variantId: v.id,
-                  change: -v.stock,
-                  reason: "ADJUSTMENT" as const,
-                  adminId,
-                  note: "Variant removed from product — had order history, stock zeroed instead of deleted",
-                })),
-              });
-            }
+            await zeroVariantStock(tx, mustKeep, { adminId, note: "Variant removed from product — had order history, stock zeroed instead of deleted" });
           }
         }
 
         for (const [index, variant] of input.variants.entries()) {
           if (variant.id) {
-            const { id: variantId, attributeValueIds, imageIds, ...updateData } = variant;
+            const { id: variantId, attributeValueIds, imageIds, stock: desiredStock, expectedStock, ...updateData } = variant;
             // The gallery is authoritative when sent; an old client that only sends `imageId` means "exactly this one image".
             const gallery = imageIds ?? (updateData.imageId !== undefined ? (updateData.imageId ? [updateData.imageId] : []) : undefined);
             if (gallery) delete updateData.imageId; // syncVariantGallery sets it, from an image that is verified to belong here
@@ -1638,28 +1639,25 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
                 });
               }
             }
-            // The plain Stock field on the product-edit form is the primary way admins change
-            // stock day-to-day — diff it against the pre-update value so every save stays
-            // ledger-complete without the form itself needing a reason/note prompt.
-            if (updateData.stock !== undefined) {
-              const before = existing.variants.find((v) => v.id === variantId);
-              const delta = before ? updateData.stock - before.stock : 0;
-              if (delta !== 0) {
-                await tx.stockMovement.create({
-                  data: { variantId, change: delta, reason: "ADJUSTMENT", adminId, note: options.stockNote ?? "Manual edit via product form" },
-                });
-              }
+            // Stock is never overwritten here: a form edit is a compare-and-set against what the editor last saw, a
+            // CSV import is a declared count — both applied by the inventory service under a row lock, ledger-complete.
+            if (desiredStock !== undefined) {
+              const actor = { adminId, note: options.stockNote ?? (options.stockMode === "count" ? "Changed by CSV import" : "Manual edit via product form") };
+              const delta =
+                options.stockMode === "count"
+                  ? await setVariantStockCount(tx, variantId, desiredStock, "IMPORT", actor)
+                  : await setVariantStockFromForm(tx, variantId, desiredStock, expectedStock, actor);
+              if (delta > 0 && desiredStock - delta <= 0) replenished.push(variantId);
             }
           } else {
             const created = await tx.productVariant.create({
               data: { ...toVariantCreateData({ ...variant, sku: variant.sku!, stock: variant.stock ?? 0, attributeValueIds: variant.attributeValueIds ?? [] }, index), productId: id },
             });
             if (variant.imageIds?.length) await syncVariantGallery(tx, id, created.id, variant.imageIds);
-            if (created.stock > 0) {
-              await tx.stockMovement.create({
-                data: { variantId: created.id, change: created.stock, reason: "RESTOCK", adminId, note: "Initial stock on variant creation" },
-              });
-            }
+            await recordInitialStock(tx, created.id, variant.stock ?? 0, options.stockMode === "count" ? "IMPORT" : "RESTOCK", {
+              adminId,
+              note: "Initial stock on variant creation",
+            });
           }
         }
       }
@@ -1681,15 +1679,7 @@ export async function updateProduct(id: string, input: UpdateProductInput, admin
 
   // Fire-and-forget: real stock/price changes trigger real customer notifications — never
   // allowed to block or fail the admin's product save.
-  if (input.variants) {
-    for (const variant of input.variants) {
-      if (!variant.id) continue;
-      const before = existing.variants.find((v) => v.id === variant.id);
-      if (before && before.stock === 0 && variant.stock !== undefined && variant.stock > 0) {
-        notifyBackInStock(variant.id).catch((err) => console.error("[stock-alert] notify failed:", err));
-      }
-    }
-  }
+  notifyReplenished(replenished);
   if (input.basePrice !== undefined && input.basePrice < Number(existing.basePrice)) {
     notifyPriceDrop(id, input.basePrice).catch((err) => console.error("[price-drop] notify failed:", err));
   }
@@ -1926,6 +1916,6 @@ export async function getRail(productId: string, key: RailKey) {
 export async function getProductForPreview(id: string) {
   const row = await prisma.product.findUnique({ where: { id }, select: PUBLIC_DETAIL_SELECT });
   if (!row) throw AppError.notFound("Product not found");
-  const [withFlash] = await withFlashSaleInfo([await presentProduct(row)]);
+  const [withFlash] = await withStorefrontReadModel([await presentProduct(row)]);
   return { ...withFlash, previewStatus: row.status };
 }

@@ -3,6 +3,9 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { getRecommendedByCategories } from "../products/product.service";
+import { PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
+import { toMajor } from "@clothing-brand/shared";
+import { quoteCart } from "../../domain/pricing/pricing.service";
 
 const include = {
   anchorCategory: true,
@@ -71,7 +74,7 @@ const SUGGESTED_PRODUCTS_LIMIT = 8;
 /** The active bundle (if any) anchored on this product's category, plus live products drawn from
  * its suggestion categories — powers the PDP's "Complete the Bundle" section. */
 export async function getBundleForProduct(productId: string) {
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { categoryId: true } });
+  const product = await prisma.product.findFirst({ where: { id: productId, ...PURCHASABLE_PRODUCT_WHERE }, select: { categoryId: true } });
   if (!product) return null;
 
   const bundle = await prisma.bundle.findFirst({
@@ -89,81 +92,24 @@ export async function getBundleForProduct(productId: string) {
   return { bundle, suggestedProducts };
 }
 
-/** Resolves cart items to their product categories, then checks every active bundle whose anchor
- * category is present against which suggestion categories are also in the cart. Returns one entry
- * per candidate bundle regardless of eligibility, so callers can both pick the best discount and
- * nudge a shopper who's close but not quite there. The discount is computed off only the matched
- * line items (anchor + matched-suggestion lines), never the whole cart, so an unrelated large cart
- * isn't discounted just because it happens to contain a Panjabi. */
-async function getCandidateBundleMatches(items: { variantId: string; quantity: number }[]) {
-  const variantIds = items.map((i) => i.variantId);
-  const variants = await prisma.productVariant.findMany({
-    where: { id: { in: variantIds } },
-    select: { id: true, price: true, product: { select: { categoryId: true, basePrice: true } } },
-  });
-  const variantById = new Map(variants.map((v) => [v.id, v]));
-
-  const categoryIdsInCart = new Set<string>();
-  const lineTotalByCategory = new Map<string, number>();
-  for (const item of items) {
-    const variant = variantById.get(item.variantId);
-    if (!variant) continue;
-    const categoryId = variant.product.categoryId;
-    const price = variant.price !== null ? Number(variant.price) : Number(variant.product.basePrice);
-    categoryIdsInCart.add(categoryId);
-    lineTotalByCategory.set(categoryId, (lineTotalByCategory.get(categoryId) ?? 0) + price * item.quantity);
-  }
-  if (categoryIdsInCart.size === 0) return [];
-
-  const candidateBundles = await prisma.bundle.findMany({
-    where: { isActive: true, anchorCategoryId: { in: [...categoryIdsInCart] } },
-    include,
-  });
-
-  return candidateBundles.map((bundle) => {
-    const matchedSuggestions = bundle.suggestions.filter((s) => categoryIdsInCart.has(s.categoryId));
-    const missingSuggestions = bundle.suggestions.filter((s) => !categoryIdsInCart.has(s.categoryId));
-    const matchedCategoryIds = [bundle.anchorCategoryId, ...matchedSuggestions.map((s) => s.categoryId)];
-    const matchedSubtotal = matchedCategoryIds.reduce((sum, id) => sum + (lineTotalByCategory.get(id) ?? 0), 0);
-
-    let discount =
-      bundle.discountType === "PERCENTAGE"
-        ? Math.round((matchedSubtotal * Number(bundle.discountValue)) / 100)
-        : Number(bundle.discountValue);
-    discount = Math.min(discount, matchedSubtotal);
-
+/** Storefront bundle preview — the applied bundle and the closest near-miss, straight from the canonical quote (the
+ * promotion engine prices bundles on the post-flash amounts, D2). No bundle math lives here. Kept for clients that
+ * still call /api/bundles/preview; the cart and checkout read the same facts from the quote itself. */
+export async function getBundleCartPreview(items: { variantId: string; quantity: number }[]) {
+  const { quote } = await quoteCart({ items });
+  const ids = [quote.bundle?.bundleId, quote.bundleNearMiss?.bundleId].filter((x): x is string => Boolean(x));
+  const bundles = ids.length ? await prisma.bundle.findMany({ where: { id: { in: ids } }, include }) : [];
+  const byId = new Map(bundles.map((b) => [b.id, b]));
+  const toMatch = (c: typeof quote.bundleNearMiss) => {
+    const bundle = c ? byId.get(c.bundleId) : undefined;
+    if (!c || !bundle) return null;
     return {
       bundle,
-      matchedCategoryIds,
-      missingCategories: missingSuggestions.map((s) => s.category),
-      eligible: matchedSuggestions.length >= bundle.minSuggestedCategories,
-      discount,
+      matchedCategoryIds: c.matchedCategoryIds,
+      missingCategories: bundle.suggestions.filter((s) => c.missingCategoryIds.includes(s.categoryId)).map((s) => s.category),
+      eligible: c.eligible,
+      discount: toMajor(c.discount),
     };
-  });
-}
-
-/** The best *eligible* bundle discount for this cart, if any — used both by the storefront preview
- * and, authoritatively, by order creation. */
-export async function evaluateBundleForItems(items: { variantId: string; quantity: number }[]) {
-  const matches = (await getCandidateBundleMatches(items)).filter((m) => m.eligible);
-  if (matches.length === 0) return null;
-  return matches.reduce((best, m) => (m.discount > best.discount ? m : best));
-}
-
-/** Storefront-facing preview: the best eligible discount (identical to `evaluateBundleForItems`,
- * used to show what checkout will apply) plus the closest near-miss bundle — anchor already in
- * cart, not yet enough suggested categories — so the cart page can nudge exactly what's missing. */
-export async function getBundleCartPreview(items: { variantId: string; quantity: number }[]) {
-  const matches = await getCandidateBundleMatches(items);
-
-  const eligible = matches.filter((m) => m.eligible);
-  const best = eligible.length > 0 ? eligible.reduce((a, b) => (b.discount > a.discount ? b : a)) : null;
-
-  const nearMisses = matches.filter((m) => !m.eligible);
-  const nearMiss =
-    nearMisses.length > 0
-      ? nearMisses.reduce((a, b) => (b.missingCategories.length < a.missingCategories.length ? b : a))
-      : null;
-
-  return { eligible: best, nearMiss };
+  };
+  return { eligible: toMatch(quote.bundle), nearMiss: toMatch(quote.bundleNearMiss) };
 }

@@ -12,7 +12,7 @@ import { resolveImageUrl } from "@/lib/image-url";
 import type { PreviewReadyMessage, PreviewUpdateMessage } from "@/lib/wizard/preview-protocol";
 
 // Real, aggregate signals need a live product with real traffic — a draft has none, same as the admin's /preview/:id.
-const NO_SIGNALS = { totalViews: 0, recentPurchaseCount: 0, unitsSoldLast7Days: 0, isFastSelling: false };
+const NO_SIGNALS = { isFastSelling: false };
 
 // In the browser this resolves to isomorphic-dompurify's browser build (plain DOMPurify on the real DOM) — the
 // jsdom fallback that breaks client-side is only the Node export.

@@ -251,6 +251,31 @@ export function useProductFormState({ initial, stagedImages }: UseProductFormSta
     selectedConfig ?? null,
   );
 
+  // The stock each existing variant had when this editor last loaded or saved it — the compare-and-set baseline the
+  // server checks a stock edit against (docs/INVENTORY_INVARIANTS.md rule 6), so a stale form can never overwrite a sale
+  // that happened meanwhile. A ref, not a form value: advancing it after a save must not retrigger autosave.
+  const stockBaselineRef = useRef<Map<string, number> | null>(null);
+  if (stockBaselineRef.current === null) {
+    stockBaselineRef.current = new Map((initial?.variants ?? []).map((v) => [v.id, v.stock]));
+  }
+
+  /** Adds `expectedStock` to every existing variant in a payload about to be sent. */
+  function withStockExpectations(values: CreateProductInput): CreateProductInput {
+    const baseline = stockBaselineRef.current!;
+    if (!values.variants) return values;
+    return {
+      ...values,
+      variants: values.variants.map((v) => (v.id && baseline.has(v.id) ? { ...v, expectedStock: baseline.get(v.id) } : v)),
+    };
+  }
+
+  /** After a successful save: the stock values just sent are now what the editor expects the server to hold. */
+  function acknowledgeSavedStock(sent: CreateProductInput) {
+    for (const v of sent.variants ?? []) {
+      if (v.id && typeof v.stock === "number" && Number.isFinite(v.stock)) stockBaselineRef.current!.set(v.id, v.stock);
+    }
+  }
+
   /** Prunes attribute keys the current type doesn't own before sending — call this on whatever values
    * are about to be submitted (a full submit, or a wizard step's partial autosave). */
   function withPrunedAttributes(values: CreateProductInput): CreateProductInput {
@@ -271,6 +296,8 @@ export function useProductFormState({ initial, stagedImages }: UseProductFormSta
     sectionEnabled,
     completeness,
     withPrunedAttributes,
+    withStockExpectations,
+    acknowledgeSavedStock,
     formState,
     typeId,
   };

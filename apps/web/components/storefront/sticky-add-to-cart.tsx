@@ -1,9 +1,11 @@
 "use client";
 
-import type { ProductVariant } from "@clothing-brand/shared";
+import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/format";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
+import { variantDisplayPrice } from "@/lib/pricing-display";
+import type { PickerIntent } from "./variant-picker-dialog";
 
 interface StickyAddToCartProps {
   visible: boolean;
@@ -12,11 +14,10 @@ interface StickyAddToCartProps {
   productSlug: string;
   productName: string;
   imageUrl: string | null;
-  basePrice: string;
-  price: string;
-  /** Called when tapped with no variant selected yet, so the page can scroll up to the size/color
-   * picker and highlight what's still missing, instead of the button just doing nothing. */
-  onRequireSelection?: () => void;
+  product: Pick<Product, "pricing" | "basePrice" | "compareAtPrice" | "trackInventory">;
+  /** Called when tapped with no variant selected yet — the page opens the "choose your options" popup for that
+   * action instead of the button doing nothing. */
+  onRequireSelection?: (intent: PickerIntent) => void;
 }
 
 /** Mobile-only PDP action bar — appears once the inline Add to Cart/Buy Now buttons in
@@ -30,25 +31,24 @@ export function StickyAddToCart({
   productSlug,
   productName,
   imageUrl,
-  basePrice,
-  price,
+  product,
   onRequireSelection,
 }: StickyAddToCartProps) {
-  const { addToCart, buyNow } = useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, basePrice });
+  const { addToCart, buyNow } = useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, product });
+  const price = variantDisplayPrice(product, selectedVariant?.id).price;
 
   if (!visible) return null;
 
-  // Genuinely out of stock is a hard stop; a not-yet-finished selection isn't — tapping it instead
-  // scrolls up to the size/color picker so the shopper can see what's still needed.
-  const outOfStock = !!selectedVariant && selectedVariant.stock === 0;
+  // Genuinely out of stock is a hard stop; a not-yet-finished selection isn't — tapping it opens the options popup.
+  const outOfStock = !!selectedVariant && maxSellableQuantity(product.trackInventory, selectedVariant.stock) === 0;
 
   function handleAddToCart() {
-    if (!selectedVariant) return onRequireSelection?.();
+    if (!selectedVariant) return onRequireSelection?.("cart");
     addToCart(1);
   }
 
   function handleBuyNow() {
-    if (!selectedVariant) return onRequireSelection?.();
+    if (!selectedVariant) return onRequireSelection?.("buy");
     buyNow(1);
   }
 

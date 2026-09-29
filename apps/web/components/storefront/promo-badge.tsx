@@ -1,4 +1,5 @@
 import type { Product } from "@clothing-brand/shared";
+import { percentOffLabel, productDisplayPrice } from "@/lib/pricing-display";
 
 export function PromoBadge({ children }: { children: React.ReactNode }) {
   return (
@@ -15,14 +16,11 @@ const LIMITED_STOCK_THRESHOLD = 5;
  * "New Arrival" beats a low-stock nudge. Sold-out is handled separately by the caller — it's an
  * availability signal, not a promotion. */
 export function getProductBadge(product: Product, totalStock: number): string | null {
-  const flash = product.activeFlashSale;
-  if (flash) {
-    const pct = Math.round((1 - Number(flash.flashPrice) / Number(product.basePrice)) * 100);
-    return pct > 0 ? `${pct}% Off` : "Sale";
-  }
-  if (product.compareAtPrice) {
-    const pct = Math.round((1 - Number(product.basePrice) / Number(product.compareAtPrice)) * 100);
-    return pct > 0 ? `${pct}% Off` : "Sale";
+  // The label compares two SERVER-resolved numbers (the price now vs. the struck-through price) — no price is computed.
+  const shown = productDisplayPrice(product);
+  if (shown.flash || shown.was !== null) {
+    const pct = percentOffLabel(shown.price, shown.was);
+    return pct && pct > 0 ? `${pct}% Off` : "Sale";
   }
 
   const ageDays = (Date.now() - new Date(product.createdAt).getTime()) / (1000 * 60 * 60 * 24);

@@ -434,12 +434,13 @@ describe("product workflow: status, completeness, SEO, care, materials, history"
     it("records specific events with what changed, not just 'products.update'", async () => {
       const p = await createProduct();
       await addImage(p.id);
-      const variantId = (await prisma.productVariant.findFirstOrThrow({ where: { productId: p.id } })).id;
+      const variant = await prisma.productVariant.findFirstOrThrow({ where: { productId: p.id } });
+      const variantId = variant.id;
       await owner().patch(`/api/products/${p.id}`, {
         basePrice: 650,
         description: "<p>New words</p>",
         seoTitle: "New SEO",
-        variants: [{ id: variantId, sku: `VT-WF-H-${RUN}`, size: "M", color: "Black", stock: 9, price: 700 }],
+        variants: [{ id: variantId, sku: `VT-WF-H-${RUN}`, size: "M", color: "Black", stock: 9, expectedStock: variant.stock, price: 700 }],
       });
       await owner().patch(`/api/products/${p.id}`, { status: "PUBLISHED" });
       await owner().patch(`/api/products/${p.id}`, { status: "UNPUBLISHED" });

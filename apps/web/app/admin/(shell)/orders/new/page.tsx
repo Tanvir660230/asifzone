@@ -1,6 +1,6 @@
 "use client";
 
-import { formatVariantLabel } from "@clothing-brand/shared";
+import { formatVariantLabel, isAvailable, maxSellableQuantity } from "@clothing-brand/shared";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -15,6 +15,7 @@ import {
   BD_ALL_AREA_OPTIONS,
   parseAreaDistrictOption,
   type AdminCreateOrderInput,
+  type QuoteRequestInput,
   type Product,
   type ProductVariant,
   type AdminCustomerListItem,
@@ -30,7 +31,9 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as productsApi from "@/lib/api/products";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
-import { validateCoupon, type CouponPreview } from "@/lib/api/coupons";
+import { getQuote } from "@/lib/api/quote";
+import { useQuote, quoteLineAmount } from "@/hooks/use-quote";
+import { productDisplayPrice, variantDisplayPrice } from "@/lib/pricing-display";
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -38,13 +41,14 @@ import { cn } from "@/lib/utils";
 const formSchema = adminCreateOrderSchema.omit({ items: true, couponCode: true, customerId: true, markPaid: true });
 type FormValues = ReturnType<typeof formSchema.parse>;
 
+/** What staff picked — ids and quantities only. Every amount comes from the server quote (PRICING_INVARIANTS §7). */
 interface CartLine {
   variantId: string;
   productName: string;
   size: string;
   color: string;
-  price: number;
-  stock: number;
+  /** Quantity ceiling for the input (D5: untracked products are limited only by the per-line maximum). */
+  maxQuantity: number;
   quantity: number;
 }
 
@@ -69,7 +73,7 @@ export default function NewOrderPage() {
 
   // --- coupon (optional, same validation the storefront uses) ---
   const [couponInput, setCouponInput] = useState("");
-  const [coupon, setCoupon] = useState<CouponPreview | null>(null);
+  const [couponCode, setCouponCode] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponChecking, setCouponChecking] = useState(false);
 
@@ -110,8 +114,8 @@ export default function NewOrderPage() {
     }
   }
 
-  // Division is derived from the chosen district rather than picked separately — it's only needed
-  // internally for the Dhaka/outside-Dhaka shipping-fee split, matching the storefront checkout.
+  // Division is derived from the chosen district rather than picked separately; the server quote resolves the
+  // shipping zone from the address, exactly as for the storefront checkout.
   useEffect(() => {
     setValue("shippingDivision", (BD_DIVISION_BY_DISTRICT[shippingDistrict] ?? "") as FormValues["shippingDivision"]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,13 +174,13 @@ export default function NewOrderPage() {
   }
 
   function addVariant(product: Product, variant: ProductVariant) {
-    if (variant.stock <= 0) return;
-    const price = Number(product.activeFlashSale?.flashPrice ?? variant.price ?? product.basePrice);
+    if (!isAvailable(product.trackInventory, variant.stock)) return;
+    const maxQuantity = maxSellableQuantity(product.trackInventory, variant.stock);
     setItems((prev) => {
       const existing = prev.find((i) => i.variantId === variant.id);
       if (existing) {
         return prev.map((i) =>
-          i.variantId === variant.id ? { ...i, quantity: Math.min(i.quantity + 1, variant.stock) } : i,
+          i.variantId === variant.id ? { ...i, quantity: Math.min(i.quantity + 1, maxQuantity) } : i,
         );
       }
       return [
@@ -186,8 +190,7 @@ export default function NewOrderPage() {
           productName: product.name,
           size: variant.sizeLabel ?? variant.size,
           color: variant.color,
-          price,
-          stock: variant.stock,
+          maxQuantity,
           quantity: 1,
         },
       ];
@@ -199,7 +202,7 @@ export default function NewOrderPage() {
 
   function updateQuantity(variantId: string, quantity: number) {
     setItems((prev) =>
-      prev.map((i) => (i.variantId === variantId ? { ...i, quantity: Math.max(1, Math.min(quantity, i.stock)) } : i)),
+      prev.map((i) => (i.variantId === variantId ? { ...i, quantity: Math.max(1, Math.min(quantity, i.maxQuantity)) } : i)),
     );
   }
 
@@ -207,36 +210,39 @@ export default function NewOrderPage() {
     setItems((prev) => prev.filter((i) => i.variantId !== variantId));
   }
 
-  const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const couponDiscount = coupon?.discount ?? 0;
-  const estimatedTotal = Math.max(0, subtotal - couponDiscount);
+  // The canonical server quote for exactly what will be submitted (items, coupon, address, linked customer) — the
+  // same pipeline the storefront checkout and the order itself use. This page does no arithmetic of its own.
+  const shippingDivision = watch("shippingDivision");
+  const baseRequest: QuoteRequestInput = {
+    items: items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+    shippingDivision: shippingDivision || undefined,
+    shippingDistrict: shippingDistrict || undefined,
+    customerId: customerId ?? undefined,
+  };
+  const { data: quote, refetch: refetchQuote } = useQuote({ ...baseRequest, couponCode: couponCode ?? undefined });
+  const money = (value: number | null | undefined) => (value === null || value === undefined ? "…" : formatPrice(value));
 
-  // The applied coupon's discount was computed against the cart as of the last Apply click — if
-  // items are added/removed/changed afterward, that discount goes stale (still shown, still what
-  // gets sent on submit) even though it no longer matches the current subtotal/items. Clear it and
-  // make the admin re-apply so the displayed total always matches what the server will charge.
+  // A coupon applied earlier is re-evaluated by every requote; if the cart changes so it no longer qualifies, say so.
   useEffect(() => {
-    if (coupon) {
-      setCoupon(null);
-      setCouponError("Cart changed — re-apply the coupon to recalculate the discount");
+    if (couponCode && quote && !quote.coupon) {
+      setCouponError(quote.rejectedPromotions[0]?.message ?? "This coupon no longer applies to the order");
     }
-    // Only fire on item changes, not on the coupon-setting apply itself.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
+  }, [couponCode, quote]);
 
   async function handleApplyCoupon() {
-    if (!couponInput.trim() || subtotal <= 0) return;
+    const code = couponInput.trim();
+    if (!code || items.length === 0) return;
     setCouponChecking(true);
     setCouponError(null);
     try {
-      const result = await validateCoupon(
-        couponInput.trim(),
-        subtotal,
-        items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
-      );
-      setCoupon(result);
+      const { quote: withCoupon } = await getQuote({ ...baseRequest, couponCode: code });
+      if (withCoupon.coupon) setCouponCode(withCoupon.coupon.code);
+      else {
+        setCouponCode(null);
+        setCouponError(withCoupon.rejectedPromotions[0]?.message ?? "Could not apply coupon");
+      }
     } catch (err) {
-      setCoupon(null);
+      setCouponCode(null);
       setCouponError(err instanceof ApiError ? err.message : "Could not apply coupon");
     } finally {
       setCouponChecking(false);
@@ -252,14 +258,18 @@ export default function NewOrderPage() {
     const payload: AdminCreateOrderInput = {
       ...values,
       customerId: customerId ?? undefined,
-      couponCode: coupon?.code,
+      couponCode: quote?.coupon?.code,
       markPaid,
-      items: items.map((i) => ({ variantId: i.variantId, quantity: i.quantity })),
+      items: baseRequest.items,
+      // The quote staff are looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
+      quoteToken: quote?.token,
     };
     try {
       const { order } = await adminOrdersApi.createManualOrder(payload);
       router.push(`/admin/orders/${order.id}`);
     } catch (err) {
+      // 409 QUOTE_CHANGED: prices moved since this quote — refresh it so staff confirm the new total before resubmitting.
+      if (err instanceof ApiError && (err.details as { code?: string } | undefined)?.code === "QUOTE_CHANGED") void refetchQuote();
       setSubmitError(err instanceof ApiError ? err.message : "Could not create order");
     }
   }
@@ -434,28 +444,29 @@ export default function NewOrderPage() {
                       >
                         <span className="font-medium text-ink-900">{p.name}</span>
                         <span className="text-xs text-ink-400">
-                          {p.activeFlashSale ? formatPrice(p.activeFlashSale.flashPrice) : formatPrice(p.basePrice)}
+                          {formatPrice(productDisplayPrice(p).price)}
                         </span>
                       </button>
                       {expandedProductId === p.id && (
                         <div className="space-y-1 bg-ink-50/60 px-3 py-2">
                           {p.variants.map((v) => {
-                            const price = Number(p.activeFlashSale?.flashPrice ?? v.price ?? p.basePrice);
+                            const price = variantDisplayPrice(p, v.id).price;
+                            const sellable = isAvailable(p.trackInventory, v.stock);
                             return (
                               <button
                                 key={v.id}
                                 type="button"
-                                disabled={v.stock <= 0}
+                                disabled={!sellable}
                                 onClick={() => addVariant(p, v)}
                                 className={cn(
                                   "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-                                  v.stock <= 0 ? "cursor-not-allowed text-ink-300" : "text-ink-600 hover:bg-ink-100",
+                                  !sellable ? "cursor-not-allowed text-ink-300" : "text-ink-600 hover:bg-ink-100",
                                 )}
                               >
                                 <span>
                                   {formatVariantLabel(v.sizeLabel ?? v.size, v.color)}{" "}
                                   <span className="text-ink-400">
-                                    — {v.stock > 0 ? `${v.stock} in stock` : "out of stock"}
+                                    — {!p.trackInventory ? "not stock-tracked" : sellable ? `${v.stock} in stock` : "out of stock"}
                                   </span>
                                 </span>
                                 <span className="font-medium">{formatPrice(price)}</span>
@@ -484,19 +495,19 @@ export default function NewOrderPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-ink-900">{item.productName}</p>
                       <p className="text-xs text-ink-400">
-                        {[formatVariantLabel(item.size, item.color), `${formatPrice(item.price)} each`].filter(Boolean).join(" · ")}
+                        {formatVariantLabel(item.size, item.color)}
                       </p>
                     </div>
                     <Input
                       type="number"
                       min={1}
-                      max={item.stock}
+                      max={item.maxQuantity}
                       value={item.quantity}
                       onChange={(e) => updateQuantity(item.variantId, Number(e.target.value) || 1)}
                       className="h-8 w-16 text-center"
                     />
                     <span className="w-20 shrink-0 text-right text-sm font-medium text-ink-900">
-                      {formatPrice(item.price * item.quantity)}
+                      {money(quoteLineAmount(quote, item.variantId))}
                     </span>
                     <button
                       type="button"
@@ -515,7 +526,7 @@ export default function NewOrderPage() {
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
           <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Creating order…" : `Create Order — ${formatPrice(estimatedTotal)}`}
+            {isSubmitting ? "Creating order…" : `Create Order — ${money(quote?.total)}`}
           </Button>
         </form>
 
@@ -531,7 +542,7 @@ export default function NewOrderPage() {
                   <span className="truncate pr-2">
                     {item.productName} × {item.quantity}
                   </span>
-                  <span className="shrink-0">{formatPrice(item.price * item.quantity)}</span>
+                  <span className="shrink-0">{money(quoteLineAmount(quote, item.variantId))}</span>
                 </div>
               ))}
             </div>
@@ -549,33 +560,59 @@ export default function NewOrderPage() {
                   variant="outline"
                   size="sm"
                   onClick={handleApplyCoupon}
-                  disabled={couponChecking || subtotal <= 0}
+                  disabled={couponChecking || items.length === 0}
                 >
                   Apply
                 </Button>
               </div>
               {couponError && <p className="mt-1 text-xs text-danger-600">{couponError}</p>}
-              {coupon && <p className="mt-1 text-xs text-success-600">Coupon &ldquo;{coupon.code}&rdquo; applied</p>}
+              {quote?.coupon && <p className="mt-1 text-xs text-success-600">Coupon &ldquo;{quote.coupon.code}&rdquo; applied</p>}
             </div>
 
             <div className="space-y-1.5 border-t border-ink-100 pt-4 text-sm">
               <div className="flex justify-between text-ink-600">
                 <span>Subtotal</span>
-                <span>{formatPrice(subtotal)}</span>
+                <span>{items.length === 0 ? formatPrice(0) : money(quote?.subtotal)}</span>
               </div>
-              {couponDiscount > 0 && (
+              {quote && quote.bundleDiscount > 0 && (
                 <div className="flex justify-between text-success-600">
-                  <span>Coupon discount</span>
-                  <span>−{formatPrice(couponDiscount)}</span>
+                  <span>Bundle discount</span>
+                  <span>−{formatPrice(quote.bundleDiscount)}</span>
                 </div>
               )}
-              <p className="text-xs text-ink-400">
-                Shipping fee is added automatically based on the delivery division once the order is created.
-              </p>
-              <div className="flex justify-between border-t border-ink-100 pt-1.5 text-base text-ink-900">
-                <span>Total (before shipping)</span>
-                <span className="font-medium">{formatPrice(estimatedTotal)}</span>
+              {quote && quote.couponDiscount > 0 && (
+                <div className="flex justify-between text-success-600">
+                  <span>Coupon discount</span>
+                  <span>−{formatPrice(quote.couponDiscount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-ink-600">
+                <span>Shipping{quote?.shipping.resolved ? ` (${quote.shipping.zoneName})` : ""}</span>
+                <span>
+                  {!quote?.shipping.resolved
+                    ? "Select district"
+                    : quote.shipping.waived
+                      ? "Free"
+                      : formatPrice(quote.shipping.charged)}
+                </span>
               </div>
+              {quote && quote.tax.addedToTotal > 0 && (
+                <div className="flex justify-between text-ink-600">
+                  <span>VAT ({quote.tax.ratePct}%)</span>
+                  <span>{formatPrice(quote.tax.addedToTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-ink-100 pt-1.5 text-base text-ink-900">
+                <span>Total</span>
+                <span className="font-medium">{items.length === 0 ? formatPrice(0) : money(quote?.total)}</span>
+              </div>
+              {quote?.warnings
+                .filter((w) => w.code !== "ADDRESS_REQUIRED" && w.code !== "NO_SHIPPING_ZONE")
+                .map((w, i) => (
+                  <p key={i} className="text-xs text-danger-600">
+                    {w.message}
+                  </p>
+                ))}
             </div>
 
             <label className="flex items-center gap-2 border-t border-ink-100 pt-4 text-sm text-ink-700">

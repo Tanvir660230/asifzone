@@ -1,6 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { queueConnection } from "../lib/queue";
 import { syncFlashSaleActivation } from "../modules/flash-sales/flash-sale.service";
+import { rebuildAllReadModels } from "../domain/storefront/read-model.service";
 
 const QUEUE_NAME = "flash-sale-activation";
 
@@ -11,7 +12,14 @@ export async function startFlashSaleCron() {
 
   new Worker(
     QUEUE_NAME,
-    async () => {
+    async (job) => {
+      // Storefront Read Model reconciliation (docs/STOREFRONT_READ_MODEL.md §5): a full, deterministic rebuild closes
+      // the one staleness the freshness guard can't see (a concurrent write whose updatedAt predates the row's).
+      if (job.name === "read-model-rebuild") {
+        const rebuilt = await rebuildAllReadModels();
+        console.log(`[read-model] periodic rebuild: ${rebuilt} row(s)`);
+        return;
+      }
       const changed = await syncFlashSaleActivation();
       if (changed > 0) console.log(`[flash-sale-cron] activation changed for ${changed} sale(s)`);
     },
@@ -19,4 +27,5 @@ export async function startFlashSaleCron() {
   );
 
   await queue.upsertJobScheduler("flash-sale-sync", { pattern: "* * * * *" }, { name: "sync" });
+  await queue.upsertJobScheduler("storefront-read-model-rebuild", { pattern: "*/15 * * * *" }, { name: "read-model-rebuild" });
 }

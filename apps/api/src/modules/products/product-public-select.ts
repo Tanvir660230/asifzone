@@ -57,3 +57,7 @@ export const PUBLIC_PRODUCT_SCALARS = {
   createdAt: true,
   updatedAt: true,
 } as const;
+
+/** Prisma filter for products that can be bought: published (`isActive` mirrors status === PUBLISHED) and not in
+ * Trash. The query-side twin of `isPurchasable` in packages/shared — every purchase path uses one or the other. */
+export const PURCHASABLE_PRODUCT_WHERE = { isActive: true, deletedAt: null } as const;

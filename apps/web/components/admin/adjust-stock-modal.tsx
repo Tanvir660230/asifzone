@@ -3,7 +3,7 @@
 import { formatVariantLabel } from "@clothing-brand/shared";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { AdjustStockInput } from "@clothing-brand/shared";
+import type { AdjustStockInput, ManualStockReason } from "@clothing-brand/shared";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,7 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [delta, setDelta] = useState<string>("");
-  const [reason, setReason] = useState<"ADJUSTMENT" | "RESTOCK">("ADJUSTMENT");
+  const [reason, setReason] = useState<ManualStockReason>("ADJUSTMENT");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -170,9 +170,11 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
           </div>
           <div>
             <Label htmlFor="stock-reason">Reason</Label>
-            <Select id="stock-reason" value={reason} onChange={(e) => setReason(e.target.value as "ADJUSTMENT" | "RESTOCK")}>
+            <Select id="stock-reason" value={reason} onChange={(e) => setReason(e.target.value as ManualStockReason)}>
               <option value="ADJUSTMENT">Adjustment / correction</option>
               <option value="RESTOCK">Restock (new stock arrived)</option>
+              <option value="DAMAGED">Damaged (write-off — enter a negative number)</option>
+              <option value="LOST">Lost / shrinkage (write-off — enter a negative number)</option>
             </Select>
           </div>
         </div>

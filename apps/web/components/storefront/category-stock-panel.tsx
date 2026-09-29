@@ -10,7 +10,6 @@ export function CategoryStockPanel({ overview }: { overview: CategoryStockOvervi
       <p className="text-sm text-ink-500">
         <span className="font-medium text-ink-900">{total.inStockProducts}</span> of {total.totalProducts} product
         {total.totalProducts === 1 ? "" : "s"} in stock
-        {total.totalStock > 0 && <> &middot; {total.totalStock} units available</>}
       </p>
 
       {subcategories.length > 0 && (

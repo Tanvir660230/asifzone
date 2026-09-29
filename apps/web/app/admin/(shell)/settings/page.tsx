@@ -244,6 +244,7 @@ export default function SettingsPage() {
       courierReturnFeeOutsideDhaka: Number(s.courierReturnFeeOutsideDhaka),
       taxEnabled: s.taxEnabled,
       defaultTaxRate: s.defaultTaxRate ? Number(s.defaultTaxRate) : undefined,
+      shippingTaxable: s.shippingTaxable ?? true,
       rewardPointsPerCurrency: Number(s.rewardPointsPerCurrency),
       whatsappMessage: s.whatsappMessage,
       whatsappLabel: s.whatsappLabel,
@@ -549,6 +550,11 @@ export default function SettingsPage() {
               />
               {errors.defaultTaxRate && <p className="mt-1 text-xs text-danger-600">{errors.defaultTaxRate.message}</p>}
             </div>
+            {/* D10: stored on the central tax config (TaxSetting), applied by the tax engine — shipping is VAT-inclusive. */}
+            <label className="flex items-center gap-2 text-sm text-ink-700">
+              <Checkbox disabled={!taxEnabled} {...register("shippingTaxable")} />
+              Shipping fee includes VAT
+            </label>
           </div>
         </FormSection>
 

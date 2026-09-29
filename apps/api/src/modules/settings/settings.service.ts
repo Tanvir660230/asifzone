@@ -3,6 +3,7 @@ import { prisma } from "../../config/prisma";
 import { cacheDel, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { deleteSiteImageFile } from "../uploads/upload.service";
+import { applySettingsToPricingConfig } from "../../domain/pricing/pricing-config";
 
 const CACHE_KEY = "settings:singleton";
 const CACHE_TTL_SECONDS = 300;
@@ -36,7 +37,20 @@ export async function updateSettings(input: UpdateSettingsInput) {
     throw AppError.badRequest("At least one payment method (Cash on Delivery or Online Payment) must stay enabled");
   }
 
-  const settings = await prisma.storeSetting.update({ where: { id: SINGLETON_ID }, data: input });
+  // Tax and shipping fields also land in their authoritative tables (TaxSetting, ShippingRate) in the same
+  // transaction — the StoreSetting columns are legacy mirrors (docs/SSOT_REGISTRY.md). shippingTaxable has no mirror.
+  const { shippingTaxable, ...storeFields } = input;
+  const settings = await prisma.$transaction(async (tx) => {
+    const updated = await tx.storeSetting.update({ where: { id: SINGLETON_ID }, data: storeFields });
+    await applySettingsToPricingConfig(tx, {
+      taxEnabled: input.taxEnabled,
+      defaultTaxRate: input.defaultTaxRate,
+      shippingTaxable,
+      shippingFeeDhaka: input.shippingFeeDhaka,
+      shippingFeeOutsideDhaka: input.shippingFeeOutsideDhaka,
+    });
+    return updated;
+  });
   await cacheDel(CACHE_KEY);
 
   // Fire-and-forget, after the DB write succeeds: never let disk cleanup fail or slow down the

@@ -13,6 +13,8 @@ export interface CartItem {
   sku: string;
   size: string;
   color: string;
+  /** Display cache of the server-resolved unit price at add time (analytics / placeholder only). Never summed into a
+   * total — cart, drawer and checkout totals come from the server quote (hooks/use-quote.ts, PRICING_INVARIANTS §7). */
   price: number;
   imageUrl: string | null;
   quantity: number;
@@ -105,5 +107,3 @@ export const useCartStore = create<CartState>()(
 );
 
 export const useCartCount = () => useCartStore((state) => state.items.reduce((sum, i) => sum + i.quantity, 0));
-export const useCartSubtotal = () =>
-  useCartStore((state) => state.items.reduce((sum, i) => sum + i.price * i.quantity, 0));

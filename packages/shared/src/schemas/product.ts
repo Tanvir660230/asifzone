@@ -58,6 +58,10 @@ export const createVariantSchema = z.object({
   compareAtPrice: nullableNumber(),
   costPrice: nullableNumber(),
   stock: z.number().int().min(0).default(0),
+  /** On an update of an existing variant: the stock value the editor last saw. The server applies `stock` only as a
+   * compare-and-set against it, so a stale form can never overwrite a sale that happened meanwhile
+   * (docs/INVENTORY_INVARIANTS.md rule 6). Ignored for new variants. */
+  expectedStock: z.number().int().min(0).optional(),
   weight: nullableNumber(),
   /** An inactive variant is hidden from the storefront and refused at checkout; it keeps its history. */
   isActive: z.boolean().optional(),

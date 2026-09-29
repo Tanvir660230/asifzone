@@ -197,6 +197,8 @@ describe("product and catalog API security", () => {
           variants: [{ sku: `VT-SEC-${RUN}-C${Math.random().toString(36).slice(2, 6)}`, size: "M", color: "Black", stock: 3, costPrice: 133 }],
         });
         expect(created.status, JSON.stringify(created.body)).toBe(201);
+        // Only a published product reaches a customer's wishlist or the public flash-sale feed (a draft is not purchasable).
+        await prisma.product.update({ where: { id: created.body.product.id }, data: { status: "PUBLISHED", isActive: true } });
         return created.body.product as { id: string };
       }
 

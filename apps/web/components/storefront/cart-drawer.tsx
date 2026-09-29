@@ -7,7 +7,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useCartStore, useCartSubtotal } from "@/store/cart";
+import { useCartStore } from "@/store/cart";
+import { useCartQuote, quoteLineAmount } from "@/hooks/use-quote";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -18,7 +19,8 @@ export function CartDrawer() {
   const items = useCartStore((s) => s.items);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
-  const subtotal = useCartSubtotal();
+  // Server quote — the only source of the money shown here.
+  const { data: quote } = useCartQuote();
   const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: close });
 
   // Zustand's persisted cart hydrates after mount — avoid a flash of "empty cart" on first paint.
@@ -112,7 +114,10 @@ export function CartDrawer() {
                           <Plus size={12} />
                         </button>
                       </div>
-                      <span className="text-sm text-ink-900">{formatPrice(item.price * item.quantity)}</span>
+                      <span className="text-sm text-ink-900">{(() => {
+                        const amount = quoteLineAmount(quote, item.variantId);
+                        return amount === null ? "…" : formatPrice(amount);
+                      })()}</span>
                     </div>
                   </div>
 
@@ -130,7 +135,7 @@ export function CartDrawer() {
             <div className="border-t border-ink-100 px-5 py-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm uppercase tracking-wide text-ink-500">Subtotal</span>
-                <span className="text-lg text-ink-900">{formatPrice(subtotal)}</span>
+                <span className="text-lg text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
               </div>
               <p className="mt-1 text-xs text-ink-400">Shipping and any discount are calculated at checkout.</p>
 
