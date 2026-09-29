@@ -1,5 +1,6 @@
 "use client";
 
+import { formatBusinessDate } from "@/lib/format";
 import { useMemo, useState } from "react";
 import type { VisitorPoint } from "@/lib/api/admin-analytics";
 
@@ -91,7 +92,7 @@ export function VisitorChart({ data }: { data: VisitorPoint[] }) {
           (p, i) =>
             i % labelEvery === 0 && (
               <text key={p.date} x={p.x} y={HEIGHT - 8} fontSize={10} className="fill-ink-400" textAnchor="middle">
-                {new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                {formatBusinessDate(p.date, { month: "short", day: "numeric" })}
               </text>
             ),
         )}
@@ -111,7 +112,7 @@ export function VisitorChart({ data }: { data: VisitorPoint[] }) {
           style={{ left: `${(hovered.x / WIDTH) * 100}%` }}
         >
           <p className="font-medium text-ink-900">
-            {new Date(hovered.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            {formatBusinessDate(hovered.date, { month: "short", day: "numeric" })}
           </p>
           <p className="text-ink-600">{hovered.visitors} visitor{hovered.visitors === 1 ? "" : "s"}</p>
           <p className="text-ink-400">{hovered.pageViews} pageview{hovered.pageViews === 1 ? "" : "s"}</p>

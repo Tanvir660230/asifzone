@@ -1004,7 +1004,7 @@ export default function OrdersPage() {
           {stats ? (
             <>
               <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={18} />} />
-              <StatTile label="Today's revenue" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Today's net sales" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={18} />} tone="accent" />
               <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={18} />} tone="warning" />
               <StatTile label="Needs attention" value={String(stats.needsAttention)} icon={<AlertTriangle size={18} />} tone="warning" />
               {/* A plain button wrapper, not a StatTile prop — this is the only tile on the page

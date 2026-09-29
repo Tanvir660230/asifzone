@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { RevenuePoint } from "@/lib/api/admin-analytics";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatBusinessDate } from "@/lib/format";
 
 const WIDTH = 760;
 const HEIGHT = 280;
@@ -120,7 +120,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
           (p, i) =>
             i % labelEvery === 0 && (
               <text key={p.date} x={p.x} y={HEIGHT - 8} fontSize={10.5} className="fill-ink-400" textAnchor="middle">
-                {new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                {formatBusinessDate(p.date, { month: "short", day: "numeric" })}
               </text>
             ),
         )}
@@ -147,7 +147,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
           style={{ left: `${(hovered.x / WIDTH) * 100}%` }}
         >
           <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
-            {new Date(hovered.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+            {formatBusinessDate(hovered.date, { weekday: "short", month: "short", day: "numeric" })}
           </p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-ink-900">{formatPrice(hovered.revenue)}</p>
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-500">

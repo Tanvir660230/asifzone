@@ -35,7 +35,7 @@ export default function LifetimeDataPage() {
             Array.from({ length: 4 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Lifetime Revenue" value={formatPrice(overview.revenueLifetime)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Lifetime net sales" value={formatPrice(overview.revenueLifetime)} icon={<Wallet size={18} />} tone="accent" />
               <StatTile label="Lifetime Orders" value={overview.ordersLifetime.toLocaleString("en-BD")} icon={<TrendingUp size={18} />} />
               <StatTile label="Average Order Value" value={formatPrice(overview.aovLifetime)} icon={<Wallet size={18} />} />
               <StatTile label="Repeat Purchase Rate" value={`${overview.repeatPurchaseRatePct.toFixed(1)}%`} icon={<Repeat size={18} />} />
@@ -48,7 +48,7 @@ export default function LifetimeDataPage() {
       <section>
         <Card>
           <CardHeader>
-            <CardTitle>Revenue by year</CardTitle>
+            <CardTitle>Net sales by year</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList

@@ -50,6 +50,7 @@ import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
 import { notifyReplenished, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
 import { enqueueMetaPurchase } from "../../lib/meta/purchase";
+import { computeMetrics } from "../../domain/metrics/metrics.service";
 import {
   REFUND_QUEUE_WHERE,
   getOrderPaymentSummary,
@@ -883,15 +884,12 @@ async function buildItemsSummary(orderIds: string[]) {
  * joins) rather than pulling every order into Node to tally, so it stays cheap as order history grows. */
 export async function getOrderStats() {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const [todayOrders, todayRevenue, pending, needsAttention, followUpDue, cancelledButPaidCount, statusGroups] = await Promise.all([
-    prisma.order.count({ where: { deletedAt: null, createdAt: { gte: startOfToday } } }),
-    prisma.order.aggregate({
-      where: { deletedAt: null, createdAt: { gte: startOfToday } },
-      _sum: { total: true },
-    }),
+  // "Today" = the store's business day; orders placed = sale orders placed today, revenue = today's realised net sales —
+  // the registry's `orders_placed` / `net_sales` (docs/METRICS_REGISTRY.md), the same numbers as the dashboard and BI.
+  const [today, pending, needsAttention, followUpDue, cancelledButPaidCount, statusGroups] = await Promise.all([
+    computeMetrics({ metrics: ["orders_placed", "net_sales"], range: { preset: "today" } }, now),
     prisma.order.count({ where: { deletedAt: null, status: { in: ["PENDING", "CONFIRMED"] } } }),
     // A fresh PENDING order isn't "stuck" yet — only one sitting unconfirmed for a day, one whose
     // payment gateway callback actually failed, one Steadfast has put "on hold" (couldn't reach the
@@ -926,8 +924,8 @@ export async function getOrderStats() {
   for (const group of statusGroups) statusCounts[group.status] = group._count;
 
   return {
-    todayOrders,
-    todayRevenue: Number(todayRevenue._sum.total ?? 0),
+    todayOrders: today.metrics.orders_placed!.value,
+    todayRevenue: today.metrics.net_sales!.value,
     pending,
     needsAttention,
     followUpDue,

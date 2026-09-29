@@ -27,6 +27,7 @@ export * from "./schemas/settings";
 export * from "./schemas/sms-settings";
 export * from "./schemas/payment-method";
 export * from "./schemas/refund";
+export * from "./schemas/metrics";
 export * from "./schemas/analytics";
 export * from "./schemas/ai";
 export * from "./schemas/campaign";
@@ -49,6 +50,7 @@ export * from "./purchasable";
 export * from "./tax";
 export * from "./flash-sale-state";
 export * from "./engines";
+export * from "./metrics";
 export * from "./meta";
 
 export * from "./types";

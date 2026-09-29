@@ -55,6 +55,14 @@ export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
+/** A server business date ("2026-09-30", already in the store timezone — docs/METRICS_REGISTRY.md §1) as "Sep 30".
+ * Formatted as a calendar date, never converted through the viewer's timezone (which could shift it a day). */
+export function formatBusinessDate(date: string, options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" }): string {
+  const [y, m, d] = date.split("-").map(Number);
+  if (!y || !m) return date;
+  return new Date(Date.UTC(y, m - 1, d || 1)).toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
+}
+
 /** "Aug 20" style — for a delivery-date estimate range, where the year is implied and two of
  * these get shown side by side ("Aug 6 – Aug 7"). */
 export function formatDateShort(date: Date): string {

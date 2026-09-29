@@ -1451,6 +1451,8 @@ model StoreSetting {
   logoOnDarkUrl                String?
   faviconUrl                   String?
   currency                     String   @default("BDT")
+  /// IANA timezone of the store's business day (metrics, "today", reports) — docs/METRICS_REGISTRY.md §1. Phase 5.
+  timezone                     String   @default("Asia/Dhaka")
   contactEmail                 String?
   contactPhone                 String?
   shippingFeeDhaka             Decimal  @default(60) @db.Decimal(10, 2)

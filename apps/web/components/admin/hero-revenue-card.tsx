@@ -73,7 +73,7 @@ export function HeroRevenueCard({
         <div className="h-14 text-cream-50/70">
           <Sparkline data={series} className="h-full w-full" />
         </div>
-        {series.length > 1 && <p className="mt-1.5 text-[11px] text-cream-50/40">Revenue — last {series.length} days</p>}
+        {series.length > 1 && <p className="mt-1.5 text-[11px] text-cream-50/40">Net sales — last {series.length} days</p>}
       </div>
     </Card>
   );

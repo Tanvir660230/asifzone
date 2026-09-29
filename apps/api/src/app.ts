@@ -17,6 +17,7 @@ import { reviewRouter } from "./modules/reviews/review.routes";
 import { redirectRouter } from "./modules/redirects/redirect.routes";
 import { paymentRouter } from "./modules/payments/payment.routes";
 import { paymentAdminRouter } from "./modules/payments/payment-admin.routes";
+import { metricsRouter } from "./modules/metrics/metrics.routes";
 import { paymentMethodRouter } from "./modules/payment-methods/payment-method.routes";
 import { flashSaleRouter } from "./modules/flash-sales/flash-sale.routes";
 import { bannerRouter } from "./modules/banners/banner.routes";
@@ -106,6 +107,7 @@ app.use("/api/courier", courierRouter);
 // Versioned API (TARGET_ARCHITECTURE §13): new endpoints land under /api/v1; existing /api routes are unchanged.
 app.use("/api/v1/checkout", checkoutV1Router);
 app.use("/api/v1/storefront/read-model", storefrontReadModelRouter);
+app.use("/api/v1/metrics", metricsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

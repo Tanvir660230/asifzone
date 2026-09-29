@@ -37,6 +37,8 @@ import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken, signPayload, constantTimeEqual } from "../../lib/token-hash";
 import { env } from "../../config/env";
 import { getSettings } from "../settings/settings.service";
+import { customerMetricsIndex } from "../../domain/metrics/metrics.service";
+import { resolveStoreRange } from "../../domain/metrics/store-time";
 
 // Bulk sends dispatch this many recipients concurrently — same bound as campaign.service.ts's
 // SEND_CONCURRENCY, for the same reason (bounded outbound connections to the SMS provider).
@@ -590,29 +592,34 @@ const adminSelect = {
  * derive from the exact same tag logic the customers list already shows, rather than a
  * re-derived approximation that could quietly drift out of sync with it. */
 export async function loadCustomersWithComputedFields(where: Prisma.CustomerWhereInput) {
-  const customers = await prisma.customer.findMany({
-    where,
-    select: {
-      ...adminSelect,
-      addresses: { where: { isDefault: true }, take: 1, select: { district: true } },
-      orders: {
-        where: { deletedAt: null },
-        select: { total: true, status: true, createdAt: true, shippingDistrict: true, courierStatus: true },
-        orderBy: { createdAt: "desc" },
+  const [customers, metrics] = await Promise.all([
+    prisma.customer.findMany({
+      where,
+      select: {
+        ...adminSelect,
+        addresses: { where: { isDefault: true }, take: 1, select: { district: true } },
+        orders: {
+          where: { deletedAt: null },
+          select: { status: true, createdAt: true, shippingDistrict: true, courierStatus: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
-    },
-  });
+    }),
+    customerMetricsIndex(),
+  ]);
 
   return customers.map(({ addresses, orders, ...customer }) => {
-    const totalOrders = orders.length;
-    const totalSpent = orders
-      .filter((o) => o.status !== "CANCELLED")
-      .reduce((sum, o) => sum + Number(o.total), 0);
+    // Spend and order count are the canonical customer metrics (docs/METRICS_REGISTRY.md §4.3, P5-4): realised net sales
+    // and sale orders — the same facts as store revenue. Risk signals keep counting every non-trashed order, since a
+    // cancellation rate needs the cancelled ones.
+    const canonical = metrics.get(customer.id);
+    const totalOrders = canonical?.orders ?? 0;
+    const totalSpent = canonical?.netSpend ?? 0;
     const cancelledOrders = orders.filter((o) => o.status === "CANCELLED").length;
     const holdOrders = orders.filter((o) => o.courierStatus === "hold").length;
     const lastOrderAt = orders[0]?.createdAt ?? null;
     const district = addresses[0]?.district ?? orders[0]?.shippingDistrict ?? null;
-    const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders, cancelledOrders, holdOrders });
+    const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders: orders.length, cancelledOrders, holdOrders });
     const tags = computeCustomerTags({
       createdAt: customer.createdAt,
       totalOrders,
@@ -696,10 +703,15 @@ export async function listCustomersAdmin(query: CustomerListQuery) {
 }
 
 export async function getCustomerStatsAdmin() {
-  const computed = await loadCustomersWithComputedFields({});
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Business-day boundaries in the store timezone (docs/METRICS_REGISTRY.md §1), not the server's local midnight.
+  const [computed, today, month] = await Promise.all([
+    loadCustomersWithComputedFields({}),
+    resolveStoreRange({ preset: "today" }, now),
+    resolveStoreRange({ preset: "this_month" }, now),
+  ]);
+  const startOfToday = today.startUtc;
+  const startOfMonth = month.startUtc;
 
   function inactiveSince(days: number) {
     const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000;
@@ -739,8 +751,8 @@ export async function getCustomerDetailAdmin(customerId: string) {
   });
   if (!customer) throw AppError.notFound("Customer not found");
 
-  const [spendAggregate, orderCounts, holdOrders, smsRecipients] = await Promise.all([
-    prisma.order.aggregate({ where: { customerId, status: { not: "CANCELLED" } }, _sum: { total: true } }),
+  const [metrics, orderCounts, holdOrders, smsRecipients] = await Promise.all([
+    customerMetricsIndex(),
     prisma.order.groupBy({ by: ["status"], where: { customerId, deletedAt: null }, _count: true }),
     prisma.order.count({ where: { customerId, deletedAt: null, courierStatus: "hold" } }),
     prisma.campaignRecipient.findMany({
@@ -751,7 +763,11 @@ export async function getCustomerDetailAdmin(customerId: string) {
     }),
   ]);
 
-  const totalSpent = Number(spendAggregate._sum.total ?? 0);
+  // Canonical customer metrics (P5-4): the same net spend and sale-order count as the CRM list, BI and store revenue.
+  const canonical = metrics.get(customerId);
+  const totalSpent = canonical?.netSpend ?? 0;
+  const saleOrders = canonical?.orders ?? 0;
+  const realisedOrders = canonical?.realisedOrders ?? 0;
   const countsByStatus = new Map(orderCounts.map((r) => [r.status, r._count]));
   const totalOrders = orderCounts.reduce((sum, r) => sum + r._count, 0);
   const deliveredOrders = countsByStatus.get("DELIVERED") ?? 0;
@@ -763,7 +779,7 @@ export async function getCustomerDetailAdmin(customerId: string) {
   const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders, cancelledOrders, holdOrders });
   const tags = computeCustomerTags({
     createdAt: customer.createdAt,
-    totalOrders,
+    totalOrders: saleOrders,
     totalSpent,
     lastOrderAt,
     isBlocked: customer.isBlocked,
@@ -831,7 +847,8 @@ export async function getCustomerDetailAdmin(customerId: string) {
       deliveredOrders,
       cancelledOrders,
       returnRate: totalOrders > 0 ? (returnedOrders / totalOrders) * 100 : 0,
-      averageOrderValue: totalOrders > 0 ? totalSpent / totalOrders : 0,
+      // Registry `aov` basis: net sales ÷ realised orders (P5-5).
+      averageOrderValue: realisedOrders > 0 ? Math.round((totalSpent / realisedOrders) * 100) / 100 : 0,
       lifetimeSpend: totalSpent,
     },
     smsHistory,

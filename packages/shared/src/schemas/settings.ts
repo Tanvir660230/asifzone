@@ -1,3 +1,4 @@
+import { isValidTimeZone } from "../metrics/business-time";
 import { z } from "zod";
 import { nullableEmail, nullableString, nullableUrl } from "./common";
 
@@ -24,6 +25,13 @@ export const updateSettingsSchema = z.object({
   logoOnDarkUrl: nullableUrl(),
   faviconUrl: nullableUrl(),
   currency: z.string().min(1).max(8).optional(),
+  // IANA timezone (e.g. "Asia/Dhaka") — the store's business day for metrics and reports (docs/METRICS_REGISTRY.md §1).
+  timezone: z
+    .string()
+    .min(1)
+    .max(64)
+    .refine(isValidTimeZone, "Unknown timezone")
+    .optional(),
   contactEmail: nullableEmail(),
   contactPhone: nullableString(32),
   shippingFeeDhaka: optionalNonNegativeNumber(),

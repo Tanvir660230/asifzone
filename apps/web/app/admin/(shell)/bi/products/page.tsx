@@ -319,7 +319,7 @@ export default function ProductIntelligencePage() {
                     <th className="pb-2 pr-4">Product</th>
                     <th className="pb-2 pr-4">Size / Color</th>
                     <th className="pb-2 pr-4">Units sold</th>
-                    <th className="pb-2">Revenue</th>
+                    <th className="pb-2">Net sales</th>
                   </tr>
                 </thead>
                 <tbody>

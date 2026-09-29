@@ -96,7 +96,7 @@ export default function MarketingIntelligencePage() {
                     <th className="pb-2 pr-4">Code</th>
                     <th className="pb-2 pr-4">Orders</th>
                     <th className="pb-2 pr-4">Discount given</th>
-                    <th className="pb-2">Revenue</th>
+                    <th className="pb-2">Net sales</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -127,7 +127,7 @@ export default function MarketingIntelligencePage() {
                     <th className="pb-2 pr-4">Bundle</th>
                     <th className="pb-2 pr-4">Orders</th>
                     <th className="pb-2 pr-4">Discount given</th>
-                    <th className="pb-2">Revenue</th>
+                    <th className="pb-2">Net sales</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -161,7 +161,7 @@ export default function MarketingIntelligencePage() {
                     <th className="pb-2 pr-4">Sale</th>
                     <th className="pb-2 pr-4">Window</th>
                     <th className="pb-2 pr-4">Units sold</th>
-                    <th className="pb-2">Revenue</th>
+                    <th className="pb-2">Net sales</th>
                   </tr>
                 </thead>
                 <tbody>

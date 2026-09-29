@@ -707,11 +707,17 @@ export function getFinancialCostBreakdown(days?: number) {
   return apiFetch<FinancialCostBreakdown>(`/api/analytics/financial-costs${windowParams({ days })}`);
 }
 
+/** VAT from each order's own tax snapshot (registry `tax_collected`) — never the current rate applied to history. */
 export interface EstimatedTax {
   taxEnabled: boolean;
   defaultTaxRatePct: number;
+  /** Σ tax snapshot of realised orders in the window. */
   estimatedTax: number;
+  /** Net sales in the window. */
   revenue: number;
+  taxRecordedOrders?: number;
+  /** Realised orders placed before tax was snapshotted (counted, not estimated). */
+  taxUnrecordedOrders?: number;
 }
 
 export function getEstimatedTax(days?: number) {

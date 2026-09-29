@@ -29,6 +29,18 @@ export interface ExecutiveOverview {
   inventoryValue: number;
   pendingPaymentsCount: number;
   pendingPaymentsAmount: number;
+
+  // Phase 5 — registry metrics (docs/METRICS_REGISTRY.md): the D1 breakdown for the business month, and ledger positions.
+  grossMerchandiseThisMonth: number;
+  discountsThisMonth: number;
+  shippingThisMonth: number;
+  returnsThisMonth: number;
+  refundsThisMonth: number;
+  collectedCashThisMonth: number;
+  taxThisMonth: number;
+  taxUnrecordedOrdersThisMonth: number;
+  outstandingCod: number;
+  refundDue: number;
 }
 
 export function getExecutiveOverview() {

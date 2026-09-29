@@ -30,7 +30,7 @@ export function RevenueChartCard({ series, range, onRangeChange, loading }: Reve
     <Card className="p-6 sm:p-8">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Revenue</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Net sales</p>
           <div className="mt-2 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <p className="font-display text-3xl tracking-tight text-ink-900 sm:text-4xl">
               {series ? formatPrice(total) : "—"}
