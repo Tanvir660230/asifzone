@@ -58,6 +58,10 @@ engine (`inclusiveTaxOf`) and returns paisa (e.g. VAT in 1000 at 15 % = 130.43, 
   unsaved values).
 - PI-3.4 Availability is one rule (`isAvailable`, `maxSellableQuantity` in `engines/availability.ts`): D5 — an
   untracked product (`trackInventory = false`) is always available, capped only by `MAX_LINE_QUANTITY` (20).
+- PI-3.5 (Phase 3) Every storefront product DTO is built by `presentStorefrontProducts` (Storefront Read Model):
+  `pricing` as PI-3.2, plus `availability` (`productAvailability`, derived per read). Price sort, filter, facet bounds
+  and price-relative recommendations read `ProductReadModel.minSellingPrice`, a guarded projection of `pricing.from`,
+  never `basePrice`. See [STOREFRONT_READ_MODEL.md](STOREFRONT_READ_MODEL.md).
 
 ## §4 Flash sales (D4)
 
@@ -248,7 +252,7 @@ authorities.
 | `engines/loyalty.ts` `rewardableMerchandiseValue` (via `customer.service.loyaltyBase`) | D8 over snapshot fields | CANONICAL (D8) |
 | web `pricing-display.ts`, `formatPrice` everywhere | formats server numbers | DISPLAY/FORMATTING |
 | admin product list/picker/CSV/audit/duplicate, wishlist `priceAtAdd`, price-drop notice | the stored list price as a catalog attribute | DISPLAY (list price is the fact shown) |
-| storefront price filter/sort/facets, similar-price recommendations | `basePrice` | DUPLICATE (known, non-charging) — **Phase 3 / read-model follow-up: "Create canonical Product.minSellingPrice projection/read model."** Not implemented in Phase 2 |
+| storefront price filter/sort/facets, similar/budget/upgrade/premium recommendations, trending budget filter | `ProductReadModel.minSellingPrice` (projection of `pricing.from`) / live `pricing.from` | CANONICAL — **resolved in Phase 3** (was DUPLICATE on `basePrice`; STOREFRONT_READ_MODEL.md §1) |
 | JSON-LD `shippingDetails` | legacy `StoreSetting.shippingFee*` mirrors (dual-written, drift-checked) | DISPLAY of a mirror |
 | `getEstimatedTaxCollected`, abandoned-cart `potentialRevenue` | analytics estimates | see §9 PI-9.6 |
 | admin wizard live preview | typed-in values of an unsaved product | DISPLAY |

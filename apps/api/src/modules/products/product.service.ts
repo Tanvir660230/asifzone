@@ -37,7 +37,15 @@ import { csvCell } from "../../lib/csv";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteProductImageFiles } from "../uploads/upload.service";
 import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
-import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../../domain/pricing/pricing.service";
+import { priceProductsForDisplay, type ProductPricingDto } from "../../domain/pricing/pricing.service";
+import {
+  ensureFreshReadModels,
+  presentStorefrontProducts,
+  projectedSellingPrice,
+  refreshReadModels,
+  sellingPriceOrderBy,
+  sellingPriceWhere,
+} from "../../domain/storefront/read-model.service";
 import { notifyReplenished, recordInitialStock, setVariantStockCount, setVariantStockFromForm, zeroVariantStock } from "../inventory/inventory.service";
 import { upsertSlugRedirect } from "../redirects/redirect.service";
 import { notifyPriceDrop } from "../wishlist/wishlist.service";
@@ -279,30 +287,10 @@ function toVariantCreateData(variant: CreateVariantInput, sortOrder: number) {
   };
 }
 
-/** Server-resolved prices for storefront reads (PRICING_INVARIANTS §3): `pricing` comes from the canonical pricing
- * engine — variant override, the best live flash sale (deterministic, stock-limit aware) — so the PDP, listings, search,
- * homepage and the cart can never disagree with checkout. `activeFlashSale` is kept for older clients; its `flashPrice`
- * is the engine's "from" price (never recomputed from the product base price any more). */
-async function withFlashSaleInfo<T extends PriceableProduct>(products: T[]) {
-  const pricing = await priceProductsForDisplay(products);
-  return products.map((product) => {
-    const p = pricing.get(product.id)!;
-    return {
-      ...product,
-      pricing: p,
-      activeFlashSale: p.flash
-        ? {
-            flashSaleId: p.flash.flashSaleId,
-            flashSaleName: p.flash.name,
-            endsAt: p.flash.endsAt,
-            discountType: p.flash.discountType,
-            discountValue: p.flash.discountValue,
-            flashPrice: String(p.from),
-          }
-        : null,
-    };
-  });
-}
+/** Every storefront product read is presented by the Storefront Read Model (docs/STOREFRONT_READ_MODEL.md): canonical
+ * `pricing` (live, from the pricing engine), `availability` (from canonical inventory state + D5) and the deprecated
+ * `activeFlashSale` compat view — one DTO for PDP, listings, search, quick view, compare and recommendations. */
+const withStorefrontReadModel = presentStorefrontProducts;
 
 
 /** Invalidates the API's own Redis read cache (immediate, always) and, best-effort and non-blocking,
@@ -311,14 +299,20 @@ async function withFlashSaleInfo<T extends PriceableProduct>(products: T[]) {
  * it wherever the affected product(s) are already known, which is every call site below. */
 export async function invalidateCache(context?: RevalidationContext) {
   await invalidateProductCache();
+  // Eager projection refresh for the products this write touched (best-effort — the read-time freshness guard catches
+  // anything missed, e.g. a crash between the write and this line).
+  const touched = [...(context?.productId ? [context.productId] : []), ...(context?.productIds ?? [])];
+  if (touched.length) await refreshReadModels(touched).catch((err) => console.error("[read-model] eager refresh failed:", err));
   void triggerStorefrontRevalidation(context).catch((err) => console.error("[revalidate] unexpected failure:", err));
 }
 
+// Price sorts use the canonical selling price from the Storefront Read Model projection — never basePrice.
 const SORT_ORDER_BY: Record<string, object> = {
   newest: { createdAt: "desc" },
-  price_asc: { basePrice: "asc" },
-  price_desc: { basePrice: "desc" },
+  price_asc: sellingPriceOrderBy("asc"),
+  price_desc: sellingPriceOrderBy("desc"),
 };
+const PRICE_SORTS = new Set(["price_asc", "price_desc"]);
 
 const TYPO_FALLBACK_THRESHOLD = 3;
 const TYPO_SIMILARITY_THRESHOLD = 0.3;
@@ -501,12 +495,21 @@ export async function getProductBySlug(slug: string) {
     await cacheSet(cacheKey, product, CACHE_TTL_SECONDS);
   }
 
-  const [withFlash] = await withFlashSaleInfo([product]);
-  return withFlash;
+  // Stock is overlaid live from the canonical inventory state, so `availability` (and the variant stock the page shows)
+  // is never the cached copy's.
+  const liveStock = new Map(
+    (await prisma.productVariant.findMany({ where: { productId: product.id }, select: { id: true, stock: true } })).map((v) => [v.id, v.stock]),
+  );
+  const fresh = { ...product, variants: product.variants.map((v) => ({ ...v, stock: liveStock.get(v.id) ?? v.stock })) };
+  const [presented] = await withStorefrontReadModel([fresh]);
+  return presented;
 }
 
 /** Storefront browsing: active products only, optionally scoped to a category (and its subcategories), searched, sorted. */
 export async function listStorefrontProducts(query: StorefrontProductQuery) {
+  const now = new Date();
+  // Price sort/filter read the projection: make every row they read current first (freshness guard).
+  if (PRICE_SORTS.has(query.sort) || query.minPrice !== undefined || query.maxPrice !== undefined) await ensureFreshReadModels(now);
   let categoryIds: string[] | undefined;
   if (query.category) {
     const category = await getCategoryBySlug(query.category);
@@ -527,14 +530,8 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     ...(searchTerms.length ? buildFieldSearchOr(searchTerms) : {}),
     ...(query.sizes?.length ? { variants: { some: { size: { in: query.sizes } } } } : {}),
     ...(query.colors?.length ? { variants: { some: { color: { in: query.colors } } } } : {}),
-    ...(query.minPrice !== undefined || query.maxPrice !== undefined
-      ? {
-          basePrice: {
-            ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
-            ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
-          },
-        }
-      : {}),
+    // The price filter matches the canonical "from" price (what the card shows), not the stored base price.
+    ...sellingPriceWhere({ gte: query.minPrice, lte: query.maxPrice }),
   };
 
   const [rawItems, total] = await Promise.all([
@@ -570,7 +567,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     pageRaw = scored.slice(start, start + query.pageSize).map((s) => s.item);
   }
 
-  let items = await withFlashSaleInfo(pageRaw);
+  let items = await withStorefrontReadModel(pageRaw, now);
   let resultTotal = total;
 
   // Typo-tolerant fallback — only worth trying on page 1 of an actual search that came up short.
@@ -583,7 +580,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
         where: { id: { in: newIds }, isActive: true, deletedAt: null },
         select: PUBLIC_PRODUCT_SELECT,
       });
-      const fallbackItems = await withFlashSaleInfo(fallbackRaw);
+      const fallbackItems = await withStorefrontReadModel(fallbackRaw);
       const byId = new Map(fallbackItems.map((p) => [p.id, p]));
       const orderedFallback = newIds.map((id) => byId.get(id)).filter((p): p is (typeof fallbackItems)[number] => Boolean(p));
 
@@ -603,6 +600,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
 
 /** Available filter options (sizes/colors/price range) for the storefront's currently-scoped product set — recomputed per category/search so the panel never offers a facet with zero results. */
 export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
+  await ensureFreshReadModels();
   let categoryIds: string[] | undefined;
   if (query.category) {
     const category = await getCategoryBySlug(query.category);
@@ -631,14 +629,15 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
       distinct: ["color"],
       select: { color: true, colorHex: true },
     }),
-    prisma.product.aggregate({ where, _min: { basePrice: true }, _max: { basePrice: true } }),
+    // Bounds of the canonical "from" price across the scoped products — the same value the price filter matches.
+    prisma.productReadModel.aggregate({ where: { product: where }, _min: { minSellingPrice: true }, _max: { minSellingPrice: true } }),
   ]);
 
   return {
     sizes: sizes.map((s) => s.size).sort(),
     colors: colors.map((c) => ({ color: c.color, colorHex: c.colorHex })).sort((a, b) => a.color.localeCompare(b.color)),
-    minPrice: priceRange._min.basePrice ? Number(priceRange._min.basePrice) : 0,
-    maxPrice: priceRange._max.basePrice ? Number(priceRange._max.basePrice) : 0,
+    minPrice: priceRange._min.minSellingPrice ? Number(priceRange._min.minSellingPrice) : 0,
+    maxPrice: priceRange._max.minSellingPrice ? Number(priceRange._max.minSellingPrice) : 0,
   };
 }
 
@@ -780,7 +779,7 @@ export async function getProductsByIds(ids: string[]) {
   });
   const byId = new Map(products.map((p) => [p.id, p]));
   const ordered = ids.map((id) => byId.get(id)).filter((p): p is (typeof products)[number] => Boolean(p));
-  return withFlashSaleInfo(ordered);
+  return withStorefrontReadModel(ordered);
 }
 
 /** Same category, ranked by price-proximity to the target product — a lightweight stand-in for a
@@ -788,33 +787,33 @@ export async function getProductsByIds(ids: string[]) {
  * Pulls a bounded candidate pool (price-sorted both directions from the target) rather than every
  * active product in the category, so a large category doesn't turn this into a full-table scan. */
 export async function getSimilarProducts(productId: string, limit = 8) {
-  const target = await prisma.product.findUnique({ where: { id: productId }, select: { categoryId: true, basePrice: true } });
+  const target = await getTargetProductContext(productId);
   if (!target) return [];
 
   const candidatePoolSize = limit * 4;
   const baseWhere = { categoryId: target.categoryId, isActive: true, deletedAt: null, id: { not: productId } };
+  const select = { ...PUBLIC_PRODUCT_SELECT, readModel: { select: { minSellingPrice: true } } };
 
+  // Price proximity by the canonical selling price (projection), not the stored base price.
   const [cheaperOrEqual, pricier] = await Promise.all([
     prisma.product.findMany({
-      where: { ...baseWhere, basePrice: { lte: target.basePrice } },
-      select: PUBLIC_PRODUCT_SELECT,
-      orderBy: { basePrice: "desc" },
+      where: { ...baseWhere, ...sellingPriceWhere({ lte: target.sellingPrice }) },
+      select,
+      orderBy: sellingPriceOrderBy("desc"),
       take: candidatePoolSize,
     }),
     prisma.product.findMany({
-      where: { ...baseWhere, basePrice: { gt: target.basePrice } },
-      select: PUBLIC_PRODUCT_SELECT,
-      orderBy: { basePrice: "asc" },
+      where: { ...baseWhere, ...sellingPriceWhere({ gt: target.sellingPrice }) },
+      select,
+      orderBy: sellingPriceOrderBy("asc"),
       take: candidatePoolSize,
     }),
   ]);
 
-  const targetPrice = Number(target.basePrice);
-  const candidates = [...cheaperOrEqual, ...pricier].sort(
-    (a, b) => Math.abs(Number(a.basePrice) - targetPrice) - Math.abs(Number(b.basePrice) - targetPrice),
-  );
+  const distance = (p: { id: string; readModel: { minSellingPrice: unknown } | null }) => Math.abs(Number(p.readModel!.minSellingPrice) - target.sellingPrice);
+  const candidates = [...cheaperOrEqual, ...pricier].sort((a, b) => distance(a) - distance(b) || (a.id < b.id ? -1 : 1));
 
-  return withFlashSaleInfo(candidates.slice(0, limit));
+  return withStorefrontReadModel(candidates.slice(0, limit).map(({ readModel: _projection, ...product }) => product));
 }
 
 /** Products actually co-purchased with this one, ranked by how often they appear in the same order.
@@ -878,7 +877,7 @@ export async function getFrequentlyBoughtTogether(productId: string, limit = 4) 
     await cacheSet(cacheKey, ranked, 3600);
   }
 
-  return withFlashSaleInfo(ranked.slice(0, limit));
+  return withStorefrontReadModel(ranked.slice(0, limit));
 }
 
 const TRENDING_CACHE_KEY = `${CACHE_PREFIX}trending`;
@@ -937,14 +936,16 @@ export async function getTrendingProducts({
     await cacheSet(TRENDING_CACHE_KEY, pool, 900);
   }
 
-  const filtered = pool.filter((p) => {
-    const price = Number(p.basePrice);
+  // The budget filter matches the canonical "from" price (live, the same number the card shows).
+  const presented = await withStorefrontReadModel(pool);
+  const filtered = presented.filter((p) => {
+    const price = p.pricing.from;
     if (minPrice !== undefined && price < minPrice) return false;
     if (maxPrice !== undefined && price > maxPrice) return false;
     return true;
   });
 
-  return withFlashSaleInfo(filtered.slice(0, limit));
+  return filtered.slice(0, limit);
 }
 
 /** Plain category-scoped pick (newest/featured first) — used both for "Recommended For You" (fed the
@@ -965,7 +966,7 @@ export async function getRecommendedByCategories(
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Products from sibling categories (same parent) — e.g. a Shirt pairs with Trousers/Blazers under
@@ -982,11 +983,18 @@ export async function getCompleteYourLook(productId: string, limit = 8) {
 
 const BRAND_TIER_RANK: Record<BrandTier, number> = { PREMIUM: 0, PLATINUM: 1, LUXURY: 2 };
 
+/** The product a price-relative rail is built around, with its canonical selling price from the (fresh) projection. */
 async function getTargetProductContext(productId: string) {
-  return prisma.product.findUnique({
-    where: { id: productId },
-    select: { categoryId: true, basePrice: true, brandTier: true },
-  });
+  await ensureFreshReadModels();
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { categoryId: true, brandTier: true } });
+  if (!product) return null;
+  // A hidden/trashed target has no guarded row; project it on demand so its rails still have a reference price.
+  let sellingPrice = await projectedSellingPrice(productId);
+  if (sellingPrice === null) {
+    await refreshReadModels([productId]);
+    sellingPrice = await projectedSellingPrice(productId);
+  }
+  return sellingPrice === null ? null : { ...product, sellingPrice };
 }
 
 /** Same category, priced lower than the current product — nearest-cheaper first. */
@@ -1000,14 +1008,14 @@ export async function getBudgetAlternatives(productId: string, limit = 8) {
       isActive: true,
       deletedAt: null,
       id: { not: productId },
-      basePrice: { lt: target.basePrice },
+      ...sellingPriceWhere({ lt: target.sellingPrice }),
     },
     select: PUBLIC_PRODUCT_SELECT,
-    orderBy: { basePrice: "desc" },
+    orderBy: sellingPriceOrderBy("desc"),
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Same category, priced higher than the current product — nearest-pricier first ("step up"). */
@@ -1021,14 +1029,14 @@ export async function getUpgradeOptions(productId: string, limit = 8) {
       isActive: true,
       deletedAt: null,
       id: { not: productId },
-      basePrice: { gt: target.basePrice },
+      ...sellingPriceWhere({ gt: target.sellingPrice }),
     },
     select: PUBLIC_PRODUCT_SELECT,
-    orderBy: { basePrice: "asc" },
+    orderBy: sellingPriceOrderBy("asc"),
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Same category, strictly higher brand tier than the current product (e.g. PREMIUM -> PLATINUM/LUXURY).
@@ -1052,11 +1060,11 @@ export async function getPremiumAlternatives(productId: string, limit = 8) {
       brandTier: { in: higherTiers },
     },
     select: PUBLIC_PRODUCT_SELECT,
-    orderBy: { basePrice: "desc" },
+    orderBy: sellingPriceOrderBy("desc"),
     take: limit,
   });
 
-  return withFlashSaleInfo(items);
+  return withStorefrontReadModel(items);
 }
 
 /** Fire-and-forget — records an anonymous, aggregate-only storefront page view. Never tied
@@ -1922,6 +1930,6 @@ export async function getRail(productId: string, key: RailKey) {
 export async function getProductForPreview(id: string) {
   const row = await prisma.product.findUnique({ where: { id }, select: PUBLIC_DETAIL_SELECT });
   if (!row) throw AppError.notFound("Product not found");
-  const [withFlash] = await withFlashSaleInfo([await presentProduct(row)]);
+  const [withFlash] = await withStorefrontReadModel([await presentProduct(row)]);
   return { ...withFlash, previewStatus: row.status };
 }

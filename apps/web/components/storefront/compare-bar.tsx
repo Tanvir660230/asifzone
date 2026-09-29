@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useCompareStore, MAX_COMPARE_ITEMS } from "@/store/compare";
 import { formatPrice } from "@/lib/format";
 import { productDisplayPrice } from "@/lib/pricing-display";
+import { availabilityOf } from "@/lib/availability-display";
 import { resolveImageUrl } from "@/lib/image-url";
 
 function attributeList(values: (string | null)[]): string {
@@ -131,10 +132,11 @@ export function CompareBar() {
               <tr className="border-t border-ink-100">
                 <td className="py-2 text-xs uppercase tracking-wide text-ink-400">In stock</td>
                 {items.map((product) => {
-                  const totalStock = product.variants.reduce((sum, v) => sum + v.stock, 0);
+                  // Server-derived availability (D5: an untracked product is always available).
+                  const availability = availabilityOf(product);
                   return (
-                    <td key={product.id} className={`p-2 ${totalStock > 0 ? "text-success-600" : "text-danger-600"}`}>
-                      {totalStock > 0 ? `${totalStock} available` : "Sold out"}
+                    <td key={product.id} className={`p-2 ${availability.inStock ? "text-success-600" : "text-danger-600"}`}>
+                      {!availability.inStock ? "Sold out" : availability.sellableUnits === null ? "In stock" : `${availability.sellableUnits} available`}
                     </td>
                   );
                 })}

@@ -424,6 +424,8 @@ model Product {
   variants          ProductVariant[]
   images            ProductImage[]
   flashSaleItems    FlashSaleItem[]
+  /// Storefront read model (Phase 3) — a projection, never authoritative (docs/STOREFRONT_READ_MODEL.md).
+  readModel         ProductReadModel?
   couponProducts    CouponProduct[]
   wishlistItems     WishlistItem[]
   viewLogs          ProductViewLog[]
@@ -2025,4 +2027,39 @@ model ProductRelation {
   @@unique([productId, relatedId, kind])
   @@index([productId, kind, sortOrder])
   @@index([relatedId])
+}
+
+/// Storefront read model (Phase 3, docs/STOREFRONT_READ_MODEL.md). A PROJECTION of the canonical pricing engine's
+/// display price (`priceProductsForDisplay` → `resolveUnitPrice`, the same function every quote uses), kept only so
+/// SQL can sort, filter and pick price-neighbours. Never authoritative: prices shown or charged are always computed
+/// live; this row is only ever written by domain/storefront/read-model.service.ts and can be rebuilt from scratch at
+/// any time. Staleness is detectable from the columns below (see the guard in read-model.service.ts).
+model ProductReadModel {
+  productId        String    @id
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Lowest current selling price over the product's active variants (= ProductPricing.from).
+  minSellingPrice  Decimal   @db.Decimal(10, 2)
+  /// Highest current selling price over the active variants (= ProductPricing.to).
+  maxSellingPrice  Decimal   @db.Decimal(10, 2)
+  /// List price of the variant that sets minSellingPrice (= ProductPricing.listFrom).
+  listPriceOfMin   Decimal   @db.Decimal(10, 2)
+  hasLiveFlashSale Boolean
+  currency         String
+  /// PRICING_VERSION the row was computed with — a mismatch marks it stale.
+  pricingVersion   Int
+  /// md5 fingerprint of every input that decides the selling price (base/compare-at price, each variant's price,
+  /// compare-at and active flag, each flash-sale item's terms and its sale's switch and window), computed by the same
+  /// SQL the freshness guard uses. Content-based on purpose: no clock (updatedAt is written in two timezones by
+  /// different code paths), and a deleted variant or flash item changes it too.
+  sourceHash       String
+  /// Next instant the price can change on the clock alone (a flash sale starting or ending); null = none scheduled.
+  validUntil       DateTime?
+  /// A live flash offer with a stock limit prices this product: quota can change with any order, so the row is
+  /// recomputed on every guarded read (D4).
+  volatile         Boolean   @default(false)
+  computedAt       DateTime
+
+  @@index([minSellingPrice])
+  @@index([validUntil])
+  @@index([volatile])
 }

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check } from "lucide-react";
-import { NO_SIZE_VALUE, type ProductVariant, type SizeGuideData, type VariantDimension, isAvailable, maxSellableQuantity, type Product } from "@clothing-brand/shared";
+import { NO_SIZE_VALUE, type ProductVariant, type SizeGuideData, type VariantDimension, isAvailable, maxSellableQuantity, variantStockState, type Product } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { cn, isPaleColor } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
@@ -127,6 +127,8 @@ export function VariantSelector({
 
   // Availability is the shared rule (D5): an untracked product is always sellable.
   const sellable = (v: ProductVariant) => isAvailable(product.trackInventory, v.stock);
+  // The shared stock-state rule (the same function the server's read model uses) — this component only picks words.
+  const selectedState = selectedVariant ? variantStockState(product.trackInventory, selectedVariant.stock, lowStockThreshold) : null;
   const maxQty = selectedVariant ? maxSellableQuantity(product.trackInventory, selectedVariant.stock) : 0;
   const sizeHasStock = (size: string) => variants.some((v) => v.size === size && sellable(v));
   const comboHasStock = (size: string, color: string) => variants.some((v) => v.size === size && v.color === color && sellable(v));
@@ -296,22 +298,22 @@ export function VariantSelector({
               <p
                 className={cn(
                   "text-sm",
-                  selectedVariant.stock === 0
+                  selectedState === "OUT_OF_STOCK" || selectedState === "UNLIMITED"
                     ? "text-ink-500"
                     : selectedVariant.stock <= CRITICAL_STOCK_THRESHOLD
                       ? "font-medium text-danger-600"
-                      : selectedVariant.stock <= lowStockThreshold
+                      : selectedState === "LOW_STOCK"
                         ? "font-medium text-brass-600"
                         : "text-ink-500",
                 )}
               >
-                {!product.trackInventory
+                {selectedState === "UNLIMITED"
                   ? "In stock"
-                  : selectedVariant.stock === 0
+                  : selectedState === "OUT_OF_STOCK"
                   ? "Out of stock"
                   : selectedVariant.stock <= CRITICAL_STOCK_THRESHOLD
                     ? `Only ${selectedVariant.stock} left!`
-                    : selectedVariant.stock <= lowStockThreshold
+                    : selectedState === "LOW_STOCK"
                       ? `Limited Stock — ${selectedVariant.stock} left`
                       : `${selectedVariant.stock} in stock`}{" "}
                 · SKU {selectedVariant.sku}

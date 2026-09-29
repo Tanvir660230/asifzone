@@ -1,3 +1,4 @@
+import type { ProductAvailability } from "./engines/availability";
 // Shapes returned by the API (JSON-serialized: Decimal/Date become strings).
 
 // CustomerTag is exported from schemas/customer.ts (derived from customerTagEnum) — imported here
@@ -208,6 +209,9 @@ export interface Product {
   pricing?: ProductPricing;
   /** Deprecated compat view of `pricing.flash` (its flashPrice is `pricing.from`). */
   activeFlashSale?: ActiveFlashSale | null;
+  /** Server-derived availability on every storefront read (docs/STOREFRONT_READ_MODEL.md §4): stock state from the
+   * canonical inventory state and the D5 rule — the storefront renders it, never recomputes it. */
+  availability?: ProductAvailability;
   avgRating: number;
   reviewCount: number;
   createdAt: string;

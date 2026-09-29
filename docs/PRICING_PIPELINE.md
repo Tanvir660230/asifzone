@@ -94,13 +94,9 @@ Phase 1's D2 (bundle on the post-flash price) is preserved. Rounding changed onl
 `taxIncludedIn` now returns paisa (130.43, not 130.4348). Prices charged are otherwise identical to Phase 1 for carts
 without the D4/D9 situations — covered by the PDP = quote = order test in `pricing.integration.test.ts`.
 
-## 4. Known remaining duplicate — Phase 3 / read-model follow-up
+## 4. Sorting, filtering and price neighbours — resolved in Phase 3
 
-Storefront price **filter/sort/facets** and similar-price recommendations still use `Product.basePrice`. They affect
-ordering and filtering only, never an amount shown or charged, so they do not block Phase 2. Recorded follow-up:
-
-```text
-Create canonical Product.minSellingPrice projection/read model.
-```
-
-(Phase 3 / read-model work; not implemented in Phase 2. See PRICING_INVARIANTS §12, TARGET_ARCHITECTURE §5.1.)
+Phase 2 left storefront price **filter/sort/facets** and similar-price recommendations on `Product.basePrice`.
+Phase 3 replaced them with the `ProductReadModel` projection. Its `minSellingPrice` is the output of this pipeline's
+`resolveUnitPrice` (via `priceProductsForDisplay`), kept fresh by a read-time guard. Nothing in the storefront sorts,
+filters or picks neighbours by `basePrice` any more. See [STOREFRONT_READ_MODEL.md](STOREFRONT_READ_MODEL.md).

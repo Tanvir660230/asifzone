@@ -4,10 +4,11 @@ import { useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ShoppingBag, Eye, Scale } from "lucide-react";
-import { isAvailable, type Product } from "@clothing-brand/shared";
+import type { Product } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
 import { productDisplayPrice } from "@/lib/pricing-display";
+import { availabilityOf } from "@/lib/availability-display";
 import { cn, isPaleColor } from "@/lib/utils";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { useQuickViewStore } from "@/store/quick-view";
@@ -26,10 +27,11 @@ interface ProductCardProps {
 
 export function ProductCard({ product, priority }: ProductCardProps) {
   const [primaryImage, secondaryImage] = product.images;
-  // Availability by the shared rule (D5): a product that doesn't track inventory is never "sold out".
-  const sellableVariants = product.variants.filter((v) => isAvailable(product.trackInventory, v.stock));
-  const soldOut = sellableVariants.length === 0;
-  const totalStock = product.trackInventory ? product.variants.reduce((sum, v) => sum + v.stock, 0) : Number.POSITIVE_INFINITY;
+  // Server-derived availability (Storefront Read Model): D5 — an untracked product is never "sold out".
+  const availability = availabilityOf(product);
+  const sellableVariants = product.variants.filter((v) => availability.variants[v.id]?.sellable);
+  const soldOut = !availability.inStock;
+  const totalStock = availability.sellableUnits ?? Number.POSITIVE_INFINITY;
   const shown = productDisplayPrice(product);
   const badge = getProductBadge(product, totalStock);
   const openQuickView = useQuickViewStore((s) => s.open);

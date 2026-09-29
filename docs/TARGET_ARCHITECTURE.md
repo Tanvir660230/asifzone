@@ -171,7 +171,7 @@ API resolver: `domain/pricing/pricing.service.ts` loads variants, active flash o
 | Exchange orders | bespoke (regular price, no refund on downgrade) | `PricingService.quoteExchange()` at the current effective price (D6) |
 | Invoice / order view / exports | read snapshot | read snapshot (unchanged) |
 | Analytics | snapshot fields | via metrics registry |
-| Storefront facets & price filter/sort | `basePrice` | a maintained `Product.minSellingPrice` projection (or view) refreshed on price/flash events |
+| Storefront facets & price filter/sort | `basePrice` | a maintained `Product.minSellingPrice` projection (or view) refreshed on price/flash events — **done in Phase 3** as `ProductReadModel` (§16c) |
 
 ### 5.2 Inventory model
 
@@ -518,6 +518,40 @@ filter/sort and similar-price recommendations still read `basePrice`; they never
 **Not in Phase 2 (recorded):** the `minSellingPrice` projection above (PRICING_INVARIANTS §12); zone/rate admin
 UI; configurable rounding policy (`CommerceSettings`); coupon `usedCount` drift report; invoices and analytics
 switching to the tax snapshot (Phase 5 metrics).
+
+## 16c. Phase 3 scope — Storefront Read Model
+
+**One storefront product.** `apps/api/src/domain/storefront/read-model.service.ts` is the Storefront Read Model:
+- `presentStorefrontProducts` builds the only storefront product DTO: canonical `pricing` from the Phase 2 engine,
+  plus `availability` derived from canonical inventory state (D5).
+- It is used by the listing, search, PDP, by-ids (compare, quick view, recently viewed, cart checks), trending,
+  recommendations and rails, the homepage flash feed and the wishlist.
+- The web renders `pricing` and `availability`; it computes neither (`lib/pricing-display.ts`,
+  `lib/availability-display.ts`).
+
+**`Product.minSellingPrice` is a projection, not a column of truth.** It lives in the additive table
+`ProductReadModel`, written only by the read-model service from `priceProductsForDisplay` output. SQL reads it for
+price sort, price filter, facet bounds and price-relative recommendations; it is never displayed.
+
+**Freshness without new infrastructure.** A read-time guard recomputes every stale row before the projection is read,
+so a listing never sorts by a stale row. A row is stale when:
+- its content fingerprint of the price inputs changed,
+- a clock boundary (`validUntil`) passed,
+- it is `volatile` (a live, quantity-limited offer),
+- or the currency or pricing version changed.
+
+The guard is the correctness path. The eager paths (product and flash-sale write hooks, the minute cron and a 15-minute
+full rebuild) only reduce work. Reconciliation: a drift report and a rebuild, both API and CLI. These hooks become
+outbox subscribers when §6 lands. Details and the Step-1 audit: [STOREFRONT_READ_MODEL.md](STOREFRONT_READ_MODEL.md).
+
+**Found and fixed along the way:**
+- The homepage flash feed returned inactive variants.
+- The wishlist returned products without server pricing, so its cards showed the base price during a flash sale.
+- The compare bar, cart low-stock check and exchange picker ignored D5.
+
+**Found and recorded (not fixed — Phase 1 code):** `inventory.service.ts` writes `"updatedAt" = NOW()` from raw SQL
+while the DB session timezone is Asia/Dhaka. Those rows get local time in a column Prisma writes as UTC. The read model
+avoids `updatedAt` for this reason.
 
 ## 17. Definition of done for each phase
 

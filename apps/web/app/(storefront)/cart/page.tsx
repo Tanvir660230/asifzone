@@ -14,6 +14,7 @@ import { useCartQuote, quoteLineAmount } from "@/hooks/use-quote";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
+import { variantAvailabilityOf } from "@/lib/availability-display";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { addToWishlist } from "@/lib/api/wishlist";
 import { fetchProductsByIds, fetchTrendingProducts, getSimilarProducts } from "@/lib/api/storefront";
@@ -65,9 +66,9 @@ export default function CartPage() {
         await Promise.all(
           items.map(async (item) => {
             const liveProduct = byId.get(item.productId);
-            const liveVariant = liveProduct?.variants.find((v) => v.id === item.variantId);
-            const isLowStock =
-              !liveProduct || !liveVariant || liveVariant.stock === 0 || liveVariant.stock <= liveProduct.lowStockThreshold;
+            // Server-derived stock state (D5: an untracked product is never low or out of stock).
+            const state = liveProduct ? variantAvailabilityOf(liveProduct, item.variantId)?.state : undefined;
+            const isLowStock = !state || state === "OUT_OF_STOCK" || state === "LOW_STOCK";
             if (!isLowStock) return;
 
             const { items: similar } = await getSimilarProducts(item.productId);

@@ -4,6 +4,7 @@ import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
 import { AppError } from "../../lib/app-error";
+import { presentStorefrontProducts } from "../../domain/storefront/read-model.service";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS, PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
 
 // A customer's wishlist shows the storefront's view of each product. (`include: { product: … }` used to return the whole row,
@@ -22,7 +23,10 @@ export async function listWishlist(customerId: string) {
     include: { product: { select: productSelect } },
     orderBy: { createdAt: "desc" },
   });
-  return items;
+  // The storefront's view of each product = the Storefront Read Model DTO (canonical pricing + availability), exactly
+  // what a listing card gets — never the stored base price.
+  const presented = await presentStorefrontProducts(items.map((i) => i.product));
+  return items.map((item, i) => ({ ...item, product: presented[i]! }));
 }
 
 export async function addToWishlist(customerId: string, productId: string) {

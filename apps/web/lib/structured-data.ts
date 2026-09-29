@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { BD_DIVISIONS, type Product, type StoreSettings, isAvailable } from "@clothing-brand/shared";
+import { BD_DIVISIONS, type Product, type StoreSettings } from "@clothing-brand/shared";
 import { resolveImageUrl } from "./image-url";
 import { stripHtml } from "./format";
 import { productDisplayPrice } from "./pricing-display";
+import { availabilityOf } from "./availability-display";
 
 const NON_DHAKA_DIVISIONS = BD_DIVISIONS.filter((d) => d !== "Dhaka");
 
@@ -49,7 +50,7 @@ function buildShippingDetails(settings: StoreSettings) {
 export function buildProductJsonLd(product: Product, siteUrl: string, settings: StoreSettings) {
   // The offer price is the server-resolved "from" price (canonical pricing engine), not a local calculation.
   const price = productDisplayPrice(product).price;
-  const inStock = product.variants.some((v) => isAvailable(product.trackInventory, v.stock));
+  const inStock = availabilityOf(product).inStock;
 
   return {
     "@context": "https://schema.org",

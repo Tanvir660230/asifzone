@@ -24,6 +24,7 @@ import { getProductBySlug, listStorefrontProducts } from "@/lib/api/storefront";
 import { useCartStore } from "@/store/cart";
 import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 import { productDisplayPrice } from "@/lib/pricing-display";
+import { variantAvailabilityOf } from "@/lib/availability-display";
 import { ApiError } from "@/lib/api-client";
 
 const RETURN_REASONS = [
@@ -67,8 +68,10 @@ export default function AccountOrderDetailPage() {
   // In stock, and not literally the same variant the customer already has — that's it. No longer
   // restricted to the original item's own product, so a completely different product is a valid
   // exchange target too (createExchangeOrder on the API side bills any price difference as COD).
-  const exchangeVariantOptions = (exchangeProductData?.product.variants ?? []).filter(
-    (v) => v.id !== exchangeItem?.variantId && v.stock > 0,
+  const exchangeProduct = exchangeProductData?.product;
+  const exchangeVariantOptions = (exchangeProduct?.variants ?? []).filter(
+    // Server-derived availability (D5: an untracked product's variants are always sellable).
+    (v) => v.id !== exchangeItem?.variantId && Boolean(exchangeProduct && variantAvailabilityOf(exchangeProduct, v.id)?.sellable),
   );
 
   const productSearchEnabled = formMode === "exchange" && showProductSearch && productSearchQuery.trim().length >= 2;
