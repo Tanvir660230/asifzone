@@ -111,16 +111,23 @@ enum PaymentMethod {
   EPS_PG
 }
 
+/// A projection of the order's payment ledger (Payment + Refund rows) — written only by
+/// domain/payments/payment-ledger.service.ts (docs/PAYMENT_LEDGER.md §4). PARTIALLY_REFUNDED: Phase 4.
 enum PaymentStatus {
   UNPAID
   PAID
   FAILED
   REFUNDED
+  PARTIALLY_REFUNDED
 }
 
+/// SSLCOMMERZ/EPS_PG: gateway settlements. COD: cash the courier collected on delivery (D1). MANUAL: an
+/// out-of-band payment staff recorded (bKash/bank/cash). COD and MANUAL never appear on a PaymentSession.
 enum PaymentProvider {
   SSLCOMMERZ
   EPS_PG
+  COD
+  MANUAL
 }
 
 /// ACTIVE -> SUCCEEDED/FAILED (a definitive, re-verified gateway answer) or CANCELLED (customer
@@ -240,6 +247,8 @@ model AdminUser {
   deletedOrders          Order[]              @relation("OrderDeletedBy")
   stockMovements         StockMovement[]
   refundsRequested       Refund[]             @relation("RefundRequestedBy")
+  refundsCompleted       Refund[]             @relation("RefundCompletedBy")
+  paymentsRecorded       Payment[]            @relation("PaymentRecordedBy")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -1139,8 +1148,9 @@ model Payment {
   /// created for a failed/cancelled attempt, so this row (not an Order) is the payment log.
   orderId               String?
   order                 Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  paymentSessionId      String           @unique
-  paymentSession        PaymentSession   @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
+  /// Null for a settlement with no gateway session — COD collected on delivery, or a MANUAL payment (Phase 4).
+  paymentSessionId      String?          @unique
+  paymentSession        PaymentSession?  @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
   provider              PaymentProvider
   status                PaymentTxnStatus
   amount                Decimal          @db.Decimal(10, 2)
@@ -1148,6 +1158,14 @@ model Payment {
   /// SSLCommerz bank_tran_id (falls back to val_id) / EPS EpsTransactionId.
   providerTransactionId String?
   rawResponse           Json?
+  /// Free-text context: how a manual payment was made ("bKash 01…"), or why a backfilled row exists.
+  note                  String?
+  recordedByAdminId     String?
+  recordedByAdmin       AdminUser?       @relation("PaymentRecordedBy", fields: [recordedByAdminId], references: [id], onDelete: SetNull)
+  /// Idempotency-Key of the admin request that recorded a manual payment — a repeat returns this row.
+  idempotencyKey        String?          @unique
+  /// True for rows the Phase 4 backfill inserted from an order's own recorded status (docs/PAYMENT_LEDGER.md §11).
+  backfilled            Boolean          @default(false)
   settledAt             DateTime         @default(now())
   refunds               Refund[]
   createdAt             DateTime         @default(now())
@@ -1173,10 +1191,10 @@ model PaymentEvent {
 
 /// A manual, out-of-band refund record — neither SSLCommerz nor EPS expose a refund API (see the
 /// comment above ReturnRequest), so an admin transfers money back themselves (bKash/bank/cash) and
-/// logs it here. This table is the record of what happened, not a trigger: creating a COMPLETED
-/// Refund is the only thing (besides settlePaymentSession/markPaymentSessionFailed) allowed to move
-/// Order.paymentStatus to REFUNDED — see refundOrderPayment in payment.service.ts, and
-/// syncOrderPaymentStatus's explicit exclusion of REFUNDED orders from its own writes.
+/// logs it here. This table is the record of what happened, not a trigger. REQUESTED = owed (a D6
+/// exchange downgrade), COMPLETED = paid out; the only mutation is REQUESTED → COMPLETED. Written only by
+/// domain/payments/payment-ledger.service.ts, which derives Order.paymentStatus from these rows and the
+/// Payment rows (docs/PAYMENT_LEDGER.md).
 model Refund {
   id                 String       @id @default(cuid())
   orderId            String
@@ -1191,6 +1209,10 @@ model Refund {
   status             RefundStatus @default(REQUESTED)
   requestedByAdminId String?
   requestedByAdmin   AdminUser?   @relation("RefundRequestedBy", fields: [requestedByAdminId], references: [id], onDelete: SetNull)
+  completedByAdminId String?
+  completedByAdmin   AdminUser?   @relation("RefundCompletedBy", fields: [completedByAdminId], references: [id], onDelete: SetNull)
+  /// Idempotency-Key of the admin request that recorded this refund — a repeat returns this row.
+  idempotencyKey     String?      @unique
   completedAt        DateTime?
   createdAt          DateTime     @default(now())
 

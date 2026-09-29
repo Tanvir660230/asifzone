@@ -200,3 +200,30 @@ export function deliveryScoreBadgeClass(rate: number | null): string {
   if (rate >= 50) return "bg-warning-100 text-warning-700";
   return "bg-danger-100 text-danger-700";
 }
+
+// Payment status (a projection of the server's payment ledger, docs/PAYMENT_LEDGER.md) → label and color — one map for
+// every screen. Before Phase 4 three inline ternaries showed anything that wasn't PAID/FAILED as "Unpaid", so a refunded
+// order read as unpaid.
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  UNPAID: "Unpaid",
+  PAID: "Paid",
+  FAILED: "Failed",
+  PARTIALLY_REFUNDED: "Part refunded",
+  REFUNDED: "Refunded",
+};
+
+const PAYMENT_STATUS_TEXT_CLASS: Record<string, string> = {
+  UNPAID: "text-warning-600",
+  PAID: "text-success-600",
+  FAILED: "text-danger-600",
+  PARTIALLY_REFUNDED: "text-info-600",
+  REFUNDED: "text-ink-500",
+};
+
+export function paymentStatusLabel(status: string): string {
+  return PAYMENT_STATUS_LABELS[status] ?? status;
+}
+
+export function paymentStatusTextClass(status: string): string {
+  return PAYMENT_STATUS_TEXT_CLASS[status] ?? "text-ink-500";
+}

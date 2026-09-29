@@ -83,6 +83,8 @@ import {
   courierStatusDescription,
   deliveryScoreBadgeClass,
   timeAgo,
+  paymentStatusLabel,
+  paymentStatusTextClass,
 } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
@@ -1454,16 +1456,9 @@ export default function OrdersPage() {
                       {order.paymentMethod === "COD" ? "COD" : "Online"}
                     </Badge>
                     <span
-                      className={cn(
-                        "text-[11px] font-medium",
-                        order.paymentStatus === "PAID"
-                          ? "text-success-600"
-                          : order.paymentStatus === "FAILED"
-                            ? "text-danger-600"
-                            : "text-warning-600",
-                      )}
+                      className={cn("text-[11px] font-medium", paymentStatusTextClass(order.paymentStatus))}
                     >
-                      {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+                      {paymentStatusLabel(order.paymentStatus)}
                     </span>
                   </div>
                 </td>
@@ -1543,16 +1538,9 @@ export default function OrdersPage() {
                     {order.paymentMethod === "COD" ? "COD" : "Online"}
                   </Badge>
                   <span
-                    className={cn(
-                      "text-[11px] font-medium",
-                      order.paymentStatus === "PAID"
-                        ? "text-success-600"
-                        : order.paymentStatus === "FAILED"
-                          ? "text-danger-600"
-                          : "text-warning-600",
-                    )}
+                    className={cn("text-[11px] font-medium", paymentStatusTextClass(order.paymentStatus))}
                   >
-                    {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+                    {paymentStatusLabel(order.paymentStatus)}
                   </span>
                   <span className="ml-auto flex items-center gap-2">{renderCourierCell(order)}</span>
                 </div>

@@ -146,7 +146,7 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
       SELECT
         (SELECT COUNT(*) FROM "Order" WHERE status != 'CANCELLED')::bigint AS "nonCancelledOrders",
         (SELECT COUNT(*) FROM "Order")::bigint AS "allOrders",
-        (SELECT COUNT(*) FROM "Order" WHERE "paymentStatus" = 'REFUNDED' OR status = 'REFUNDED')::bigint AS "refundedOrders",
+        (SELECT COUNT(*) FROM "Order" WHERE "paymentStatus" IN ('REFUNDED', 'PARTIALLY_REFUNDED') OR status = 'REFUNDED')::bigint AS "refundedOrders",
         (SELECT COUNT(*) FROM "Order" WHERE status = 'CANCELLED')::bigint AS "cancelledOrders",
         (SELECT COUNT(DISTINCT "orderId") FROM "ReturnRequest")::bigint AS "returnedOrders"
     `,

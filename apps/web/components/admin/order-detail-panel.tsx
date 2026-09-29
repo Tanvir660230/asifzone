@@ -36,6 +36,7 @@ import type {
   AdjustOrderPriceInput,
   ReconcilePartialDeliveryInput,
   RecordRefundInput,
+  RecordPaymentInput,
 } from "@clothing-brand/shared";
 import {
   updateOrderDetailsSchema,
@@ -71,6 +72,8 @@ import {
   courierStatusLabel,
   courierStatusDescription,
   timeAgo,
+  paymentStatusLabel,
+  paymentStatusTextClass,
 } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -153,6 +156,13 @@ interface OrderDetailPanelProps {
 
 /** All order-detail content and mutations — shared by the standalone /admin/orders/[id] route and
  * the orders list's slide-in drawer, so there's exactly one implementation of this view. */
+const PAYMENT_PROVIDER_LABELS: Record<string, string> = {
+  SSLCOMMERZ: "SSLCommerz",
+  EPS_PG: "EPS",
+  COD: "Cash on delivery",
+  MANUAL: "Recorded by staff",
+};
+
 export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: OrderDetailPanelProps) {
   const queryClient = useQueryClient();
   const [statusNote, setStatusNote] = useState("");
@@ -169,6 +179,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
   const [priceError, setPriceError] = useState<string | null>(null);
   const [returnedQuantities, setReturnedQuantities] = useState<Record<string, number>>({});
   const [refundDraft, setRefundDraft] = useState<{ amount: string; reason: string; method: string } | null>(null);
+  const [paymentDraft, setPaymentDraft] = useState<{ amount: string; method: string; note: string } | null>(null);
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
@@ -191,6 +202,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     setHoldNote("");
     setReturnedQuantities({});
     setRefundDraft(null);
+    setPaymentDraft(null);
   }, [id]);
 
   const { data, isLoading } = useQuery({
@@ -323,21 +335,38 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to unlink courier booking"),
   });
 
-  const { data: refundsData } = useQuery({
-    queryKey: ["admin-order-refunds", id],
-    queryFn: () => paymentsAdminApi.listRefunds(id),
-  });
+  // Payments and refunds are read from the order's payment ledger summary (`order.payment`, docs/PAYMENT_LEDGER.md) —
+  // every amount below is server-derived; this panel only renders it and sends commands.
+  const invalidateMoney = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
+    queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
+  };
   const refundMutation = useMutation({
     mutationFn: (input: RecordRefundInput) => paymentsAdminApi.createRefund(id, input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-order-refunds", id] });
-      queryClient.invalidateQueries({ queryKey: ["admin-order", id] });
-      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
+      invalidateMoney();
       setRefundDraft(null);
       toast.success("Refund recorded");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to record refund"),
+  });
+  const completeRefundMutation = useMutation({
+    mutationFn: (refundId: string) => paymentsAdminApi.completeRefund(id, refundId, {}),
+    onSuccess: () => {
+      invalidateMoney();
+      toast.success("Refund marked as paid out");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to complete refund"),
+  });
+  const paymentMutation = useMutation({
+    mutationFn: (input: RecordPaymentInput) => paymentsAdminApi.recordPayment(id, input),
+    onSuccess: () => {
+      invalidateMoney();
+      setPaymentDraft(null);
+      toast.success("Payment recorded");
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to record payment"),
   });
 
   const outerClassName = variant === "page" ? "mx-auto max-w-4xl space-y-5" : "space-y-4 p-5";
@@ -561,17 +590,8 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               <Badge className={order.paymentMethod === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700"}>
                 {order.paymentMethod === "COD" ? "COD" : "Online"}
               </Badge>
-              <span
-                className={cn(
-                  "text-xs font-medium",
-                  order.paymentStatus === "PAID"
-                    ? "text-success-600"
-                    : order.paymentStatus === "FAILED"
-                      ? "text-danger-600"
-                      : "text-warning-600",
-                )}
-              >
-                {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+              <span className={cn("text-xs font-medium", paymentStatusTextClass(order.paymentStatus))}>
+                {paymentStatusLabel(order.paymentStatus)}
               </span>
             </div>
           </div>
@@ -595,105 +615,221 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
         </CardContent>
       </Card>
 
-      {/* Refunds — no EPS/SSLCommerz refund API exists, so this only records what an admin already
-          did themselves (bKash/bank transfer) rather than triggering a real money movement. Shown
-          whenever there's history to display, even if the order is no longer PAID. */}
-      {(order.paymentStatus === "PAID" || (refundsData?.refunds.length ?? 0) > 0) && (
+      {/* Payments & refunds — the order's payment ledger (docs/PAYMENT_LEDGER.md). No EPS/SSLCommerz refund API exists,
+          so a refund only records what an admin already did themselves (bKash/bank transfer). */}
+      {order.payment && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Undo2 size={16} className="text-ink-400" /> Refunds
+              <Undo2 size={16} className="text-ink-400" /> Payments &amp; refunds
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {refundsData && refundsData.refunds.length > 0 && (
+            <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              {(
+                [
+                  ["Received", order.payment.paid],
+                  ["Refunded", order.payment.refunded],
+                  ["Still due", order.payment.amountDue],
+                  ["Can refund", order.payment.refundable],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">{label}</dt>
+                  <dd className="mt-0.5 font-semibold tabular-nums text-ink-900">{formatPrice(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            {order.payment.codToCollect > 0 && (
+              <p className="text-xs text-ink-500">Courier collects {formatPrice(order.payment.codToCollect)} on delivery.</p>
+            )}
+            {order.payment.refundDue > 0 && (
+              <p className="rounded-md bg-warning-50 px-3 py-2 text-xs font-medium text-warning-700">
+                {formatPrice(order.payment.refundDue)} is owed back to the customer.
+              </p>
+            )}
+
+            {order.payment.payments.some((p) => p.status === "SUCCEEDED") && (
               <ul className="space-y-2">
-                {refundsData.refunds.map((r) => (
+                {order.payment.payments
+                  .filter((p) => p.status === "SUCCEEDED")
+                  .map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 p-3 text-sm">
+                      <div>
+                        <p className="font-medium text-ink-900">
+                          {formatPrice(p.amount)} · {PAYMENT_PROVIDER_LABELS[p.provider] ?? p.provider}
+                        </p>
+                        {p.note && <p className="mt-0.5 text-xs text-ink-500">{p.note}</p>}
+                      </div>
+                      <div className="text-right text-xs text-ink-400">
+                        <p>{p.recordedBy ?? (p.backfilled ? "Backfilled" : "—")}</p>
+                        <p>{new Date(p.settledAt).toLocaleDateString()}</p>
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            )}
+
+            {order.payment.refunds.length > 0 && (
+              <ul className="space-y-2">
+                {order.payment.refunds.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-3 rounded-lg border border-ink-100 p-3 text-sm">
                     <div>
                       <p className="font-medium text-ink-900">
-                        {formatPrice(r.amount)}
+                        Refund {formatPrice(r.amount)}
                         {r.method ? ` · ${r.method}` : ""}
+                        {r.status === "REQUESTED" && <span className="ml-2 text-xs font-medium text-warning-600">Owed — not paid out yet</span>}
                       </p>
                       {r.reason && <p className="mt-0.5 text-xs text-ink-500">{r.reason}</p>}
                     </div>
-                    <div className="text-right text-xs text-ink-400">
-                      <p>{r.requestedByAdmin?.name ?? "—"}</p>
-                      <p>{new Date(r.createdAt).toLocaleDateString()}</p>
+                    <div className="flex items-center gap-3 text-right text-xs text-ink-400">
+                      {r.status === "REQUESTED" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={completeRefundMutation.isPending}
+                          onClick={async () => {
+                            if (!(await confirm(`Mark the ${formatPrice(r.amount)} refund as paid out? Do this only after you've sent the money.`))) return;
+                            completeRefundMutation.mutate(r.id);
+                          }}
+                        >
+                          Mark paid out
+                        </Button>
+                      ) : (
+                        <div>
+                          <p>{r.completedBy ?? r.requestedBy ?? "—"}</p>
+                          <p>{new Date(r.completedAt ?? r.createdAt).toLocaleDateString()}</p>
+                        </div>
+                      )}
                     </div>
                   </li>
                 ))}
               </ul>
             )}
 
-            {order.paymentStatus === "PAID" &&
-              (refundDraft ? (
-                <div className="space-y-3 rounded-lg border border-ink-100 p-4">
-                  <div>
-                    <Label htmlFor="refundAmount">Amount</Label>
-                    <Input
-                      id="refundAmount"
-                      type="number"
-                      step="0.01"
-                      value={refundDraft.amount}
-                      onChange={(e) => setRefundDraft({ ...refundDraft, amount: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="refundMethod">Method</Label>
-                    <Input
-                      id="refundMethod"
-                      placeholder="bKash, Bank transfer, Cash…"
-                      value={refundDraft.method}
-                      onChange={(e) => setRefundDraft({ ...refundDraft, method: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="refundReason">Reason</Label>
-                    <Textarea
-                      id="refundReason"
-                      rows={2}
-                      value={refundDraft.reason}
-                      onChange={(e) => setRefundDraft({ ...refundDraft, reason: e.target.value })}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setRefundDraft(null)}>
-                      Cancel
-                    </Button>
-                    <Button
-                      variant="brass"
-                      size="sm"
-                      disabled={refundMutation.isPending || !refundDraft.amount}
-                      onClick={async () => {
-                        const amount = Number(refundDraft.amount);
-                        if (!amount || amount <= 0) return toast.error("Enter a valid amount");
-                        if (
-                          !(await confirm(
-                            `Record a ${formatPrice(amount)} refund for order ${order.orderNumber}? This assumes you've already sent the money back yourself — nothing is charged or refunded automatically.`,
-                          ))
-                        )
-                          return;
-                        refundMutation.mutate({
-                          amount,
-                          reason: refundDraft.reason || undefined,
-                          method: refundDraft.method || undefined,
-                        } as RecordRefundInput);
-                      }}
-                    >
-                      {refundMutation.isPending ? "Recording…" : "Record refund"}
-                    </Button>
-                  </div>
+            {refundDraft ? (
+              <div className="space-y-3 rounded-lg border border-ink-100 p-4">
+                <div>
+                  <Label htmlFor="refundAmount">Amount (up to {formatPrice(order.payment.refundable)})</Label>
+                  <Input
+                    id="refundAmount"
+                    type="number"
+                    step="0.01"
+                    value={refundDraft.amount}
+                    onChange={(e) => setRefundDraft({ ...refundDraft, amount: e.target.value })}
+                  />
                 </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRefundDraft({ amount: String(order.total), reason: "", method: "" })}
-                >
-                  <Undo2 size={14} /> Record a refund
-                </Button>
-              ))}
+                <div>
+                  <Label htmlFor="refundMethod">Method</Label>
+                  <Input
+                    id="refundMethod"
+                    placeholder="bKash, Bank transfer, Cash…"
+                    value={refundDraft.method}
+                    onChange={(e) => setRefundDraft({ ...refundDraft, method: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="refundReason">Reason</Label>
+                  <Textarea
+                    id="refundReason"
+                    rows={2}
+                    value={refundDraft.reason}
+                    onChange={(e) => setRefundDraft({ ...refundDraft, reason: e.target.value })}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setRefundDraft(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="brass"
+                    size="sm"
+                    disabled={refundMutation.isPending || !refundDraft.amount}
+                    onClick={async () => {
+                      const amount = Number(refundDraft.amount);
+                      if (!amount || amount <= 0) return toast.error("Enter a valid amount");
+                      if (
+                        !(await confirm(
+                          `Record a ${formatPrice(amount)} refund for order ${order.orderNumber}? This assumes you've already sent the money back yourself — nothing is charged or refunded automatically.`,
+                        ))
+                      )
+                        return;
+                      refundMutation.mutate({
+                        amount,
+                        reason: refundDraft.reason || undefined,
+                        method: refundDraft.method || undefined,
+                      } as RecordRefundInput);
+                    }}
+                  >
+                    {refundMutation.isPending ? "Recording…" : "Record refund"}
+                  </Button>
+                </div>
+              </div>
+            ) : paymentDraft ? (
+              <div className="space-y-3 rounded-lg border border-ink-100 p-4">
+                <div>
+                  <Label htmlFor="paymentAmount">Amount received (up to {formatPrice(order.payment.amountDue)})</Label>
+                  <Input
+                    id="paymentAmount"
+                    type="number"
+                    step="0.01"
+                    value={paymentDraft.amount}
+                    onChange={(e) => setPaymentDraft({ ...paymentDraft, amount: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="paymentMethod">Method</Label>
+                  <Input
+                    id="paymentMethod"
+                    placeholder="bKash, Bank transfer, Cash…"
+                    value={paymentDraft.method}
+                    onChange={(e) => setPaymentDraft({ ...paymentDraft, method: e.target.value })}
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPaymentDraft(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="brass"
+                    size="sm"
+                    disabled={paymentMutation.isPending || !paymentDraft.amount}
+                    onClick={() => {
+                      const amount = Number(paymentDraft.amount);
+                      if (!amount || amount <= 0) return toast.error("Enter a valid amount");
+                      paymentMutation.mutate({
+                        amount,
+                        kind: order.status === "PARTIALLY_DELIVERED" ? "COD_COLLECTED" : "MANUAL",
+                        method: paymentDraft.method || undefined,
+                      });
+                    }}
+                  >
+                    {paymentMutation.isPending ? "Recording…" : "Record payment"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {order.payment.refundable > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRefundDraft({ amount: String(order.payment!.refundable), reason: "", method: "" })}
+                  >
+                    <Undo2 size={14} /> Record a refund
+                  </Button>
+                )}
+                {order.payment.amountDue > 0 && !["CANCELLED", "RETURNED", "REFUNDED"].includes(order.status) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPaymentDraft({ amount: String(order.payment!.amountDue), method: "", note: "" })}
+                  >
+                    <Receipt size={14} /> {order.status === "PARTIALLY_DELIVERED" ? "Record cash the courier collected" : "Record a payment"}
+                  </Button>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1026,7 +1162,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                   size="sm"
                   disabled={bookCourierMutation.isPending || !!order.deletedAt}
                   onClick={async () => {
-                    const codAmount = order.paymentMethod === "COD" ? Number(order.total) : 0;
+                    const codAmount = order.payment?.codToCollect ?? 0;
                     const ok = await confirm(
                       `Book delivery with Steadfast for ${order.customerName} (${order.customerPhone})? COD to collect: ${formatPrice(codAmount)}.`,
                       "Book",

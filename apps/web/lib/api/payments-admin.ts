@@ -1,4 +1,4 @@
-import type { Refund, RecordRefundInput } from "@clothing-brand/shared";
+import type { CompleteRefundInput, OrderPaymentSummary, RecordPaymentInput, Refund, RecordRefundInput } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export interface PaymentsOverview {
@@ -43,5 +43,15 @@ export function listRefunds(orderId: string) {
 }
 
 export function createRefund(orderId: string, input: RecordRefundInput) {
-  return apiFetch<{ refund: Refund }>(`/api/orders/${orderId}/refunds`, { method: "POST", body: input });
+  return apiFetch<{ refund: Refund; summary: OrderPaymentSummary }>(`/api/orders/${orderId}/refunds`, { method: "POST", body: input });
+}
+
+/** Marks a REQUESTED refund (D6 exchange downgrade) as paid out. */
+export function completeRefund(orderId: string, refundId: string, input: CompleteRefundInput) {
+  return apiFetch<{ refund: Refund; summary: OrderPaymentSummary }>(`/api/orders/${orderId}/refunds/${refundId}/complete`, { method: "POST", body: input });
+}
+
+/** Records a payment received by hand (MANUAL) or the cash a courier collected on a partial delivery (COD_COLLECTED). */
+export function recordPayment(orderId: string, input: RecordPaymentInput) {
+  return apiFetch<{ summary: OrderPaymentSummary }>(`/api/orders/${orderId}/payments`, { method: "POST", body: input });
 }

@@ -1,5 +1,6 @@
 import type {
   Order,
+  OrderPaymentSummary,
   AdminOrderListItem,
   OrderStatus,
   BulkOrderStatusResult,
@@ -85,7 +86,8 @@ export function downloadOrdersCsvUrl(params: AdminOrderListParams = {}) {
 }
 
 export function bulkGetOrders(ids: string[]) {
-  return apiFetch<{ orders: Order[] }>("/api/orders/bulk/get", { method: "POST", body: { ids } });
+  // Each order carries its payment ledger position — labels print `payment.codToCollect` as the COD amount.
+  return apiFetch<{ orders: Array<Order & { payment: OrderPaymentSummary }> }>("/api/orders/bulk/get", { method: "POST", body: { ids } });
 }
 
 /** sessionStorage key the Orders list page writes selected ids to and the print-labels page reads

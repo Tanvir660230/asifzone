@@ -9,6 +9,7 @@ import {
 } from "../../lib/steadfast";
 import { getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
+import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
 
 // PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
 // anything further for this consignment) even though it still needs an admin to reconcile which
@@ -128,7 +129,8 @@ export async function bookOrderWithSteadfast(orderId: string) {
     throw AppError.badRequest("This order is missing customer/address details — edit the order before booking a courier");
   }
 
-  const codAmount = order.paymentMethod === "COD" ? Number(order.total) : 0;
+  // The payment ledger's cash-to-collect (PL-6): the balance due of an open COD order — 0 when it was prepaid.
+  const codAmount = order.payment.codToCollect;
 
   const consignment = await createSteadfastConsignment({
     invoice: order.orderNumber,
@@ -197,6 +199,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
   }
 
   if (!eligible.length) return { booked: [], failed };
+  const codAmounts = await codToCollectFor(eligible.map((order) => order.id));
 
   const results = await createBulkSteadfastConsignments(
     eligible.map((order) => ({
@@ -204,7 +207,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
       recipientName: order.customerName,
       recipientPhone: normalizeBdPhone(order.customerPhone),
       recipientAddress: buildRecipientAddress(order),
-      codAmount: order.paymentMethod === "COD" ? Number(order.total) : 0,
+      codAmount: codAmounts.get(order.id) ?? 0,
       note: order.notes ?? undefined,
     })),
   );

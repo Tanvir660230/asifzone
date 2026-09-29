@@ -4,6 +4,7 @@ import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import { metaContextFromRequest } from "../../lib/meta/capi";
+import { completeRefund, getOrderPaymentSummary, recordManualPayment } from "../../domain/payments/payment-ledger.service";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -60,8 +61,20 @@ export const createManual = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const createRefund = asyncHandler(async (req: Request, res: Response) => {
-  const refund = await refundOrderPayment(req.params.id!, req.body, req.admin!.adminId);
-  res.status(201).json({ refund });
+  const { summary, ...refund } = await refundOrderPayment(req.params.id!, req.body, req.admin!.adminId, idempotencyKeyOf(req));
+  res.status(201).json({ refund, summary });
+});
+
+export const completeRefundRequest = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await completeRefund(req.params.id!, req.params.refundId!, req.body, req.admin!.adminId));
+});
+
+export const recordPayment = asyncHandler(async (req: Request, res: Response) => {
+  res.status(201).json(await recordManualPayment(req.params.id!, req.body, req.admin!.adminId, idempotencyKeyOf(req)));
+});
+
+export const getPayment = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ payment: await getOrderPaymentSummary(req.params.id!) });
 });
 
 export const listRefunds = asyncHandler(async (req: Request, res: Response) => {

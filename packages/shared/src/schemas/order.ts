@@ -16,7 +16,8 @@ export const orderStatusEnum = z.enum([
 ]);
 
 export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ", "EPS_PG"]);
-export const paymentStatusEnum = z.enum(["UNPAID", "PAID", "FAILED", "REFUNDED"]);
+// A projection of the payment ledger (docs/PAYMENT_LEDGER.md §4); PARTIALLY_REFUNDED since Phase 4.
+export const paymentStatusEnum = z.enum(["UNPAID", "PAID", "FAILED", "REFUNDED", "PARTIALLY_REFUNDED"]);
 
 /** Every raw `delivery_status` value Steadfast's API can return (courier.service.ts's
  * mapSteadfastStatusToOrderStatus only understands a subset of these) — shared so the admin
@@ -725,7 +726,7 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue
   // (followUpAt <= now) — the callback queue. No "false" variant; omit the param for the normal listing.
   followUpDue: z.enum(["true"]).optional(),
-  // "true" = only orders that are CANCELLED but still show paymentStatus PAID — the refund-risk
+  // "true" = only CANCELLED orders still holding money (paymentStatus PAID or PARTIALLY_REFUNDED) — the refund-risk
   // queue behind getOrderStats().cancelledButPaidCount. No "false" variant; omit for the normal listing.
   cancelledButPaid: z.enum(["true"]).optional(),
   dateFrom: z.coerce.date().optional(),

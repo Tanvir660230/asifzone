@@ -21,6 +21,7 @@ import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.
 import { recordSale, releaseOrderLines } from "../inventory/inventory.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
+import { recordExchangeCovered, requestRefund } from "../../domain/payments/payment-ledger.service";
 
 const include = {
   order: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
@@ -169,7 +170,8 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
  * stock-limit aware; no bundle or coupon, no shipping) and compared with what the customer actually paid for the item
  * being returned (its order-line snapshot, net of the discounts allocated to it — history, not the current price).
  *   • replacement costs more  → the difference is the new order's total, collected COD on delivery;
- *   • replacement costs less  → the difference is owed back: a REQUESTED Refund on the original order for an admin to pay out;
+ *   • replacement costs less  → the difference is owed back: a REQUESTED Refund on the original order (payment ledger),
+ *                                completed by an admin once paid out;
  *   • equal                   → a free exchange.
  * Then: takes the replacement out of stock (re-checked — it may have sold out since the request), puts the original
  * item back (a RETURN on the original order's line, so it can never be restocked twice), and opens the companion Order
@@ -231,7 +233,8 @@ async function createExchangeOrder(
       customerId: originalOrder.customerId,
       status: "CONFIRMED",
       paymentMethod: amountDue.amount > 0 ? "COD" : originalOrder.paymentMethod,
-      paymentStatus: amountDue.amount > 0 ? "UNPAID" : "PAID",
+      // Payment status is derived by the payment ledger: UNPAID until the COD difference is collected, or settled at
+      // zero just below when the returned item covers the whole price.
       customerName: originalOrder.customerName,
       customerEmail: originalOrder.customerEmail,
       customerPhone: originalOrder.customerPhone,
@@ -303,17 +306,13 @@ async function createExchangeOrder(
     lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }],
   });
 
-  // D6: a cheaper replacement means money is owed back — recorded as a refund to be paid out (no gateway refund API).
+  // Fully covered by the returned item: nothing to collect — settled at zero in the ledger (status PAID, as before).
+  if (amountDue.amount === 0) await recordExchangeCovered(tx, exchangeOrder.id, adminId);
+
+  // D6: a cheaper replacement means money is owed back — a REQUESTED refund on the original order (no gateway refund
+  // API), completed by an admin once paid out. Capped by what was received for that order (PL-2).
   if (refundDue.amount > 0) {
-    await tx.refund.create({
-      data: {
-        orderId: originalOrder.id,
-        amount: toMajor(refundDue),
-        reason: `Exchange price difference — ${label}`,
-        status: "REQUESTED",
-        requestedByAdminId: adminId,
-      },
-    });
+    await requestRefund(tx, originalOrder.id, { amount: toMajor(refundDue), reason: `Exchange price difference — ${label}` }, adminId);
   }
 
   await tx.returnRequest.update({ where: { id: request.id }, data: { exchangeOrderId: exchangeOrder.id } });

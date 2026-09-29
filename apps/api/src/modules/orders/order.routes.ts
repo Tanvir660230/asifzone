@@ -11,6 +11,8 @@ import {
   trackOrderSchema,
   retryPaymentSchema,
   recordRefundSchema,
+  completeRefundSchema,
+  recordPaymentSchema,
   bulkOrderIdsSchema,
   bulkOrderStatusSchema,
   bulkCourierBookSchema,
@@ -86,6 +88,10 @@ orderRouter.patch(
 );
 orderRouter.post("/:id/refunds", requireAdmin, validate(recordRefundSchema), orderController.createRefund);
 orderRouter.get("/:id/refunds", requireAdmin, orderController.listRefunds);
+orderRouter.post("/:id/refunds/:refundId/complete", requireAdmin, validate(completeRefundSchema), orderController.completeRefundRequest);
+// Payment ledger (docs/PAYMENT_LEDGER.md §8): the order's payment position, and payments staff record by hand.
+orderRouter.get("/:id/payment", requireAdmin, orderController.getPayment);
+orderRouter.post("/:id/payments", requireAdmin, validate(recordPaymentSchema), orderController.recordPayment);
 orderRouter.post("/:id/courier/book", requireAdmin, orderController.bookCourier);
 orderRouter.post("/:id/courier/refresh", requireAdmin, orderController.refreshCourier);
 orderRouter.post("/:id/courier/unlink", requireAdmin, orderController.unlinkCourier);

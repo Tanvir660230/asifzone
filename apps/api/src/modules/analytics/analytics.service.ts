@@ -1897,7 +1897,7 @@ export async function getProductRiskMetrics(days?: number, limit = 10) {
         SUM(oi.quantity)::bigint AS "totalQty",
         SUM(oi."returnedQuantity")::bigint AS "returnedQty",
         COUNT(DISTINCT oi."orderId")::bigint AS "totalOrders",
-        COUNT(DISTINCT oi."orderId") FILTER (WHERE o."paymentStatus" = 'REFUNDED')::bigint AS "refundedOrders"
+        COUNT(DISTINCT oi."orderId") FILTER (WHERE o."paymentStatus" IN ('REFUNDED', 'PARTIALLY_REFUNDED'))::bigint AS "refundedOrders"
       FROM "OrderItem" oi
       JOIN "Order" o ON o.id = oi."orderId"
       JOIN "ProductVariant" pv ON pv.id = oi."variantId"
@@ -2677,7 +2677,7 @@ export async function getFinancialCostBreakdown(days?: number) {
   const since = daysAgoOrUndefined(days) ?? new Date(0);
   const [orderRows, lossRows] = await Promise.all([
     prisma.$queryRaw<Array<{ refundCost: number; discountCost: number }>>`
-      SELECT COALESCE(SUM(total) FILTER (WHERE "paymentStatus" = 'REFUNDED'), 0)::float AS "refundCost",
+      SELECT COALESCE(SUM(total) FILTER (WHERE "paymentStatus" IN ('REFUNDED', 'PARTIALLY_REFUNDED')), 0)::float AS "refundCost",
         COALESCE(SUM(discount + "bundleDiscount"), 0)::float AS "discountCost"
       FROM "Order"
       WHERE "createdAt" >= ${since} AND status != 'CANCELLED'

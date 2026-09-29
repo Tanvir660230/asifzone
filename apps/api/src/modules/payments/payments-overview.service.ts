@@ -2,6 +2,7 @@ import { normalizeBdPhone } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import type { PendingCheckoutPayload } from "./payment.service";
+import { REFUND_QUEUE_WHERE } from "../../domain/payments/payment-ledger.service";
 
 const CACHE_TTL_SECONDS = 60;
 const CACHE_KEY = "payments:overview";
@@ -51,7 +52,7 @@ export async function getPaymentsOverview(): Promise<PaymentsOverview> {
     prisma.paymentSession.count({
       where: { provider: "EPS_PG", status: "ACTIVE", createdAt: { lte: reconciliationGrace } },
     }),
-    prisma.order.count({ where: { deletedAt: null, status: "CANCELLED", paymentStatus: "PAID" } }),
+    prisma.order.count({ where: { deletedAt: null, ...REFUND_QUEUE_WHERE } }),
     prisma.payment.findMany({
       where: { status: "FAILED" },
       orderBy: { settledAt: "desc" },
