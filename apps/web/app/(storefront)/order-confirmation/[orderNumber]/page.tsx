@@ -17,7 +17,6 @@ import { pixelPurchase } from "@/lib/meta-pixel";
 import { useCartStore } from "@/store/cart";
 
 const SESSION_KEY = "lastOrderPhone";
-const PIXEL_PURCHASE_KEY = "pixelPurchaseTracked";
 const PAYMENT_TOAST_KEY = "paymentSuccessToastShown";
 
 function needsPaymentRetry(order: Order) {
@@ -51,8 +50,7 @@ export default function OrderConfirmationPage() {
       // checkout/page.tsx's onSubmit). The digital-payment checkout never clears the client cart
       // before redirecting to the gateway (a failed/cancelled attempt must leave it untouched for
       // retry), so this is the one place a *settled* payment's cart finally gets cleared. Same
-      // sessionStorage dedupe shape as the pixel-purchase guard below, so a refresh doesn't re-fire
-      // either of these.
+      // sessionStorage dedupe, so a refresh doesn't re-fire it.
       if (found.paymentMethod !== "COD" && found.paymentStatus === "PAID") {
         const toastKey = `${PAYMENT_TOAST_KEY}:${found.orderNumber}`;
         if (!sessionStorage.getItem(toastKey)) {
@@ -62,18 +60,10 @@ export default function OrderConfirmationPage() {
         }
       }
 
-      // Guards against double-counting the same order as a Purchase on a page refresh or a
-      // second phone-lookup submit — sessionStorage, not a ref, since a fresh mount (refresh)
-      // would otherwise re-fire it.
-      const trackedKey = `${PIXEL_PURCHASE_KEY}:${found.orderNumber}`;
-      if (!sessionStorage.getItem(trackedKey)) {
-        sessionStorage.setItem(trackedKey, "1");
-        pixelPurchase({
-          contentIds: found.items.map((i) => i.variantId),
-          value: Number(found.total),
-          numItems: found.items.reduce((sum, i) => sum + i.quantity, 0),
-        });
-      }
+      // `found` is the order as the backend has it — pixelPurchase itself decides whether it's a real
+      // completed purchase (not an unpaid/cancelled online attempt, not an old order looked up
+      // again) and guards against refreshes; the API already sent the server-side twin.
+      pixelPurchase(found);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not find this order");
     }

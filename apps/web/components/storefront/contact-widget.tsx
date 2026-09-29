@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, MessageCircleMore, MessageSquareText, Phone, X } from "lucide-react";
 import type { SocialLink, StoreSettings } from "@clothing-brand/shared";
+import { pixelContact } from "@/lib/meta-pixel";
 
 declare global {
   interface Window {
@@ -216,7 +217,12 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                     href={action.href}
                     target={action.external ? "_blank" : undefined}
                     rel={action.external ? "noreferrer" : undefined}
-                    onClick={() => setOpen(false)}
+                    onClick={() => {
+                      setOpen(false);
+                      // Opening WhatsApp / dialing is the contact itself — there's no later
+                      // "sent" signal to wait for from either app.
+                      if (action.key === "whatsapp" || action.key === "call") pixelContact(action.key);
+                    }}
                     aria-label={action.label}
                     className="glass glossy flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
                   >

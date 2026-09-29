@@ -86,6 +86,17 @@ export const env = {
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? "",
   },
+  // Optional — Meta Conversions API (server-side Purchase events, see lib/meta/). Stays fully inert
+  // until both pixelId and accessToken are set. Outside NODE_ENV=production it additionally refuses
+  // to send anything unless testEventCode is set too, so a dev machine with a copied production
+  // .env can only ever reach Events Manager's Test Events tab, never real conversion data. The
+  // access token is server-only — never give it a NEXT_PUBLIC_ name.
+  meta: {
+    pixelId: process.env.META_PIXEL_ID ?? "",
+    accessToken: process.env.META_ACCESS_TOKEN ?? "",
+    apiVersion: process.env.META_API_VERSION || "v24.0",
+    testEventCode: process.env.META_TEST_EVENT_CODE ?? "",
+  },
   // Optional — without an API key, "Book with Steadfast" returns a clear "not configured" error
   // instead of faking a booking. webhookToken is a shared secret of our own choosing (not issued
   // by Steadfast) since their delivery-status webhook carries no signature — it must be pasted

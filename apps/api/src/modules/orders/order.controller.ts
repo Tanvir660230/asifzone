@@ -3,6 +3,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
+import { metaContextFromRequest } from "../../lib/meta/capi";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -28,12 +29,16 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   // opens a PaymentSession (no Order, no stock touched) and the Order is materialized later, in
   // settlePaymentSession, only once the gateway confirms success — a failed/cancelled attempt never
   // produces an Order at all, only the Payment FAILED row that already serves as its payment log.
+  // Captured here, from the shopper's own request, because it's the last point that has one — an
+  // online payment's Order is only written later from a gateway callback/IPN/cron (lib/meta/).
+  const metaContext = metaContextFromRequest(req);
+
   if (req.body.paymentMethod === "COD") {
-    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { idempotencyKey: idempotencyKeyOf(req) });
+    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { idempotencyKey: idempotencyKeyOf(req), metaContext });
     return res.status(201).json({ order });
   }
 
-  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req));
+  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req), metaContext);
   res.status(201).json({ gatewayUrl });
 });
 

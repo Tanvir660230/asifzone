@@ -48,6 +48,8 @@ import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
 import { notifyReplenished, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
+import { enqueueMetaPurchase } from "../../lib/meta/purchase";
+import type { MetaRequestContext } from "../../lib/meta/capi";
 
 const include = {
   items: true,
@@ -261,6 +263,10 @@ export async function insertOrderRecord(
     // exactly as the customer was quoted and charged.
     itemSnapshots?: OrderItemSnapshot[];
     idempotencyKey?: string | null;
+    // Set only by the two storefront paths (COD checkout, settled gateway payment) — its presence is
+    // what marks this as a website conversion to report to Meta. An admin-entered phone/Facebook
+    // order never passes it: that sale didn't happen on the website.
+    metaContext?: MetaRequestContext;
   } = {},
 ) {
   const snapshots = opts.itemSnapshots ?? pricing.itemSnapshots ?? [];
@@ -376,6 +382,8 @@ export async function insertOrderRecord(
   sendCustomerOrderSms(order, opts.customerSmsTouchpoint ?? "PLACED");
   sendAdminOrderAlertSms(order);
 
+  if (opts.metaContext) enqueueMetaPurchase(order.id, opts.metaContext);
+
   // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
   // abandonment sweep must not fire on it.
   if (pricing.customerId) {
@@ -410,8 +418,9 @@ export async function createOrder(
   input: CheckoutInput,
   customerId: string | null = null,
   // Only the admin "Create order" path sets changedByAdminId/statusNote — attributes the order's opening PENDING
-  // statusHistory entry to the staff member who entered it. idempotencyKey comes from the Idempotency-Key header.
-  opts: { changedByAdminId?: string; statusNote?: string; idempotencyKey?: string | null } = {},
+  // statusHistory entry to the staff member who entered it. idempotencyKey comes from the Idempotency-Key header;
+  // metaContext (storefront checkout only) marks a website conversion to report to Meta.
+  opts: { changedByAdminId?: string; statusNote?: string; idempotencyKey?: string | null; metaContext?: MetaRequestContext } = {},
 ) {
   // Idempotency: one lock-and-dedupe mechanism, keyed by the Idempotency-Key header when the client sends one (durable:
   // Order.idempotencyKey is unique), else by the storefront's own client-generated sessionId (the pre-existing
@@ -468,6 +477,7 @@ export async function createOrder(
       changedByAdminId: opts.changedByAdminId,
       statusNote: opts.statusNote,
       idempotencyKey: key,
+      metaContext: opts.metaContext,
     });
   } catch (err) {
     // Two requests with the same key raced past the lock (Redis down): the unique index let exactly one in.

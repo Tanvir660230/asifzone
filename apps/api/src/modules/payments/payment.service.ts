@@ -14,6 +14,7 @@ import { loyaltyBase, reverseDeliveryPoints } from "../customers/customer.servic
 import { getSettings } from "../settings/settings.service";
 import { initEpsSession, verifyEpsTransaction } from "./eps.service";
 import { initSslcommerzSession } from "./sslcommerz.service";
+import type { MetaRequestContext } from "../../lib/meta/capi";
 
 /** What's snapshotted onto PaymentSession.checkoutPayload when a storefront digital-payment
  * checkout starts a session with no Order yet (see initiatePendingPayment). `pricing`/
@@ -26,6 +27,10 @@ export interface PendingCheckoutPayload {
   /** The canonical quote's order-level snapshot (Phase 2 fields optional: payloads from before Phase 2 still settle). */
   pricing: OrderPricingSnapshot;
   itemSnapshots: OrderItemSnapshot[];
+  /** The shopper's browser signals for the Meta Purchase event, captured at checkout because the
+   * settlement that finally writes the Order may be an IPN/cron with no browser behind it. Absent on
+   * sessions started before this existed. */
+  metaContext?: MetaRequestContext;
 }
 
 // Same lookback bound the EPS reconciliation sweep already used before this table existed.
@@ -157,6 +162,7 @@ export async function initiatePendingPayment(
   customerId: string | null,
   ipAddress?: string,
   idempotencyKey?: string | null,
+  metaContext?: MetaRequestContext,
 ): Promise<{ gatewayUrl: string; sessionId: string }> {
   if (input.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
 
@@ -173,7 +179,7 @@ export async function initiatePendingPayment(
   const itemSnapshots = pricing.itemSnapshots;
   const { customerId: _c, quote: _q, quoteToken: _t, rows: _r, itemSnapshots: _i, ...snapshot } = pricing;
   void _c; void _q; void _t; void _r; void _i;
-  const checkoutPayload: PendingCheckoutPayload = { input, customerId: pricing.customerId, pricing: snapshot, itemSnapshots };
+  const checkoutPayload: PendingCheckoutPayload = { input, customerId: pricing.customerId, pricing: snapshot, itemSnapshots, metaContext };
 
   // Same double-submit guard as createOrder's sessionLockKey (order.service.ts) — a double-click on
   // "Place Order" before the first request's response comes back would otherwise open two live
@@ -342,6 +348,8 @@ export async function settlePaymentSession(
       customerSmsTouchpoint: "CONFIRMED",
       allowOversell: true,
       itemSnapshots: payload!.itemSnapshots,
+      // Only a storefront checkout ever has a checkoutPayload, so this is always a website purchase.
+      metaContext: payload!.metaContext ?? {},
     });
     orderId = created.id;
     await prisma.paymentSession.update({ where: { id: session.id }, data: { orderId } });

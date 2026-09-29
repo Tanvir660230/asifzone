@@ -8,7 +8,7 @@ import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-da
 import { env } from "@/lib/env";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
-import { MetaPixelScript } from "@/components/analytics/meta-pixel-script";
+import { MetaPixel } from "@/components/analytics/meta-pixel";
 import { jsonLdString } from "@clothing-brand/shared";
 
 const inter = Inter({
@@ -89,7 +89,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
         <PageViewTracker />
         <HeatmapScript />
-        <MetaPixelScript />
+        <MetaPixel />
         <Providers>{children}</Providers>
       </body>
     </html>

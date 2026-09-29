@@ -20,6 +20,7 @@ import { registerCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
 import { env } from "@/lib/env";
+import { pixelCompleteRegistration } from "@/lib/meta-pixel";
 
 type Mode = "email" | "phone";
 
@@ -50,6 +51,7 @@ export default function AccountRegisterPage() {
     setServerError(null);
     try {
       await registerCustomer(values);
+      pixelCompleteRegistration();
       goToAccount();
     } catch (err) {
       setServerError(err instanceof ApiError ? err.message : "Registration failed, please try again");

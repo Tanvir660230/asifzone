@@ -76,6 +76,14 @@ services:
       STEADFAST_SECRET_KEY: ${STEADFAST_SECRET_KEY:-}
       STEADFAST_BASE_URL: ${STEADFAST_BASE_URL:-https://portal.packzy.com/api/v1}
       STEADFAST_WEBHOOK_TOKEN: ${STEADFAST_WEBHOOK_TOKEN:-}
+      # Meta Conversions API (server-side Purchase — apps/api/src/lib/meta/). The pixel id is the
+      # same value the web build bakes in as NEXT_PUBLIC_META_PIXEL_ID, reused rather than a second
+      # variable so the browser and server halves can never point at different pixels. Inert until
+      # META_ACCESS_TOKEN is set too.
+      META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      META_API_VERSION: ${META_API_VERSION:-}
+      META_TEST_EVENT_CODE: ${META_TEST_EVENT_CODE:-}
     volumes:
       - uploads_data:/repo/apps/api/uploads
     ports:
