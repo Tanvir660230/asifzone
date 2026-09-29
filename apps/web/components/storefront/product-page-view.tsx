@@ -71,7 +71,7 @@ function Block({ section, product }: { section: PublicSection; product: Product 
   return null;
 }
 
-const NO_SIGNALS = { totalViews: 0, recentPurchaseCount: 0, unitsSoldLast7Days: 0, isFastSelling: false };
+const NO_SIGNALS = { isFastSelling: false };
 
 interface ProductPageViewProps {
   product: Product;

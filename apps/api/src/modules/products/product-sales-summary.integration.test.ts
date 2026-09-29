@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
+import { cacheDelByPrefix } from "../../config/redis";
 import { signAccessToken } from "../../lib/jwt";
 
 /** The admin-only "sold in the last 7 days" figure shown on the storefront product page. */
@@ -95,11 +96,33 @@ describe("GET /api/products/:id/sales-summary", () => {
     expect(new Date(res.body.since).getTime()).toBeLessThan(Date.now() - 6.9 * 24 * 60 * 60 * 1000);
   });
 
-  it("agrees with the figure customers are shown (same rule)", async () => {
+  it("the public signals carry no sales numbers — only 'selling fast', by the same 7-day rule", async () => {
     const publicSignals = await request(app).get(`/api/products/${productId}/urgency-signals`);
     const admin = await as("OWNER").get(`/api/products/${productId}/sales-summary`);
     expect(publicSignals.status).toBe(200);
-    expect(publicSignals.body.unitsSoldLast7Days).toBe(admin.body.unitsSold);
+    expect(publicSignals.body).toEqual({ isFastSelling: false }); // 8 sold vs 100 in stock
+    expect(publicSignals.body).not.toHaveProperty("unitsSoldLast7Days");
+    expect(publicSignals.body).not.toHaveProperty("recentPurchaseCount");
+
+    // Same rule as the admin figure: once 7-day units sold reach the stock, it's "selling fast".
+    const stock = (await prisma.productVariant.aggregate({ where: { productId }, _sum: { stock: true } }))._sum.stock ?? 0;
+    await prisma.productVariant.updateMany({ where: { productId }, data: { stock: 0 } });
+    await prisma.productVariant.update({ where: { id: variants[0]!.id }, data: { stock: admin.body.unitsSold } });
+    await cacheDelByPrefix("products:urgency");
+    expect((await request(app).get(`/api/products/${productId}/urgency-signals`)).body).toEqual({ isFastSelling: true });
+    await prisma.productVariant.update({ where: { id: variants[0]!.id }, data: { stock } }); // put it back
+    await cacheDelByPrefix("products:urgency");
+  });
+
+  it("the view count is admin-only: on the sales summary, never on the public signals", async () => {
+    await Promise.all([1, 2, 3].map(() => request(app).post(`/api/products/${productId}/view`)));
+    const views = await prisma.productViewLog.count({ where: { productId } });
+    expect(views).toBeGreaterThanOrEqual(3);
+    const admin = await as("STAFF").get(`/api/products/${productId}/sales-summary`);
+    expect(admin.body.totalViews).toBe(views);
+    const publicSignals = await request(app).get(`/api/products/${productId}/urgency-signals`);
+    expect(publicSignals.status).toBe(200);
+    expect(publicSignals.body).not.toHaveProperty("totalViews");
   });
 
   it("is admin-only: no session is refused, and an unknown product is a 404", async () => {

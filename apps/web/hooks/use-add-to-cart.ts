@@ -29,25 +29,27 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
   const setExpressItem = useExpressCheckoutStore((s) => s.setItem);
   const [justAdded, setJustAdded] = useState(false);
 
-  function buildCartItem() {
-    if (!selectedVariant) return null;
+  // `variant` overrides the hook's selectedVariant — the options popup acts on the variant just chosen in it, before
+  // that choice has flowed back into the page's state.
+  function buildCartItem(variant: ProductVariant | undefined = selectedVariant) {
+    if (!variant) return null;
     return {
-      variantId: selectedVariant.id,
+      variantId: variant.id,
       productId,
       productSlug,
       productName,
-      sku: selectedVariant.sku,
-      size: selectedVariant.size,
-      color: selectedVariant.color,
-      price: Number(variantDisplayPrice(product, selectedVariant.id).price),
+      sku: variant.sku,
+      size: variant.size,
+      color: variant.color,
+      price: Number(variantDisplayPrice(product, variant.id).price),
       imageUrl,
       // D5: an untracked product has no stock ceiling (only the per-line maximum).
-      maxStock: maxSellableQuantity(product.trackInventory, selectedVariant.stock),
+      maxStock: maxSellableQuantity(product.trackInventory, variant.stock),
     };
   }
 
-  function addToCart(quantity: number) {
-    const item = buildCartItem();
+  function addToCart(quantity: number, variant?: ProductVariant) {
+    const item = buildCartItem(variant);
     if (!item) return;
     addItem(item, quantity);
     pixelAddToCart({ contentId: item.productId, contentName: productName, value: item.price, quantity });
@@ -56,8 +58,8 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     setTimeout(() => setJustAdded(false), 2500);
   }
 
-  function buyNow(quantity: number) {
-    const item = buildCartItem();
+  function buyNow(quantity: number, variant?: ProductVariant) {
+    const item = buildCartItem(variant);
     if (!item) return;
     setExpressItem({ ...item, quantity });
     pixelAddToCart({ contentId: item.productId, contentName: productName, value: item.price, quantity });

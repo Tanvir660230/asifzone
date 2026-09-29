@@ -6,6 +6,7 @@ import { pickGalleryImages, type Product, type ProductVariant } from "@clothing-
 import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
+import type { PickerIntent } from "@/components/storefront/variant-picker-dialog";
 import { UrgencySignals } from "@/components/storefront/urgency-signals";
 import { AdminSalesBadge } from "@/components/storefront/admin-sales-badge";
 import { CountdownTimer } from "@/components/storefront/countdown-timer";
@@ -38,20 +39,14 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
   const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
-  const [highlightMissing, setHighlightMissing] = useState(false);
+  // The sticky bar's Add to Cart / Buy Now with no choice yet opens the same options popup as the inline buttons.
+  const [pickerRequest, setPickerRequest] = useState<{ intent: PickerIntent; nonce: number } | null>(null);
   // Spec groups, size guide and variant dimensions arrive resolved from the product's type template.
   const resolved = product.resolved;
   const buttonsRef = useRef<HTMLDivElement>(null);
-  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Triggered when Add to Cart/Buy Now is clicked before a size/color is chosen — scrolls the
-  // selector into view and briefly highlights whichever picker still needs a choice, so the
-  // shopper isn't left staring at a button that just silently refuses to do anything.
-  function handleRequireSelection() {
-    buttonsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightMissing(true);
-    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
-    highlightTimeoutRef.current = setTimeout(() => setHighlightMissing(false), 1600);
+  function handleRequireSelection(intent: PickerIntent) {
+    setPickerRequest({ intent, nonce: Date.now() });
   }
 
   // Shows the mobile sticky bar only once the inline Add to Cart/Buy Now buttons have scrolled out
@@ -67,12 +62,6 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
-    };
   }, []);
 
   // What the shopper is looking at follows their choice: the selected colour's own images (then the shared ones),
@@ -134,8 +123,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             showSizeGuide={showSizeGuideLink && (resolved?.sizeGuide.show ?? false)}
             onVariantChange={setSelectedVariant}
             onSelectionChange={setSelection}
-            highlightMissing={highlightMissing}
-            onRequireSelection={handleRequireSelection}
+            pickerRequest={pickerRequest}
           />
         </div>
 

@@ -1,4 +1,4 @@
-import { Eye, Flame } from "lucide-react";
+import { Flame } from "lucide-react";
 import type { UrgencySignals as UrgencySignalsData } from "@clothing-brand/shared";
 
 interface UrgencySignalsProps {
@@ -11,22 +11,13 @@ interface UrgencySignalsProps {
  * render inconsistently across OS/browser emoji fonts and clash with the site's restrained,
  * monochrome-plus-one-accent palette.
  *
- * Views are a lifetime total, not "today" — a per-day count resets to a small number every
- * midnight and can look like nobody's interested on a slow morning; the running total only ever
- * climbs. Purchase counts (last 24h, last 7 days) are deliberately never shown to shoppers — the
- * shop doesn't reveal its sales volume; the units-sold figure is admin-only (AdminSalesBadge). */
+ * The view count and sales counts are never sent to shoppers at all (the public API carries only this yes/no flag) — the
+ * shop doesn't reveal its traffic or sales volume; views and units sold are admin-only (AdminSalesBadge). */
 export function UrgencySignals({ signals }: UrgencySignalsProps) {
-  const hasAny = signals.totalViews > 0 || signals.isFastSelling;
-  if (!hasAny) return null;
+  if (!signals.isFastSelling) return null;
 
   return (
     <div className="mt-3 space-y-1.5 text-sm text-ink-600">
-      {signals.totalViews > 0 && (
-        <p className="flex items-center gap-1.5">
-          <Eye size={14} className="shrink-0 text-ink-400" />
-          {signals.totalViews} total view{signals.totalViews === 1 ? "" : "s"}
-        </p>
-      )}
       {signals.isFastSelling && (
         <p className="flex items-center gap-1.5 font-medium text-sale-500">
           <Flame size={14} className="shrink-0" />

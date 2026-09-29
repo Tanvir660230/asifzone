@@ -239,12 +239,10 @@ export interface RatingBreakdown {
   counts: Record<"5" | "4" | "3" | "2" | "1", number>;
 }
 
-/** Real, aggregate signals for a single product's PDP — never fabricated. Every field is a
- * genuine count (or null/0/false) derived from real orders, views, and stock. */
+/** Public product-page signals — never fabricated, and never a number: the shop doesn't publish its traffic or sales
+ * volume. Views and units sold are admin-only (ProductSalesSummary: totalViews, unitsSold). */
 export interface UrgencySignals {
-  totalViews: number;
-  recentPurchaseCount: number;
-  unitsSoldLast7Days: number;
+  /** Units sold in the last 7 days (same rule as the admin's unitsSold) ≥ current stock. */
   isFastSelling: boolean;
 }
 

@@ -125,4 +125,6 @@ export interface ProductSalesSummary {
   /** Orders that contained this product. */
   orders: number;
   byVariant: { variantId: string; sku: string; size: string; color: string; units: number }[];
+  /** Lifetime product-page views — admin-only (never on the public urgency-signals response). */
+  totalViews: number;
 }

@@ -132,11 +132,11 @@ export function CompareBar() {
               <tr className="border-t border-ink-100">
                 <td className="py-2 text-xs uppercase tracking-wide text-ink-400">In stock</td>
                 {items.map((product) => {
-                  // Server-derived availability (D5: an untracked product is always available).
+                  // Server-derived availability (D5: an untracked product is always available). A state, never a quantity.
                   const availability = availabilityOf(product);
                   return (
                     <td key={product.id} className={`p-2 ${availability.inStock ? "text-success-600" : "text-danger-600"}`}>
-                      {!availability.inStock ? "Sold out" : availability.sellableUnits === null ? "In stock" : `${availability.sellableUnits} available`}
+                      {availability.inStock ? "In stock" : "Sold out"}
                     </td>
                   );
                 })}

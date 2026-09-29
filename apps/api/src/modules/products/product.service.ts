@@ -20,6 +20,7 @@ import {
   validateProductAgainstConfig,
   type ProductRelationsInput,
   type ProductSalesSummary,
+  type UrgencySignals,
   type ResolvedSection,
   NO_SIZE_VALUE,
   type AttributeDataType,
@@ -1085,7 +1086,8 @@ const URGENCY_CACHE_TTL_SECONDS = 60;
  * so the two numbers can never disagree. */
 const NOT_A_SALE = ["CANCELLED", "REFUNDED"] as const;
 
-/** Admin-only: how many units of a product sold in the last `days` days, and in how many orders. Not cached (few readers). */
+/** Admin-only: how many units of a product sold in the last `days` days, in how many orders, and its lifetime page views.
+ * Not cached (few readers). */
 export async function getProductSalesSummary(productId: string, days = 7): Promise<ProductSalesSummary> {
   if (!(await prisma.product.findUnique({ where: { id: productId }, select: { id: true } }))) throw AppError.notFound("Product not found");
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -1107,6 +1109,8 @@ export async function getProductSalesSummary(productId: string, days = 7): Promi
     productId,
     days,
     since: since.toISOString(),
+    // Views are the shop's own figure — shown to admins only, never to shoppers.
+    totalViews: await prisma.productViewLog.count({ where: { productId } }),
     unitsSold: items.reduce((sum, i) => sum + i.quantity, 0),
     orders: new Set(items.map((i) => i.orderId)).size,
     byVariant: [...byVariant.values()].sort((a, b) => b.units - a.units),
@@ -1114,52 +1118,34 @@ export async function getProductSalesSummary(productId: string, days = 7): Promi
 }
 
 export async function getUrgencySignals(productId: string) {
-  const cacheKey = `${CACHE_PREFIX}urgency:${productId}`;
-  const cached = await cacheGet<{
-    totalViews: number;
-    recentPurchaseCount: number;
-    unitsSoldLast7Days: number;
-    isFastSelling: boolean;
-  }>(cacheKey);
+  // Public: only the yes/no "selling fast" flag. View and sales counts are admin-only (getProductSalesSummary). v3 key so
+  // no cached older copy (which still carried the counts) is ever served.
+  const cacheKey = `${CACHE_PREFIX}urgency:v3:${productId}`;
+  const cached = await cacheGet<UrgencySignals>(cacheKey);
   if (cached) return cached;
 
-  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const variantIds = (await prisma.productVariant.findMany({ where: { productId }, select: { id: true } })).map(
     (v) => v.id,
   );
 
-  // Lifetime count rather than "today" — a per-day count resets to a small, unimpressive number
-  // every midnight and reads as "nobody's looking at this" on a slow morning; the running total
-  // only ever goes up.
-  const [totalViews, weekOrderItems, stockAgg] = await Promise.all([
-    prisma.productViewLog.count({ where: { productId } }),
+  const [weekOrderItems, stockAgg] = await Promise.all([
     variantIds.length
       ? prisma.orderItem.findMany({
           where: {
             variantId: { in: variantIds },
             order: { status: { notIn: [...NOT_A_SALE] }, createdAt: { gte: since7d } },
           },
-          select: { quantity: true, order: { select: { createdAt: true } } },
+          select: { quantity: true },
         })
       : [],
     prisma.productVariant.aggregate({ where: { productId }, _sum: { stock: true } }),
   ]);
 
   const unitsSoldLast7Days = weekOrderItems.reduce((sum, i) => sum + i.quantity, 0);
-  const recentPurchaseCount = weekOrderItems
-    .filter((i) => i.order.createdAt >= since24h)
-    .reduce((sum, i) => sum + i.quantity, 0);
   const stock = stockAgg._sum.stock ?? 0;
-  const isFastSelling = stock > 0 && unitsSoldLast7Days >= stock;
-
-  const signals = {
-    totalViews,
-    recentPurchaseCount,
-    unitsSoldLast7Days,
-    isFastSelling,
-  };
+  const signals: UrgencySignals = { isFastSelling: stock > 0 && unitsSoldLast7Days >= stock };
 
   await cacheSet(cacheKey, signals, URGENCY_CACHE_TTL_SECONDS);
   return signals;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ShoppingBag, Eye, Scale } from "lucide-react";
@@ -16,6 +16,7 @@ import { useCompareStore } from "@/store/compare";
 import { WishlistButton } from "./wishlist-button";
 import { PromoBadge, getProductBadge } from "./promo-badge";
 import { StarRating } from "./star-rating";
+import { VariantPickerDialog } from "./variant-picker-dialog";
 
 interface ProductCardProps {
   product: Product;
@@ -43,6 +44,9 @@ export function ProductCard({ product, priority }: ProductCardProps) {
   // hand-built cart item, so a future change to add-to-cart logic can't miss this path. Its price is
   // the server-resolved price, the same one the PDP and checkout use.
   const firstInStockVariant = sellableVariants[0];
+  // More than one buyable option is a real choice: quick add asks (the options popup) instead of silently picking one.
+  const needsChoice = sellableVariants.length > 1;
+  const [pickerOpen, setPickerOpen] = useState(false);
   const { addToCart, justAdded } = useAddToCart({
     selectedVariant: firstInStockVariant,
     productId: product.id,
@@ -73,7 +77,8 @@ export function ProductCard({ product, priority }: ProductCardProps) {
   function handleQuickAdd(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    addToCart(1);
+    if (needsChoice) setPickerOpen(true);
+    else addToCart(1);
   }
 
   return (
@@ -191,6 +196,25 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           </div>
         )}
       </Link>
+      {/* Rendered outside both Links (and portalled to <body>), so a tap inside it can never navigate the card. Mounted
+          only while open — a listing has dozens of cards. */}
+      {pickerOpen && (
+        <VariantPickerDialog
+          open
+          intent="cart"
+          onClose={() => setPickerOpen(false)}
+          onConfirm={(variant, quantity) => {
+            setPickerOpen(false);
+            addToCart(quantity, variant);
+          }}
+          variants={product.variants}
+          product={product}
+          lowStockThreshold={product.lowStockThreshold}
+          productName={product.name}
+          imageUrl={primaryImage?.url ?? null}
+          variantDimensions={product.resolved?.variantDimensions}
+        />
+      )}
     </div>
   );
 }

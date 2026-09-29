@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check } from "lucide-react";
-import { NO_SIZE_VALUE, type ProductVariant, type SizeGuideData, type VariantDimension, isAvailable, maxSellableQuantity, variantStockState, type Product } from "@clothing-brand/shared";
+import { maxSellableQuantity, type Product, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
-import { cn, isPaleColor } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import { trackFunnelEvent } from "@/lib/analytics";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
@@ -13,8 +12,8 @@ import { useCartDrawerStore } from "@/store/cart-drawer";
 import { WishlistButton } from "./wishlist-button";
 import { StockAlertButton } from "./stock-alert-button";
 import { SizeGuideModal } from "./size-guide-modal";
-
-const CRITICAL_STOCK_THRESHOLD = 3;
+import { STOCK_TONE_CLASS, VariantOptionPickers, missingSelectionText, stockLine, useVariantOptions } from "./variant-option-pickers";
+import { VariantPickerDialog, type PickerIntent } from "./variant-picker-dialog";
 
 interface VariantSelectorProps {
   variants: ProductVariant[];
@@ -42,12 +41,9 @@ interface VariantSelectorProps {
   onFocusImageChange?: (imageId: string | null) => void;
   /** Called whenever the chosen size and/or colour changes (null = not chosen yet) — the parent uses it to pick the gallery. */
   onSelectionChange?: (selection: { size: string | null; color: string | null }) => void;
-  /** True for a brief moment after the shopper tries to Add to Cart/Buy Now without finishing their
-   * selection — draws attention to whichever picker (size and/or color) still needs a choice. */
-  highlightMissing?: boolean;
-  /** Called when Add to Cart/Buy Now is clicked with no variant selected yet, so the parent can
-   * scroll this selector into view (used by the mobile sticky bar, which lives lower on the page). */
-  onRequireSelection?: () => void;
+  /** Opens the "choose your options" popup from outside (the mobile sticky bar's Add to Cart / Buy Now). A new `nonce`
+   * opens it again. */
+  pickerRequest?: { intent: PickerIntent; nonce: number } | null;
 }
 
 export function VariantSelector({
@@ -65,32 +61,16 @@ export function VariantSelector({
   onVariantChange,
   onFocusImageChange,
   onSelectionChange,
-  highlightMissing,
-  onRequireSelection,
+  pickerRequest,
 }: VariantSelectorProps) {
-  const sizeDim = variantDimensions.find((d) => d.targetField === "size");
-  const colorDim = variantDimensions.find((d) => d.targetField === "color");
-
-  const sizes = useMemo(() => Array.from(new Set(variants.map((v) => v.size))), [variants]);
-  const colors = useMemo(() => Array.from(new Set(variants.map((v) => v.color))).filter(Boolean), [variants]);
-  // A picker is shown when the type has that dimension (Volume, Case Size, Color, ...) or when the
-  // data really offers a choice. A single value (e.g. "Standard", or no color at all) is
-  // auto-selected below and needs no picker — a lone "Standard" size is a placeholder, not a value
-  // worth showing, even on a type that has a size dimension.
-  const onlyPlaceholderSize = sizes.length === 1 && sizes[0] === NO_SIZE_VALUE;
-  const showSizes = sizes.length > 0 && !onlyPlaceholderSize && (Boolean(sizeDim) || sizes.length > 1);
-  const showColors = colors.length > 0 && (Boolean(colorDim) || colors.length > 1);
-  const sizeLabel = sizeDim?.label ?? "Size";
-  const colorLabel = colorDim?.label ?? "Color";
-
-  const [selectedSize, setSelectedSize] = useState<string | null>(sizes.length === 1 ? (sizes[0] ?? null) : null);
-  const [selectedColor, setSelectedColor] = useState<string | null>(colors.length === 1 ? (colors[0] ?? null) : null);
+  const options = useVariantOptions(variants, variantDimensions);
+  const [selectedSize, setSelectedSize] = useState<string | null>(options.defaultSize);
+  const [selectedColor, setSelectedColor] = useState<string | null>(options.defaultColor);
   const [quantity, setQuantity] = useState(1);
+  // Add to Cart / Buy Now pressed before the choice is complete → the options popup, for that action.
+  const [pickerIntent, setPickerIntent] = useState<PickerIntent | null>(null);
 
-  // Products without any color (e.g. Islamic Product) have nothing to match on for color.
-  const selectedVariant = variants.find(
-    (v) => v.size === selectedSize && (colors.length === 0 || v.color === selectedColor),
-  );
+  const selectedVariant = options.resolve(selectedSize, selectedColor);
   const { addToCart, buyNow, justAdded } = useAddToCart({
     selectedVariant,
     productId,
@@ -112,9 +92,7 @@ export function VariantSelector({
 
   // Previews the picked color's photo as soon as a color is chosen, without waiting for a size too —
   // any variant of that color carries the same photo, so the first one with an assigned image will do.
-  const focusImageId = selectedColor
-    ? (variants.find((v) => v.color === selectedColor && v.imageId)?.imageId ?? null)
-    : null;
+  const focusImageId = selectedColor ? (variants.find((v) => v.color === selectedColor && v.imageId)?.imageId ?? null) : null;
   useEffect(() => {
     onSelectionChange?.({ size: selectedSize, color: selectedColor });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,169 +103,55 @@ export function VariantSelector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusImageId]);
 
-  // Availability is the shared rule (D5): an untracked product is always sellable.
-  const sellable = (v: ProductVariant) => isAvailable(product.trackInventory, v.stock);
-  // The shared stock-state rule (the same function the server's read model uses) — this component only picks words.
-  const selectedState = selectedVariant ? variantStockState(product.trackInventory, selectedVariant.stock, lowStockThreshold) : null;
-  const maxQty = selectedVariant ? maxSellableQuantity(product.trackInventory, selectedVariant.stock) : 0;
-  const sizeHasStock = (size: string) => variants.some((v) => v.size === size && sellable(v));
-  const comboHasStock = (size: string, color: string) => variants.some((v) => v.size === size && v.color === color && sellable(v));
+  useEffect(() => {
+    if (pickerRequest) setPickerIntent(pickerRequest.intent);
+  }, [pickerRequest]);
 
-  const sizeMissing = showSizes && !selectedSize;
-  const colorMissing = showColors && !selectedColor;
+  const maxQty = selectedVariant ? maxSellableQuantity(product.trackInventory, selectedVariant.stock) : 0;
+  const stock = selectedVariant ? stockLine(product.trackInventory, selectedVariant.stock, lowStockThreshold) : null;
+
+  // The quantity shown is capped to what this variant can sell; the action uses exactly that number (a larger quantity
+  // picked on another variant must not carry over — express checkout doesn't cap it later).
+  const effectiveQty = Math.max(1, Math.min(quantity, maxQty));
 
   function handleAddToCart() {
-    if (!selectedVariant) {
-      onRequireSelection?.();
-      return;
-    }
-    addToCart(quantity);
+    if (!selectedVariant) return setPickerIntent("cart");
+    addToCart(effectiveQty);
   }
 
   function handleBuyNow() {
-    if (!selectedVariant) {
-      onRequireSelection?.();
-      return;
-    }
-    buyNow(quantity);
+    if (!selectedVariant) return setPickerIntent("buy");
+    buyNow(effectiveQty);
+  }
+
+  // The popup's choice becomes the page's choice too (gallery, price, sticky bar follow it), then the action runs.
+  function handlePickerConfirm(variant: ProductVariant, qty: number) {
+    const intent = pickerIntent;
+    setSelectedSize(variant.size);
+    if (options.colors.length > 0) setSelectedColor(variant.color);
+    setQuantity(qty);
+    setPickerIntent(null);
+    if (intent === "buy") buyNow(qty, variant);
+    else addToCart(qty, variant);
   }
 
   return (
     <div className="space-y-5">
-      {showSizes && (
-        <div
-          className={cn(
-            "rounded-xl transition-shadow duration-200",
-            highlightMissing && sizeMissing && "animate-shake ring-2 ring-danger-500 ring-offset-2",
-          )}
-        >
-          <div className="mb-2 flex items-center justify-between">
-            <p className={cn("text-xs uppercase tracking-wide", highlightMissing && sizeMissing ? "font-medium text-danger-600" : "text-ink-500")}>
-              {sizeLabel}
-            </p>
-            {showSizeGuide && <SizeGuideModal sizeGuide={sizeGuide} />}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {sizes.map((size) => {
-              const sizeLabel = variants.find((v) => v.size === size)?.sizeLabel;
-              const inStock = sizeHasStock(size);
-              const isSelected = selectedSize === size;
-              return (
-                <motion.button
-                  key={size}
-                  onClick={() => setSelectedSize(size)}
-                  disabled={!inStock}
-                  aria-label={inStock ? size : `${size} — out of stock`}
-                  title={inStock ? undefined : "Out of stock"}
-                  whileTap={inStock ? { scale: 0.9 } : undefined}
-                  className={cn(
-                    "relative isolate flex h-10 min-w-10 items-center justify-center rounded-full border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
-                    isSelected
-                      ? "border-transparent text-cream-50"
-                      : inStock
-                        ? "border-ink-200 text-ink-700 hover:border-ink-900"
-                        : "border-danger-100 bg-danger-50 text-ink-400",
-                  )}
-                >
-                  {isSelected && (
-                    <motion.span
-                      layoutId="size-pill"
-                      className="glossy absolute inset-0 -z-10 rounded-full bg-ink-900 shadow-sm"
-                      transition={{ type: "spring", stiffness: 500, damping: 32 }}
-                    />
-                  )}
-                  {sizeLabel ? `${size} (${sizeLabel})` : size}
-                  {!inStock && (
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 -rotate-[14deg] rounded-full bg-danger-500/80"
-                    />
-                  )}
-                </motion.button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {showColors && (
-        <div
-          className={cn(
-            "rounded-xl transition-shadow duration-200",
-            highlightMissing && colorMissing && "animate-shake ring-2 ring-danger-500 ring-offset-2",
-          )}
-        >
-          <p className={cn("mb-2 text-xs uppercase tracking-wide", highlightMissing && colorMissing ? "font-medium text-danger-600" : "text-ink-500")}>
-            {colorLabel}{selectedColor ? ` — ${selectedColor}` : ""}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {colors.map((color) => {
-              const disabled = selectedSize ? !comboHasStock(selectedSize, color) : false;
-              const colorHex = variants.find((v) => v.color === color)?.colorHex;
-              const isSelected = selectedColor === color;
-              return (
-                <motion.button
-                  key={color}
-                  onClick={() => setSelectedColor(color)}
-                  disabled={disabled}
-                  title={disabled ? `${color} — out of stock in this size` : color}
-                  aria-label={disabled ? `${color} — out of stock in this size` : color}
-                  aria-pressed={isSelected}
-                  whileTap={!disabled ? { scale: 0.85 } : undefined}
-                  animate={isSelected ? { scale: [1, 1.12, 1] } : { scale: 1 }}
-                  transition={{ duration: 0.35, ease: "easeOut" }}
-                  className={cn(
-                    "relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-2 shadow-sm transition-all duration-200 ease-smooth disabled:cursor-not-allowed",
-                    isSelected
-                      ? "border-brass-400 ring-2 ring-brass-200"
-                      : disabled
-                        ? "border-ink-200"
-                        : isPaleColor(colorHex)
-                          ? "border-ink-300"
-                          : "border-ink-200",
-                  )}
-                  style={{ backgroundColor: colorHex ?? "#d4d4d4" }}
-                >
-                  {disabled && (
-                    <>
-                      {/* Wash the swatch color down instead of dimming the whole button, so the red
-                          out-of-stock mark on top stays at full, clearly-legible opacity. */}
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-cream-50/70" />
-                      {/* A light halo behind the red line keeps it legible over dark swatch colors too. */}
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 -rotate-45 rounded-full bg-cream-50/95"
-                      />
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-x-0 top-1/2 h-[1.5px] -translate-y-1/2 -rotate-45 rounded-full bg-danger-500"
-                      />
-                    </>
-                  )}
-                  <AnimatePresence>
-                    {isSelected && !disabled && (
-                      <motion.span
-                        key="check"
-                        initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0, opacity: 0 }}
-                        transition={{ type: "spring", stiffness: 500, damping: 22 }}
-                        className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-ink-900 shadow-sm"
-                      >
-                        <Check size={11} strokeWidth={3} />
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <VariantOptionPickers
+        variants={variants}
+        trackInventory={product.trackInventory}
+        options={options}
+        selectedSize={selectedSize}
+        selectedColor={selectedColor}
+        onSelectSize={setSelectedSize}
+        onSelectColor={setSelectedColor}
+        instanceId="inline"
+        sizeHeadingExtra={showSizeGuide ? <SizeGuideModal sizeGuide={sizeGuide} /> : undefined}
+      />
 
       <div>
         <AnimatePresence mode="wait">
-          {selectedVariant ? (
+          {selectedVariant && stock ? (
             <motion.div
               key={selectedVariant.id}
               initial={{ opacity: 0, y: -4 }}
@@ -295,32 +159,11 @@ export function VariantSelector({
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
             >
-              <p
-                className={cn(
-                  "text-sm",
-                  selectedState === "OUT_OF_STOCK" || selectedState === "UNLIMITED"
-                    ? "text-ink-500"
-                    : selectedVariant.stock <= CRITICAL_STOCK_THRESHOLD
-                      ? "font-medium text-danger-600"
-                      : selectedState === "LOW_STOCK"
-                        ? "font-medium text-brass-600"
-                        : "text-ink-500",
-                )}
-              >
-                {selectedState === "UNLIMITED"
-                  ? "In stock"
-                  : selectedState === "OUT_OF_STOCK"
-                  ? "Out of stock"
-                  : selectedVariant.stock <= CRITICAL_STOCK_THRESHOLD
-                    ? `Only ${selectedVariant.stock} left!`
-                    : selectedState === "LOW_STOCK"
-                      ? `Limited Stock — ${selectedVariant.stock} left`
-                      : `${selectedVariant.stock} in stock`}{" "}
-                · SKU {selectedVariant.sku}
+              {/* Stock is shown as a state, never a quantity. */}
+              <p className={cn("text-sm", STOCK_TONE_CLASS[stock.tone])} data-testid="variant-stock-status">
+                {stock.text} · SKU {selectedVariant.sku}
               </p>
-              {maxQty === 0 && restockDate && (
-                <p className="mt-1 text-sm text-ink-500">Expected back in stock: {formatDate(restockDate)}</p>
-              )}
+              {maxQty === 0 && restockDate && <p className="mt-1 text-sm text-ink-500">Expected back in stock: {formatDate(restockDate)}</p>}
               {maxQty === 0 && <StockAlertButton variantId={selectedVariant.id} />}
             </motion.div>
           ) : (
@@ -331,18 +174,9 @@ export function VariantSelector({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className={cn(
-                "text-sm transition-colors duration-200",
-                highlightMissing ? "font-medium text-danger-600" : "text-ink-500",
-              )}
+              className="text-sm text-ink-500"
             >
-              {sizeMissing && colorMissing
-                ? "Please select a size and color to continue"
-                : sizeMissing
-                  ? "Please select a size to continue"
-                  : colorMissing
-                    ? "Please select a color to continue"
-                    : "Select a size and color"}
+              {missingSelectionText(options, selectedSize, selectedColor)}
             </motion.p>
           )}
         </AnimatePresence>
@@ -360,15 +194,15 @@ export function VariantSelector({
             <p className="shrink-0 text-xs uppercase tracking-wide text-ink-500">Qty</p>
             <div className="flex items-center rounded-full border border-ink-200 shadow-sm">
               <button
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                onClick={() => setQuantity(Math.max(1, effectiveQty - 1))}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
                 aria-label="Decrease quantity"
               >
                 −
               </button>
-              <span className="w-10 text-center text-sm">{quantity}</span>
+              <span className="w-10 text-center text-sm">{effectiveQty}</span>
               <button
-                onClick={() => setQuantity((q) => Math.min(maxQty, q + 1))}
+                onClick={() => setQuantity(Math.min(maxQty, effectiveQty + 1))}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
                 aria-label="Increase quantity"
               >
@@ -381,22 +215,10 @@ export function VariantSelector({
 
       <div>
         <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="lg"
-            className="flex-1"
-            disabled={!!selectedVariant && maxQty === 0}
-            onClick={handleAddToCart}
-          >
+          <Button variant="outline" size="lg" className="flex-1" disabled={!!selectedVariant && maxQty === 0} onClick={handleAddToCart}>
             Add to Cart
           </Button>
-          <Button
-            variant="primary"
-            size="lg"
-            className="flex-1"
-            disabled={!!selectedVariant && maxQty === 0}
-            onClick={handleBuyNow}
-          >
+          <Button variant="primary" size="lg" className="flex-1" disabled={!!selectedVariant && maxQty === 0} onClick={handleBuyNow}>
             Buy Now
           </Button>
           <WishlistButton productId={productId} className="h-12 w-12 shrink-0 border border-ink-200 bg-cream-50" />
@@ -410,6 +232,22 @@ export function VariantSelector({
           </p>
         )}
       </div>
+
+      <VariantPickerDialog
+        open={pickerIntent !== null}
+        intent={pickerIntent ?? "cart"}
+        onClose={() => setPickerIntent(null)}
+        onConfirm={handlePickerConfirm}
+        variants={variants}
+        product={product}
+        lowStockThreshold={lowStockThreshold}
+        productName={productName}
+        imageUrl={imageUrl}
+        variantDimensions={variantDimensions}
+        initialSize={selectedSize}
+        initialColor={selectedColor}
+        initialQuantity={quantity}
+      />
     </div>
   );
 }
