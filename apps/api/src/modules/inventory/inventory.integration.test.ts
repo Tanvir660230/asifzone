@@ -14,7 +14,7 @@ import {
 import { deleteOrder, restoreOrder, updateOrderStatus } from "../orders/order.service";
 import { reviewReturnRequest } from "../return-requests/return-request.service";
 import { updateProduct } from "../products/product.service";
-import { adjustVariantStock } from "./inventory.service";
+import { adjustVariantStock, recordInitialStock } from "./inventory.service";
 
 // docs/INVENTORY_INVARIANTS.md — current stock = opening stock + every valid movement, after every kind of change.
 
@@ -161,5 +161,29 @@ describe("inventory ledger reconciliation", () => {
     expect((await owner.post(`/api/inventory/variants/${variants[0]!.id}/adjust`, { delta: 1, reason: "LOST" })).status).toBe(400);
     expect((await owner.post(`/api/inventory/variants/${variants[0]!.id}/adjust`, { delta: 1, reason: "CANCELLATION" })).status).toBe(400);
     expect(await stockOf(variants[0]!.id)).toBe(4);
+  });
+});
+
+describe("stock-write timestamps (Phase 1 raw SQL vs Prisma)", () => {
+  it("a stock change stamps ProductVariant.updatedAt in UTC, like Prisma's @updatedAt — whatever the DB session timezone", async () => {
+    const { variants } = await createStockedProduct({ stocks: [1] });
+    const id = variants[0]!.id;
+    const before = Date.now();
+    await prisma.$transaction(async (tx) => {
+      // Pin the session to the production timezone so the check doesn't depend on the server's setting.
+      await tx.$executeRawUnsafe(`SET LOCAL TIME ZONE 'Asia/Dhaka'`);
+      await recordInitialStock(tx, id, 2, "RESTOCK");
+    });
+    const after = Date.now();
+    const raw = (await prisma.productVariant.findUniqueOrThrow({ where: { id } })).updatedAt.getTime();
+    // Read back through Prisma (UTC) it is "now" — the old bare NOW() read back 6 hours in the future.
+    expect(raw).toBeGreaterThanOrEqual(before - 2_000);
+    expect(raw).toBeLessThanOrEqual(after + 2_000);
+    // …and a later Prisma write is later on the same clock (the two writers agree on ordering).
+    await prisma.productVariant.update({ where: { id }, data: { sizeLabel: "M" } });
+    const prismaStamp = (await prisma.productVariant.findUniqueOrThrow({ where: { id } })).updatedAt.getTime();
+    expect(prismaStamp).toBeGreaterThanOrEqual(raw);
+    expect(prismaStamp - raw).toBeLessThan(60_000);
+    expect(await stockOf(id)).toBe(3); // stock arithmetic unchanged
   });
 });

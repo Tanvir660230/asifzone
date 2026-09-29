@@ -24,15 +24,18 @@ const include = {
 
 /** Applies `delta` to one variant's stock and returns the new balance — or null when the variant no longer
  * exists, or when `guard` is set and a decrease would take stock below zero. Raw SQL so the new value comes
- * back from the same atomic statement (needed to spot a 0 → positive "back in stock" crossing). */
+ * back from the same atomic statement (needed to spot a 0 → positive "back in stock" crossing).
+ *
+ * `updatedAt` is a `timestamp` without time zone that Prisma reads and writes as UTC. A bare NOW() would store the
+ * DB session's local wall clock (Asia/Dhaka, +6 h), so the stamp is taken in UTC — the same semantics as @updatedAt. */
 async function applyDelta(tx: Tx, variantId: string, delta: number, guard: boolean): Promise<number | null> {
   const rows = guard
     ? await tx.$queryRaw<Array<{ stock: number }>>`
-        UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = NOW()
+        UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = (NOW() AT TIME ZONE 'UTC')
         WHERE id = ${variantId} AND stock + ${delta} >= 0
         RETURNING stock`
     : await tx.$queryRaw<Array<{ stock: number }>>`
-        UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = NOW()
+        UPDATE "ProductVariant" SET stock = stock + ${delta}, "updatedAt" = (NOW() AT TIME ZONE 'UTC')
         WHERE id = ${variantId}
         RETURNING stock`;
   return rows[0]?.stock ?? null;

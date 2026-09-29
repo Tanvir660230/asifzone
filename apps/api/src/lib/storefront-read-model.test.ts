@@ -36,7 +36,7 @@ describe("stock state (canonical inventory state + D5)", () => {
     expect(variantStockState(true, 6, 5)).toBe("IN_STOCK");
   });
 
-  it("per product: only ACTIVE variants count; sellable units, in-stock flag and state", () => {
+  it("per product: only ACTIVE variants count; sellable units, in-stock flag and state (no product-level LOW_STOCK)", () => {
     const tracked = productAvailability({
       trackInventory: true,
       lowStockThreshold: 5,
@@ -46,7 +46,8 @@ describe("stock state (canonical inventory state + D5)", () => {
         { id: "gone", stock: 99, isActive: false },
       ],
     });
-    expect([tracked.state, tracked.inStock, tracked.sellableUnits]).toEqual(["LOW_STOCK", true, 3]);
+    // 3 units ≤ threshold 5: the VARIANT is LOW_STOCK, the product is just IN_STOCK (no approved product-level rule).
+    expect([tracked.state, tracked.inStock, tracked.sellableUnits]).toEqual(["IN_STOCK", true, 3]);
     expect(Object.keys(tracked.variants).sort()).toEqual(["a", "b"]); // an inactive variant is never offered
     expect(tracked.variants.b).toEqual({ state: "OUT_OF_STOCK", sellable: false, maxQuantity: 0 });
     expect(tracked.variants.a).toEqual({ state: "LOW_STOCK", sellable: true, maxQuantity: 3 });

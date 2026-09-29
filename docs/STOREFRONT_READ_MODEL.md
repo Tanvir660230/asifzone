@@ -136,15 +136,19 @@ canonical inventory state (`ProductVariant.stock`, written only by `inventory.se
 |---|---|
 | `UNLIMITED` | `trackInventory = false` (D5) — always sellable, whatever the stock number says |
 | `OUT_OF_STOCK` | tracked and no active variant has stock |
-| `LOW_STOCK` | tracked, sellable, and stock (variant) or total sellable units (product) ≤ `lowStockThreshold`. This is the same threshold the admin low-stock alert uses. |
+| `LOW_STOCK` | **variant level only**: tracked, sellable, and the variant's stock ≤ the product's `lowStockThreshold` (the existing per-variant rule, as in the admin low-stock alert and the PDP label) |
 | `IN_STOCK` | otherwise |
 
 Only **active** variants count. `sellable` = `isAvailable`, `maxQuantity` = `maxSellableQuantity` (Phase 2
 functions). This is a **derivation for display**, not a business rule. It is computed on every read and never
 persisted, so the read model is never a second inventory writer (tested: a full rebuild changes no stock and writes
-no `StockMovement`). The product-level `LOW_STOCK` label is a display classification introduced here. It applies the
-existing per-product threshold to the product's total sellable units. No UI decision uses it yet (the card's
-"Limited Item" badge keeps its presentation constant, now fed by the server's `sellableUnits`).
+no `StockMovement`).
+
+**Product level** (`availability.state`) is only `UNLIMITED`, `IN_STOCK` or `OUT_OF_STOCK`. There is no product-level
+`LOW_STOCK`, because no approved rule defines one. A first draft of Phase 3 applied the threshold to the product's total
+units; that was removed at sign-off (2026-09-29). Low stock is per variant (`availability.variants[id].state`), exactly
+as before Phase 3. The card's "Limited Item" badge keeps its own presentation constant, now fed by the server's
+`sellableUnits`.
 
 The PDP's detail row is Redis-cached (120 s) for its heavy content. Variant stock is re-read live on every PDP
 request, so `availability` is never the cached copy's. The web tier's own fetch-cache windows (`REVALIDATE_SECONDS`,
@@ -206,6 +210,7 @@ plus `GET /api/v1/storefront/read-model/drift` → `{ "drift": [] }`.
 ## 8. Phase 4 candidates (not done)
 
 - Move the eager hooks to outbox subscribers once §6 lands.
-- Fix the raw-SQL `NOW()` timezone mismatch in `inventory.service.ts` (Phase 1 code; writes Dhaka local time into a
-  UTC column). Recorded as a risk: it doesn't affect this projection, which uses a content fingerprint.
+- (Done at Phase 3 sign-off: the raw-SQL `NOW()` timezone mismatch in `inventory.service.ts`, INVENTORY_INVARIANTS INV-8.)
+- Analytics raw SQL compares `timestamp` columns with `NOW() - INTERVAL …` (read-side; the DB casts in the session
+  timezone). Out of Phase 3 scope — review with the Phase 5 metrics work.
 - Materialise availability for "in stock only" filtering, if that filter is ever added.

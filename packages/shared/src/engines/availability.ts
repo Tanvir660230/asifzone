@@ -21,11 +21,14 @@ export function maxSellableQuantity(trackInventory: boolean, stock: number): num
  * stored, never a second inventory writer.
  *   UNLIMITED     trackInventory = false (D5): always sellable, whatever the stock number says
  *   OUT_OF_STOCK  tracked and nothing sellable
- *   LOW_STOCK     tracked, sellable, and at or below the product's lowStockThreshold (the same threshold the admin
- *                 low-stock alert uses)
+ *   LOW_STOCK     VARIANT level only: tracked, sellable, and the variant's stock is at or below the product's
+ *                 lowStockThreshold (the existing per-variant rule — the admin low-stock alert and the PDP label)
  *   IN_STOCK      otherwise
+ * There is deliberately no product-level LOW_STOCK: no approved rule defines one.
  */
 export type StockState = "UNLIMITED" | "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK";
+/** Product-level state: whether anything can be bought (no product-level "low stock" — see above). */
+export type ProductStockState = Exclude<StockState, "LOW_STOCK">;
 
 export function variantStockState(trackInventory: boolean, stock: number, lowStockThreshold: number): StockState {
   if (!trackInventory) return "UNLIMITED";
@@ -42,7 +45,7 @@ export interface VariantAvailability {
 }
 
 export interface ProductAvailability {
-  state: StockState;
+  state: ProductStockState;
   /** At least one active variant can be bought now. */
   inStock: boolean;
   /** Σ stock of the active variants that can be sold; null when inventory isn't tracked (unlimited). */
@@ -68,6 +71,6 @@ export function productAvailability(input: {
   const inStock = Object.values(variants).some((v) => v.sellable);
   if (!input.trackInventory) return { state: "UNLIMITED", inStock: active.length > 0, sellableUnits: null, variants };
   const sellableUnits = active.reduce((sum, v) => sum + Math.max(0, v.stock), 0);
-  const state: StockState = !inStock ? "OUT_OF_STOCK" : sellableUnits <= input.lowStockThreshold ? "LOW_STOCK" : "IN_STOCK";
+  const state: ProductStockState = inStock ? "IN_STOCK" : "OUT_OF_STOCK";
   return { state, inStock, sellableUnits, variants };
 }

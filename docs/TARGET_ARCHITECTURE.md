@@ -549,9 +549,11 @@ outbox subscribers when §6 lands. Details and the Step-1 audit: [STOREFRONT_REA
 - The wishlist returned products without server pricing, so its cards showed the base price during a flash sale.
 - The compare bar, cart low-stock check and exchange picker ignored D5.
 
-**Found and recorded (not fixed — Phase 1 code):** `inventory.service.ts` writes `"updatedAt" = NOW()` from raw SQL
-while the DB session timezone is Asia/Dhaka. Those rows get local time in a column Prisma writes as UTC. The read model
-avoids `updatedAt` for this reason.
+**Fixed at Phase 3 sign-off (Phase 1 code, one-line change):** `inventory.service.ts` wrote `"updatedAt" = NOW()` from
+raw SQL while the DB session timezone is Asia/Dhaka. That stored local time in a column Prisma reads and writes as UTC.
+It now writes `NOW() AT TIME ZONE 'UTC'` (INVENTORY_INVARIANTS INV-8). Rows written before the fix keep their old
+stamp. The read model never relied on `updatedAt` (it uses a content fingerprint). Product-level "low stock" was
+removed at sign-off because no rule approves it; low stock stays per variant.
 
 ## 17. Definition of done for each phase
 

@@ -66,6 +66,7 @@ Historical rows keep their original reason (older cancellations are `ADJUSTMENT`
 | INV-2 | `0 ≤ restockedQuantity ≤ quantity` and `0 ≤ returnedQuantity ≤ quantity` for every order line | all orders |
 | INV-3 | for an order line: `Σ movements(orderId, variantId) = −quantity + restockedQuantity` | orders placed since the ledger was completed |
 | INV-4 | only `inventory.service.ts` mutates stock (the Phase 3 Storefront Read Model only *reads* stock to derive `availability`; a projection rebuild writes no stock and no movement — tested) | source code (architecture test) |
+| INV-8 | a stock write stamps `ProductVariant.updatedAt` in UTC, the same semantics as Prisma's `@updatedAt` (`applyDelta` uses `NOW() AT TIME ZONE 'UTC'`; a bare `NOW()` stored the DB session's Asia/Dhaka wall clock, 6 h ahead) | `inventory.integration.test.ts` (session pinned to Asia/Dhaka) |
 | INV-5 | `stock ≥ 0` unless an oversell movement exists for a paid settlement, or the product is untracked (`trackInventory = false`, D5 — its sales are still ledgered, unguarded) | all variants |
 | INV-6 | cancelling, returning, refunding, trashing an order in any order and any number of times restocks each unit at most once | state machine + INV-3 |
 | INV-7 | a stale form never changes stock it did not intend to change | product update |

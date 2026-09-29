@@ -49,7 +49,11 @@ async function flashSale(productId: string, over: { discountValue?: number; stoc
 const listing = async (slug: string, query: Record<string, string> = {}) => {
   const res = await request(app).get("/api/products/storefront").query({ category: slug, pageSize: "50", ...query });
   expect(res.status, JSON.stringify(res.body)).toBe(200);
-  return res.body.items as Array<{ id: string; pricing: { from: number }; availability: { state: string; inStock: boolean; sellableUnits: number | null } }>;
+  return res.body.items as Array<{
+    id: string;
+    pricing: { from: number };
+    availability: { state: string; inStock: boolean; sellableUnits: number | null; variants: Record<string, { state: string }> };
+  }>;
 };
 const ids = (items: Array<{ id: string }>) => items.map((i) => i.id);
 const row = (productId: string) => prisma.productReadModel.findUnique({ where: { productId } });
@@ -211,12 +215,13 @@ describe("availability comes from canonical inventory state; the read model neve
     const byId = new Map((await listing(c.slug, { sort: "price_asc" })).map((i) => [i.id, i.availability]));
     expect(byId.get(untracked.id)).toMatchObject({ state: "UNLIMITED", inStock: true, sellableUnits: null });
     expect(byId.get(out.id)).toMatchObject({ state: "OUT_OF_STOCK", inStock: false, sellableUnits: 0 });
-    expect(byId.get(low.id)).toMatchObject({ state: "LOW_STOCK", inStock: true, sellableUnits: 3 });
+    // Low stock is a VARIANT state only; the product-level state stays IN_STOCK.
+    expect(byId.get(low.id)).toMatchObject({ state: "IN_STOCK", inStock: true, sellableUnits: 3, variants: { [low.variants[0]!.id]: { state: "LOW_STOCK" } } });
     expect(byId.get(plenty.id)).toMatchObject({ state: "IN_STOCK", inStock: true, sellableUnits: 50 });
 
     // The PDP read is Redis-cached; its availability still follows the live stock.
     const pdp = async () => (await request(app).get(`/api/products/slug/${low.slug}`)).body.product;
-    expect((await pdp()).availability.state).toBe("LOW_STOCK");
+    expect((await pdp()).availability.variants[low.variants[0]!.id].state).toBe("LOW_STOCK");
     await placeOrder([{ variantId: low.variants[0]!.id, quantity: 3 }], { customerPhone: "01799900003" });
     expect(await stockOf(low.variants[0]!.id)).toBe(0);
     const after = await pdp();
