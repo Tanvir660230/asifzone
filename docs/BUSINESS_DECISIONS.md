@@ -165,3 +165,19 @@ All registered in [SSOT_REGISTRY.md](SSOT_REGISTRY.md) (B2, B4).
 | D10 | Shipping is resolved before tax so its VAT can be computed on the fee actually charged. Merchandise VAT is unaffected by the order. | See PRICING_PIPELINE §1a (dependency graph). |
 | D3 | `Product.taxRate` remains unused; tax uses the store rate only. | No decision asks for per-product rates. |
 
+## Phase 4 implementation notes (interpretations, recorded 2026-09-29)
+
+Phase 4 (the Payment Ledger, [PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)) adds **no new business rule**. It records money
+that D1, D6 and D8 already describe. Where the existing code or decisions left a detail open, this is the
+interpretation I implemented. The owner may overrule any of them with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P4-1 | Once any money has been received for an order (`paid > 0`), its total can't be changed by a price adjustment (409). Corrections after payment go through a refund. Before Phase 4 a paid gateway order could be adjusted, leaving `PAID` against a different total. | `PAID` must keep meaning "this total was received". A downward adjustment after payment is money owed back, which only a refund records. |
+| P4-2 | Refunds may be partial and repeated, up to what was actually received minus refunds already recorded or requested. A partial refund leaves the payment status `PARTIALLY_REFUNDED` (the M8 value planned since Phase 0). Only the full amount gives `REFUNDED`, and the T8 order-status rule still requires that. | Before Phase 4, any partial refund set `REFUNDED` and blocked the rest of the refund. |
+| P4-3 | D1 COD collection at delivery is recorded as a `COD` payment of the order's **balance due** (normally the total; less if part was prepaid and recorded). | D1 says delivery is the collection point. The ledger records the money instead of only flipping the status. |
+| P4-4 | "Refund due" for a cancelled or returned order is everything received (net of refunds already recorded or requested). For an active order it's only an overpayment (e.g. a duplicate gateway payment). | T6/T7 already raise "refund may be owed" for these cases; the ledger gives the amount. |
+| P4-5 | A manually recorded payment does not change the order status. (A gateway settlement still moves `PENDING → CONFIRMED`, as before.) A manual payment on a COD order is not accepted after courier booking, because the parcel's COD amount is fixed at booking. | Manual payments are recorded by staff who confirm orders themselves. The booking rule mirrors the existing price-adjustment and address-edit guards. |
+| P4-6 | A D6 exchange downgrade refund stays `REQUESTED` until staff record that they paid it out ("Complete"). Completing it reverses loyalty points like any refund (D8 interpretation (b)). | D6: "collected or refunded centrally". Before Phase 4 the request could never be completed. |
+| P4-7 | Legacy backfill: an order already marked paid (or a delivered COD order) with no payment record gets one settlement of its total, marked `backfilled`. Its status projection is corrected only by the explicit repair command. | D1 (delivered COD = collected) and the order's own recorded status are the only evidence used. Nothing is invented and no order row is rewritten. |
+

@@ -5,6 +5,10 @@
 
 **Approved business decisions (2026-09-28):** all of D1–D10 — the register is [BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md). Highlights: D1 revenue recognition (COD is realised at `DELIVERED`; returns and refunds subtracted separately; creation is never cash collection), D2 bundles on the post-flash price, D3 tax-inclusive prices with an inclusive VAT component. Details and the Phase 1 changes: [TARGET_ARCHITECTURE.md §16–16a](TARGET_ARCHITECTURE.md), [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md), [INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md), [PRICING_PIPELINE.md](PRICING_PIPELINE.md).
 
+**Phase 4 (2026-09-29):** the payment and refund truth has one owner, the Payment Ledger
+([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)). See B5 and invariants I9, I23–I26. Audit and duplicate-truth matrix:
+[PHASE_4_AUDIT.md](PHASE_4_AUDIT.md).
+
 **Legend.** *Status today*: ✅ single authority and single writer · ⚠️ authority clear but duplicated logic or a writer outside the owner · ❌ conflicting definitions or known drift path. *Class*: **M** master data · **S** transaction snapshot (immutable history — not duplication) · **P** projection/cache (derivable, must be reconciled) · **D** computed on demand (never stored).
 
 ---
@@ -180,10 +184,11 @@
 | Fact | Class | Authoritative source | Authoritative service | Projection / cache | Consumers | Mutation path | Reconciliation | Status |
 |---|---|---|---|---|---|---|---|---|
 | Payment attempt | M | `PaymentSession` (+ `checkoutPayload` S — carries the full quote pricing snapshot and split line snapshots since Phase 2; + `idempotencyKey` unique) | PaymentService | — | callbacks, retry, reconciliation | initiate / callbacks / cron | expiry sweep | ✅ |
-| Settlement | S | `Payment` (+ `rawResponse`) | PaymentService | — | refunds, overview | `settlePaymentSession` atomic claim | amount re-verified | ✅ |
+| Settlement (money received) | S | `Payment` status `SUCCEEDED`: gateway (`SSLCOMMERZ`/`EPS_PG`, + `rawResponse`), `COD` (collected at delivery, D1), `MANUAL` (staff-recorded) | PaymentLedger (`domain/payments/payment-ledger.service.ts`) — sole writer | — | position, refunds, overview, (Phase 5) collected cash | gateway settle (atomic claim, amount re-verified); T4 `recordCodCollection`; `POST /orders/:id/payments`; manual order `markPaid` | append-only; backfilled rows flagged `backfilled` | ✅ Phase 4 |
 | Payment timeline | S | `PaymentEvent` | PaymentService | — | admin | fire-and-forget writes | — | ⚠️ fire-and-forget (target: outbox) |
-| Refund | S | `Refund` | PaymentService | — | order, BI, overview | `refundOrderPayment` | — | ⚠️ no partial state; STAFF can create |
-| Order payment status | P | Payment + Refund + COD collected on `DELIVERED` (D1) | PaymentService; the DELIVERED transition for COD | `Order.paymentStatus` | filters, courier COD, BI | `syncOrderPaymentStatus` (no longer revives a cancelled order), `refundOrderPayment`, `createManualOrder(markPaid)`, T4 | target report | ⚠️ `REFUNDED` order status now requires `paymentStatus = REFUNDED` |
+| Refund | S | `Refund` (`REQUESTED → COMPLETED`, one-way) | PaymentLedger — sole writer | — | position, order, BI, overview | `POST /orders/:id/refunds` (partial + repeated, ≤ refundable, `Idempotency-Key`); exchange downgrade `requestRefund`; `POST …/refunds/:id/complete` | PL-2 violation report | ✅ Phase 4 (STAFF can still record — Phase 10) |
+| Payment position (paid, refunded, pending, balance due, `codToCollect`, refundable, refund due, overpaid) | D | `derivePaymentPosition` (`packages/shared/src/engines/payment-ledger.ts`) over the order's `Payment` + `Refund` rows + `Order.total` | PaymentLedger | none stored; `OrderPaymentSummary` read model (`order.payment`) | courier `cod_amount` (single + bulk), admin order page, shipping labels, refund form, price-adjustment guard | — | derived per read | ✅ Phase 4 |
+| Order payment status | P | `derivePaymentPosition(...).status` (PAYMENT_LEDGER §4): UNPAID / PAID / FAILED / PARTIALLY_REFUNDED / REFUNDED | PaymentLedger `refreshPaymentStatus` — sole writer | `Order.paymentStatus` | filters, refund queue (`REFUND_QUEUE_WHERE`), T8 guard, BI | every ledger command, in its transaction | `GET /api/payments/admin/ledger/drift`; `POST …/repair` (OWNER, dry run default); `pnpm --filter api payment-ledger:reconcile [--apply]` | ✅ Phase 4 (I9 implemented) |
 | Payment method enablement | M | `StoreSetting.codEnabled/onlinePaymentEnabled/epsPaymentEnabled` → target `ProviderConfig.enabled` | Config / Payment | settings cache 300 s | checkout UI + server guard | settings PATCH | — | ⚠️ `updateSettings` guard ignores EPS |
 | Provider credentials | M | env vars → target `ProviderConfig` (encrypted) | Config | — | providers | deploy / setup wizard | — | ❌ env only |
 
@@ -267,5 +272,11 @@
 | I21 | legacy `StoreSetting` tax/shipping mirrors equal `TaxSetting` / legacy zone rates (`pricingConfigDrift` empty) | Pricing |
 | I22 | no client-supplied price or subtotal influences a quote or an order | Pricing |
 
+| I23 | Σ completed refunds ≤ Σ settled payments per order; a new refund ≤ `refundable` | Payments |
+| I24 | only `payment-ledger.service.ts` writes `Payment`, `Refund`, `Order.paymentStatus` | Payments (architecture test) |
+| I25 | the courier COD amount = `codToCollect` (balance due of a COD order); a prepaid order is booked with 0 | Payments |
+| I26 | a paid order's total never changes (price adjustment refused once `paid > 0`) | Orders / Payments |
+
 Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
-`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`).
+`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 4 implements and tests
+I9 (as PAYMENT_LEDGER PL-1, with a drift report) and I23–I26 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §13).

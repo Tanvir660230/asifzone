@@ -211,6 +211,12 @@ Key Phase 1 semantics (superseding the sketch in the Phase 0 draft):
 
 `UNPAID → PAID` (Payment SUCCEEDED, or COD collected on DELIVERED — decision D1), `UNPAID → FAILED` (last attempt failed), `PAID → PARTIALLY_REFUNDED → REFUNDED` (additive enum value; computed from Σ `Refund.amount` vs. amount paid). Only `PaymentService` writes it (including the manual "mark paid" for admin orders, which becomes a `Payment` row with provider `MANUAL`).
 
+✅ **Phase 4** implements this as the Payment Ledger ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md), §16d). Every settlement is
+a `Payment` row: gateway, `COD` collected at delivery, or `MANUAL`. Refunds are `Refund` rows (`REQUESTED → COMPLETED`).
+The pure engine `derivePaymentPosition` (`packages/shared/src/engines/payment-ledger.ts`) derives the status, the
+balance due, the cash to collect on delivery, the refundable amount and the refund due. `domain/payments/payment-ledger.service.ts`
+is the only writer of `Payment`, `Refund` and the `Order.paymentStatus` projection.
+
 ### 5.5 Customer and product metrics engines
 
 - `CustomerMetrics` (spend, order count, AOV, last order, RFM, tags) computed from the metrics registry predicates, not ad-hoc filters. Later materialised to `CustomerStats` updated by events.
@@ -554,6 +560,45 @@ raw SQL while the DB session timezone is Asia/Dhaka. That stored local time in a
 It now writes `NOW() AT TIME ZONE 'UTC'` (INVENTORY_INVARIANTS INV-8). Rows written before the fix keep their old
 stamp. The read model never relied on `updatedAt` (it uses a content fingerprint). Product-level "low stock" was
 removed at sign-off because no rule approves it; low stock stays per variant.
+
+## 16d. Phase 4 scope — Payment Ledger (order payment & refund SSOT)
+
+**Why this phase.** The Phase 4 audit ([PHASE_4_AUDIT.md](PHASE_4_AUDIT.md)) found every remaining S1 defect in the
+payment and refund truth:
+- `Order.paymentStatus` had six direct writers and no derivation.
+- COD collection, manual payments and free exchanges set `PAID` with no money record.
+- Refunds were capped against the total, not against what was paid. A partial refund was stored as a full one and
+  blocked any further refund.
+- Exchange refunds (D6) could never be paid out.
+- The courier's COD amount was recomputed five times as `COD ? total : 0`, so a prepaid COD order was collected twice.
+
+Analytics (Phase 5) depends on these facts being right, so it follows.
+
+**One ledger.**
+- **Facts:** `Payment` (every settlement) and `Refund`.
+- **Pure engine:** `derivePaymentPosition`, which derives paid, refunded, pending, balance due, `codToCollect`,
+  refundable, refund due and status.
+- **One writer:** `apps/api/src/domain/payments/payment-ledger.service.ts`, whose commands run under the order row lock.
+- **Projection:** `Order.paymentStatus`, refreshed in the same transaction as the fact that changed it.
+- **Architecture guard:** `payment-ledger-writer.guard.test.ts`.
+
+**Consumers switched.**
+- Gateway settlement: now atomic with the `PENDING → CONFIRMED` transition.
+- T4 COD collection: now a `COD` payment of the balance due (D1 unchanged).
+- Manual orders (`markPaid`) in the order's own transaction.
+- Exchange downgrade refunds: completable.
+- Courier booking and labels: send and show `codToCollect`.
+- Admin order page: renders the position; one payment-status label map.
+- The refund queue: one predicate.
+- Price adjustment: refused once money was received (P4-1).
+
+**Additive schema.** `PaymentStatus += PARTIALLY_REFUNDED`; `PaymentProvider += COD, MANUAL`; nullable
+`Payment.paymentSessionId`; audit and idempotency columns. A backfill inserts settlement rows only where the order's
+own record already asserts payment. A drift report and an explicit, dry-run-by-default repair fix the projection;
+nothing rewrites an order.
+
+**Not in Phase 4:** metrics built on this ledger (collected cash, outstanding COD, refunds): Phase 5. Gateway refund
+APIs: Phase 7. Outbox events: Phase 8. Refund permissions: Phase 10.
 
 ## 17. Definition of done for each phase
 
