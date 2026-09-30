@@ -270,6 +270,24 @@ these readings; the owner may overrule any with a new dated entry.
 | P7-3 | Every business date shown to admins or customers (orders, payments, refunds, returns, reviews, coupons, "today") is the **store-timezone** date, not the viewer's device date. | Reports bucket by the store's business day (Phase 5). A viewer-local date could place an order on a different day than the reports. |
 | P7-4 | Currency symbols are derived from the store currency (`Intl` narrow symbol). The number locale stays `en-BD` until a locale setting exists. Transactional SMS copy is unchanged (Bengali content). | No locale concept exists yet (TARGET §7 future). The SMS copy is content, not configuration. |
 
+## Phase 10 implementation notes and open decisions (recorded 2026-10-01)
+
+Phase 10 ([PHASE_10_AUDIT.md](PHASE_10_AUDIT.md), [PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)) keeps every role capability
+exactly as it was (TARGET §15). It records these readings; the owner may overrule any of them with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P10-1 | A customer's order timeline shows the order's **status journey**: one entry per status change, with the note written on that change. Same-status entries are **staff annotations** and stay internal: follow-up holds ("call after 6pm"), address/price edit diffs, payment/refund bookkeeping, admin notes on an unchanged status. The return-request reply (`adminNote`) stays customer-visible as "Note from support". | The timeline was shared by staff and customers with no visibility flag, so internal call notes reached customers. Transition notes and the support reply were already customer-facing by design and stay so. |
+| P10-2 | The store always keeps **at least one active OWNER**. Demoting or deactivating the last one is refused (409), including when two owners act at the same moment. | Otherwise no one could manage the team, settings or repairs again without database access. |
+| P10-3 | Deactivating an admin or changing their role takes effect on their **next request**, not when their 15-minute session token expires. | TARGET §15 ("isActive and role re-checked"). A removed admin must lose access immediately. |
+
+**Open decisions (awaiting the owner; today's behaviour is kept until decided):**
+
+| ID | Question | Today | Recommendation |
+|---|---|---|---|
+| PD-10.1 | Should **permanent delete of coupons and categories** be OWNER-only, like permanent delete of orders and products? | STAFF and OWNER | OWNER-only (`catalog.purge` / a `promotions.purge`), for consistency |
+| PD-10.2 | Should STAFF keep **refunds, manual payments, price adjustment, loyalty adjustment, ad-hoc/bulk SMS, exports and financial analytics (COGS/margin)**? | all STAFF-allowed (Phase 6 recorded no restriction) | Owner's call per capability. Each is one line in `ROLE_PERMISSIONS` |
+
 ## Phase 9 implementation notes (interpretations, recorded 2026-10-01)
 
 Phase 9 ([PHASE_9_AUDIT.md](PHASE_9_AUDIT.md), [PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)) adds no business rule beyond

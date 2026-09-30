@@ -756,6 +756,29 @@ reliability, a separate worker process (§14).
 **Deferred:** automatic recovery of an unknown courier outcome (a Steadfast lookup by invoice), notifications and
 campaigns through the outbox, a separate worker, the bounded settings-cache race, roles/permissions (Phase 10).
 
+## 16j. Phase 10 scope — Roles, permissions & authorization
+
+**Why this phase.** The Phase 10 audit ([PHASE_10_AUDIT.md](PHASE_10_AUDIT.md)) found:
+- admin role and active flag trusted from a 15-min JWT (R16), so deactivation and demotion were not immediate;
+- admin/customer token separation that depended on configuration only;
+- customer order responses carrying staff-only data, including notes labelled "not visible to the customer";
+- no permission vocabulary: two role strings checked at 60 route sites and in 15 web files;
+- no last-owner protection.
+
+**Delivered** ([PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)). This is §15's permission model:
+- `packages/shared/src/permissions.ts` (34 permissions and the role map). The initial mapping reproduces the
+  pre-Phase-10 OWNER/STAFF boundary exactly, verified on all 299 admin routes;
+- `requirePermission()` on every admin route, replacing `requireRole()`;
+- DB-backed identity on every admin request (`domain/auth/authorization.ts`);
+- typed tokens;
+- the customer order view (`toCustomerOrder`);
+- last-owner protection;
+- audited role changes and exports;
+- the web reads permissions from `/auth/me`.
+
+**Deferred:** custom roles or per-admin grants, per-staff data scoping, Redis-backed rate limits, provider-credential
+encryption (ProviderConfig), per-request customer token revocation.
+
 ## 17. Definition of done for each phase
 
 Tests (unit + integration + e2e) green · `tsc --noEmit` for api, web, shared · `eslint` for api and web (added to CI in Phase 1) · `next build` · migrations applied to a copy of production + drift check · invariant suite green · reconciliation reports reviewed · this document, the audit and the SSOT registry updated · remaining risks listed in the phase's PR description.
