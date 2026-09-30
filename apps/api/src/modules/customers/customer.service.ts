@@ -1053,17 +1053,33 @@ export async function checkAndUpdateDeliveryScore(customerId: string, rawPhone: 
 
 export async function adjustRewardPoints(customerId: string, points: number, reason: string) {
   if (points === 0) throw AppError.badRequest("Point adjustment cannot be zero");
-  const customer = await getCustomerById(customerId);
-  if (customer.rewardPoints + points < 0) {
-    throw AppError.badRequest(`Customer only has ${customer.rewardPoints} points`);
-  }
+  await getCustomerById(customerId);
 
-  await prisma.$transaction([
-    prisma.rewardPointsEntry.create({ data: { customerId, points, reason: reason || "Manual adjustment" } }),
-    prisma.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } }),
-  ]);
+  // Phase 9 (D-6): the balance check and the write happen under the customer row lock, so two concurrent deductions can't
+  // both pass the check and take the balance below zero.
+  await prisma.$transaction(async (tx) => {
+    const [row] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+    if (!row) throw AppError.notFound("Customer not found");
+    if (row.rewardPoints + points < 0) throw AppError.badRequest(`Customer only has ${row.rewardPoints} points`);
+    await tx.rewardPointsEntry.create({ data: { customerId, points, reason: reason || "Manual adjustment" } });
+    await tx.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } });
+  });
 
   return prisma.customer.findUnique({ where: { id: customerId }, select: publicSelect });
+}
+
+/** Phase 9 (D-7) — read-only loyalty reconciliation: every points writer changes the ledger (RewardPointsEntry) and the
+ * cached balance (Customer.rewardPoints) together, so any customer whose balance ≠ Σ ledger has drifted. Reported, never
+ * auto-corrected (a repair is an explained manual adjustment). */
+export async function loyaltyDrift(limit = 100) {
+  return prisma.$queryRaw<Array<{ customerId: string; name: string; balance: number; ledgerSum: number }>>`
+    SELECT c.id AS "customerId", c.name, c."rewardPoints" AS balance, COALESCE(SUM(e.points), 0)::int AS "ledgerSum"
+    FROM "Customer" c
+    LEFT JOIN "RewardPointsEntry" e ON e."customerId" = c.id
+    GROUP BY c.id, c.name, c."rewardPoints"
+    HAVING c."rewardPoints" <> COALESCE(SUM(e.points), 0)
+    ORDER BY c.name
+    LIMIT ${limit}`;
 }
 
 export async function listCustomerOrders(customerId: string, query: PaginationQuery) {

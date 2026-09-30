@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { Resend } from "resend";
 import { env } from "../config/env";
+import { liveProvidersEnabled } from "./provider-guard";
 
 interface MailInput {
   to: string;
@@ -23,7 +24,10 @@ export class MailProviderError extends Error {
 }
 
 const devMailDir = path.join(process.cwd(), ".devmail");
-const resend = !env.resend.apiKey || process.env.NODE_ENV === "test" ? null : new Resend(env.resend.apiKey);
+/** Inside the outbox lease (Phase 9 D-5). The SDK takes no signal, so the send is raced against a timer: a late delivery of
+ * the abandoned attempt is deduplicated by the provider's idempotency key on the retry. */
+export const MAIL_TIMEOUT_MS = 20_000;
+const resend = !env.resend.apiKey || !liveProvidersEnabled() ? null : new Resend(env.resend.apiKey);
 
 function writeDevMail({ to, subject, html }: MailInput) {
   console.log(`[mailer] (dev mode, not actually sent) To: ${to} | Subject: ${subject}`);
@@ -45,7 +49,14 @@ export async function sendMail({ to, subject, html, idempotencyKey }: MailInput)
     return;
   }
 
-  const { error } = await resend.emails.send({ from: env.resend.fromAddress, to, subject, html }, idempotencyKey ? { idempotencyKey } : undefined);
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new MailProviderError(`[mailer] Resend send timed out after ${MAIL_TIMEOUT_MS} ms`, true)), MAIL_TIMEOUT_MS);
+  });
+  const { error } = await Promise.race([
+    resend.emails.send({ from: env.resend.fromAddress, to, subject, html }, idempotencyKey ? { idempotencyKey } : undefined),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
   if (error) {
     const status = (error as { statusCode?: number | null }).statusCode ?? null;
     // No status (network) / 429 / 5xx are transient; any other 4xx is the request itself being rejected.

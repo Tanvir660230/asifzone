@@ -19,6 +19,7 @@ import { paymentRouter } from "./modules/payments/payment.routes";
 import { paymentAdminRouter } from "./modules/payments/payment-admin.routes";
 import { metricsRouter } from "./modules/metrics/metrics.routes";
 import { outboxRouter } from "./modules/outbox/outbox.routes";
+import { opsRouter } from "./modules/ops/ops.routes";
 import { paymentMethodRouter } from "./modules/payment-methods/payment-method.routes";
 import { flashSaleRouter } from "./modules/flash-sales/flash-sale.routes";
 import { bannerRouter } from "./modules/banners/banner.routes";
@@ -47,6 +48,7 @@ import { storefrontReadModelRouter } from "./modules/storefront/read-model.route
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
+import { liveProvidersEnabled } from "./lib/provider-guard";
 
 export const app = express();
 
@@ -66,7 +68,8 @@ app.use(auditMiddleware);
 
 app.use(`/${env.uploadsDir}`, express.static(env.uploadsDir, { maxAge: "30d" }));
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+// `liveProviders` lets e2e tooling refuse to run against an API that could reach real providers (Phase 9).
+app.get("/health", (_req, res) => res.json({ status: "ok", liveProviders: liveProvidersEnabled() }));
 
 app.use("/api/auth", authRouter);
 app.use("/api/categories", categoryRouter);
@@ -110,6 +113,7 @@ app.use("/api/v1/checkout", checkoutV1Router);
 app.use("/api/v1/storefront/read-model", storefrontReadModelRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/outbox", outboxRouter);
+app.use("/api/v1/ops", opsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

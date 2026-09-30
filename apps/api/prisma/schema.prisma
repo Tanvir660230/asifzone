@@ -950,6 +950,10 @@ model Order {
   /// shown to the admin as-is; see mapSteadfastStatusToOrderStatus for how it affects `status`.
   courierStatus         String?
   courierBookedAt       DateTime?
+  /// Phase 9 (D-4): booking claim — set atomically (conditional update) before the Steadfast call so two concurrent
+  /// bookings can't both reach the provider; cleared when the booking is saved or definitely failed, KEPT when the
+  /// outcome is unknown (timeout / 5xx) until an operator checks Steadfast or the 10-min lease lapses.
+  courierBookingStartedAt DateTime?
   /// Steadfast's own trackable URL (https://steadfast.com.bd/tl/{opaque-token}) — only present in
   /// the create_order/bulk-order response body, not derivable from tracking_code and not returned
   /// by status_by_cid, so bookings made before this field existed will have it null forever.

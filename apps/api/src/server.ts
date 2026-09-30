@@ -10,6 +10,7 @@ import { startPaymentReconciliationCron } from "./jobs/payment-reconciliation-cr
 import { startMetaCapiWorker } from "./jobs/meta-capi-worker";
 import { startOutboxWorker } from "./jobs/outbox-worker";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
+import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard";
 
 let shuttingDown = false;
 
@@ -18,6 +19,12 @@ async function main() {
   await redis.connect().catch((err) => console.warn("[redis] not connected yet:", err.message));
 
   await syncFlashSaleActivation().catch((err) => console.error("[flash-sale-cron] initial sync failed:", err));
+
+  // e2e / local safety (Phase 9): with LIVE_PROVIDERS=off no outbound request may leave for a real provider.
+  if (!liveProvidersEnabled()) {
+    installNetworkGuard([new URL(env.webInternalUrl).hostname]);
+    console.log("[provider-guard] live providers OFF — outbound requests to non-local hosts are blocked");
+  }
 
   const server = app.listen(env.port, () => {
     console.log(`API listening on http://localhost:${env.port}`);

@@ -58,6 +58,7 @@ export async function createReturnRequest(customerId: string, input: CreateRetur
   if (input.type === "EXCHANGE") {
     const item = order.items.find((i) => i.id === input.orderItemId);
     if (!item) throw AppError.badRequest("Select an item from this order to exchange");
+    if (item.restockedQuantity > 0) throw AppError.conflict("This item has already been returned or exchanged");
 
     const requestedVariant = await prisma.productVariant.findUnique({ where: { id: input.requestedVariantId } });
     if (!requestedVariant) throw AppError.badRequest("The selected item is no longer available");
@@ -187,6 +188,11 @@ async function createExchangeOrder(
 
   const originalItem = originalOrder.items.find((i) => i.id === request.orderItemId);
   if (!originalItem) throw AppError.badRequest("The original item on this order could not be found");
+  // Phase 9 (D-1): a replacement ships only in exchange for units that actually come back. A line already restocked (an
+  // earlier exchange of the same item, a return, a partial-delivery reconciliation) can't be exchanged again.
+  if (originalItem.restockedQuantity > 0) {
+    throw AppError.conflict("This item has already been returned or exchanged — it can't be exchanged again");
+  }
   if (!request.requestedVariantId) throw AppError.badRequest("No replacement size/color was recorded for this exchange");
 
   const requestedVariant = await tx.productVariant.findUnique({
@@ -304,11 +310,17 @@ async function createExchangeOrder(
     }
     throw err;
   }
-  await releaseOrderLines(tx, originalOrder.id, "return", {
+  const { released } = await releaseOrderLines(tx, originalOrder.id, "return", {
     adminId,
     note: "Stock restored — exchange approved",
     lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }],
   });
+  // The release is a conditional update: if a concurrent return/exchange took these units first, nothing was released —
+  // then the whole approval (replacement order, its stock, any refund) rolls back instead of shipping a second item.
+  const returnedUnits = released.filter((r) => r.orderItemId === originalItem.id).reduce((n, r) => n + r.quantity, 0);
+  if (returnedUnits !== originalItem.quantity) {
+    throw AppError.conflict("This item has already been returned or exchanged — it can't be exchanged again");
+  }
 
   // Fully covered by the returned item: nothing to collect — settled at zero in the ledger (status PAID, as before).
   if (amountDue.amount === 0) await recordExchangeCovered(tx, exchangeOrder.id, adminId);

@@ -3,8 +3,9 @@ import { apiFetch } from "../api-client";
 
 // `order` is only present for COD (created immediately); every other payment method returns just
 // `gatewayUrl` — the Order isn't materialized until the gateway confirms success server-side.
-export function createOrder(input: CheckoutInput) {
-  return apiFetch<{ order?: Order; gatewayUrl?: string }>("/api/orders", { method: "POST", body: input });
+/** `idempotencyKey`: the same key on a retry returns the first attempt's order / payment session (Phase 9). */
+export function createOrder(input: CheckoutInput, idempotencyKey?: string) {
+  return apiFetch<{ order?: Order; gatewayUrl?: string }>("/api/orders", { method: "POST", body: input, idempotencyKey });
 }
 
 /** Guest tracking — the phone number on the order must match, so an order number alone can't expose someone else's address. */

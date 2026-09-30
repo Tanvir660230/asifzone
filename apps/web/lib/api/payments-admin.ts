@@ -42,8 +42,8 @@ export function listRefunds(orderId: string) {
   return apiFetch<{ refunds: Refund[] }>(`/api/orders/${orderId}/refunds`);
 }
 
-export function createRefund(orderId: string, input: RecordRefundInput) {
-  return apiFetch<{ refund: Refund; summary: OrderPaymentSummary }>(`/api/orders/${orderId}/refunds`, { method: "POST", body: input });
+export function createRefund(orderId: string, input: RecordRefundInput, idempotencyKey?: string) {
+  return apiFetch<{ refund: Refund; summary: OrderPaymentSummary }>(`/api/orders/${orderId}/refunds`, { method: "POST", body: input, idempotencyKey });
 }
 
 /** Marks a REQUESTED refund (D6 exchange downgrade) as paid out. */
@@ -52,6 +52,6 @@ export function completeRefund(orderId: string, refundId: string, input: Complet
 }
 
 /** Records a payment received by hand (MANUAL) or the cash a courier collected on a partial delivery (COD_COLLECTED). */
-export function recordPayment(orderId: string, input: RecordPaymentInput) {
-  return apiFetch<{ summary: OrderPaymentSummary }>(`/api/orders/${orderId}/payments`, { method: "POST", body: input });
+export function recordPayment(orderId: string, input: RecordPaymentInput, idempotencyKey?: string) {
+  return apiFetch<{ summary: OrderPaymentSummary }>(`/api/orders/${orderId}/payments`, { method: "POST", body: input, idempotencyKey });
 }

@@ -69,6 +69,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { getStoreConfig } from "@/lib/store-config";
+import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 
@@ -329,8 +330,10 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     queryClient.invalidateQueries({ queryKey: ["admin-order-stats"] });
   };
   const refundMutation = useMutation({
-    mutationFn: (input: RecordRefundInput) => paymentsAdminApi.createRefund(id, input),
+    // A retry of the same refund (double click, timeout) reuses its Idempotency-Key — the API records it once (Phase 9).
+    mutationFn: (input: RecordRefundInput) => paymentsAdminApi.createRefund(id, input, idempotencyKeyFor(`refund:${id}`, input)),
     onSuccess: () => {
+      settleIdempotencyKey(`refund:${id}`);
       invalidateMoney();
       setRefundDraft(null);
       toast.success("Refund recorded");
@@ -346,8 +349,9 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to complete refund"),
   });
   const paymentMutation = useMutation({
-    mutationFn: (input: RecordPaymentInput) => paymentsAdminApi.recordPayment(id, input),
+    mutationFn: (input: RecordPaymentInput) => paymentsAdminApi.recordPayment(id, input, idempotencyKeyFor(`payment:${id}`, input)),
     onSuccess: () => {
+      settleIdempotencyKey(`payment:${id}`);
       invalidateMoney();
       setPaymentDraft(null);
       toast.success("Payment recorded");

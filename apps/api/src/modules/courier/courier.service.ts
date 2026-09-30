@@ -2,11 +2,7 @@ import { canTransitionOrder, normalizeBdPhone, type OrderStatus } from "@clothin
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
-import {
-  createSteadfastConsignment,
-  createBulkSteadfastConsignments,
-  getSteadfastStatusByConsignmentId,
-} from "../../lib/steadfast";
+import { CourierOutcomeUnknownError, createBulkSteadfastConsignments, createSteadfastConsignment, getSteadfastStatusByConsignmentId } from "../../lib/steadfast";
 import { getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
@@ -118,6 +114,35 @@ async function applyCourierStatus(order: { id: string; orderNumber: string; stat
   });
 }
 
+/** Phase 9 (D-4): a booking holds this claim from just before the Steadfast call until the consignment is saved. */
+export const COURIER_BOOKING_LEASE_MS = 10 * 60_000;
+
+/** Atomically claims the right to book `orderId` (no consignment yet, no live claim). Two concurrent bookings — a double
+ * click, two admins, single + bulk — can't both win, so only one ever reaches Steadfast. */
+export async function claimCourierBooking(orderId: string, now: Date = new Date()): Promise<boolean> {
+  const claimed = await prisma.order.updateMany({
+    where: {
+      id: orderId,
+      courierConsignmentId: null,
+      OR: [{ courierBookingStartedAt: null }, { courierBookingStartedAt: { lt: new Date(now.getTime() - COURIER_BOOKING_LEASE_MS) } }],
+    },
+    data: { courierBookingStartedAt: now },
+  });
+  return claimed.count === 1;
+}
+
+async function releaseCourierBooking(orderId: string) {
+  await prisma.order.updateMany({ where: { id: orderId, courierConsignmentId: null }, data: { courierBookingStartedAt: null } });
+}
+
+/** The claim is KEPT: Steadfast may have created the consignment. Re-booking waits for the lease, and the order says why. */
+async function flagCourierOutcomeUnknown(orderId: string, orderNumber: string, detail: string) {
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { courierSyncError: `Booking outcome unknown (${detail}) — check Steadfast for invoice ${orderNumber} before booking again` },
+  });
+}
+
 export async function bookOrderWithSteadfast(orderId: string) {
   const order = await getOrderById(orderId);
   if (order.deletedAt) throw AppError.badRequest("Restore this order before booking a courier");
@@ -132,17 +157,28 @@ export async function bookOrderWithSteadfast(orderId: string) {
   // The payment ledger's cash-to-collect (PL-6): the balance due of an open COD order — 0 when it was prepaid.
   const codAmount = order.payment.codToCollect;
 
-  const consignment = await createSteadfastConsignment({
-    invoice: order.orderNumber,
-    recipientName: order.customerName,
-    // Steadfast requires exactly 11 digits — checkout normalizes new orders' customerPhone to that
-    // form already, but this defends against rows written before that validation existed (same
-    // reasoning as lib/sms.ts's own re-normalization before dialing out).
-    recipientPhone: normalizeBdPhone(order.customerPhone),
-    recipientAddress: buildRecipientAddress(order),
-    codAmount,
-    note: order.notes ?? undefined,
-  });
+  if (!(await claimCourierBooking(orderId))) {
+    throw AppError.conflict("This order is already booked with a courier, or a booking for it is in progress");
+  }
+
+  let consignment;
+  try {
+    consignment = await createSteadfastConsignment({
+      invoice: order.orderNumber,
+      recipientName: order.customerName,
+      // Steadfast requires exactly 11 digits — checkout normalizes new orders' customerPhone to that
+      // form already, but this defends against rows written before that validation existed (same
+      // reasoning as lib/sms.ts's own re-normalization before dialing out).
+      recipientPhone: normalizeBdPhone(order.customerPhone),
+      recipientAddress: buildRecipientAddress(order),
+      codAmount,
+      note: order.notes ?? undefined,
+    });
+  } catch (err) {
+    if (err instanceof CourierOutcomeUnknownError) await flagCourierOutcomeUnknown(orderId, order.orderNumber, err.message);
+    else await releaseCourierBooking(orderId);
+    throw err;
+  }
 
   await prisma.order.update({
     where: { id: orderId },
@@ -153,6 +189,8 @@ export async function bookOrderWithSteadfast(orderId: string) {
       courierStatus: consignment.status,
       courierTrackingLink: consignment.tracking_link,
       courierBookedAt: new Date(),
+      courierBookingStartedAt: null,
+      courierSyncError: null,
     },
   });
 
@@ -198,23 +236,42 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
     }
   }
 
-  if (!eligible.length) return { booked: [], failed };
-  const codAmounts = await codToCollectFor(eligible.map((order) => order.id));
+  // Claim each order first (Phase 9 D-4): one another booking already holds is skipped, never sent twice.
+  const claimed: typeof eligible = [];
+  for (const order of eligible) {
+    if (await claimCourierBooking(order.id)) claimed.push(order);
+    else failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "A booking for this order is already in progress" });
+  }
+  if (!claimed.length) return { booked: [], failed };
+  const codAmounts = await codToCollectFor(claimed.map((order) => order.id));
 
-  const results = await createBulkSteadfastConsignments(
-    eligible.map((order) => ({
-      invoice: order.orderNumber,
-      recipientName: order.customerName,
-      recipientPhone: normalizeBdPhone(order.customerPhone),
-      recipientAddress: buildRecipientAddress(order),
-      codAmount: codAmounts.get(order.id) ?? 0,
-      note: order.notes ?? undefined,
-    })),
-  );
+  let results;
+  try {
+    results = await createBulkSteadfastConsignments(
+      claimed.map((order) => ({
+        invoice: order.orderNumber,
+        recipientName: order.customerName,
+        recipientPhone: normalizeBdPhone(order.customerPhone),
+        recipientAddress: buildRecipientAddress(order),
+        codAmount: codAmounts.get(order.id) ?? 0,
+        note: order.notes ?? undefined,
+      })),
+    );
+  } catch (err) {
+    if (err instanceof CourierOutcomeUnknownError) {
+      for (const order of claimed) {
+        await flagCourierOutcomeUnknown(order.id, order.orderNumber, err.message);
+        failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Booking outcome unknown — check Steadfast before booking again" });
+      }
+      return { booked: [], failed };
+    }
+    for (const order of claimed) await releaseCourierBooking(order.id);
+    throw err;
+  }
   const byInvoice = new Map(results.map((r) => [r.invoice, r]));
 
   const booked: BulkCourierBookResult["booked"] = [];
-  for (const order of eligible) {
+  for (const order of claimed) {
     const result = byInvoice.get(order.orderNumber);
     // Success is judged by "did Steadfast actually give us a consignment_id + tracking_code", not
     // by matching a specific `status` value — Steadfast's own bulk response format for a *successful*
@@ -227,6 +284,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         console.error(`[steadfast] bulk item for ${order.orderNumber} had no usable result:`, JSON.stringify(result));
       }
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason });
+      await releaseCourierBooking(order.id);
       continue;
     }
 
@@ -239,6 +297,8 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         courierStatus: "in_review",
         courierTrackingLink: result.tracking_link ?? null,
         courierBookedAt: new Date(),
+        courierBookingStartedAt: null,
+        courierSyncError: null,
       },
     });
     if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
@@ -407,6 +467,7 @@ export async function unlinkCourierBooking(orderId: string) {
       courierStatus: null,
       courierTrackingLink: null,
       courierBookedAt: null,
+      courierBookingStartedAt: null,
       courierStatusSyncedAt: null,
       courierSyncError: null,
     },
