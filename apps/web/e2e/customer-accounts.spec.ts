@@ -5,6 +5,9 @@ import path from "path";
 const devMailDir = path.join(__dirname, "..", "..", "api", ".devmail");
 
 const TRACKING_BEACON = /\/api\/(analytics\/|products\/[^/]+\/view$)/;
+// Google Identity Services (the "Sign in with Google" button) logs its own FedCM/iframe errors and gets 403s from
+// accounts.google.com on a localhost origin, intermittently, depending on the network — third-party noise, not our app.
+const GOOGLE_IDENTITY = /accounts\.google\.com|\/gsi\//;
 
 function trackConsoleErrors(page: Page) {
   const errors: string[] = [];
@@ -12,7 +15,14 @@ function trackConsoleErrors(page: Page) {
     // Tracking beacons (analytics, product views) are rate-limited per IP; a long e2e run from one machine
     // can exhaust that budget, and a throttled beacon is invisible to the shopper — not an error in the
     // journey under test.
-    if (msg.type() === "error" && !TRACKING_BEACON.test(msg.location().url)) errors.push(msg.text());
+    if (msg.type() !== "error" || TRACKING_BEACON.test(msg.location().url)) return;
+    if (GOOGLE_IDENTITY.test(msg.location().url) || msg.text().startsWith("[GSI_LOGGER]")) return;
+    // GoogleButton cancels Google's pending One Tap credential request when the login page unmounts
+    // (google.accounts.id.cancel(), components/account/google-button.tsx); Chrome reports that deliberate abort with
+    // exactly this message, attributed to the page.
+    if (msg.text() === "The request has been aborted.") return;
+    // The source URL makes an intermittent failure attributable (first-party vs third-party script).
+    errors.push(`${msg.text()} @ ${msg.location().url || "(no url)"}`);
   });
   page.on("pageerror", (err) => errors.push(err.message));
   return errors;
@@ -66,7 +76,9 @@ test.describe("customer account journey", () => {
 
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password", { exact: true }).fill(newPassword);
-    await page.getByRole("button", { name: /sign in/i }).click();
+    // exact: the customer login page also renders Google's "Sign in with Google" button whenever its script loads, and
+    // /sign in/i matched both (a strict-mode violation that failed this test intermittently, depending on the network).
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/account$/);
 
     await page.getByRole("link", { name: /addresses/i }).click();
