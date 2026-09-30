@@ -13,6 +13,12 @@ const SINGLETON_ID = "singleton";
 // other referrer once overwritten, so it should be cleaned up rather than left on disk forever.
 const REPLACEABLE_IMAGE_FIELDS = ["logoUrl", "faviconUrl", "paymentMethodsImageUrl"] as const;
 
+/** P6-4 / Phase 7: the store currency may be set freely until the first order exists; after that every recorded amount is in
+ * it, so a change is refused. Saving the same currency is never a change. */
+export function currencyChangeBlocked(requested: string | undefined, current: string, ordersExist: boolean): boolean {
+  return requested !== undefined && requested !== current && ordersExist;
+}
+
 /** Lazily creates the one settings row on first read — no seed step required for a fresh database. */
 export async function getSettings() {
   const cached = await cacheGet<Awaited<ReturnType<typeof fetchOrCreate>>>(CACHE_KEY);
@@ -44,7 +50,7 @@ export async function updateSettings(input: UpdateSettingsInput) {
   const settings = await prisma.$transaction(async (tx) => {
     // P6-4: orders record no currency — every money snapshot means "the store currency". Once any order exists,
     // changing it would silently reinterpret all history, so it is locked (docs/PHASE_6_AUDIT.md G5).
-    if (input.currency !== undefined && input.currency !== previous.currency && (await tx.order.count({ take: 1 })) > 0) {
+    if (currencyChangeBlocked(input.currency, previous.currency, (await tx.order.count({ take: 1 })) > 0)) {
       throw new AppError(409, "The store currency can't be changed once orders exist — every recorded amount is in it", { code: "CURRENCY_LOCKED" });
     }
     const updated = await tx.storeSetting.update({ where: { id: SINGLETON_ID }, data: storeFields });

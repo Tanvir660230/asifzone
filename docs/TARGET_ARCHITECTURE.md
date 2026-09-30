@@ -687,6 +687,32 @@ changes when current data changes:
 - metrics RBAC: Phase 10;
 - outbox subscribers: Phase 8.
 
+## 16g. Phase 7 scope — Commerce settings & configuration SSOT
+
+**Why this phase.** The Phase 7 audit ([PHASE_7_AUDIT.md](PHASE_7_AUDIT.md)) found that every configuration concept already
+had one storage owner, but the reads did not:
+- 8 readers re-declared `|| "BDT"`;
+- SSLCommerz and Meta hard-coded `"BDT"`;
+- display hard-coded `৳`, `en-BD` and `Asia/Dhaka`, or used the browser's timezone;
+- emails hard-coded the brand;
+- a settings save left the storefront's copy stale for 5 minutes;
+- the currency writer accepted any string.
+
+**Delivered** ([PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)):
+- `domain/config/commerce-settings`, the one currency/timezone reader over `StoreSetting` (no new table);
+- validated currency;
+- the store currency in every money path;
+- shared configuration-driven formatters with one declared display locale;
+- `<StoreConfig>` in the web root layout;
+- email identity from settings;
+- storefront settings revalidation;
+- focused guards.
+
+The Phase 6 lock is unchanged. There is no migration.
+
+**Deferred:** `CommerceSettings`/`StoreProfile` tables and config packs (installer, §7/§9), locale setting and
+configurable SMS copy, country pack, `ProviderConfig` and per-provider currency capability, a per-order currency column.
+
 ## 17. Definition of done for each phase
 
 Tests (unit + integration + e2e) green · `tsc --noEmit` for api, web, shared · `eslint` for api and web (added to CI in Phase 1) · `next build` · migrations applied to a copy of production + drift check · invariant suite green · reconciliation reports reviewed · this document, the audit and the SSOT registry updated · remaining risks listed in the phase's PR description.

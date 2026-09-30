@@ -257,3 +257,15 @@ overrule any of them with a new dated entry.
 | P6-3 | Lines written before Phase 6 are **not** backfilled with today's cost, category or brand. Reports group them as "Not recorded" and count them in cost coverage. The one backfill is `productIdSnapshot`, from the variant's product. | Today's catalog isn't history. A variant never changes product, so its product id is the true historical fact. |
 | P6-4 | The store currency is locked once any order exists: settings refuse the change (409 `CURRENCY_LOCKED`). | Orders record no currency. Every money snapshot, including the new minor-unit cost, means "store currency". Changing it would silently reinterpret all history. |
 | P6-5 | An exchange (P5-3) keeps the original line's cost and attribution (the original sale stands). The replacement line records its own snapshots for the record, but a replacement is not a sale, so it contributes no COGS or sales. | Consistent with D6/P5-3. Counting the replacement's cost would need a new decision, like upgrades (P5-3). |
+
+## Phase 7 implementation notes (interpretations, recorded 2026-09-30)
+
+Phase 7 ([PHASE_7_AUDIT.md](PHASE_7_AUDIT.md), [PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)) adds no business rule beyond
+these readings; the owner may overrule any with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P7-1 | A store may use only a currency the money engine represents exactly: `BDT USD EUR GBP INR JPY`. Other codes are rejected with 400. Adding one means adding it to the engine's minor-digit table. | The engine silently assumed 2 decimals for unknown codes. A wrong scale would reinterpret every amount, and `Intl` can't display a non-ISO code. |
+| P7-2 | Currency and timezone stay stored in `StoreSetting`. No `CommerceSettings` table in Phase 7. `domain/config/commerce-settings` is the single read path. | Storage already had one owner. A new table would have been a second copy during compatibility (Phase 7 boundary). |
+| P7-3 | Every business date shown to admins or customers (orders, payments, refunds, returns, reviews, coupons, "today") is the **store-timezone** date, not the viewer's device date. | Reports bucket by the store's business day (Phase 5). A viewer-local date could place an order on a different day than the reports. |
+| P7-4 | Currency symbols are derived from the store currency (`Intl` narrow symbol). The number locale stays `en-BD` until a locale setting exists. Transactional SMS copy is unchanged (Bengali content). | No locale concept exists yet (TARGET §7 future). The SMS copy is content, not configuration. |

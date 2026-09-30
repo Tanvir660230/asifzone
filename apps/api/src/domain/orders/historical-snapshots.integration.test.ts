@@ -3,6 +3,7 @@ import request from "supertest";
 import { contributions, groupKeyOf, snapshotCoverage, sumOf, type OrderFact } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
+import { cacheDel } from "../../config/redis";
 import { RUN, asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, trackOrder } from "../../test-fixtures";
 import { trackOrder as trackOrderLookup, updateOrderStatus } from "../../modules/orders/order.service";
 import { listCustomerOrders } from "../../modules/customers/customer.service";
@@ -198,11 +199,17 @@ describe("store currency lock (G5, P6-4)", () => {
   it("once orders exist the currency can't change (409 CURRENCY_LOCKED); saving the same currency still works", async () => {
     await deliveredSale();
     const current = (await prisma.storeSetting.findUniqueOrThrow({ where: { id: "singleton" } })).currency;
-    await expect(updateSettings({ currency: current === "USD" ? "EUR" : "USD" })).rejects.toMatchObject({ statusCode: 409, details: { code: "CURRENCY_LOCKED" } });
-    expect((await prisma.storeSetting.findUniqueOrThrow({ where: { id: "singleton" } })).currency).toBe(current);
-    await expect(updateSettings({ currency: current })).resolves.toMatchObject({ currency: current });
-    const api = await asOwner();
-    const http = await api.patch("/api/settings", { currency: current === "USD" ? "EUR" : "USD" });
-    expect([http.status, http.body.details?.code]).toEqual([409, "CURRENCY_LOCKED"]);
+    try {
+      await expect(updateSettings({ currency: current === "USD" ? "EUR" : "USD" })).rejects.toMatchObject({ statusCode: 409, details: { code: "CURRENCY_LOCKED" } });
+      expect((await prisma.storeSetting.findUniqueOrThrow({ where: { id: "singleton" } })).currency).toBe(current);
+      await expect(updateSettings({ currency: current })).resolves.toMatchObject({ currency: current });
+      const api = await asOwner();
+      const http = await api.patch("/api/settings", { currency: current === "USD" ? "EUR" : "USD" });
+      expect([http.status, http.body.details?.code]).toEqual([409, "CURRENCY_LOCKED"]);
+    } finally {
+      // Even if a regression let the change through, the shared test DB keeps its currency (the lock blocks the app path).
+      await prisma.storeSetting.update({ where: { id: "singleton" }, data: { currency: current } });
+      await cacheDel("settings:singleton");
+    }
   });
 });

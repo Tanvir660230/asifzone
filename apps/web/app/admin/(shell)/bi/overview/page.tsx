@@ -168,8 +168,8 @@ export default function ExecutiveOverviewPage() {
           <div className="h-[15.5rem] animate-pulse rounded-3xl bg-ink-100 lg:col-span-2" />
         )}
 
-        {/* Single column on phones — at 2-up, a 6-digit ৳ value with the label/icon left almost
-            no room and clipped ("৳108,1…"), which defeats the point of a KPI tile. Full-width
+        {/* Single column on phones — at 2-up, a 6-digit price with the label/icon left almost
+            no room and clipped ("108,1…"), which defeats the point of a KPI tile. Full-width
             rows cost a little more scroll but the numbers are always readable, which review
             criterion #4 (data readability) treats as non-negotiable for a KPI card. */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:col-span-3 lg:grid-cols-3">
