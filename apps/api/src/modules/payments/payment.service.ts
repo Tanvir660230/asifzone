@@ -1,5 +1,6 @@
 import crypto from "crypto";
-import type { Order, OrderItem } from "@prisma/client";
+import type { Order } from "@prisma/client";
+import type { OrderItemRow } from "../../config/prisma";
 import { Prisma } from "@prisma/client";
 import type { CheckoutInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
@@ -82,7 +83,7 @@ async function settleExistingOrder(
  * caller redirects the customer's browser to the returned gatewayUrl. Used both at checkout
  * (order.controller.ts) and for a later retry on the same order (retryPayment). */
 export async function startPaymentSession(
-  order: Order & { items: OrderItem[] },
+  order: Order & { items: OrderItemRow[] },
   ipAddress?: string,
 ): Promise<{ gatewayUrl: string; sessionId: string }> {
   if (order.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");

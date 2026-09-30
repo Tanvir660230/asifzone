@@ -238,14 +238,14 @@ export async function getProductConversionRates(days?: number) {
   });
 }
 
-/** Estimated gross margin per product (current cost — P5-6). */
+/** Gross margin per product from each line's recorded cost (Phase 6) — lines without a recorded cost are excluded. */
 export async function getHighestProfitProducts(days?: number, limit = 10) {
   const range = await resolveLegacyWindow(days);
-  const m = await computeMetrics({ metrics: ["gross_margin_estimated", "net_merchandise_sales", "cogs_estimated"], range, groupBy: "product", limit });
+  const m = await computeMetrics({ metrics: ["gross_margin", "net_merchandise_sales", "cogs"], range, groupBy: "product", limit });
   const refs = await productRefs(m.groups!.map((g) => g.key));
   return m.groups!
     .filter((g) => refs.has(g.key))
-    .map((g) => ({ id: g.key, name: g.label, slug: refs.get(g.key)!.slug, revenue: g.metrics.net_merchandise_sales!, cogs: g.metrics.cogs_estimated!, profit: g.metrics.gross_margin_estimated! }));
+    .map((g) => ({ id: g.key, name: g.label, slug: refs.get(g.key)!.slug, revenue: g.metrics.net_merchandise_sales!, cogs: g.metrics.cogs!, profit: g.metrics.gross_margin! }));
 }
 
 /** Return rate = units returned ÷ units sold (realised); refund rate = realised orders with a completed refund ÷
@@ -360,13 +360,13 @@ export async function getSizeColorPerformance(days?: number) {
   });
 }
 
-/** Estimated COGS of net units sold ÷ current inventory value, per product (both at current cost — P5-6). */
+/** Recorded COGS of net units sold (Phase 6 snapshots) ÷ current inventory value (stock held now, at current cost). */
 export async function getInventoryTurnover(days?: number, limit = 10) {
   const range = await resolveLegacyWindow(days);
   return cached(`inventory-turnover:${limit}`, range, async () => {
     const { currency } = await storeContext();
     const [{ orders, major }, variants] = await Promise.all([facts(range), loadInventoryFacts(currency)]);
-    const cogs = groupContributions("cogs_estimated", orders, range, productIdOf);
+    const cogs = groupContributions("cogs", orders, range, productIdOf);
     const valueBy = new Map<string, number>();
     for (const v of variants) if (v.held && v.trackInventory) valueBy.set(v.productId, (valueBy.get(v.productId) ?? 0) + Math.max(0, v.stock) * v.currentUnitCost);
     const refs = await productRefs([...valueBy.keys()]);
@@ -583,11 +583,14 @@ export async function getDiscountUsageBreakdown(days?: number, dateFrom?: Date, 
 
 // ─── Financial ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Daily net merchandise sales vs estimated COGS vs estimated gross margin (P5-6). */
+/** Daily net merchandise sales vs recorded COGS vs gross margin (Phase 6 cost snapshots), with line cost coverage. */
 export async function getProfitTrend(days = 30) {
   const range = await resolveLegacyWindow(days);
-  const m = await computeMetrics({ metrics: ["net_merchandise_sales", "cogs_estimated", "gross_margin_estimated"], range, groupBy: "day" });
-  return m.groups!.map((g) => ({ date: g.key, revenue: g.metrics.net_merchandise_sales!, cogs: g.metrics.cogs_estimated!, profit: g.metrics.gross_margin_estimated! }));
+  const m = await computeMetrics({ metrics: ["net_merchandise_sales", "cogs", "gross_margin"], range, groupBy: "day" });
+  return {
+    series: m.groups!.map((g) => ({ date: g.key, revenue: g.metrics.net_merchandise_sales!, cogs: g.metrics.cogs!, profit: g.metrics.gross_margin! })),
+    costCoverage: m.metrics.cogs!.coverage ?? { recorded: 0, missing: 0 },
+  };
 }
 
 /** Refunds (ledger), discounts (snapshot) and courier loss for the window. */

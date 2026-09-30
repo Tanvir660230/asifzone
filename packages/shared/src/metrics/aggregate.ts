@@ -111,8 +111,27 @@ const P = {
   unitsOrdered: (o: OrderFact) => (isSaleOrder(o) ? o.lines.map((l) => one(o.placedAt, l.quantity, o, l)) : []),
   unitsSold: (o: OrderFact) => realised(o, (at) => o.lines.map((l) => one(at, l.quantity, o, l))),
   unitsReturned: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.units, o, e.line))),
-  cogsSold: (o: OrderFact) => realised(o, (at) => o.lines.map((l) => one(at, l.quantity * l.currentUnitCost, o, l))),
-  cogsReturned: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.currentCost, o, e.line))),
+  /** Recorded cost of units sold — lines without a recorded cost are unknown and excluded (P6-2, never counted at 0). */
+  cogsSold: (o: OrderFact) => realised(o, (at) => o.lines.filter((l) => l.unitCostSnapshot !== null).map((l) => one(at, l.quantity * l.unitCostSnapshot!, o, l))),
+  cogsReturned: (o: OrderFact) =>
+    realised(o, () =>
+      returnEvents(o)
+        .filter((e) => e.cost !== null)
+        .map((e) => one(e.at, e.cost!, o, e.line)),
+    ),
+  /** Margin over costed lines only: merchandise excluding VAT − recorded cost (same population on both sides). */
+  marginSold: (o: OrderFact) =>
+    realised(o, (at) => {
+      const nets = lineNets(o);
+      const v = lineMerchandiseVat(o);
+      return o.lines.flatMap((l, i) => (l.unitCostSnapshot === null ? [] : [one(at, nets[i]! - v[i]! - l.quantity * l.unitCostSnapshot, o, l)]));
+    }),
+  marginReturned: (o: OrderFact) =>
+    realised(o, () =>
+      returnEvents(o)
+        .filter((e) => e.cost !== null)
+        .map((e) => one(e.at, e.valueExVat - e.cost!, o, e.line)),
+    ),
 } satisfies Record<string, Producer>;
 
 function atRealised(o: OrderFact, amount: number): Contribution[] {
@@ -153,8 +172,8 @@ const ADDITIVE: Record<string, Term[]> = {
   units_sold: [[1, P.unitsSold]],
   units_returned: [[1, P.unitsReturned]],
   net_units_sold: [[1, P.unitsSold], [-1, P.unitsReturned]],
-  cogs_estimated: [[1, P.cogsSold], [-1, P.cogsReturned]],
-  gross_margin_estimated: [[1, P.gross], [-1, P.discountLines], [-1, P.returnsValue], [-1, P.cogsSold], [1, P.cogsReturned]],
+  cogs: [[1, P.cogsSold], [-1, P.cogsReturned]],
+  gross_margin: [[1, P.marginSold], [-1, P.marginReturned]],
 };
 
 export const ADDITIVE_METRICS = new Set(Object.keys(ADDITIVE));
@@ -183,6 +202,9 @@ export interface GroupKey {
   label: string;
 }
 
+/** Lines written before Phase 6 have no category/brand snapshot: shown as such, never re-attributed from today's catalog. */
+const NOT_RECORDED: GroupKey = { key: "not_recorded", label: "Not recorded (before Phase 6)" };
+
 export function groupKeyOf(c: Contribution, grouping: MetricGrouping, tz: string): GroupKey {
   switch (grouping) {
     case "day":
@@ -198,8 +220,10 @@ export function groupKeyOf(c: Contribution, grouping: MetricGrouping, tz: string
     case "product":
       return c.line ? { key: c.line.productId ?? `unattributed:${c.line.productName}`, label: c.line.productName } : { key: "unattributed", label: "Unattributed" };
     case "category":
+      if (c.line && !c.line.attributionRecorded) return NOT_RECORDED;
       return c.line?.categoryId ? { key: c.line.categoryId, label: c.line.categoryName ?? "—" } : { key: "uncategorized", label: "Uncategorized" };
     case "brand":
+      if (c.line && !c.line.attributionRecorded) return NOT_RECORDED;
       return c.line?.brand ? { key: c.line.brand, label: c.line.brand } : { key: "unbranded", label: "Unbranded" };
   }
 }
@@ -221,6 +245,18 @@ export function snapshotCoverage(key: string, orders: OrderFact[], range: Pick<B
         : key === "realised_net_sales" || key === "merchandise_vat" || key === "aov"
           ? (o: OrderFact) => merchandiseVat(o) === null
           : null;
+  if (key === "cogs" || key === "gross_margin") {
+    // Line-level: lines of realised orders in range with / without a recorded cost (P6-2).
+    const lines = { recorded: 0, missing: 0 };
+    for (const o of orders) {
+      if (!inRange(realisedAt(o), range)) continue;
+      for (const l of o.lines) {
+        if (l.unitCostSnapshot === null) lines.missing++;
+        else lines.recorded++;
+      }
+    }
+    return lines;
+  }
   if (!isMissing) return undefined;
   const cov = { recorded: 0, missing: 0 };
   for (const o of orders) {

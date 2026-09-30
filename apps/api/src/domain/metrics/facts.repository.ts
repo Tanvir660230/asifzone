@@ -1,7 +1,8 @@
 /**
  * The fact loader (docs/METRICS_REGISTRY.md) — the ONLY code that reads sales facts for metrics. It turns Order/OrderItem
  * snapshots, OrderStatusHistory, Payment/Refund (ledger), StockMovement RETURN rows and approved exchanges into the pure
- * engine's OrderFact objects. It uses Prisma's typed API only (correct UTC semantics, no raw time comparisons) and never
+ * engine's OrderFact objects. Cost and category/brand come only from the order line's own Phase 6 snapshots
+ * (docs/PHASE_6_AUDIT.md) — never today's catalog; this is the one reader that selects the omitted recorded cost. It uses Prisma's typed API only (correct UTC semantics, no raw time comparisons) and never
  * writes anything.
  *
  * For a range, it loads exactly the orders that have an event inside it — placement, first delivery, a cancellation (the
@@ -78,6 +79,11 @@ const ORDER_SELECT = {
       bundleDiscountAllocated: true,
       couponDiscountAllocated: true,
       flashSaleId: true,
+      unitCostSnapshot: true,
+      productIdSnapshot: true,
+      categoryIdSnapshot: true,
+      categoryNameSnapshot: true,
+      brandSnapshot: true,
     },
     orderBy: { id: "asc" as const },
   },
@@ -110,7 +116,7 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
       }),
     ),
     batched(orderIds, (chunk) => prisma.returnRequest.findMany({ where: { exchangeOrderId: { in: chunk } }, select: { exchangeOrderId: true } })),
-    loadVariantAttribution([...new Set(rows.flatMap((r) => r.items.map((i) => i.variantId)))], currency),
+    loadVariantProducts([...new Set(rows.flatMap((r) => r.items.filter((i) => !i.productIdSnapshot).map((i) => i.variantId)))]),
   ]);
 
   const movementsBy = groupBy(returnMovements, (m) => m.orderId!);
@@ -145,16 +151,16 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
     shippingDistrict: o.shippingDistrict,
     couponId: o.couponId,
     bundleId: o.bundleId,
-    lines: o.items.map((i): LineFact => {
-      const v = variants.get(i.variantId);
-      return {
+    lines: o.items.map(
+      (i): LineFact => ({
         orderItemId: i.id,
         variantId: i.variantId,
-        productId: v?.productId ?? null,
+        productId: i.productIdSnapshot ?? variants.get(i.variantId) ?? null,
         productName: i.productNameSnapshot,
-        categoryId: v?.categoryId ?? null,
-        categoryName: v?.categoryName ?? null,
-        brand: v?.brand ?? null,
+        attributionRecorded: i.categoryIdSnapshot !== null,
+        categoryId: i.categoryIdSnapshot,
+        categoryName: i.categoryNameSnapshot,
+        brand: i.brandSnapshot,
         sku: i.skuSnapshot,
         size: i.sizeSnapshot,
         color: i.colorSnapshot,
@@ -164,9 +170,9 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
         couponDiscountAllocated: minorOrNull(i.couponDiscountAllocated, currency),
         returnedQuantity: i.returnedQuantity,
         flashSaleId: i.flashSaleId,
-        currentUnitCost: v?.unitCost ?? 0,
-      };
-    }),
+        unitCostSnapshot: i.unitCostSnapshot,
+      }),
+    ),
     payments: o.payments.map((p) => ({ amount: minor(p.amount, currency), status: p.status, provider: p.provider, settledAt: p.settledAt })),
     refunds: o.refunds.map((r) => ({ amount: minor(r.amount, currency), status: r.status, completedAt: r.completedAt })),
     returnMovements: (movementsBy.get(o.id) ?? []).map((m) => ({ variantId: m.variantId, units: m.change, at: m.createdAt })),
@@ -174,25 +180,11 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
   }));
 }
 
-/** Current product/category/brand/cost of each variant — attribution only (P5-6, P5-7); a missing variant is unattributed. */
-async function loadVariantAttribution(variantIds: string[], currency: string) {
-  const out = new Map<string, { productId: string; categoryId: string | null; categoryName: string | null; brand: string | null; unitCost: number }>();
-  const rows = await batched(variantIds, (chunk) =>
-    prisma.productVariant.findMany({
-      where: { id: { in: chunk } },
-      select: { id: true, costPrice: true, product: { select: { id: true, brand: true, costPrice: true, categoryId: true, category: { select: { name: true } } } } },
-    }),
-  );
-  for (const v of rows) {
-    out.set(v.id, {
-      productId: v.product.id,
-      categoryId: v.product.categoryId,
-      categoryName: v.product.category?.name ?? null,
-      brand: v.product.brand,
-      unitCost: minor(v.costPrice ?? v.product.costPrice, currency),
-    });
-  }
-  return out;
+/** The product of variants whose lines have no productIdSnapshot (identity only — a variant never changes product; the
+ * migration backfilled every line whose variant existed, so this only covers lines written in between). */
+async function loadVariantProducts(variantIds: string[]) {
+  const rows = await batched(variantIds, (chunk) => prisma.productVariant.findMany({ where: { id: { in: chunk } }, select: { id: true, productId: true } }));
+  return new Map(rows.map((v) => [v.id, v.productId]));
 }
 
 /** Point-in-time ledger positions need every non-trashed order's money rows (no lines). */

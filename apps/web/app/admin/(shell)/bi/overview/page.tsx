@@ -177,7 +177,7 @@ export default function ExecutiveOverviewPage() {
           ) : (
             <>
               <StatTile
-                label="Gross profit (lifetime)"
+                label="Gross profit (lifetime, recorded cost)"
                 value={formatPrice(overview.grossProfitLifetime)}
                 icon={<TrendingUp size={20} />}
                 trendPct={overview.profitGrowthPct}

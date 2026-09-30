@@ -16,14 +16,14 @@
  * (`volatile`), or the currency / pricing version changed — and recomputes exactly those rows. The minute cron runs the
  * same guard, and a full rebuild + drift report exist for reconciliation.
  */
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { PRICING_VERSION, productAvailability, type ProductAvailability } from "@clothing-brand/shared";
-import { prisma } from "../../config/prisma";
+import { prisma, type Db as AppDb } from "../../config/prisma";
 import { getSettings } from "../../modules/settings/settings.service";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+type Db = AppDb;
 
 const PROJECTION_SOURCE_SELECT = {
   id: true,

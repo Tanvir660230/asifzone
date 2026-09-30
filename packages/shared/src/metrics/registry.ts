@@ -16,7 +16,7 @@ export interface MetricDefinition {
   unit: MetricUnit;
   basis: MetricBasis;
   status: "active" | "pending";
-  /** Uses the current cost price (P5-6). */
+  /** Uses the current cost price — point-in-time valuation only (inventory), never history. */
   estimated?: boolean;
   groupings: readonly MetricGrouping[];
 }
@@ -63,8 +63,8 @@ export const METRIC_DEFINITIONS: readonly MetricDefinition[] = [
   def("aov", "Average order value", "money", "realised", TIME, "Realised net sales ÷ orders realised (same realisation population, P5-5)."),
   def("cod_orders_placed", "COD orders placed", "count", "placed", ORDER_LEVEL, "Sale orders paid by cash on delivery, by placement time."),
   def("courier_loss", "Courier loss", "money", "event", TIME, "Σ courier-loss ledger (estimated return-leg fees)."),
-  def("cogs_estimated", "Cost of goods (estimated)", "money", "mixed", LINE_LEVEL, "Net units sold × current cost price.", { estimated: true }),
-  def("gross_margin_estimated", "Gross margin (estimated)", "money", "mixed", LINE_LEVEL, "Net merchandise sales − estimated cost of goods.", { estimated: true }),
+  def("cogs", "Cost of goods sold (recorded cost)", "money", "mixed", LINE_LEVEL, "Units sold − units returned, × each line's recorded cost (OrderItem.unitCostSnapshot). Lines without a recorded cost are unknown: excluded and reported as coverage (lines), never counted at 0."),
+  def("gross_margin", "Gross margin (recorded cost)", "money", "mixed", LINE_LEVEL, "Over lines with a recorded cost only: merchandise excluding VAT − recorded cost, net of returns. Uncosted lines are excluded from both sides and reported as coverage (lines)."),
   // Product
   def("units_ordered", "Units ordered", "count", "placed", LINE_LEVEL, "Units on sale orders by placement time (demand)."),
   def("units_sold", "Units sold", "count", "realised", LINE_LEVEL, "Units on realised sale orders."),

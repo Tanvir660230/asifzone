@@ -4,6 +4,9 @@ generator client {
   // Docker image actually runs on, and its Alpine base ships OpenSSL 3.x, not the 1.1 the
   // default musl engine binary needs.
   binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  // Global `omit` (config/prisma.ts) keeps OrderItem.unitCostSnapshot out of every read unless selected explicitly —
+  // recorded cost is internal and must never reach a customer response (docs/PHASE_6_AUDIT.md G6).
+  previewFeatures = ["omitApi"]
 }
 
 datasource db {
@@ -1275,6 +1278,20 @@ model OrderItem {
   /// This line's share of the order's bundle / coupon discount (proportional allocation, sums to the order amount).
   bundleDiscountAllocated Decimal? @db.Decimal(10, 2)
   couponDiscountAllocated Decimal? @db.Decimal(10, 2)
+  /// Historical facts (Phase 6, docs/PHASE_6_AUDIT.md) — captured once, in the transaction that writes this line
+  /// (order creation or exchange-replacement creation), never updated. No FKs: history outlives the catalog.
+  /// Per-unit cost in MINOR units of the store currency (StoreSetting.currency, locked once orders exist):
+  /// variant.costPrice ?? product.costPrice at order time. NULL = unknown (no cost configured, or before Phase 6) —
+  /// never 0 by default. Omitted from every Prisma read unless selected (config/prisma.ts).
+  unitCostSnapshot        Int?
+  /// The variant's product (backfilled for older lines from ProductVariant.productId — a variant never changes product).
+  productIdSnapshot       String?
+  /// The product's category and its name at order time. NULL = not recorded (line predates Phase 6); every product has
+  /// a category, so a recorded line always has categoryIdSnapshot.
+  categoryIdSnapshot      String?
+  categoryNameSnapshot    String?
+  /// Product.brand at order time (free text; no brand id exists). NULL with categoryIdSnapshot set = unbranded.
+  brandSnapshot           String?
 
   @@index([orderId])
   @@index([flashSaleItemId])

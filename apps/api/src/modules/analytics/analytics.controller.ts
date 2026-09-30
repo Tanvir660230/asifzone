@@ -356,7 +356,7 @@ export const courierPerformance = asyncHandler(async (req: Request, res: Respons
 
 export const profitTrend = asyncHandler(async (req: Request, res: Response) => {
   const { days = 30 } = query(req);
-  res.json({ series: await analyticsService.getProfitTrend(days) });
+  res.json(await analyticsService.getProfitTrend(days));
 });
 
 export const financialCostBreakdown = asyncHandler(async (req: Request, res: Response) => {

@@ -11,6 +11,7 @@ export function line(over: Partial<LineFact> = {}): LineFact {
     variantId: `var${seq}`,
     productId: "prodA",
     productName: "Product A",
+    attributionRecorded: true,
     categoryId: "catA",
     categoryName: "Category A",
     brand: "BrandA",
@@ -23,7 +24,7 @@ export function line(over: Partial<LineFact> = {}): LineFact {
     couponDiscountAllocated: null,
     returnedQuantity: 0,
     flashSaleId: null,
-    currentUnitCost: T(400),
+    unitCostSnapshot: T(400),
     ...over,
   };
 }

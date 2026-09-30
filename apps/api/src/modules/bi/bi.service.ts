@@ -31,6 +31,9 @@ export interface ExecutiveOverview {
 
   grossProfitLifetime: number;
   profitGrowthPct: number;
+  /** Gross profit covers lines with a recorded cost (Phase 6); older lines and lines without a cost are unknown. */
+  grossProfitCostedLinesLifetime: number;
+  grossProfitUncostedLinesLifetime: number;
 
   totalVisitors: number;
   returningVisitors: number;
@@ -85,9 +88,9 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
     computeMetrics({ metrics: ["realised_net_sales"], range: today }),
     computeMetrics({ metrics: ["realised_net_sales"], range: yesterday }),
     computeMetrics({ metrics: ["realised_net_sales"], range: week }),
-    computeMetrics({ metrics: ["realised_net_sales", "gross_margin_estimated"], range: month }),
-    computeMetrics({ metrics: ["realised_net_sales", "gross_margin_estimated"], range: lastMonth }),
-    computeMetrics({ metrics: ["realised_net_sales", "orders_realised", "aov", "gross_margin_estimated", "orders_placed", "orders_cancelled", "inventory_value"], range: lifetime }),
+    computeMetrics({ metrics: ["realised_net_sales", "gross_margin"], range: month }),
+    computeMetrics({ metrics: ["realised_net_sales", "gross_margin"], range: lastMonth }),
+    computeMetrics({ metrics: ["realised_net_sales", "orders_realised", "aov", "gross_margin", "orders_placed", "orders_cancelled", "inventory_value"], range: lifetime }),
     computeMetrics({
       metrics: ["gross_merchandise_sales", "discounts", "merchandise_vat", "merchandise_refunds", "overpayment_refunds", "net_sales", "shipping_charged", "returns", "refunds", "collected_cash", "tax_collected"],
       range: month,
@@ -150,8 +153,10 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
     ordersLifetime: life.metrics.orders_realised!.value,
     aovLifetime: life.metrics.aov!.value,
 
-    grossProfitLifetime: life.metrics.gross_margin_estimated!.value,
-    profitGrowthPct: pctChange(m.metrics.gross_margin_estimated!.value, lm.metrics.gross_margin_estimated!.value),
+    grossProfitLifetime: life.metrics.gross_margin!.value,
+    grossProfitCostedLinesLifetime: life.metrics.gross_margin!.coverage?.recorded ?? 0,
+    grossProfitUncostedLinesLifetime: life.metrics.gross_margin!.coverage?.missing ?? 0,
+    profitGrowthPct: pctChange(m.metrics.gross_margin!.value, lm.metrics.gross_margin!.value),
 
     totalVisitors,
     returningVisitors,

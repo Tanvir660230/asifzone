@@ -212,7 +212,7 @@ export default function ProductIntelligencePage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Highest profit (est.)</CardTitle>
+            <CardTitle>Highest profit (recorded cost)</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList
@@ -225,7 +225,7 @@ export default function ProductIntelligencePage() {
               })}
               emptyLabel="No sales recorded yet."
             />
-            <p className="mt-3 text-xs text-ink-400">Profit is net merchandise sales minus estimated cost at current cost price — not an exact historical margin.</p>
+            <p className="mt-3 text-xs text-ink-400">Profit uses the cost recorded on each order line when it was sold (excluding VAT); lines with no recorded cost are left out.</p>
           </CardContent>
         </Card>
       </section>
@@ -400,7 +400,7 @@ export default function ProductIntelligencePage() {
               })}
               emptyLabel="No turnover data yet — needs both sales and cost-priced stock on hand."
             />
-            <p className="mt-3 text-xs text-ink-400">COGS sold ÷ current inventory value — a practical stand-in for average inventory, since stock isn&apos;t snapshotted over time.</p>
+            <p className="mt-3 text-xs text-ink-400">Recorded COGS sold ÷ current inventory value (stock held now at current cost) — a practical stand-in for average inventory, since stock isn&apos;t snapshotted over time.</p>
           </CardContent>
         </Card>
         <Card>

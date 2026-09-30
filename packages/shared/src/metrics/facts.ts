@@ -11,12 +11,16 @@ import { money } from "../engines/money";
 export interface LineFact {
   orderItemId: string;
   variantId: string;
-  /** Current product of the variant (null when the variant no longer exists — "unattributed"). */
+  /** The line's product: `OrderItem.productIdSnapshot`, else the variant's product (a variant never changes product);
+   * null when neither exists — "unattributed". */
   productId: string | null;
   productName: string;
-  /** Current category/brand of that product (no historical snapshot exists — P5-7). */
+  /** Category and brand AS RECORDED on the line (Phase 6 snapshots) — never today's catalog. `attributionRecorded` is
+   * false for lines written before Phase 6: their category/brand are unknown ("Not recorded"), not reconstructed. */
+  attributionRecorded: boolean;
   categoryId: string | null;
   categoryName: string | null;
+  /** null with `attributionRecorded` = unbranded. */
   brand: string | null;
   sku: string;
   size: string;
@@ -28,8 +32,9 @@ export interface LineFact {
   couponDiscountAllocated: number | null;
   returnedQuantity: number;
   flashSaleId: string | null;
-  /** Current unit cost (variant ?? product ?? 0) — used only by metrics flagged *estimated* (P5-6). */
-  currentUnitCost: number;
+  /** `OrderItem.unitCostSnapshot`: per-unit cost recorded when the line was written (minor units). null = unknown — no
+   * cost configured, or the line predates Phase 6. Historical COGS/margin never read the current cost price. */
+  unitCostSnapshot: number | null;
 }
 
 export interface OrderFact {
@@ -218,21 +223,27 @@ export interface ReturnEvent {
   at: Date;
   /** units × net unit value of the variant in this order (minor units). */
   value: number;
+  /** `value` excluding merchandise VAT (the order's snapshot, allocated to lines). */
+  valueExVat: number;
   /** A representative line of the variant (for product/category attribution). */
   line: LineFact;
-  /** units × current unit cost (for estimated COGS reversal). */
-  currentCost: number;
+  /** units × recorded unit cost; null when any line of the variant has no recorded cost (unknown). */
+  cost: number | null;
 }
 
 /** Returned units valued from snapshots (§3), with exchange-returned units removed chronologically (P5-3). */
 export function returnEvents(o: OrderFact): ReturnEvent[] {
   if (!o.returnMovements.length) return [];
   const discounts = lineDiscounts(o);
-  const byVariant = new Map<string, { net: number; qty: number; line: LineFact }>();
+  const vat = lineMerchandiseVat(o);
+  const byVariant = new Map<string, { net: number; netExVat: number; qty: number; cost: number | null; line: LineFact }>();
   o.lines.forEach((l, i) => {
-    const entry = byVariant.get(l.variantId) ?? { net: 0, qty: 0, line: l };
-    entry.net += lineGross(l) - discounts[i]!;
+    const entry = byVariant.get(l.variantId) ?? { net: 0, netExVat: 0, qty: 0, cost: 0, line: l };
+    const net = lineGross(l) - discounts[i]!;
+    entry.net += net;
+    entry.netExVat += net - vat[i]!;
     entry.qty += l.quantity;
+    entry.cost = entry.cost === null || l.unitCostSnapshot === null ? null : entry.cost + l.quantity * l.unitCostSnapshot;
     byVariant.set(l.variantId, entry);
   });
 
@@ -266,8 +277,9 @@ export function returnEvents(o: OrderFact): ReturnEvent[] {
       units,
       at: mv.at,
       value: Math.round((info.net * units) / info.qty),
+      valueExVat: Math.round((info.netExVat * units) / info.qty),
       line: info.line,
-      currentCost: units * info.line.currentUnitCost,
+      cost: info.cost === null ? null : Math.round((info.cost * units) / info.qty),
     });
   }
   return events;

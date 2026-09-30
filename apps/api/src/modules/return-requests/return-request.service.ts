@@ -22,6 +22,7 @@ import { recordSale, releaseOrderLines } from "../inventory/inventory.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
 import { recordExchangeCovered, requestRefund } from "../../domain/payments/payment-ledger.service";
+import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 
 const include = {
   order: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
@@ -227,6 +228,7 @@ async function createExchangeOrder(
         ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(refundDue)} owed back to the customer (refund requested)`
         : `Free exchange for order ${originalOrder.orderNumber} (${label})`;
 
+  const replacementSnapshots = await captureLineSnapshots(tx, [requestedVariant.id], cur);
   const exchangeOrder = await tx.order.create({
     data: {
       orderNumber: generateOrderNumber(),
@@ -273,6 +275,8 @@ async function createExchangeOrder(
           flashSaleItemId: seg.flash?.flashSaleItemId ?? null,
           bundleDiscountAllocated: 0,
           couponDiscountAllocated: 0,
+          // Recorded for the replacement line; a replacement is not a sale, so no COGS/sales read it (P6-5).
+          ...lineSnapshotData(replacementSnapshots, requestedVariant.id),
         })),
       },
       statusHistory: {

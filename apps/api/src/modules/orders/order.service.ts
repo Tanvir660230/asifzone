@@ -33,7 +33,8 @@ import type {
   BulkOrderStatusResult,
 } from "@clothing-brand/shared";
 import { Prisma } from "@prisma/client";
-import { prisma } from "../../config/prisma";
+import { prisma, type Db } from "../../config/prisma";
+import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
@@ -164,7 +165,7 @@ function assertOrderable(quote: Quote, input: CheckoutInput, rows: PricedQuote["
  *
  * `input.quoteToken` (the quote the customer was shown): when present and no longer matching the server's price, the
  * order is refused with 409 QUOTE_CHANGED carrying the fresh quote — a stale price is never charged. */
-export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null, db: Prisma.TransactionClient | typeof prisma = prisma): Promise<DerivedOrderPricing> {
+export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null, db: Db = prisma): Promise<DerivedOrderPricing> {
   // A guest (no session cookie) still gets tied to a real Customer row, matched by email/phone —
   // see findOrCreateGuestCustomer for why (repeat-guest recognition, and a base to merge into once
   // they register/log in).
@@ -298,8 +299,11 @@ export async function insertOrderRecord(
   const oversoldItems: { name: string; size: string; color: string }[] = [];
   let stockAfter = new Map<string, number>();
   const untracked = new Set([...(pricing.rows?.values() ?? [])].filter((r) => !r.product.trackInventory).map((r) => r.id));
+  const currency = (await getSettings()).currency || "BDT";
 
   const order = await prisma.$transaction(async (tx) => {
+    // Phase 6: cost and attribution as the catalog stands when the line is written (docs/PHASE_6_AUDIT.md).
+    const lineSnapshots = await captureLineSnapshots(tx, snapshots.map((s) => s.variantId), currency);
     const created = await tx.order.create({
       data: {
         orderNumber: generateOrderNumber(),
@@ -349,6 +353,7 @@ export async function insertOrderRecord(
             flashSaleItemId: s.flashSaleItemId ?? null,
             bundleDiscountAllocated: s.bundleDiscountAllocated ?? null,
             couponDiscountAllocated: s.couponDiscountAllocated ?? null,
+            ...lineSnapshotData(lineSnapshots, s.variantId),
           })),
         },
         statusHistory: {

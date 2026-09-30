@@ -693,7 +693,8 @@ export interface ProfitTrendPoint {
 }
 
 export function getProfitTrend(days = 30) {
-  return apiFetch<{ series: ProfitTrendPoint[] }>(`/api/analytics/profit-trend${windowParams({ days })}`);
+  // costCoverage: order lines in the window with / without a recorded cost (Phase 6) — margin covers the recorded ones.
+  return apiFetch<{ series: ProfitTrendPoint[]; costCoverage: { recorded: number; missing: number } }>(`/api/analytics/profit-trend${windowParams({ days })}`);
 }
 
 export interface FinancialCostBreakdown {

@@ -1,6 +1,6 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { fromMajor, type ShippingZoneRule, type TaxConfig } from "@clothing-brand/shared";
-import { prisma } from "../../config/prisma";
+import { prisma, type Db as AppDb } from "../../config/prisma";
 
 /**
  * Loads (and, from the settings form, writes) the centralised pricing configuration: the TaxSetting singleton (D3, D10)
@@ -8,7 +8,7 @@ import { prisma } from "../../config/prisma";
  * taxEnabled/defaultTaxRate/shippingFeeDhaka/shippingFeeOutsideDhaka are legacy mirrors kept equal by the dual-write
  * below until the contract phase (docs/SSOT_REGISTRY.md).
  */
-type Db = PrismaClient | Prisma.TransactionClient;
+type Db = AppDb;
 
 export const TAX_SETTING_ID = "singleton";
 /** The two zones the Phase 2 migration seeds from the old "inside / outside Dhaka" fees. */

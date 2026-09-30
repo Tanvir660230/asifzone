@@ -80,7 +80,7 @@ export default function FinancialAnalyticsPage() {
             Array.from({ length: 6 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Gross margin (lifetime, est.)" value={formatPrice(overview.grossProfitLifetime)} icon={<Wallet size={18} />} tone="accent" trendPct={overview.profitGrowthPct} />
+              <StatTile label="Gross margin (lifetime, recorded cost)" value={formatPrice(overview.grossProfitLifetime)} icon={<Wallet size={18} />} tone="accent" trendPct={overview.profitGrowthPct} />
               <StatTile label="Inventory value (current cost)" value={formatPrice(overview.inventoryValue)} icon={<Package size={18} />} />
               <StatTile label="Refund rate" value={`${overview.refundRatePct.toFixed(1)}%`} icon={<Receipt size={18} />} />
               <StatTile label="Return rate" value={`${overview.returnRatePct.toFixed(1)}%`} icon={<Receipt size={18} />} />
@@ -119,8 +119,8 @@ export default function FinancialAnalyticsPage() {
                   <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
                     <th className="pb-2 pr-4">Date</th>
                     <th className="pb-2 pr-4">Net merchandise</th>
-                    <th className="pb-2 pr-4">Est. COGS</th>
-                    <th className="pb-2">Est. margin</th>
+                    <th className="pb-2 pr-4">COGS</th>
+                    <th className="pb-2">Margin</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -135,7 +135,11 @@ export default function FinancialAnalyticsPage() {
                 </tbody>
               </table>
             )}
-            <p className="mt-3 text-xs text-ink-400">Cost of goods uses the current cost price (no cost is recorded at sale time), so margin is an estimate.</p>
+            <p className="mt-3 text-xs text-ink-400">
+              Cost of goods and margin use the cost recorded on each order line when it was sold; margin excludes VAT. Lines with no recorded cost
+              (sold before cost was recorded, or with no cost price) are left out rather than counted at zero
+              {profitTrend && profitTrend.costCoverage.missing > 0 ? ` — ${profitTrend.costCoverage.missing} such line(s) in this window` : ""}.
+            </p>
           </CardContent>
         </Card>
       </section>

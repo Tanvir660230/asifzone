@@ -13,6 +13,8 @@ export interface ExecutiveOverview {
 
   grossProfitLifetime: number;
   profitGrowthPct: number;
+  grossProfitCostedLinesLifetime: number;
+  grossProfitUncostedLinesLifetime: number;
 
   totalVisitors: number;
   returningVisitors: number;

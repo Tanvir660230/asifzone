@@ -41,6 +41,11 @@ export async function updateSettings(input: UpdateSettingsInput) {
   // transaction — the StoreSetting columns are legacy mirrors (docs/SSOT_REGISTRY.md). shippingTaxable has no mirror.
   const { shippingTaxable, ...storeFields } = input;
   const settings = await prisma.$transaction(async (tx) => {
+    // P6-4: orders record no currency — every money snapshot means "the store currency". Once any order exists,
+    // changing it would silently reinterpret all history, so it is locked (docs/PHASE_6_AUDIT.md G5).
+    if (input.currency !== undefined && input.currency !== previous.currency && (await tx.order.count({ take: 1 })) > 0) {
+      throw new AppError(409, "The store currency can't be changed once orders exist — every recorded amount is in it", { code: "CURRENCY_LOCKED" });
+    }
     const updated = await tx.storeSetting.update({ where: { id: SINGLETON_ID }, data: storeFields });
     await applySettingsToPricingConfig(tx, {
       taxEnabled: input.taxEnabled,

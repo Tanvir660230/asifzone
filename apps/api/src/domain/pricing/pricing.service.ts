@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import {
   DEFAULT_ROUNDING_POLICY,
   buildQuote,
@@ -18,7 +18,7 @@ import {
   type QuoteDto,
   type ShippingAddress,
 } from "@clothing-brand/shared";
-import { prisma } from "../../config/prisma";
+import { prisma, type Db as AppDb } from "../../config/prisma";
 import { getSettings } from "../../modules/settings/settings.service";
 import { loadShippingZones, loadTaxConfig } from "./pricing-config";
 
@@ -32,7 +32,7 @@ import { loadShippingZones, loadTaxConfig } from "./pricing-config";
  * Every consumer — product pages and listings, cart, checkout, order creation (COD, online, admin), exchanges, coupon and
  * bundle previews — goes through here.
  */
-type Db = PrismaClient | Prisma.TransactionClient;
+type Db = AppDb;
 
 /** How long a quote token is presented as valid to the client. The server re-prices at order time regardless. */
 export const QUOTE_TTL_MS = 15 * 60 * 1000;
