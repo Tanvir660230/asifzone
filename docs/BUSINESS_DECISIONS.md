@@ -243,3 +243,17 @@ overrides the interpretation where they differ.
 | P5-7 | Category and brand reports attribute sold lines to the product's **current** category/brand. | No category/brand snapshot exists on `OrderItem`; historical re-attribution can't be reconstructed and isn't faked. | APPROVED limitation. Historical category/brand reports change if the catalog is reclassified; documented until snapshots exist. |
 | P5-8 | The store timezone is a store setting (`StoreSetting.timezone`, default `Asia/Dhaka`, today's behaviour). | Configuration over code (TARGET §7). | APPROVED. |
 | P5-9 | "Units ordered" (demand on placed sale orders) drives storefront urgency, trending and forecasts; "units sold" (realised, net of returns) drives sales reports. Before Phase 5 both used ad-hoc `NOT IN (CANCELLED, REFUNDED)` or `!= CANCELLED`. | TARGET §5.5: urgency and the sales panel share one predicate; demand and realised sales are different facts. | APPROVED. No product-level low-stock semantics. |
+
+## Phase 6 implementation notes (interpretations, recorded 2026-09-30)
+
+Phase 6 ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)) freezes the order-line facts reports need. These readings follow from
+the owner's Phase 6 brief ("never fabricate historical values"; "old orders remain explicitly unknown"); the owner may
+overrule any of them with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P6-1 | Cost, category, brand and product are snapshotted **once, in the transaction that writes the order line**: order creation (checkout, admin order, gateway settlement) and exchange-replacement creation. They never change afterwards. | The line is financially committed when written (price fixed, stock sold). Realisation or delivery would be a mutable, later moment. |
+| P6-2 | A line whose product had no cost price at order time records cost **unknown** (NULL), not 0. COGS and gross margin cover only lines with a recorded cost and report the rest as coverage. | "Missing cost = 0" overstated margin. An unknown isn't a zero. |
+| P6-3 | Lines written before Phase 6 are **not** backfilled with today's cost, category or brand. Reports group them as "Not recorded" and count them in cost coverage. The one backfill is `productIdSnapshot`, from the variant's product. | Today's catalog isn't history. A variant never changes product, so its product id is the true historical fact. |
+| P6-4 | The store currency is locked once any order exists: settings refuse the change (409 `CURRENCY_LOCKED`). | Orders record no currency. Every money snapshot, including the new minor-unit cost, means "store currency". Changing it would silently reinterpret all history. |
+| P6-5 | An exchange (P5-3) keeps the original line's cost and attribution (the original sale stands). The replacement line records its own snapshots for the record, but a replacement is not a sale, so it contributes no COGS or sales. | Consistent with D6/P5-3. Counting the replacement's cost would need a new decision, like upgrades (P5-3). |
