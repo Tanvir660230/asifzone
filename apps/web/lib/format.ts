@@ -1,12 +1,43 @@
-export function formatPrice(value: string | number): string {
+import { DISPLAY_LOCALE, currencySymbol, formatDate as formatZonedDate, formatDateTime, formatMoney, formatTime } from "@clothing-brand/shared";
+import { getStoreConfig } from "./store-config";
+
+/** A store amount in the store currency ("৳1,500" for BDT, "$1,500.25" for USD). `currency` overrides it for an amount that
+ * carries its own (e.g. a product's server-resolved `pricing.currency` in a server component). */
+export function formatPrice(value: string | number, currency?: string): string {
   const amount = typeof value === "string" ? Number(value) : value;
-  return `৳${amount.toLocaleString("en-BD", { maximumFractionDigits: 2 })}`;
+  return formatMoney(amount, currency ?? getStoreConfig().currency);
+}
+
+/** The store currency's symbol alone ("৳", "$") — for labels such as "Amount (৳)" and chart axes. */
+export function storeCurrencySymbol(): string {
+  return currencySymbol(getStoreConfig().currency);
+}
+
+/** The store currency code ("BDT") — for labels such as "Base price (BDT)". */
+export function storeCurrencyCode(): string {
+  return getStoreConfig().currency;
 }
 
 /** "1,204" for a plain count, no currency symbol — for KPI tiles (visitors, orders) that would
- * otherwise misleadingly borrow formatPrice's ৳ sign. */
+ * otherwise misleadingly borrow formatPrice's currency sign. */
 export function formatCount(value: number): string {
-  return value.toLocaleString("en-BD");
+  return value.toLocaleString(DISPLAY_LOCALE);
+}
+
+/** An instant's calendar date in the STORE timezone ("30 Sept 2026") — the same business day reports put it in, whatever the
+ * viewer's own timezone (Phase 7). */
+export function formatStoreDate(iso: string | Date, options?: Intl.DateTimeFormatOptions): string {
+  return formatZonedDate(iso, getStoreConfig().timezone, options);
+}
+
+/** An instant as store-timezone wall-clock time ("30 Sept 2026, 18:30"). */
+export function formatStoreDateTime(iso: string | Date): string {
+  return formatDateTime(iso, getStoreConfig().timezone);
+}
+
+/** An instant's store-timezone clock time ("18:30"). */
+export function formatStoreTime(iso: string | Date): string {
+  return formatTime(iso, getStoreConfig().timezone);
 }
 
 /** "3h ago" / "12m ago" / "just now" — shared by the notification bell and the BI activity feed so

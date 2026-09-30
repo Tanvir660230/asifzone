@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 import { useQuery } from "@tanstack/react-query";
 import {
   Wallet,
@@ -185,7 +186,7 @@ export default function ExecutiveOverviewPage() {
               />
               <StatTile
                 label="Customers"
-                value={customerInsights ? customerInsights.totalCustomers.toLocaleString("en-BD") : "…"}
+                value={customerInsights ? customerInsights.totalCustomers.toLocaleString(DISPLAY_LOCALE) : "…"}
                 icon={<Users size={20} />}
               />
               <StatTile label="Conversion rate" value={`${overview.conversionRatePct.toFixed(1)}%`} icon={<Target size={20} />} />

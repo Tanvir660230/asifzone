@@ -14,7 +14,7 @@ import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { CouponForm } from "@/components/admin/coupon-form";
 import * as couponsApi from "@/lib/api/admin-coupons";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -239,7 +239,7 @@ export default function CouponsPage() {
                     <td className="px-4 py-3">
                       <UsageCell used={c.usedCount} limit={c.usageLimit} />
                     </td>
-                    <td className="px-4 py-3 text-ink-500">{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : "—"}</td>
+                    <td className="px-4 py-3 text-ink-500">{c.expiresAt ? formatStoreDate(c.expiresAt) : "—"}</td>
                     <td className="px-4 py-3">
                       <Badge className={status.className}>{status.label}</Badge>
                     </td>

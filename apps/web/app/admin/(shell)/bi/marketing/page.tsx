@@ -7,8 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -169,8 +170,8 @@ export default function MarketingIntelligencePage() {
                     <tr key={s.id} className="border-b border-ink-50 last:border-0">
                       <td className="py-2 pr-4 font-medium text-ink-800">{s.name}</td>
                       <td className="py-2 pr-4 text-xs text-ink-500">
-                        {new Date(s.startsAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })} –{" "}
-                        {new Date(s.endsAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        {formatStoreDate(s.startsAt, { month: "short", day: "numeric" })} –{" "}
+                        {formatStoreDate(s.endsAt, { month: "short", day: "numeric" })}
                       </td>
                       <td className="py-2 pr-4 text-ink-600">{s.unitsSold}</td>
                       <td className="py-2 text-ink-800">{formatPrice(s.revenue)}</td>
@@ -228,10 +229,10 @@ export default function MarketingIntelligencePage() {
                 Array.from({ length: 4 }).map((_, i) => <StatTileSkeleton key={i} />)
               ) : (
                 <>
-                  <StatTile label="Points issued" value={loyalty.issued.toLocaleString("en-BD")} icon={<Gift size={18} />} />
-                  <StatTile label="Points redeemed" value={loyalty.redeemed.toLocaleString("en-BD")} icon={<Gift size={18} />} />
-                  <StatTile label="Outstanding balance" value={loyalty.outstanding.toLocaleString("en-BD")} icon={<Wallet size={18} />} tone="accent" />
-                  <StatTile label="Customers with a balance" value={loyalty.customersWithBalance.toLocaleString("en-BD")} icon={<Wallet size={18} />} />
+                  <StatTile label="Points issued" value={loyalty.issued.toLocaleString(DISPLAY_LOCALE)} icon={<Gift size={18} />} />
+                  <StatTile label="Points redeemed" value={loyalty.redeemed.toLocaleString(DISPLAY_LOCALE)} icon={<Gift size={18} />} />
+                  <StatTile label="Outstanding balance" value={loyalty.outstanding.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} tone="accent" />
+                  <StatTile label="Customers with a balance" value={loyalty.customersWithBalance.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} />
                 </>
               )}
             </div>

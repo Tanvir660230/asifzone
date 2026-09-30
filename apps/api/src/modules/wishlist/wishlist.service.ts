@@ -6,6 +6,8 @@ import { escapeHtml } from "../../lib/html";
 import { AppError } from "../../lib/app-error";
 import { presentStorefrontProducts } from "../../domain/storefront/read-model.service";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS, PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
+import { formatMoney } from "@clothing-brand/shared";
+import { getCurrency } from "../../domain/config/commerce-settings";
 
 // A customer's wishlist shows the storefront's view of each product. (`include: { product: … }` used to return the whole row,
 // including the product's cost price and tax rate, and every variant's cost price.)
@@ -60,6 +62,7 @@ export async function notifyPriceDrop(productId: string, newPrice: number) {
   // batch, and must not block `alertedAt` from being set on the ones that *did* go out — otherwise
   // every already-emailed customer gets re-spammed on the next price-drop trigger for this product.
   const sentIds: string[] = [];
+  const currency = await getCurrency();
   for (const item of items) {
     try {
       const productUrl = `${env.webOrigin}/product/${item.product.slug}`;
@@ -68,7 +71,7 @@ export async function notifyPriceDrop(productId: string, newPrice: number) {
         // Non-null by the query filter above — Prisma's include type just can't express that.
         to: item.customer.email!,
         subject: `Price drop: ${item.product.name}`,
-        html: renderEmailLayout({
+        html: await renderEmailLayout({
           bodyHtml: `
             <p style="margin:0 0 4px;">
               <span style="display:inline-block;background-color:#e53935;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:4px 10px;border-radius:999px;">Price drop</span>
@@ -76,8 +79,8 @@ export async function notifyPriceDrop(productId: string, newPrice: number) {
             <p style="margin:14px 0 8px;font-size:18px;font-weight:600;">${escapeHtml(item.product.name)}</p>
             <p style="margin:0;">Hi ${escapeHtml(item.customer.name)}, an item on your wishlist just got cheaper:</p>
             <p style="margin:10px 0 0;">
-              <span style="font-size:20px;font-weight:700;color:#111111;">৳${newPrice}</span>
-              <span style="font-size:14px;color:#999999;text-decoration:line-through;margin-left:8px;">৳${oldPrice}</span>
+              <span style="font-size:20px;font-weight:700;color:#111111;">${formatMoney(Number(newPrice), currency)}</span>
+              <span style="font-size:14px;color:#999999;text-decoration:line-through;margin-left:8px;">${formatMoney(oldPrice, currency)}</span>
             </p>
           `,
           ctaLabel: "View product",

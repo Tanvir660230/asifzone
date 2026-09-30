@@ -42,7 +42,7 @@ import { SmsComposer } from "@/components/admin/sms-composer";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 import type { AdminCustomerListParams } from "@/lib/api/admin-customers";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { TAG_META, primaryTag } from "@/lib/customer-tags";
@@ -674,11 +674,11 @@ export default function CustomersPage() {
                     <td className="px-4 py-3.5 text-right tabular-nums text-ink-700">{customer.totalOrders}</td>
                     <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</td>
                     <td className="px-4 py-3.5 text-ink-500">
-                      {customer.lastOrderAt ? new Date(customer.lastOrderAt).toLocaleDateString() : "—"}
+                      {customer.lastOrderAt ? formatStoreDate(customer.lastOrderAt) : "—"}
                     </td>
                     <td className="px-4 py-3.5">{renderTagBadge(customer)}</td>
                     <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
-                      {customer.lastSmsSentAt ? new Date(customer.lastSmsSentAt).toLocaleDateString() : "—"}
+                      {customer.lastSmsSentAt ? formatStoreDate(customer.lastSmsSentAt) : "—"}
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex justify-end gap-3">{renderRowActions(customer)}</div>
@@ -743,7 +743,7 @@ export default function CustomersPage() {
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
               <span>
                 {customer.totalOrders} order{customer.totalOrders === 1 ? "" : "s"} ·{" "}
-                {customer.lastOrderAt ? `last ${new Date(customer.lastOrderAt).toLocaleDateString()}` : "no orders yet"}
+                {customer.lastOrderAt ? `last ${formatStoreDate(customer.lastOrderAt)}` : "no orders yet"}
               </span>
               {renderTagBadge(customer)}
             </div>

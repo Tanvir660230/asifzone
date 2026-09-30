@@ -24,6 +24,8 @@ import {
   type UpdateCustomerAdminFieldsInput,
   type CreateCustomerAdminInput,
   type CustomerSmsVars,
+  formatDate,
+  formatMoney,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -39,6 +41,7 @@ import { env } from "../../config/env";
 import { getSettings } from "../settings/settings.service";
 import { customerMetricsIndex } from "../../domain/metrics/metrics.service";
 import { resolveStoreRange } from "../../domain/metrics/store-time";
+import { getCommerceSettings, type CommerceSettings } from "../../domain/config/commerce-settings";
 
 // Bulk sends dispatch this many recipients concurrently — same bound as campaign.service.ts's
 // SEND_CONCURRENCY, for the same reason (bounded outbound connections to the SMS provider).
@@ -295,7 +298,7 @@ export async function requestPasswordReset(email: string) {
     // Non-null — customer was looked up by this exact email a few lines up.
     to: customer.email!,
     subject: "Reset your password",
-    html: renderEmailLayout({
+    html: await renderEmailLayout({
       bodyHtml: `
         <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Reset your password</p>
         <p style="margin:0;">We got a request to reset your password. This link expires in 1 hour — if you didn't ask for this, you can safely ignore it.</p>
@@ -346,7 +349,7 @@ export async function sendVerificationEmail(customerId: string) {
   await sendMail({
     to: customer.email,
     subject: "Verify your email",
-    html: renderEmailLayout({
+    html: await renderEmailLayout({
       bodyHtml: `
         <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Verify your email</p>
         <p style="margin:0;">Confirm this is your email address to secure your account. This link expires in 1 hour.</p>
@@ -884,15 +887,13 @@ export async function updateCustomerAdminFields(customerId: string, input: Updat
 
 /** {{variable}} context for a given computed customer — shared by the individual and bulk send
  * paths below so a template renders identically regardless of which one sent it. */
-function customerSmsVars(c: { name: string; phone: string; totalSpent: number; lastOrderAt: Date | null }): CustomerSmsVars {
+function customerSmsVars(c: { name: string; phone: string; totalSpent: number; lastOrderAt: Date | null }, commerce: CommerceSettings): CustomerSmsVars {
   return {
     customerName: c.name,
     firstName: c.name.split(" ")[0] || c.name,
     phone: c.phone,
-    totalSpent: `৳${Math.round(c.totalSpent).toLocaleString("en-BD")}`,
-    lastOrder: c.lastOrderAt
-      ? c.lastOrderAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
-      : "no orders yet",
+    totalSpent: formatMoney(Math.round(c.totalSpent), commerce.currency),
+    lastOrder: c.lastOrderAt ? formatDate(c.lastOrderAt, commerce.timezone, { year: "numeric", month: "long", day: "numeric" }) : "no orders yet",
     website: env.webOrigin,
   };
 }
@@ -925,7 +926,7 @@ export async function sendAdHocSmsToCustomer(customerId: string, body: string) {
   if (!customer) throw AppError.notFound("Customer not found");
   if (!customer.phone) throw AppError.badRequest("This customer has no phone number on file");
 
-  const rendered = renderCustomerSmsTemplate(body, customerSmsVars({ ...customer, phone: customer.phone }));
+  const rendered = renderCustomerSmsTemplate(body, customerSmsVars({ ...customer, phone: customer.phone }, await getCommerceSettings()));
   const campaign = await prisma.campaign.create({
     data: { name: "Direct message", channel: "SMS", body, status: "SENDING" },
   });
@@ -955,8 +956,9 @@ export async function sendBulkSmsToCustomers(customerIds: string[], body: string
 
   let sent = 0;
   let failed = 0;
+  const commerce = await getCommerceSettings();
   await mapWithConcurrency(withPhone, SMS_SEND_CONCURRENCY, async (c) => {
-    const rendered = renderCustomerSmsTemplate(body, customerSmsVars(c));
+    const rendered = renderCustomerSmsTemplate(body, customerSmsVars(c, commerce));
     const result = await dispatchAndLogSms(campaign.id, c.id, c.phone, rendered);
     if (result.status === "SENT") sent++;
     else failed++;

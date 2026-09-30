@@ -1,5 +1,6 @@
 import { Queue, UnrecoverableError } from "bullmq";
-import { META_CURRENCY, metaPurchaseEventId } from "@clothing-brand/shared";
+import { metaPurchaseEventId } from "@clothing-brand/shared";
+import { getCurrency } from "../../domain/config/commerce-settings";
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
 import { queueConnection } from "../queue";
@@ -36,6 +37,8 @@ function getQueue(): Queue {
 export async function buildPurchaseEvent(orderId: string, context: MetaRequestContext): Promise<MetaServerEvent | null> {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
   if (!order) return null;
+  // The store currency is the recorded currency of every order amount (locked once orders exist — P6-4).
+  const currency = await getCurrency();
 
   // Variant id is the content id everywhere (AddToCart, InitiateCheckout, both Purchases) — the one
   // identifier that's stable for a specific size/colour and never edited, unlike a SKU.
@@ -64,7 +67,7 @@ export async function buildPurchaseEvent(orderId: string, context: MetaRequestCo
       context,
     ),
     custom_data: {
-      currency: META_CURRENCY,
+      currency,
       value: Number(order.total),
       order_id: order.orderNumber,
       content_type: "product",

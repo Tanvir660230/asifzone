@@ -1,4 +1,5 @@
-import { META_CURRENCY, metaPurchaseEventId, type Order } from "@clothing-brand/shared";
+import { metaPurchaseEventId, type Order } from "@clothing-brand/shared";
+import { getStoreConfig } from "./store-config";
 
 /** The one module that talks to the Meta Pixel — components call the typed pixel* functions below
  * and never touch `fbq` directly. Server-side counterpart (Conversions API, Purchase only):
@@ -116,7 +117,7 @@ function cartParams(items: MetaLineItem[]) {
     contents: items.map((i) => ({ id: i.id, quantity: i.quantity, item_price: i.price })),
     num_items: items.reduce((sum, i) => sum + i.quantity, 0),
     value: items.reduce((sum, i) => sum + i.price * i.quantity, 0),
-    currency: META_CURRENCY,
+    currency: getStoreConfig().currency,
   };
 }
 
@@ -141,7 +142,7 @@ export function pixelViewContent(params: { productId: string; productName: strin
     content_ids: [params.productId],
     content_name: params.productName,
     value: params.price,
-    currency: META_CURRENCY,
+    currency: getStoreConfig().currency,
   });
 }
 

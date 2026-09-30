@@ -63,7 +63,7 @@ async function dispatchToRecipient(campaign: Campaign, customer: Customer): Prom
       await sendMail({
         to: customer.email,
         subject: title,
-        html: renderEmailLayout({
+        html: await renderEmailLayout({
           bodyHtml: campaign.body,
           footerHtml: `Don't want these emails? ${emailLink(unsubscribeUrl, "Unsubscribe")}`,
         }),

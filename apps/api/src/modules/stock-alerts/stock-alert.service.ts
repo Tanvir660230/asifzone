@@ -47,7 +47,7 @@ export async function notifyBackInStock(variantId: string) {
         // Non-null by the query filter above — Prisma's include type just can't express that.
         to: alert.customer.email!,
         subject: `Back in stock: ${alert.variant.product.name}`,
-        html: renderEmailLayout({
+        html: await renderEmailLayout({
           bodyHtml: `
             <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Back in stock</p>
             <p style="margin:0;">Hi ${escapeHtml(alert.customer.name)}, good news — <strong>${escapeHtml(alert.variant.product.name)}</strong>${escapeHtml(formatVariantSuffix(alert.variant.size, alert.variant.color))} is available again.</p>

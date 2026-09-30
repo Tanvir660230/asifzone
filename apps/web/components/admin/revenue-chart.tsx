@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { RevenuePoint } from "@/lib/api/admin-analytics";
-import { formatPrice, formatBusinessDate } from "@/lib/format";
+import { formatBusinessDate, formatPrice, storeCurrencySymbol } from "@/lib/format";
 
 const WIDTH = 760;
 const HEIGHT = 280;
@@ -161,6 +161,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
 }
 
 function formatCompactPrice(value: number): string {
-  if (value >= 1000) return `৳${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
-  return `৳${Math.round(value)}`;
+  const symbol = storeCurrencySymbol();
+  if (value >= 1000) return `${symbol}${(value / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return `${symbol}${Math.round(value)}`;
 }

@@ -6,12 +6,12 @@ import { inclusiveTaxOf } from "./engines/rounding";
  * `inclusiveTaxOf`, used by engines/tax.ts `computeTax`) — never a second implementation. */
 
 /** The VAT contained in a tax-inclusive major-unit `amount` at `ratePct` percent: amount × r / (100 + r), to the paisa. */
-export function taxIncludedIn(amount: number, ratePct: number, currency = "BDT"): number {
+export function taxIncludedIn(amount: number, ratePct: number, currency: string): number {
   if (!(ratePct > 0) || !Number.isFinite(amount)) return 0;
   return toMajor(inclusiveTaxOf(fromMajor(amount, currency), ratePct, "MINOR"));
 }
 
 /** The taxable (net-of-VAT) part of a tax-inclusive amount. */
-export function amountExcludingTax(amount: number, ratePct: number, currency = "BDT"): number {
+export function amountExcludingTax(amount: number, ratePct: number, currency: string): number {
   return toMajor(fromMajor(amount, currency)) - taxIncludedIn(amount, ratePct, currency);
 }

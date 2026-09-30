@@ -19,9 +19,9 @@
 import { Prisma } from "@prisma/client";
 import { PRICING_VERSION, productAvailability, type ProductAvailability } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
-import { getSettings } from "../../modules/settings/settings.service";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
+import { getCurrency } from "../config/commerce-settings";
 
 type Db = AppDb;
 
@@ -92,7 +92,7 @@ export async function refreshReadModels(productIds: string[], now: Date = new Da
 
 /** Visible (published, not trashed) products whose projection row is missing or stale at `now`. */
 export async function findStaleProductIds(now: Date = new Date(), db: Db = prisma): Promise<string[]> {
-  const currency = (await getSettings()).currency || "BDT";
+  const currency = await getCurrency();
   const rows = await db.$queryRaw<Array<{ id: string }>>`
     SELECT p.id FROM "Product" p
     LEFT JOIN "ProductReadModel" r ON r."productId" = p.id

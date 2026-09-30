@@ -27,8 +27,8 @@ import {
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
-import { getSettings } from "../../modules/settings/settings.service";
 import { loyaltyBase, reverseDeliveryPoints } from "../../modules/customers/customer.service";
+import { getCurrency } from "../config/commerce-settings";
 
 type Db = Prisma.TransactionClient;
 
@@ -37,7 +37,7 @@ type Db = Prisma.TransactionClient;
 export const REFUND_QUEUE_WHERE = { status: "CANCELLED", paymentStatus: { in: ["PAID", "PARTIALLY_REFUNDED"] } } satisfies Prisma.OrderWhereInput;
 
 async function storeCurrency(): Promise<string> {
-  return (await getSettings()).currency || "BDT";
+  return getCurrency();
 }
 
 function noteMoney(m: Money): string {

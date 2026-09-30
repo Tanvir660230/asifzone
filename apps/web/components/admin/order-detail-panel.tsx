@@ -1,6 +1,6 @@
 "use client";
 
-import { canTransitionOrder, formatVariantLabel, formatVariantSuffix } from "@clothing-brand/shared";
+import { addDays, businessDate, businessDayStartUtc, canTransitionOrder, formatVariantLabel, formatVariantSuffix } from "@clothing-brand/shared";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -63,22 +63,12 @@ import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
-import {
-  formatPrice,
-  initials,
-  orderStatusBadgeClass,
-  orderStatusLabel,
-  courierStatusBadgeClass,
-  courierStatusLabel,
-  courierStatusDescription,
-  timeAgo,
-  paymentStatusLabel,
-  paymentStatusTextClass,
-} from "@/lib/format";
+import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, formatPrice, formatStoreDate, formatStoreDateTime, initials, orderStatusBadgeClass, orderStatusLabel, paymentStatusLabel, paymentStatusTextClass, storeCurrencySymbol, timeAgo } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { copyToClipboard } from "@/lib/clipboard";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { getStoreConfig } from "@/lib/store-config";
 
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 
@@ -101,18 +91,14 @@ const HOLD_QUICK_PICKS = [
   { label: "+4h", ms: 4 * 60 * 60 * 1000 },
 ];
 
-/** "Tomorrow" quick-pick target: 10:00 next-day Bangladesh time, computed via an explicit +6h
- * offset rather than the browser's local timezone — admin staff are assumed to be in Bangladesh,
- * but this keeps the button correct even if someone's OS clock/timezone is misconfigured. */
-function nextBdMorning(): Date {
-  const bdNow = new Date(Date.now() + 6 * 60 * 60 * 1000); // "now" shifted into BD wall-clock
-  const nextDayBdAsUtc = Date.UTC(bdNow.getUTCFullYear(), bdNow.getUTCMonth(), bdNow.getUTCDate() + 1, 10, 0, 0);
-  return new Date(nextDayBdAsUtc - 6 * 60 * 60 * 1000); // shift back to the real UTC instant
+/** "Tomorrow" quick-pick target: 10:00 on the next business day in the STORE timezone (Phase 7) — never the browser's
+ * timezone or a fixed offset, so the button is right wherever the admin's device is set. */
+function nextStoreMorning(): Date {
+  const { timezone } = getStoreConfig();
+  const tomorrow = addDays(businessDate(new Date(), timezone), 1);
+  return new Date(businessDayStartUtc(tomorrow, timezone).getTime() + 10 * 60 * 60 * 1000);
 }
 
-function formatBdDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", { timeZone: "Asia/Dhaka", dateStyle: "medium", timeStyle: "short" });
-}
 
 const STATUS_OPTIONS: OrderStatus[] = [
   "PENDING",
@@ -663,7 +649,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                       </div>
                       <div className="text-right text-xs text-ink-400">
                         <p>{p.recordedBy ?? (p.backfilled ? "Backfilled" : "—")}</p>
-                        <p>{new Date(p.settledAt).toLocaleDateString()}</p>
+                        <p>{formatStoreDate(p.settledAt)}</p>
                       </div>
                     </li>
                   ))}
@@ -698,7 +684,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                       ) : (
                         <div>
                           <p>{r.completedBy ?? r.requestedBy ?? "—"}</p>
-                          <p>{new Date(r.completedAt ?? r.createdAt).toLocaleDateString()}</p>
+                          <p>{formatStoreDate(r.completedAt ?? r.createdAt)}</p>
                         </div>
                       )}
                     </div>
@@ -912,7 +898,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               {order.followUpAt ? (
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="flex items-center gap-1.5 text-sm text-warning-800">
-                    <CalendarClock size={14} /> Follow up by {formatBdDateTime(order.followUpAt)}
+                    <CalendarClock size={14} /> Follow up by {formatStoreDateTime(order.followUpAt)}
                     {order.callAttempts > 0 && (
                       <> · {order.callAttempts} call attempt{order.callAttempts > 1 ? "s" : ""}</>
                     )}
@@ -938,7 +924,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                         {p.label}
                       </Button>
                     ))}
-                    <Button variant="outline" size="sm" disabled={holdMutation.isPending} onClick={() => holdMutation.mutate(nextBdMorning())}>
+                    <Button variant="outline" size="sm" disabled={holdMutation.isPending} onClick={() => holdMutation.mutate(nextStoreMorning())}>
                       Tomorrow
                     </Button>
                     <Input
@@ -996,7 +982,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
           <CardContent className="space-y-3">
             {order.partialDeliveryReconciledAt ? (
               <p className="text-sm text-ink-600">
-                Reconciled {formatBdDateTime(order.partialDeliveryReconciledAt)} —{" "}
+                Reconciled {formatStoreDateTime(order.partialDeliveryReconciledAt)} —{" "}
                 {order.items.some((item) => item.returnedQuantity > 0)
                   ? `${order.items.reduce((sum, item) => sum + item.returnedQuantity, 0)} unit(s) restocked.`
                   : "customer kept the full shipment, nothing restocked."}
@@ -1505,7 +1491,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
             {editingPrice && priceDraft ? (
               <div className="space-y-2 border-t border-ink-100 pt-2">
                 <div>
-                  <Label htmlFor="priceAdjustment">Price adjustment (৳, negative = discount)</Label>
+                  <Label htmlFor="priceAdjustment">Price adjustment ({storeCurrencySymbol()}, negative = discount)</Label>
                   <Input
                     id="priceAdjustment"
                     type="number"

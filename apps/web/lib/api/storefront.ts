@@ -140,10 +140,13 @@ export function getActiveHomepageSectionsSafe() {
   return safe(getActiveHomepageSections, { sections: [] });
 }
 
+/** Tagged "settings" so a settings save revalidates it immediately (the API calls /api/revalidate — Phase 7). */
 export function getSiteSettings() {
-  return storefrontFetch<{ settings: StoreSettings }>("/api/settings", 300);
+  return storefrontFetch<{ settings: StoreSettings }>("/api/settings", 300, ["settings"]);
 }
 
+/** Outage placeholder — rendered only when the API is unreachable (image build, outage); never a reader of store truth.
+ * Its currency/timezone mirror the StoreSetting schema defaults, so a placeholder render can't disagree with a fresh store. */
 const DEFAULT_STORE_SETTINGS: StoreSettings = {
   id: "singleton",
   storeName: "Store",
@@ -152,6 +155,7 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   logoOnDarkUrl: null,
   faviconUrl: null,
   currency: "BDT",
+  timezone: "Asia/Dhaka",
   contactEmail: null,
   contactPhone: null,
   shippingFeeDhaka: "60",

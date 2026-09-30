@@ -20,6 +20,7 @@ import * as socialLinksApi from "@/lib/api/admin-social-links";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { storeCurrencyCode } from "@/lib/format";
 
 /** wa.me and api.whatsapp.com/send?phone= are the two URL shapes admins tend to paste (or that this
  * form itself writes) — read whichever one is there back out to a plain number for editing. */
@@ -324,7 +325,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <Label htmlFor="currency">Currency code</Label>
-              <Input id="currency" placeholder="BDT" {...register("currency")} />
+              <Input id="currency" placeholder={storeCurrencyCode()} {...register("currency")} />
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="tagline">Tagline</Label>
@@ -478,12 +479,12 @@ export default function SettingsPage() {
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="shippingFeeDhaka">Shipping fee — inside Dhaka district (BDT)</Label>
+              <Label htmlFor="shippingFeeDhaka">Shipping fee — inside Dhaka district ({storeCurrencyCode()})</Label>
               <Input id="shippingFeeDhaka" type="number" step="0.01" {...register("shippingFeeDhaka", { valueAsNumber: true })} />
               {errors.shippingFeeDhaka && <p className="mt-1 text-xs text-danger-600">{errors.shippingFeeDhaka.message}</p>}
             </div>
             <div>
-              <Label htmlFor="shippingFeeOutsideDhaka">Shipping fee — outside Dhaka (BDT)</Label>
+              <Label htmlFor="shippingFeeOutsideDhaka">Shipping fee — outside Dhaka ({storeCurrencyCode()})</Label>
               <Input
                 id="shippingFeeOutsideDhaka"
                 type="number"
@@ -495,7 +496,7 @@ export default function SettingsPage() {
               )}
             </div>
             <div>
-              <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka district (BDT)</Label>
+              <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka district ({storeCurrencyCode()})</Label>
               <Input
                 id="courierReturnFeeDhaka"
                 type="number"
@@ -511,7 +512,7 @@ export default function SettingsPage() {
               </p>
             </div>
             <div>
-              <Label htmlFor="courierReturnFeeOutsideDhaka">Courier return fee — outside Dhaka (BDT)</Label>
+              <Label htmlFor="courierReturnFeeOutsideDhaka">Courier return fee — outside Dhaka ({storeCurrencyCode()})</Label>
               <Input
                 id="courierReturnFeeOutsideDhaka"
                 type="number"
@@ -523,7 +524,7 @@ export default function SettingsPage() {
               )}
             </div>
             <div>
-              <Label htmlFor="rewardPointsPerCurrency">Reward points per 1 BDT spent</Label>
+              <Label htmlFor="rewardPointsPerCurrency">Reward points per 1 {storeCurrencyCode()} spent</Label>
               <Input
                 id="rewardPointsPerCurrency"
                 type="number"

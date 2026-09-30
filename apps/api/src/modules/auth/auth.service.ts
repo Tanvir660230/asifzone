@@ -221,7 +221,7 @@ export async function createAdminInvite(input: CreateAdminInviteInput, invitedBy
   await sendMail({
     to: email,
     subject: "You've been invited to the admin console",
-    html: renderEmailLayout({
+    html: await renderEmailLayout({
       bodyHtml: `
         <p style="margin:0 0 8px;font-size:18px;font-weight:600;">You're invited</p>
         <p style="margin:0;">You've been invited as ${input.role === "OWNER" ? "an owner" : "a staff member"} on the admin console. Set your password to get started — this link expires in 7 days.</p>

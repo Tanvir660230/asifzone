@@ -1,6 +1,6 @@
 "use client";
 
-import { formatVariantLabel } from "@clothing-brand/shared";
+import { DISPLAY_LOCALE, formatVariantLabel } from "@clothing-brand/shared";
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -93,7 +93,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.views,
-                valueLabel: (p) => p.views.toLocaleString("en-BD"),
+                valueLabel: (p) => p.views.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No views recorded yet."
@@ -110,7 +110,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.count,
-                valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                valueLabel: (p) => p.count.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No wishlist activity yet."
@@ -127,7 +127,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.count,
-                valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                valueLabel: (p) => p.count.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No add-to-cart activity yet for this range."
@@ -144,7 +144,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.count,
-                valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                valueLabel: (p) => p.count.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No cart-removal activity yet for this range."

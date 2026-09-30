@@ -4,6 +4,7 @@ import { cacheDel, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { deleteSiteImageFile } from "../uploads/upload.service";
 import { applySettingsToPricingConfig } from "../../domain/pricing/pricing-config";
+import { revalidateStorefrontTags, SETTINGS_CACHE_TAG } from "../../lib/storefront-revalidate";
 
 const CACHE_KEY = "settings:singleton";
 const CACHE_TTL_SECONDS = 300;
@@ -57,6 +58,8 @@ export async function updateSettings(input: UpdateSettingsInput) {
     return updated;
   });
   await cacheDel(CACHE_KEY);
+  // The storefront's own copy (Next fetch cache, tag "settings") must not outlive the save either (Phase 7 D-7).
+  void revalidateStorefrontTags([SETTINGS_CACHE_TAG]);
 
   // Fire-and-forget, after the DB write succeeds: never let disk cleanup fail or slow down the
   // admin's save, and never delete the old file before the new URL is safely persisted.

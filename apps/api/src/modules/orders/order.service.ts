@@ -1,4 +1,6 @@
 import {
+  formatDateTime,
+  formatMoney,
   describeRefusedTransition,
   formatVariantLabel,
   formatVariantSuffix,
@@ -61,6 +63,7 @@ import {
   summarizeOrderPayments,
 } from "../../domain/payments/payment-ledger.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
+import { getCurrency, getTimezone } from "../../domain/config/commerce-settings";
 
 const include = {
   items: true,
@@ -299,7 +302,7 @@ export async function insertOrderRecord(
   const oversoldItems: { name: string; size: string; color: string }[] = [];
   let stockAfter = new Map<string, number>();
   const untracked = new Set([...(pricing.rows?.values() ?? [])].filter((r) => !r.product.trackInventory).map((r) => r.id));
-  const currency = (await getSettings()).currency || "BDT";
+  const currency = await getCurrency();
 
   const order = await prisma.$transaction(async (tx) => {
     // Phase 6: cost and attribution as the catalog stands when the line is written (docs/PHASE_6_AUDIT.md).
@@ -1000,7 +1003,7 @@ async function getCourierReturnFee(shippingDistrict: string, shippingDivision?: 
   const settings = await getSettings();
   // Zone-matched by the same shipping-zone configuration that priced the delivery (no hard-coded geography): the
   // estimate for the seeded "inside Dhaka district" zone, else the outside estimate.
-  const zone = resolveZone(await loadShippingZones(settings.currency || "BDT"), { district: shippingDistrict, division: shippingDivision });
+  const zone = resolveZone(await loadShippingZones(await getCurrency()), { district: shippingDistrict, division: shippingDivision });
   return zone?.key === LEGACY_ZONE_KEYS.insideDhaka ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
 }
 
@@ -1118,7 +1121,7 @@ export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, 
 
   // D8: points on merchandise after discounts, excluding shipping (and the admin adjustment) — from the order snapshot.
   if (rule.awardPoints && order.customerId) {
-    await awardDeliveryPoints(order.customerId, order.id, loyaltyBase(order, (await getSettings()).currency || "BDT")).catch((err) =>
+    await awardDeliveryPoints(order.customerId, order.id, loyaltyBase(order, await getCurrency())).catch((err) =>
       console.error(`[loyalty] points for ${order.orderNumber} failed:`, err),
     );
   }
@@ -1131,7 +1134,7 @@ export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, 
     notify({
       type: rule.alertIfPaid,
       title: rule.alertIfPaid === "order.cancelled_but_paid" ? `Cancelled but paid: ${order.orderNumber}` : `Returned — refund may be owed: ${order.orderNumber}`,
-      body: `${order.customerName} · ${formatBdt(Number(order.total))} — refund may be owed`,
+      body: `${order.customerName} · ${formatMoney(Number(order.total), await getCurrency())} — refund may be owed`,
       link: `/admin/orders/${order.id}`,
     });
   }
@@ -1204,12 +1207,6 @@ export async function updateOrderDetails(id: string, input: UpdateOrderDetailsIn
   });
 }
 
-/** Node ships with full ICU by default, so Intl can format directly into Asia/Dhaka regardless of
- * the server process's own timezone — Bangladesh has one fixed UTC+6 offset with no DST, so this is
- * a pure display concern; followUpAt itself is always stored/compared as an absolute UTC instant. */
-function formatBdDateTime(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dhaka", dateStyle: "medium", timeStyle: "short" }).format(date);
-}
 
 /** Records the outcome of a confirmation call that was neither a clear yes nor a clear no — sets a
  * follow-up time and bumps the lifetime call-attempt counter, but deliberately does NOT touch
@@ -1222,9 +1219,9 @@ export async function holdOrderForFollowUp(id: string, input: HoldOrderInput, ch
     throw AppError.badRequest("Only pending orders can be put on a follow-up hold");
   }
 
-  const note = input.note
-    ? `On hold — follow up ${formatBdDateTime(input.followUpAt)}: ${input.note}`
-    : `On hold — follow up ${formatBdDateTime(input.followUpAt)}`;
+  // Display only, in the store timezone (Phase 7); followUpAt itself is stored and compared as an absolute UTC instant.
+  const followUp = formatDateTime(input.followUpAt, await getTimezone());
+  const note = input.note ? `On hold — follow up ${followUp}: ${input.note}` : `On hold — follow up ${followUp}`;
 
   return prisma.order.update({
     where: { id },
@@ -1257,9 +1254,6 @@ export async function clearOrderHold(id: string, changedByAdminId?: string) {
 
 const PRICE_ADJUSTMENT_LOCKED_STATUSES: OrderStatus[] = ["CANCELLED", "REFUNDED", "RETURNED", "DELIVERED"];
 
-function formatBdt(amount: number): string {
-  return `৳${Math.round(amount).toLocaleString("en-BD")}`;
-}
 
 /** Lets an admin nudge the order total up or down during the confirmation call (a negotiated
  * discount, a remote-area surcharge) — replaces whatever priceAdjustment was already set, it isn't
@@ -1290,7 +1284,7 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   if (existing.shippingWaived === null) {
     throw AppError.conflict("This order's pricing snapshot is incomplete (shipping waiver unknown) — it can't be adjusted automatically");
   }
-  const cur = (await getSettings()).currency || "BDT";
+  const cur = await getCurrency();
   const m = (v: unknown) => fromMajor(String(v ?? 0), cur);
   const bundle = m(existing.bundleDiscount);
   const totals = computeOrderTotals({
@@ -1305,7 +1299,7 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   const newTotal = toMajor(totals.total);
 
   const note =
-    `Price adjustment: ${formatBdt(previousAdjustment)} -> ${formatBdt(input.priceAdjustment)} (total ${formatBdt(Number(existing.total))} -> ${formatBdt(newTotal)})` +
+    `Price adjustment: ${formatMoney(previousAdjustment, cur)} -> ${formatMoney(input.priceAdjustment, cur)} (total ${formatMoney(Number(existing.total), cur)} -> ${formatMoney(newTotal, cur)})` +
     (input.note ? ` — ${input.note}` : "");
 
   return prisma.$transaction(async (tx) => {

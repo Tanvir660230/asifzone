@@ -4,10 +4,9 @@ import { renderEmailLayout } from "./email-template";
 import { escapeHtml } from "./html";
 import { getSmsSettings } from "../modules/sms-settings/sms-settings.service";
 import { env } from "../config/env";
+import { formatMoney } from "@clothing-brand/shared";
+import { getCurrency } from "../domain/config/commerce-settings";
 
-function formatBdt(amount: number): string {
-  return `৳${Math.round(amount).toLocaleString("en-BD")}`;
-}
 
 /** Fire-and-forget receipt email, fired from settlePaymentSession's success branch alongside the
  * existing "CONFIRMED" SMS — same spirit as lib/order-sms.ts's sendCustomerOrderSms. Skips silently
@@ -22,6 +21,7 @@ export function sendPaymentConfirmationEmail(order: Order): void {
     if (!smsSettings.customerPaymentConfirmedEmailEnabled) return;
 
     const firstName = escapeHtml(order.customerName.split(" ")[0] ?? "");
+    const currency = await getCurrency();
     const bodyHtml = `
       <p style="margin:0 0 16px;">Hi ${firstName},</p>
       <p style="margin:0 0 16px;">We've received your payment for order <strong>${order.orderNumber}</strong>.</p>
@@ -32,7 +32,7 @@ export function sendPaymentConfirmationEmail(order: Order): void {
         </tr>
         <tr style="border-top:1px solid #ececec;">
           <td style="padding:8px 0;color:#666666;">Amount paid</td>
-          <td style="padding:8px 0;text-align:right;font-weight:600;">${formatBdt(Number(order.total))}</td>
+          <td style="padding:8px 0;text-align:right;font-weight:600;">${formatMoney(Number(order.total), currency)}</td>
         </tr>
       </table>
       <p style="margin:0;">You can track this order any time using the link below.</p>
@@ -41,7 +41,7 @@ export function sendPaymentConfirmationEmail(order: Order): void {
     await sendMail({
       to: order.customerEmail!,
       subject: `Payment confirmed — Order ${order.orderNumber}`,
-      html: renderEmailLayout({
+      html: await renderEmailLayout({
         bodyHtml,
         ctaLabel: "View order",
         ctaUrl: `${env.webOrigin}/order-confirmation/${order.orderNumber}`,

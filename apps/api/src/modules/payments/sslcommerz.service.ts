@@ -1,5 +1,6 @@
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
+import { getCurrency } from "../../domain/config/commerce-settings";
 
 const BASE_URL = env.sslcommerz.isLive
   ? "https://securepay.sslcommerz.com"
@@ -34,7 +35,8 @@ export async function initSslcommerzSession(params: InitSessionParams): Promise<
     store_id: env.sslcommerz.storeId,
     store_passwd: env.sslcommerz.storePassword,
     total_amount: params.amount.toFixed(2),
-    currency: "BDT",
+    // The amount is in the store currency (the recorded currency of every order amount) — never a hard-coded code.
+    currency: await getCurrency(),
     tran_id: attemptRef,
     success_url: `${env.apiOrigin}/api/payments/sslcommerz/success`,
     fail_url: `${env.apiOrigin}/api/payments/sslcommerz/fail`,

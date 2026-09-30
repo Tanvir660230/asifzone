@@ -3,6 +3,7 @@ import { Inter, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { getSiteSettingsSafe } from "@/lib/api/storefront";
+import { StoreConfig } from "@/components/store-config";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-data";
 import { env } from "@/lib/env";
@@ -90,7 +91,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <PageViewTracker />
         <HeatmapScript />
         <MetaPixel />
-        <Providers>{children}</Providers>
+        <StoreConfig currency={settings.currency} timezone={settings.timezone}>
+          <Providers>{children}</Providers>
+        </StoreConfig>
       </body>
     </html>
   );

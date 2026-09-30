@@ -49,7 +49,7 @@ import { RankedBarList } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as categoriesApi from "@/lib/api/categories";
-import { computeTrendPct, formatPrice } from "@/lib/format";
+import { computeTrendPct, formatPrice, formatStoreDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type AnalyticsTab = "sales" | "catalog" | "marketing" | "customers";
@@ -78,7 +78,7 @@ export default function DashboardPage() {
     const now = new Date();
     const hour = now.getHours();
     setGreeting(hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening");
-    setDateLabel(now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }));
+    setDateLabel(formatStoreDate(now, { weekday: "long", month: "long", day: "numeric" }));
   }, []);
 
   // Today's order-ops snapshot — moved here from the Orders page so that page stays focused on

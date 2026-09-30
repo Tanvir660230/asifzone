@@ -750,6 +750,8 @@ export interface StoreSettings {
   logoOnDarkUrl: string | null;
   faviconUrl: string | null;
   currency: string;
+  /** IANA timezone of the store's business day (Phase 5/7). */
+  timezone: string;
   contactEmail: string | null;
   contactPhone: string | null;
   shippingFeeDhaka: string;

@@ -72,20 +72,7 @@ import type {
   BulkDeliveryScoreResult,
   AdminOrderListParams,
 } from "@/lib/api/admin-orders";
-import {
-  formatPrice,
-  initials,
-  orderStatusBadgeClass,
-  orderStatusLabel,
-  orderStatusShortLabel,
-  courierStatusBadgeClass,
-  courierStatusLabel,
-  courierStatusDescription,
-  deliveryScoreBadgeClass,
-  timeAgo,
-  paymentStatusLabel,
-  paymentStatusTextClass,
-} from "@/lib/format";
+import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, deliveryScoreBadgeClass, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel, paymentStatusLabel, paymentStatusTextClass, timeAgo } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
@@ -1466,9 +1453,9 @@ export default function OrdersPage() {
                 <td className="px-3 py-2.5 align-middle">{renderStatusCell(order)}</td>
                 <td className="px-3 py-2.5 align-middle">{renderCourierCell(order)}</td>
                 <td className="px-3 py-2.5 align-middle text-ink-500">
-                  <div>{new Date(order.createdAt).toLocaleDateString()}</div>
+                  <div>{formatStoreDate(order.createdAt)}</div>
                   <div className="text-xs text-ink-400">
-                    {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatStoreTime(order.createdAt)}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 align-middle">
@@ -1526,8 +1513,8 @@ export default function OrdersPage() {
                       <span className="font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</span>
                     </div>
                     <div className="mt-0.5 text-xs text-ink-400">
-                      {new Date(order.createdAt).toLocaleDateString()} ·{" "}
-                      {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatStoreDate(order.createdAt)} ·{" "}
+                      {formatStoreTime(order.createdAt)}
                     </div>
                   </button>
                 </div>

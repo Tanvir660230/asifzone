@@ -1,5 +1,6 @@
 /**
- * Store business time for the API (docs/METRICS_REGISTRY.md §1): the store timezone comes from StoreSetting, "now" from
+ * Store business time for the API (docs/METRICS_REGISTRY.md §1): the store timezone comes from the commerce-settings
+ * service (Phase 7 — the one resolution path; StoreSetting is its storage), "now" from
  * the application clock, and every raw-SQL comparison against a timestamp column goes through `utcInstant`.
  *
  * Why `utcInstant`: columns are naive `timestamp(3)` holding UTC wall-clock (Prisma), the DB session runs in the
@@ -8,9 +9,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { addDays, businessDate, resolveBusinessRange, type BusinessRange, type RangeInput } from "@clothing-brand/shared";
-import { getSettings } from "../../modules/settings/settings.service";
-
-export const DEFAULT_STORE_TIMEZONE = "Asia/Dhaka";
+import { getCommerceSettings } from "../config/commerce-settings";
 
 export interface StoreContext {
   timezone: string;
@@ -18,8 +17,7 @@ export interface StoreContext {
 }
 
 export async function storeContext(): Promise<StoreContext> {
-  const s = (await getSettings()) as { timezone?: string | null; currency?: string | null };
-  return { timezone: s.timezone || DEFAULT_STORE_TIMEZONE, currency: s.currency || "BDT" };
+  return getCommerceSettings();
 }
 
 /** A bound instant as naive UTC — the only way metrics/analytics SQL compares with a timestamp column. */

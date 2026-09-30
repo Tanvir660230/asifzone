@@ -80,11 +80,11 @@ describe("flash sale phase", () => {
 
 describe("tax-inclusive VAT (D3)", () => {
   it("extracts the VAT contained in an inclusive amount, never adds it", () => {
-    expect(taxIncludedIn(115, 15)).toBeCloseTo(15, 10);
-    expect(amountExcludingTax(115, 15)).toBeCloseTo(100, 10);
-    expect(taxIncludedIn(1000, 0)).toBe(0);
+    expect(taxIncludedIn(115, 15, "BDT")).toBeCloseTo(15, 10);
+    expect(amountExcludingTax(115, 15, "BDT")).toBeCloseTo(100, 10);
+    expect(taxIncludedIn(1000, 0, "BDT")).toBe(0);
     // The old analytics estimate used 1000 × 15% = 150 for tax-inclusive revenue; the contained VAT is 130.43
     // (rounded to the paisa by the central rounding policy since Phase 2).
-    expect(taxIncludedIn(1000, 15)).toBe(130.43);
+    expect(taxIncludedIn(1000, 15, "BDT")).toBe(130.43);
   });
 });

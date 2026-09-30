@@ -19,8 +19,8 @@ import {
   type ShippingAddress,
 } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
-import { getSettings } from "../../modules/settings/settings.service";
 import { loadShippingZones, loadTaxConfig } from "./pricing-config";
+import { getCurrency } from "../config/commerce-settings";
 
 /**
  * PricingService — the orchestration half of the canonical pricing pipeline (docs/PRICING_INVARIANTS.md). It loads every
@@ -66,7 +66,7 @@ export interface PricedQuote {
 }
 
 async function currencyOf(): Promise<string> {
-  return (await getSettings()).currency || "BDT";
+  return getCurrency();
 }
 
 /** Units sold under each flash-sale item, net of units put back (cancelled/returned): Σ (quantity − restockedQuantity)

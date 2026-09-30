@@ -13,6 +13,7 @@ import * as biApi from "@/lib/api/bi";
 import * as customersApi from "@/lib/api/admin-customers";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -97,15 +98,15 @@ export default function CustomerIntelligencePage() {
             Array.from({ length: 10 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Total Customers" value={stats.totalCustomers.toLocaleString("en-BD")} icon={<Wallet size={18} />} />
-              <StatTile label="VIP" value={stats.vipCustomers.toLocaleString("en-BD")} icon={<Wallet size={18} />} tone="accent" />
-              <StatTile label="Returning" value={stats.repeatCustomers.toLocaleString("en-BD")} icon={<Wallet size={18} />} />
-              <StatTile label="One-Time Buyers" value={stats.oneTimeBuyers.toLocaleString("en-BD")} icon={<Wallet size={18} />} />
-              <StatTile label="New This Month" value={stats.newThisMonth.toLocaleString("en-BD")} icon={<Wallet size={18} />} />
-              <StatTile label="Inactive (90d)" value={stats.inactive90.toLocaleString("en-BD")} icon={<Wallet size={18} />} tone={stats.inactive90 > 0 ? "warning" : "default"} />
-              <StatTile label="High-Risk (Suspicious)" value={stats.suspiciousCount.toLocaleString("en-BD")} icon={<Wallet size={18} />} tone={stats.suspiciousCount > 0 ? "warning" : "default"} />
-              <StatTile label="COD Risk" value={stats.codRiskCount.toLocaleString("en-BD")} icon={<Wallet size={18} />} tone={stats.codRiskCount > 0 ? "warning" : "default"} />
-              <StatTile label="Blocked" value={stats.blockedCount.toLocaleString("en-BD")} icon={<Wallet size={18} />} />
+              <StatTile label="Total Customers" value={stats.totalCustomers.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} />
+              <StatTile label="VIP" value={stats.vipCustomers.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Returning" value={stats.repeatCustomers.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} />
+              <StatTile label="One-Time Buyers" value={stats.oneTimeBuyers.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} />
+              <StatTile label="New This Month" value={stats.newThisMonth.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} />
+              <StatTile label="Inactive (90d)" value={stats.inactive90.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} tone={stats.inactive90 > 0 ? "warning" : "default"} />
+              <StatTile label="High-Risk (Suspicious)" value={stats.suspiciousCount.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} tone={stats.suspiciousCount > 0 ? "warning" : "default"} />
+              <StatTile label="COD Risk" value={stats.codRiskCount.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} tone={stats.codRiskCount > 0 ? "warning" : "default"} />
+              <StatTile label="Blocked" value={stats.blockedCount.toLocaleString(DISPLAY_LOCALE)} icon={<Wallet size={18} />} />
               <StatTile label="Lifetime realised net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
             </>
           )}
@@ -169,7 +170,7 @@ export default function CustomerIntelligencePage() {
                 key: (b) => b.bucket,
                 label: (b) => b.bucket,
                 value: (b) => b.customers,
-                valueLabel: (b) => b.customers.toLocaleString("en-BD"),
+                valueLabel: (b) => b.customers.toLocaleString(DISPLAY_LOCALE),
               })}
               emptyLabel="No purchase history yet."
             />
@@ -221,7 +222,7 @@ export default function CustomerIntelligencePage() {
                 key: (s) => s.value,
                 label: (s) => s.value,
                 value: (s) => s.unitsSold,
-                valueLabel: (s) => s.unitsSold.toLocaleString("en-BD"),
+                valueLabel: (s) => s.unitsSold.toLocaleString(DISPLAY_LOCALE),
               })}
               emptyLabel="No sales recorded yet."
             />
@@ -237,7 +238,7 @@ export default function CustomerIntelligencePage() {
                 key: (c) => c.value,
                 label: (c) => c.value,
                 value: (c) => c.unitsSold,
-                valueLabel: (c) => c.unitsSold.toLocaleString("en-BD"),
+                valueLabel: (c) => c.unitsSold.toLocaleString(DISPLAY_LOCALE),
               })}
               emptyLabel="No sales recorded yet."
             />
@@ -293,7 +294,7 @@ export default function CustomerIntelligencePage() {
                 key: (h) => String(h.hour),
                 label: (h) => formatHourLabel(h.hour),
                 value: (h) => h.orders,
-                valueLabel: (h) => h.orders.toLocaleString("en-BD"),
+                valueLabel: (h) => h.orders.toLocaleString(DISPLAY_LOCALE),
               })}
               emptyLabel="No orders recorded yet."
             />
@@ -309,7 +310,7 @@ export default function CustomerIntelligencePage() {
                 key: (d) => String(d.dow),
                 label: (d) => DOW_LABELS[d.dow] ?? String(d.dow),
                 value: (d) => d.orders,
-                valueLabel: (d) => d.orders.toLocaleString("en-BD"),
+                valueLabel: (d) => d.orders.toLocaleString(DISPLAY_LOCALE),
               })}
               emptyLabel="No orders recorded yet."
             />
