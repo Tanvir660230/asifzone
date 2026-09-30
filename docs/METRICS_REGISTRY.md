@@ -65,7 +65,7 @@ Treatment summary:
 | Exchange replacement order | never a sale (TARGET §11). An **upgrade** difference collected on it is **not** merchandise sales (P5-3, D6) | its payments → `exchange_difference_collected` + `collected_cash` | excluded |
 | Exchange-returned original units | **not** a return (the original sale stands: D6, return-request service) | a **downgrade** difference is a Refund on the original order: a merchandise refund that reduces `realised_net_sales` in full (goods first) | — |
 | Trashed order | excluded from every sales and count metric | its payments/refunds still count (ledger rows stay facts) | excluded |
-| Trashed / deleted product | history unaffected (line snapshots); attribution to the current product via `variantId` when the variant still exists, else "unattributed" | — | — |
+| Trashed / deleted product | history unaffected: price, cost, product, category and brand are the line's own snapshots (Phase 6), so even a permanently deleted product keeps its attribution. Lines written before Phase 6 fall back to the variant's product when the variant still exists (else "unattributed"); their category/brand are "Not recorded" | — | — |
 
 ## 3. Valuation rules (from snapshots, never live data)
 
@@ -114,7 +114,19 @@ Treatment summary:
 - **Returned units** come from the ledger's `StockMovement` rows with reason `RETURN` (orderId, variantId, units,
   timestamp). They are valued at the net unit value above. Exchange-returned units, i.e. the original line of an
   `APPROVED` `EXCHANGE` request, are removed chronologically from that (order, variant) pair.
-- Money is integer minor units in the store currency (`StoreSetting.currency`); DTOs carry major units.
+- Money is integer minor units in the store currency (`StoreSetting.currency`); DTOs carry major units. The store
+  currency is **locked once any order exists** (P6-4): orders record no currency, so it is the recorded currency of all
+  order money.
+- **Recorded cost (Phase 6).** `OrderItem.unitCostSnapshot` is the per-unit cost in minor units, captured once in the
+  transaction that writes the line (`variant.costPrice ?? product.costPrice` at that moment). NULL means **unknown**:
+  no cost was configured, or the line predates Phase 6. Historical COGS and margin never read the current cost price.
+  Uncosted lines are excluded from both COGS and margin (never counted at 0) and reported as line coverage. A returned
+  unit reverses its recorded cost. Its margin reverses at the VAT-exclusive return value.
+- **Attribution (Phase 6).** Every line records `productIdSnapshot`, `categoryIdSnapshot` / `categoryNameSnapshot`
+  (leaf category and its name at order time) and `brandSnapshot` (free text; NULL = unbranded). Reports group by these,
+  never by today's catalog. Lines written before Phase 6 have no category/brand snapshot. They group as
+  **"Not recorded (before Phase 6)"** and are never re-attributed (P6-3). `productIdSnapshot` was backfilled from the
+  variant's product, because a variant never changes product.
 
 ## 4. The registry
 
@@ -154,8 +166,8 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 | `aov` | `realised_net_sales ÷ orders_realised` (P5-5). Both use the same realisation eligibility and the same cancellation reversals; a refunded order stays in the denominator (it was realised), and its refund lowers the numerator | realised | via numerator | — | excluded | money |
 | `cod_orders_placed` | sale orders with `paymentMethod = COD` | placed | — | — | excluded | count |
 | `courier_loss` | Σ `CourierLossEvent.amount` | event `createdAt` | — | — | — | money |
-| `cogs_estimated` | Σ (units sold − units returned) × **current** cost (`variant.costPrice ?? product.costPrice ?? 0`) | realised / returned | — | net | excluded | money, flagged *estimated* |
-| `gross_margin_estimated` | `net_merchandise_sales − cogs_estimated` (as charged; current cost — P5-6) | mixed | — | — | excluded | money, flagged *estimated* |
+| `cogs` | Σ (units sold − units returned) × **recorded** cost (`OrderItem.unitCostSnapshot`), costed lines only; coverage = lines with / without a recorded cost | realised / returned | — | net | excluded | money |
+| `gross_margin` | over costed lines only: merchandise excluding VAT − recorded cost, net of costed returns (same population on both sides); coverage as `cogs` | mixed | — | net | excluded | money |
 
 ### 4.2 Product
 | Key | Definition | Time |
@@ -164,7 +176,7 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 | `units_sold` | Σ quantity on realised sale-order lines | realised |
 | `units_returned` | returned units (same rule as `returns`) | returned |
 | `net_units_sold` | `units_sold − units_returned` (TARGET "units sold") | mixed |
-| product / category / variant / size / colour groupings | the metrics above plus `gross_merchandise_sales`, `net_merchandise_sales`, grouped by the line's current product (via `variantId`), its **current** category/brand (no snapshot exists — audit §1.4, P5-7: **historical category/brand reports change if the catalog is reclassified**), or the line's own SKU/size/colour snapshot | as metric |
+| product / category / variant / size / colour groupings | the metrics above plus `gross_merchandise_sales`, `net_merchandise_sales`, grouped by the line's own snapshots (Phase 6): `productIdSnapshot`, `categoryIdSnapshot`/`categoryNameSnapshot`, `brandSnapshot`, SKU/size/colour. A later re-categorisation, rename, brand edit or product deletion changes no historical report. Pre-Phase-6 lines group as "Not recorded". P5-7 is superseded for new orders | as metric |
 
 ### 4.3 Customer (a grouping of the canonical facts, never a separate calculation)
 | Key | Definition |
@@ -218,7 +230,8 @@ The API code `METRIC_PENDING` remains for any future pending metric.
 
 - **No projection tables.** Metrics are computed on request from facts. The fact loader selects only orders with an
   event in the window, using indexed columns. The store's volume doesn't justify materialisation. A daily fact table
-  (TARGET M13) would add a rebuild, and nothing today needs one.
+  (TARGET M13) would add a rebuild, and nothing today needs one. Phase 6 measured the engine at ~0.1 s / 10k orders and
+  ~0.6 s / 100k; revisit above ~50k orders or a lifetime p95 > 1 s ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md) C).
 - **Cache:** Redis, 60 s, keyed by metric set + resolved UTC range + timezone + grouping. Stale semantics: at most 60 s
   old; money commands don't invalidate it, since a dashboard number may lag a refund by up to a minute.
 - **Reconciliation (M-3), `GET /api/v1/metrics/consistency`:**
@@ -226,6 +239,7 @@ The API code `METRIC_PENDING` remains for any future pending metric.
   - Σ daily `realised_net_sales` = total; Σ `customer_net_spend` = store `realised_net_sales`.
   - Bridge: `realised_net_sales` = `gross_merchandise_sales − discounts − merchandise_vat − merchandise_refunds`.
   - Σ product `net_merchandise_sales` (incl. unattributed) = store `net_merchandise_sales`.
+  - Σ product `gross_margin` = store `gross_margin`; Σ category `cogs` (incl. "Not recorded") = store `cogs` (Phase 6).
   - `collected_cash` = Σ ledger payments − Σ ledger refunds, recomputed directly from the tables.
 
 ## 8. Invariants (tested)
@@ -242,6 +256,9 @@ The API code `METRIC_PENDING` remains for any future pending metric.
 | M-8 | Refund hierarchy: overpayment first, then merchandise up to the remaining eligible merchandise, then non-merchandise; never pro-rata. `realised_net_sales` falls only by the merchandise part |
 | M-9 | Merchandise VAT comes only from the order's tax snapshot; unknown VAT is reported as coverage, never estimated |
 | M-10 | Headline sales, AOV and customer spend are all `realised_net_sales`, over the same realisation population |
+| M-11 | COGS and gross margin read only the line's recorded cost. A later cost change changes no historical figure. Unknown cost is excluded and reported, never counted as 0 or backfilled |
+| M-12 | Category, brand and product attribution read only the line's snapshots. Re-categorisation, rename, brand edits and permanent product deletion change no historical report. Pre-Phase-6 lines are "Not recorded", never re-attributed |
+| M-13 | Order-line snapshots have one writer (`domain/orders/line-snapshots.ts`), called in the transaction that writes the line. Recorded cost is omitted from every read except the metrics loader and never reaches a customer response |
 
 ## 9. Verification (final Phase 5 run incl. PD-5.1, 2026-09-30)
 

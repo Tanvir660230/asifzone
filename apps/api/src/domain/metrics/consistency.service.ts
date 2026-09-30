@@ -20,15 +20,17 @@ const sum = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) * 100) / 
 export async function metricsConsistency(range: RangeInput | BusinessRange): Promise<{ range: unknown; checks: ConsistencyCheck[]; ok: boolean }> {
   const { currency } = await storeContext();
   const totals = await computeMetrics({
-    metrics: ["realised_net_sales", "gross_merchandise_sales", "discounts", "merchandise_vat", "merchandise_refunds", "net_sales", "net_merchandise_sales", "collected_cash", "orders_placed"],
+    metrics: ["realised_net_sales", "gross_merchandise_sales", "discounts", "merchandise_vat", "merchandise_refunds", "net_sales", "net_merchandise_sales", "collected_cash", "orders_placed", "cogs", "gross_margin"],
     range,
     fresh: true,
   });
-  const [byDay, byCustomer, byProduct] = await Promise.all([
+  const [byDay, byCustomer, byProduct, byCategory] = await Promise.all([
     // Day buckets are capped (400); a longer range reconciles by month — the same contributions either way.
     computeMetrics({ metrics: ["realised_net_sales", "net_sales", "orders_placed"], range, fresh: true, groupBy: Date.parse(totals.range.to) - Date.parse(totals.range.from) > 365 * 86_400_000 ? "month" : "day" }),
     computeMetrics({ metrics: ["realised_net_sales"], range, groupBy: "customer", fresh: true }),
-    computeMetrics({ metrics: ["net_merchandise_sales"], range, groupBy: "product", fresh: true }),
+    computeMetrics({ metrics: ["net_merchandise_sales", "gross_margin"], range, groupBy: "product", fresh: true }),
+    // Phase 6: the category cut uses the lines' own snapshots ("Not recorded" included), so it must still add up.
+    computeMetrics({ metrics: ["cogs"], range, groupBy: "category", fresh: true }),
   ]);
 
   const window = { gte: new Date(totals.range.startUtc), lt: new Date(totals.range.endUtc) };
@@ -50,6 +52,8 @@ export async function metricsConsistency(range: RangeInput | BusinessRange): Pro
     },
     { check: "Σ product net merchandise = net_merchandise_sales", expected: totals.metrics.net_merchandise_sales!.value, actual: sum(byProduct.groups!.map((g) => g.metrics.net_merchandise_sales!)) },
     { check: "collected_cash = ledger payments − ledger refunds", expected: ledgerCash, actual: totals.metrics.collected_cash!.value },
+    { check: "Σ product gross margin = gross_margin (recorded cost)", expected: totals.metrics.gross_margin!.value, actual: sum(byProduct.groups!.map((g) => g.metrics.gross_margin!)) },
+    { check: "Σ category COGS (incl. not recorded) = cogs", expected: totals.metrics.cogs!.value, actual: sum(byCategory.groups!.map((g) => g.metrics.cogs!)) },
   ].map((c) => ({ ...c, ok: close(c.expected, c.actual) }));
   return { range: totals.range, checks, ok: checks.every((c) => c.ok) };
 }

@@ -24,6 +24,8 @@ import { T, deliveredCod, line, order, paidOnline } from "./metrics-facts.fixtur
 
 interface Impl {
   metric: (key: string, orders: OrderFact[], range: BusinessRange) => number;
+  /** How the implementation's loader presents a fact (identity for the canonical loader; mutants model a loader defect). */
+  facts: (o: OrderFact) => OrderFact;
   aov: (orders: OrderFact[], range: BusinessRange) => number;
   customerSpend: (orders: OrderFact[], range: BusinessRange) => Map<string, number>;
   range: (from: string, to: string) => BusinessRange;
@@ -34,6 +36,7 @@ const NOW = new Date("2026-09-30T12:00:00Z");
 const canonicalMetric = (key: string, orders: OrderFact[], range: BusinessRange) => sumOf(contributions(key, orders, range));
 const canonical: Impl = {
   metric: canonicalMetric,
+  facts: (o) => o,
   aov: (orders, range) => aovOf(canonicalMetric("realised_net_sales", orders, range), canonicalMetric("orders_realised", orders, range)),
   customerSpend: (orders, range) => {
     const m = new Map<string, number>();
@@ -138,6 +141,31 @@ function altRealisedNet(orders: OrderFact[], r: BusinessRange, mode: "refundBefo
   return positive - reduction;
 }
 
+// Phase 6 fixture: what the line recorded vs what the catalog says today.
+const P6: OrderFact[] = [
+  deliveredCod(d12, {
+    id: "costed",
+    lines: [line({ unitPrice: T(1150), unitCostSnapshot: T(400), categoryId: "catThen", categoryName: "Shirts", brand: "Brand Then" })],
+    subtotal: T(1150),
+    total: T(1210),
+    taxAmount: T(150),
+    shippingTaxAmount: 0,
+  }),
+  deliveredCod(d12, { id: "uncosted", lines: [line({ unitCostSnapshot: null })] }),
+  deliveredCod(d12, {
+    id: "mixed",
+    lines: [line({ unitCostSnapshot: T(400) }), line({ unitCostSnapshot: null })],
+    subtotal: T(2000),
+    total: T(2060),
+  }),
+  deliveredCod(d12, { id: "legacy", lines: [line({ attributionRecorded: false, categoryId: null, categoryName: null, brand: null, unitCostSnapshot: null })] }),
+  deliveredCod(d12, { id: "deletedProduct", lines: [line({ variantId: "goneVariant", productId: "pGone", unitCostSnapshot: T(400) })] }),
+];
+/** Today's catalog, which differs from what was recorded. */
+const CURRENT_COST = T(900);
+const CURRENT_CATEGORY = { categoryId: "catNow", categoryName: "Trousers" };
+const CURRENT_BRAND = "Brand Now";
+
 /** A current catalog/tax state that differs from what the orders recorded. History must ignore it. */
 const CURRENT_PRICE = T(1500);
 const CURRENT_TAX_PCT = 7.5;
@@ -194,11 +222,31 @@ function violations(impl: Impl): string[] {
   check("AOV over the realisation population (month)", impl.aov(PD, sept) === aovOf(T(4500), 5));
   check("AOV over the realisation population (day of sale)", impl.aov(PD, day12) === aovOf(T(6000), 6));
   check("customer spend follows realised net sales", impl.customerSpend(PD, sept).get("k6") === T(800));
+
+  // ── Phase 6: recorded cost and attribution snapshots ──
+  const h = (id: string) => P6.filter((o) => o.id === id);
+  check("COGS from the recorded cost", impl.metric("cogs", h("costed"), sept) === T(400));
+  check("margin from the recorded cost, ex VAT", impl.metric("gross_margin", h("costed"), sept) === T(1150 - 150 - 400));
+  check("uncosted line is unknown, not zero cost", impl.metric("cogs", h("uncosted"), sept) === 0 && impl.metric("gross_margin", h("uncosted"), sept) === 0);
+  check("mixed order: margin over the costed line only", impl.metric("gross_margin", h("mixed"), sept) === T(600));
+  const catOf = (id: string) => {
+    const cs = contributions("gross_merchandise_sales", h(id).map(impl.facts), sept);
+    return cs.length ? groupKeyOf(cs[0]!, "category", TZ).key : "none";
+  };
+  const brandOf = (id: string) => {
+    const cs = contributions("gross_merchandise_sales", h(id).map(impl.facts), sept);
+    return cs.length ? groupKeyOf(cs[0]!, "brand", TZ).key : "none";
+  };
+  check("category from the snapshot", catOf("costed") === "catThen");
+  check("brand from the snapshot", brandOf("costed") === "Brand Then");
+  check("pre-Phase-6 line is not recorded, not re-attributed", catOf("legacy") === "not_recorded" && brandOf("legacy") === "not_recorded");
+  check("deleted product keeps its attribution", contributions("gross_merchandise_sales", h("deletedProduct").map(impl.facts), sept)[0]?.line?.productId === "pGone");
   return out;
 }
 
 const withOrders = (map: (o: OrderFact) => OrderFact): Impl => ({
   ...canonical,
+  facts: map,
   metric: (k, orders, r) => canonicalMetric(k, orders.map(map), r),
   aov: (orders, r) => canonical.aov(orders.map(map), r),
   customerSpend: (orders, r) => canonical.customerSpend(orders.map(map), r),
@@ -260,6 +308,18 @@ const MUTANTS: Array<[string, Impl]> = [
   ],
   ["PD-5. cancellation retroactively deletes the historical sale", withOrders((o) => (o.cancelledAt ? { ...o, cancelledAt: null, status: "CANCELLED" } : o))],
   ["PD-6. exchange upgrade difference counted as a new sale", overrideMetric("realised_net_sales", (orders, r) => canonicalMetric("realised_net_sales", orders, r) + canonicalMetric("exchange_difference_collected", orders, r))],
+  // Phase 6
+  ["P6-1. COGS from the current cost price instead of the line's recorded cost", withOrders((o) => ({ ...o, lines: o.lines.map((l) => (l.unitCostSnapshot === null ? l : { ...l, unitCostSnapshot: CURRENT_COST })) }))],
+  ["P6-2. unknown cost counted as zero", withOrders((o) => ({ ...o, lines: o.lines.map((l) => ({ ...l, unitCostSnapshot: l.unitCostSnapshot ?? 0 })) }))],
+  ["P6-3. old lines backfilled with today's cost (fabricated history)", withOrders((o) => ({ ...o, lines: o.lines.map((l) => ({ ...l, unitCostSnapshot: l.unitCostSnapshot ?? CURRENT_COST })) }))],
+  [
+    "P6-4. gross margin as net merchandise − COGS (uncosted revenue counted, VAT included)",
+    overrideMetric("gross_margin", (orders, r) => canonicalMetric("net_merchandise_sales", orders, r) - canonicalMetric("cogs", orders, r)),
+  ],
+  ["P6-5. category from today's product instead of the snapshot", withOrders((o) => ({ ...o, lines: o.lines.map((l) => (l.attributionRecorded ? { ...l, ...CURRENT_CATEGORY } : l)) }))],
+  ["P6-6. brand from today's product instead of the snapshot", withOrders((o) => ({ ...o, lines: o.lines.map((l) => (l.attributionRecorded ? { ...l, brand: CURRENT_BRAND } : l)) }))],
+  ["P6-7. pre-Phase-6 lines re-attributed to today's category/brand", withOrders((o) => ({ ...o, lines: o.lines.map((l) => (l.attributionRecorded ? l : { ...l, attributionRecorded: true, ...CURRENT_CATEGORY, brand: CURRENT_BRAND })) }))],
+  ["P6-8. product snapshot ignored: a permanently deleted product's lines lose their product", withOrders((o) => ({ ...o, lines: o.lines.map((l) => (l.variantId === "goneVariant" ? { ...l, productId: null } : l)) }))],
 ];
 
 describe("metrics — mutation tests", () => {

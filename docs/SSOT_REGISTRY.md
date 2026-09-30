@@ -230,7 +230,10 @@ rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
 | Orders placed / realised / cancelled, AOV (`orders_placed`, `orders_realised`, `orders_cancelled`, `aov`) | SALE_ORDER / realisation / operational predicates; AOV = net sales ÷ realised (P5-5) | dashboard, KPI strip, BI, customer drawer | ✅ Phase 5 |
 | Units ordered / sold / net (`units_ordered`, `units_sold`, `net_units_sold`) | sale-order lines (placement) / realised lines, net of returns | storefront urgency/trending/FBT, product sales panel, heatmaps, forecasts | ✅ Phase 5 (P5-9) |
 | Customer spend, orders, repeat rate, CLV (`customer_*`) | groupings of `realised_net_sales` / `orders_placed` | CRM list/drawer, VIP tags, SMS vars, RFM, BI customers | ✅ Phase 5 (P5-4) |
-| COGS / gross margin (`cogs_estimated`, `gross_margin_estimated`) | net units × **current** cost, flagged *estimated* | BI financial/products | ⚠️ estimated (cost snapshot deferred — P5-6) |
+| COGS / gross margin (`cogs`, `gross_margin`) | net units × **recorded** cost (`OrderItem.unitCostSnapshot`), costed lines only, with line coverage | BI financial/overview/products, inventory turnover | ✅ Phase 6 (current-cost estimate removed) |
+| Order-line cost (`OrderItem.unitCostSnapshot`) | captured once when the line is written (`domain/orders/line-snapshots.ts`): `variant.costPrice ?? product.costPrice`, minor units; NULL = unknown; omitted from every read except the metrics loader | cogs, gross_margin | ✅ Phase 6 |
+| Order-line attribution (`productIdSnapshot`, `categoryIdSnapshot`, `categoryNameSnapshot`, `brandSnapshot`) | captured once when the line is written (same writer); no FKs; pre-Phase-6 lines "Not recorded" (product backfilled from the variant) | product/category/brand groupings, top categories/brands, product reports | ✅ Phase 6 |
+| Store currency (`StoreSetting.currency`) | owner: settings; **locked once any order exists** (P6-4) — the recorded currency of all order money | every money snapshot and conversion | ✅ Phase 6 |
 | Stock on hand / low / out of stock / value (`stock_on_hand`, `low_stock_variants`, `out_of_stock_variants`, `inventory_value`) | `ProductVariant.stock` (read-only) + `variantStockState` (D5, per variant) | dashboard, BI inventory, insights | ✅ Phase 5 (`≤ 5` rule removed) |
 | Courier loss (`courier_loss`) | `CourierLossEvent` | dashboard, BI | ✅ |
 | Conversion rate / visitors (behavioural) | `PageView` sessions ÷ sessions with a sale order (SALE_ORDER) | dashboard, BI | ✅ Phase 5 (predicate + windows canonical; visits are their own facts) |
@@ -290,7 +293,10 @@ rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
 | I27 | business numbers come only from the metrics engine; financial metrics read snapshots and the ledger, never current configuration (M-1, M-2) | Metrics (guard + integration test) |
 | I28 | every business-day boundary and SQL time comparison follows `StoreSetting.timezone` via `resolveBusinessRange` / `utcInstant` (M-4) | Metrics (guard + integration test) |
 | I29 | realised net sales: refunds reduce it only by their merchandise part (overpayment first, goods first, capped), merchandise VAT comes from the order's snapshot, and a cancellation after realisation is a reversal in the cancellation period, never a rewrite of earlier periods (M-5, M-8–M-10) | Metrics (engine + mutation + integration tests) |
+| I30 | an order line's cost, product, category and brand are captured once, by one writer, in the transaction that writes the line, and never change; historical COGS, margin and attribution read only them; unknown values stay unknown (M-11–M-13) | Orders / Metrics (guard + engine + mutation + integration tests) |
+| I31 | recorded cost never appears in a customer or storefront response (global Prisma `omit`) | Orders (integration test) |
+| I32 | the store currency can't change once any order exists (409 `CURRENCY_LOCKED`) | Settings (integration test) |
 
 Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
-`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27, I28 and I29 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 4 implements and tests
+`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27, I28 and I29 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 6 implements and tests I30–I32 ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)). Phase 4 implements and tests
 I9 (as PAYMENT_LEDGER PL-1, with a drift report) and I23–I26 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §13).

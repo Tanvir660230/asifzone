@@ -3,7 +3,7 @@ import request from "supertest";
 import { aovOf, contributions, isSaleOrder, merchandiseVat, realisationOf, snapshotCoverage, sumOf, type BusinessRange, type OrderFact } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
-import { cacheDel } from "../../config/redis";
+import { cacheDel, cacheDelByPrefix } from "../../config/redis";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, trackOrder } from "../../test-fixtures";
 import { updateOrderStatus } from "../../modules/orders/order.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
@@ -370,6 +370,9 @@ describe("PD-5.1 realised net sales over real orders (order, ledger and exchange
     await updateOrderStatus(o.id, { status: "DELIVERED" }, admin);
     const customerId = (await prisma.order.findUniqueOrThrow({ where: { id: o.id }, select: { customerId: true } })).customerId!;
     const own = await loadOrderFacts((await prisma.order.findMany({ where: { customerId }, select: { id: true } })).map((r) => r.id), "BDT");
+    // The index is served from the 60 s metrics cache by design (METRICS_REGISTRY §7); drop it so this read sees the order
+    // just placed (with Redis connected, an earlier test's lifetime grouping would otherwise still be cached).
+    await cacheDelByPrefix("metrics:");
     const index = await customerMetricsIndex();
     expect(minor(index.get(customerId)!.netSpend)).toBe(life("realised_net_sales", own));
   });

@@ -662,6 +662,31 @@ doesn't need materialisation, and the read-time loader selects only orders with 
 - the timezone/currency move into `CommerceSettings` (Phase 6);
 - permission scoping of metrics (Phase 10).
 
+## 16f. Phase 6 scope — Historical order-line facts
+
+**Why this phase.** The Phase 6 audit ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)) found the remaining places where history
+changes when current data changes:
+- historical COGS and margin used **today's** cost price (and missing cost counted as 0);
+- category and brand reports used **today's** product relationships;
+- a permanent product delete erased a line's product, category, brand and cost;
+- the store currency, the implied currency of every money snapshot, was freely editable.
+
+**Scope** (M7's `unitCostSnapshot`, extended to attribution):
+- **Snapshots.** `OrderItem.unitCostSnapshot` (Int, minor units), `productIdSnapshot`, `categoryIdSnapshot`,
+  `categoryNameSnapshot` and `brandSnapshot`. They are captured once by one writer (`domain/orders/line-snapshots.ts`)
+  in the transaction that writes the line (`insertOrderRecord`, `createExchangeOrder`) and never updated.
+- **Metrics.** `cogs` and `gross_margin` use recorded cost only, with line coverage. Category, brand and product
+  groupings use the snapshots. Pre-Phase-6 lines are "Not recorded". Nothing is fabricated; only `productIdSnapshot`
+  is backfilled from the variant.
+- **Default-deny cost.** Global Prisma `omit`, so no customer response can contain it.
+- **Currency lock** once orders exist (P6-4).
+
+**Deferred with reasons (audit gap matrix):**
+- daily facts / M13: not needed at measured scale;
+- configuration relocation into `CommerceSettings`: Phase 7+ (installer; no duplicate truth);
+- metrics RBAC: Phase 10;
+- outbox subscribers: Phase 8.
+
 ## 17. Definition of done for each phase
 
 Tests (unit + integration + e2e) green · `tsc --noEmit` for api, web, shared · `eslint` for api and web (added to CI in Phase 1) · `next build` · migrations applied to a copy of production + drift check · invariant suite green · reconciliation reports reviewed · this document, the audit and the SSOT registry updated · remaining risks listed in the phase's PR description.

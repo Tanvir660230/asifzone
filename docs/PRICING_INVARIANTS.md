@@ -159,6 +159,8 @@ at initiation):
 | `OrderItem.listPriceSnapshot` | unit list price at sale |
 | `OrderItem.flashSaleId` / `flashSaleItemId` | D4 attribution (NULL = not flash-priced) |
 | `OrderItem.bundleDiscountAllocated` / `couponDiscountAllocated` | the line's share of each discount (sums exactly) |
+| `OrderItem.unitCostSnapshot` (Phase 6) | per-unit cost at sale, minor units; NULL = unknown (never 0); internal — omitted from every read except metrics |
+| `OrderItem.productIdSnapshot` / `categoryIdSnapshot` / `categoryNameSnapshot` / `brandSnapshot` (Phase 6) | attribution at sale; no FKs; NULL category = not recorded (pre-Phase-6) |
 
 ## §9 History is immutable
 

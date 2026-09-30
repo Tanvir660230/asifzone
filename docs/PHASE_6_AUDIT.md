@@ -290,3 +290,26 @@ recorded". No extra flag column is needed.
 
 **Not changed:** Phase 1–4 truths. The order state machine, pricing pipeline, stock ledger and payment ledger are
 untouched. Phase 5 definitions are unchanged apart from the cost metrics and attribution source above.
+
+---
+
+## Verification (2026-09-30)
+
+| Gate | Result |
+|---|---|
+| Engine tests (`lib/historical-snapshots.test.ts`: recorded COGS/margin ex VAT, uncosted lines excluded + coverage, returns reverse recorded cost, cancellation reversal, snapshot attribution, Unbranded / Not recorded) | 6 passed |
+| Mutation tests (`lib/metrics.mutation.test.ts`) | 31 passed: canonical engine clean; 30/30 mutants killed — the 22 of Phase 5 plus P6-1 COGS from current cost, P6-2 unknown cost as 0, P6-3 old lines backfilled with today's cost, P6-4 margin as net merchandise − COGS, P6-5 category from today's product, P6-6 brand from today's product, P6-7 pre-Phase-6 lines re-attributed, P6-8 product snapshot ignored after deletion |
+| Guard (`domain/orders/historical-snapshots.guard.test.ts`) | 2 passed: one snapshot writer; the order-fact loader reads no current cost/category/brand |
+| Integration (`domain/orders/historical-snapshots.integration.test.ts`, real order / exchange / product-deletion / settings paths) | 12 passed: cost captured (variant over product, minor units); later cost change changes neither snapshot nor COGS/margin; no cost → unknown + coverage; pre-Phase-6 line unknown; service coverage; re-categorisation, rename and brand edit change nothing; Unbranded vs Not recorded; permanent product delete keeps attribution and cost; exchange keeps the original's COGS, replacement records its own; reconciliation incl. the Phase 6 checks; checkout response, order tracking (service + HTTP) and the customer's order list never contain cost; currency locked (service + HTTP 409), same currency still saves |
+| Source mutations (by hand, then restored) | 7/7 killed: cost `omit` removed, currency lock removed, exchange replacement not snapshotted, missing cost written as 0, loader treats every line as attributed, loader ignores `productIdSnapshot`, order writer skips snapshots |
+| Full API suite, Redis connected / without Redis | 50 files, 691 / 691 passed |
+| D8 loyalty tests alone (`-t D8`) with Redis | 2/2 |
+| Playwright desktop + mobile (API on the test DB, Redis connected) | 194 passed, 2 skipped, 0 failed (98 / 98). A first run failed one desktop step (`POST /api/wishlist` 404): the Next.js fetch cache still held products from before the test-DB reset; after clearing `.next/cache/fetch-cache` the full rerun was clean |
+| TypeScript (api, web) · ESLint (api clean; web 0 errors, 2 pre-existing `<img>` warnings) · API build | clean |
+| Next.js build | compiled, type-checked, 12/12 pages; standalone copy step fails with the known Windows symlink `EPERM` (14) |
+| Database (`clothing_brand_test` only; datasource printed before every Prisma command; no shadow database) | empty DB → full chain of 80 migrations → seed; **backfill proof over existing rows** (lines written by the app, Phase 6 columns rolled back, migration re-applied): `productIdSnapshot` restored from the variant, cost/category/brand left NULL, a line with a missing variant left fully unknown; `migrate status` up to date; `migrate diff` (datasource → datamodel): no drift |
+| Reconciliation (`metricsConsistency`) | all checks ok, including Σ product gross margin = total and Σ category COGS (with "Not recorded") = total, in the integration suite over its own costed / uncosted / pre-Phase-6 orders, and on the test DB (lifetime / 30 days / today) |
+
+Also fixed during verification (test-only): a Phase 5 integration test read `customerMetricsIndex()` through the 60 s
+metrics cache. With Redis connected, after the fresh reset, it saw an earlier cached grouping. It now clears the
+`metrics:` cache first.
