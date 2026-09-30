@@ -7,8 +7,7 @@ import { prisma } from "../../config/prisma";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
-import { sendCustomerOrderSms } from "../../lib/order-sms";
-import { sendPaymentConfirmationEmail } from "../../lib/order-mailer";
+import { recordOutboxEvents } from "../../domain/outbox/outbox";
 import { applyOrderTransition, deriveOrderPricing, insertOrderRecord, type OrderItemSnapshot, type OrderPricingSnapshot } from "../orders/order.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { listRefunds, recordFailedAttempt, recordGatewaySettlement, recordRefund } from "../../domain/payments/payment-ledger.service";
@@ -74,7 +73,12 @@ async function settleExistingOrder(
     const becamePaid = before.paymentStatus !== "PAID" && position.status === "PAID";
     const current = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
     if (!becamePaid || current.status !== "PENDING") return { becamePaid, confirmed: false, overpaid: position.overpaid.amount > 0 };
+    // The CONFIRMED transition records the customer's "confirmed" SMS intent itself; the receipt email is recorded here —
+    // both commit with the settlement (Phase 8).
     await applyOrderTransition(tx, orderId, { status: "CONFIRMED", note: "Payment received" });
+    await recordOutboxEvents(tx, [
+      { eventType: "payment.settled.v1", consumer: "payment-receipt-email", eventKey: `order:${orderId}:paid`, aggregateType: "Order", aggregateId: orderId, payload: { orderId } },
+    ]);
     return { becamePaid, confirmed: true, overpaid: false };
   });
 }
@@ -361,7 +365,6 @@ export async function settlePaymentSession(
     orderId = created.id;
     await prisma.paymentSession.update({ where: { id: session.id }, data: { orderId } });
     recordEvent(session.id, "VERIFIED_SUCCESS", undefined, rawResponse);
-    sendPaymentConfirmationEmail(created);
     return { order: await prisma.order.findUniqueOrThrow({ where: { id: orderId } }), justSettled: true };
   }
 
@@ -378,10 +381,7 @@ export async function settlePaymentSession(
   });
   recordEvent(session.id, "VERIFIED_SUCCESS", undefined, rawResponse);
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-  if (result.confirmed) {
-    sendCustomerOrderSms(order, "CONFIRMED");
-    sendPaymentConfirmationEmail(order);
-  } else if (result.becamePaid && order.status === "CANCELLED") {
+  if (result.becamePaid && order.status === "CANCELLED") {
     notify({
       type: "order.cancelled_but_paid",
       title: `Cancelled but paid: ${order.orderNumber}`,

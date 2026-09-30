@@ -303,6 +303,7 @@ export async function recordRefund(orderId: string, input: RecordRefundInput, ad
       });
       await timelineNote(tx, orderId, order.status, `Refund recorded: ${noteMoney(amount)}${input.method ? ` via ${input.method}` : ""}${input.reason ? ` — ${input.reason}` : ""}`, adminId);
       const after = await refreshPaymentStatus(tx, orderId, currency);
+      await reversePointsForRefund(tx, orderId, Number(refund.amount), currency);
       return { refund, paymentSessionId: payment?.paymentSessionId ?? null, position: after };
     });
   } catch (err) {
@@ -312,7 +313,6 @@ export async function recordRefund(orderId: string, input: RecordRefundInput, ad
     }
     throw err;
   }
-  await reversePointsForRefund(orderId, Number(result.refund.amount), currency);
   return { refund: result.refund, paymentSessionId: result.paymentSessionId, summary: await getOrderPaymentSummary(orderId) };
 }
 
@@ -356,22 +356,23 @@ export async function completeRefund(orderId: string, refundId: string, input: C
     if (claimed.count === 0) throw new AppError(409, "This refund has already been completed", { code: "REFUND_NOT_REQUESTED" });
     await timelineNote(tx, orderId, order.status, `Refund paid out: ${noteMoney(amount)}${input.method ? ` via ${input.method}` : ""}${input.note ? ` — ${input.note}` : ""}`, adminId);
     await refreshPaymentStatus(tx, orderId, currency);
+    await reversePointsForRefund(tx, orderId, Number(existing.amount), currency);
     return tx.refund.findUniqueOrThrow({ where: { id: refundId } });
   });
-  await reversePointsForRefund(orderId, Number(refund.amount), currency);
   return { refund, summary: await getOrderPaymentSummary(orderId) };
 }
 
 /** D8 (PI-9.4): a refund counts against merchandise first — reverses `refund ÷ rewardable` of the order's points
- * (capped at what it earned by reverseDeliveryPoints). Post-commit, like every loyalty effect. */
-async function reversePointsForRefund(orderId: string, refundAmount: number, currency: string) {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true, customerId: true, subtotal: true, discount: true, bundleDiscount: true, couponDiscount: true } });
+ * (capped at what it earned by reverseDeliveryPoints). Inside the refund's transaction (Phase 8): the reversal commits or
+ * rolls back with the refund. */
+async function reversePointsForRefund(tx: Db, orderId: string, refundAmount: number, currency: string) {
+  const order = await tx.order.findUnique({ where: { id: orderId }, select: { orderNumber: true, customerId: true, subtotal: true, discount: true, bundleDiscount: true, couponDiscount: true } });
   if (!order?.customerId) return;
   const base = loyaltyBase(order, currency);
   if (base <= 0) return;
   // Ratio of two minor-unit integers — no float money arithmetic.
   const fraction = fromMajor(String(refundAmount), currency).amount / fromMajor(String(base), currency).amount;
-  await reverseDeliveryPoints(order.customerId, orderId, fraction).catch((err) => console.error(`[loyalty] refund reversal for ${order.orderNumber} failed:`, err));
+  await reverseDeliveryPoints(tx, order.customerId, orderId, fraction);
 }
 
 // ─── Read model ──────────────────────────────────────────────────────────────────────────────────────────────────────

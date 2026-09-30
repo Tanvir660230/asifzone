@@ -3,7 +3,7 @@ import { queueConnection } from "../lib/queue";
 import { isMetaCapiEnabled } from "../lib/meta/capi";
 import { META_CAPI_QUEUE, processMetaPurchase, type MetaPurchaseJobData } from "../lib/meta/purchase";
 
-/** Drains the Conversions API queue filled by lib/meta/purchase.ts's enqueueMetaPurchase — retries
+/** Drains Conversions API jobs queued before Phase 8 (Meta now goes through the outbox) — retries
  * and backoff are configured per job there. Not started at all while CAPI is unconfigured, so a dev
  * machine or CI never holds a worker open for a queue nothing writes to. */
 export async function startMetaCapiWorker() {

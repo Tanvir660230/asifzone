@@ -25,46 +25,48 @@ const TEMPLATE_KEY: Record<CustomerTouchpoint, keyof SmsSettings> = {
   CANCELLED: "customerOrderCancelledTemplate",
 };
 
-/** Fire-and-forget — never awaited by the caller in a way that could block or throw into the order
- * flow, same spirit as lib/notify.ts. */
-export function sendCustomerOrderSms(order: Order, touchpoint: CustomerTouchpoint): void {
-  void (async () => {
-    const [smsSettings, storeSettings] = await Promise.all([getSmsSettings(), getSettings()]);
-    if (!smsSettings[TOGGLE_KEY[touchpoint]]) return;
+type OrderSmsFacts = Pick<Order, "orderNumber" | "total" | "customerName" | "customerPhone">;
 
-    const customTemplate = smsSettings[TEMPLATE_KEY[touchpoint]] as string | null;
-    const template = customTemplate?.trim() ? customTemplate : DEFAULT_CUSTOMER_SMS_TEMPLATES[touchpoint];
-    const body = renderOrderSms(template, {
-      orderNumber: order.orderNumber,
-      total: Number(order.total),
-      storeName: storeSettings.storeName,
-      customerName: order.customerName,
-    });
-    await sendSms({ to: order.customerPhone, body });
-  })().catch((err) => console.error(`[order-sms] customer ${touchpoint} sms failed for ${order.orderNumber}:`, err));
+/** One customer order SMS — awaited by its outbox consumer (Phase 8), which retries a transient failure. The admin's toggle
+ * and template are read at send time. Throws on failure (SmsProviderError carries whether a retry can help). */
+export async function deliverCustomerOrderSms(order: OrderSmsFacts, touchpoint: CustomerTouchpoint): Promise<"sent" | "disabled"> {
+  const [smsSettings, storeSettings] = await Promise.all([getSmsSettings(), getSettings()]);
+  if (!smsSettings[TOGGLE_KEY[touchpoint]]) return "disabled";
+
+  const customTemplate = smsSettings[TEMPLATE_KEY[touchpoint]] as string | null;
+  const template = customTemplate?.trim() ? customTemplate : DEFAULT_CUSTOMER_SMS_TEMPLATES[touchpoint];
+  const body = renderOrderSms(template, {
+    orderNumber: order.orderNumber,
+    total: Number(order.total),
+    storeName: storeSettings.storeName,
+    customerName: order.customerName,
+  });
+  await sendSms({ to: order.customerPhone, body });
+  return "sent";
 }
 
-/** Fire-and-forget alert to every configured admin phone, independently — one bad number must not
- * stop the others from receiving it. */
-export function sendAdminOrderAlertSms(order: Order): void {
-  void (async () => {
-    const smsSettings = await getSmsSettings();
-    if (!smsSettings.adminOrderAlertEnabled) return;
+/** The new-order alert to every configured admin phone, independently — one bad number must not stop the others. Throws
+ * (so the outbox retries) only when EVERY phone failed transiently; a partial failure is logged, never retried, because a
+ * retry would re-alert the phones that already received it. */
+export async function deliverAdminOrderAlertSms(order: OrderSmsFacts): Promise<"sent" | "disabled"> {
+  const smsSettings = await getSmsSettings();
+  if (!smsSettings.adminOrderAlertEnabled) return "disabled";
 
-    const phones = smsSettings.adminAlertPhones
-      .split(",")
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (!phones.length) return;
+  const phones = smsSettings.adminAlertPhones
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!phones.length) return "disabled";
 
-    const body = smsTemplates.newOrderAdminAlertSms({
-      orderNumber: order.orderNumber,
-      customerName: order.customerName,
-      customerPhone: order.customerPhone,
-      total: Number(order.total),
-    });
-    await Promise.all(
-      phones.map((to) => sendSms({ to, body }).catch((err) => console.error(`[order-sms] admin alert to ${to} failed:`, err))),
-    );
-  })().catch((err) => console.error(`[order-sms] admin alert failed for ${order.orderNumber}:`, err));
+  const body = smsTemplates.newOrderAdminAlertSms({
+    orderNumber: order.orderNumber,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    total: Number(order.total),
+  });
+  const results = await Promise.allSettled(phones.map((to) => sendSms({ to, body })));
+  const failures = results.flatMap((r, i) => (r.status === "rejected" ? [{ to: phones[i]!, err: r.reason as unknown }] : []));
+  for (const f of failures) console.error(`[order-sms] admin alert to ${f.to} failed:`, f.err);
+  if (failures.length === phones.length) throw failures[0]!.err;
+  return "sent";
 }

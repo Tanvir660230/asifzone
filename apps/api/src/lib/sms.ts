@@ -6,6 +6,18 @@ interface SmsInput {
   body: string;
 }
 
+/** A failed send. `retryable` separates "try again later" (network, timeout, HTTP 5xx/429) from the provider actively
+ * rejecting the message (invalid number, bad sender id, credentials) — which no retry will fix (Phase 8 retry policy). */
+export class SmsProviderError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "SmsProviderError";
+  }
+}
+
 const BULKSMSBD_ENDPOINT = "https://bulksmsbd.net/api/smsapi";
 
 // BulkSMSBD expects the international "8801XXXXXXXXX" form. Phones are validated/normalized to
@@ -33,11 +45,13 @@ export async function sendSms({ to, body }: SmsInput): Promise<void> {
     message: body,
   });
 
+  // A network failure/timeout here throws a plain Error — retryable by default.
   const res = await fetch(`${BULKSMSBD_ENDPOINT}?${params.toString()}`);
+  if (!res.ok) throw new SmsProviderError(`[sms] BulkSMSBD HTTP ${res.status}`, res.status >= 500 || res.status === 429);
   const data = (await res.json().catch(() => null)) as { response_code?: number } | null;
 
-  // BulkSMSBD responds HTTP 200 even on failure — the real status is response_code (202 = accepted).
-  if (!res.ok || !data || data.response_code !== 202) {
-    throw new Error(`[sms] BulkSMSBD send failed: ${data ? JSON.stringify(data) : res.status}`);
-  }
+  // BulkSMSBD responds HTTP 200 even on failure — the real status is response_code (202 = accepted). An unreadable body is
+  // treated as transient; any other response code is the provider rejecting this message.
+  if (!data) throw new SmsProviderError("[sms] BulkSMSBD returned an unreadable response", true);
+  if (data.response_code !== 202) throw new SmsProviderError(`[sms] BulkSMSBD rejected the message: ${JSON.stringify(data)}`, false);
 }

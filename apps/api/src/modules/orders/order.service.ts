@@ -35,14 +35,16 @@ import type {
   BulkOrderStatusResult,
 } from "@clothing-brand/shared";
 import { Prisma } from "@prisma/client";
-import { prisma, type Db } from "../../config/prisma";
+import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
 import { paginate } from "../../lib/paginate";
 import { notify } from "../../lib/notify";
-import { sendAdminOrderAlertSms, sendCustomerOrderSms, type CustomerTouchpoint } from "../../lib/order-sms";
+import type { CustomerTouchpoint } from "../../lib/order-sms";
+import { recordOutboxEvents, type OutboxIntent } from "../../domain/outbox/outbox";
+import { isMetaCapiEnabled } from "../../lib/meta/capi";
 import { incrementCouponUsage } from "../coupons/coupon.service";
 import { flashUnitsSold, priceProductsForDisplay, quoteCart, toQuoteDto, type PricedQuote, type PriceableProduct } from "../../domain/pricing/pricing.service";
 import { LEGACY_ZONE_KEYS, loadShippingZones } from "../../domain/pricing/pricing-config";
@@ -52,7 +54,6 @@ import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
 import { notifyReplenished, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
-import { enqueueMetaPurchase } from "../../lib/meta/purchase";
 import { computeMetrics } from "../../domain/metrics/metrics.service";
 import {
   REFUND_QUEUE_WHERE,
@@ -394,6 +395,21 @@ export async function insertOrderRecord(
     // Payment ledger (docs/PAYMENT_LEDGER.md): the settlement that pays for this order, in the same transaction.
     if (opts.gatewaySettlement) await recordGatewaySettlement(tx, { orderId: created.id, ...opts.gatewaySettlement });
     if (opts.markPaidByAdminId) await recordMarkedPaid(tx, created.id, opts.markPaidByAdminId);
+
+    // Phase 8: the side-effect intents commit (or roll back) WITH the order — delivered afterwards by the outbox worker.
+    const placed = { aggregateType: "Order", aggregateId: created.id, eventType: "order.placed.v1" } as const;
+    const intents: OutboxIntent[] = [
+      { ...placed, consumer: "customer-order-sms", eventKey: `order:${created.id}:placed`, payload: { orderId: created.id, touchpoint: opts.customerSmsTouchpoint ?? "PLACED" } },
+      { ...placed, consumer: "admin-order-alert-sms", eventKey: `order:${created.id}:placed`, payload: { orderId: created.id } },
+    ];
+    if (opts.gatewaySettlement) {
+      intents.push({ aggregateType: "Order", aggregateId: created.id, eventType: "payment.settled.v1", consumer: "payment-receipt-email", eventKey: `order:${created.id}:paid`, payload: { orderId: created.id } });
+    }
+    if (opts.metaContext && isMetaCapiEnabled()) {
+      intents.push({ ...placed, consumer: "meta-capi-purchase", eventKey: `order:${created.id}`, payload: { orderId: created.id, context: { ...opts.metaContext } } });
+    }
+    await recordOutboxEvents(tx, intents);
+
     return opts.gatewaySettlement || opts.markPaidByAdminId ? tx.order.findUniqueOrThrow({ where: { id: created.id }, include }) : created;
   });
 
@@ -412,11 +428,6 @@ export async function insertOrderRecord(
       link: `/admin/orders/${order.id}`,
     });
   }
-
-  sendCustomerOrderSms(order, opts.customerSmsTouchpoint ?? "PLACED");
-  sendAdminOrderAlertSms(order);
-
-  if (opts.metaContext) enqueueMetaPurchase(order.id, opts.metaContext);
 
   // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
   // abandonment sweep must not fire on it.
@@ -1109,25 +1120,34 @@ export async function applyOrderTransition(
     },
     include,
   });
+
+  // D8 loyalty points are business truth: awarded / reversed IN this transaction (Phase 8), never after it.
+  if (rule.awardPoints && order.customerId) await awardDeliveryPoints(tx, order.customerId, order.id, loyaltyBase(order, await getCurrency()));
+  if (rule.reversesPoints && order.customerId) await reverseDeliveryPoints(tx, order.customerId, order.id, 1);
+
+  // The customer's status SMS: an outbox intent committed with the transition, keyed by the history row just written.
+  if (rule.customerSms) {
+    const historyId = order.statusHistory.at(-1)!.id;
+    await recordOutboxEvents(tx as AppTransactionClient, [
+      {
+        eventType: "order.status_changed.v1",
+        consumer: "customer-order-sms",
+        eventKey: `status:${historyId}`,
+        aggregateType: "Order",
+        aggregateId: orderId,
+        payload: { orderId, touchpoint: rule.customerSms as CustomerTouchpoint },
+      },
+    ]);
+  }
   return { ...base, order, changed: true, replenished };
 }
 
-/** Post-commit effects of a transition: customer SMS, loyalty points, admin alerts, back-in-stock emails. Never
- * run inside the transaction — a slow SMS gateway must not hold the order row lock, and a rolled-back
- * transition must not have messaged anyone. */
-export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, opts: { sms?: boolean } = {}) {
+/** Best-effort post-commit effects of a transition: admin alerts and back-in-stock emails. The customer SMS and loyalty
+ * points are NOT here any more — the SMS is an outbox intent and the points are written inside the transition's
+ * transaction (Phase 8), so neither can be lost after the transition commits. */
+export async function runTransitionSideEffects(outcome: OrderTransitionOutcome) {
   const { order, rule, changed, previousPaymentStatus } = outcome;
   if (!changed) return;
-
-  // D8: points on merchandise after discounts, excluding shipping (and the admin adjustment) — from the order snapshot.
-  if (rule.awardPoints && order.customerId) {
-    await awardDeliveryPoints(order.customerId, order.id, loyaltyBase(order, await getCurrency())).catch((err) =>
-      console.error(`[loyalty] points for ${order.orderNumber} failed:`, err),
-    );
-  }
-  if (rule.reversesPoints && order.customerId) {
-    await reverseDeliveryPoints(order.customerId, order.id, 1).catch((err) => console.error(`[loyalty] reversal for ${order.orderNumber} failed:`, err));
-  }
 
   // Money-risk alerts: the payment was already collected, and nothing here sends it back.
   if (rule.alertIfPaid && MONEY_HELD_PAYMENT_STATUSES.includes(previousPaymentStatus)) {
@@ -1139,7 +1159,6 @@ export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, 
     });
   }
 
-  if (rule.customerSms && opts.sms !== false) sendCustomerOrderSms(order, rule.customerSms as CustomerTouchpoint);
   notifyReplenished(outcome.replenished);
 }
 

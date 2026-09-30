@@ -2104,3 +2104,46 @@ model ProductReadModel {
   @@index([validUntil])
   @@index([volatile])
 }
+
+/// Phase 8 (docs/PHASE_8_AUDIT.md) — delivery state of one outbox row.
+enum OutboxStatus {
+  PENDING
+  ENQUEUED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+/// Transactional outbox (Phase 8): the durable INTENT to perform one external side effect, written in the same
+/// transaction as the business change it follows — never business truth itself. One row per (consumer, eventKey), so a
+/// producer can't record the same intent twice. Written only by domain/outbox/outbox.ts; delivered by the dispatcher
+/// (→ BullMQ) and the worker (domain/outbox/processor.ts), at least once, to idempotent consumers.
+model OutboxEvent {
+  id            String       @id @default(cuid())
+  /// Versioned business event the intent follows, e.g. "order.placed.v1" (the version governs the payload shape).
+  eventType     String
+  /// The single consumer that performs the side effect, e.g. "customer-order-sms".
+  consumer      String
+  /// Business idempotency key, e.g. "order:<id>:placed" — unique per consumer.
+  eventKey      String
+  aggregateType String
+  aggregateId   String
+  /// Minimal, versioned, secret-free payload (ids + what the consumer can't re-read later).
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  /// Processing attempts made (dispatch/enqueue attempts don't count).
+  attempts      Int          @default(0)
+  /// Not before this instant (retry backoff).
+  availableAt   DateTime     @default(now())
+  /// Lease of whoever holds the row right now (dispatcher claim, or worker while PROCESSING).
+  claimedUntil  DateTime?
+  enqueuedAt    DateTime?
+  processedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([consumer, eventKey])
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId])
+}
