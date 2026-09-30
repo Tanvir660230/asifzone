@@ -196,7 +196,7 @@ at initiation):
   |---|---|---|
   | `subtotal`, `discount`, `bundleDiscount`, `shippingFee`, `priceAdjustment`, `total`, `priceSnapshot` | HISTORICAL SNAPSHOT | revenue, AOV, discount totals (unchanged) |
   | `couponDiscount`, `flashDiscount`, tax fields, allocations, attribution | HISTORICAL SNAPSHOT (NULL before Phase 2) | new breakdowns; NULL means "not recorded", never 0 |
-  | `getEstimatedTaxCollected` | ESTIMATE (store rate × inclusive formula over revenue) | pre-Phase-2 periods; switch to Σ `taxAmount` for orders with `pricingVersion` in Phase 5 |
+  | `getEstimatedTaxCollected` | **Phase 5:** HISTORICAL SNAPSHOT — Σ `taxAmount` (registry `tax_collected`); orders without a snapshot are counted as coverage, never estimated from the current rate | METRICS_REGISTRY §3 |
   | abandoned-cart `potentialRevenue` | ESTIMATE at list price (ignores flash) | indicative only |
   | Meta Pixel / funnel `value` | DISPLAY CACHE | marketing signal, not revenue |
 
@@ -254,7 +254,7 @@ authorities.
 | admin product list/picker/CSV/audit/duplicate, wishlist `priceAtAdd`, price-drop notice | the stored list price as a catalog attribute | DISPLAY (list price is the fact shown) |
 | storefront price filter/sort/facets, similar/budget/upgrade/premium recommendations, trending budget filter | `ProductReadModel.minSellingPrice` (projection of `pricing.from`) / live `pricing.from` | CANONICAL — **resolved in Phase 3** (was DUPLICATE on `basePrice`; STOREFRONT_READ_MODEL.md §1) |
 | JSON-LD `shippingDetails` | legacy `StoreSetting.shippingFee*` mirrors (dual-written, drift-checked) | DISPLAY of a mirror |
-| `getEstimatedTaxCollected`, abandoned-cart `potentialRevenue` | analytics estimates | see §9 PI-9.6 |
+| `getEstimatedTaxCollected` (Σ snapshot since Phase 5), abandoned-cart `potentialRevenue` (estimate) | analytics | see §9 PI-9.6, METRICS_REGISTRY |
 | admin wizard live preview | typed-in values of an unsaved product | DISPLAY |
 
 Removed in Phase 2: `orders/cart-lines.ts` (`effectivePrice`/`resolveCartLines`), `computeFlashPrice` /

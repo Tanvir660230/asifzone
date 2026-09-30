@@ -366,6 +366,9 @@ defineMetric({
 });
 ```
 
+✅ **Phase 5** implements this as the metrics registry ([METRICS_REGISTRY.md](METRICS_REGISTRY.md), §16e). The table below stays the
+approved source of the definitions; realised revenue's refund term is pending PD-5.1.
+
 **Canonical definitions** (D1 approved; implementation in Phase 5):
 
 | Metric | Definition |
@@ -599,6 +602,60 @@ nothing rewrites an order.
 
 **Not in Phase 4:** metrics built on this ledger (collected cash, outstanding COD, refunds): Phase 5. Gateway refund
 APIs: Phase 7. Outbox events: Phase 8. Refund permissions: Phase 10.
+
+## 16e. Phase 5 scope — Metrics & Analytics SSOT
+
+**Why this phase.** The Phase 5 audit ([PHASE_5_METRICS_AUDIT.md](PHASE_5_METRICS_AUDIT.md)) traced 85 functions:
+- About 40 private definitions of "a sale".
+- Revenue computed as `Σ total` of placed orders (unrealised COD, no returns or refunds, trashed and exchange orders
+  included).
+- Bundle discounts counted twice.
+- Tax estimated from the *current* rate.
+- Flash attribution guessed from time windows.
+- Customer spend computed three different ways.
+- `stock ≤ 5` as the low-stock rule.
+- A **measured 6-hour skew** in every raw-SQL time window: naive-UTC columns compared with `NOW()` or a bound
+  `timestamptz` under an Asia/Dhaka session.
+
+**One engine.**
+- `packages/shared/src/metrics` (pure):
+  - business time: store timezone, half-open ranges with inclusive business dates, DST-correct;
+  - canonical facts and eligibility: `SALE_ORDER`, D1 realisation;
+  - snapshot valuation: returns from the stock ledger, exchange units excluded;
+  - the registry;
+  - a contribution-based aggregator, so a total, a day series and a product/customer grouping are the same numbers cut
+    differently.
+- `domain/metrics`:
+  - the only fact loader (Phase 2 snapshots, Phase 4 ledger, RETURN movements);
+  - the service (validation, 60 s cache, groupings, `compare=previous`);
+  - reconciliation;
+  - the `SALE_ORDER` query form;
+  - `utcInstant`.
+- API: `GET /api/v1/metrics`, `/definitions`, `/consistency`.
+
+**Consumers switched.**
+- The dashboard, orders KPI strip, every BI page and the ~40 analytics reports are cuts of the engine; response shapes
+  are kept.
+- CRM spend / VIP tags / RFM use `customer_net_spend`.
+- The payments overview.
+- The admin product sales panel and storefront urgency/trending/FBT use `units_ordered`.
+- Behavioural analytics keep their own facts, but every window goes through business time.
+- The web renders server numbers only. BI overview totals are no longer summed in the browser, and business dates are
+  never shifted through the viewer's timezone.
+
+**Additive schema.** `StoreSetting.timezone` (default `Asia/Dhaka`). No metric projection tables: the store's volume
+doesn't need materialisation, and the read-time loader selects only orders with an event in the range.
+
+**Pending decision:** PD-5.1, the refund term of realised revenue. `net_sales` and `refunds` are shown side by side
+until it's decided.
+
+**Deferred:** see METRICS_REGISTRY and the Phase 5 report:
+- `OrderItem.unitCostSnapshot` (exact COGS);
+- category/brand snapshots;
+- daily fact tables (TARGET M13);
+- metrics outbox subscribers (Phase 8);
+- the timezone/currency move into `CommerceSettings` (Phase 6);
+- permission scoping of metrics (Phase 10).
 
 ## 17. Definition of done for each phase
 

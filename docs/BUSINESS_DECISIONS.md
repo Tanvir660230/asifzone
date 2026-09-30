@@ -14,7 +14,7 @@ Related: [TARGET_ARCHITECTURE.md §16](TARGET_ARCHITECTURE.md) · [PRICING_PIPEL
 
 | ID | Topic | Status | Implemented in |
 |---|---|---|---|
-| D1 | Revenue recognition (COD, returns, refunds) | APPROVED | Phase 1 (facts) · Phase 5 (metrics) |
+| D1 | Revenue recognition (COD, returns, refunds) | APPROVED · IMPLEMENTED (refund term pending PD-5.1) | Phase 1 (facts) · Phase 5 (metrics — [METRICS_REGISTRY.md](METRICS_REGISTRY.md)) |
 | D2 | Bundle discount on the post-flash price | APPROVED | Phase 1 |
 | D3 | Tax-inclusive pricing | APPROVED · IMPLEMENTED | Phase 1 (helper, analytics fix) · Phase 2 (tax engine, snapshot) |
 | D4 | Enforce `FlashSaleItem.stockLimit` | APPROVED · IMPLEMENTED | Phase 2 |

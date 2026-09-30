@@ -9,6 +9,8 @@
 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)). See B5 and invariants I9, I23–I26. Audit and duplicate-truth matrix:
 [PHASE_4_AUDIT.md](PHASE_4_AUDIT.md).
 
+**Phase 5 (2026-09-30):** every business number has one definition in the metrics registry ([METRICS_REGISTRY.md](METRICS_REGISTRY.md)). See B7 and invariants I11, I27, I28. Audit: [PHASE_5_METRICS_AUDIT.md](PHASE_5_METRICS_AUDIT.md).
+
 **Legend.** *Status today*: ✅ single authority and single writer · ⚠️ authority clear but duplicated logic or a writer outside the owner · ❌ conflicting definitions or known drift path. *Class*: **M** master data · **S** transaction snapshot (immutable history — not duplication) · **P** projection/cache (derivable, must be reconciled) · **D** computed on demand (never stored).
 
 ---
@@ -207,23 +209,32 @@
 | Server cart mirror | P | browser cart (authoritative) | cart.service | `Cart`, `CartItem` | abandonment analytics | debounced sync | — | ⚠️ `reminderSentAt` unused, recovery job missing |
 | Wishlist | M | `WishlistItem` (+ `priceAtAdd` S) | wishlist.service | local store for guests | account, price-drop | wishlist endpoints | merge on login | ⚠️ price-drop compares `basePrice` only |
 
-### B7. Analytics & metrics (target definitions in TARGET_ARCHITECTURE §11)
+### B7. Analytics & metrics — Phase 5 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md))
 
-| Metric | Authority | Service | Current implementations | Status |
-|---|---|---|---|---|
-| Revenue / gross sales | `Order.total` over `SALE_ORDER` | MetricsService | `getOrderStats.todayRevenue`, `getDashboardSummary`, `getRevenueSeries`, BI `revenue*`, ~50 raw SQL copies | ❌ |
-| Net sales | gross − returns − refunds | MetricsService | none | ❌ |
-| Orders count / AOV | `SALE_ORDER` | MetricsService | dashboard, BI, customer drawer | ❌ |
-| Units sold | `OrderItem.quantity − returnedQuantity` | MetricsService | analytics (`!= CANCELLED`), product sales panel (`NOT_A_SALE`) | ❌ |
-| Gross profit / COGS | snapshot cost (target) | MetricsService | BI (current cost) | ⚠️ |
-| Conversion rate | sessions with sale ÷ sessions | MetricsService | analytics funnel, BI | ⚠️ |
-| Visitors / returning | `PageView` | MetricsService | analytics, BI | ⚠️ |
-| Refund / return / cancel rates | `Refund`, `ReturnRequest(APPROVED)`, status | MetricsService | BI (counts any return request incl. rejected/pending) | ❌ |
-| Low-stock count | `InventoryRules.isLowStock` | MetricsService | dashboard (`≤ 5`) | ❌ |
-| Stock value | `stock × cost` purchasable | MetricsService | BI | ⚠️ |
-| Courier loss | `CourierLossEvent` | MetricsService | dashboard | ✅ |
-| Estimated tax | `TaxEngine` / snapshot (`Order.taxAmount` for orders with `pricingVersion`) | MetricsService | analytics estimate (inclusive formula over revenue; PRICING_INVARIANTS §9) | ⚠️ switch to Σ snapshot in Phase 5 |
-| Business day / timezone | `CommerceSettings.timezone` | ConfigService | server-local, UTC and Asia/Dhaka in different places | ❌ |
+Every business number is a registry metric. Its one definition is `packages/shared/src/metrics` (pure engine: business
+time, facts, registry, aggregation). The only fact loader is `domain/metrics/facts.repository.ts` (snapshots +
+ledger + RETURN movements; never current prices, tax, zones, coupons or flash sales). The service is
+`domain/metrics/metrics.service.ts`, the API `GET /api/v1/metrics`. No metric is stored, so there are no projections to
+rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
+
+| Metric (registry key) | Authority | Consumers | Status |
+|---|---|---|---|
+| Gross merchandise sales (`gross_merchandise_sales`) | `OrderItem.priceSnapshot × quantity` of realised sale orders (D1) | BI financial, reports | ✅ Phase 5 |
+| Discounts / bundle / coupon / flash (`discounts`, `bundle_discount`, `coupon_discount`, `flash_discount`) | `Order` discount snapshots (Phase 2 split; flash with coverage) | BI financial/marketing, discount usage (double count removed) | ✅ Phase 5 |
+| Shipping, adjustments, tax (`shipping_charged`, `price_adjustments`, `tax_collected`) | `Order` snapshots (tax: `taxAmount`, NULL counted as coverage, never estimated) | BI financial | ✅ Phase 5 (current-rate estimate removed) |
+| Returns (`returns`, `units_returned`) | stock-ledger `RETURN` rows × line net unit value; exchange-returned units excluded (P5-3) | BI, product risk | ✅ Phase 5 |
+| Net merchandise sales / net sales (`net_merchandise_sales`, `net_sales`) | composed from the above (D1, before the refund term) | dashboard, KPI strip, BI, exports, product/category rankings | ✅ Phase 5 |
+| Realised revenue (`realised_revenue`) | D1 incl. "refunds not already counted as returns" | — | ⏸ **PD-5.1 pending** (API returns `METRIC_PENDING`) |
+| Refunds, payments, collected cash (`refunds`, `payments_received`, `collected_cash`) | Phase 4 ledger | BI financial, payments overview | ✅ Phase 5 |
+| Outstanding COD / amount due / refunds owed (`outstanding_cod`, `amount_due`, `refund_due`) | `derivePaymentPosition` per order (Phase 4), point in time | BI financial, insights | ✅ Phase 5 |
+| Orders placed / realised / cancelled, AOV (`orders_placed`, `orders_realised`, `orders_cancelled`, `aov`) | SALE_ORDER / realisation / operational predicates; AOV = net sales ÷ realised (P5-5) | dashboard, KPI strip, BI, customer drawer | ✅ Phase 5 |
+| Units ordered / sold / net (`units_ordered`, `units_sold`, `net_units_sold`) | sale-order lines (placement) / realised lines, net of returns | storefront urgency/trending/FBT, product sales panel, heatmaps, forecasts | ✅ Phase 5 (P5-9) |
+| Customer spend, orders, repeat rate, CLV (`customer_*`) | groupings of `net_sales` / `orders_placed` | CRM list/drawer, VIP tags, SMS vars, RFM, BI customers | ✅ Phase 5 (P5-4) |
+| COGS / gross margin (`cogs_estimated`, `gross_margin_estimated`) | net units × **current** cost, flagged *estimated* | BI financial/products | ⚠️ estimated (cost snapshot deferred — P5-6) |
+| Stock on hand / low / out of stock / value (`stock_on_hand`, `low_stock_variants`, `out_of_stock_variants`, `inventory_value`) | `ProductVariant.stock` (read-only) + `variantStockState` (D5, per variant) | dashboard, BI inventory, insights | ✅ Phase 5 (`≤ 5` rule removed) |
+| Courier loss (`courier_loss`) | `CourierLossEvent` | dashboard, BI | ✅ |
+| Conversion rate / visitors (behavioural) | `PageView` sessions ÷ sessions with a sale order (SALE_ORDER) | dashboard, BI | ✅ Phase 5 (predicate + windows canonical; visits are their own facts) |
+| Business day / timezone | `StoreSetting.timezone` (IANA, default `Asia/Dhaka`) → `resolveBusinessRange`; SQL instants via `utcInstant` | every metric, analytics window, KPI strip, payments overview, CRM "new today" | ✅ Phase 5 (6 h raw-SQL skew fixed) |
 
 ### B8. Settings, content, notifications, audit
 
@@ -276,7 +287,9 @@
 | I24 | only `payment-ledger.service.ts` writes `Payment`, `Refund`, `Order.paymentStatus` | Payments (architecture test) |
 | I25 | the courier COD amount = `codToCollect` (balance due of a COD order); a prepaid order is booked with 0 | Payments |
 | I26 | a paid order's total never changes (price adjustment refused once `paid > 0`) | Orders / Payments |
+| I27 | business numbers come only from the metrics engine; financial metrics read snapshots and the ledger, never current configuration (M-1, M-2) | Metrics (guard + integration test) |
+| I28 | every business-day boundary and SQL time comparison follows `StoreSetting.timezone` via `resolveBusinessRange` / `utcInstant` (M-4) | Metrics (guard + integration test) |
 
 Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
-`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 4 implements and tests
+`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27 and I28 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 4 implements and tests
 I9 (as PAYMENT_LEDGER PL-1, with a drift report) and I23–I26 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §13).
