@@ -732,6 +732,30 @@ enqueue. It also found D8 loyalty points, which are business truth, written afte
 **Deferred:** the full §6 event catalogue and subscriber fan-out, notifications and marketing emails, campaign
 reliability, a separate worker process (§14).
 
+## 16i. Phase 9 scope — Commerce reliability & operational hardening
+
+**Why this phase.** The Phase 9 audit ([PHASE_9_AUDIT.md](PHASE_9_AUDIT.md)) found:
+- an exchange could ship a replacement without taking the original back (D-1);
+- checkout, refunds, manual payments and manual orders were sent without an idempotency key (D-2, D-3);
+- courier booking was unlocked, so it could create duplicate consignments (D-4);
+- provider calls had no timeout (D-5);
+- manual points adjustments were unlocked, and nothing detected loyalty drift (D-6, D-7);
+- automated tests reached live providers (D-8).
+
+**Delivered** ([PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)):
+- a provider guard: `liveProvidersEnabled()` plus a network guard under vitest and `LIVE_PROVIDERS=off`, with a
+  Playwright pre-flight check;
+- client `Idempotency-Key`s on every money-creating web call;
+- an atomic courier booking claim (`Order.courierBookingStartedAt`) with an unknown-outcome state;
+- exchange fulfilment made conditional on the release;
+- 20 s provider timeouts;
+- the locked points adjustment and a loyalty drift detector;
+- quiet same-status courier sync;
+- `GET /api/v1/ops/reliability`, a read-only operator view.
+
+**Deferred:** automatic recovery of an unknown courier outcome (a Steadfast lookup by invoice), notifications and
+campaigns through the outbox, a separate worker, the bounded settings-cache race, roles/permissions (Phase 10).
+
 ## 17. Definition of done for each phase
 
 Tests (unit + integration + e2e) green · `tsc --noEmit` for api, web, shared · `eslint` for api and web (added to CI in Phase 1) · `next build` · migrations applied to a copy of production + drift check · invariant suite green · reconciliation reports reviewed · this document, the audit and the SSOT registry updated · remaining risks listed in the phase's PR description.

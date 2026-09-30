@@ -33,6 +33,8 @@ const lifetime = { startUtc: new Date(0), endUtc: new Date(Date.now() + 86_400_0
 
 beforeAll(async () => {
   admin = await ownerId();
+  // The seed doesn't create the singleton (getSettings does, on first use): on a fresh database this file may run first.
+  await getSettings();
   const s = await prisma.storeSetting.findUniqueOrThrow({ where: { id: "singleton" } });
   original = { timezone: s.timezone, storeName: s.storeName, tagline: s.tagline, currency: s.currency };
 });

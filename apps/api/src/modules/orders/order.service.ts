@@ -1041,7 +1041,9 @@ export async function applyOrderTransition(
   tx: Prisma.TransactionClient,
   orderId: string,
   input: UpdateOrderStatusInput,
-  actor: { adminId?: string | null } = {},
+  /** `quietNoop`: an automated source (courier webhook / sync) — a same-status call leaves no timeline entry, so a
+   * duplicate or late provider push never adds noise (Phase 9). */
+  actor: { adminId?: string | null; quietNoop?: boolean } = {},
 ): Promise<OrderTransitionOutcome> {
   const [locked] = await tx.$queryRaw<
     Array<{
@@ -1071,7 +1073,7 @@ export async function applyOrderTransition(
   // Same status: nothing happens — no stock, SMS, points or courier loss (so a re-applied bulk action or a
   // double-clicked button is harmless). A note still lands on the timeline so admins can annotate.
   if (from === to) {
-    const order = input.note
+    const order = input.note && !actor.quietNoop
       ? await tx.order.update({
           where: { id: orderId },
           data: { statusHistory: { create: { status: to, note: input.note, changedByAdminId: actor.adminId ?? null } } },
@@ -1164,11 +1166,17 @@ export async function runTransitionSideEffects(outcome: OrderTransitionOutcome) 
 
 /** The one command every status change goes through (admin picker, bulk, courier, returns): its own transaction +
  * post-commit side effects. Throws 400 for a transition the matrix doesn't allow. */
-export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
-  const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, input, { adminId: changedByAdminId }));
+export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string, opts: { quietNoop?: boolean } = {}) {
+  return (await changeOrderStatus(id, input, changedByAdminId, opts)).order;
+}
+
+/** `updateOrderStatus`, also saying whether the locked transition actually changed the status (`false`: a same-status
+ * no-op — e.g. a duplicate courier webhook that lost the race), so a caller's own follow-up can run exactly once. */
+export async function changeOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string, opts: { quietNoop?: boolean } = {}) {
+  const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, input, { adminId: changedByAdminId, quietNoop: opts.quietNoop }));
   await runTransitionSideEffects(outcome);
   const items = await attachLiveItemInfo(outcome.order.items, { requireAvailable: false });
-  return { ...outcome.order, items };
+  return { order: { ...outcome.order, items }, changed: outcome.changed };
 }
 
 const ORDER_DETAIL_FIELD_LABELS = {

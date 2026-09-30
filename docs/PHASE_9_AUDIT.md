@@ -20,7 +20,7 @@ rather than re-derived.
 | Cancel vs payment / cancel vs ship | yes | yes | — | both lock the order row | ✅ (Phase 4: a late success on a CANCELLED order doesn't revive it) |
 | Return / exchange review | yes | — | claim `updateMany … status: PENDING` | conditional update | ✅ one reviewer wins |
 | **Exchange fulfilment** | yes | — | — | line release is a conditional update | ❌ **defect D-1**: `createExchangeOrder` ignores what `releaseOrderLines` released. If the original line was already restocked (a second approved exchange for the same item, or the line returned or reconciled first), the release silently does nothing, **but the replacement order is still created and shipped** and any price difference charged or refunded. The customer gets a second item without returning one |
-| Return request creation | no | order must be DELIVERED | "one PENDING per order" (find-then-create, racy) | none | ⚠️ early UX guard only. D-1's fix is the real protection |
+| Return request creation | no | order must be DELIVERED | "one PENDING per order": the find-then-create is only the friendly check; the partial unique index `ReturnRequest_orderId_pending_key` (migration 20260810121000) enforces it | DB unique index | ✅ *(corrected during implementation: the first draft called this racy. Two concurrent requests can't both be PENDING. D-1 still applies to an exchange racing a return, or to a later exchange after the first was approved)* |
 | Duplicate checkout / retry after timeout | yes | — | `Order.idempotencyKey` unique **if sent**; otherwise a Redis lock on the session plus a duplicate lookup | Redis `SET NX`, **fails open** | ❌ **defect D-2**: the storefront sends no `Idempotency-Key`. With Redis unavailable (or the lazy client's first-command drop), a double submit or timeout retry can create two orders |
 
 ## B. Inventory
@@ -141,6 +141,19 @@ payload. No change needed.
 - Phase 8's e2e run made real BulkSMSBD calls, which the provider refused (IP not whitelisted).
 - SMS and email skip only when `NODE_ENV === "test"`. The API that Playwright talks to runs as development. Steadfast,
   SSLCommerz, EPS (`https.request`), Meta and Anthropic have no test switch at all.
+
+## L. Found during implementation
+
+**D-9 (fixed, part of D-4's webhook work):** duplicate courier webhooks converged on the right status, but each
+same-status replay added another timeline entry. The locked transition treats a same-status call as a no-op, but it
+still writes the note so admins can annotate. The concurrency test saw three `DELIVERED` history rows for one delivery.
+
+The pre-check in `applyCourierStatus` reads the status before the lock, so each losing duplicate also sent another
+admin "marked delivered by Steadfast" notification: 3 for one delivery, caught during final verification.
+
+Automated sources (webhook, status sync) now call the transition with `quietNoop`: a same-status call writes nothing.
+The admin notification is sent only when the locked transition reports `changed`, via the new `changeOrderStatus`,
+which is `updateOrderStatus` plus the outcome's existing `changed` flag. Admin same-status notes are unchanged.
 
 ---
 

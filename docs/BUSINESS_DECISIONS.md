@@ -270,6 +270,17 @@ these readings; the owner may overrule any with a new dated entry.
 | P7-3 | Every business date shown to admins or customers (orders, payments, refunds, returns, reviews, coupons, "today") is the **store-timezone** date, not the viewer's device date. | Reports bucket by the store's business day (Phase 5). A viewer-local date could place an order on a different day than the reports. |
 | P7-4 | Currency symbols are derived from the store currency (`Intl` narrow symbol). The number locale stays `en-BD` until a locale setting exists. Transactional SMS copy is unchanged (Bengali content). | No locale concept exists yet (TARGET §7 future). The SMS copy is content, not configuration. |
 
+## Phase 9 implementation notes (interpretations, recorded 2026-10-01)
+
+Phase 9 ([PHASE_9_AUDIT.md](PHASE_9_AUDIT.md), [PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)) adds no business rule beyond
+these readings; the owner may overrule any with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P9-1 | When a Steadfast booking **times out or gets a 5xx**, the order is flagged "Booking outcome unknown" and **can't be re-booked for 10 minutes**. The operator should check the Steadfast portal for the invoice (= order number) first. A definite rejection (4xx, validation) can be retried at once. | Steadfast may have created the consignment. Re-booking blind risks two shipments and two charges, and the duplicate-invoice behaviour isn't verified. |
+| P9-2 | An exchange is refused (409) when the original line has already been returned or exchanged, and the whole approval rolls back when the original units can't be taken back. | A replacement is only owed against units coming back. Otherwise the customer receives a second item for free. |
+| P9-3 | Resubmitting the same checkout, refund or payment form (same content) after a timeout returns the first result. Submitting it again **after a success** is a new operation. | A timeout retry must not double-charge or double-refund, while a deliberate second identical refund stays possible. |
+
 ## Phase 8 implementation notes (interpretations, recorded 2026-09-30)
 
 Phase 8 ([PHASE_8_AUDIT.md](PHASE_8_AUDIT.md), [PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)) adds no business rule beyond

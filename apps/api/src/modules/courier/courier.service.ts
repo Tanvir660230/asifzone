@@ -3,7 +3,7 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
 import { CourierOutcomeUnknownError, createBulkSteadfastConsignments, createSteadfastConsignment, getSteadfastStatusByConsignmentId } from "../../lib/steadfast";
-import { getOrderById, updateOrderStatus } from "../orders/order.service";
+import { changeOrderStatus, getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
 
@@ -106,7 +106,10 @@ async function applyCourierStatus(order: { id: string; orderNumber: string; stat
       ? "Steadfast could not deliver this parcel — it was returned to origin after already shipping"
       : `Steadfast delivery status: ${status}`;
 
-  await updateOrderStatus(order.id, { status: mapped, note });
+  // quietNoop: a duplicate / concurrent webhook for a status already applied leaves no second timeline entry, and only
+  // the call that actually changed the status notifies admins (Phase 9).
+  const { changed } = await changeOrderStatus(order.id, { status: mapped, note }, undefined, { quietNoop: true });
+  if (!changed) return;
   notify({
     type: "order.courier_update",
     title: `Order ${order.orderNumber} marked ${mapped.toLowerCase()} by Steadfast`,
