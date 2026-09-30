@@ -269,3 +269,13 @@ these readings; the owner may overrule any with a new dated entry.
 | P7-2 | Currency and timezone stay stored in `StoreSetting`. No `CommerceSettings` table in Phase 7. `domain/config/commerce-settings` is the single read path. | Storage already had one owner. A new table would have been a second copy during compatibility (Phase 7 boundary). |
 | P7-3 | Every business date shown to admins or customers (orders, payments, refunds, returns, reviews, coupons, "today") is the **store-timezone** date, not the viewer's device date. | Reports bucket by the store's business day (Phase 5). A viewer-local date could place an order on a different day than the reports. |
 | P7-4 | Currency symbols are derived from the store currency (`Intl` narrow symbol). The number locale stays `en-BD` until a locale setting exists. Transactional SMS copy is unchanged (Bengali content). | No locale concept exists yet (TARGET §7 future). The SMS copy is content, not configuration. |
+
+## Phase 8 implementation notes (interpretations, recorded 2026-09-30)
+
+Phase 8 ([PHASE_8_AUDIT.md](PHASE_8_AUDIT.md), [PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)) adds no business rule beyond
+these readings; the owner may overrule either with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P8-1 | D8 loyalty points are awarded and reversed **inside** the transaction of the delivery / return / refund that causes them. If the points write fails, that status change or refund fails too and can be retried. Before Phase 8, the change committed and the points were silently lost. | Points are business truth: they may not be lost after commit, and an outbox worker may not write truth. The award is row-locked, so concurrent deliveries can't double-award. |
+| P8-2 | Order SMS / receipt email respect the admin's toggles **at send time**, including after an outage. An intent disabled in the meantime is not sent. | Same behaviour as before, when the send happened immediately. It avoids messages the owner has switched off. |

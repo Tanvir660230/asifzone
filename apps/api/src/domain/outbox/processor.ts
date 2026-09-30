@@ -25,6 +25,9 @@ export const PROCESS_LEASE_MS = 5 * 60_000;
 export const ENQUEUED_STALE_MS = 15 * 60_000;
 export const ENQUEUE_RETRY_MS = 10_000;
 export const PROCESSED_RETENTION_DAYS = 30;
+/** "Due" allows this much clock slack: timestamp(3) columns round to the millisecond, so a row written in the same instant
+ * can read as marginally in the future. Backoffs start at 30 s, so this never lets a retry through early. */
+export const DUE_TOLERANCE_MS = 1_000;
 const HEARTBEAT_KEY = "outbox:dispatcher:heartbeat";
 
 /** 30 s, 1 min, 2 min, … capped at 6 h — attempts 1..8 span ~1 h in total. */
@@ -53,14 +56,21 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 export type Enqueue = (job: { eventId: string; jobId: string }) => Promise<void>;
 
 /** Claims due rows and hands each to `enqueue`; returns how many were claimed / enqueued / left for a later try. */
-export async function dispatchOutbox(opts: { enqueue: Enqueue; limit?: number; now?: Date }): Promise<{ claimed: number; enqueued: number; deferred: number }> {
+export async function dispatchOutbox(opts: {
+  enqueue: Enqueue;
+  limit?: number;
+  now?: Date;
+  /** Restrict to these rows (an operator re-drive, or a test isolating its own rows); omitted = every due row. */
+  onlyIds?: string[];
+}): Promise<{ claimed: number; enqueued: number; deferred: number }> {
   const now = opts.now ?? new Date();
+  const scope = opts.onlyIds ? Prisma.sql`AND id IN (${Prisma.join(opts.onlyIds.length ? opts.onlyIds : [""])})` : Prisma.empty;
   const claimed = await prisma.$queryRaw<Array<{ id: string; attempts: number }>>`
     UPDATE "OutboxEvent"
     SET "claimedUntil" = ${utcInstant(plus(now, DISPATCH_LEASE_MS))}, "updatedAt" = ${utcInstant(now)}
     WHERE id IN (
       SELECT id FROM "OutboxEvent"
-      WHERE status = 'PENDING' AND "availableAt" <= ${utcInstant(now)} AND ("claimedUntil" IS NULL OR "claimedUntil" < ${utcInstant(now)})
+      WHERE status = 'PENDING' AND "availableAt" <= ${utcInstant(plus(now, DUE_TOLERANCE_MS))} AND ("claimedUntil" IS NULL OR "claimedUntil" < ${utcInstant(now)}) ${scope}
       ORDER BY "availableAt" ASC
       LIMIT ${opts.limit ?? 100}
       FOR UPDATE SKIP LOCKED
@@ -109,7 +119,7 @@ export async function processOutboxEvent(eventId: string, opts: { now?: Date; co
   const [row] = await prisma.$queryRaw<Array<{ id: string; eventType: string; consumer: string; eventKey: string; payload: unknown; attempts: number }>>`
     UPDATE "OutboxEvent"
     SET status = 'PROCESSING', attempts = attempts + 1, "claimedUntil" = ${utcInstant(plus(now, PROCESS_LEASE_MS))}, "updatedAt" = ${utcInstant(now)}
-    WHERE id = ${eventId} AND status IN ('PENDING', 'ENQUEUED') AND "availableAt" <= ${utcInstant(now)}
+    WHERE id = ${eventId} AND status IN ('PENDING', 'ENQUEUED') AND "availableAt" <= ${utcInstant(plus(now, DUE_TOLERANCE_MS))}
     RETURNING id, "eventType", consumer, "eventKey", payload, attempts`;
   if (!row) return { outcome: "skipped" }; // already processed/processing, failed, not due yet, or gone
 

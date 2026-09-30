@@ -713,6 +713,25 @@ The Phase 6 lock is unchanged. There is no migration.
 **Deferred:** `CommerceSettings`/`StoreProfile` tables and config packs (installer, §7/§9), locale setting and
 configurable SMS copy, country pack, `ProviderConfig` and per-provider currency capability, a per-order currency column.
 
+## 16h. Phase 8 scope — Outbox & reliable side effects
+
+**Why this phase.** The Phase 8 audit ([PHASE_8_AUDIT.md](PHASE_8_AUDIT.md)) found every order / transition / payment side
+effect fired post-commit and fire-and-forget, with no retry: customer and admin SMS, the receipt email, and the Meta
+enqueue. It also found D8 loyalty points, which are business truth, written after commit.
+
+**Delivered** ([PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)):
+- `OutboxEvent` (a slimmer, delivery-state-carrying form of §6's `DomainEvent`, one row per consumer intent), written
+  only in the business transaction;
+- a `SKIP LOCKED` dispatcher over the existing BullMQ connection;
+- an idempotent worker with retry / failure state in PostgreSQL;
+- per-consumer idempotency (row claim, Resend key, Meta event_id);
+- loyalty points moved into their transactions;
+- operator status and retry;
+- 30-day retention.
+
+**Deferred:** the full §6 event catalogue and subscriber fan-out, notifications and marketing emails, campaign
+reliability, a separate worker process (§14).
+
 ## 17. Definition of done for each phase
 
 Tests (unit + integration + e2e) green · `tsc --noEmit` for api, web, shared · `eslint` for api and web (added to CI in Phase 1) · `next build` · migrations applied to a copy of production + drift check · invariant suite green · reconciliation reports reviewed · this document, the audit and the SSOT registry updated · remaining risks listed in the phase's PR description.
