@@ -16,8 +16,8 @@ function pctChange(current: number, previous: number): number {
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
-/** The executive overview — every number is a registry metric (docs/METRICS_REGISTRY.md). "Revenue" is `net_sales`
- * (D1 realised revenue before the refund term, PD-5.1), with refunds, returns and collected cash shown beside it. */
+/** The executive overview — every number is a registry metric (docs/METRICS_REGISTRY.md). "Revenue" fields carry the
+ * headline `realised_net_sales` (PD-5.1), with refunds, returns and collected cash shown beside it. */
 export interface ExecutiveOverview {
   revenueToday: number;
   revenueYesterday: number;
@@ -57,6 +57,11 @@ export interface ExecutiveOverview {
   collectedCashThisMonth: number;
   taxThisMonth: number;
   taxUnrecordedOrdersThisMonth: number;
+  merchandiseVatThisMonth: number;
+  merchandiseVatUnrecordedOrdersThisMonth: number;
+  merchandiseRefundsThisMonth: number;
+  overpaymentRefundsThisMonth: number;
+  netSalesInclShippingThisMonth: number;
   outstandingCod: number;
   refundDue: number;
 }
@@ -77,14 +82,14 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
   const { timezone, currency } = await storeContext();
 
   const [t, y, w, m, lm, life, monthFinance, positions, lifetimeFacts, visitorRows, sessionRows, pendingRows] = await Promise.all([
-    computeMetrics({ metrics: ["net_sales"], range: today }),
-    computeMetrics({ metrics: ["net_sales"], range: yesterday }),
-    computeMetrics({ metrics: ["net_sales"], range: week }),
-    computeMetrics({ metrics: ["net_sales", "gross_margin_estimated"], range: month }),
-    computeMetrics({ metrics: ["net_sales", "gross_margin_estimated"], range: lastMonth }),
-    computeMetrics({ metrics: ["net_sales", "orders_realised", "aov", "gross_margin_estimated", "orders_placed", "orders_cancelled", "inventory_value"], range: lifetime }),
+    computeMetrics({ metrics: ["realised_net_sales"], range: today }),
+    computeMetrics({ metrics: ["realised_net_sales"], range: yesterday }),
+    computeMetrics({ metrics: ["realised_net_sales"], range: week }),
+    computeMetrics({ metrics: ["realised_net_sales", "gross_margin_estimated"], range: month }),
+    computeMetrics({ metrics: ["realised_net_sales", "gross_margin_estimated"], range: lastMonth }),
+    computeMetrics({ metrics: ["realised_net_sales", "orders_realised", "aov", "gross_margin_estimated", "orders_placed", "orders_cancelled", "inventory_value"], range: lifetime }),
     computeMetrics({
-      metrics: ["gross_merchandise_sales", "discounts", "shipping_charged", "returns", "refunds", "collected_cash", "tax_collected"],
+      metrics: ["gross_merchandise_sales", "discounts", "merchandise_vat", "merchandise_refunds", "overpayment_refunds", "net_sales", "shipping_charged", "returns", "refunds", "collected_cash", "tax_collected"],
       range: month,
     }),
     computeMetrics({ metrics: ["outstanding_cod", "refund_due", "amount_due"], range: today }),
@@ -135,12 +140,12 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
   const insights = await getCustomerInsights();
 
   const result: ExecutiveOverview = {
-    revenueToday: t.metrics.net_sales!.value,
-    revenueYesterday: y.metrics.net_sales!.value,
-    revenueThisWeek: w.metrics.net_sales!.value,
-    revenueThisMonth: m.metrics.net_sales!.value,
-    revenueLifetime: life.metrics.net_sales!.value,
-    revenueGrowthPct: pctChange(m.metrics.net_sales!.value, lm.metrics.net_sales!.value),
+    revenueToday: t.metrics.realised_net_sales!.value,
+    revenueYesterday: y.metrics.realised_net_sales!.value,
+    revenueThisWeek: w.metrics.realised_net_sales!.value,
+    revenueThisMonth: m.metrics.realised_net_sales!.value,
+    revenueLifetime: life.metrics.realised_net_sales!.value,
+    revenueGrowthPct: pctChange(m.metrics.realised_net_sales!.value, lm.metrics.realised_net_sales!.value),
 
     ordersLifetime: life.metrics.orders_realised!.value,
     aovLifetime: life.metrics.aov!.value,
@@ -172,6 +177,11 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
     collectedCashThisMonth: monthFinance.metrics.collected_cash!.value,
     taxThisMonth: monthFinance.metrics.tax_collected!.value,
     taxUnrecordedOrdersThisMonth: monthFinance.metrics.tax_collected!.coverage?.missing ?? 0,
+    merchandiseVatThisMonth: monthFinance.metrics.merchandise_vat!.value,
+    merchandiseVatUnrecordedOrdersThisMonth: monthFinance.metrics.merchandise_vat!.coverage?.missing ?? 0,
+    merchandiseRefundsThisMonth: monthFinance.metrics.merchandise_refunds!.value,
+    overpaymentRefundsThisMonth: monthFinance.metrics.overpayment_refunds!.value,
+    netSalesInclShippingThisMonth: monthFinance.metrics.net_sales!.value,
     outstandingCod: positions.metrics.outstanding_cod!.value,
     refundDue: positions.metrics.refund_due!.value,
   };

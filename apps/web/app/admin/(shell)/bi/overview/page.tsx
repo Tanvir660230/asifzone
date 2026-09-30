@@ -90,12 +90,12 @@ export default function ExecutiveOverviewPage() {
   const { data: customerInsights } = useQuery({ queryKey: ["bi-overview-customers"], queryFn: analyticsApi.getCustomerInsights });
   const { data: activity } = useQuery({ queryKey: ["bi-overview-activity"], queryFn: notificationsApi.listNotifications, refetchInterval: 30_000 });
 
-  // Net sales, orders realised, the daily series and the prior-period comparison — all computed by the server's metrics
+  // Realised net sales, orders realised, the daily series and the prior-period comparison — all computed by the server's metrics
   // engine for exactly the picked business dates (docs/METRICS_REGISTRY.md); nothing is summed here.
   const { data: revenueSeries } = useQuery({
     queryKey: ["bi-overview-revenue", rangeKey],
     queryFn: () =>
-      metricsApi.getMetrics({ metrics: ["net_sales", "orders_realised"], from: metricsApi.pickedDate(range.from), to: metricsApi.pickedDate(range.to), groupBy: "day", compare: "previous" }),
+      metricsApi.getMetrics({ metrics: ["realised_net_sales", "orders_realised"], from: metricsApi.pickedDate(range.from), to: metricsApi.pickedDate(range.to), groupBy: "day", compare: "previous" }),
   });
   // getJourneyFunnel/getTopProducts/getTopCategories/getCampaignPerformance/getCustomerLocationBreakdown
   // only accept a rolling "days" window (not an explicit dateFrom/dateTo like getFavoritePaymentMethod
@@ -126,9 +126,9 @@ export default function ExecutiveOverviewPage() {
   });
 
   const currentSeries = revenueSeries?.groups ?? [];
-  const periodRevenue = revenueSeries?.metrics.net_sales?.value ?? 0;
+  const periodRevenue = revenueSeries?.metrics.realised_net_sales?.value ?? 0;
   const periodOrders = revenueSeries?.metrics.orders_realised?.value ?? 0;
-  const revenueTrendPct = revenueSeries?.previous?.changePct.net_sales ?? null;
+  const revenueTrendPct = revenueSeries?.previous?.changePct.realised_net_sales ?? null;
 
   const topInsights = insights?.insights.slice(0, 3) ?? [];
   const recentActivity = activity?.items.slice(0, 6) ?? [];
@@ -155,13 +155,13 @@ export default function ExecutiveOverviewPage() {
         {revenueSeries ? (
           <HeroRevenueCard
             className="lg:col-span-2"
-            label={`Net sales — ${rangeDays} day${rangeDays === 1 ? "" : "s"} selected`}
+            label={`Realised net sales — ${rangeDays} day${rangeDays === 1 ? "" : "s"} selected`}
             value={formatPrice(periodRevenue)}
             todayOrders={periodOrders}
             ordersSuffix="in this period"
             trendPct={revenueTrendPct}
             trendLabel="vs. prior period"
-            series={currentSeries.map((g) => g.metrics.net_sales ?? 0)}
+            series={currentSeries.map((g) => g.metrics.realised_net_sales ?? 0)}
           />
         ) : (
           <div className="h-[15.5rem] animate-pulse rounded-3xl bg-ink-100 lg:col-span-2" />
@@ -197,7 +197,7 @@ export default function ExecutiveOverviewPage() {
                 tone={overview.refundRatePct > 5 ? "warning" : "default"}
               />
               <StatTile
-                label="Net sales growth (30d)"
+                label="Realised net sales growth (30d)"
                 value={`${overview.revenueGrowthPct >= 0 ? "+" : ""}${overview.revenueGrowthPct.toFixed(1)}%`}
                 icon={<Wallet size={20} />}
                 tone={overview.revenueGrowthPct >= 0 ? "accent" : "warning"}
@@ -249,7 +249,7 @@ export default function ExecutiveOverviewPage() {
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Sales trend</p>
-            <p className="mt-1 text-sm text-ink-500">Daily revenue for the selected range.</p>
+            <p className="mt-1 text-sm text-ink-500">Daily realised net sales for the selected range.</p>
           </div>
           <Link href="/admin/bi/sales" className="flex shrink-0 items-center gap-1 text-sm font-medium text-ink-500 hover:text-ink-900">
             Sales Intelligence <ArrowUpRight size={14} />
@@ -257,7 +257,7 @@ export default function ExecutiveOverviewPage() {
         </div>
         <div className="mt-6">
           {currentSeries.length > 0 ? (
-            <RevenueChart data={currentSeries.map((g) => ({ date: g.key, revenue: g.metrics.net_sales ?? 0, orders: g.metrics.orders_realised ?? 0 }))} />
+            <RevenueChart data={currentSeries.map((g) => ({ date: g.key, revenue: g.metrics.realised_net_sales ?? 0, orders: g.metrics.orders_realised ?? 0 }))} />
           ) : (
             <div className="h-[17.5rem] animate-pulse rounded-2xl bg-ink-50" />
           )}

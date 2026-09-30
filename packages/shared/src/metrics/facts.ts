@@ -46,6 +46,9 @@ export interface OrderFact {
   placedAt: Date;
   /** First OrderStatusHistory entry DELIVERED or PARTIALLY_DELIVERED. */
   firstDeliveredAt: Date | null;
+  /** First OrderStatusHistory entry CANCELLED — the cancellation instant (P5-2). Null when never cancelled, and for a
+   * legacy cancelled order that has no history entry. */
+  cancelledAt: Date | null;
   subtotal: number;
   discount: number;
   bundleDiscount: number;
@@ -57,6 +60,8 @@ export interface OrderFact {
   total: number;
   taxAmount: number | null;
   taxMode: string | null;
+  /** Shipping part of `taxAmount` (D10 snapshot); null before Phase 2. */
+  shippingTaxAmount: number | null;
   shippingDivision: string;
   shippingDistrict: string;
   couponId: string | null;
@@ -70,9 +75,14 @@ export interface OrderFact {
   exchangedLines: Array<{ orderItemId: string; approvedAt: Date }>;
 }
 
-/** TARGET §11 SALE_ORDER: not trashed, not cancelled, not an exchange replacement. */
-export function isSaleOrder(o: Pick<OrderFact, "deleted" | "status" | "isExchangeReplacement">): boolean {
-  return !o.deleted && o.status !== "CANCELLED" && !o.isExchangeReplacement;
+/** Cancelled now, or ever (the state machine allows CANCELLED → REFUNDED, so the current status alone isn't enough). */
+export function isCancelled(o: Pick<OrderFact, "status" | "cancelledAt">): boolean {
+  return o.status === "CANCELLED" || o.cancelledAt !== null;
+}
+
+/** TARGET §11 SALE_ORDER (placement-basis metrics): not trashed, never cancelled, not an exchange replacement. */
+export function isSaleOrder(o: Pick<OrderFact, "deleted" | "status" | "cancelledAt" | "isExchangeReplacement">): boolean {
+  return !o.deleted && !isCancelled(o) && !o.isExchangeReplacement;
 }
 
 /** Operational order: any status, not trashed, not an exchange replacement. */
@@ -80,13 +90,31 @@ export function isOperationalOrder(o: Pick<OrderFact, "deleted" | "isExchangeRep
   return !o.deleted && !o.isExchangeReplacement;
 }
 
-/** D1 realisation instant (P5-1): COD at first delivery; otherwise at the first successful payment. Null = not realised. */
+export interface Realisation {
+  /** D1 realisation instant (P5-1). */
+  at: Date;
+  /** The cancellation instant when the order was cancelled after it was realised (P5-2 reversal), else null. */
+  reversedAt: Date | null;
+}
+
+/** D1 realisation (P5-1): COD at first delivery; otherwise at the first successful payment — only if that happened before
+ * any cancellation. A realised order cancelled later keeps its realisation and is reversed at `reversedAt` (P5-2). A
+ * legacy cancelled order with no cancellation instant can't be reversed at a known time and is excluded. */
+export function realisationOf(o: OrderFact): Realisation | null {
+  if (o.deleted || o.isExchangeReplacement) return null;
+  if (isCancelled(o) && !o.cancelledAt) return null;
+  let at: Date | null = null;
+  if (o.paymentMethod === "COD") at = o.firstDeliveredAt;
+  else for (const p of o.payments) if (p.status === "SUCCEEDED" && (!at || p.settledAt < at)) at = p.settledAt;
+  if (!at) return null;
+  if (o.cancelledAt && at.getTime() >= o.cancelledAt.getTime()) return null;
+  return { at, reversedAt: o.cancelledAt };
+}
+
+/** The realisation instant of a realised order that still stands (not reversed by a later cancellation); null otherwise. */
 export function realisedAt(o: OrderFact): Date | null {
-  if (!isSaleOrder(o)) return null;
-  if (o.paymentMethod === "COD") return o.firstDeliveredAt;
-  let first: Date | null = null;
-  for (const p of o.payments) if (p.status === "SUCCEEDED" && (!first || p.settledAt < first)) first = p.settledAt;
-  return first;
+  const r = realisationOf(o);
+  return r && !r.reversedAt ? r.at : null;
 }
 
 /** Line discounts that sum exactly to `Order.discount`: the Phase 2 allocations when recorded (as weights, so a clamped
@@ -102,6 +130,74 @@ export function lineDiscounts(o: OrderFact): number[] {
 
 export function lineGross(l: LineFact): number {
   return l.unitPrice * l.quantity;
+}
+
+/** Line net as charged (gross − allocated discount); VAT-inclusive on tax-inclusive orders. */
+export function lineNets(o: OrderFact): number[] {
+  const d = lineDiscounts(o);
+  return o.lines.map((l, i) => lineGross(l) - d[i]!);
+}
+
+/** Merchandise VAT from the order's own tax snapshot (C2) — never the current tax setting. EXCLUSIVE: 0 (the charged
+ * price excludes VAT). INCLUSIVE: taxAmount − shippingTaxAmount. Null = unknown (no snapshot): nothing is guessed. */
+export function merchandiseVat(o: OrderFact): number | null {
+  if (o.taxMode === "EXCLUSIVE") return 0;
+  if (o.taxMode !== "INCLUSIVE" || o.taxAmount === null) return null;
+  if (o.taxAmount === 0) return 0;
+  if (o.shippingTaxAmount === null) return null;
+  return Math.max(0, o.taxAmount - o.shippingTaxAmount);
+}
+
+/** The order's merchandise VAT split across lines by line net — an allocation (largest remainder), since VAT was never
+ * recorded per line. Zeros when the VAT is 0 or unknown. */
+export function lineMerchandiseVat(o: OrderFact): number[] {
+  const vat = merchandiseVat(o) ?? 0;
+  const nets = lineNets(o);
+  if (vat === 0 || !nets.some((n) => n > 0)) return nets.map(() => 0);
+  return allocateProportionally(money(vat, "X"), nets.map((n) => Math.max(0, n))).map((m) => m.amount);
+}
+
+export interface RefundAllocation {
+  at: Date;
+  amount: number;
+  /** Step 1 — covers payment overage; never a sales reduction (C4). */
+  overpayment: number;
+  /** Step 2 — merchandise as charged, capped at the remaining eligible merchandise (C3). */
+  merchandise: number;
+  /** The VAT-exclusive equivalent of `merchandise` — what `realised_net_sales` falls by. */
+  merchandiseExVat: number;
+  /** Step 3 — the rest: shipping, shipping VAT, exclusive VAT, price adjustment (not merchandise). */
+  other: number;
+}
+
+/** Splits each COMPLETED refund of the order, in completion order: payment overage first, then merchandise up to the
+ * remaining eligible merchandise (nothing before realisation), then non-merchandise. Never pro-rata. */
+export function refundAllocations(o: OrderFact): RefundAllocation[] {
+  const real = realisationOf(o);
+  const merchCharged = lineNets(o).reduce((s, n) => s + n, 0);
+  const merchExVat = merchCharged - (merchandiseVat(o) ?? 0);
+  let remCharged = real ? merchCharged : 0;
+  let remExVat = real ? merchExVat : 0;
+  let overageUsed = 0;
+  const payments = o.payments.filter((p) => p.status === "SUCCEEDED");
+  const refunds = o.refunds
+    .filter((r): r is typeof r & { completedAt: Date } => r.status === "COMPLETED" && r.completedAt !== null)
+    .sort((a, b) => a.completedAt.getTime() - b.completedAt.getTime());
+  return refunds.map((r) => {
+    const paid = payments.reduce((s, p) => (p.settledAt.getTime() <= r.completedAt.getTime() ? s + p.amount : s), 0);
+    const overpayment = Math.min(r.amount, Math.max(0, paid - o.total - overageUsed));
+    overageUsed += overpayment;
+    const rest = r.amount - overpayment;
+    let merchandise = 0;
+    let merchandiseExVat = 0;
+    if (real && r.completedAt.getTime() >= real.at.getTime() && remCharged > 0) {
+      merchandise = Math.min(rest, remCharged);
+      merchandiseExVat = merchandise === remCharged ? remExVat : Math.min(remExVat, Math.round((merchandise * merchExVat) / merchCharged));
+      remCharged -= merchandise;
+      remExVat -= merchandiseExVat;
+    }
+    return { at: r.completedAt, amount: r.amount, overpayment, merchandise, merchandiseExVat, other: rest - merchandise };
+  });
 }
 
 /** Shipping actually charged (§3): the waiver snapshot when known, else the order's own arithmetic. */

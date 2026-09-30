@@ -887,9 +887,9 @@ export async function getOrderStats() {
   const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   // "Today" = the store's business day; orders placed = sale orders placed today, revenue = today's realised net sales —
-  // the registry's `orders_placed` / `net_sales` (docs/METRICS_REGISTRY.md), the same numbers as the dashboard and BI.
+  // the registry's `orders_placed` / `realised_net_sales` (docs/METRICS_REGISTRY.md), the same numbers as the dashboard and BI.
   const [today, pending, needsAttention, followUpDue, cancelledButPaidCount, statusGroups] = await Promise.all([
-    computeMetrics({ metrics: ["orders_placed", "net_sales"], range: { preset: "today" } }, now),
+    computeMetrics({ metrics: ["orders_placed", "realised_net_sales"], range: { preset: "today" } }, now),
     prisma.order.count({ where: { deletedAt: null, status: { in: ["PENDING", "CONFIRMED"] } } }),
     // A fresh PENDING order isn't "stuck" yet — only one sitting unconfirmed for a day, one whose
     // payment gateway callback actually failed, one Steadfast has put "on hold" (couldn't reach the
@@ -925,7 +925,7 @@ export async function getOrderStats() {
 
   return {
     todayOrders: today.metrics.orders_placed!.value,
-    todayRevenue: today.metrics.net_sales!.value,
+    todayRevenue: today.metrics.realised_net_sales!.value,
     pending,
     needsAttention,
     followUpDue,

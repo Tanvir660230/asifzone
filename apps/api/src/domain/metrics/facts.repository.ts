@@ -4,8 +4,9 @@
  * engine's OrderFact objects. It uses Prisma's typed API only (correct UTC semantics, no raw time comparisons) and never
  * writes anything.
  *
- * For a range, it loads exactly the orders that have an event inside it — placement, first delivery, a payment, a refund
- * or a returned unit — which covers every time basis a metric can use, so no contribution inside the range is missed.
+ * For a range, it loads exactly the orders that have an event inside it — placement, first delivery, a cancellation (the
+ * P5-2 reversal instant), a payment, a refund or a returned unit — which covers every time basis a metric can use, so no
+ * contribution inside the range is missed.
  */
 import { fromMajor, type BusinessRange, type InventoryVariantFact, type LineFact, type OrderFact } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
@@ -24,16 +25,17 @@ function minorOrNull(v: { toString(): string } | number | null | undefined, curr
 export async function candidateOrderIds(range: Pick<BusinessRange, "startUtc" | "endUtc" | "preset">): Promise<string[] | null> {
   if (range.preset === "lifetime") return null;
   const window = { gte: range.startUtc, lt: range.endUtc };
-  const [placed, delivered, paid, refunded, returned] = await Promise.all([
+  const [placed, delivered, cancelled, paid, refunded, returned] = await Promise.all([
     prisma.order.findMany({ where: { createdAt: window }, select: { id: true } }),
     prisma.orderStatusHistory.findMany({ where: { status: { in: [...DELIVERED_STATUSES] }, createdAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
+    prisma.orderStatusHistory.findMany({ where: { status: "CANCELLED", createdAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.payment.findMany({ where: { settledAt: window, orderId: { not: null } }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.refund.findMany({ where: { completedAt: window }, select: { orderId: true }, distinct: ["orderId"] }),
     prisma.stockMovement.findMany({ where: { reason: "RETURN", createdAt: window, orderId: { not: null } }, select: { orderId: true }, distinct: ["orderId"] }),
   ]);
   const ids = new Set<string>();
   for (const r of placed) ids.add(r.id);
-  for (const r of [...delivered, ...paid, ...refunded, ...returned]) if (r.orderId) ids.add(r.orderId);
+  for (const r of [...delivered, ...cancelled, ...paid, ...refunded, ...returned]) if (r.orderId) ids.add(r.orderId);
   return [...ids];
 }
 
@@ -57,6 +59,7 @@ const ORDER_SELECT = {
   total: true,
   taxAmount: true,
   taxMode: true,
+  shippingTaxAmount: true,
   shippingDivision: true,
   shippingDistrict: true,
   couponId: true,
@@ -80,7 +83,7 @@ const ORDER_SELECT = {
   },
   payments: { select: { amount: true, status: true, provider: true, settledAt: true } },
   refunds: { select: { amount: true, status: true, completedAt: true } },
-  statusHistory: { where: { status: { in: [...DELIVERED_STATUSES] } }, select: { createdAt: true }, orderBy: { createdAt: "asc" as const }, take: 1 },
+  statusHistory: { where: { status: { in: [...DELIVERED_STATUSES, "CANCELLED" as const] } }, select: { status: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
 };
 
 /** Loads OrderFacts for the given ids (or every order when `ids` is null). */
@@ -124,7 +127,8 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
     deleted: o.deletedAt !== null,
     isExchangeReplacement: replacementIds.has(o.id),
     placedAt: o.createdAt,
-    firstDeliveredAt: o.statusHistory[0]?.createdAt ?? null,
+    firstDeliveredAt: o.statusHistory.find((h) => h.status !== "CANCELLED")?.createdAt ?? null,
+    cancelledAt: o.statusHistory.find((h) => h.status === "CANCELLED")?.createdAt ?? null,
     subtotal: minor(o.subtotal, currency),
     discount: minor(o.discount, currency),
     bundleDiscount: minor(o.bundleDiscount, currency),
@@ -136,6 +140,7 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
     total: minor(o.total, currency),
     taxAmount: minorOrNull(o.taxAmount, currency),
     taxMode: o.taxMode,
+    shippingTaxAmount: minorOrNull(o.shippingTaxAmount, currency),
     shippingDivision: o.shippingDivision,
     shippingDistrict: o.shippingDistrict,
     couponId: o.couponId,
@@ -218,6 +223,7 @@ const EMPTY_ORDER: OrderFact = {
   isExchangeReplacement: false,
   placedAt: new Date(0),
   firstDeliveredAt: null,
+  cancelledAt: null,
   subtotal: 0,
   discount: 0,
   bundleDiscount: 0,
@@ -229,6 +235,7 @@ const EMPTY_ORDER: OrderFact = {
   total: 0,
   taxAmount: null,
   taxMode: null,
+  shippingTaxAmount: null,
   shippingDivision: "",
   shippingDistrict: "",
   couponId: null,

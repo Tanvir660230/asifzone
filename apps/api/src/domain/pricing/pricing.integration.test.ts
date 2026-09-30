@@ -3,7 +3,7 @@ import request from "supertest";
 import type { Prisma } from "@prisma/client";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
-import { cacheDel } from "../../config/redis";
+import { cacheDel, redis } from "../../config/redis";
 import {
   RUN,
   asOwner,
@@ -32,9 +32,21 @@ let originalStore: {
 } | null;
 
 /** StoreSetting written directly (no admin endpoint for these fields) must also drop the cached row that getSettings()
- * serves for 5 minutes, or code under test reads the stale value whenever Redis is connected. */
+ * serves for 5 minutes, or code under test reads the stale value whenever Redis is connected. The client is lazy and has
+ * no offline queue (config/redis.ts), so a command sent before the first connection fails — and cacheDel swallows it —
+ * which is exactly what happens when this is the process's first Redis call (e.g. `-t D8`). Wait for the connection
+ * first; without Redis there is no cache to drop. */
 async function setStoreSetting(data: Prisma.StoreSettingUpdateInput) {
   await prisma.storeSetting.update({ where: { id: "singleton" }, data });
+  if (redis.status !== "ready") {
+    if (redis.status === "wait") redis.connect().catch(() => undefined);
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      redis.once("ready", done);
+      redis.once("error", done);
+      setTimeout(done, 2500);
+    });
+  }
   await cacheDel("settings:singleton");
 }
 

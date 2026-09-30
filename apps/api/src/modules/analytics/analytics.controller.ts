@@ -441,8 +441,8 @@ export const exportRevenueSeriesCsv = asyncHandler(async (req: Request, res: Res
   const { days = 365 } = query(req);
   const series = await analyticsService.getRevenueSeries(days);
   const csv = toCsv(
-    // Registry metrics (docs/METRICS_REGISTRY.md): net_sales and orders_realised per business day.
-    ["Date", "Net sales", "Orders realised"],
+    // Registry metrics (docs/METRICS_REGISTRY.md): realised_net_sales and orders_realised per business day.
+    ["Date", "Realised net sales", "Orders realised"],
     series.map((p) => [p.date, p.revenue, p.orders]),
   );
   sendCsv(res, "revenue", csv);

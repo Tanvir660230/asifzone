@@ -39,6 +39,11 @@ export interface ExecutiveOverview {
   collectedCashThisMonth: number;
   taxThisMonth: number;
   taxUnrecordedOrdersThisMonth: number;
+  merchandiseVatThisMonth: number;
+  merchandiseVatUnrecordedOrdersThisMonth: number;
+  merchandiseRefundsThisMonth: number;
+  overpaymentRefundsThisMonth: number;
+  netSalesInclShippingThisMonth: number;
   outstandingCod: number;
   refundDue: number;
 }

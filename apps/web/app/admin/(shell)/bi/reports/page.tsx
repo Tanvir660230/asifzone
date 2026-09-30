@@ -15,8 +15,8 @@ const REPORTS = [
   },
   {
     id: "revenue",
-    title: "Net sales export (365 days)",
-    description: "Daily order count and revenue for the last 365 days.",
+    title: "Realised net sales export (365 days)",
+    description: "Daily realised net sales and orders realised for the last 365 days.",
     icon: TrendingUp,
     href: analyticsApi.downloadRevenueCsvUrl(365),
   },

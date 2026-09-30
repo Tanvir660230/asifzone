@@ -14,7 +14,7 @@ Related: [TARGET_ARCHITECTURE.md §16](TARGET_ARCHITECTURE.md) · [PRICING_PIPEL
 
 | ID | Topic | Status | Implemented in |
 |---|---|---|---|
-| D1 | Revenue recognition (COD, returns, refunds) | APPROVED · IMPLEMENTED (refund term pending PD-5.1) | Phase 1 (facts) · Phase 5 (metrics — [METRICS_REGISTRY.md](METRICS_REGISTRY.md)) |
+| D1 | Revenue recognition (COD, returns, refunds) | APPROVED · IMPLEMENTED (refund term resolved by PD-5.1) | Phase 1 (facts) · Phase 5 (metrics — [METRICS_REGISTRY.md](METRICS_REGISTRY.md)) |
 | D2 | Bundle discount on the post-flash price | APPROVED | Phase 1 |
 | D3 | Tax-inclusive pricing | APPROVED · IMPLEMENTED | Phase 1 (helper, analytics fix) · Phase 2 (tax engine, snapshot) |
 | D4 | Enforce `FlashSaleItem.stockLimit` | APPROVED · IMPLEMENTED | Phase 2 |
@@ -182,34 +182,64 @@ interpretation I implemented. The owner may overrule any of them with a new date
 | P4-7 | Legacy backfill: an order already marked paid (or a delivered COD order) with no payment record gets one settlement of its total, marked `backfilled`. Its status projection is corrected only by the explicit repair command. | D1 (delivered COD = collected) and the order's own recorded status are the only evidence used. Nothing is invented and no order row is rewritten. |
 
 
-## PD-5.1 — PENDING: refunds in realised revenue (Phase 5, raised 2026-09-30)
+## PD-5.1 — RESOLVED: realised net sales (Phase 5; raised and resolved 2026-09-30)
 
-- **Question.** D1 (TARGET §11) defines *Realised revenue = Gross sales − Discounts + shipping charged + adjustments −
-  Returns − Refunds not already counted as returns*. The last term has no rule in this system: a `Refund` isn't linked
-  to the returned units it pays for.
-- **What must be decided:**
-  - (a) When does a refund duplicate a return that was already subtracted?
-  - (b) Is a refund of a duplicate payment (an overpayment that was never revenue) excluded?
-  - (c) Which period absorbs the netting when the refund and the return fall in different periods?
-- **Proposal (not implemented):** per sale order, the refund term is `max(0, refunds − returns value − overpayment
-  refunded)`. It is recognised at the refund's completion time, with returns known at that moment counting first.
-  Refunds on cancelled orders aren't a revenue term (the order was never a sale).
-- **Until approved:** `realised_revenue` isn't served. Dashboards show `net_sales` (realised revenue before the refund
-  term) with `refunds` beside it, and `aov` uses `net_sales`. See [METRICS_REGISTRY.md](METRICS_REGISTRY.md) §6.
+- **Question (as raised).** The last term of D1's realised revenue, *"refunds not already counted as returns"*, had no
+  rule: a `Refund` isn't linked to what it pays back.
+- **Owner decision (2026-09-30).**
+  - **Realised net sales** = merchandise sales that have become financially realised, less applicable merchandise
+    refunds.
+  - Realisation is D1 unchanged (P5-1):
+    - online: when the payment settles;
+    - COD: when it is delivered, i.e. collected;
+    - unpaid or pending COD is not realised;
+    - an order cancelled before realisation is not realised.
+  - Historical facts only; never current product, tax, shipping, coupon or flash configuration; never "subtract the
+    order total".
+  - Shipping and tax stay separate metrics.
+  - An exchange replacement never double-counts merchandise.
+  - The Phase 4 ledger is the payment/refund truth.
+- **C1 — headline.**
+  - `realised_net_sales` is the canonical headline sales metric: dashboard, KPI strip, BI headline, AOV, customer net
+    spend, VIP/RFM.
+  - `net_sales` remains a **secondary** metric, labelled *"Net sales incl. shipping, less returns"*.
+  - No surface shows two concepts under "Revenue".
+- **C2 — merchandise VAT.** Merchandise is measured without VAT, using the order's own tax snapshot:
+  - `INCLUSIVE`: merchandise VAT = `taxAmount − shippingTaxAmount`.
+  - `EXCLUSIVE`: 0, because the charged price excludes it.
+  - Where the snapshot is insufficient: nothing is guessed, today's rate is never used, and the gap is reported as
+    coverage.
+  - Per-line VAT is a documented value-based **allocation** (largest remainder over line net). It was never stored per
+    line.
+  - `gross_merchandise_sales` is relabelled "as charged": it includes VAT on inclusive orders.
+- **C3 + C4 — refund allocation hierarchy.** Each completed refund of an order, in completion order:
+  1. **Payment overage first:** up to `max(0, payments settled by then − order total)`, minus overage already absorbed
+     by earlier refunds. It never reduces sales. *Example:* total 1000, payments 1200, refund 200 → overpayment refund;
+     merchandise sales unchanged.
+  2. **Goods first, capped:** the rest goes to merchandise, up to the order's remaining eligible merchandise (realised
+     merchandise as charged, less earlier merchandise refund parts; nothing before realisation). Sales fall by its
+     VAT-exclusive equivalent.
+  3. **Non-merchandise:** the remainder belongs to the order's other components (shipping, shipping VAT, exclusive
+     VAT, price adjustment). It doesn't reduce merchandise sales.
+
+  No pro-rata split is used. An exchange downgrade refund, which is pure merchandise, reduces sales in full.
+- **Implemented:** [METRICS_REGISTRY.md](METRICS_REGISTRY.md) §3, §4.1, §6. The pending key `realised_revenue` is
+  withdrawn.
 
 ## Phase 5 implementation notes (interpretations, recorded 2026-09-30)
 
 Phase 5 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md)) adds no business rule. It implements D1 and TARGET §11 and
-records these readings, which the owner may overrule with a new dated entry:
+records these readings. **The owner reviewed all nine on 2026-09-30**; the decision column is authoritative and
+overrides the interpretation where they differ.
 
-| ID | Interpretation | Why |
-|---|---|---|
-| P5-1 | An online (non-COD) order is realised at its **first successful payment** (`Payment.settledAt`); a COD order at its first `DELIVERED`/`PARTIALLY_DELIVERED`, even if it was prepaid. | D1: "COD: `DELIVERED`… online: `paymentStatus` reached `PAID`". |
-| P5-2 | A paid order that is later **cancelled** is not a sale. Its payment and refund count in cash metrics (`collected_cash`, `refunds`), not in sales. | TARGET §11 `SALE_ORDER` excludes cancelled orders; the goods never left. |
-| P5-3 | In an exchange, the original line's units coming back are **not a return**, and the replacement order is **not a sale**. A downgrade refund is a refund. An upgrade difference collected on the replacement is reported as `exchange_difference_collected` and isn't added to sales. | TARGET §11 excludes replacement orders from `SALE_ORDER`; the exchange keeps the original sale (return-request service: "the sale stands"). Counting either side again would double-count merchandise. |
-| P5-4 | Customer spend (CRM list, VIP / HIGH_SPENDER tags, minimum-spend filter, SMS `totalSpent`, RFM) becomes `customer_net_spend`: realised, net of returns, trashed orders excluded. Unrealised COD orders no longer count toward VIP. | D1: placing an order isn't revenue; one definition for revenue and customer spend. |
-| P5-5 | `aov` = `net_sales ÷ orders_realised` until PD-5.1 approves realised revenue. | TARGET §11 denominator; the pending numerator is replaced by its approved components. |
-| P5-6 | COGS, gross margin, inventory turnover and dead-stock value use the **current** cost price and are flagged *estimated*. | TARGET §11: historical rows "fall back to current cost, flagged 'estimated'". No cost snapshot exists (`OrderItem.unitCostSnapshot` deferred). |
-| P5-7 | Category and brand reports attribute sold lines to the product's **current** category/brand. | No category/brand snapshot exists on `OrderItem`; historical re-attribution can't be reconstructed and isn't faked. |
-| P5-8 | The store timezone is a store setting (`StoreSetting.timezone`, default `Asia/Dhaka`, today's behaviour). | Configuration over code (TARGET §7). |
-| P5-9 | "Units ordered" (demand on placed sale orders) drives storefront urgency, trending and forecasts; "units sold" (realised, net of returns) drives sales reports. Before Phase 5 both used ad-hoc `NOT IN (CANCELLED, REFUNDED)` or `!= CANCELLED`. | TARGET §5.5: urgency and the sales panel share one predicate; demand and realised sales are different facts. |
+| ID | Interpretation | Why | Owner decision (2026-09-30) |
+|---|---|---|---|
+| P5-1 | An online (non-COD) order is realised at its **first successful payment** (`Payment.settledAt`); a COD order at its first `DELIVERED`/`PARTIALLY_DELIVERED`, even if it was prepaid. | D1: "COD: `DELIVERED`… online: `paymentStatus` reached `PAID`". | APPROVED unchanged. |
+| P5-2 | A paid order that is later **cancelled** is not a sale. Its payment and refund count in cash metrics (`collected_cash`, `refunds`), not in sales. | TARGET §11 `SALE_ORDER` excludes cancelled orders; the goods never left. | **CHANGED → reversal at cancellation.** A sale realised before its cancellation stays in its realisation period and is reversed (every realised contribution, opposite sign) at the first `CANCELLED` status entry. No earlier period changes, and nothing extra is stored: it is derived from `OrderStatusHistory`, with no second ledger. Cancellation is read from history, not the current status (`CANCELLED → REFUNDED` is allowed). Cash metrics are unchanged. |
+| P5-3 | In an exchange, the original line's units coming back are **not a return**, and the replacement order is **not a sale**. A downgrade refund is a refund. An upgrade difference collected on the replacement is reported as `exchange_difference_collected` and isn't added to sales. | TARGET §11 excludes replacement orders from `SALE_ORDER`; the exchange keeps the original sale (return-request service: "the sale stands"). Counting either side again would double-count merchandise. | KEPT. Returned exchange units aren't a sale, the replacement isn't a sale, a downgrade difference is a refund (a merchandise refund under PD-5.1), and an upgrade difference is **not** merchandise sales under D6. Counting upgrades as incremental sales would need a new explicit decision. |
+| P5-4 | Customer spend (CRM list, VIP / HIGH_SPENDER tags, minimum-spend filter, SMS `totalSpent`, RFM) becomes `customer_net_spend`: realised, net of returns, trashed orders excluded. Unrealised COD orders no longer count toward VIP. | D1: placing an order isn't revenue; one definition for revenue and customer spend. | APPROVED. Spend, VIP/RFM and CLV use `realised_net_sales` (PD-5.1 C1). |
+| P5-5 | `aov` = `net_sales ÷ orders_realised` until PD-5.1 approves realised revenue. | TARGET §11 denominator; the pending numerator is replaced by its approved components. | **REPLACED.** `aov = realised_net_sales ÷ orders_realised`, both over the same realisation population, with the same cancellation reversals. |
+| P5-6 | COGS, gross margin, inventory turnover and dead-stock value use the **current** cost price and are flagged *estimated*. | TARGET §11: historical rows "fall back to current cost, flagged 'estimated'". No cost snapshot exists (`OrderItem.unitCostSnapshot` deferred). | APPROVED. Stays *estimated* until `OrderItem.unitCostSnapshot` exists. |
+| P5-7 | Category and brand reports attribute sold lines to the product's **current** category/brand. | No category/brand snapshot exists on `OrderItem`; historical re-attribution can't be reconstructed and isn't faked. | APPROVED limitation. Historical category/brand reports change if the catalog is reclassified; documented until snapshots exist. |
+| P5-8 | The store timezone is a store setting (`StoreSetting.timezone`, default `Asia/Dhaka`, today's behaviour). | Configuration over code (TARGET §7). | APPROVED. |
+| P5-9 | "Units ordered" (demand on placed sale orders) drives storefront urgency, trending and forecasts; "units sold" (realised, net of returns) drives sales reports. Before Phase 5 both used ad-hoc `NOT IN (CANCELLED, REFUNDED)` or `!= CANCELLED`. | TARGET §5.5: urgency and the sales panel share one predicate; demand and realised sales are different facts. | APPROVED. No product-level low-stock semantics. |

@@ -4,8 +4,12 @@ import {
   contributions,
   customerStats,
   groupKeyOf,
+  inRange,
   inclusiveTaxOf,
+  lineNets,
+  merchandiseVat,
   money,
+  realisationOf,
   resolveBusinessRange,
   sumOf,
   DEFAULT_ROUNDING_POLICY,
@@ -30,10 +34,10 @@ const NOW = new Date("2026-09-30T12:00:00Z");
 const canonicalMetric = (key: string, orders: OrderFact[], range: BusinessRange) => sumOf(contributions(key, orders, range));
 const canonical: Impl = {
   metric: canonicalMetric,
-  aov: (orders, range) => aovOf(canonicalMetric("net_sales", orders, range), canonicalMetric("orders_realised", orders, range)),
+  aov: (orders, range) => aovOf(canonicalMetric("realised_net_sales", orders, range), canonicalMetric("orders_realised", orders, range)),
   customerSpend: (orders, range) => {
     const m = new Map<string, number>();
-    for (const c of contributions("net_sales", orders, range)) m.set(c.order.customerId ?? "guest", (m.get(c.order.customerId ?? "guest") ?? 0) + c.amount);
+    for (const c of contributions("realised_net_sales", orders, range)) m.set(c.order.customerId ?? "guest", (m.get(c.order.customerId ?? "guest") ?? 0) + c.amount);
     return m;
   },
   range: (from, to) => resolveBusinessRange({ from, to }, TZ, NOW),
@@ -69,6 +73,71 @@ const FIXTURE: OrderFact[] = [
   order({ id: "pendingCod", customerId: "c6" }),
 ];
 
+// PD-5.1 fixture (docs/BUSINESS_DECISIONS.md PD-5.1; METRICS_REGISTRY §3).
+const d21 = new Date("2026-09-21T10:00:00Z");
+const day12 = resolveBusinessRange({ from: "2026-09-12", to: "2026-09-12" }, TZ, NOW);
+const day20 = resolveBusinessRange({ from: "2026-09-20", to: "2026-09-20" }, TZ, NOW);
+const PD: OrderFact[] = [
+  // total 1060, paid 1060 + a duplicate 200, refund 200 → overpayment only
+  paidOnline(d12, {
+    id: "overpaid",
+    customerId: "k1",
+    payments: [
+      { amount: T(1060), status: "SUCCEEDED", provider: "EPS_PG", settledAt: d12 },
+      { amount: T(200), status: "SUCCEEDED", provider: "MANUAL", settledAt: d12 },
+    ],
+    refunds: [{ amount: T(200), status: "COMPLETED", completedAt: d20 }],
+  }),
+  // merchandise 1000 + shipping 100; refund 300 → goods first: 700 (pro-rata would give 727.27)
+  deliveredCod(d12, { id: "shipRefund", customerId: "k2", shippingFee: T(100), refunds: [{ amount: T(300), status: "COMPLETED", completedAt: d20 }] }),
+  // paid on the 12th, cancelled on the 20th, refunded on the 21st
+  paidOnline(d12, { id: "cancelledAfter", customerId: "k3", status: "CANCELLED", cancelledAt: d20, refunds: [{ amount: T(1060), status: "COMPLETED", completedAt: d21 }] }),
+  // 1150 inclusive of 150 merchandise VAT (+ 9 shipping VAT)
+  deliveredCod(d12, { id: "inclusiveVat", customerId: "k4", lines: [line({ unitPrice: T(1150) })], taxAmount: T(159), shippingTaxAmount: T(9) }),
+  // exchange upgrade: the replacement's 300 difference is collected, not sold
+  deliveredCod(d12, {
+    id: "upOrig",
+    customerId: "k5",
+    lines: [line({ orderItemId: "upLine", variantId: "upv" })],
+    returnMovements: [{ variantId: "upv", units: 1, at: d20 }],
+    exchangedLines: [{ orderItemId: "upLine", approvedAt: d20 }],
+  }),
+  deliveredCod(d20, { id: "upRepl", isExchangeReplacement: true, customerId: "k5", lines: [line({ unitPrice: T(1300) })], discount: T(1000), shippingFee: 0, total: T(300) }),
+  // exchange downgrade: a 200 difference refund on the original
+  deliveredCod(d12, {
+    id: "downOrig",
+    customerId: "k6",
+    lines: [line({ orderItemId: "dnLine", variantId: "dnv" })],
+    returnMovements: [{ variantId: "dnv", units: 1, at: d20 }],
+    exchangedLines: [{ orderItemId: "dnLine", approvedAt: d20 }],
+    refunds: [{ amount: T(200), status: "COMPLETED", completedAt: d21 }],
+  }),
+];
+
+/** An alternative refund reduction, for the allocation mutants: the canonical positive part minus a different split. */
+function altRealisedNet(orders: OrderFact[], r: BusinessRange, mode: "refundBeforeOverpayment" | "proRata"): number {
+  const positive = canonicalMetric("realised_net_sales", orders, r) + canonicalMetric("merchandise_refunds", orders, r);
+  let reduction = 0;
+  for (const o of orders) {
+    const real = realisationOf(o);
+    if (!real || real.reversedAt) continue;
+    const merchCharged = lineNets(o).reduce((a, b) => a + b, 0);
+    const exVat = merchCharged - (merchandiseVat(o) ?? 0);
+    let remaining = merchCharged;
+    for (const f of o.refunds) {
+      if (f.status !== "COMPLETED" || !inRange(f.completedAt, r)) continue;
+      if (mode === "refundBeforeOverpayment") {
+        const part = Math.min(f.amount, remaining);
+        remaining -= part;
+        reduction += Math.round((part * exVat) / merchCharged);
+      } else {
+        reduction += Math.round((f.amount * exVat) / o.total);
+      }
+    }
+  }
+  return positive - reduction;
+}
+
 /** A current catalog/tax state that differs from what the orders recorded. History must ignore it. */
 const CURRENT_PRICE = T(1500);
 const CURRENT_TAX_PCT = 7.5;
@@ -96,20 +165,35 @@ function violations(impl: Impl): string[] {
   // 9 — an exchange never double-counts merchandise: the original line stays sold, its units are not a return.
   check("exchange units are not returns", m("returns") === T(1000));
   check("net merchandise: exchange counted once", m("net_merchandise_sales") === T(4500 - 1000));
-  // 10 — customer spend is the same net sales, grouped.
+  // 10 — customer spend is the same realised net sales, grouped (P5-4). c1: two sales of 1000 with 130 inclusive VAT.
   const spend = impl.customerSpend(FIXTURE, sept);
-  check("Σ customer spend = net sales", [...spend.values()].reduce((a, b) => a + b, 0) === m("net_sales"));
-  check("customer c1 spend = own net sales", spend.get("c1") === T(1060 + 1060));
-  // 11 — AOV denominator is orders realised.
-  check("AOV = net sales ÷ realised orders", impl.aov(FIXTURE, sept) === aovOf(m("net_sales"), 4));
+  check("Σ customer spend = realised net sales", [...spend.values()].reduce((a, b) => a + b, 0) === m("realised_net_sales"));
+  check("customer c1 spend = own realised net sales", spend.get("c1") === T(870 + 870));
+  // 11 — AOV = realised net sales ÷ orders realised (P5-5).
+  check("AOV = realised net sales ÷ realised orders", impl.aov(FIXTURE, sept) === aovOf(m("realised_net_sales"), 4));
   // D1 — a pending COD order is not revenue.
   check("pending COD not realised", m("orders_realised") === 4);
   // Customer stats count the same sale orders.
   check("customers with orders", customerStats(FIXTURE, sept).customersWithOrders === 4);
   // Groupings reconcile.
   const byDay = new Map<string, number>();
-  for (const c of contributions("net_sales", FIXTURE, sept)) byDay.set(groupKeyOf(c, "day", TZ).key, (byDay.get(groupKeyOf(c, "day", TZ).key) ?? 0) + c.amount);
-  check("Σ day series = total", [...byDay.values()].reduce((a, b) => a + b, 0) === m("net_sales"));
+  for (const c of contributions("realised_net_sales", FIXTURE, sept)) byDay.set(groupKeyOf(c, "day", TZ).key, (byDay.get(groupKeyOf(c, "day", TZ).key) ?? 0) + c.amount);
+  check("Σ day series = total", [...byDay.values()].reduce((a, b) => a + b, 0) === m("realised_net_sales"));
+
+  // ── PD-5.1 (headline, refund hierarchy, merchandise VAT, reversal, exchanges, AOV population) ──
+  const one = (id: string) => PD.filter((o) => o.id === id);
+  const rns = (orders: OrderFact[], r = sept) => impl.metric("realised_net_sales", orders, r);
+  check("headline realised net sales (merchandise ex VAT − merchandise refunds)", rns(PD) === T(4500));
+  check("overpayment refund doesn't reduce sales", rns(one("overpaid")) === T(1000));
+  check("goods first, capped (not pro-rata)", rns(one("shipRefund")) === T(700));
+  check("merchandise VAT from the order's snapshot", rns(one("inclusiveVat")) === T(1000));
+  check("cancellation: sale stays on its day", rns(one("cancelledAfter"), day12) === T(1000));
+  check("cancellation: reversal on the cancellation day", rns(one("cancelledAfter"), day20) === -T(1000));
+  check("exchange downgrade refund is a merchandise refund", rns(one("downOrig")) === T(800));
+  check("exchange upgrade difference is not a sale", rns([...one("upOrig"), ...one("upRepl")]) === T(1000));
+  check("AOV over the realisation population (month)", impl.aov(PD, sept) === aovOf(T(4500), 5));
+  check("AOV over the realisation population (day of sale)", impl.aov(PD, day12) === aovOf(T(6000), 6));
+  check("customer spend follows realised net sales", impl.customerSpend(PD, sept).get("k6") === T(800));
   return out;
 }
 
@@ -146,10 +230,36 @@ const MUTANTS: Array<[string, Impl]> = [
       },
     },
   ],
-  ["11. AOV over orders placed instead of orders realised", { ...canonical, aov: (orders, r) => aovOf(canonicalMetric("net_sales", orders, r), canonicalMetric("orders_placed", orders, r)) }],
+  ["11. AOV over orders placed instead of orders realised", { ...canonical, aov: (orders, r) => aovOf(canonicalMetric("realised_net_sales", orders, r), canonicalMetric("orders_placed", orders, r)) }],
+  ["11b. AOV denominator = payments instead of orders realised", { ...canonical, aov: (orders, r) => aovOf(canonicalMetric("realised_net_sales", orders, r), canonicalMetric("payment_count", orders, r)) }],
   ["12a. trashed orders counted", withOrders((o) => ({ ...o, deleted: false }))],
   ["12b. lines of deleted/trashed products dropped from history", withOrders((o) => ({ ...o, lines: o.lines.filter((l) => l.productId !== null) }))],
   ["D1. placed COD orders counted as realised", withOrders((o) => (o.paymentMethod === "COD" && !o.firstDeliveredAt ? { ...o, firstDeliveredAt: o.placedAt } : o))],
+  // PD-5.1
+  [
+    "PD-1. old net_sales used as the headline (and for AOV / customer spend)",
+    {
+      ...overrideMetric("realised_net_sales", (orders, r) => canonicalMetric("net_sales", orders, r)),
+      aov: (orders, r) => aovOf(canonicalMetric("net_sales", orders, r), canonicalMetric("orders_realised", orders, r)),
+      customerSpend: (orders, r) => {
+        const m = new Map<string, number>();
+        for (const c of contributions("net_sales", orders, r)) m.set(c.order.customerId ?? "guest", (m.get(c.order.customerId ?? "guest") ?? 0) + c.amount);
+        return m;
+      },
+    },
+  ],
+  ["PD-2. refund allocated to goods before the payment overage", overrideMetric("realised_net_sales", (orders, r) => altRealisedNet(orders, r, "refundBeforeOverpayment"))],
+  ["PD-3. pro-rata refund allocation over the order total", overrideMetric("realised_net_sales", (orders, r) => altRealisedNet(orders, r, "proRata"))],
+  [
+    "PD-4. merchandise VAT from the current tax rate instead of the order's snapshot",
+    withOrders((o) =>
+      o.taxMode === "INCLUSIVE" && (o.taxAmount ?? 0) > 0
+        ? { ...o, shippingTaxAmount: 0, taxAmount: inclusiveTaxOf(money(lineNets(o).reduce((a, b) => a + b, 0), "BDT"), CURRENT_TAX_PCT, DEFAULT_ROUNDING_POLICY.tax).amount }
+        : o,
+    ),
+  ],
+  ["PD-5. cancellation retroactively deletes the historical sale", withOrders((o) => (o.cancelledAt ? { ...o, cancelledAt: null, status: "CANCELLED" } : o))],
+  ["PD-6. exchange upgrade difference counted as a new sale", overrideMetric("realised_net_sales", (orders, r) => canonicalMetric("realised_net_sales", orders, r) + canonicalMetric("exchange_difference_collected", orders, r))],
 ];
 
 describe("metrics — mutation tests", () => {

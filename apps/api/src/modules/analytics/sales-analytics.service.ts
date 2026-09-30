@@ -3,7 +3,7 @@
  * Phase 5 replaced ~40 hand-written SQL aggregations (each with its own "sale" predicate, money field and time window;
  * docs/PHASE_5_METRICS_AUDIT.md) with cuts of the ONE engine: every figure below is a registry metric's contributions,
  * grouped for the chart that needs it. Response shapes are unchanged for the dashboards; meanings follow the registry
- * (e.g. "revenue" is now `net_sales`, realised per D1).
+ * (e.g. "revenue" is now `realised_net_sales`, the PD-5.1 headline).
  */
 import {
   bucketKey,
@@ -56,8 +56,8 @@ const productIdOf = (c: { line?: { productId: string | null } }) => c.line?.prod
 /** Daily net sales + orders realised for the last N business days, zero-filled. */
 export async function getRevenueSeries(days = 30) {
   const range = await resolveLegacyWindow(days);
-  const m = await computeMetrics({ metrics: ["net_sales", "orders_realised"], range, groupBy: "day" });
-  return m.groups!.map((g) => ({ date: g.key, revenue: g.metrics.net_sales!, orders: g.metrics.orders_realised! }));
+  const m = await computeMetrics({ metrics: ["realised_net_sales", "orders_realised"], range, groupBy: "day" });
+  return m.groups!.map((g) => ({ date: g.key, revenue: g.metrics.realised_net_sales!, orders: g.metrics.orders_realised! }));
 }
 
 /** Current status breakdown of operational orders (not trashed, not exchange replacements). */
@@ -70,8 +70,8 @@ export async function getDashboardSummary() {
   const range = await resolveStoreRange({ preset: "last_30_days" });
   const prev = previousRange(range);
   const [cur, before, pendingOrders, visitorRows, courierLossCount] = await Promise.all([
-    computeMetrics({ metrics: ["net_sales", "orders_realised", "aov", "courier_loss", "low_stock_variants"], range }),
-    computeMetrics({ metrics: ["net_sales", "orders_realised", "aov"], range: prev }),
+    computeMetrics({ metrics: ["realised_net_sales", "orders_realised", "aov", "courier_loss", "low_stock_variants"], range }),
+    computeMetrics({ metrics: ["realised_net_sales", "orders_realised", "aov"], range: prev }),
     prisma.order.count({ where: { ...OPERATIONAL_ORDER_WHERE, status: "PENDING" } }),
     prisma.$queryRaw<Array<{ current: bigint; previous: bigint }>>`
       SELECT
@@ -83,9 +83,9 @@ export async function getDashboardSummary() {
     prisma.courierLossEvent.count({ where: { createdAt: { gte: range.startUtc, lt: range.endUtc } } }),
   ]);
   return {
-    revenue30d: cur.metrics.net_sales!.value,
+    revenue30d: cur.metrics.realised_net_sales!.value,
     orders30d: cur.metrics.orders_realised!.value,
-    revenuePrev30d: before.metrics.net_sales!.value,
+    revenuePrev30d: before.metrics.realised_net_sales!.value,
     ordersPrev30d: before.metrics.orders_realised!.value,
     pendingOrders,
     lowStockCount: cur.metrics.low_stock_variants!.value,
@@ -456,8 +456,8 @@ export async function getCohortRetention() {
 /** Orders placed + net sales by payment method. */
 export async function getFavoritePaymentMethod(days?: number, dateFrom?: Date, dateTo?: Date) {
   const range = await resolveLegacyWindow(days, dateFrom, dateTo);
-  const m = await computeMetrics({ metrics: ["orders_placed", "net_sales"], range, groupBy: "payment_method" });
-  return m.groups!.map((g) => ({ method: g.key, orders: g.metrics.orders_placed!, revenue: g.metrics.net_sales! })).sort((a, b) => b.orders - a.orders);
+  const m = await computeMetrics({ metrics: ["orders_placed", "realised_net_sales"], range, groupBy: "payment_method" });
+  return m.groups!.map((g) => ({ method: g.key, orders: g.metrics.orders_placed!, revenue: g.metrics.realised_net_sales! })).sort((a, b) => b.orders - a.orders);
 }
 
 /** Hour-of-day and day-of-week of sale orders placed, in the store timezone. */
@@ -482,7 +482,7 @@ export async function getCustomerLocationBreakdown(days?: number, limit = 10) {
     const { orders, major } = await facts(range);
     const cut = (field: "shippingDivision" | "shippingDistrict") => {
       const count = groupContributions("orders_placed", orders, range, (c) => c.order[field]);
-      const revenue = groupContributions("net_sales", orders, range, (c) => c.order[field]);
+      const revenue = groupContributions("realised_net_sales", orders, range, (c) => c.order[field]);
       return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([k, n]) => ({ k, orders: n, revenue: major(revenue.get(k) ?? 0) }));
     };
     return {
@@ -507,7 +507,7 @@ export async function getCampaignPerformance(days = 30, limit = 10) {
     const campaignOf = new Map(touches.map((t) => [t.sessionId, t.utmCampaign]));
     const key = (c: { order: OrderFact }) => (c.order.sessionId ? (campaignOf.get(c.order.sessionId) ?? null) : null);
     const count = groupContributions("orders_placed", orders, range, key);
-    const revenue = groupContributions("net_sales", orders, range, key);
+    const revenue = groupContributions("realised_net_sales", orders, range, key);
     return [...count.entries()].map(([campaign, n]) => ({ campaign, orders: n, revenue: major(revenue.get(campaign) ?? 0) })).sort((a, b) => b.revenue - a.revenue).slice(0, limit);
   });
 }
@@ -521,7 +521,7 @@ export async function getCouponEffectiveness(days?: number, limit = 10) {
     const key = (c: { order: OrderFact }) => c.order.couponId;
     const count = groupContributions("orders_realised", orders, range, key);
     const discount = groupContributions("coupon_discount", orders, range, key);
-    const revenue = groupContributions("net_sales", orders, range, key);
+    const revenue = groupContributions("realised_net_sales", orders, range, key);
     const coupons = count.size ? await prisma.coupon.findMany({ where: { id: { in: [...count.keys()] } }, select: { id: true, code: true, type: true } }) : [];
     return coupons
       .map((c) => ({ code: c.code, type: c.type, orders: count.get(c.id) ?? 0, discountGiven: major(discount.get(c.id) ?? 0), revenue: major(revenue.get(c.id) ?? 0) }))
@@ -537,7 +537,7 @@ export async function getBundlePerformance(days?: number, limit = 10) {
     const key = (c: { order: OrderFact }) => c.order.bundleId;
     const count = groupContributions("orders_realised", orders, range, key);
     const discount = groupContributions("bundle_discount", orders, range, key);
-    const revenue = groupContributions("net_sales", orders, range, key);
+    const revenue = groupContributions("realised_net_sales", orders, range, key);
     const bundles = count.size ? await prisma.bundle.findMany({ where: { id: { in: [...count.keys()] } }, select: { id: true, name: true } }) : [];
     return bundles
       .map((b) => ({ name: b.name, orders: count.get(b.id) ?? 0, discountGiven: major(discount.get(b.id) ?? 0), revenue: major(revenue.get(b.id) ?? 0) }))
@@ -604,13 +604,13 @@ export async function getFinancialCostBreakdown(days?: number) {
  * before tax was snapshotted are counted in `taxUnrecordedOrders`, not estimated. */
 export async function getEstimatedTaxCollected(days?: number) {
   const range = await resolveLegacyWindow(days);
-  const [m, tax] = await Promise.all([computeMetrics({ metrics: ["tax_collected", "net_sales"], range }), prisma.taxSetting.findFirst()]);
+  const [m, tax] = await Promise.all([computeMetrics({ metrics: ["tax_collected", "realised_net_sales"], range }), prisma.taxSetting.findFirst()]);
   const coverage = m.metrics.tax_collected!.coverage ?? { recorded: 0, missing: 0 };
   return {
     taxEnabled: tax?.enabled ?? false,
     defaultTaxRatePct: tax ? Number(tax.defaultRate) : 0,
     estimatedTax: m.metrics.tax_collected!.value,
-    revenue: m.metrics.net_sales!.value,
+    revenue: m.metrics.realised_net_sales!.value,
     taxRecordedOrders: coverage.recorded,
     taxUnrecordedOrders: coverage.missing,
   };
@@ -618,8 +618,8 @@ export async function getEstimatedTaxCollected(days?: number) {
 
 /** Orders and net sales per business year, lifetime. */
 export async function getLifetimeYearlyTrend() {
-  const m = await computeMetrics({ metrics: ["orders_realised", "net_sales"], range: { preset: "lifetime" }, groupBy: "year" });
-  return m.groups!.filter((g) => g.metrics.orders_realised! > 0 || g.metrics.net_sales! !== 0).map((g) => ({ year: Number(g.key), orders: g.metrics.orders_realised!, revenue: g.metrics.net_sales! }));
+  const m = await computeMetrics({ metrics: ["orders_realised", "realised_net_sales"], range: { preset: "lifetime" }, groupBy: "year" });
+  return m.groups!.filter((g) => g.metrics.orders_realised! > 0 || g.metrics.realised_net_sales! !== 0).map((g) => ({ year: Number(g.key), orders: g.metrics.orders_realised!, revenue: g.metrics.realised_net_sales! }));
 }
 
 // ─── Operations ──────────────────────────────────────────────────────────────────────────────────────────────────────

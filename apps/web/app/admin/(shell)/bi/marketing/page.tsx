@@ -69,12 +69,12 @@ export default function MarketingIntelligencePage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Campaign performance (UTM revenue)</CardTitle>
+            <CardTitle>Campaign performance (realised net sales)</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList
               items={toBarItems(campaigns?.campaigns, { key: (c) => c.campaign, label: (c) => c.campaign, value: (c) => c.revenue, valueLabel: (c) => formatPrice(c.revenue) })}
-              emptyLabel="No campaign-attributed revenue yet for this range."
+              emptyLabel="No campaign-attributed sales yet for this range."
             />
           </CardContent>
         </Card>
@@ -96,7 +96,7 @@ export default function MarketingIntelligencePage() {
                     <th className="pb-2 pr-4">Code</th>
                     <th className="pb-2 pr-4">Orders</th>
                     <th className="pb-2 pr-4">Discount given</th>
-                    <th className="pb-2">Net sales</th>
+                    <th className="pb-2">Realised net sales</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -127,7 +127,7 @@ export default function MarketingIntelligencePage() {
                     <th className="pb-2 pr-4">Bundle</th>
                     <th className="pb-2 pr-4">Orders</th>
                     <th className="pb-2 pr-4">Discount given</th>
-                    <th className="pb-2">Net sales</th>
+                    <th className="pb-2">Realised net sales</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -161,7 +161,7 @@ export default function MarketingIntelligencePage() {
                     <th className="pb-2 pr-4">Sale</th>
                     <th className="pb-2 pr-4">Window</th>
                     <th className="pb-2 pr-4">Units sold</th>
-                    <th className="pb-2">Net sales</th>
+                    <th className="pb-2">Net merchandise sales</th>
                   </tr>
                 </thead>
                 <tbody>

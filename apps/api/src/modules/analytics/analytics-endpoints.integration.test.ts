@@ -49,17 +49,34 @@ describe("every analytics and BI endpoint answers on the metrics SSOT", () => {
     const api = await asOwner();
     const overview = await api.get("/api/bi/overview");
     expect(overview.status).toBe(200);
-    for (const key of ["revenueToday", "revenueThisMonth", "collectedCashThisMonth", "refundsThisMonth", "returnsThisMonth", "outstandingCod", "refundDue", "taxThisMonth"]) {
+    for (const key of [
+      "revenueToday",
+      "revenueThisMonth",
+      "collectedCashThisMonth",
+      "refundsThisMonth",
+      "returnsThisMonth",
+      "outstandingCod",
+      "refundDue",
+      "taxThisMonth",
+      "merchandiseVatThisMonth",
+      "merchandiseRefundsThisMonth",
+      "overpaymentRefundsThisMonth",
+      "netSalesInclShippingThisMonth",
+    ]) {
       expect(typeof overview.body[key], key).toBe("number");
     }
     const insights = await api.get("/api/bi/automated-insights");
     expect(insights.status).toBe(200);
   });
 
-  it("the dashboard's net sales equals the metrics API for the same 30-business-day range (one number per metric)", async () => {
+  it("the dashboard's headline (realised net sales) equals the metrics API for the same 30-business-day range", async () => {
     const api = await asOwner();
-    const [dashboard, metrics] = await Promise.all([api.get("/api/analytics/summary"), api.get("/api/v1/metrics?metrics=net_sales,orders_realised&preset=last_30_days")]);
-    expect(dashboard.body.revenue30d).toBeCloseTo(metrics.body.metrics.net_sales.value, 2);
+    const [dashboard, metrics] = await Promise.all([
+      api.get("/api/analytics/summary"),
+      api.get("/api/v1/metrics?metrics=realised_net_sales,orders_realised,aov&preset=last_30_days"),
+    ]);
+    expect(dashboard.body.revenue30d).toBeCloseTo(metrics.body.metrics.realised_net_sales.value, 2);
+    expect(dashboard.body.aov30d).toBeCloseTo(metrics.body.metrics.aov.value, 2);
     expect(dashboard.body.orders30d).toBe(metrics.body.metrics.orders_realised.value);
   });
 });

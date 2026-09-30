@@ -143,7 +143,8 @@ async function computeUncached(req: MetricsRequest, range: BusinessRange, curren
       value = sumOf(contributions(key, orders, range));
       coverage = snapshotCoverage(key, orders, range);
     } else if (key === "aov") {
-      value = aovOf(sumOf(contributions("net_sales", orders, range)), sumOf(contributions("orders_realised", orders, range)));
+      value = aovOf(sumOf(contributions("realised_net_sales", orders, range)), sumOf(contributions("orders_realised", orders, range)));
+      coverage = snapshotCoverage(key, orders, range);
     } else if (key === "courier_loss") {
       value = courierLoss.reduce((s, e) => s + e.amount, 0);
     } else if (CUSTOMER_KEYS.has(key)) {
@@ -204,7 +205,7 @@ async function buildGroups(
     } else if (key === "aov" && isTime) {
       const net = new Map<string, number>();
       const cnt = new Map<string, number>();
-      for (const c of contributions("net_sales", orders, range)) net.set(bucketKey(c.at!, tz, grouping as "day"), (net.get(bucketKey(c.at!, tz, grouping as "day")) ?? 0) + c.amount);
+      for (const c of contributions("realised_net_sales", orders, range)) net.set(bucketKey(c.at!, tz, grouping as "day"), (net.get(bucketKey(c.at!, tz, grouping as "day")) ?? 0) + c.amount);
       for (const c of contributions("orders_realised", orders, range)) cnt.set(bucketKey(c.at!, tz, grouping as "day"), (cnt.get(bucketKey(c.at!, tz, grouping as "day")) ?? 0) + c.amount);
       for (const g of groups.values()) g.minor[key] = aovOf(net.get(g.key) ?? 0, cnt.get(g.key) ?? 0);
     } else if (key === "customers_with_orders" && isTime) {
@@ -242,7 +243,7 @@ export async function loadFactsForRange(range: BusinessRange): Promise<{ orders:
 }
 
 export interface CustomerMetricEntry {
-  /** `customer_net_spend` — lifetime net sales of the customer's realised sale orders (P5-4). */
+  /** `customer_net_spend` — lifetime realised net sales of the customer's orders (P5-4, PD-5.1). */
   netSpend: number;
   /** `customer_orders` — sale orders placed (lifetime). */
   orders: number;
@@ -252,11 +253,11 @@ export interface CustomerMetricEntry {
 /** Lifetime customer metrics for every customer, as a grouping of the canonical facts (never a separate spend
  * calculation). Cached by computeMetrics. */
 export async function customerMetricsIndex(): Promise<Map<string, CustomerMetricEntry>> {
-  const m = await computeMetrics({ metrics: ["net_sales", "orders_placed", "orders_realised"], range: { preset: "lifetime" }, groupBy: "customer" });
+  const m = await computeMetrics({ metrics: ["realised_net_sales", "orders_placed", "orders_realised"], range: { preset: "lifetime" }, groupBy: "customer" });
   const out = new Map<string, CustomerMetricEntry>();
   for (const g of m.groups ?? []) {
     if (g.key === "guest") continue;
-    out.set(g.key, { netSpend: g.metrics.net_sales!, orders: g.metrics.orders_placed!, realisedOrders: g.metrics.orders_realised! });
+    out.set(g.key, { netSpend: g.metrics.realised_net_sales!, orders: g.metrics.orders_placed!, realisedOrders: g.metrics.orders_realised! });
   }
   return out;
 }

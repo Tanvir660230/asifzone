@@ -31,23 +31,30 @@ export default function FinancialAnalyticsPage() {
         <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">This month</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           {!overview ? (
-            Array.from({ length: 8 }).map((_, i) => <StatTileSkeleton key={i} />)
+            Array.from({ length: 11 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Gross merchandise sales" value={formatPrice(overview.grossMerchandiseThisMonth)} icon={<Wallet size={18} />} />
+              <StatTile label="Gross merchandise (as charged)" value={formatPrice(overview.grossMerchandiseThisMonth)} icon={<Wallet size={18} />} />
               <StatTile label="Discounts" value={formatPrice(overview.discountsThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile label="Merchandise VAT" value={formatPrice(overview.merchandiseVatThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile label="Merchandise refunds" value={formatPrice(overview.merchandiseRefundsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile label="Realised net sales" value={formatPrice(overview.revenueThisMonth)} icon={<TrendingUp size={18} />} tone="accent" trendPct={overview.revenueGrowthPct} />
               <StatTile label="Shipping charged" value={formatPrice(overview.shippingThisMonth)} icon={<Truck size={18} />} />
-              <StatTile label="Returns" value={formatPrice(overview.returnsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile label="Net sales" value={formatPrice(overview.revenueThisMonth)} icon={<TrendingUp size={18} />} tone="accent" trendPct={overview.revenueGrowthPct} />
-              <StatTile label="Refunds" value={formatPrice(overview.refundsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile label="Collected cash" value={formatPrice(overview.collectedCashThisMonth)} icon={<Banknote size={18} />} />
               <StatTile label="VAT collected" value={formatPrice(overview.taxThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile label="All refunds" value={formatPrice(overview.refundsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile label="Collected cash" value={formatPrice(overview.collectedCashThisMonth)} icon={<Banknote size={18} />} />
+              <StatTile label="Returns (goods back)" value={formatPrice(overview.returnsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile label="Net sales incl. shipping, less returns" value={formatPrice(overview.netSalesInclShippingThisMonth)} icon={<Wallet size={18} />} />
             </>
           )}
         </div>
         <p className="mt-2 text-xs text-ink-400">
-          Net sales = gross merchandise − discounts + shipping + adjustments − returns. Refunds are shown beside it: how they net against
-          returns in &ldquo;realised revenue&rdquo; is awaiting a business decision.
+          Realised net sales = gross merchandise − discounts − merchandise VAT − merchandise refunds. Shipping and VAT are reported
+          separately. A refund first covers any overpayment, then merchandise (up to what is left of the order), then shipping and
+          other charges.
+          {overview && overview.merchandiseVatUnrecordedOrdersThisMonth > 0
+            ? ` ${overview.merchandiseVatUnrecordedOrdersThisMonth} order(s) this month have no VAT record, so their merchandise is shown as charged.`
+            : ""}
         </p>
       </section>
 
@@ -146,7 +153,7 @@ export default function FinancialAnalyticsPage() {
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
                 <StatTile label="VAT on orders" value={formatPrice(tax.estimatedTax)} icon={<Receipt size={18} />} tone="accent" />
-                <StatTile label="Net sales" value={formatPrice(tax.revenue)} icon={<Wallet size={18} />} />
+                <StatTile label="Realised net sales" value={formatPrice(tax.revenue)} icon={<Wallet size={18} />} />
                 <StatTile label="Orders without a VAT record" value={String(tax.taxUnrecordedOrders ?? 0)} icon={<Receipt size={18} />} />
               </div>
             )}

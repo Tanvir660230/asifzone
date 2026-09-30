@@ -352,7 +352,7 @@ export default function CustomersPage() {
             <StatTile label="Total customers" value={stats.totalCustomers.toLocaleString()} icon={<Users size={18} />} />
             <StatTile label="New this month" value={stats.newThisMonth.toLocaleString()} icon={<UserPlus size={18} />} />
             <StatTile label="Repeat customers" value={stats.repeatCustomers.toLocaleString()} icon={<Flame size={18} />} />
-            <StatTile label="Lifetime net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
+            <StatTile label="Lifetime realised net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
             <StatTile label="VIP customers" value={stats.vipCustomers.toLocaleString()} icon={<Star size={18} />} tone="accent" />
             <StatTile
               label="Inactive customers"

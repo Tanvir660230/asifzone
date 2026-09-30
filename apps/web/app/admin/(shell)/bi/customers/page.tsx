@@ -106,7 +106,7 @@ export default function CustomerIntelligencePage() {
               <StatTile label="High-Risk (Suspicious)" value={stats.suspiciousCount.toLocaleString("en-BD")} icon={<Wallet size={18} />} tone={stats.suspiciousCount > 0 ? "warning" : "default"} />
               <StatTile label="COD Risk" value={stats.codRiskCount.toLocaleString("en-BD")} icon={<Wallet size={18} />} tone={stats.codRiskCount > 0 ? "warning" : "default"} />
               <StatTile label="Blocked" value={stats.blockedCount.toLocaleString("en-BD")} icon={<Wallet size={18} />} />
-              <StatTile label="Lifetime net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Lifetime realised net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
             </>
           )}
         </div>

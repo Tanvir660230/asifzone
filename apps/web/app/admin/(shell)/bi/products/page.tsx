@@ -195,7 +195,7 @@ export default function ProductIntelligencePage() {
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{`Highest revenue (${range === "all" ? "365d" : `${range}D`})`}</CardTitle>
+            <CardTitle>{`Highest net merchandise sales (${range === "all" ? "365d" : `${range}D`})`}</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList
@@ -225,7 +225,7 @@ export default function ProductIntelligencePage() {
               })}
               emptyLabel="No sales recorded yet."
             />
-            <p className="mt-3 text-xs text-ink-400">Profit is revenue minus estimated cost at current cost price — not an exact historical margin.</p>
+            <p className="mt-3 text-xs text-ink-400">Profit is net merchandise sales minus estimated cost at current cost price — not an exact historical margin.</p>
           </CardContent>
         </Card>
       </section>
@@ -319,7 +319,7 @@ export default function ProductIntelligencePage() {
                     <th className="pb-2 pr-4">Product</th>
                     <th className="pb-2 pr-4">Size / Color</th>
                     <th className="pb-2 pr-4">Units sold</th>
-                    <th className="pb-2">Net sales</th>
+                    <th className="pb-2">Net merchandise sales</th>
                   </tr>
                 </thead>
                 <tbody>

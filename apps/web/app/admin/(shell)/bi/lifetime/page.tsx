@@ -48,7 +48,7 @@ export default function LifetimeDataPage() {
       <section>
         <Card>
           <CardHeader>
-            <CardTitle>Net sales by year</CardTitle>
+            <CardTitle>Realised net sales by year</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList

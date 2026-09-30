@@ -7,7 +7,12 @@ The rules here come from approved sources: D1 (revenue recognition), D6 (exchang
 ([BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)), the TARGET_ARCHITECTURE §11 metric table, the order state machine,
 the Phase 2 snapshots ([PRICING_INVARIANTS.md](PRICING_INVARIANTS.md) §8) and the Phase 4 ledger
 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)). Where those leave a rule open, the metric is marked **PENDING** and isn't
-implemented (§6).
+implemented. **PD-5.1 was resolved by the owner on 2026-09-30** (§6); no metric is pending.
+
+**Headline sales metric: `realised_net_sales`** (§4.1). The dashboard, KPI strip, BI headline, AOV, customer net spend,
+VIP tags and RFM all use it. `net_sales` survives only as a secondary metric labelled *"Net sales incl. shipping, less
+returns"*. No surface labels either of them "Revenue" (legacy response field names such as `revenue30d` are kept for
+compatibility and carry `realised_net_sales`).
 
 ```
 database truth    Order + OrderItem snapshots (Phase 2) · OrderStatusHistory (Phase 1) · Payment + Refund (Phase 4)
@@ -17,7 +22,7 @@ database truth    Order + OrderItem snapshots (Phase 2) · OrderStatusHistory (P
   → service       apps/api/src/domain/metrics/metrics.service.ts — resolves the range, loads facts, runs the engine, caches
   → API           GET /api/v1/metrics · /definitions · /consistency
   → consumers     dashboard, orders KPI strip, BI (overview, financial, sales, products, customers, inventory, lifetime),
-                  CRM (spend, tags, RFM),`groupBy` ∈ `day | month | year | payment_method | product | category | brand | customer`sales panel, storefront urgency/trending/FBT
+                  CRM (spend, tags, RFM), product sales panel, storefront urgency/trending/FBT
 ```
 
 ---
@@ -40,8 +45,9 @@ database truth    Order + OrderItem snapshots (Phase 2) · OrderStatusHistory (P
 
 | Predicate | Definition | Source |
 |---|---|---|
-| **Sale order** | `deletedAt IS NULL ∧ status ≠ CANCELLED ∧ not an exchange replacement` (an order referenced by `ReturnRequest.exchangeOrderId`) | TARGET §11 `SALE_ORDER` |
-| **Realised** | a sale order whose realisation instant exists. **COD:** the first `OrderStatusHistory` entry `DELIVERED` or `PARTIALLY_DELIVERED`. **Online / other:** the first `SUCCEEDED` `Payment.settledAt`. | D1 ("COD: DELIVERED; online: paymentStatus reached PAID") |
+| **Cancelled** | `status = CANCELLED` **or** the order has a `CANCELLED` status-history entry (the state machine allows `CANCELLED → REFUNDED`, so the current status alone would miss a cancelled-then-refunded order). **Cancellation instant** = the first `CANCELLED` history entry. | order state machine (T6, T8) |
+| **Sale order** | `deletedAt IS NULL ∧ not cancelled ∧ not an exchange replacement` (an order referenced by `ReturnRequest.exchangeOrderId`). Used by the **placement-basis** (demand) metrics. | TARGET §11 `SALE_ORDER` |
+| **Realised** | not trashed, not an exchange replacement, and a realisation instant exists **before** any cancellation. **COD:** the first `OrderStatusHistory` entry `DELIVERED` or `PARTIALLY_DELIVERED`. **Online / other:** the first `SUCCEEDED` `Payment.settledAt`. A realised order that is cancelled later is **reversed at the cancellation instant** (P5-2, §3). A legacy cancelled order with no `CANCELLED` history entry has no instant to reverse at and is excluded, as before. | D1 (P5-1 approved) |
 | Operational order | `deletedAt IS NULL ∧ not an exchange replacement`, any status | status breakdowns, cancellation counts |
 | Money movement | every `SUCCEEDED` `Payment` and `COMPLETED` `Refund` row, whatever the order's status or trash state (cash is cash; trash never deletes a money movement) | Phase 4 ledger |
 
@@ -52,13 +58,14 @@ Treatment summary:
 | Pending / confirmed / shipped COD | not realised → excluded | — | `orders_placed` |
 | Paid online order | realised at first successful payment | payment counted | placed + realised |
 | Delivered COD | realised at first delivery | COD payment counted (Phase 4 T4) | placed + realised |
-| Cancelled | never a sale | its payments and refunds count in cash metrics | `orders_cancelled` |
+| Cancelled before realisation | never realised → nothing to reverse | its payments and refunds count in cash metrics | `orders_cancelled` |
+| Cancelled after realisation (e.g. paid online, then cancelled) | counted in the realisation period; **every realised contribution is reversed in the cancellation period** (P5-2). Refunds after the cancellation don't reduce sales again. | payments and refunds count in cash metrics | realised +1, reversal −1 |
 | Returned (T7) | realised earlier; returned units subtract as `returns` at their return date | refunds count at completion | status breakdown |
-| Refunded / partially refunded | unaffected by status; refunds are their own metric | refunds subtract from `collected_cash` | — |
-| Exchange replacement order | never a sale (TARGET §11) | its payments → `exchange_difference_collected` + `collected_cash` | excluded |
-| Exchange-returned original units | **not** a return (the original sale stands: D6, return-request service) | downgrade refund → `refunds` | — |
+| Refunded / partially refunded | `realised_net_sales` falls by the refund's merchandise part (goods first, capped, after any overpayment — §3) | refunds subtract from `collected_cash` | — |
+| Exchange replacement order | never a sale (TARGET §11). An **upgrade** difference collected on it is **not** merchandise sales (P5-3, D6) | its payments → `exchange_difference_collected` + `collected_cash` | excluded |
+| Exchange-returned original units | **not** a return (the original sale stands: D6, return-request service) | a **downgrade** difference is a Refund on the original order: a merchandise refund that reduces `realised_net_sales` in full (goods first) | — |
 | Trashed order | excluded from every sales and count metric | its payments/refunds still count (ledger rows stay facts) | excluded |
-| Trashed / deleted`groupBy` ∈ `day | month | year | payment_method | product | category | brand | customer`| history unaffected (line snapshots); attribution to the current product via `variantId` when the variant still exists, else "unattributed" | — | — |
+| Trashed / deleted product | history unaffected (line snapshots); attribution to the current product via `variantId` when the variant still exists, else "unattributed" | — | — |
 
 ## 3. Valuation rules (from snapshots, never live data)
 
@@ -73,6 +80,37 @@ Treatment summary:
   row), the order's own arithmetic is used: `total − (subtotal − discount) − priceAdjustment − taxAdded` (floored at 0).
 - **Tax** = `Order.taxAmount` (merchandise + shipping VAT). NULL = not recorded (pre-Phase-2). It is *counted as
   coverage*, never estimated from the current rate.
+- **As charged vs VAT-exclusive (C2).** Line prices are stored as charged. Under `taxMode = INCLUSIVE` (D3 default) the
+  charged price **contains** VAT; under `EXCLUSIVE` it doesn't (VAT is added on top). So `gross_merchandise_sales`,
+  `discounts`, `returns`, `net_merchandise_sales` and `net_sales` are **as charged** (VAT-inclusive for inclusive
+  orders). The VAT-exclusive merchandise figure is `realised_net_sales`.
+- **Merchandise VAT** of an order, from its own snapshot only (never the current tax setting):
+  - `EXCLUSIVE` → 0 (the charged merchandise price excludes VAT).
+  - `INCLUSIVE` → `taxAmount − shippingTaxAmount` (0 when `taxAmount` is 0).
+  - no `taxMode`, `taxAmount` NULL, or a non-zero `taxAmount` without `shippingTaxAmount` → **unknown**. Nothing is
+    guessed and no rate is applied. The merchandise stays at its charged value and the order is reported in the
+    metric's `coverage.missing` (with `coverage.recorded` for the rest).
+  - Per line it is an **allocation**, not stored data: the order's merchandise VAT is split across lines by line net
+    (largest remainder, the shared `allocateProportionally`). VAT was never recorded per line.
+- **Refund allocation (C3 + C4).** A `Refund` row records only an amount. Each `COMPLETED` refund of an order, in
+  completion order, is split in this fixed hierarchy:
+  1. **Overpayment first.** Available overage = `max(0, Σ SUCCEEDED payments settled at or before the refund − Order.total)`
+     minus the overage earlier refunds already absorbed. That part is an `overpayment_refund` and never touches sales.
+     *Example:* total 1000, payments 1200, refund 200 → the whole 200 is overpayment; sales unchanged.
+  2. **Goods, capped.** The next part goes to merchandise, up to the order's **remaining eligible merchandise**: its
+     realised merchandise as charged (Σ line net) minus the merchandise parts of earlier refunds. Nothing is eligible
+     before the order is realised. This part reduces `realised_net_sales` by its VAT-exclusive equivalent, i.e. part ×
+     (merchandise ex VAT ÷ merchandise as charged), rounded half-up. The part that exhausts the remainder takes the
+     exact remaining ex-VAT value, so a full refund always nets to zero.
+  3. **Non-merchandise.** Anything left belongs to the order's other components (shipping charged, shipping VAT,
+     exclusive VAT, price adjustment). It isn't merchandise and doesn't reduce `realised_net_sales`; it stays in
+     `refunds`.
+  No simple pro-rata split is used. An exchange downgrade refund (pure merchandise) therefore reduces sales in full.
+- **Cancellation reversal (P5-2).** For an order realised and later cancelled, every realised-basis contribution made
+  before the cancellation (the sale, its discounts, shipping, tax, units, merchandise refunds, returns) is emitted again
+  with the opposite sign **at the cancellation instant**. Contributions after it are dropped. History stays traceable
+  (Day 1 +1000, Day 3 −1000), no earlier period changes, and nothing new is stored: the reversal is derived from
+  `OrderStatusHistory`, with no second ledger.
 - **Returned units** come from the ledger's `StockMovement` rows with reason `RETURN` (orderId, variantId, units,
   timestamp). They are valued at the net unit value above. Exchange-returned units, i.e. the original line of an
   `APPROVED` `EXCHANGE` request, are removed chronologically from that (order, variant) pair.
@@ -87,20 +125,23 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 | Key | Definition | Time | Refunds | Returns | Exchange | Grain |
 |---|---|---|---|---|---|---|
 | `orders_placed` | count of sale orders | placed | — | — | excluded | order |
-| `orders_realised` | count of realised sale orders | realised | — | — | excluded | order |
-| `orders_cancelled` | count of operational orders with status `CANCELLED` | placed | — | — | excluded | order |
+| `orders_realised` | count of realised orders (§2); −1 at the cancellation instant for a realised order cancelled later | realised | — | — | excluded | order |
+| `orders_cancelled` | count of cancelled operational orders (§2 cancelled) | placed | — | — | excluded | order |
 | `cancelled_order_value` | Σ `total` of those | placed | — | — | excluded | money |
-| `gross_merchandise_sales` | Σ line gross of realised sale orders (excl. shipping, tax, adjustment) | realised | not subtracted | not subtracted | excluded | money |
+| `gross_merchandise_sales` | Σ line gross (`priceSnapshot × quantity`, after flash sales, before bundle/coupon) of realised orders, **as charged**: excludes shipping and price adjustments; **includes VAT on tax-inclusive orders** (see `merchandise_vat`) | realised | not subtracted | not subtracted | excluded | money |
 | `discounts` | Σ `Order.discount` (bundle + coupon) of realised sale orders | realised | — | — | excluded | money |
 | `bundle_discount` / `coupon_discount` | split of `discounts` (`bundleDiscount`; `couponDiscount` ?? `discount − bundleDiscount`) | realised | — | — | excluded | money |
 | `flash_discount` | Σ `Order.flashDiscount` where recorded (coverage reported) | realised | — | — | excluded | money |
 | `shipping_charged` | §3 | realised | — | — | excluded | money |
 | `price_adjustments` | Σ `priceAdjustment` | realised | — | — | excluded | money |
 | `tax_collected` | Σ `taxAmount` where recorded (coverage reported) | realised | — | — | excluded | money |
-| `returns` | Σ returned units × net unit value (sale orders; exchange units excluded) | returned | — | this is the return | excluded | money |
-| `net_merchandise_sales` | `gross_merchandise_sales − discounts − returns` | mixed (each term its own) | not subtracted | subtracted | excluded | money |
-| `net_sales` | `gross_merchandise_sales − discounts + shipping_charged + price_adjustments − returns`, i.e. D1 realised revenue **before the refund term** | mixed | **not** subtracted (shown beside) | subtracted | excluded | money |
-| `realised_revenue` | D1: `net_sales − refunds not already counted as returns` | — | **PENDING PD-5.1** | — | — | — |
+| `returns` | Σ returned units × net unit value as charged (realised orders; exchange units excluded) | returned | — | this is the return | excluded | money |
+| `net_merchandise_sales` | `gross_merchandise_sales − discounts − returns`, as charged (goods-returned basis; product/category rankings) | mixed (each term its own) | not subtracted | subtracted | excluded | money |
+| **`realised_net_sales`** | **Headline.** Realised merchandise sales excluding VAT, less the merchandise part of completed refunds: `gross_merchandise_sales − discounts − merchandise_vat − merchandise_refunds`. Shipping, tax and adjustments are separate metrics. Orders with unknown merchandise VAT are reported as `coverage.missing` | realised / refunded | merchandise part subtracted (§3 hierarchy) | not subtracted (the refund is the reduction) | original sale stands; downgrade refund subtracted; upgrade difference not added | money (order-level groupings) |
+| `merchandise_vat` | Σ merchandise VAT of realised orders (§3; coverage reported) | realised | — | — | excluded | money |
+| `merchandise_refunds` | Σ VAT-exclusive merchandise parts of completed refunds on realised orders (§3 step 2) | refunded | this is the reduction | — | downgrade refunds included | money |
+| `overpayment_refunds` | Σ overpayment parts of completed refunds (§3 step 1), any order | refunded | never a sales reduction | — | — | money |
+| `net_sales` | **Secondary — "Net sales incl. shipping, less returns".** `gross_merchandise_sales − discounts + shipping_charged + price_adjustments − returns`, as charged (the D1 goods-basis view) | mixed | **not** subtracted | subtracted | excluded | money |
 | `refunds` | Σ `Refund.amount` COMPLETED (all orders; ledger) | refunded | this is the refund | — | downgrade refunds included | money |
 | `refund_count` | count of those | refunded | — | — | — | count |
 | `payments_received` | Σ `Payment.amount` SUCCEEDED (all providers incl. COD/MANUAL) | settled | — | — | included | money |
@@ -110,11 +151,11 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 | `outstanding_cod` | Σ `codToCollect` over non-deleted orders (`derivePaymentPosition`) | now | — | — | included | money |
 | `amount_due` | Σ `amountDue` over non-deleted, non-cancelled, non-closed orders | now | — | — | included | money |
 | `refund_due` | Σ `refundDue` over non-deleted orders | now | — | — | included | money |
-| `aov` | `net_sales ÷ orders_realised` (interim basis until PD-5.1 approves realised revenue; TARGET's denominator) | realised | — | — | excluded | money |
+| `aov` | `realised_net_sales ÷ orders_realised` (P5-5). Both use the same realisation eligibility and the same cancellation reversals; a refunded order stays in the denominator (it was realised), and its refund lowers the numerator | realised | via numerator | — | excluded | money |
 | `cod_orders_placed` | sale orders with `paymentMethod = COD` | placed | — | — | excluded | count |
 | `courier_loss` | Σ `CourierLossEvent.amount` | event `createdAt` | — | — | — | money |
 | `cogs_estimated` | Σ (units sold − units returned) × **current** cost (`variant.costPrice ?? product.costPrice ?? 0`) | realised / returned | — | net | excluded | money, flagged *estimated* |
-| `gross_margin_estimated` | `net_merchandise_sales − cogs_estimated` | mixed | — | — | excluded | money, flagged *estimated* |
+| `gross_margin_estimated` | `net_merchandise_sales − cogs_estimated` (as charged; current cost — P5-6) | mixed | — | — | excluded | money, flagged *estimated* |
 
 ### 4.2 Product
 | Key | Definition | Time |
@@ -123,18 +164,18 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 | `units_sold` | Σ quantity on realised sale-order lines | realised |
 | `units_returned` | returned units (same rule as `returns`) | returned |
 | `net_units_sold` | `units_sold − units_returned` (TARGET "units sold") | mixed |
-|`groupBy` ∈ `day | month | year | payment_method | product | category | brand | customer`/ category / variant / size / colour groupings | the metrics above plus `gross_merchandise_sales`, `net_merchandise_sales`, grouped by the line's current product (via `variantId`), its **current** category (no category snapshot exists — audit §1.4), or the line's own SKU/size/colour snapshot | as metric |
+| product / category / variant / size / colour groupings | the metrics above plus `gross_merchandise_sales`, `net_merchandise_sales`, grouped by the line's current product (via `variantId`), its **current** category/brand (no snapshot exists — audit §1.4, P5-7: **historical category/brand reports change if the catalog is reclassified**), or the line's own SKU/size/colour snapshot | as metric |
 
 ### 4.3 Customer (a grouping of the canonical facts, never a separate calculation)
 | Key | Definition |
 |---|---|
 | `customer_orders` | `orders_placed` grouped by customer (lifetime) |
-| `customer_net_spend` | `net_sales` grouped by customer (lifetime) |
+| `customer_net_spend` | `realised_net_sales` grouped by customer (lifetime) — CRM spend, VIP / HIGH_SPENDER tags, RFM, SMS `totalSpent` (P5-4) |
 | `customer_refunded` | `refunds` grouped by customer |
 | `customer_net_paid` | `collected_cash` grouped by customer |
 | `customers_with_orders` | customers with ≥ 1 sale order |
 | `repeat_customer_rate` | customers with ≥ 2 sale orders ÷ `customers_with_orders` |
-| `customer_lifetime_value` | average `customer_net_spend` over customers with ≥ 1 realised order |
+| `customer_lifetime_value` | average `realised_net_sales` per customer over customers with ≥ 1 realised order |
 
 ### 4.4 Inventory (read-only over InventoryService truth, point in time)
 | Key | Definition |
@@ -148,24 +189,30 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 
 | Method & path | Auth | Query | Response |
 |---|---|---|---|
-| `GET /api/v1/metrics` | admin | `metrics` (comma list of registry keys), `preset` or `from`+`to`, optional `groupBy` ∈ `day | month | year | payment_method | product | category | brand | customer`\| month \| year \| payment_method \| product \| category \| customer`, optional `limit` (1–100, groupings), optional `compare=previous` (the preceding range of equal length + % change, server-computed) | `{ range, timezone, currency, metrics: { [key]: { value, unit, estimated?, coverage? } }, groups?: [{ key, label, metrics }] }` |
+| `GET /api/v1/metrics` | admin | `metrics` (comma list of registry keys), `preset` or `from`+`to`, optional `groupBy` ∈ `day \| month \| year \| payment_method \| product \| category \| brand \| customer`, optional `limit` (1–100, groupings), optional `compare=previous` (the preceding range of equal length + % change, server-computed) | `{ range, timezone, currency, metrics: { [key]: { value, unit, estimated?, coverage? } }, groups?: [{ key, label, metrics }] }` |
 | `GET /api/v1/metrics/definitions` | admin | — | the registry (key, label, description, unit, time basis, status) |
 | `GET /api/v1/metrics/consistency` | admin | `preset` / `from`+`to` | cross-surface checks (M-3): each `{ check, expected, actual, ok }` |
 
 Unknown keys, `PENDING` keys, unsupported groupings and malformed dates → 400 with `details.code` (`UNKNOWN_METRIC`,
 `METRIC_PENDING`, `UNSUPPORTED_GROUPING`, `INVALID_RANGE`). No free-form filters or SQL fragments are accepted.
 
-The existing `/api/analytics/*`, `/api/bi/*`, `/api/orders/stats`, customer and`groupBy` ∈ `day | month | year | payment_method | product | category | brand | customer`endpoints keep their response
+The existing `/api/analytics/*`, `/api/bi/*`, `/api/orders/stats`, customer and product endpoints keep their response
 shapes where the meaning didn't change. They are re-implemented on the metrics service, so dashboards and the API
 return one number per metric.
 
-## 6. Pending decision
+## 6. Resolved decisions (PD-5.1, owner, 2026-09-30)
 
-- **PD-5.1:** "Refunds not already counted as returns" (the last term of D1 realised revenue). Refunds aren't linked to
-  returns. The term needs a rule for when a refund duplicates a return that was already subtracted, how a refund of a
-  duplicate payment (overpayment, never revenue) is treated, and which period absorbs the netting. Until approved:
-  `realised_revenue` isn't served (400 `METRIC_PENDING`); `net_sales` and `refunds` are shown side by side; `aov` uses
-  `net_sales`. The proposal is recorded in BUSINESS_DECISIONS (PD-5.1).
+PD-5.1 is resolved. The full record is in [BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md) (PD-5.1 and the P5 table):
+- **C1:** `realised_net_sales` is the headline. `net_sales` is secondary and relabelled. The pending
+  `realised_revenue` key is withdrawn.
+- **C2:** merchandise VAT comes from the order's own snapshot, allocated to lines, with coverage for unknowns.
+- **C3:** refunds go goods first, capped. **C4:** overpayment is absorbed first (§3).
+- **P5-2:** a cancellation after realisation is a reversal in the cancellation period.
+- **P5-3:** exchange semantics are unchanged.
+- **P5-5:** AOV = `realised_net_sales ÷ orders_realised`.
+- **P5-1, P5-4, P5-6, P5-7, P5-8, P5-9:** approved as recorded.
+
+The API code `METRIC_PENDING` remains for any future pending metric.
 
 ## 7. Aggregation, caching, reconciliation
 
@@ -176,8 +223,9 @@ return one number per metric.
   old; money commands don't invalidate it, since a dashboard number may lag a refund by up to a minute.
 - **Reconciliation (M-3), `GET /api/v1/metrics/consistency`:**
   - Σ daily series = range total.
-  - Σ `customer_net_spend` = store `net_sales` over the lifetime.
-  - Σ`groupBy` ∈ `day | month | year | payment_method | product | category | brand | customer``net_merchandise_sales` (incl. unattributed) = store `net_merchandise_sales`.
+  - Σ daily `realised_net_sales` = total; Σ `customer_net_spend` = store `realised_net_sales`.
+  - Bridge: `realised_net_sales` = `gross_merchandise_sales − discounts − merchandise_vat − merchandise_refunds`.
+  - Σ product `net_merchandise_sales` (incl. unattributed) = store `net_merchandise_sales`.
   - `collected_cash` = Σ ledger payments − Σ ledger refunds, recomputed directly from the tables.
 
 ## 8. Invariants (tested)
@@ -185,25 +233,31 @@ return one number per metric.
 | ID | Invariant |
 |---|---|
 | M-1 | Business numbers come from the registry engine only: no `SUM(total)` / `status != 'CANCELLED'` revenue SQL outside the fact loader (guard test) |
-| M-2 | Financial metrics read snapshots and the ledger only. Changing a`groupBy` ∈ `day | month | year | payment_method | product | category | brand | customer`price, tax setting, shipping zone, coupon or flash sale after the fact changes no historical metric |
+| M-2 | Financial metrics read snapshots and the ledger only. Changing a product price, tax setting, shipping zone, coupon or flash sale after the fact changes no historical metric |
 | M-3 | Cross-surface equality (§7) |
 | M-4 | Business-day boundaries follow `StoreSetting.timezone`. Raw `NOW()` and bare instant comparisons are forbidden (guard test) |
-| M-5 | Cancelled, trashed and exchange-replacement orders are never sales |
+| M-5 | Trashed and exchange-replacement orders are never sales. An order cancelled before realisation is never a sale; one cancelled after realisation is reversed in the cancellation period (P5-2), never deleted from earlier periods |
 | M-6 | Returned units never count as net sold. Exchange-returned units aren't returns. An exchange never double-counts merchandise |
 | M-7 | Metrics code never writes: no stock, ledger or order writes (the existing single-writer guards cover it) |
+| M-8 | Refund hierarchy: overpayment first, then merchandise up to the remaining eligible merchandise, then non-merchandise; never pro-rata. `realised_net_sales` falls only by the merchandise part |
+| M-9 | Merchandise VAT comes only from the order's tax snapshot; unknown VAT is reported as coverage, never estimated |
+| M-10 | Headline sales, AOV and customer spend are all `realised_net_sales`, over the same realisation population |
 
-## 9. Verification (Phase 5 sign-off run, 2026-09-30)
+## 9. Verification (final Phase 5 run incl. PD-5.1, 2026-09-30)
 
 | Gate | Result |
 |---|---|
-| Engine unit tests (`lib/metrics-engine.test.ts`: business time incl. Dhaka boundaries and a DST zone, eligibility, valuation, aggregation, M-3) | 22 passed |
-| Mutation tests (`lib/metrics.mutation.test.ts`) | 16 passed: canonical engine clean, 15/15 mutants killed (cancelled / exchange / trashed included, refunds ignored, current tax, current price, UTC or `NOW()` day boundaries, returned units sold, exchange double count ×2, independent customer spend, wrong AOV denominator, deleted-product lines dropped, placed COD realised) |
-| Source mutations (by hand against the integration suites, then reverted) | 8/8 killed: SALE_ORDER query form, replacement flag, exchange approvals, `utcInstant`, store timezone, dashboard figure, COD realisation, returns valuation |
-| SSOT guard (`domain/metrics/metrics-ssot.guard.test.ts`) | 2 passed |
-| Integration + API contract (`domain/metrics/metrics.integration.test.ts`: real orders through order/ledger/exchange paths, M-2, M-4, `utcInstant` probe, reconciliation, groupings, `/api/v1/metrics` success and error contract) | 15 passed |
-| Every analytics / BI endpoint (`modules/analytics/analytics-endpoints.integration.test.ts`: 76 endpoints × default / 7 days / custom range, BI overview, dashboard = metrics API) | 78 passed |
-| Full API suite | 46 files, 633 tests passed |
-| Playwright desktop + mobile (API connected to Redis) | 194 passed, 2 skipped (viewport-scoped by the specs), 0 failed |
-| TypeScript (api, web) · ESLint (api, web: 0 errors; 2 pre-existing `<img>` warnings) · API build | clean |
-| Next.js build | compiled, type-checked, 12/12 pages generated; the standalone copy step fails with the known Windows symlink `EPERM` |
-| Test DB (`clothing_brand_test`) | reset + all 79 migrations from zero, seeded; `migrate status` up to date; `migrate diff` (datasource → datamodel, read-only) no drift |
+| PD-5.1 focused tests (`lib/realised-net-sales.test.ts`: realised online / COD, unrealised COD, cancellation reversal incl. CANCELLED → REFUNDED, partial / full / overpayment refunds, goods-first capped, exchange downgrade / upgrade, inclusive VAT, missing snapshot coverage, AOV and its population, customer spend, bridge) | 18 passed |
+| Engine unit tests (`lib/metrics-engine.test.ts`) | 22 passed |
+| Mutation tests (`lib/metrics.mutation.test.ts`) | 23 passed: canonical engine clean; 22/22 mutants killed — the 15 Phase 5 mutants plus 11b (AOV denominator = payments) and PD-1 old `net_sales` headline, PD-2 refund before overpayment, PD-3 pro-rata refund, PD-4 current tax instead of the snapshot, PD-5 cancellation retroactively deleting the sale, PD-6 exchange upgrade counted as a sale |
+| Source mutations (by hand, then reverted) | 11/11 killed: the 8 of the earlier run plus loader drops `cancelledAt`, loader drops `shippingTaxAmount`, SALE_ORDER query form ignores the CANCELLED history |
+| SSOT guard | 2 passed |
+| Integration + API contract (`domain/metrics/metrics.integration.test.ts`: incl. PD-5.1 over real order / ledger / exchange paths — paid → cancelled → refunded → REFUNDED, goods-first partial refund, completed exchange downgrade refund, inclusive VAT from the snapshot with the tax setting restored, AOV and customer spend through the service) | 20 passed |
+| Every analytics / BI endpoint (76 endpoints × 3 windows, BI fields incl. the PD-5.1 bridge, dashboard headline and AOV = metrics API) | 78 passed |
+| Full API suite, Redis connected / without Redis | 47 files, 663 passed / 663 passed |
+| D8 loyalty tests with Redis connected (test-only cache isolation) | 22/22 whole file and 2/2 in isolation (`-t D8`), with and without Redis |
+| Playwright desktop + mobile (API on the test DB, Redis connected) | 194 passed, 2 skipped (viewport-scoped by the specs), 0 failed — 98 desktop / 98 mobile. (A first run failed only the STAFF-permission test ×2: the reset test DB lacked the CI-provisioned staff account; after `scripts/create-e2e-staff.ts` on the test DB, the full rerun is clean.) |
+| TypeScript (api, web) · ESLint (api clean; web 0 errors, 2 pre-existing `<img>` warnings) · API build | clean |
+| Next.js build | compiled, type-checked, 12/12 pages generated; the standalone copy step fails with the known Windows symlink `EPERM` (14) |
+| Test DB (`clothing_brand_test`) | `migrate status`: 79 migrations, up to date; `migrate diff` (datasource → datamodel, read-only, no shadow DB): no drift |
+| Reconciliation (`metricsConsistency`, M-3) | all checks ok for lifetime / last 30 days / today on the test DB, and in the integration suite over its own realised, refunded and exchanged orders |

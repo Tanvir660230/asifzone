@@ -367,7 +367,8 @@ defineMetric({
 ```
 
 ✅ **Phase 5** implements this as the metrics registry ([METRICS_REGISTRY.md](METRICS_REGISTRY.md), §16e). The table below stays the
-approved source of the definitions; realised revenue's refund term is pending PD-5.1.
+approved source of the definitions. PD-5.1 (2026-09-30) resolved realised revenue as **`realised_net_sales`**: merchandise only,
+VAT-exclusive, less merchandise refunds. It is the headline; `net_sales` is secondary. See METRICS_REGISTRY §3 and §4.1.
 
 **Canonical definitions** (D1 approved; implementation in Phase 5):
 
@@ -646,8 +647,12 @@ APIs: Phase 7. Outbox events: Phase 8. Refund permissions: Phase 10.
 **Additive schema.** `StoreSetting.timezone` (default `Asia/Dhaka`). No metric projection tables: the store's volume
 doesn't need materialisation, and the read-time loader selects only orders with an event in the range.
 
-**Pending decision:** PD-5.1, the refund term of realised revenue. `net_sales` and `refunds` are shown side by side
-until it's decided.
+**PD-5.1 resolved (2026-09-30):**
+- `realised_net_sales` is the headline. It is realised merchandise excluding VAT (from the tax snapshot), less the
+  merchandise part of completed refunds. The refund hierarchy is overpayment first, then goods first (capped), then
+  non-merchandise.
+- A cancellation after realisation is a reversal in the cancellation period (P5-2).
+- AOV = `realised_net_sales ÷ orders_realised`.
 
 **Deferred:** see METRICS_REGISTRY and the Phase 5 report:
 - `OrderItem.unitCostSnapshot` (exact COGS);

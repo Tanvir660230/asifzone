@@ -19,11 +19,15 @@ const sum = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) * 100) / 
 
 export async function metricsConsistency(range: RangeInput | BusinessRange): Promise<{ range: unknown; checks: ConsistencyCheck[]; ok: boolean }> {
   const { currency } = await storeContext();
-  const totals = await computeMetrics({ metrics: ["net_sales", "net_merchandise_sales", "collected_cash", "orders_placed"], range, fresh: true });
+  const totals = await computeMetrics({
+    metrics: ["realised_net_sales", "gross_merchandise_sales", "discounts", "merchandise_vat", "merchandise_refunds", "net_sales", "net_merchandise_sales", "collected_cash", "orders_placed"],
+    range,
+    fresh: true,
+  });
   const [byDay, byCustomer, byProduct] = await Promise.all([
     // Day buckets are capped (400); a longer range reconciles by month — the same contributions either way.
-    computeMetrics({ metrics: ["net_sales", "orders_placed"], range, fresh: true, groupBy: Date.parse(totals.range.to) - Date.parse(totals.range.from) > 365 * 86_400_000 ? "month" : "day" }),
-    computeMetrics({ metrics: ["net_sales"], range, groupBy: "customer", fresh: true }),
+    computeMetrics({ metrics: ["realised_net_sales", "net_sales", "orders_placed"], range, fresh: true, groupBy: Date.parse(totals.range.to) - Date.parse(totals.range.from) > 365 * 86_400_000 ? "month" : "day" }),
+    computeMetrics({ metrics: ["realised_net_sales"], range, groupBy: "customer", fresh: true }),
     computeMetrics({ metrics: ["net_merchandise_sales"], range, groupBy: "product", fresh: true }),
   ]);
 
@@ -35,9 +39,15 @@ export async function metricsConsistency(range: RangeInput | BusinessRange): Pro
   const ledgerCash = toMajor(money(fromMajor(String(paid._sum.amount ?? 0), currency).amount - fromMajor(String(refunded._sum.amount ?? 0), currency).amount, currency));
 
   const checks: ConsistencyCheck[] = [
+    { check: "Σ series realised_net_sales = total", expected: totals.metrics.realised_net_sales!.value, actual: sum(byDay.groups!.map((g) => g.metrics.realised_net_sales!)) },
     { check: "Σ series net_sales = total", expected: totals.metrics.net_sales!.value, actual: sum(byDay.groups!.map((g) => g.metrics.net_sales!)) },
     { check: "Σ series orders_placed = total", expected: totals.metrics.orders_placed!.value, actual: sum(byDay.groups!.map((g) => g.metrics.orders_placed!)) },
-    { check: "Σ customer net spend = net_sales", expected: totals.metrics.net_sales!.value, actual: sum(byCustomer.groups!.map((g) => g.metrics.net_sales!)) },
+    { check: "Σ customer net spend = realised_net_sales", expected: totals.metrics.realised_net_sales!.value, actual: sum(byCustomer.groups!.map((g) => g.metrics.realised_net_sales!)) },
+    {
+      check: "realised_net_sales = gross − discounts − merchandise VAT − merchandise refunds",
+      expected: sum([totals.metrics.gross_merchandise_sales!.value, -totals.metrics.discounts!.value, -totals.metrics.merchandise_vat!.value, -totals.metrics.merchandise_refunds!.value]),
+      actual: totals.metrics.realised_net_sales!.value,
+    },
     { check: "Σ product net merchandise = net_merchandise_sales", expected: totals.metrics.net_merchandise_sales!.value, actual: sum(byProduct.groups!.map((g) => g.metrics.net_merchandise_sales!)) },
     { check: "collected_cash = ledger payments − ledger refunds", expected: ledgerCash, actual: totals.metrics.collected_cash!.value },
   ].map((c) => ({ ...c, ok: close(c.expected, c.actual) }));

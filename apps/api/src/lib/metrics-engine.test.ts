@@ -175,8 +175,9 @@ describe("aggregation (§4)", () => {
     expect(sum("returns", orders, early)).toBe(0);
     expect(sum("net_sales", orders, early)).toBe(T(4120));
   });
-  it("AOV = net sales ÷ orders realised", () => {
-    expect(aovOf(sum("net_sales", orders), sum("orders_realised", orders))).toBe(T(1040));
+  it("AOV = realised net sales ÷ orders realised", () => {
+    expect(sum("realised_net_sales", orders)).toBe(T(1500 + 1740));
+    expect(aovOf(sum("realised_net_sales", orders), sum("orders_realised", orders))).toBe(T(1080));
     expect(aovOf(100, 0)).toBe(0);
   });
   it("M-3: day series, customer and product groupings all sum to the total", () => {
@@ -194,7 +195,8 @@ describe("aggregation (§4)", () => {
     const s = customerStats(orders, SEPT);
     expect(s.customersWithOrders).toBe(3); // cust1 (pending), c1, c2
     expect(s.repeatCustomers).toBe(1); // c1: two sale orders
-    expect(s.customerLifetimeValue).toBe(Math.round((T(1060) + T(60) + T(2000)) / 2)); // c1 net 1060 + 60, c2 2000
+    // realised_net_sales per customer (PD-5.1): c1 = 1000 + 1000 − 500 goods refund; c2 = 2000 − 260 inclusive VAT.
+    expect(s.customerLifetimeValue).toBe(Math.round((T(1500) + T(1740)) / 2));
   });
   it("point-in-time ledger totals (Phase 4 engine)", () => {
     const t = positionTotals([order({ id: "due" }), paidOnline(sep15, { status: "CANCELLED" })], "BDT");

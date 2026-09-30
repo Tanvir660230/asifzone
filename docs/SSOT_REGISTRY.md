@@ -219,17 +219,17 @@ rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
 
 | Metric (registry key) | Authority | Consumers | Status |
 |---|---|---|---|
-| Gross merchandise sales (`gross_merchandise_sales`) | `OrderItem.priceSnapshot × quantity` of realised sale orders (D1) | BI financial, reports | ✅ Phase 5 |
+| Gross merchandise sales (`gross_merchandise_sales`) | `OrderItem.priceSnapshot × quantity` of realised orders (D1), as charged (VAT-inclusive on inclusive orders) | BI financial, reports | ✅ Phase 5 |
 | Discounts / bundle / coupon / flash (`discounts`, `bundle_discount`, `coupon_discount`, `flash_discount`) | `Order` discount snapshots (Phase 2 split; flash with coverage) | BI financial/marketing, discount usage (double count removed) | ✅ Phase 5 |
 | Shipping, adjustments, tax (`shipping_charged`, `price_adjustments`, `tax_collected`) | `Order` snapshots (tax: `taxAmount`, NULL counted as coverage, never estimated) | BI financial | ✅ Phase 5 (current-rate estimate removed) |
 | Returns (`returns`, `units_returned`) | stock-ledger `RETURN` rows × line net unit value; exchange-returned units excluded (P5-3) | BI, product risk | ✅ Phase 5 |
-| Net merchandise sales / net sales (`net_merchandise_sales`, `net_sales`) | composed from the above (D1, before the refund term) | dashboard, KPI strip, BI, exports, product/category rankings | ✅ Phase 5 |
-| Realised revenue (`realised_revenue`) | D1 incl. "refunds not already counted as returns" | — | ⏸ **PD-5.1 pending** (API returns `METRIC_PENDING`) |
+| **Realised net sales (`realised_net_sales`) — headline** | realised merchandise ex VAT (tax snapshot; `merchandise_vat`) − merchandise part of completed refunds (overpayment first, then goods first, capped: `merchandise_refunds`); a realised order cancelled later is reversed at the cancellation instant (PD-5.1, P5-2) | dashboard, KPI strip, BI headline, AOV, CRM spend/VIP/RFM, exports | ✅ Phase 5 (PD-5.1 resolved) |
+| Net merchandise sales / net sales (`net_merchandise_sales`, `net_sales` = "Net sales incl. shipping, less returns") | as charged, goods-returned basis (secondary) | product/category rankings, BI financial breakdown | ✅ Phase 5 |
 | Refunds, payments, collected cash (`refunds`, `payments_received`, `collected_cash`) | Phase 4 ledger | BI financial, payments overview | ✅ Phase 5 |
 | Outstanding COD / amount due / refunds owed (`outstanding_cod`, `amount_due`, `refund_due`) | `derivePaymentPosition` per order (Phase 4), point in time | BI financial, insights | ✅ Phase 5 |
 | Orders placed / realised / cancelled, AOV (`orders_placed`, `orders_realised`, `orders_cancelled`, `aov`) | SALE_ORDER / realisation / operational predicates; AOV = net sales ÷ realised (P5-5) | dashboard, KPI strip, BI, customer drawer | ✅ Phase 5 |
 | Units ordered / sold / net (`units_ordered`, `units_sold`, `net_units_sold`) | sale-order lines (placement) / realised lines, net of returns | storefront urgency/trending/FBT, product sales panel, heatmaps, forecasts | ✅ Phase 5 (P5-9) |
-| Customer spend, orders, repeat rate, CLV (`customer_*`) | groupings of `net_sales` / `orders_placed` | CRM list/drawer, VIP tags, SMS vars, RFM, BI customers | ✅ Phase 5 (P5-4) |
+| Customer spend, orders, repeat rate, CLV (`customer_*`) | groupings of `realised_net_sales` / `orders_placed` | CRM list/drawer, VIP tags, SMS vars, RFM, BI customers | ✅ Phase 5 (P5-4) |
 | COGS / gross margin (`cogs_estimated`, `gross_margin_estimated`) | net units × **current** cost, flagged *estimated* | BI financial/products | ⚠️ estimated (cost snapshot deferred — P5-6) |
 | Stock on hand / low / out of stock / value (`stock_on_hand`, `low_stock_variants`, `out_of_stock_variants`, `inventory_value`) | `ProductVariant.stock` (read-only) + `variantStockState` (D5, per variant) | dashboard, BI inventory, insights | ✅ Phase 5 (`≤ 5` rule removed) |
 | Courier loss (`courier_loss`) | `CourierLossEvent` | dashboard, BI | ✅ |
@@ -289,7 +289,8 @@ rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
 | I26 | a paid order's total never changes (price adjustment refused once `paid > 0`) | Orders / Payments |
 | I27 | business numbers come only from the metrics engine; financial metrics read snapshots and the ledger, never current configuration (M-1, M-2) | Metrics (guard + integration test) |
 | I28 | every business-day boundary and SQL time comparison follows `StoreSetting.timezone` via `resolveBusinessRange` / `utcInstant` (M-4) | Metrics (guard + integration test) |
+| I29 | realised net sales: refunds reduce it only by their merchandise part (overpayment first, goods first, capped), merchandise VAT comes from the order's snapshot, and a cancellation after realisation is a reversal in the cancellation period, never a rewrite of earlier periods (M-5, M-8–M-10) | Metrics (engine + mutation + integration tests) |
 
 Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
-`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27 and I28 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 4 implements and tests
+`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27, I28 and I29 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 4 implements and tests
 I9 (as PAYMENT_LEDGER PL-1, with a drift report) and I23–I26 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §13).

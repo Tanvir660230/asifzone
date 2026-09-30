@@ -346,7 +346,7 @@ export default function DashboardPage() {
         <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Last 30 days</p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatTile
-            label="Net sales (30d)"
+            label="Realised net sales (30d)"
             value={summary ? formatPrice(summary.revenue30d) : "—"}
             icon={<DollarSign size={22} />}
             trendPct={summary ? computeTrendPct(summary.revenue30d, summary.revenuePrev30d) : undefined}

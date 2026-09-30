@@ -9,11 +9,17 @@ import { money } from "../engines/money";
 import { bucketKey, inRange, type BusinessRange } from "./business-time";
 import {
   couponDiscountOf,
+  isCancelled,
   isOperationalOrder,
   isSaleOrder,
   lineDiscounts,
   lineGross,
+  lineMerchandiseVat,
+  lineNets,
+  merchandiseVat,
+  realisationOf,
   realisedAt,
+  refundAllocations,
   returnEvents,
   shippingCharged,
   type InventoryVariantFact,
@@ -36,31 +42,66 @@ const one = (at: Date | null, amount: number, order: OrderFact, line?: LineFact)
 
 // ─── Base producers ──────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** Realised-basis contributions of an order (P5-2). `build` gets the realisation instant. For an order cancelled after
+ * it was realised, every contribution before the cancellation is repeated with the opposite sign AT the cancellation
+ * instant, and anything after it is dropped: earlier periods never change and the net effect is zero. */
+function realised(o: OrderFact, build: (at: Date) => Contribution[]): Contribution[] {
+  const r = realisationOf(o);
+  if (!r) return [];
+  const cs = build(r.at);
+  if (!r.reversedAt) return cs;
+  const cut = r.reversedAt.getTime();
+  const out: Contribution[] = [];
+  for (const c of cs) {
+    if (!c.at || c.at.getTime() >= cut) continue;
+    out.push(c, { ...c, at: r.reversedAt, amount: -c.amount });
+  }
+  return out;
+}
+
 const P = {
   placed: (o: OrderFact) => (isSaleOrder(o) ? [one(o.placedAt, 1, o)] : []),
-  realised: (o: OrderFact) => {
-    const r = realisedAt(o);
-    return r ? [one(r, 1, o)] : [];
-  },
-  cancelled: (o: OrderFact) => (isOperationalOrder(o) && o.status === "CANCELLED" ? [one(o.placedAt, 1, o)] : []),
-  cancelledValue: (o: OrderFact) => (isOperationalOrder(o) && o.status === "CANCELLED" ? [one(o.placedAt, o.total, o)] : []),
-  gross: (o: OrderFact) => {
-    const r = realisedAt(o);
-    return r ? o.lines.map((l) => one(r, lineGross(l), o, l)) : [];
-  },
-  discountLines: (o: OrderFact) => {
-    const r = realisedAt(o);
-    if (!r) return [];
-    const d = lineDiscounts(o);
-    return o.lines.map((l, i) => one(r, d[i]!, o, l));
-  },
+  realised: (o: OrderFact) => realised(o, (at) => [one(at, 1, o)]),
+  cancelled: (o: OrderFact) => (isOperationalOrder(o) && isCancelled(o) ? [one(o.placedAt, 1, o)] : []),
+  cancelledValue: (o: OrderFact) => (isOperationalOrder(o) && isCancelled(o) ? [one(o.placedAt, o.total, o)] : []),
+  gross: (o: OrderFact) => realised(o, (at) => o.lines.map((l) => one(at, lineGross(l), o, l))),
+  discountLines: (o: OrderFact) =>
+    realised(o, (at) => {
+      const d = lineDiscounts(o);
+      return o.lines.map((l, i) => one(at, d[i]!, o, l));
+    }),
   bundle: (o: OrderFact) => atRealised(o, o.bundleDiscount),
   coupon: (o: OrderFact) => atRealised(o, couponDiscountOf(o)),
   flash: (o: OrderFact) => atRealised(o, o.flashDiscount ?? 0),
   shipping: (o: OrderFact) => atRealised(o, shippingCharged(o)),
   adjustments: (o: OrderFact) => atRealised(o, o.priceAdjustment),
   tax: (o: OrderFact) => atRealised(o, o.taxAmount ?? 0),
-  returnsValue: (o: OrderFact) => (isSaleOrder(o) ? returnEvents(o).map((e) => one(e.at, e.value, o, e.line)) : []),
+  /** Merchandise VAT from the order's snapshot, allocated to lines (C2). */
+  merchVat: (o: OrderFact) =>
+    realised(o, (at) => {
+      const v = lineMerchandiseVat(o);
+      return o.lines.map((l, i) => one(at, v[i]!, o, l));
+    }),
+  /** Realised merchandise excluding VAT, per line (the positive part of realised_net_sales). */
+  realisedMerch: (o: OrderFact) =>
+    realised(o, (at) => {
+      const nets = lineNets(o);
+      const v = lineMerchandiseVat(o);
+      return o.lines.map((l, i) => one(at, nets[i]! - v[i]!, o, l));
+    }),
+  /** VAT-exclusive merchandise part of completed refunds (C3, after overpayment — C4). Order-level: a refund names no line. */
+  merchRefunds: (o: OrderFact) =>
+    realised(o, () =>
+      refundAllocations(o)
+        .filter((a) => a.merchandiseExVat > 0)
+        .map((a) => one(a.at, a.merchandiseExVat, o)),
+    ),
+  /** Overpayment part of completed refunds (any order): cash only, never a sales reduction. */
+  overpaymentRefunds: (o: OrderFact) =>
+    refundAllocations(o)
+      .filter((a) => a.overpayment > 0)
+      .map((a) => one(a.at, a.overpayment, o)),
+  returnsValue: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.value, o, e.line))),
   refunds: (o: OrderFact) => o.refunds.filter((r) => r.status === "COMPLETED" && r.completedAt).map((r) => one(r.completedAt, r.amount, o)),
   refundCount: (o: OrderFact) => o.refunds.filter((r) => r.status === "COMPLETED" && r.completedAt).map((r) => one(r.completedAt, 1, o)),
   payments: (o: OrderFact) => o.payments.filter((p) => p.status === "SUCCEEDED").map((p) => one(p.settledAt, p.amount, o)),
@@ -68,21 +109,14 @@ const P = {
   exchangeDiff: (o: OrderFact) => (o.isExchangeReplacement ? o.payments.filter((p) => p.status === "SUCCEEDED").map((p) => one(p.settledAt, p.amount, o)) : []),
   codPlaced: (o: OrderFact) => (isSaleOrder(o) && o.paymentMethod === "COD" ? [one(o.placedAt, 1, o)] : []),
   unitsOrdered: (o: OrderFact) => (isSaleOrder(o) ? o.lines.map((l) => one(o.placedAt, l.quantity, o, l)) : []),
-  unitsSold: (o: OrderFact) => {
-    const r = realisedAt(o);
-    return r ? o.lines.map((l) => one(r, l.quantity, o, l)) : [];
-  },
-  unitsReturned: (o: OrderFact) => (isSaleOrder(o) ? returnEvents(o).map((e) => one(e.at, e.units, o, e.line)) : []),
-  cogsSold: (o: OrderFact) => {
-    const r = realisedAt(o);
-    return r ? o.lines.map((l) => one(r, l.quantity * l.currentUnitCost, o, l)) : [];
-  },
-  cogsReturned: (o: OrderFact) => (isSaleOrder(o) ? returnEvents(o).map((e) => one(e.at, e.currentCost, o, e.line)) : []),
+  unitsSold: (o: OrderFact) => realised(o, (at) => o.lines.map((l) => one(at, l.quantity, o, l))),
+  unitsReturned: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.units, o, e.line))),
+  cogsSold: (o: OrderFact) => realised(o, (at) => o.lines.map((l) => one(at, l.quantity * l.currentUnitCost, o, l))),
+  cogsReturned: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.currentCost, o, e.line))),
 } satisfies Record<string, Producer>;
 
 function atRealised(o: OrderFact, amount: number): Contribution[] {
-  const r = realisedAt(o);
-  return r ? [one(r, amount, o)] : [];
+  return realised(o, (at) => [one(at, amount, o)]);
 }
 
 type Term = [sign: 1 | -1, producer: Producer];
@@ -104,6 +138,10 @@ const ADDITIVE: Record<string, Term[]> = {
   returns: [[1, P.returnsValue]],
   net_merchandise_sales: [[1, P.gross], [-1, P.discountLines], [-1, P.returnsValue]],
   net_sales: [[1, P.gross], [-1, P.discountLines], [1, P.shipping], [1, P.adjustments], [-1, P.returnsValue]],
+  merchandise_vat: [[1, P.merchVat]],
+  merchandise_refunds: [[1, P.merchRefunds]],
+  overpayment_refunds: [[1, P.overpaymentRefunds]],
+  realised_net_sales: [[1, P.realisedMerch], [-1, P.merchRefunds]],
   refunds: [[1, P.refunds]],
   refund_count: [[1, P.refundCount]],
   payments_received: [[1, P.payments]],
@@ -175,12 +213,19 @@ export interface Coverage {
 
 /** For snapshot fields that pre-Phase-2 orders never recorded: how many realised orders in range have one. */
 export function snapshotCoverage(key: string, orders: OrderFact[], range: Pick<BusinessRange, "startUtc" | "endUtc">): Coverage | undefined {
-  const field = key === "tax_collected" ? "taxAmount" : key === "flash_discount" ? "flashDiscount" : null;
-  if (!field) return undefined;
+  const isMissing =
+    key === "tax_collected"
+      ? (o: OrderFact) => o.taxAmount === null
+      : key === "flash_discount"
+        ? (o: OrderFact) => o.flashDiscount === null
+        : key === "realised_net_sales" || key === "merchandise_vat" || key === "aov"
+          ? (o: OrderFact) => merchandiseVat(o) === null
+          : null;
+  if (!isMissing) return undefined;
   const cov = { recorded: 0, missing: 0 };
   for (const o of orders) {
     if (!inRange(realisedAt(o), range)) continue;
-    if (o[field] === null) cov.missing++;
+    if (isMissing(o)) cov.missing++;
     else cov.recorded++;
   }
   return cov;
@@ -188,9 +233,10 @@ export function snapshotCoverage(key: string, orders: OrderFact[], range: Pick<B
 
 // ─── Derived (non-additive) metrics ──────────────────────────────────────────────────────────────────────────────────
 
-/** AOV = net sales ÷ orders realised (P5-5); 0 when nothing was realised. Minor units, rounded half-up. */
-export function aovOf(netSales: number, ordersRealised: number): number {
-  return ordersRealised > 0 ? Math.round(netSales / ordersRealised) : 0;
+/** AOV = realised net sales ÷ orders realised (P5-5, same realisation population); 0 when nothing was realised. Minor
+ * units, rounded half-up. */
+export function aovOf(realisedNetSales: number, ordersRealised: number): number {
+  return ordersRealised > 0 ? Math.round(realisedNetSales / ordersRealised) : 0;
 }
 
 export interface CustomerMetricStats {
@@ -204,13 +250,15 @@ export interface CustomerMetricStats {
 export function customerStats(orders: OrderFact[], range: Pick<BusinessRange, "startUtc" | "endUtc">): CustomerMetricStats {
   const ordersBy = new Map<string, number>();
   for (const c of contributions("orders_placed", orders, range)) if (c.order.customerId) ordersBy.set(c.order.customerId, (ordersBy.get(c.order.customerId) ?? 0) + 1);
-  const realisedCustomers = new Set<string>();
-  for (const c of contributions("orders_realised", orders, range)) if (c.order.customerId) realisedCustomers.add(c.order.customerId);
+  // Net realised orders per customer: a realised order reversed by a later cancellation (P5-2) nets to zero here too, so
+  // CLV uses the same realisation population as AOV.
+  const realisedBy = new Map<string, number>();
+  for (const c of contributions("orders_realised", orders, range)) if (c.order.customerId) realisedBy.set(c.order.customerId, (realisedBy.get(c.order.customerId) ?? 0) + c.amount);
   const spendBy = new Map<string, number>();
-  for (const c of contributions("net_sales", orders, range)) if (c.order.customerId) spendBy.set(c.order.customerId, (spendBy.get(c.order.customerId) ?? 0) + c.amount);
+  for (const c of contributions("realised_net_sales", orders, range)) if (c.order.customerId) spendBy.set(c.order.customerId, (spendBy.get(c.order.customerId) ?? 0) + c.amount);
   const customersWithOrders = ordersBy.size;
   const repeatCustomers = [...ordersBy.values()].filter((n) => n >= 2).length;
-  const spenders = [...realisedCustomers];
+  const spenders = [...realisedBy].filter(([, n]) => n > 0).map(([id]) => id);
   const totalSpend = spenders.reduce((s, id) => s + (spendBy.get(id) ?? 0), 0);
   return {
     customersWithOrders,
