@@ -4,6 +4,20 @@ import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import { accessTokenCookieOptions, refreshTokenCookieOptions, csrfTokenCookieOptions } from "../../lib/cookies";
 import * as authService from "./auth.service";
+import { recordAudit } from "../../lib/audit";
+
+/** Phase 10 (G-7): admin-account changes are audited with the exact before/after, in place of the generic row. */
+function auditAdminChange(req: Request, res: Response, action: string, before: { role: string; isActive: boolean }, after: { role: string; isActive: boolean }) {
+  res.locals.auditHandled = true;
+  recordAudit({
+    adminId: req.admin!.adminId,
+    action,
+    entityType: "admins",
+    entityId: req.params.id ?? null,
+    ipAddress: req.ip ?? null,
+    metadata: { before: { role: before.role, isActive: before.isActive }, after: { role: after.role, isActive: after.isActive } },
+  });
+}
 
 function issueCsrfCookie(res: Response) {
   res.cookie("csrf_token", crypto.randomBytes(24).toString("hex"), csrfTokenCookieOptions);
@@ -70,12 +84,14 @@ export const listAdmins = asyncHandler(async (_req: Request, res: Response) => {
 });
 
 export const setAdminActive = asyncHandler(async (req: Request, res: Response) => {
-  const admin = await authService.setAdminActive(req.params.id!, req.admin!.adminId, req.body.isActive);
+  const { before, admin } = await authService.setAdminActive(req.params.id!, req.admin!.adminId, req.body.isActive);
+  auditAdminChange(req, res, admin.isActive ? "admins.activate" : "admins.deactivate", before, admin);
   res.json({ admin });
 });
 
 export const updateAdmin = asyncHandler(async (req: Request, res: Response) => {
-  const admin = await authService.updateAdmin(req.params.id!, req.admin!.adminId, req.body);
+  const { before, admin } = await authService.updateAdmin(req.params.id!, req.admin!.adminId, req.body);
+  auditAdminChange(req, res, before.role !== admin.role ? "admins.role_change" : "admins.update", before, admin);
   res.json({ admin });
 });
 

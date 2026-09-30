@@ -12,6 +12,7 @@ import {
 } from "../../lib/cookies";
 import * as customerService from "./customer.service";
 import { getOrderForCustomer } from "../orders/order.service";
+import { toCustomerOrder } from "../orders/customer-order-view";
 
 // Same double-submit token as the admin login flow (middlewares/csrf.ts) — customer login was
 // never issuing this cookie, which left every customer-session mutation unprotected by the CSRF
@@ -108,12 +109,12 @@ export const deleteAddress = asyncHandler(async (req: Request, res: Response) =>
 
 export const listOrders = asyncHandler(async (req: Request, res: Response) => {
   const result = await customerService.listCustomerOrders(req.customer!.customerId, req.query as never);
-  res.json(result);
+  res.json({ ...result, items: result.items.map(toCustomerOrder) });
 });
 
 export const getOrder = asyncHandler(async (req: Request, res: Response) => {
   const order = await getOrderForCustomer(req.customer!.customerId, req.params.id!);
-  res.json({ order });
+  res.json({ order: toCustomerOrder(order) });
 });
 
 export const listPoints = asyncHandler(async (req: Request, res: Response) => {

@@ -26,6 +26,7 @@ import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 import { DuplicateProductDialog } from "@/components/admin/duplicate-product-dialog";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 import { CLASSIC_PRODUCT_NEW_HREF, PRODUCT_NEW_HREF, productEditHref } from "@/lib/admin-routes";
 import { formatPrice } from "@/lib/format";
 
@@ -54,7 +55,7 @@ export default function ProductsPage() {
   const [duplicating, setDuplicating] = useState<{ id: string; name: string } | null>(null);
   // Permanent deletion is the owner's call (the API refuses staff); don't offer a button that always 403s.
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canPurge = adminCan(currentAdmin?.admin, "catalog.purge");
 
   const { data, isLoading } = useQuery({
     queryKey: ["products", { page, pageSize, search, tab, statusFilter, typeFilter }],
@@ -201,7 +202,7 @@ export default function ProductsPage() {
         >
           <RotateCcw size={16} />
         </button>
-        {isOwner && (
+        {canPurge && (
           <button
             onClick={() => handlePermanentDelete(p.id, p.name)}
             className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-danger-600")}

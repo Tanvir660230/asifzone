@@ -55,3 +55,4 @@ export * from "./meta";
 export * from "./format";
 
 export * from "./types";
+export * from "./permissions";

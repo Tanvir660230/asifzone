@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { metricsQuerySchema, metricsRangeQuerySchema } from "@clothing-brand/shared";
-import { requireAdmin } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { validate } from "../../middlewares/validate";
 import * as metricsController from "./metrics.controller";
 
@@ -8,6 +8,6 @@ import * as metricsController from "./metrics.controller";
 export const metricsRouter = Router();
 
 metricsRouter.use(requireAdmin);
-metricsRouter.get("/", validate(metricsQuerySchema, "query"), metricsController.metrics);
-metricsRouter.get("/definitions", metricsController.definitions);
-metricsRouter.get("/consistency", validate(metricsRangeQuerySchema, "query"), metricsController.consistency);
+metricsRouter.get("/", requirePermission("analytics.read"), validate(metricsQuerySchema, "query"), metricsController.metrics);
+metricsRouter.get("/definitions", requirePermission("analytics.read"), metricsController.definitions);
+metricsRouter.get("/consistency", requirePermission("ops.read"), validate(metricsRangeQuerySchema, "query"), metricsController.consistency);

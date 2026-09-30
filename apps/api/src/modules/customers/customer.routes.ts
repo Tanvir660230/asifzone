@@ -24,7 +24,7 @@ import {
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireCustomer } from "../../middlewares/require-customer";
-import { requireAdmin } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { loginRateLimit, otpRequestRateLimit } from "../../middlewares/rate-limit";
 import * as customerController from "./customer.controller";
 
@@ -111,40 +111,46 @@ customerRouter.delete(
 customerRouter.get(
   "/admin",
   requireAdmin,
+  requirePermission("customers.read"),
   validate(customerListQuerySchema, "query"),
   customerController.listCustomersAdmin,
 );
 customerRouter.post(
   "/admin",
   requireAdmin,
+  requirePermission("customers.manage"),
   validate(createCustomerAdminSchema),
   customerController.createCustomerAdmin,
 );
 // Must come before "/admin/:id" — otherwise Express matches "stats" as the :id param.
-customerRouter.get("/admin/stats", requireAdmin, customerController.getCustomerStatsAdmin);
+customerRouter.get("/admin/stats", requireAdmin, requirePermission("customers.read"), customerController.getCustomerStatsAdmin);
 // Same reason: "/admin/:id/sms" below would otherwise match "/admin/bulk/sms" with id="bulk".
 customerRouter.post(
   "/admin/bulk/sms",
   requireAdmin,
+  requirePermission("customers.message"),
   validate(bulkSendSmsSchema),
   customerController.sendBulkSms,
 );
-customerRouter.get("/admin/:id", requireAdmin, customerController.getCustomerDetailAdmin);
+customerRouter.get("/admin/:id", requireAdmin, requirePermission("customers.read"), customerController.getCustomerDetailAdmin);
 customerRouter.post(
   "/admin/:id/points",
   requireAdmin,
+  requirePermission("loyalty.adjust"),
   validate(adjustRewardPointsSchema),
   customerController.adjustPoints,
 );
 customerRouter.patch(
   "/admin/:id",
   requireAdmin,
+  requirePermission("customers.manage"),
   validate(updateCustomerAdminFieldsSchema),
   customerController.updateCustomerAdminFields,
 );
 customerRouter.post(
   "/admin/:id/sms",
   requireAdmin,
+  requirePermission("customers.message"),
   validate(sendAdHocSmsSchema),
   customerController.sendAdHocSms,
 );

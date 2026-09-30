@@ -20,6 +20,7 @@ import * as attributesApi from "@/lib/api/attributes";
 import * as catalogApi from "@/lib/api/catalog";
 import * as aiApi from "@/lib/api/ai";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 
 /** Flattens the category tree into a top-level-first, indented option list (e.g. "— Cap" under
  * "Accessories") so the admin can see hierarchy in a single-select dropdown without a second field. */
@@ -188,7 +189,7 @@ export function useProductFormState({ initial, stagedImages }: UseProductFormSta
   // AI generation is OWNER-only on the backend (it bills real API usage) — hide the entry points
   // for STAFF rather than showing a button that always 403s.
   const { data: currentAdmin } = useCurrentAdmin();
-  const canUseAi = Boolean(aiStatus?.configured && currentAdmin?.admin.role === "OWNER");
+  const canUseAi = Boolean(aiStatus?.configured && adminCan(currentAdmin?.admin, "ai.use"));
 
   const selectedConfigRef = useRef<ResolvedTypeConfig | undefined>(undefined);
   // The store-wide section layer, so the product's section editor can say what a blank field inherits.

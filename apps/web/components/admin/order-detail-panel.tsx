@@ -61,6 +61,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
 import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, formatPrice, formatStoreDate, formatStoreDateTime, initials, orderStatusBadgeClass, orderStatusLabel, paymentStatusLabel, paymentStatusTextClass, storeCurrencySymbol, timeAgo } from "@/lib/format";
@@ -170,7 +171,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canDeleteOrders = adminCan(currentAdmin?.admin, "orders.delete");
 
   // This panel can now stay mounted while `id` changes underneath it (Drawer next/prev) instead of
   // always remounting fresh — without this, an in-progress edit on one order (e.g. editingDetails
@@ -513,7 +514,7 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
               <Printer size={14} /> Invoice
             </Button>
           </Link>
-          {isOwner &&
+          {canDeleteOrders &&
             (order.deletedAt ? (
               <>
                 <Button

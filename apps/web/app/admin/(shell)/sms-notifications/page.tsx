@@ -22,6 +22,7 @@ import { toast } from "@/components/ui/toast";
 import * as smsSettingsApi from "@/lib/api/sms-settings";
 import { ApiError } from "@/lib/api-client";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 
 const CUSTOMER_TOUCHPOINTS = [
   {
@@ -65,7 +66,7 @@ export default function SmsNotificationsPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["sms-settings"], queryFn: smsSettingsApi.getSmsSettings });
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canManageSettings = adminCan(currentAdmin?.admin, "settings.manage");
 
   const {
     register,
@@ -109,7 +110,7 @@ export default function SmsNotificationsPage() {
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
-  if (currentAdmin && !isOwner) {
+  if (currentAdmin && !canManageSettings) {
     return (
       <div>
         <PageHeader title="SMS Notifications" />

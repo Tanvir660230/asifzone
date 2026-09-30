@@ -5,8 +5,12 @@ const ACTION_BY_METHOD: Record<string, string> = { POST: "create", PATCH: "updat
 
 /** Generic audit trail for every admin-authenticated write — no per-route wiring needed. Coarse
  * action label (e.g. "products.create") plus the full path/method in metadata for detail. */
+/** Bulk data leaving the system (orders / products / analytics CSV) — a read, but audited like a write (Phase 10, G-7). */
+const EXPORT_PATH = /\/export\//;
+
 export function auditMiddleware(req: Request, res: Response, next: NextFunction) {
-  const actionVerb = ACTION_BY_METHOD[req.method];
+  const isExport = req.method === "GET" && EXPORT_PATH.test(req.path);
+  const actionVerb = isExport ? "export" : ACTION_BY_METHOD[req.method];
   if (!actionVerb) return next();
 
   let responseBody: unknown;
@@ -29,7 +33,7 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
     }
 
     const pathTail = req.path.split("/").filter(Boolean);
-    const verb = pathTail[0] === "bulk" ? `bulk_${pathTail[1] ?? actionVerb}` : pathTail.includes("restore") ? "restore" : actionVerb;
+    const verb = isExport ? "export" : pathTail[0] === "bulk" ? `bulk_${pathTail[1] ?? actionVerb}` : pathTail.includes("restore") ? "restore" : actionVerb;
 
     recordAudit({
       adminId: req.admin.adminId,

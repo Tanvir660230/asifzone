@@ -9,7 +9,7 @@ import {
   setAdminPasswordSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
-import { requireAdmin, requireRole } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission, requireSelf } from "../../middlewares/require-admin";
 import { loginRateLimit } from "../../middlewares/rate-limit";
 import {
   login,
@@ -34,38 +34,38 @@ export const authRouter = Router();
 authRouter.post("/login", loginRateLimit, validate(adminLoginSchema), login);
 authRouter.post("/google", loginRateLimit, validate(googleLoginSchema), googleLogin);
 authRouter.post("/logout", logout);
-authRouter.post("/logout-all", requireAdmin, logoutAllDevices);
-authRouter.get("/sessions", requireAdmin, sessions);
+authRouter.post("/logout-all", requireAdmin, requireSelf, logoutAllDevices);
+authRouter.get("/sessions", requireAdmin, requireSelf, sessions);
 authRouter.post("/refresh", refresh);
-authRouter.get("/me", requireAdmin, me);
+authRouter.get("/me", requireAdmin, requireSelf, me);
 
 // No public registration route exists anywhere for admin accounts — the only way one comes into
 // being is an OWNER inviting it here, or prisma/seed.ts for the very first account.
-authRouter.get("/admins", requireAdmin, requireRole("OWNER"), listAdmins);
+authRouter.get("/admins", requireAdmin, requirePermission("users.manage"), listAdmins);
 authRouter.patch(
   "/admins/:id/active",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("users.manage"),
   validate(updateAdminActiveSchema),
   setAdminActive,
 );
-authRouter.patch("/admins/:id", requireAdmin, requireRole("OWNER"), validate(updateAdminSchema), updateAdmin);
+authRouter.patch("/admins/:id", requireAdmin, requirePermission("users.manage"), validate(updateAdminSchema), updateAdmin);
 authRouter.patch(
   "/admins/:id/password",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("users.manage"),
   validate(setAdminPasswordSchema),
   setAdminPassword,
 );
-authRouter.get("/admin-invites", requireAdmin, requireRole("OWNER"), listAdminInvites);
+authRouter.get("/admin-invites", requireAdmin, requirePermission("users.manage"), listAdminInvites);
 authRouter.post(
   "/admin-invites",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("users.manage"),
   validate(createAdminInviteSchema),
   createAdminInvite,
 );
-authRouter.delete("/admin-invites/:id", requireAdmin, requireRole("OWNER"), revokeAdminInvite);
+authRouter.delete("/admin-invites/:id", requireAdmin, requirePermission("users.manage"), revokeAdminInvite);
 authRouter.post(
   "/admin-invites/accept",
   loginRateLimit,

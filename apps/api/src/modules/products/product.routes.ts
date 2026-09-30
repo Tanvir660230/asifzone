@@ -20,7 +20,7 @@ import {
   productImportCommitSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
-import { requireAdmin, requireRole } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { trackingRateLimit } from "../../middlewares/rate-limit";
 import { imageUpload } from "../uploads/upload.middleware";
 import * as productController from "./product.controller";
@@ -73,48 +73,51 @@ productRouter.get("/:id/premium-alternatives", productController.premiumAlternat
 productRouter.get("/:id/urgency-signals", productController.urgencySignals);
 productRouter.post("/:id/view", trackingRateLimit, productController.recordView);
 
-productRouter.get("/export/csv", requireAdmin, productController.exportCsv);
+productRouter.get("/export/csv", requireAdmin, requirePermission("catalog.export"), productController.exportCsv);
 // The importable format (one row per variant) and its empty template. Import is the owner's: it can change prices across the whole catalog.
-productRouter.get("/export/full", requireAdmin, productController.exportFull);
-productRouter.get("/import/template", requireAdmin, productController.importTemplate);
-productRouter.post("/import/validate", requireAdmin, requireRole("OWNER"), validate(productImportRequestSchema), productController.importValidate);
-productRouter.post("/import/commit", requireAdmin, requireRole("OWNER"), validate(productImportCommitSchema), productController.importCommit);
+productRouter.get("/export/full", requireAdmin, requirePermission("catalog.export"), productController.exportFull);
+productRouter.get("/import/template", requireAdmin, requirePermission("catalog.read"), productController.importTemplate);
+productRouter.post("/import/validate", requireAdmin, requirePermission("products.import"), validate(productImportRequestSchema), productController.importValidate);
+productRouter.post("/import/commit", requireAdmin, requirePermission("products.import"), validate(productImportCommitSchema), productController.importCommit);
 // Both of these return full records (costPrice included, isActive/deletedAt unfiltered) and are
 // only ever called from the admin console — the storefront uses GET /storefront and GET /slug/:slug.
-productRouter.get("/", requireAdmin, validate(productListQuerySchema, "query"), productController.list);
-productRouter.get("/:id", requireAdmin, productController.getOne);
-productRouter.get("/:id/history", requireAdmin, productController.history);
-productRouter.get("/:id/sales-summary", requireAdmin, productController.salesSummary);
-productRouter.get("/:id/preview", requireAdmin, productController.preview);
+productRouter.get("/", requireAdmin, requirePermission("catalog.read"), validate(productListQuerySchema, "query"), productController.list);
+productRouter.get("/:id", requireAdmin, requirePermission("catalog.read"), productController.getOne);
+productRouter.get("/:id/history", requireAdmin, requirePermission("catalog.read"), productController.history);
+productRouter.get("/:id/sales-summary", requireAdmin, requirePermission("catalog.read"), productController.salesSummary);
+productRouter.get("/:id/preview", requireAdmin, requirePermission("catalog.read"), productController.preview);
 
-productRouter.post("/bulk/delete", requireAdmin, validate(bulkProductIdsSchema), productController.bulkDelete);
-productRouter.post("/bulk/status", requireAdmin, validate(bulkProductStatusSchema), productController.bulkStatus);
-productRouter.post("/bulk/category", requireAdmin, validate(bulkProductCategorySchema), productController.bulkCategory);
+productRouter.post("/bulk/delete", requireAdmin, requirePermission("catalog.manage"), validate(bulkProductIdsSchema), productController.bulkDelete);
+productRouter.post("/bulk/status", requireAdmin, requirePermission("catalog.manage"), validate(bulkProductStatusSchema), productController.bulkStatus);
+productRouter.post("/bulk/category", requireAdmin, requirePermission("catalog.manage"), validate(bulkProductCategorySchema), productController.bulkCategory);
 
-productRouter.post("/", requireAdmin, validate(createProductSchema), productController.create);
-productRouter.patch("/:id", requireAdmin, validate(updateProductSchema), productController.update);
-productRouter.delete("/:id", requireAdmin, productController.remove);
-productRouter.post("/:id/restore", requireAdmin, productController.restore);
-productRouter.post("/:id/duplicate", requireAdmin, validate(duplicateProductSchema), productController.duplicate);
+productRouter.post("/", requireAdmin, requirePermission("catalog.manage"), validate(createProductSchema), productController.create);
+productRouter.patch("/:id", requireAdmin, requirePermission("catalog.manage"), validate(updateProductSchema), productController.update);
+productRouter.delete("/:id", requireAdmin, requirePermission("catalog.manage"), productController.remove);
+productRouter.post("/:id/restore", requireAdmin, requirePermission("catalog.manage"), productController.restore);
+productRouter.post("/:id/duplicate", requireAdmin, requirePermission("catalog.manage"), validate(duplicateProductSchema), productController.duplicate);
 // Irreversible (it also deletes the image files), so it is the owner's call, not staff's.
-productRouter.delete("/:id/permanent", requireAdmin, requireRole("OWNER"), productController.permanentlyRemove);
+productRouter.delete("/:id/permanent", requireAdmin, requirePermission("catalog.purge"), productController.permanentlyRemove);
 
 productRouter.post(
   "/:id/images",
   requireAdmin,
+  requirePermission("catalog.manage"),
   imageUpload.array("images", 10),
   productController.uploadImages,
 );
 productRouter.patch(
   "/:id/images/reorder",
   requireAdmin,
+  requirePermission("catalog.manage"),
   validate(reorderImagesSchema),
   productController.reorderImages,
 );
-productRouter.delete("/:id/images/:imageId", requireAdmin, productController.removeImage);
+productRouter.delete("/:id/images/:imageId", requireAdmin, requirePermission("catalog.manage"), productController.removeImage);
 productRouter.patch(
   "/:id/images/:imageId",
   requireAdmin,
+  requirePermission("catalog.manage"),
   validate(updateImageSchema),
   productController.updateImage,
 );

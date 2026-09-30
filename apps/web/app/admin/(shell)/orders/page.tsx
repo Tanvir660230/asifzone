@@ -64,6 +64,7 @@ import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import type {
@@ -367,7 +368,7 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canDeleteOrders = adminCan(currentAdmin?.admin, "orders.delete");
   const debouncedSearch = useDebouncedValue(search, 350);
 
   // "/" or ⌘K focuses search from anywhere on the page — skipped while already typing somewhere
@@ -904,7 +905,7 @@ export default function OrdersPage() {
 
   function rowMenuItems(order: AdminOrderListItem): DropdownMenuItem[] {
     if (order.deletedAt) {
-      return isOwner
+      return canDeleteOrders
         ? [
             { label: "View order", icon: Eye, onClick: () => setDrawerOrderId(order.id) },
             { label: "Restore", icon: RotateCcw, onClick: () => handleRestore(order.orderNumber, order.id) },
@@ -923,7 +924,7 @@ export default function OrdersPage() {
       ...(!order.courierConsignmentId
         ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
         : [{ label: "Sync courier status", icon: RefreshCw, onClick: () => syncCourierMutation.mutate(order.id) }]),
-      ...(isOwner
+      ...(canDeleteOrders
         ? [{ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => handleDelete(order.orderNumber, order.id) }]
         : []),
     ];
@@ -1028,7 +1029,7 @@ export default function OrdersPage() {
           scrolling order rows (order #, status pills), and translucency there let row text visibly
           bleed/cut through the bar's bottom edge as it scrolled underneath. */}
       <div className="sticky top-14 z-10 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50 px-4 pb-3 pt-2.5 sm:-mx-8 sm:px-8">
-        {isOwner && (
+        {canDeleteOrders && (
           <div className="flex items-center gap-1">
             {(["active", "trash"] as const).map((t) => (
               <button
@@ -1555,7 +1556,7 @@ export default function OrdersPage() {
                     so the card doesn't turn into a wall of buttons. */}
                 <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-ink-100 pt-2.5">
                   {order.deletedAt ? (
-                    isOwner ? (
+                    canDeleteOrders ? (
                       <Button variant="outline" size="sm" onClick={() => handleRestore(order.orderNumber, order.id)}>
                         <RotateCcw size={13} /> Restore
                       </Button>
@@ -1646,7 +1647,7 @@ export default function OrdersPage() {
                 <Button variant="outline" size="sm" onClick={() => handlePrintLabels()}>
                   <Printer size={14} /> Print Labels
                 </Button>
-                {isOwner && (
+                {canDeleteOrders && (
                   <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
                     <Trash2 size={14} /> Move to Trash
                   </Button>

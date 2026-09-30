@@ -20,6 +20,7 @@ import * as socialLinksApi from "@/lib/api/admin-social-links";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 import { storeCurrencyCode } from "@/lib/format";
 
 /** wa.me and api.whatsapp.com/send?phone= are the two URL shapes admins tend to paste (or that this
@@ -212,7 +213,7 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: settingsApi.getSettings });
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canManageSettings = adminCan(currentAdmin?.admin, "settings.manage");
 
   const {
     register,
@@ -282,7 +283,7 @@ export default function SettingsPage() {
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
-  if (currentAdmin && !isOwner) {
+  if (currentAdmin && !canManageSettings) {
     return (
       <div>
         <PageHeader title="Settings" />

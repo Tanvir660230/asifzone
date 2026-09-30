@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAdmin } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { asyncHandler } from "../../lib/async-handler";
 import { reliabilityReport } from "./ops.service";
 
@@ -7,7 +7,7 @@ import { reliabilityReport } from "./ops.service";
 export const opsRouter = Router();
 opsRouter.use(requireAdmin);
 opsRouter.get(
-  "/reliability",
+  "/reliability", requirePermission("ops.read"),
   asyncHandler(async (_req, res) => {
     res.json(await reliabilityReport());
   }),

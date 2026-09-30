@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAdmin, requireRole } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import { outboxStatus, retryOutboxEvent } from "../../domain/outbox/processor";
@@ -10,14 +10,13 @@ export const outboxRouter = Router();
 
 outboxRouter.use(requireAdmin);
 outboxRouter.get(
-  "/status",
+  "/status", requirePermission("ops.read"),
   asyncHandler(async (_req, res) => {
     res.json(await outboxStatus());
   }),
 );
 outboxRouter.post(
-  "/:id/retry",
-  requireRole("OWNER"),
+  "/:id/retry", requirePermission("ops.repair"),
   asyncHandler(async (req, res) => {
     if (!(await retryOutboxEvent(req.params.id!))) throw AppError.conflict("Only a failed outbox event can be retried");
     res.json({ retried: req.params.id });
