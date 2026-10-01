@@ -4,6 +4,7 @@ import { sendSms } from "./sms";
 import * as smsTemplates from "./sms-templates";
 import { getSmsSettings } from "../modules/sms-settings/sms-settings.service";
 import { getSettings } from "../modules/settings/settings.service";
+import { captureError } from "./observability/error-capture";
 
 export type CustomerTouchpoint = CustomerSmsTouchpoint;
 type SmsSettings = Awaited<ReturnType<typeof getSmsSettings>>;
@@ -66,7 +67,7 @@ export async function deliverAdminOrderAlertSms(order: OrderSmsFacts): Promise<"
   });
   const results = await Promise.allSettled(phones.map((to) => sendSms({ to, body })));
   const failures = results.flatMap((r, i) => (r.status === "rejected" ? [{ to: phones[i]!, err: r.reason as unknown }] : []));
-  for (const f of failures) console.error(`[order-sms] admin alert to ${f.to} failed:`, f.err);
+  for (const f of failures) captureError(f.err, { msg: `[order-sms] admin alert to ${f.to} failed:` });
   if (failures.length === phones.length) throw failures[0]!.err;
   return "sent";
 }

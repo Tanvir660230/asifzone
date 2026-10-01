@@ -1,5 +1,6 @@
 import { env } from "../config/env";
 import { AppError } from "./app-error";
+import { logger } from "./observability/logger";
 
 interface CreateConsignmentInput {
   invoice: string;
@@ -151,7 +152,7 @@ export async function createSteadfastConsignment(input: CreateConsignmentInput):
   // in-body status is the real signal, same "don't trust the transport code alone" pattern as
   // lib/sms.ts's BulkSMSBD handling.
   if (!res.ok || !data || data.status !== 200 || !data.consignment) {
-    if (!data) console.error(`[steadfast] booking failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] booking failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast booking failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -189,7 +190,7 @@ export async function createBulkSteadfastConsignments(
 
   const { data, rawText } = await readSteadfastResponse(res);
   if (!res.ok || !data) {
-    console.error(`[steadfast] bulk booking failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    logger.error(`[steadfast] bulk booking failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast bulk booking failed: ${(data as { message?: string } | null)?.message ?? `HTTP ${res.status}`}`,
       { status: res.status, body: rawText.slice(0, 2000) },
@@ -207,7 +208,7 @@ export async function createBulkSteadfastConsignments(
       : [];
 
   if (!rawResults.length) {
-    console.error("[steadfast] bulk booking returned no results:", rawText.slice(0, 2000));
+    logger.error("[steadfast] bulk booking returned no results:", { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast bulk booking failed: ${(data as { message?: string }).message ?? "no results returned"}`,
       data,
@@ -225,7 +226,7 @@ export async function getSteadfastBalance(): Promise<number> {
   const data = parsed as SteadfastEnvelope<never> | null;
 
   if (!res.ok || !data || data.status !== 200 || typeof data.current_balance !== "number") {
-    if (!data) console.error(`[steadfast] balance check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] balance check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast balance check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -268,7 +269,7 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
   const data = parsed as RawSteadfastFraudCheck | null;
 
   if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || typeof data.total_parcels !== "number") {
-    if (!data) console.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast fraud check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -298,7 +299,7 @@ export async function getSteadfastStatusByConsignmentId(consignmentId: string): 
   const data = parsed as SteadfastEnvelope<never> | null;
 
   if (!res.ok || !data || data.status !== 200 || !data.delivery_status) {
-    if (!data) console.error(`[steadfast] status check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] status check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast status check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },

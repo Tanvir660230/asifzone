@@ -3,6 +3,7 @@ import path from "path";
 import { Resend } from "resend";
 import { env } from "../config/env";
 import { liveProvidersEnabled } from "./provider-guard";
+import { logger } from "./observability/logger";
 
 interface MailInput {
   to: string;
@@ -30,7 +31,7 @@ export const MAIL_TIMEOUT_MS = 20_000;
 const resend = !env.resend.apiKey || !liveProvidersEnabled() ? null : new Resend(env.resend.apiKey);
 
 function writeDevMail({ to, subject, html }: MailInput) {
-  console.log(`[mailer] (dev mode, not actually sent) To: ${to} | Subject: ${subject}`);
+  logger.info(`[mailer] (dev mode, not actually sent) To: ${to} | Subject: ${subject}`);
 
   fs.mkdirSync(devMailDir, { recursive: true });
   const filename = `${Date.now()}-${to.replace(/[^a-z0-9]/gi, "_")}.html`;
@@ -38,7 +39,7 @@ function writeDevMail({ to, subject, html }: MailInput) {
     path.join(devMailDir, filename),
     `<!-- To: ${to} -->\n<!-- Subject: ${subject} -->\n${html}`,
   );
-  console.log(`[mailer] preview written to apps/api/.devmail/${filename}`);
+  logger.info(`[mailer] preview written to apps/api/.devmail/${filename}`);
 }
 
 // No RESEND_API_KEY configured yet: fall back to writing each email to disk and logging it, so

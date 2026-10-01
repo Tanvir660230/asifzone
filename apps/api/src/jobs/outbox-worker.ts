@@ -1,6 +1,9 @@
-import { Queue, Worker } from "bullmq";
+import { cleanupExpiredCustomerSessions } from "../modules/customers/customer-sessions";
+import { createObservedWorker } from "../lib/observability/jobs";
+import { Queue } from "bullmq";
 import { queueConnection } from "../lib/queue";
 import { cleanupOutbox, dispatchOutbox, markDispatcherHeartbeat, processOutboxEvent, reapStaleClaims } from "../domain/outbox/processor";
+import { logger } from "../lib/observability/logger";
 
 /** Phase 8 outbox transport (docs/PHASE_8_AUDIT.md). One BullMQ queue carries three job kinds:
  *   dispatch  every 3 s (job scheduler — one schedule however many API instances run): reap expired claims, claim due
@@ -17,19 +20,22 @@ export async function startOutboxWorker() {
     await queue.add("deliver", { eventId }, { jobId, attempts: 1, removeOnComplete: true, removeOnFail: { age: 7 * 24 * 60 * 60 } });
   };
 
-  new Worker(
+  createObservedWorker(
     OUTBOX_QUEUE,
     async (job) => {
       if (job.name === "deliver") {
         const result = await processOutboxEvent((job.data as { eventId: string }).eventId);
-        if (result.outcome === "retry" || result.outcome === "failed") console.error(`[outbox] ${(job.data as { eventId: string }).eventId} ${result.outcome}: ${result.error}`);
+        if (result.outcome === "retry" || result.outcome === "failed") logger.error(`[outbox] ${(job.data as { eventId: string }).eventId} ${result.outcome}: ${result.error}`);
       } else if (job.name === "dispatch") {
         await reapStaleClaims();
         await dispatchOutbox({ enqueue });
         await markDispatcherHeartbeat();
       } else if (job.name === "cleanup") {
         const removed = await cleanupOutbox();
-        if (removed) console.log(`[outbox] retention: removed ${removed} processed event(s)`);
+        if (removed) logger.info(`[outbox] retention: removed ${removed} processed event(s)`);
+        // Phase 11: the same daily tick drops customer refresh tokens whose family expired more than a day ago.
+        const sessions = await cleanupExpiredCustomerSessions();
+        if (sessions) logger.info(`[customer-sessions] retention: removed ${sessions} expired token(s)`);
       }
     },
     { connection: queueConnection, concurrency: 5 },

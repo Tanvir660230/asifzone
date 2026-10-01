@@ -4,6 +4,7 @@ import { getCurrency } from "../../domain/config/commerce-settings";
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
 import { buildUserData, MetaApiError, sendMetaEvent, type MetaRequestContext, type MetaServerEvent } from "./capi";
+import { logger } from "../observability/logger";
 
 /** Server-side Purchase via the Conversions API — the authoritative copy of every storefront
  * conversion. The browser Pixel fires its own Purchase from the order-confirmation page with the
@@ -74,19 +75,17 @@ export async function buildPurchaseEvent(orderId: string, context: MetaRequestCo
 export async function processMetaPurchase({ orderId, context }: MetaPurchaseJobData): Promise<void> {
   const event = await buildPurchaseEvent(orderId, context);
   if (!event) {
-    console.warn(`[meta-capi] order ${orderId} no longer exists — Purchase not sent`);
+    logger.warn(`[meta-capi] order ${orderId} no longer exists — Purchase not sent`);
     return;
   }
 
   const orderNumber = event.custom_data?.order_id;
   try {
     const { eventsReceived } = await sendMetaEvent(event);
-    console.log(
-      `[meta-capi] Purchase sent for order ${orderNumber} (events_received=${eventsReceived}${env.meta.testEventCode ? ", test event" : ""})`,
-    );
+    logger.info(`[meta-capi] Purchase sent for order ${orderNumber} (events_received=${eventsReceived}${env.meta.testEventCode ? ", test event" : ""})`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[meta-capi] Purchase for order ${orderNumber} failed: ${message}`);
+    logger.error(`[meta-capi] Purchase for order ${orderNumber} failed: ${message}`);
     if (err instanceof MetaApiError && !err.retryable) throw new UnrecoverableError(message);
     throw err;
   }

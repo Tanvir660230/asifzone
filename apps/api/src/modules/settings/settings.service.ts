@@ -5,6 +5,7 @@ import { AppError } from "../../lib/app-error";
 import { deleteSiteImageFile } from "../uploads/upload.service";
 import { applySettingsToPricingConfig } from "../../domain/pricing/pricing-config";
 import { revalidateStorefrontTags, SETTINGS_CACHE_TAG } from "../../lib/storefront-revalidate";
+import { captureError } from "../../lib/observability/error-capture";
 
 const CACHE_KEY = "settings:singleton";
 const CACHE_TTL_SECONDS = 300;
@@ -73,7 +74,7 @@ export async function updateSettings(input: UpdateSettingsInput) {
     const oldUrl = previous[field];
     const newUrl = settings[field];
     if (oldUrl && oldUrl !== newUrl) {
-      deleteSiteImageFile(oldUrl).catch((err) => console.error(`[settings] failed to delete old ${field}:`, err));
+      deleteSiteImageFile(oldUrl).catch((err) => captureError(err, { msg: `[settings] failed to delete old ${field}:` }));
     }
   }
 

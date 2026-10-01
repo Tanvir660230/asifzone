@@ -56,7 +56,7 @@ export async function reliabilityReport(now: Date = new Date()) {
       recentFailures: outbox.recentFailures.slice(0, TOP),
       retry: "POST /api/v1/outbox/:id/retry (OWNER) — consumers are idempotent (Phase 8)",
     },
-    courierBookings: { count: courier.length, items: courier.slice(0, TOP) },
+    courierBookings: { count: courier.length, outcomeUnknown: courier.filter((c) => c.outcomeUnknown).length, items: courier.slice(0, TOP) },
     paymentLedgerDrift: {
       count: ledger.drift.length,
       violations: ledger.violations.length,

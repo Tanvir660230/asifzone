@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma";
+import { captureError } from "./observability/error-capture";
 
 interface RecordAuditInput {
   adminId: string | null;
@@ -23,5 +24,5 @@ export function recordAudit(input: RecordAuditInput): void {
         ipAddress: input.ipAddress ?? null,
       },
     })
-    .catch((err) => console.error("[audit] failed to record", input.action, err));
+    .catch((err) => captureError(err, { msg: "[audit] failed to record", detail: input.action }));
 }

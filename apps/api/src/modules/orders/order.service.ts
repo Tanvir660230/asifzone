@@ -17,6 +17,8 @@ import {
   PRE_SHIPMENT_STATUSES,
   MONEY_HELD_PAYMENT_STATUSES,
   type OrderTransitionRule,
+  clampNonNegative,
+  subtract,
 } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
@@ -65,6 +67,7 @@ import {
 } from "../../domain/payments/payment-ledger.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
 import { getCurrency, getTimezone } from "../../domain/config/commerce-settings";
+import { captureError } from "../../lib/observability/error-capture";
 
 const include = {
   items: true,
@@ -432,14 +435,14 @@ export async function insertOrderRecord(
   // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
   // abandonment sweep must not fire on it.
   if (pricing.customerId) {
-    clearCart(pricing.customerId).catch((err) => console.error("[cart] clear after order failed:", err));
+    clearCart(pricing.customerId).catch((err) => captureError(err, { msg: "[cart] clear after order failed:" }));
 
     // Same Steadfast fraud_check the admin used to trigger by hand with "Check score" on the order
     // list — fired automatically the moment the order lands, so the delivery-score badge is already
     // populated by the time anyone opens the order. Fire-and-forget: Steadfast being slow/down must
     // never delay or fail checkout.
     checkAndUpdateDeliveryScore(pricing.customerId, order.customerPhone).catch((err) =>
-      console.error(`[courier] auto delivery-score check failed for order ${order.orderNumber}:`, err),
+      captureError(err, { msg: `[courier] auto delivery-score check failed for order ${order.orderNumber}:` }),
     );
   }
 
@@ -1317,7 +1320,8 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   const totals = computeOrderTotals({
     subtotal: m(existing.subtotal),
     bundleDiscount: bundle,
-    couponDiscount: m(existing.couponDiscount ?? Math.max(0, Number(existing.discount) - Number(existing.bundleDiscount))),
+    // Pre-Phase-2 orders have no couponDiscount snapshot: derive it exactly in minor units (Phase 11, F-20 — never floats).
+    couponDiscount: existing.couponDiscount != null ? m(existing.couponDiscount) : clampNonNegative(subtract(m(existing.discount), bundle)),
     shippingCharged: existing.shippingWaived ? m(0) : m(existing.shippingFee),
     taxAdded: existing.taxMode === "EXCLUSIVE" ? m(existing.taxAmount) : m(0),
     priceAdjustment: fromMajor(String(input.priceAdjustment), cur),
@@ -1522,7 +1526,7 @@ export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, 
     } catch (err) {
       const orderNumber = (await prisma.order.findUnique({ where: { id }, select: { orderNumber: true } }))?.orderNumber ?? null;
       result.failed.push({ id, orderNumber, reason: err instanceof AppError ? err.message : "Unexpected error" });
-      if (!(err instanceof AppError)) console.error(`[orders] bulk status ${id} failed:`, err);
+      if (!(err instanceof AppError)) captureError(err, { msg: `[orders] bulk status ${id} failed:` });
     }
   }
   return result;

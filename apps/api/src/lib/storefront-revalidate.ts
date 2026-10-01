@@ -1,4 +1,6 @@
 import { env } from "../config/env";
+import { logger } from "./observability/logger";
+import { captureError } from "./observability/error-capture";
 
 /** Next.js fetch-cache tag the storefront puts on its `/api/settings` read (apps/web/lib/api/storefront.ts). */
 export const SETTINGS_CACHE_TAG = "settings";
@@ -14,8 +16,8 @@ export async function revalidateStorefrontTags(tags: string[]): Promise<void> {
       headers: { "Content-Type": "application/json", "X-Revalidate-Secret": env.revalidateSecret },
       body: JSON.stringify({ tags }),
     });
-    if (!res.ok) console.error(`[revalidate] storefront responded ${res.status} for tags`, tags);
+    if (!res.ok) logger.error(`[revalidate] storefront responded ${res.status} for tags`, { detail: tags });
   } catch (err) {
-    console.error("[revalidate] storefront trigger failed:", err);
+    captureError(err, { msg: "[revalidate] storefront trigger failed:" });
   }
 }

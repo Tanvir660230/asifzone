@@ -1,6 +1,8 @@
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 import { getCurrency } from "../../domain/config/commerce-settings";
+import { logger } from "../../lib/observability/logger";
+import { captureError } from "../../lib/observability/error-capture";
 
 const BASE_URL = env.sslcommerz.isLive
   ? "https://securepay.sslcommerz.com"
@@ -69,14 +71,14 @@ export async function initSslcommerzSession(params: InitSessionParams): Promise<
     // proxy error) throws here — left unguarded this became an unhandled TypeError/SyntaxError that
     // the generic error handler turned into a raw 500 instead of the same friendly message the
     // "gateway said no" branch below already gives for a well-formed failure.
-    console.error(`[sslcommerz] session init request failed for order ${params.orderNumber}:`, err);
+    captureError(err, { msg: `[sslcommerz] session init request failed for order ${params.orderNumber}:` });
     throw AppError.badRequest("Could not start the payment session. Please try again or choose Cash on Delivery.");
   }
 
   if (data.status !== "SUCCESS" || !data.GatewayPageURL) {
     // The gateway's failedreason is an internal/config-facing detail (e.g. bad store_id) — log it
     // for us, but never surface it to the customer verbatim.
-    console.error(`[sslcommerz] session init failed for order ${params.orderNumber}:`, data.failedreason);
+    logger.error(`[sslcommerz] session init failed for order ${params.orderNumber}:`, { detail: data.failedreason });
     throw AppError.badRequest("Could not start the payment session. Please try again or choose Cash on Delivery.");
   }
 
@@ -110,7 +112,7 @@ export async function validateSslcommerzTransaction(valId: string): Promise<SslV
     // as "could not verify" (the caller treats null as unverified, same as a well-formed but
     // rejected validation response), so resolve to that instead of throwing an unhandled exception
     // out of a gateway callback route.
-    console.error(`[sslcommerz] validation request failed for val_id ${valId}:`, err);
+    captureError(err, { msg: `[sslcommerz] validation request failed for val_id ${valId}:` });
     return null;
   }
   if ((data.status !== "VALID" && data.status !== "VALIDATED") || !data.tran_id || !data.amount) {

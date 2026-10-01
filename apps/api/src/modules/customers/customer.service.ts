@@ -53,6 +53,7 @@ import { getSettings } from "../settings/settings.service";
 import { customerMetricsIndex } from "../../domain/metrics/metrics.service";
 import { resolveStoreRange } from "../../domain/metrics/store-time";
 import { getCommerceSettings, type CommerceSettings } from "../../domain/config/commerce-settings";
+import { captureError } from "../../lib/observability/error-capture";
 
 // Bulk sends dispatch this many recipients concurrently — same bound as campaign.service.ts's
 // SEND_CONCURRENCY, for the same reason (bounded outbound connections to the SMS provider).
@@ -181,7 +182,7 @@ export async function registerCustomer(input: CustomerRegisterInput, opts: Sessi
   try {
     await sendVerificationEmail(customer.id);
   } catch (err) {
-    console.error("[customer] failed to send verification email:", err);
+    captureError(err, { msg: "[customer] failed to send verification email:" });
   }
 
   return { claimPending: false, ...(await issueCustomerTokens(customer.id, opts)), customer };
@@ -626,7 +627,7 @@ export async function verifyOtp(input: VerifyOtpInput, opts: SessionOptions = {}
   try {
     await sendVerificationEmail(customerId);
   } catch (err) {
-    console.error("[customer] failed to send verification email:", err);
+    captureError(err, { msg: "[customer] failed to send verification email:" });
   }
   const customer = await getCustomerById(customerId);
   return { ...(await issueCustomerTokens(customerId, opts)), customer };

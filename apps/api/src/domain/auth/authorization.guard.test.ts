@@ -30,6 +30,8 @@ const webSource = files(WEB, /\.(ts|tsx)$/);
  * tracking (order number + phone), beacons, provider callbacks. A new unauthenticated route is a deliberate decision. */
 const PUBLIC_ROUTES = [
   "GET /health",
+  "GET /health/ready", // Phase 11: readiness — booleans only (postgres / redis / outbox dispatcher)
+  "GET /api/v1/ops/attention", // Phase 11: counts only; gated by requireOpsReadOrMonitorToken (ops.read or the monitor token)
   "POST /api/auth/login",
   "POST /api/auth/google",
   "POST /api/auth/logout",
@@ -154,6 +156,11 @@ describe("authorization — architecture guards", () => {
     const sensitive = routes.filter((r) => /^\/api\/(v1\/(ops|outbox|metrics\/consistency|storefront\/read-model)|payment-admin|auth\/admin|audit-logs|sms-settings)/.test(r.path) && r.path !== "/api/auth/admin-invites/accept");
     expect(sensitive.length).toBeGreaterThan(15);
     for (const r of sensitive) {
+      if (r.path === "/api/v1/ops/attention") {
+        // Phase 11: the one ops route an external monitor may call — still gated (ops.read session or monitor token).
+        expect(r.chain).toContain("requireOpsReadOrMonitorToken");
+        continue;
+      }
       expect(routePermission(r), `${r.method} ${r.path}`).toMatch(/^(ops\.|users\.manage|audit\.read|settings\.manage|payments\.read)/);
     }
   });

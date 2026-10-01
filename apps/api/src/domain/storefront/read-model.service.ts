@@ -22,6 +22,7 @@ import { prisma, type Db as AppDb } from "../../config/prisma";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
 import { getCurrency } from "../config/commerce-settings";
+import { captureError } from "../../lib/observability/error-capture";
 
 type Db = AppDb;
 
@@ -115,7 +116,7 @@ export async function ensureFreshReadModels(now: Date = new Date(), db: Db = pri
     const stale = await findStaleProductIds(now, db);
     return stale.length ? await refreshReadModels(stale, now, db) : 0;
   } catch (err) {
-    console.error("[read-model] freshness guard failed; serving the last projection:", err);
+    captureError(err, { msg: "[read-model] freshness guard failed; serving the last projection:" });
     return 0;
   }
 }

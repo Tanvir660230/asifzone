@@ -17,6 +17,8 @@ import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { utcInstant } from "../metrics/store-time";
 import { outboxConsumer, type OutboxConsumer } from "./consumers";
+import { currentCorrelationId, newCorrelationId, runWithContext } from "../../lib/observability/context";
+import { captureError } from "../../lib/observability/error-capture";
 
 export const OUTBOX_MAX_ATTEMPTS = 8;
 export const DISPATCH_LEASE_MS = 30_000;
@@ -116,11 +118,11 @@ export type ProcessOutcome = { outcome: "skipped" } | { outcome: "processed"; re
 /** Delivers one outbox event (called by the BullMQ worker). Safe to call any number of times for the same id. */
 export async function processOutboxEvent(eventId: string, opts: { now?: Date; consumers?: Record<string, OutboxConsumer> } = {}): Promise<ProcessOutcome> {
   const now = opts.now ?? new Date();
-  const [row] = await prisma.$queryRaw<Array<{ id: string; eventType: string; consumer: string; eventKey: string; payload: unknown; attempts: number }>>`
+  const [row] = await prisma.$queryRaw<Array<{ id: string; eventType: string; consumer: string; eventKey: string; payload: unknown; attempts: number; correlationId: string | null }>>`
     UPDATE "OutboxEvent"
     SET status = 'PROCESSING', attempts = attempts + 1, "claimedUntil" = ${utcInstant(plus(now, PROCESS_LEASE_MS))}, "updatedAt" = ${utcInstant(now)}
     WHERE id = ${eventId} AND status IN ('PENDING', 'ENQUEUED') AND "availableAt" <= ${utcInstant(plus(now, DUE_TOLERANCE_MS))}
-    RETURNING id, "eventType", consumer, "eventKey", payload, attempts`;
+    RETURNING id, "eventType", consumer, "eventKey", payload, attempts, "correlationId"`;
   if (!row) return { outcome: "skipped" }; // already processed/processing, failed, not due yet, or gone
 
   const fail = async (error: string): Promise<ProcessOutcome> => {
@@ -135,9 +137,12 @@ export async function processOutboxEvent(eventId: string, opts: { now?: Date; co
   if (!parsed.success) return fail(`invalid payload: ${parsed.error.message}`.slice(0, 2000));
 
   let result: string;
+  // Phase 11: the consumer (and every provider call it makes) runs in the recording request's correlation context.
+  const ctx = { correlationId: row.correlationId ?? currentCorrelationId() ?? newCorrelationId(), operation: `outbox:${row.consumer}` };
   try {
-    result = await consumer.handle(parsed.data, { id: row.id, eventKey: row.eventKey });
+    result = await runWithContext(ctx, () => consumer.handle(parsed.data, { id: row.id, eventKey: row.eventKey }));
   } catch (err) {
+    runWithContext(ctx, () => captureError(err, { outboxEventId: row.id, consumer: row.consumer, attempt: row.attempts }));
     const error = errorText(err);
     if (!isRetryable(err)) return fail(`non-retryable: ${error}`);
     if (row.attempts >= OUTBOX_MAX_ATTEMPTS) return fail(`gave up after ${row.attempts} attempts: ${error}`);
@@ -174,6 +179,12 @@ export async function retryOutboxEvent(eventId: string, now: Date = new Date()):
 
 export async function markDispatcherHeartbeat(at: Date = new Date()): Promise<void> {
   await cacheSet(HEARTBEAT_KEY, { at: at.toISOString() }, 3_600);
+}
+
+/** Phase 11 readiness: only the dispatcher heartbeat (cheap), same 60 s rule as outboxStatus().dispatcher.healthy. */
+export async function dispatcherHealthy(now: Date = new Date()): Promise<boolean> {
+  const heartbeat = await cacheGet<{ at: string }>(HEARTBEAT_KEY);
+  return heartbeat !== null && now.getTime() - new Date(heartbeat.at).getTime() < 60_000;
 }
 
 /** Operational visibility: counts, the oldest undelivered intent, recent failures, dispatcher heartbeat. */

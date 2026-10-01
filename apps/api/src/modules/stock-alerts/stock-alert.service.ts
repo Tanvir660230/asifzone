@@ -6,6 +6,7 @@ import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
 import { AppError } from "../../lib/app-error";
 import { PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
+import { captureError } from "../../lib/observability/error-capture";
 
 export async function subscribe(customerId: string, variantId: string) {
   // No restock alerts for something that can't be bought (trashed/unpublished product, inactive variant).
@@ -58,7 +59,7 @@ export async function notifyBackInStock(variantId: string) {
       });
       notifiedIds.push(alert.id);
     } catch (err) {
-      console.error(`[stock-alert] failed to notify alert ${alert.id}:`, err);
+      captureError(err, { msg: `[stock-alert] failed to notify alert ${alert.id}:` });
     }
   }
 

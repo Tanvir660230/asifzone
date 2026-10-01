@@ -1,6 +1,7 @@
 import { normalizeBdPhone } from "@clothing-brand/shared";
 import { env } from "../config/env";
 import { liveProvidersEnabled } from "./provider-guard";
+import { logger } from "./observability/logger";
 
 interface SmsInput {
   to: string;
@@ -37,7 +38,7 @@ function toBulkSmsBdNumber(phone: string): string {
 // lib/mailer.ts, so local dev/CI never needs a real account.
 export async function sendSms({ to, body }: SmsInput): Promise<void> {
   if (!env.bulkSmsBd.apiKey || !liveProvidersEnabled()) {
-    console.log(`[sms] (dev mode, not actually sent) To: ${to} | Body: ${body}`);
+    logger.info("[sms] (dev mode, not actually sent)", { to, bodyLength: body.length });
     return;
   }
 

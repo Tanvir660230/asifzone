@@ -6,6 +6,8 @@ import { CourierOutcomeUnknownError, createBulkSteadfastConsignments, createStea
 import { changeOrderStatus, getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
+import { logger } from "../../lib/observability/logger";
+import { captureError } from "../../lib/observability/error-capture";
 
 // PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
 // anything further for this consignment) even though it still needs an admin to reconcile which
@@ -284,7 +286,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
     if (!result || !result.consignment_id || !result.tracking_code) {
       const reason = result?.message ?? "No result returned by Steadfast";
       if (!result?.message) {
-        console.error(`[steadfast] bulk item for ${order.orderNumber} had no usable result:`, JSON.stringify(result));
+        logger.error(`[steadfast] bulk item for ${order.orderNumber} had no usable result:`, { detail: JSON.stringify(result) });
       }
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason });
       await releaseCourierBooking(order.id);
@@ -532,7 +534,7 @@ export async function syncPendingCourierStatuses(): Promise<number> {
         await prisma.order.update({ where: { id: order.id }, data: { courierStatusSyncedAt: new Date(), courierSyncError: null } });
       }
     } catch (err) {
-      console.error(`[courier-status-cron] failed to refresh order ${order.id}:`, err);
+      captureError(err, { msg: `[courier-status-cron] failed to refresh order ${order.id}:` });
       await recordCourierSyncError(order.id, syncErrorMessage(err));
     }
   }

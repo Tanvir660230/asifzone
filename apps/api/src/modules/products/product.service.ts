@@ -68,6 +68,7 @@ import { layerFromRows, loadGlobalRows, overridesFromRows, saveProductSections, 
 import { PRODUCT_CACHE_PREFIX, invalidateProductCache, triggerStorefrontRevalidation, type RevalidationContext } from "./product.cache";
 import { diffProduct, type AuditSnapshot } from "./product-audit";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "./product-public-select";
+import { captureError } from "../../lib/observability/error-capture";
 
 const CACHE_PREFIX = PRODUCT_CACHE_PREFIX;
 const CACHE_TTL_SECONDS = 120;
@@ -305,8 +306,8 @@ export async function invalidateCache(context?: RevalidationContext) {
   // Eager projection refresh for the products this write touched (best-effort — the read-time freshness guard catches
   // anything missed, e.g. a crash between the write and this line).
   const touched = [...(context?.productId ? [context.productId] : []), ...(context?.productIds ?? [])];
-  if (touched.length) await refreshReadModels(touched).catch((err) => console.error("[read-model] eager refresh failed:", err));
-  void triggerStorefrontRevalidation(context).catch((err) => console.error("[revalidate] unexpected failure:", err));
+  if (touched.length) await refreshReadModels(touched).catch((err) => captureError(err, { msg: "[read-model] eager refresh failed:" }));
+  void triggerStorefrontRevalidation(context).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));
 }
 
 // Price sorts use the canonical selling price from the Storefront Read Model projection — never basePrice.
@@ -1685,7 +1686,7 @@ export async function updateProduct(
   // allowed to block or fail the admin's product save.
   notifyReplenished(replenished);
   if (input.basePrice !== undefined && input.basePrice < Number(existing.basePrice)) {
-    notifyPriceDrop(id, input.basePrice).catch((err) => console.error("[price-drop] notify failed:", err));
+    notifyPriceDrop(id, input.basePrice).catch((err) => captureError(err, { msg: "[price-drop] notify failed:" }));
   }
 
   const updated = await getProductById(id);

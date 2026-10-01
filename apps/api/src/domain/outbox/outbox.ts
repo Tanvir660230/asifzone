@@ -6,6 +6,7 @@
 import type { Prisma } from "@prisma/client";
 import type { AppTransactionClient } from "../../config/prisma";
 import { outboxConsumer, type OutboxConsumerName } from "./consumers";
+import { currentCorrelationId } from "../../lib/observability/context";
 
 export interface OutboxIntent {
   /** Versioned business event, e.g. "order.placed.v1". */
@@ -29,8 +30,10 @@ export async function recordOutboxEvents(tx: AppTransactionClient, intents: Outb
     const parsed = consumer.payload.safeParse(intent.payload);
     if (!parsed.success) throw new Error(`[outbox] invalid ${intent.eventType} payload for ${intent.consumer}: ${parsed.error.message}`);
   }
+  // Phase 11: the request's correlation ID travels with the intent to the worker (observability only).
+  const correlationId = currentCorrelationId();
   await tx.outboxEvent.createMany({
-    data: intents.map((i) => ({ ...i, payload: i.payload as Prisma.InputJsonValue })),
+    data: intents.map((i) => ({ ...i, payload: i.payload as Prisma.InputJsonValue, correlationId })),
     skipDuplicates: true,
   });
 }

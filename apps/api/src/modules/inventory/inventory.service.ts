@@ -4,6 +4,7 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
+import { captureError } from "../../lib/observability/error-capture";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
  * (docs/INVENTORY_INVARIANTS.md; enforced by inventory-writer.guard.test.ts). Every change is a relative,
@@ -56,7 +57,7 @@ function movement(variantId: string, change: number, reason: MovementReason, act
 /** Fire-and-forget back-in-stock emails for variants that just went from 0 to positive. Call after commit. */
 export function notifyReplenished(variantIds: string[]): void {
   for (const id of new Set(variantIds)) {
-    notifyBackInStock(id).catch((err) => console.error("[stock-alert] notify failed:", err));
+    notifyBackInStock(id).catch((err) => captureError(err, { msg: "[stock-alert] notify failed:" }));
   }
 }
 

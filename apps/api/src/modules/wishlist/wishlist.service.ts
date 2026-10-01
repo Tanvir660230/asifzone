@@ -8,6 +8,7 @@ import { presentStorefrontProducts } from "../../domain/storefront/read-model.se
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS, PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
 import { formatMoney } from "@clothing-brand/shared";
 import { getCurrency } from "../../domain/config/commerce-settings";
+import { captureError } from "../../lib/observability/error-capture";
 
 // A customer's wishlist shows the storefront's view of each product. (`include: { product: … }` used to return the whole row,
 // including the product's cost price and tax rate, and every variant's cost price.)
@@ -89,7 +90,7 @@ export async function notifyPriceDrop(productId: string, newPrice: number) {
       });
       sentIds.push(item.id);
     } catch (err) {
-      console.error(`[price-drop] failed to notify wishlist item ${item.id}:`, err);
+      captureError(err, { msg: `[price-drop] failed to notify wishlist item ${item.id}:` });
     }
   }
 

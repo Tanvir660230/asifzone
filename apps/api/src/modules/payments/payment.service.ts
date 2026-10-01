@@ -14,6 +14,7 @@ import { listRefunds, recordFailedAttempt, recordGatewaySettlement, recordRefund
 import { initEpsSession, verifyEpsTransaction } from "./eps.service";
 import { initSslcommerzSession } from "./sslcommerz.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
+import { captureError } from "../../lib/observability/error-capture";
 
 /** What's snapshotted onto PaymentSession.checkoutPayload when a storefront digital-payment
  * checkout starts a session with no Order yet (see initiatePendingPayment). `pricing`/
@@ -49,7 +50,7 @@ function recordEvent(paymentSessionId: string, type: string, note?: string, rawR
     .create({
       data: { paymentSessionId, type, note: note ?? null, rawResponse: rawResponse as Prisma.InputJsonValue | undefined },
     })
-    .catch((err) => console.error(`[payment.service] failed to record event ${type} for session ${paymentSessionId}:`, err));
+    .catch((err) => captureError(err, { msg: `[payment.service] failed to record event ${type} for session ${paymentSessionId}:` }));
 }
 
 /** A verified gateway success on an order that already exists (retryPayment / admin-created orders): the Payment row,
@@ -341,7 +342,7 @@ export async function settlePaymentSession(
     const rows = await quoteCart({ items: payload!.input.items })
       .then((p) => p.rows)
       .catch((err) => {
-        console.error(`[payment.service] failed to fetch live variant info for settlement of session ${session.id}:`, err);
+        captureError(err, { msg: `[payment.service] failed to fetch live variant info for settlement of session ${session.id}:` });
         return undefined;
       });
     const finalPricing = { customerId: payload!.customerId, rows, ...payload!.pricing };
@@ -500,7 +501,7 @@ export async function reconcileStuckEpsSessions(): Promise<number> {
         recovered++;
       }
     } catch (err) {
-      console.error(`[payment-reconciliation-cron] failed to verify session ${gatewayTransactionRef}:`, err);
+      captureError(err, { msg: `[payment-reconciliation-cron] failed to verify session ${gatewayTransactionRef}:` });
     }
   }
   return recovered;
