@@ -13,10 +13,14 @@ import { CategoryTree } from "@/components/admin/category-tree";
 import { PageHeader } from "@/components/admin/page-header";
 import * as categoriesApi from "@/lib/api/categories";
 import { ApiError } from "@/lib/api-client";
+import { adminCan } from "@/lib/auth";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { cn } from "@/lib/utils";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
+  const { data: currentAdmin } = useCurrentAdmin();
+  const canPurge = adminCan(currentAdmin?.admin, "catalog.purge"); // PD-10.1: permanent delete is OWNER-only
   const [tab, setTab] = useState<"active" | "trash">("active");
   const CATEGORIES_KEY = ["categories", tab] as const;
   const { data, isLoading } = useQuery({
@@ -244,14 +248,16 @@ export default function CategoriesPage() {
                       >
                         <RotateCcw size={16} />
                       </button>
-                      <button
-                        onClick={() => handlePermanentDelete(c)}
-                        className="text-ink-500 hover:text-danger-600"
-                        aria-label="Delete permanently"
-                        title="Delete permanently"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {canPurge && (
+                        <button
+                          onClick={() => handlePermanentDelete(c)}
+                          className="text-ink-500 hover:text-danger-600"
+                          aria-label="Delete permanently"
+                          title="Delete permanently"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

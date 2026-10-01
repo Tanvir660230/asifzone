@@ -2,8 +2,10 @@
  * The one admin permission vocabulary and role → permission map (Phase 10, docs/PHASE_10_AUDIT.md). The API enforces it
  * (`requirePermission`); the web never re-derives it — it asks `can()` over the list `/api/auth/me` returns.
  *
- * The STAFF grant reproduces the pre-Phase-10 OWNER/STAFF access exactly (verified route by route). Restricting STAFF is
- * an owner decision (BUSINESS_DECISIONS PD-10.1 / PD-10.2) and, once made, a change to this map only.
+ * The STAFF grant is the pre-Phase-10 OWNER/STAFF access (verified route by route) with the owner's decisions applied
+ * (BUSINESS_DECISIONS): PD-10.1 made permanent coupon / category delete OWNER-only (`promotions.purge`, `catalog.purge`);
+ * PD-10.2 kept refunds, manual payments, price and loyalty adjustments, SMS, exports and financial analytics with STAFF.
+ * Any further change is an owner decision and a change to this map only.
  */
 export const ADMIN_ROLES = ["OWNER", "STAFF"] as const;
 export type AdminRoleName = (typeof ADMIN_ROLES)[number];
@@ -17,7 +19,7 @@ export const PERMISSIONS = [
   "catalog.manage", // products, categories, attributes, images (incl. current cost)
   "catalog.configure", // product types, templates, guides, materials, SKU pattern, sections
   "catalog.export",
-  "catalog.purge", // permanent product delete
+  "catalog.purge", // permanent catalog delete (products, categories)
   "products.import",
   "ai.use", // billed AI generation
   // orders & money
@@ -33,6 +35,7 @@ export const PERMISSIONS = [
   "courier.manage",
   // commerce configuration
   "promotions.manage", // coupons, bundles, flash sales
+  "promotions.purge", // permanent coupon delete (PD-10.1)
   "content.manage", // banners, sections, reviews, feedback, payment methods, editor uploads
   "storefront.configure", // redirects, social links
   "settings.manage", // store settings, SMS provider settings, branding
@@ -52,12 +55,13 @@ export const PERMISSIONS = [
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-/** Only OWNER holds these. Everything else is granted to STAFF as well (today's behaviour). */
+/** Only OWNER holds these. Everything else is granted to STAFF as well. */
 export const OWNER_ONLY_PERMISSIONS = [
   "users.manage",
   "audit.read",
   "catalog.configure",
   "catalog.purge",
+  "promotions.purge",
   "products.import",
   "ai.use",
   "orders.delete",

@@ -17,14 +17,22 @@
 | G-1 stale privilege (R16) | `requireAdmin` verifies the token, then resolves the admin **from the database on every request** (`domain/auth/authorization.ts` → `resolveAdminIdentity`). A missing or deactivated admin → 401. The **current** role decides, so deactivation and demotion apply on the next request |
 | G-2 token confusion | Admin tokens carry `typ: "admin"` and customer tokens `typ: "customer"`. Each verifier refuses the other's token, whatever the secrets |
 | G-3 customer data leakage | `modules/orders/customer-order-view.ts` (`toCustomerOrder`, `toCustomerReturnRequest`): **one whitelist** for everything a customer or guest receives about an order, covering checkout response, guest tracking, account list and detail, return requests. The customer timeline shows the status journey (P10-1) |
-| G-4 no permission model | `packages/shared/src/permissions.ts`: 34 permissions and `ROLE_PERMISSIONS`. `requirePermission()` on **every** admin route replaces `requireRole()`. Six self-service routes are explicit (`requireSelf`). `/auth/me`, login and refresh return the resolved `permissions`; the web uses `adminCan()` |
+| G-4 no permission model | `packages/shared/src/permissions.ts`: 35 permissions and `ROLE_PERMISSIONS`. `requirePermission()` on **every** admin route replaces `requireRole()`. Six self-service routes are explicit (`requireSelf`). `/auth/me`, login and refresh return the resolved `permissions`; the web uses `adminCan()` |
 | G-5 last owner | `assertKeepsAnActiveOwner` locks the active-owner rows; demoting or deactivating the last active OWNER → 409 (P10-2) |
 | G-7 traceability | Role and active changes audited as `admins.role_change` / `admins.activate` / `admins.deactivate` with before/after; exports audited as `<entity>.export` |
 
 **No schema change and no migration.** Permissions are code-level, mapped from the existing `AdminRole` enum.
 
-**No role capability changed.** The STAFF grant reproduces the pre-Phase-10 boundary exactly: 0 differences on all 299
-admin routes, verified by script and pinned by a test. PD-10.1 and PD-10.2 remain open for the owner.
+**Role capabilities change only by the owner's decisions.** The permission model first reproduced the pre-Phase-10
+boundary exactly: 0 differences on all 299 admin routes, verified by script. The owner then decided:
+
+- **PD-10.1:** permanent coupon and category delete is **OWNER-only**. STAFF gets 403 on `DELETE
+  /api/coupons/:id/permanent` (`promotions.purge`, new) and `DELETE /api/categories/:id/permanent` (`catalog.purge`).
+  Normal coupon and category work stays with STAFF.
+- **PD-10.2:** STAFF **keeps** refunds, manual payments, price adjustments, loyalty adjustments, bulk/ad-hoc SMS,
+  exports and financial analytics, including COGS and margin.
+
+The pinned OWNER-only route list is the pre-Phase-10 set plus the two PD-10.1 routes.
 
 ## 2. Identity model
 
@@ -46,14 +54,15 @@ admin routes, verified by script and pinned by a test. PD-10.1 and PD-10.2 remai
 | `catalog.read` / `catalog.manage` | catalog reads / products, categories, attributes, images (incl. current cost) | ✅ | ✅ |
 | `catalog.configure` | product types, templates, guides, materials, SKU pattern, sections | ✅ | — |
 | `catalog.export` | product CSV / full export | ✅ | ✅ |
-| `catalog.purge`, `products.import` | permanent product delete, bulk import | ✅ | — |
+| `catalog.purge`, `products.import` | permanent product and category delete (PD-10.1), bulk import | ✅ | — |
 | `ai.use` | billed AI generation | ✅ | — |
 | `orders.read` / `orders.manage` | orders / manual order, status, details, follow-up, reconcile | ✅ | ✅ |
 | `orders.adjust_price`, `orders.export` | price adjustment, order CSV | ✅ | ✅ |
 | `orders.delete` | delete / restore / permanent | ✅ | — |
 | `payments.read`, `payments.record`, `refunds.manage` | ledger views, manual payment, refunds | ✅ | ✅ |
 | `returns.manage`, `courier.manage` | returns and exchanges, courier | ✅ | ✅ |
-| `promotions.manage`, `content.manage` | coupons, bundles, flash sales / storefront content | ✅ | ✅ |
+| `promotions.manage`, `content.manage` | coupons, bundles, flash sales (incl. trash / restore) / storefront content | ✅ | ✅ |
+| `promotions.purge` | permanent coupon delete (PD-10.1) | ✅ | — |
 | `storefront.configure`, `settings.manage` | redirects, social links / store and SMS-provider settings | ✅ | — |
 | `customers.read` / `customers.manage` / `customers.message` | customers / CRM flags / ad-hoc and bulk SMS | ✅ | ✅ |
 | `loyalty.adjust`, `campaigns.manage` | points adjustment / campaigns, SMS templates | ✅ | ✅ |
@@ -62,7 +71,7 @@ admin routes, verified by script and pinned by a test. PD-10.1 and PD-10.2 remai
 | `ops.read` / `ops.repair` | outbox, reliability, drift / outbox retry, ledger repair, read-model rebuild | ✅ | ✅ / — |
 
 - **OWNER** holds everything. It can't demote or deactivate itself, and the last active OWNER can't be removed.
-- **STAFF** holds everything except the 10 OWNER-only permissions. It can't grant itself anything: role and permission
+- **STAFF** holds everything except the 11 OWNER-only permissions. It can't grant itself anything: role and permission
   changes need `users.manage`, and permissions aren't stored per user.
 - **Customers** have no permissions. They are authorized by ownership.
 
@@ -91,7 +100,7 @@ customer cookie → requireCustomer (typ=customer) → service scoped by custome
 | Internal attribution | product / category / brand snapshots, flash-sale item ids | never | ✅ | ✅ |
 | Customer PII | name, phone, address, email | own orders only | `orders.read`, `customers.read` | ✅ |
 | Payment / refund data | ledger rows | own totals and status | `payments.read` | ✅ |
-| Financial reports, metrics | revenue, COGS, margin | never | `analytics.read` (PD-10.2) | ✅ |
+| Financial reports, metrics | revenue, COGS, margin | never | `analytics.read` (kept by PD-10.2) | ✅ |
 | Admin accounts, audit log | roles, IPs, activity | never | never | ✅ |
 | Provider credentials | SMS settings | never | never | `settings.manage` |
 
@@ -112,7 +121,7 @@ customer cookie → requireCustomer (typ=customer) → service scoped by custome
 |---|---|
 | Authentication (401) | no cookie; garbage token; wrong-secret token; expired token; a customer-typed token signed with the **admin** secret; an admin token without `typ`; an unknown admin id → all 401. An admin token as a customer cookie → 401 |
 | Immediate revocation | a **deactivated** admin's unexpired token → 401 on the next request. A **demoted** owner (token still says OWNER) → 403 `{"error":"Forbidden"}` on `users.manage` at once, and still a valid STAFF session |
-| `/auth/me` | returns exactly `ROLE_PERMISSIONS[currentRole]` (OWNER: all 34) |
+| `/auth/me` | returns exactly `ROLE_PERMISSIONS[currentRole]` (OWNER: all 35) |
 | Role matrix: **all 299 admin routes** × STAFF | 403 **exactly** on the 60 routes that were `requireRole(OWNER)` before Phase 10, pinned verbatim; allowed (never 401/403) on the other 239 |
 | Role matrix × OWNER | passes every permission gate (3 broad side-effect routes skipped; each has its own suite) |
 | Role matrix × customer and anonymous | 401 on every one of the 299 admin routes (598 requests) |
@@ -143,7 +152,7 @@ The guards check that:
 The existing product-builder guard was updated to recognise owner-only catalog writes by `catalog.configure` instead
 of `requireRole("OWNER")`. Its assertion is unchanged: only SKU generation is STAFF-writable.
 
-### 7.3 Source mutations: **20 / 20 killed** (final code)
+### 7.3 Source mutations: **20 / 20 killed** (final code; 23 / 23 after PD-10.1 / PD-10.2, §7.5)
 
 The mutations were:
 - authentication removed;
@@ -192,6 +201,36 @@ The first run surfaced one survivor. Removing `requirePermission`'s missing-iden
 - **Fixed sleeps.** One first run on a fresh DB failed once and didn't reproduce in 8 further runs. The two audit
   assertions waited a fixed 200 ms for fire-and-forget writes; they now poll for the row (up to 5 s).
 
+### 7.5 Closure verification after PD-10.1 / PD-10.2 (2026-10-01)
+
+**Change:**
+- one new OWNER-only permission, `promotions.purge`, for permanent coupon delete;
+- permanent category delete moved to `catalog.purge`;
+- the web hides both permanent-delete buttons without the permission (UX only).
+
+No STAFF capability changed apart from PD-10.1, and there is no migration.
+
+**Tests:**
+- **2 new integration tests (18 in total):**
+  - PD-10.1: STAFF gets 403 and nothing is deleted; OWNER permanently deletes a trashed coupon and a trashed category;
+    normal coupon and category reads stay with STAFF.
+  - PD-10.2: STAFF still reaches refunds, manual payments, price and loyalty adjustments, bulk SMS, orders/products/
+    analytics exports, profit and financial-cost analytics, and COGS / gross margin metrics.
+- **Pinned list:** the OWNER-only route list is now the pre-Phase-10 60 plus the 2 PD-10.1 routes.
+- **New mutants:** each PD-10.1 route reverted to its STAFF permission, and STAFF losing refunds. All three are killed.
+
+| Gate | Result |
+|---|---|
+| Authorization suites (`src/domain/auth`) | **29 / 29**, 3× with Redis and 3× without, on a freshly migrated DB |
+| Full API suite, Redis connected | 59 files, **788 / 788**, 0 skipped (65.6 s) |
+| Full API suite, without Redis | 59 files, **788 / 788**, 0 skipped (67.7 s) |
+| Source mutations | **23 / 23 killed** |
+| Guards | 11 / 11 (inside the 29): one decision per admin route, no role strings, vocabulary defined once, public surface pinned |
+| Playwright desktop + mobile | **194 passed, 2 skipped (viewport-scoped, pre-existing), 0 failed** (6.7 min). API with `LIVE_PROVIDERS=off` and blank provider credentials; the network guard blocked 8 outbound calls (all to the EPS sandbox); no provider reached |
+| TypeScript (api, web) · ESLint · API build | clean · api clean, web 0 errors / 2 existing `<img>` warnings · clean |
+| Next.js build | compiled, types checked, 12 / 12 pages; then the known Windows standalone symlink `EPERM` (7) |
+| Database (`clothing_brand_test` only; no shadow DB) | empty DB → 82 migrations → seed + presets → e2e staff → `migrate status` up to date → `migrate diff` no difference |
+
 ## 8. Known limitations
 
 - **Permissions are role-level.** There are no custom roles, per-admin grants or data scoping (e.g. STAFF limited to
@@ -201,7 +240,6 @@ The first run surfaced one survivor. Removing `requirePermission`'s missing-iden
 - **Customer revocation:** customer access tokens are not re-checked per request. A reset password revokes refresh
   tokens and the 15-min access token then lapses; unchanged from before.
 - **Rate limits:** still in-memory (TARGET §15).
-- **Open policy:** PD-10.1 and PD-10.2 need the owner. Until then, today's STAFF capabilities stand.
 - **Next.js build:** the standalone copy step still fails with the known Windows symlink `EPERM`.
 
 ## 9. Deferred

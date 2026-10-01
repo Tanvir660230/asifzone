@@ -16,6 +16,8 @@ import { CouponForm } from "@/components/admin/coupon-form";
 import * as couponsApi from "@/lib/api/admin-coupons";
 import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
+import { adminCan } from "@/lib/auth";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { cn } from "@/lib/utils";
 
 function statusOf(c: Coupon): { label: string; className: string } {
@@ -59,6 +61,8 @@ type FormMode = "create" | "edit";
 
 export default function CouponsPage() {
   const queryClient = useQueryClient();
+  const { data: currentAdmin } = useCurrentAdmin();
+  const canPurge = adminCan(currentAdmin?.admin, "promotions.purge"); // PD-10.1: permanent delete is OWNER-only
   const [tab, setTab] = useState<"active" | "trash">("active");
   const { data, isLoading } = useQuery({
     queryKey: ["admin-coupons", tab],
@@ -255,14 +259,16 @@ export default function CouponsPage() {
                             >
                               <RotateCcw size={16} />
                             </button>
-                            <button
-                              onClick={() => handlePermanentDelete(c)}
-                              className="text-ink-500 hover:text-danger-600"
-                              aria-label="Delete permanently"
-                              title="Delete permanently"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            {canPurge && (
+                              <button
+                                onClick={() => handlePermanentDelete(c)}
+                                className="text-ink-500 hover:text-danger-600"
+                                aria-label="Delete permanently"
+                                title="Delete permanently"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                           </>
                         ) : (
                           <>

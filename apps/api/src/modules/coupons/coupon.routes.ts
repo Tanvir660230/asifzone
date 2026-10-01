@@ -30,4 +30,4 @@ couponRouter.post("/", requireAdmin, requirePermission("promotions.manage"), val
 couponRouter.patch("/:id", requireAdmin, requirePermission("promotions.manage"), validate(updateCouponSchema), couponController.update);
 couponRouter.delete("/:id", requireAdmin, requirePermission("promotions.manage"), couponController.remove);
 couponRouter.post("/:id/restore", requireAdmin, requirePermission("promotions.manage"), couponController.restore);
-couponRouter.delete("/:id/permanent", requireAdmin, requirePermission("promotions.manage"), couponController.permanentlyRemove);
+couponRouter.delete("/:id/permanent", requireAdmin, requirePermission("promotions.purge"), couponController.permanentlyRemove);

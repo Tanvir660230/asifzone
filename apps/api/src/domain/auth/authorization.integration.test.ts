@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { OWNER_ONLY_PERMISSIONS, ROLE_PERMISSIONS, PERMISSIONS } from "@clothing-brand/shared";
+import { OWNER_ONLY_PERMISSIONS, ROLE_PERMISSIONS, PERMISSIONS, roleHasPermission } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
@@ -48,9 +48,11 @@ async function eventually(check: () => Promise<boolean>, timeoutMs = 5_000) {
   }
 }
 
-/** Pre-Phase-10 OWNER-only routes (requireRole("OWNER")), from the audit's route walk — the permission model must reproduce
- * exactly this boundary (TARGET §15: "initial role mapping preserves today's OWNER/STAFF behaviour exactly"). */
-const OWNER_ONLY_ROUTES_BEFORE = [
+/** OWNER-only routes: the pre-Phase-10 `requireRole("OWNER")` set from the audit's route walk (TARGET §15: the initial
+ * mapping preserves it exactly), plus the owner's PD-10.1 decision — permanent coupon / category delete. */
+const PD_10_1_ROUTES = ["DELETE /api/coupons/:id/permanent", "DELETE /api/categories/:id/permanent"];
+const OWNER_ONLY_ROUTES = [
+  ...PD_10_1_ROUTES,
   "GET /api/auth/admins",
   "PATCH /api/auth/admins/:id/active",
   "PATCH /api/auth/admins/:id",
@@ -210,7 +212,7 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
-  it("STAFF is refused (403) exactly on the pre-Phase-10 OWNER-only routes, and allowed everywhere else", async () => {
+  it("STAFF is refused (403) exactly on the OWNER-only routes (pre-Phase-10 set + PD-10.1), and allowed everywhere else", async () => {
     const staffSession = adminAgent(staff, "STAFF");
     const denied: string[] = [];
     const wrong: string[] = [];
@@ -225,7 +227,7 @@ describe("the role matrix — every admin route, every identity", () => {
       if ((res.status === 403) !== ownerOnly.has(perm)) wrong.push(`${key} (${perm}) → ${res.status}`);
     }
     expect(wrong).toEqual([]);
-    expect(denied.sort()).toEqual([...OWNER_ONLY_ROUTES_BEFORE].sort());
+    expect(denied.sort()).toEqual([...OWNER_ONLY_ROUTES].sort());
   });
 
   it("OWNER passes every permission gate", async () => {
@@ -249,6 +251,64 @@ describe("the role matrix — every admin route, every identity", () => {
       }
     }
     expect(leaks).toEqual([]);
+  });
+});
+
+describe("owner decisions (BUSINESS_DECISIONS PD-10.1, PD-10.2)", () => {
+  it("PD-10.1: permanent coupon / category delete is OWNER-only — STAFF gets 403 and nothing is deleted", async () => {
+    const trashedCoupon = () => prisma.coupon.create({ data: { code: `P10PURGE${Math.random().toString(36).slice(2, 8).toUpperCase()}`, type: "FIXED", value: 10, deletedAt: new Date() } });
+    const trashedCategory = () => prisma.category.create({ data: { name: `P10 purge ${RUN}`, slug: `p10-purge-${RUN}-${Math.random().toString(36).slice(2, 7)}`, deletedAt: new Date() } });
+    const s = adminAgent(staff, "STAFF");
+    const o = adminAgent(owner, "OWNER");
+
+    const coupon = await trashedCoupon();
+    const staffCoupon = await s.delete(`/api/coupons/${coupon.id}/permanent`);
+    expect(staffCoupon.status).toBe(403);
+    expect(staffCoupon.body).toEqual({ error: "Forbidden" });
+    expect(await prisma.coupon.findUnique({ where: { id: coupon.id } })).not.toBeNull();
+    expect((await o.delete(`/api/coupons/${coupon.id}/permanent`)).status).toBeLessThan(300);
+    expect(await prisma.coupon.findUnique({ where: { id: coupon.id } })).toBeNull();
+
+    const category = await trashedCategory();
+    const staffCategory = await s.delete(`/api/categories/${category.id}/permanent`);
+    expect(staffCategory.status).toBe(403);
+    expect(staffCategory.body).toEqual({ error: "Forbidden" });
+    expect(await prisma.category.findUnique({ where: { id: category.id } })).not.toBeNull();
+    expect((await o.delete(`/api/categories/${category.id}/permanent`)).status).toBeLessThan(300);
+    expect(await prisma.category.findUnique({ where: { id: category.id } })).toBeNull();
+
+    // Normal coupon / category work is unchanged for STAFF.
+    expect((await s.get("/api/coupons")).status).toBe(200);
+    expect((await s.get("/api/categories")).status).toBe(200);
+    expect(roleHasPermission("STAFF", "promotions.manage") && roleHasPermission("STAFF", "catalog.manage")).toBe(true);
+    expect(roleHasPermission("STAFF", "promotions.purge") || roleHasPermission("STAFF", "catalog.purge")).toBe(false);
+  });
+
+  it("PD-10.2: STAFF keeps refunds, manual payments, price and loyalty adjustments, bulk SMS, exports and financial analytics (COGS / margin)", async () => {
+    for (const p of ["refunds.manage", "payments.record", "orders.adjust_price", "loyalty.adjust", "customers.message", "orders.export", "catalog.export", "analytics.export", "analytics.read"] as const) {
+      expect(roleHasPermission("STAFF", p), p).toBe(true);
+    }
+    const s = adminAgent(staff, "STAFF");
+    // Writes reach their handler (404 for a missing order / customer, 400 for an empty body) — never 401 / 403.
+    const writes: Array<[string, Promise<request.Response>]> = [
+      ["refund", s.post("/api/orders/p10-missing/refunds", { amount: 1 })],
+      ["manual payment", s.post("/api/orders/p10-missing/payments", { amount: 1, method: "Cash" })],
+      ["price adjustment", s.patch("/api/orders/p10-missing/price", { priceAdjustment: -1 })],
+      ["loyalty adjustment", s.post("/api/customers/admin/p10-missing/points", { points: 1, reason: "PD-10.2" })],
+      ["bulk SMS", s.post("/api/customers/admin/bulk/sms", {})],
+    ];
+    for (const [what, pending] of writes) {
+      const res = await pending;
+      expect([401, 403], `${what} → ${res.status}`).not.toContain(res.status);
+    }
+    // Reads answer 200.
+    for (const url of ["/api/orders/export/csv", "/api/products/export/csv", "/api/analytics/export/revenue.csv", "/api/analytics/profit-trend", "/api/analytics/financial-costs", "/api/analytics/highest-profit-products", "/api/v1/metrics?metrics=cogs,gross_margin"]) {
+      const res = await s.get(url);
+      expect(res.status, url).toBe(200);
+    }
+    const metrics = (await s.get("/api/v1/metrics?metrics=cogs,gross_margin")).body.metrics;
+    expect(metrics).toHaveProperty("cogs");
+    expect(metrics).toHaveProperty("gross_margin");
   });
 });
 

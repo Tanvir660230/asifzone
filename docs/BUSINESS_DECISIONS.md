@@ -281,12 +281,12 @@ exactly as it was (TARGET §15). It records these readings; the owner may overru
 | P10-2 | The store always keeps **at least one active OWNER**. Demoting or deactivating the last one is refused (409), including when two owners act at the same moment. | Otherwise no one could manage the team, settings or repairs again without database access. |
 | P10-3 | Deactivating an admin or changing their role takes effect on their **next request**, not when their 15-minute session token expires. | TARGET §15 ("isActive and role re-checked"). A removed admin must lose access immediately. |
 
-**Open decisions (awaiting the owner; today's behaviour is kept until decided):**
+**Owner decisions (resolved 2026-10-01):**
 
-| ID | Question | Today | Recommendation |
+| ID | Question | Decision | Enforcement |
 |---|---|---|---|
-| PD-10.1 | Should **permanent delete of coupons and categories** be OWNER-only, like permanent delete of orders and products? | STAFF and OWNER | OWNER-only (`catalog.purge` / a `promotions.purge`), for consistency |
-| PD-10.2 | Should STAFF keep **refunds, manual payments, price adjustment, loyalty adjustment, ad-hoc/bulk SMS, exports and financial analytics (COGS/margin)**? | all STAFF-allowed (Phase 6 recorded no restriction) | Owner's call per capability. Each is one line in `ROLE_PERMISSIONS` |
+| PD-10.1 | Should **permanent delete of coupons and categories** be OWNER-only, like permanent delete of orders and products? | **Yes: OWNER-only.** STAFF gets 403. Normal coupon and category work (create, edit, trash, restore) stays with STAFF | `DELETE /api/coupons/:id/permanent` → `promotions.purge` (new, OWNER-only); `DELETE /api/categories/:id/permanent` → `catalog.purge` (OWNER-only, already used for products) |
+| PD-10.2 | Should STAFF keep **refunds, manual payments, price adjustment, loyalty adjustment, ad-hoc/bulk SMS, exports and financial analytics (COGS/margin)**? | **Yes: STAFF keeps all of them.** OWNER remains fully privileged | unchanged STAFF permissions: `refunds.manage`, `payments.record`, `orders.adjust_price`, `loyalty.adjust`, `customers.message`, `orders.export` / `catalog.export` / `analytics.export`, `analytics.read` |
 
 ## Phase 9 implementation notes (interpretations, recorded 2026-10-01)
 

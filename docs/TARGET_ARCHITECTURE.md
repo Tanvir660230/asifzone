@@ -766,8 +766,9 @@ campaigns through the outbox, a separate worker, the bounded settings-cache race
 - no last-owner protection.
 
 **Delivered** ([PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)). This is §15's permission model:
-- `packages/shared/src/permissions.ts` (34 permissions and the role map). The initial mapping reproduces the
-  pre-Phase-10 OWNER/STAFF boundary exactly, verified on all 299 admin routes;
+- `packages/shared/src/permissions.ts` (35 permissions and the role map). The initial mapping reproduced the
+  pre-Phase-10 OWNER/STAFF boundary exactly, verified on all 299 admin routes. The owner's decisions then made
+  permanent coupon / category delete OWNER-only (PD-10.1) and kept STAFF's financial capabilities (PD-10.2);
 - `requirePermission()` on every admin route, replacing `requireRole()`;
 - DB-backed identity on every admin request (`domain/auth/authorization.ts`);
 - typed tokens;

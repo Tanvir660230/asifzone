@@ -37,4 +37,4 @@ categoryRouter.patch("/:id", requireAdmin, requirePermission("catalog.manage"), 
 categoryRouter.post("/:id/move", requireAdmin, requirePermission("catalog.manage"), validate(moveCategorySchema), categoryController.move);
 categoryRouter.delete("/:id", requireAdmin, requirePermission("catalog.manage"), categoryController.remove);
 categoryRouter.post("/:id/restore", requireAdmin, requirePermission("catalog.manage"), categoryController.restore);
-categoryRouter.delete("/:id/permanent", requireAdmin, requirePermission("catalog.manage"), categoryController.permanentlyRemove);
+categoryRouter.delete("/:id/permanent", requireAdmin, requirePermission("catalog.purge"), categoryController.permanentlyRemove);
