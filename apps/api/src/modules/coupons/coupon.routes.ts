@@ -21,7 +21,7 @@ couponRouter.post(
   validate(validateCouponSchema),
   couponController.validate,
 );
-couponRouter.post("/best", attachCustomerIfPresent, validate(bestCouponSchema), couponController.best);
+couponRouter.post("/best", couponValidateRateLimit, attachCustomerIfPresent, validate(bestCouponSchema), couponController.best);
 couponRouter.get("/active", couponController.active);
 
 couponRouter.get("/", requireAdmin, requirePermission("promotions.manage"), validate(couponListQuerySchema, "query"), couponController.list);

@@ -115,6 +115,25 @@ export const otpRequestRateLimit = rateLimit({
   message: { error: "Too many codes requested, please try again later" },
 });
 
+/** Phase 11 (F-05): session refresh (admin and customer). Generous enough for many tabs, but a ceiling on token guessing
+ * and refresh abuse. */
+export const refreshRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again shortly" },
+});
+
+/** Phase 11 (F-05): endpoints that send an email on every call (resend verification) — cost and spam ceiling. */
+export const emailSendRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many emails requested, please try again later" },
+});
+
 /** The canonical quote (POST /api/v1/checkout/quote) is re-requested on every cart/checkout change — its own, much
  * larger budget so browsing a cart never eats into order placement's. It writes nothing, so a high ceiling is safe. */
 export const quoteRateLimit = rateLimit({

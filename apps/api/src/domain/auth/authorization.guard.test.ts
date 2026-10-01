@@ -88,6 +88,7 @@ const PUBLIC_ROUTES = [
   "POST /api/customers/forgot-password",
   "POST /api/customers/reset-password",
   "POST /api/customers/verify-email",
+  "POST /api/customers/claim/confirm", // Phase 11 (BD-11.6 a): the emailed link that proves an existing record's email
   "POST /api/customers/unsubscribe",
   "POST /api/customers/google",
   "POST /api/customers/otp/request",

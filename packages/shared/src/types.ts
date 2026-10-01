@@ -628,6 +628,8 @@ export interface Customer {
   email: string | null;
   emailVerifiedAt: string | null;
   phone: string | null;
+  /** Phase 11: set once an OTP to this phone succeeded — only then is the phone a login identifier. */
+  phoneVerifiedAt?: string | null;
   smsMarketingOptIn: boolean;
   emailMarketingOptIn: boolean;
   rewardPoints: number;

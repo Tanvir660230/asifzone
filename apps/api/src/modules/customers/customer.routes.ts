@@ -21,11 +21,15 @@ import {
   createCustomerAdminSchema,
   sendAdHocSmsSchema,
   bulkSendSmsSchema,
+  phoneVerificationRequestSchema,
+  phoneVerificationConfirmSchema,
+  changeCustomerPasswordSchema,
+  confirmCustomerClaimSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireCustomer } from "../../middlewares/require-customer";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
-import { loginRateLimit, otpRequestRateLimit } from "../../middlewares/rate-limit";
+import { emailSendRateLimit, loginRateLimit, otpRequestRateLimit, refreshRateLimit } from "../../middlewares/rate-limit";
 import * as customerController from "./customer.controller";
 
 export const customerRouter = Router();
@@ -33,7 +37,10 @@ export const customerRouter = Router();
 customerRouter.post("/register", loginRateLimit, validate(customerRegisterSchema), customerController.register);
 customerRouter.post("/login", loginRateLimit, validate(customerLoginSchema), customerController.login);
 customerRouter.post("/logout", customerController.logout);
-customerRouter.post("/refresh", customerController.refresh);
+customerRouter.post("/refresh", refreshRateLimit, customerController.refresh);
+// Phase 11 (BD-11.6 a): the emailed claim link proves ownership of an existing record's email.
+customerRouter.post("/claim/confirm", loginRateLimit, validate(confirmCustomerClaimSchema), customerController.confirmClaim);
+customerRouter.post("/logout-all", requireCustomer, loginRateLimit, customerController.logoutAll);
 customerRouter.post(
   "/forgot-password",
   loginRateLimit,
@@ -47,7 +54,7 @@ customerRouter.post(
   customerController.resetPassword,
 );
 customerRouter.post("/verify-email", loginRateLimit, validate(verifyEmailSchema), customerController.verifyEmail);
-customerRouter.post("/resend-verification", requireCustomer, customerController.resendVerification);
+customerRouter.post("/resend-verification", requireCustomer, emailSendRateLimit, customerController.resendVerification);
 // Public — clicked from a marketing email, no session required. Its own HMAC token (not the CSRF
 // cookie) is what proves the caller holds a real unsubscribe link (see generateEmailUnsubscribeToken).
 customerRouter.post(
@@ -63,6 +70,10 @@ customerRouter.post("/otp/verify", loginRateLimit, validate(verifyOtpSchema), cu
 
 customerRouter.get("/me", requireCustomer, customerController.me);
 customerRouter.patch("/me", requireCustomer, validate(updateCustomerSchema), customerController.updateMe);
+// Phase 11 (BD-11.1, BD-11.3): verify a phone (first time, or a new login phone) and set/change the password.
+customerRouter.post("/me/phone/otp", requireCustomer, otpRequestRateLimit, validate(phoneVerificationRequestSchema), customerController.requestPhoneVerification);
+customerRouter.post("/me/phone/verify", requireCustomer, loginRateLimit, validate(phoneVerificationConfirmSchema), customerController.confirmPhoneVerification);
+customerRouter.post("/me/password", requireCustomer, loginRateLimit, validate(changeCustomerPasswordSchema), customerController.changePassword);
 
 customerRouter.get("/me/addresses", requireCustomer, customerController.listAddresses);
 customerRouter.post(

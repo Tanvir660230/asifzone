@@ -10,7 +10,7 @@ import {
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission, requireSelf } from "../../middlewares/require-admin";
-import { loginRateLimit } from "../../middlewares/rate-limit";
+import { loginRateLimit, refreshRateLimit } from "../../middlewares/rate-limit";
 import {
   login,
   googleLogin,
@@ -36,7 +36,7 @@ authRouter.post("/google", loginRateLimit, validate(googleLoginSchema), googleLo
 authRouter.post("/logout", logout);
 authRouter.post("/logout-all", requireAdmin, requireSelf, logoutAllDevices);
 authRouter.get("/sessions", requireAdmin, requireSelf, sessions);
-authRouter.post("/refresh", refresh);
+authRouter.post("/refresh", refreshRateLimit, refresh);
 authRouter.get("/me", requireAdmin, requireSelf, me);
 
 // No public registration route exists anywhere for admin accounts — the only way one comes into

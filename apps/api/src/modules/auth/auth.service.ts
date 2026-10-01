@@ -79,9 +79,16 @@ export async function loginAdminWithGoogle(idToken: string, userAgent?: string) 
     throw AppError.unauthorized("Invalid Google sign-in — please try again");
   }
   if (!payload?.sub || !payload.email) throw AppError.unauthorized("Invalid Google sign-in — please try again");
+  return signInAdminWithGoogleIdentity({ sub: payload.sub, email: payload.email, emailVerified: payload.email_verified }, userAgent);
+}
 
-  const googleId = payload.sub;
-  const email = payload.email.trim().toLowerCase();
+/** Phase 11 (F-27): a Google identity counts only when Google itself confirms the email (`email_verified`) — otherwise an
+ * account whose Google email is unverified could be linked to the invited admin who owns that address. Admin accounts
+ * stay invite-only; permissions are untouched (Phase 10). */
+export async function signInAdminWithGoogleIdentity(identity: { sub: string; email: string; emailVerified?: boolean | null }, userAgent?: string) {
+  if (identity.emailVerified !== true) throw AppError.unauthorized("Google couldn't confirm this email address — sign in with your password");
+  const googleId = identity.sub;
+  const email = identity.email.trim().toLowerCase();
 
   let admin = await prisma.adminUser.findUnique({ where: { googleId } });
   if (!admin) {
