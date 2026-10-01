@@ -270,6 +270,33 @@ these readings; the owner may overrule any with a new dated entry.
 | P7-3 | Every business date shown to admins or customers (orders, payments, refunds, returns, reviews, coupons, "today") is the **store-timezone** date, not the viewer's device date. | Reports bucket by the store's business day (Phase 5). A viewer-local date could place an order on a different day than the reports. |
 | P7-4 | Currency symbols are derived from the store currency (`Intl` narrow symbol). The number locale stays `en-BD` until a locale setting exists. Transactional SMS copy is unchanged (Bengali content). | No locale concept exists yet (TARGET §7 future). The SMS copy is content, not configuration. |
 
+## Phase 11 decisions (owner, 2026-10-01)
+
+Phase 11 ([PHASE_11_IMPLEMENTATION_CONTRACT.md](PHASE_11_IMPLEMENTATION_CONTRACT.md),
+[PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)).
+
+| ID | Decision |
+|---|---|
+| BD-11.1 | A phone is a login identifier only after a successful OTP to it. OTP login matches only `phone = P AND phoneVerifiedAt IS NOT NULL`. At most one customer per verified phone (partial unique index). Unverified phones may repeat. A verified phone changes only through OTP of the new number; the old one stays the login until then. Existing phone data is never auto-verified |
+| BD-11.2 | No account merges and no record moves: orders, addresses, points, payments and refunds stay put. Existing duplicate or unverified phones remain allowed |
+| BD-11.3 | DB-backed customer refresh sessions, at most 7 days from login, rotating. Server-side logout, log out everywhere, and revocation on password change and reset; `tokenVersion` stays compatible. Reuse of a rotated or revoked token revokes that login's chain, with a 10-second grace window for concurrent tabs. `isBlocked` stays a CRM field. No account deletion |
+| BD-11.4 | Provider-neutral observability: correlation IDs, structured logs, error-capture interface, readiness, attention signals |
+| BD-11.5 | Brief deploy downtime acceptable, no blue/green: backup → verify → migrate → start → readiness (≤ 120 s) → fail if not ready; documented rollback |
+| BD-11.6 | **(a)** An existing passwordless customer record is claimed only after proving the matched identity: email (verification/claim link) or phone (OTP). Never by a match alone; never moving history; auditable; safe against concurrency |
+| BD-11.7 | **(a)** Guest checkout attaches to an existing customer only through an already **verified** phone or email; otherwise a guest record per existing guest semantics |
+| F-26 / F-27 | OTP sign-up never marks the email verified. Google `email_verified` is required for customer and admin Google sign-in |
+| R-1 | Existing OTP-only customers are not auto-verified; their first OTP sign-in after the deploy verifies the phone, asking again for their name and email |
+
+**Implementation readings** (recorded; the owner may overrule any with a new dated entry):
+
+| ID | Reading | Why |
+|---|---|---|
+| P11-1 | A guest record ("placeholder") is reused only for the exact same (phone, email) pair. A guest email already held by another unverified record is not used as a key; the order still keeps the email on the order itself | Grouping guests by phone *or* email let one placeholder collect different people's orders, so whoever later proved either identity could see the others' orders. Exact pairs make a claim expose only orders placed with the proven identity |
+| P11-2 | OTP proof of a phone claims the unclaimed guest record holding that phone **and** the email supplied at sign-up, else the one holding that phone with no email | The phone is proven, and the supplied email names which guest record is theirs. An email-only match is never claimed by a phone proof |
+| P11-3 | A record whose phone is verified but whose email isn't can't gain a password through that email (no reset email is sent). Its owner sets a password while signed in | The email on such a record was never proven by the phone's owner, so a stranger holding that mailbox must not take the account over |
+| P11-4 | Google links to an existing record only when that record is an unclaimed placeholder or its email is already verified; otherwise 409 ("sign in another way and verify your email first") | Google proves the Google user owns the email, not that the existing record's owner does |
+| P11-5 | Within the 10-second grace window a replayed refresh token gets a fresh access token but **no** new refresh token, so the session chain never forks. Outside the window the whole chain is revoked | Concurrent tabs keep working through the cookie the winning tab set; there is no unlimited replay window |
+
 ## Phase 10 implementation notes and open decisions (recorded 2026-10-01)
 
 Phase 10 ([PHASE_10_AUDIT.md](PHASE_10_AUDIT.md), [PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)) keeps every role capability

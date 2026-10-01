@@ -73,11 +73,12 @@ describe("reuse detection and the 10-second grace window", () => {
   });
 
   it("a replay inside the grace window gets no new refresh token; outside it, the whole family is revoked", async () => {
+    expect(REUSE_GRACE_MS).toBe(10_000); // BD-11.3: exactly a 10-second window — never unbounded
     const c = await newCustomer();
     const next = await rotateCustomerSession(c.refreshToken);
     expect((await rotateCustomerSession(c.refreshToken)).refreshToken).toBeNull(); // inside grace: no fork
 
-    await ageRotation(c.refreshToken, REUSE_GRACE_MS + 1_000);
+    await ageRotation(c.refreshToken, 11_000);
     await expect(rotateCustomerSession(c.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
     const family = await prisma.customerRefreshToken.findMany({ where: { familyId: (await row(c.refreshToken)).familyId } });
     expect(family.every((t) => t.revokedAt && t.revokedReason === "reuse_detected")).toBe(true);
@@ -144,7 +145,7 @@ describe("legacy stateless refresh tokens (pre-Phase-11)", () => {
     const legacy = signCustomerRefreshToken({ customerId: c.id, tokenVersion });
     const converted = await rotateCustomerSession(legacy);
     expect(converted.refreshToken).toBeTruthy();
-    await ageRotation(legacy, REUSE_GRACE_MS + 1_000);
+    await ageRotation(legacy, 11_000);
     await expect(rotateCustomerSession(legacy)).rejects.toMatchObject({ statusCode: 401 });
     await expect(rotateCustomerSession(converted.refreshToken!)).rejects.toMatchObject({ statusCode: 401 }); // family revoked
   });

@@ -780,6 +780,34 @@ campaigns through the outbox, a separate worker, the bounded settings-cache race
 **Deferred:** custom roles or per-admin grants, per-staff data scoping, Redis-backed rate limits, provider-credential
 encryption (ProviderConfig), per-request customer token revocation.
 
+## 16k. Phase 11 scope — Production readiness: identity integrity, sessions, observability, safe operations
+
+**Why this phase.** The Phase 11 audit and contract ([PHASE_11_IMPLEMENTATION_CONTRACT.md](PHASE_11_IMPLEMENTATION_CONTRACT.md))
+found that unverified contact data granted access:
+- OTP login by an unverified, non-unique phone;
+- registration silently claiming guest and OTP records;
+- guest orders attaching by an unverified match;
+- OTP sign-up marking the email verified;
+- Google linking without `email_verified`.
+
+It also found non-revocable customer sessions, no observability, deploys that started code before migrating, and
+rate-limit gaps.
+
+**Delivered** ([PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)):
+- `Customer.phoneVerifiedAt` and a partial unique index;
+- proof-before-claim (`CustomerClaim`);
+- verified-only guest attachment;
+- `CustomerRefreshToken` rotating sessions;
+- correlation IDs (`OutboxEvent.correlationId`), a redacting JSON logger and provider-neutral error capture;
+- `/health/ready` and `/api/v1/ops/attention`;
+- `docker/deploy.sh` (backup → migrate → switch → readiness gate);
+- the rate-limit gaps closed;
+- seed and money hardening.
+
+**Deferred:** dedicated worker, Redis-backed rate limits, ProviderConfig, StoreProfile, installer and config packs,
+country packs, per-order currency, daily facts, courier auto-recovery, the remaining notifications through the
+outbox, custom roles, object storage.
+
 ## 17. Definition of done for each phase
 
 Tests (unit + integration + e2e) green · `tsc --noEmit` for api, web, shared · `eslint` for api and web (added to CI in Phase 1) · `next build` · migrations applied to a copy of production + drift check · invariant suite green · reconciliation reports reviewed · this document, the audit and the SSOT registry updated · remaining risks listed in the phase's PR description.

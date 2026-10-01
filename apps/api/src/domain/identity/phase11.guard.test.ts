@@ -95,6 +95,12 @@ describe("Phase 11 — identity, sessions, observability guards", () => {
     expect(attention).not.toMatch(/role\s*[!=]==/);
   });
 
+  it("the legacy price-adjustment path does money in minor units — no Number() arithmetic (F-20)", () => {
+    const adjust = fnBody(read("modules/orders/order.service.ts"), "adjustOrderPrice");
+    expect(adjust).not.toMatch(/Number\([^)]*\)\s*[-+*/]\s*Number\(/);
+    expect(adjust).toMatch(/clampNonNegative\(subtract\(m\(existing\.discount\), bundle\)\)/);
+  });
+
   it("no destructive migration after the two early ones; the Phase 11 migration is additive with the partial index", () => {
     const destructive = /DROP\s+(TABLE|COLUMN)|ALTER\s+COLUMN\s+\S+\s+(TYPE|SET NOT NULL)|DROP\s+TYPE|RENAME\s+(COLUMN|TO)|DELETE\s+FROM|TRUNCATE/i;
     const allowedEarly = new Set(["20260805063035_add_social_links", "20260805112438_zone_based_shipping"]);

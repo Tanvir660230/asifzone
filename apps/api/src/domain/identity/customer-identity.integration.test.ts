@@ -138,6 +138,23 @@ describe("phone identity (BD-11.1)", () => {
     expect(row.emailVerifiedAt).toBeNull();
   });
 
+  it("a wrong guess that raced past stale pre-checks still can't push a code past its cap (atomic attempts)", async () => {
+    const p = phone();
+    await seedOtp(p);
+    const otp = await prisma.phoneOtp.findFirstOrThrow({ where: { phone: p } });
+    await prisma.phoneOtp.update({ where: { id: otp.id }, data: { attempts: 5 } }); // the cap is already spent…
+    // …but this request read the OTP and the phone budget before the other guesses landed (the race window).
+    const findSpy = vi.spyOn(prisma.phoneOtp, "findFirst").mockResolvedValueOnce({ ...otp, attempts: 0 });
+    const aggSpy = vi.spyOn(prisma.phoneOtp, "aggregate").mockResolvedValueOnce({ _sum: { attempts: 0 } } as never);
+    try {
+      await expect(verifyOtp({ phone: p, code: "000000" })).rejects.toMatchObject({ statusCode: 400, message: "Too many incorrect attempts — request a new code" });
+    } finally {
+      findSpy.mockRestore();
+      aggSpy.mockRestore();
+    }
+    expect((await prisma.phoneOtp.findUniqueOrThrow({ where: { id: otp.id } })).attempts).toBe(5); // never past the cap
+  });
+
   it("concurrent wrong OTP guesses can't exceed the per-code cap (atomic attempts)", async () => {
     const p = phone();
     await seedOtp(p);
@@ -189,6 +206,17 @@ describe("claiming an existing passwordless record (BD-11.6 a)", () => {
     const otp = await otpLogin(p, { name: "Owner", email: mail() });
     expect(otp.customer.id).toBe(placeholderId); // proof of the phone claims the placeholder
     expect((await meOrders(placeholderId)).body.items.map((o: { id: string }) => o.id)).toContain(order.id);
+  });
+
+  it("an OTP for a different phone can't claim a record matched only by email", async () => {
+    const email = mail();
+    const order = await placeholderWithOrder(phone(), email);
+    const otherPhone = phone();
+    await seedOtp(otherPhone);
+    await expect(verifyOtp({ phone: otherPhone, code: CODE, name: "Imposter", email })).rejects.toMatchObject({ statusCode: 409 });
+    const placeholder = await prisma.customer.findUniqueOrThrow({ where: { id: order.customerId! } });
+    expect(placeholder.phoneVerifiedAt).toBeNull();
+    expect(placeholder.phone).not.toBe(otherPhone);
   });
 
   it("concurrent claims: two links for one record, or one link twice — exactly one wins", async () => {
