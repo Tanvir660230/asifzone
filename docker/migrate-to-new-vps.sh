@@ -56,6 +56,9 @@ OLD_USER="${OLD_USER:-root}"
 [ -n "$OLD_HOST" ] || die "পুরনো VPS-এর IP দিতে হবে।"
 
 SSH_OPTS=(-p "$OLD_PORT" -o ControlPath="$SOCK" -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30)
+# পুরনো VPS-এ পাসওয়ার্ড লগইন বন্ধ থাকলে SSH key দিয়ে ঢোকা (GitHub-এর VPS_SSH_KEY secret থেকে আসে)
+OLD_KEY_FILE=/root/.ssh/asifzone-old-key
+[ -s "$OLD_KEY_FILE" ] && SSH_OPTS+=(-i "$OLD_KEY_FILE")
 old() { ssh "${SSH_OPTS[@]}" "$OLD_USER@$OLD_HOST" "$@"; }
 
 if ! ssh "${SSH_OPTS[@]}" -O check "$OLD_USER@$OLD_HOST" 2>/dev/null; then
