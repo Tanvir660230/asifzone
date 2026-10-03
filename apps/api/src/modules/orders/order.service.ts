@@ -773,6 +773,9 @@ async function buildDeliveryScoreByCustomerId(customerIds: string[]) {
       deliveryTotalParcels: true,
       deliverySuccessParcels: true,
       deliveryCancelledParcels: true,
+      deliveryCancellationRate: true,
+      deliveryVolumeRange: true,
+      deliveryFraudReports: true,
       deliveryScoreCheckedAt: true,
     },
   });
@@ -781,8 +784,11 @@ async function buildDeliveryScoreByCustomerId(customerIds: string[]) {
     scores.set(c.id, {
       successRate: c.deliverySuccessRate,
       totalParcels: c.deliveryTotalParcels ?? 0,
-      successParcels: c.deliverySuccessParcels ?? 0,
-      cancelledParcels: c.deliveryCancelledParcels ?? 0,
+      successParcels: c.deliverySuccessParcels,
+      cancelledParcels: c.deliveryCancelledParcels,
+      cancellationRate: c.deliveryCancellationRate,
+      volumeRange: c.deliveryVolumeRange,
+      fraudReports: c.deliveryFraudReports,
       checkedAt: c.deliveryScoreCheckedAt!.toISOString(),
     });
   }

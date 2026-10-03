@@ -1021,9 +1021,13 @@ export async function checkAndUpdateDeliveryScore(customerId: string, rawPhone: 
     where: { id: customerId },
     data: {
       deliveryTotalParcels: result.totalParcels,
-      deliverySuccessParcels: result.successParcels,
-      deliveryCancelledParcels: result.cancelledParcels,
+      // Steadfast no longer publishes exact delivered/cancelled counts — clear any stale ones.
+      deliverySuccessParcels: null,
+      deliveryCancelledParcels: null,
       deliverySuccessRate: result.successRate,
+      deliveryCancellationRate: result.cancellationRate,
+      deliveryVolumeRange: result.volumeRange,
+      deliveryFraudReports: result.fraudReports,
       deliveryScoreCheckedAt: new Date(),
     },
   });

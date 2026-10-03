@@ -267,6 +267,25 @@ if [ "$MODE" = "steadfast" ]; then
   exit 0
 fi
 
+# নতুন VPS-এ এই branch-এর কোড ডিপ্লয় (fast-forward only; সার্ভারে নিজের হাতে করা পরিবর্তন থাকলে থেমে যায়)
+if [ "$MODE" = "deploy" ]; then
+  branch="${DEPLOY_BRANCH:-claude/charming-gauss-e26lar}"
+  cd "$REPO_DIR"
+  git config --global --add safe.directory "$REPO_DIR"
+  [ -z "$(git status --porcelain --untracked-files=no)" ] || { git status --short; die "সার্ভারের কোডে নিজের হাতে করা পরিবর্তন আছে — ডিপ্লয় থামালাম।"; }
+  git fetch -q https://github.com/Tanvir660230/asifzone.git "$branch"
+  git merge --ff-only FETCH_HEAD || die "fast-forward সম্ভব না — ডিপ্লয় থামালাম।"
+  say "ডিপ্লয় হচ্ছে: $(git log -1 --format='%h %s')"
+  dc build api web
+  # migration আগে (নতুন image দিয়ে), যাতে নতুন কোড চালু হওয়ার সময় নতুন column আগেই থাকে; additive তাই পুরনো কোডও চলে
+  dc run --rm --no-deps -T api npx prisma migrate deploy
+  dc up -d --no-deps api web
+  # api/web নতুন কন্টেইনার মানে নতুন IP — nginx রিস্টার্ট না করলে 502
+  dc restart nginx
+  check_site
+  exit 0
+fi
+
 if [ "$MODE" = "sync" ]; then
   [ -f "$COMPOSE_DIR/docker-compose.yml" ] || die "আগে পুরো মাইগ্রেশন (bash migrate.sh) চালান।"
   final_sync

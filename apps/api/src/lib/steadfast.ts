@@ -210,38 +210,47 @@ export async function getSteadfastBalance(): Promise<number> {
 }
 
 export interface SteadfastFraudCheck {
+  /** Lower bound of Steadfast's volume range ("25+" -> 25, "6-10" -> 6); 0 means no history. */
   totalParcels: number;
-  successParcels: number;
-  cancelledParcels: number;
-  /** 0-100, or null when totalParcels is 0 — no delivery history yet, not the same as a bad score. */
+  /** As reported, e.g. "2" or "25+" — exact counts are no longer published. Null when there's no history. */
+  volumeRange: string | null;
+  /** 0-100, or null when there's no delivery history yet — not the same as a bad score. */
   successRate: number | null;
+  cancellationRate: number | null;
+  fraudReports: number;
 }
 
-/** Response shape confirmed against a live account: {total_parcels, total_delivered, total_cancelled,
- * total_fraud_reports} — no {status, message} envelope at all, unlike every other endpoint here.
- * (Earlier field-name guesses — total_parcel/success_parcel/cancelled_parcel, singular — never matched
- * a real response, so every check silently failed with "HTTP 200" as the only clue.) `status` is still
- * treated as optional in case it ever appears. Success rate is computed locally from the two counts
- * rather than trusted from the API, so rounding/definition can't drift. */
-interface RawSteadfastFraudCheck {
+/** Response shape confirmed against a live account on 2026-10-03:
+ * {status: 200, phone, score, level, reasons, scoring_disabled, doubtful_reports, total_reports,
+ *  delivery_ratio, cancellation_ratio, return_ratio, volume_band, volume_range, fraud_categories}.
+ * This replaced GET /fraud_check/{phone}, which since 2026-09-27 answers HTTP 200 with every count
+ * set to 0 plus a `notice` — so it kept "working" while silently turning every customer into
+ * "No history". Ratios are already percentages; exact parcel counts are gone for good. */
+interface RawSteadfastFraudScore {
   status?: number;
   message?: string;
-  total_parcels?: number;
-  total_delivered?: number;
-  total_cancelled?: number;
+  delivery_ratio?: number | null;
+  cancellation_ratio?: number | null;
+  volume_range?: string | number | null;
+  total_reports?: number | null;
+}
+
+function parseVolumeLowerBound(range: string | null): number {
+  const match = range?.match(/\d+/);
+  return match ? Number(match[0]) : 0;
 }
 
 export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFraudCheck> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/fraud_check/${encodeURIComponent(phone)}`, {
+  const res = await fetch(`${env.steadfast.baseUrl}/fraud_check/score/${encodeURIComponent(phone)}`, {
     headers: authHeaders(),
   });
 
   const { data: parsed, rawText } = await readSteadfastResponse(res);
-  const data = parsed as RawSteadfastFraudCheck | null;
+  const data = parsed as RawSteadfastFraudScore | null;
 
-  if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || typeof data.total_parcels !== "number") {
+  if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || !("delivery_ratio" in data)) {
     if (!data) console.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
     throw AppError.badRequest(
       `Steadfast fraud check failed: ${data?.message ?? `HTTP ${res.status}`}`,
@@ -249,15 +258,16 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
     );
   }
 
-  const totalParcels = Number(data.total_parcels);
-  const successParcels = Number(data.total_delivered ?? 0);
-  const cancelledParcels = Number(data.total_cancelled ?? 0);
+  const volumeRange = data.volume_range === null || data.volume_range === undefined ? null : String(data.volume_range);
+  const totalParcels = parseVolumeLowerBound(volumeRange);
+  const hasHistory = totalParcels > 0 && typeof data.delivery_ratio === "number";
 
   return {
-    totalParcels,
-    successParcels,
-    cancelledParcels,
-    successRate: totalParcels > 0 ? Math.round((successParcels / totalParcels) * 1000) / 10 : null,
+    totalParcels: hasHistory ? totalParcels : 0,
+    volumeRange: hasHistory ? volumeRange : null,
+    successRate: hasHistory ? Number(data.delivery_ratio) : null,
+    cancellationRate: hasHistory && typeof data.cancellation_ratio === "number" ? data.cancellation_ratio : null,
+    fraudReports: Number(data.total_reports ?? 0),
   };
 }
 

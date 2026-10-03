@@ -191,7 +191,7 @@ export function bulkSyncCourier(ids: string[]) {
 }
 
 export interface BulkDeliveryScoreResult {
-  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number }>;
+  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number; volumeRange: string | null }>;
   failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
 }
 

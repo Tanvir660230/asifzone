@@ -315,7 +315,7 @@ export async function bulkSyncCourierStatuses(orderIds: string[]): Promise<BulkC
 }
 
 export interface BulkDeliveryScoreResult {
-  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number }>;
+  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number; volumeRange: string | null }>;
   failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
 }
 
@@ -349,7 +349,13 @@ export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkD
     try {
       const result = await checkAndUpdateDeliveryScore(customerId, group[0]!.customerPhone);
       for (const order of group) {
-        checked.push({ orderId: order.id, orderNumber: order.orderNumber, successRate: result.successRate, totalParcels: result.totalParcels });
+        checked.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          successRate: result.successRate,
+          totalParcels: result.totalParcels,
+          volumeRange: result.volumeRange,
+        });
       }
     } catch (err) {
       const reason = syncErrorMessage(err);
