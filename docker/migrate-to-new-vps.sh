@@ -244,7 +244,7 @@ if [ "$MODE" = "steadfast" ]; then
   say "ডাটাবেসে কাস্টমারদের delivery score-এর অবস্থা (দিন অনুযায়ী)"
   dc exec -T postgres psql -U postgres -d clothing_brand -c 'SELECT date("deliveryScoreCheckedAt") AS day, count(*) AS checked, count(*) FILTER (WHERE "deliveryTotalParcels" > 0) AS with_history FROM "Customer" WHERE "deliveryScoreCheckedAt" IS NOT NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 15' || true
   say "সর্বশেষ ৩টা অর্ডারের ফোন দিয়ে Steadfast-কে সরাসরি জিজ্ঞেস করছি"
-  phones=$(dc exec -T postgres psql -U postgres -d clothing_brand -tAc 'SELECT "customerPhone" FROM "Order" ORDER BY "createdAt" DESC LIMIT 3')
+  phones=$(dc exec -T postgres psql -U postgres -d clothing_brand -tAc 'SELECT "customerPhone" FROM "Order" ORDER BY "createdAt" DESC LIMIT 2')
   for ph in $phones; do
     dc exec -T -e PH="$ph" api node -e '
       const raw = process.env.PH.replace(/\D/g, "");
@@ -252,12 +252,12 @@ if [ "$MODE" = "steadfast" ]; then
       const base = process.env.STEADFAST_BASE_URL;
       const h = { "Api-Key": process.env.STEADFAST_API_KEY, "Secret-Key": process.env.STEADFAST_SECRET_KEY, "Content-Type": "application/json" };
       (async () => {
-        for (const url of [base + "/fraud_check/" + ph]) {
+        for (const url of [base + "/fraud_check/score/" + ph, base + "/fraud_check/" + ph]) {
           try {
             const r = await fetch(url, { headers: h });
             const t = await r.text();
-            let shape = t.slice(0, 300).split(ph).join("01XXXXXXXXX");
-            console.log("phone ...", ph.slice(-3), "HTTP", r.status, "->", shape);
+            let shape = t.slice(0, 1500).split(ph).join("01XXXXXXXXX").replace(/01[3-9]\d{8}/g, "01XXXXXXXXX");
+            console.log(url.includes("/score/") ? "[score]" : "[old]", "phone ...", ph.slice(-3), "HTTP", r.status, "->", shape);
           } catch (e) { console.log("phone ...", ph.slice(-3), "fetch error:", e.message); }
         }
       })();' || true
