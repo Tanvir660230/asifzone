@@ -120,6 +120,7 @@ const NAV_SECTIONS: NavSection[] = [
           "/admin/social-links",
           "/admin/redirects",
           "/admin/team",
+          "/admin/storage",
           "/admin/audit-log",
         ],
         label: "Settings",

@@ -56,8 +56,10 @@ fi
 
 # ৩. ছবি — শুধু নতুন/বদলানো ফাইল যায়; মোছা ফাইল deleted-images-এ সরে যায়
 UPLOADS="$(docker volume inspect "${PROJECT}_uploads_data" --format '{{ .Mountpoint }}')"
-rclone sync "$UPLOADS" "$REMOTE/images" --backup-dir "$REMOTE/deleted-images/$DAY" --quiet
-IMG_COUNT="$(find "$UPLOADS" -type f | wc -l)"
+# admin প্যানেলের "Storage cleanup" যে ছবি ট্র্যাশে সরায় (.trash), সেগুলো images-এ রাখা হয় না — sync সেগুলোকে
+# deleted-images/<দিন>-এ সরিয়ে দেয়, যেখানে আরও ৩০ দিন থাকে।
+rclone sync "$UPLOADS" "$REMOTE/images" --exclude '.trash/**' --backup-dir "$REMOTE/deleted-images/$DAY" --quiet
+IMG_COUNT="$(find "$UPLOADS" -path "$UPLOADS/.trash" -prune -o -type f -print | wc -l)"
 
 # ৪. পুরনো ব্যাকআপ মোছা
 rclone delete "$REMOTE/daily" --min-age 30d --quiet || true

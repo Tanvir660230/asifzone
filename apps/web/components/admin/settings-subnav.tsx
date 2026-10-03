@@ -10,6 +10,7 @@ const TABS = [
   { label: "Social Links", href: "/admin/social-links" },
   { label: "Redirects", href: "/admin/redirects" },
   { label: "Team", href: "/admin/team", ownerOnly: true },
+  { label: "Storage", href: "/admin/storage", ownerOnly: true },
   { label: "Audit Log", href: "/admin/audit-log", ownerOnly: true },
 ];
 
