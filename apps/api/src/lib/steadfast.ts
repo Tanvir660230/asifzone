@@ -240,12 +240,32 @@ function parseVolumeLowerBound(range: string | null): number {
   return match ? Number(match[0]) : 0;
 }
 
+// The score endpoint rate-limits much harder than the retired count endpoint did — an admin's bulk
+// "Check score" over a page of orders gets HTTP 429 after a handful of calls. Wait and retry instead
+// of failing the row: honour Retry-After when Steadfast sends it, otherwise back off 2s/4s/8s.
+const FRAUD_CHECK_RETRY_DELAYS_MS = [2000, 4000, 8000];
+const MAX_RETRY_AFTER_MS = 15000;
+
+async function fetchFraudScore(url: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers: authHeaders() });
+    if (res.status !== 429 || attempt >= FRAUD_CHECK_RETRY_DELAYS_MS.length) return res;
+    const retryAfterSec = Number(res.headers.get("retry-after"));
+    const delay = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+      ? Math.min(retryAfterSec * 1000, MAX_RETRY_AFTER_MS)
+      : FRAUD_CHECK_RETRY_DELAYS_MS[attempt]!;
+    await res.body?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+
 export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFraudCheck> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/fraud_check/score/${encodeURIComponent(phone)}`, {
-    headers: authHeaders(),
-  });
+  const res = await fetchFraudScore(`${env.steadfast.baseUrl}/fraud_check/score/${encodeURIComponent(phone)}`);
+  if (res.status === 429) {
+    throw AppError.badRequest("Steadfast is limiting fraud checks right now (HTTP 429) — try again in a minute");
+  }
 
   const { data: parsed, rawText } = await readSteadfastResponse(res);
   const data = parsed as RawSteadfastFraudScore | null;

@@ -328,6 +328,9 @@ export interface BulkDeliveryScoreResult {
  * to look up the score, since that's the exact value findOrCreateGuestCustomer wrote to the Customer
  * row at checkout time; the cached result is still stored on the Customer row so it's shared across
  * every one of that customer's orders, not just the ones selected here. */
+const BULK_FRAUD_CHECK_SPACING_MS = 1000;
+const BULK_FRAUD_CHECK_BUDGET_MS = 40000;
+
 export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkDeliveryScoreResult> {
   const orders = await prisma.order.findMany({ where: { id: { in: orderIds } } });
 
@@ -345,7 +348,20 @@ export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkD
     else groupsByCustomerId.set(order.customerId, [order]);
   }
 
+  const startedAt = Date.now();
+  let first = true;
   for (const [customerId, group] of groupsByCustomerId) {
+    // Pacing (and 429 retries inside getSteadfastFraudCheck) make a big selection slow; stop well before
+    // nginx's 60s proxy timeout turns the whole request into a 504 and report the rest as not checked.
+    if (Date.now() - startedAt > BULK_FRAUD_CHECK_BUDGET_MS) {
+      for (const order of group) {
+        failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not checked yet — run Check score again for these" });
+      }
+      continue;
+    }
+    // Pace the calls: Steadfast's score endpoint answers a burst with HTTP 429.
+    if (!first) await new Promise((resolve) => setTimeout(resolve, BULK_FRAUD_CHECK_SPACING_MS));
+    first = false;
     try {
       const result = await checkAndUpdateDeliveryScore(customerId, group[0]!.customerPhone);
       for (const order of group) {

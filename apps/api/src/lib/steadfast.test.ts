@@ -71,3 +71,42 @@ describe("getSteadfastFraudCheck", () => {
     await expect(getSteadfastFraudCheck("01700000000")).rejects.toThrow(/Steadfast fraud check failed/);
   });
 });
+
+describe("getSteadfastFraudCheck rate limiting", () => {
+  const saved = { ...env.steadfast };
+  beforeEach(() => {
+    env.steadfast.apiKey = "key";
+    env.steadfast.secretKey = "secret";
+    env.steadfast.baseUrl = "https://steadfast.test/api/v1";
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    Object.assign(env.steadfast, saved);
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("waits and retries after HTTP 429", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Too Many Attempts.", { status: 429, headers: { "Retry-After": "1" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(SCORE_WITH_HISTORY), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = getSteadfastFraudCheck("01700000000");
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(pending).resolves.toMatchObject({ successRate: 96 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up with a clear message after repeated 429s", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response("", { status: 429 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = getSteadfastFraudCheck("01700000000");
+    const assertion = expect(pending).rejects.toThrow(/try again in a minute/);
+    await vi.advanceTimersByTimeAsync(2000 + 4000 + 8000);
+    await assertion;
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+});
