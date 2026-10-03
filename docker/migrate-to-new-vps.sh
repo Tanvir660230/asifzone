@@ -207,6 +207,24 @@ if [ "$MODE" = "forward" ]; then
   exit 0
 fi
 
+# পুরনো আর নতুন সার্ভারের ডাটা মিলিয়ে দেখা (শুধু পড়ে, কিছু বদলায় না)
+if [ "$MODE" = "verify" ]; then
+  count_sql="SELECT string_agg(t || '=' || n, E'\\n' ORDER BY t) FROM (
+    SELECT relname AS t, (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM public.%I', relname), false, true, '')))[1]::text AS n
+    FROM pg_stat_user_tables WHERE schemaname = 'public') x"
+  printf '%s;\n' "$count_sql" | old "docker exec -i $OLD_PG psql -U postgres -d clothing_brand -tA" > /tmp/old-counts.txt
+  printf '%s;\n' "$count_sql" | dc exec -T postgres psql -U postgres -d clothing_brand -tA > /tmp/new-counts.txt
+  say "টেবিল অনুযায়ী রো সংখ্যা (পুরনো -> নতুন)"
+  join -t= -a1 -a2 -e MISSING -o 0,1.2,2.2 <(sort /tmp/old-counts.txt) <(sort /tmp/new-counts.txt) \
+    | awk -F= '{ flag = ($2 == $3) ? "ঠিক আছে" : (($3+0 > $2+0) ? "নতুন বেশি (নতুন ডাটা এসেছে)" : "*** কম ***"); printf "%-40s %8s -> %-8s %s\n", $1, $2, $3, flag }'
+  old_files=$(old "docker run --rm --volumes-from $OLD_API alpine sh -c 'find /repo/apps/api/uploads -type f | wc -l'")
+  new_files=$(docker run --rm -v "${PROJECT}_uploads_data:/u" alpine sh -c 'find /u -type f | wc -l')
+  say "আপলোড করা ফাইল: পুরনো $old_files -> নতুন $new_files"
+  say "সর্বশেষ ৫টা অর্ডার (নতুন সার্ভারে)"
+  dc exec -T postgres psql -U postgres -d clothing_brand -c 'SELECT "createdAt", status FROM "Order" ORDER BY "createdAt" DESC LIMIT 5' || true
+  exit 0
+fi
+
 if [ "$MODE" = "sync" ]; then
   [ -f "$COMPOSE_DIR/docker-compose.yml" ] || die "আগে পুরো মাইগ্রেশন (bash migrate.sh) চালান।"
   final_sync
