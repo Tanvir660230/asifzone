@@ -239,6 +239,34 @@ if [ "$MODE" = "orders" ]; then
   exit 0
 fi
 
+# Steadfast fraud check কেন "No history" দেখাচ্ছে তা খোঁজা (শুধু পড়ে; লগ public, তাই ফোন নম্বর ছাপে না)
+if [ "$MODE" = "steadfast" ]; then
+  say "ডাটাবেসে কাস্টমারদের delivery score-এর অবস্থা (দিন অনুযায়ী)"
+  dc exec -T postgres psql -U postgres -d clothing_brand -c 'SELECT date("deliveryScoreCheckedAt") AS day, count(*) AS checked, count(*) FILTER (WHERE "deliveryTotalParcels" > 0) AS with_history FROM "Customer" WHERE "deliveryScoreCheckedAt" IS NOT NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 15' || true
+  say "সর্বশেষ ৩টা অর্ডারের ফোন দিয়ে Steadfast-কে সরাসরি জিজ্ঞেস করছি"
+  phones=$(dc exec -T postgres psql -U postgres -d clothing_brand -tAc 'SELECT "customerPhone" FROM "Order" ORDER BY "createdAt" DESC LIMIT 3')
+  for ph in $phones; do
+    dc exec -T -e PH="$ph" api node -e '
+      const raw = process.env.PH.replace(/\D/g, "");
+      const ph = raw.startsWith("880") ? "0" + raw.slice(3) : raw;
+      const base = process.env.STEADFAST_BASE_URL;
+      const h = { "Api-Key": process.env.STEADFAST_API_KEY, "Secret-Key": process.env.STEADFAST_SECRET_KEY, "Content-Type": "application/json" };
+      (async () => {
+        for (const url of [base + "/fraud_check/" + ph]) {
+          try {
+            const r = await fetch(url, { headers: h });
+            const t = await r.text();
+            let shape = t.slice(0, 300).split(ph).join("01XXXXXXXXX");
+            console.log("phone ...", ph.slice(-3), "HTTP", r.status, "->", shape);
+          } catch (e) { console.log("phone ...", ph.slice(-3), "fetch error:", e.message); }
+        }
+      })();' || true
+  done
+  say "api লগে Steadfast error"
+  dc logs --no-log-prefix --since 24h api 2>&1 | grep -i 'steadfast\|delivery-score' | sed -E 's/01[0-9]{9}/01XXXXXXXXX/g' | tail -n 15 || true
+  exit 0
+fi
+
 if [ "$MODE" = "sync" ]; then
   [ -f "$COMPOSE_DIR/docker-compose.yml" ] || die "আগে পুরো মাইগ্রেশন (bash migrate.sh) চালান।"
   final_sync
