@@ -296,6 +296,42 @@ if [ "$MODE" = "deploy" ]; then
   exit 0
 fi
 
+# Google Drive ব্যাকআপ সেটআপ: rclone, token (GitHub secret থেকে আসে), রাত ৩টার cron, আর একটা টেস্ট ব্যাকআপ
+if [ "$MODE" = "gdrive" ]; then
+  branch="${DEPLOY_BRANCH:-claude/charming-gauss-e26lar}"
+  cd "$REPO_DIR"
+  git config --global --add safe.directory "$REPO_DIR"
+  git config core.fileMode false
+  git fetch -q https://github.com/Tanvir660230/asifzone.git "$branch"
+  git merge --ff-only FETCH_HEAD || die "fast-forward সম্ভব না।"
+  chmod +x "$COMPOSE_DIR/gdrive-backup.sh" "$COMPOSE_DIR/gdrive-restore.sh"
+
+  command -v rclone >/dev/null || { apt-get install -y unzip >/dev/null 2>&1; curl -fsSL https://rclone.org/install.sh | bash >/dev/null; }
+  TOKEN_FILE=/root/.asifzone-gdrive-token
+  if [ -s "$TOKEN_FILE" ]; then
+    mkdir -p /root/.config/rclone
+    { printf '[gdrive]\ntype = drive\nscope = drive\ntoken = '; tr -d '\r\n' < "$TOKEN_FILE"; printf '\n'; } > /root/.config/rclone/rclone.conf
+    chmod 600 /root/.config/rclone/rclone.conf
+    rm -f "$TOKEN_FILE"
+  fi
+  rclone lsd gdrive: --max-depth 1 >/dev/null || die "Google Drive-এ ঢুকতে পারলাম না — token ঠিক আছে কিনা দেখুন।"
+  say "Google Drive যুক্ত হয়েছে"
+
+  # cron সার্ভারের নিজের সময় ধরে চলে — বাংলাদেশ সময় রাত ৩টা সেই হিসেবে বের করা
+  offset_h=$(( $(date +%z | sed -E 's/^([+-])0?([0-9]+)([0-9]{2})$/\1\2/') ))
+  hour=$(( ((3 - 6 + offset_h) % 24 + 24) % 24 ))
+  ( crontab -l 2>/dev/null | grep -v -e 'docker/backup.sh' -e 'gdrive-backup.sh' -e './backup.sh' || true
+    echo "0 $hour * * * $COMPOSE_DIR/gdrive-backup.sh >> /var/log/asifzone-gdrive-backup.log 2>&1"
+  ) | crontab -
+  say "প্রতিদিন বাংলাদেশ সময় রাত ৩টার ব্যাকআপ বসানো হয়েছে (সার্ভারের সময়ে $hour:00)"
+
+  say "টেস্ট ব্যাকআপ চালাচ্ছি"
+  "$COMPOSE_DIR/gdrive-backup.sh"
+  rclone lsf -R --max-depth 2 gdrive:asifzone-backups | grep -v '^images/.' || true
+  rclone cat gdrive:asifzone-backups/last-backup.txt
+  exit 0
+fi
+
 if [ "$MODE" = "sync" ]; then
   [ -f "$COMPOSE_DIR/docker-compose.yml" ] || die "আগে পুরো মাইগ্রেশন (bash migrate.sh) চালান।"
   final_sync

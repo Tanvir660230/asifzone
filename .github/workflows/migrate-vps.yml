@@ -24,6 +24,8 @@ jobs:
       OLD_PASS: ${{ secrets.OLD_VPS_PASSWORD }}
       # The old VPS only accepts key logins — this is the same deploy key validate-nginx.yml uses.
       OLD_KEY: ${{ secrets.VPS_SSH_KEY }}
+      # rclone token for the nightly Google Drive backup (docker/gdrive-backup.sh); only used by MODE=gdrive.
+      GDRIVE_TOKEN: ${{ secrets.GDRIVE_RCLONE_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +47,10 @@ jobs:
           } | $SSH 'umask 077; cat > /root/.asifzone-migrate.secrets'
           if [ -n "$OLD_KEY" ]; then
             printf '%s\n' "$OLD_KEY" | $SSH 'umask 077; mkdir -p /root/.ssh; cat > /root/.ssh/asifzone-old-key'
+          fi
+          if [ "$MODE" = "gdrive" ]; then
+            [ -n "$GDRIVE_TOKEN" ] || { echo "::error::GDRIVE_RCLONE_TOKEN secret is missing"; exit 1; }
+            printf '%s\n' "$GDRIVE_TOKEN" | $SSH 'umask 077; cat > /root/.asifzone-gdrive-token'
           fi
 
       - name: Run the migration on the new VPS
