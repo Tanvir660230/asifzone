@@ -155,6 +155,8 @@ final_sync() {
   old "docker stop ${OLD_API} ${OLD_WEB}" >/dev/null || true
   copy_data
   dc up -d
+  # api/web পুনরায় তৈরি হলে নতুন IP পায়, কিন্তু nginx শুরুতে পাওয়া পুরনো IP ধরে রাখে -> 502।
+  dc restart nginx
   check_site || true
   local ip; ip=$(curl -4 -s https://api.ipify.org || hostname -I | awk '{print $1}')
   cat <<EOF
@@ -170,6 +172,20 @@ final_sync() {
 =====================================================================
 EOF
 }
+
+if [ "$MODE" = "fix" ]; then
+  say "nginx রিস্টার্ট করে অবস্থা দেখছি"
+  dc up -d
+  dc restart nginx
+  dc ps
+  for path in / /products /api/health; do
+    printf '%s -> ' "$path"
+    curl -sk -o /dev/null -w '%{http_code}\n' -H 'Cache-Control: no-cache' --resolve asifzone.com:443:127.0.0.1 "https://asifzone.com$path?nocache=$RANDOM" || true
+  done
+  dc logs --tail=40 web api nginx 2>&1 | grep -viE 'password|secret|token' || true
+  check_site
+  exit 0
+fi
 
 if [ "$MODE" = "sync" ]; then
   [ -f "$COMPOSE_DIR/docker-compose.yml" ] || die "আগে পুরো মাইগ্রেশন (bash migrate.sh) চালান।"
