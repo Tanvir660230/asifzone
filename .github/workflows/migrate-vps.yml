@@ -49,5 +49,6 @@ jobs:
 
       - name: Run the migration on the new VPS
         run: |
+          . .github/migrate-trigger.env
           sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 \
-            root@$NEW_HOST 'bash /root/migrate.sh auto 2>&1'
+            root@$NEW_HOST "bash /root/migrate.sh ${MODE:-auto} 2>&1"

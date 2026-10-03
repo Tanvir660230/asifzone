@@ -40,7 +40,7 @@ if [ -f "$STATE_FILE" ]; then
 fi
 # MODE=auto (GitHub Actions থেকে): OLD_HOST/OLD_PORT/OLD_USER আর পাসওয়ার্ড SSHPASS env-এ আসে,
 # কিছু জিজ্ঞেস করে না, আর সাইট টেস্ট পাস করলে নিজেই ফাইনাল সিঙ্ক করে।
-if [ "$MODE" = "auto" ] && [ -f /root/.asifzone-migrate.secrets ]; then
+if [ -f /root/.asifzone-migrate.secrets ]; then
   # shellcheck disable=SC1091
   . /root/.asifzone-migrate.secrets
   rm -f /root/.asifzone-migrate.secrets
@@ -74,7 +74,7 @@ fi
 
 # পুরনো সার্ভারের কোন কন্টেইনার কোনটা, আর কোড কোন ফোল্ডারে — Docker Compose-এর label থেকে বের করা
 old_container() {
-  old "docker ps -q --filter label=com.docker.compose.service=$1 | head -n1"
+  old "docker ps -aq --filter label=com.docker.compose.service=$1 | head -n1"
 }
 OLD_PG=$(old_container postgres)
 OLD_API=$(old_container api)
@@ -112,7 +112,8 @@ copy_data() {
 
   say "পুরনো VPS থেকে আপলোড করা ছবি কপি করছি"
   if [ -n "$OLD_API" ]; then
-    old "docker exec $OLD_API tar czf - -C /repo/apps/api/uploads ." > "$BACKUP_DIR/uploads-$ts.tar.gz"
+    # --volumes-from instead of docker exec: works even after final_sync has stopped the api container
+    old "docker run --rm --volumes-from $OLD_API alpine tar czf - -C /repo/apps/api/uploads ." > "$BACKUP_DIR/uploads-$ts.tar.gz"
   else
     old "docker run --rm -v ${PROJECT}_uploads_data:/u alpine tar czf - -C /u ." > "$BACKUP_DIR/uploads-$ts.tar.gz"
   fi
