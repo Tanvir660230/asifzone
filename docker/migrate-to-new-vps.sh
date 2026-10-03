@@ -38,7 +38,15 @@ if [ -f "$STATE_FILE" ]; then
   # shellcheck disable=SC1090
   . "$STATE_FILE"
 fi
+# MODE=auto (GitHub Actions থেকে): OLD_HOST/OLD_PORT/OLD_USER আর পাসওয়ার্ড SSHPASS env-এ আসে,
+# কিছু জিজ্ঞেস করে না, আর সাইট টেস্ট পাস করলে নিজেই ফাইনাল সিঙ্ক করে।
+if [ "$MODE" = "auto" ] && [ -f /root/.asifzone-migrate.secrets ]; then
+  # shellcheck disable=SC1091
+  . /root/.asifzone-migrate.secrets
+  rm -f /root/.asifzone-migrate.secrets
+fi
 if [ -z "${OLD_HOST:-}" ]; then
+  [ "$MODE" = "auto" ] && die "auto মোডে OLD_HOST দেওয়া হয়নি।"
   read -rp "পুরনো VPS-এর IP address: " OLD_HOST
   read -rp "পুরনো VPS-এর SSH পোর্ট [22]: " OLD_PORT
   read -rp "পুরনো VPS-এর ইউজারনেম [root]: " OLD_USER
@@ -52,7 +60,12 @@ old() { ssh "${SSH_OPTS[@]}" "$OLD_USER@$OLD_HOST" "$@"; }
 
 if ! ssh "${SSH_OPTS[@]}" -O check "$OLD_USER@$OLD_HOST" 2>/dev/null; then
   say "পুরনো VPS ($OLD_HOST)-এ লগইন করছি — পাসওয়ার্ড চাইলে পুরনো VPS-এর পাসওয়ার্ড দিন (শুধু একবার লাগবে)"
-  ssh "${SSH_OPTS[@]}" -o ControlMaster=yes -o ControlPersist=3h -fN "$OLD_USER@$OLD_HOST" \
+  SSH_PREFIX=()
+  if [ -n "${SSHPASS:-}" ]; then
+    command -v sshpass >/dev/null || { apt-get update -y >/dev/null; apt-get install -y sshpass >/dev/null; }
+    SSH_PREFIX=(sshpass -e)
+  fi
+  "${SSH_PREFIX[@]}" ssh "${SSH_OPTS[@]}" -o ControlMaster=yes -o ControlPersist=3h -fN "$OLD_USER@$OLD_HOST" \
     || die "পুরনো VPS-এ ঢুকতে পারলাম না। IP/পোর্ট/পাসওয়ার্ড ঠিক আছে কিনা দেখুন।"
 fi
 
@@ -221,7 +234,8 @@ copy_data
 say "সব সার্ভিস চালু করছি"
 dc up -d
 dc exec -T api npx prisma migrate deploy || warn "prisma migrate deploy সফল হয়নি — উপরের লগ দেখুন"
-check_site || warn "সাইট টেস্ট পাস করেনি। ফাইনাল সিঙ্কের আগে ঠিক করা দরকার।"
+SITE_OK=1
+check_site || { SITE_OK=0; warn "সাইট টেস্ট পাস করেনি। ফাইনাল সিঙ্কের আগে ঠিক করা দরকার।"; }
 
 # ---------------------------------------------------------------- ৬. রাতের ব্যাকআপ
 chmod +x "$COMPOSE_DIR/backup.sh"
@@ -232,6 +246,15 @@ fi
   echo "0 2 * * * cd $COMPOSE_DIR && ./backup.sh >> /var/log/clothing-brand-backup.log 2>&1"
 ) | crontab -
 say "রাত ২টার অটো-ব্যাকআপ cron বসানো হয়েছে"
+
+if [ "$MODE" = "auto" ]; then
+  if [ "$SITE_OK" = 1 ]; then
+    final_sync
+  else
+    die "নতুন সাইট টেস্ট পাস করেনি, তাই পুরনো সাইট বন্ধ করিনি — পুরনো সাইট আগের মতোই চলছে।"
+  fi
+  exit 0
+fi
 
 echo
 read -rp "ফাইনাল সিঙ্ক এখনই করব? এতে পুরনো সাইট কয়েক মিনিট বন্ধ থাকবে, তারপর আপনি DNS বদলাবেন। (y/n): " ans
