@@ -187,6 +187,26 @@ if [ "$MODE" = "fix" ]; then
   exit 0
 fi
 
+# DNS বদলের পরও যাদের কম্পিউটার/ISP পুরনো IP মনে রেখেছে, তারা পুরনো সার্ভারে গিয়ে 502 পায়।
+# পুরনো সার্ভারের nginx বন্ধ করে 80/443 পোর্টের সব ট্রাফিক নতুন VPS-এ পাঠিয়ে দেওয়া হয়।
+if [ "$MODE" = "forward" ]; then
+  new_ip=$(curl -4 -s https://api.ipify.org || hostname -I | awk '{print $1}')
+  say "পুরনো সার্ভারের ট্রাফিক নতুন VPS ($new_ip)-এ পাঠানোর ব্যবস্থা করছি"
+  old "docker stop $OLD_NGINX >/dev/null; docker update --restart=no $OLD_NGINX >/dev/null;
+       for p in 80 443; do
+         docker rm -f asifzone-forward-\$p >/dev/null 2>&1 || true
+         docker run -d --name asifzone-forward-\$p --restart unless-stopped -p \$p:\$p \
+           alpine/socat tcp-listen:\$p,fork,reuseaddr tcp:$new_ip:\$p >/dev/null
+       done
+       docker ps --format '{{.Names}} {{.Status}}' | grep -E 'forward|nginx' || true"
+  sleep 3
+  for host in 127.0.0.1 "$OLD_HOST"; do
+    printf 'via %s -> ' "$host"
+    curl -sk -o /dev/null -w '%{http_code}\n' --resolve "asifzone.com:443:$host" https://asifzone.com/ || true
+  done
+  exit 0
+fi
+
 if [ "$MODE" = "sync" ]; then
   [ -f "$COMPOSE_DIR/docker-compose.yml" ] || die "আগে পুরো মাইগ্রেশন (bash migrate.sh) চালান।"
   final_sync
