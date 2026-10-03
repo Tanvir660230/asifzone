@@ -45,6 +45,14 @@ if [ -f /root/.asifzone-migrate.secrets ]; then
   . /root/.asifzone-migrate.secrets
   rm -f /root/.asifzone-migrate.secrets
 fi
+# deploy/gdrive শুধু নতুন VPS-এ কাজ করে — পুরনো VPS বন্ধ হয়ে গেলেও চলে
+if [ "$MODE" = "deploy" ] || [ "$MODE" = "gdrive" ]; then
+  LOCAL_PG=$(docker ps -q --filter label=com.docker.compose.service=postgres | head -n1)
+  [ -n "$LOCAL_PG" ] || die "এই সার্ভারে চালু postgres কন্টেইনার পাইনি।"
+  COMPOSE_DIR=$(docker inspect "$LOCAL_PG" --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}')
+  PROJECT=$(docker inspect "$LOCAL_PG" --format '{{ index .Config.Labels "com.docker.compose.project" }}')
+  REPO_DIR=$(dirname "$COMPOSE_DIR")
+else
 if [ -z "${OLD_HOST:-}" ]; then
   [ "$MODE" = "auto" ] && die "auto মোডে OLD_HOST দেওয়া হয়নি।"
   read -rp "পুরনো VPS-এর IP address: " OLD_HOST
@@ -92,6 +100,7 @@ OLD_PORT=$OLD_PORT
 OLD_USER=$OLD_USER
 EOF
 say "পুরনো সাইট পাওয়া গেছে: $OLD_COMPOSE_DIR (project: $PROJECT)"
+fi
 
 dc() { docker compose -p "$PROJECT" -f "$COMPOSE_DIR/docker-compose.yml" --project-directory "$COMPOSE_DIR" "$@"; }
 
@@ -272,6 +281,7 @@ if [ "$MODE" = "deploy" ]; then
   branch="${DEPLOY_BRANCH:-claude/charming-gauss-e26lar}"
   cd "$REPO_DIR"
   git config --global --add safe.directory "$REPO_DIR"
+  git config core.fileMode false
   [ -z "$(git status --porcelain --untracked-files=no)" ] || { git status --short; die "সার্ভারের কোডে নিজের হাতে করা পরিবর্তন আছে — ডিপ্লয় থামালাম।"; }
   git fetch -q https://github.com/Tanvir660230/asifzone.git "$branch"
   git merge --ff-only FETCH_HEAD || die "fast-forward সম্ভব না — ডিপ্লয় থামালাম।"
