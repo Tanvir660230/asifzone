@@ -225,6 +225,20 @@ if [ "$MODE" = "verify" ]; then
   exit 0
 fi
 
+# মাইগ্রেশনের সময়ে অর্ডার দেওয়ার চেষ্টাগুলো খোঁজা (শুধু লগ পড়ে, কিছু বদলায় না)
+if [ "$MODE" = "orders" ]; then
+  pat='POST /api/(orders|checkout)[^ ]* '
+  say "পুরনো সার্ভারের nginx লগে আজকের অর্ডার রিকোয়েস্ট"
+  old "docker logs --since 6h $OLD_NGINX 2>&1" | grep -E "$pat" | awk '{print $4, $6, $7, $9}' || echo "(কিছু নেই)"
+  say "নতুন সার্ভারের nginx লগে অর্ডার রিকোয়েস্ট"
+  dc logs --no-log-prefix --since 6h nginx 2>&1 | grep -E "$pat" | awk '{print $4, $6, $7, $9}' || echo "(কিছু নেই)"
+  say "নতুন সার্ভারের api লগে অর্ডার সংক্রান্ত error"
+  dc logs --no-log-prefix --since 6h api 2>&1 | grep -iE 'order' | grep -iE 'error|fail' | tail -n 20 || echo "(কিছু নেই)"
+  say "সর্বশেষ ৫টা অর্ডার (নতুন সার্ভারে, বাংলাদেশ সময়)"
+  dc exec -T postgres psql -U postgres -d clothing_brand -c 'SELECT "orderNumber", ("createdAt" + interval '"'"'6 hours'"'"') AS bd_time, status FROM "Order" ORDER BY "createdAt" DESC LIMIT 5' || true
+  exit 0
+fi
+
 if [ "$MODE" = "sync" ]; then
   [ -f "$COMPOSE_DIR/docker-compose.yml" ] || die "আগে পুরো মাইগ্রেশন (bash migrate.sh) চালান।"
   final_sync
