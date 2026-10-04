@@ -11,7 +11,10 @@ const SCRIPT = join(__dirname, "..", "..", "..", "..", "..", "docker", "deploy.s
 const BASH = process.platform === "win32" && existsSync("C:\\Program Files\\Git\\bin\\bash.exe") ? "C:\\Program Files\\Git\\bin\\bash.exe" : "bash";
 const posix = (p: string) => p.replace(/\\/g, "/");
 
-function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fail"; ready?: "ok" | "never" }) {
+/** Phase 12 (W10): a real deploy has the store's own inputs in docker/.env; the harness passes them as environment. */
+const STORE_ENV = { SERVER_NAME: "store.example", SERVER_ALIASES: "www.store.example", CERT_NAME: "store.example", GDRIVE_REMOTE: "gdrive:store-backups" };
+
+function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fail"; ready?: "ok" | "never"; storeEnv?: Record<string, string> }) {
   const dir = mkdtempSync(join(tmpdir(), "p11-deploy-"));
   const calls = posix(join(dir, "calls.log"));
   const hooks = join(dir, "hooks.sh");
@@ -27,7 +30,7 @@ function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fai
     ].join("\n"),
   );
   const res = spawnSync(BASH, [posix(SCRIPT)], {
-    env: { ...process.env, DEPLOY_HOOKS: posix(hooks), BACKUP_FILE: posix(join(dir, "backup.sql.gz")), MIN_BACKUP_BYTES: "20", READY_TIMEOUT: "2", READY_POLL: "1", DEPLOY_SHA: "test" },
+    env: { ...process.env, ENV_FILE: posix(join(dir, "missing.env")), ...(stubs.storeEnv ?? STORE_ENV), DEPLOY_HOOKS: posix(hooks), BACKUP_FILE: posix(join(dir, "backup.sql.gz")), MIN_BACKUP_BYTES: "20", READY_TIMEOUT: "2", READY_POLL: "1", DEPLOY_SHA: "test" },
     encoding: "utf8",
     timeout: 30_000,
   });
@@ -41,6 +44,14 @@ describe("deploy script (brief downtime, no blue/green)", () => {
     expect(r.code).toBe(0);
     expect(r.calls).toEqual(["backup", "build", "migrate", "switch", "ready", "proxy"]);
     expect(r.out).toContain("DEPLOY OK");
+  });
+
+  it("Phase 12: missing per-store configuration stops at the preflight, before the backup or anything else", () => {
+    const { SERVER_NAME: _drop, GDRIVE_REMOTE: _drop2, ...partial } = STORE_ENV;
+    const r = deploy({ storeEnv: { ...partial, SERVER_NAME: "", GDRIVE_REMOTE: "" } });
+    expect(r.code).toBe(1);
+    expect(r.calls).toEqual([]);
+    expect(r.out).toMatch(/DEPLOY FAILED: missing per-store configuration in .*: SERVER_NAME GDRIVE_REMOTE .*nothing was changed/);
   });
 
   it("a failed or empty backup stops before anything changes", () => {
