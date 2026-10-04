@@ -1,5 +1,7 @@
-import { Queue, Worker } from "bullmq";
+import { createObservedWorker } from "../lib/observability/jobs";
+import { Queue } from "bullmq";
 import { queueConnection } from "../lib/queue";
+import { logger } from "../lib/observability/logger";
 import { purgeExpiredTrash } from "../modules/storage/storage.service";
 
 const QUEUE_NAME = "storage-trash-purge";
@@ -9,11 +11,11 @@ const QUEUE_NAME = "storage-trash-purge";
 export async function startStorageTrashCron() {
   const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
 
-  new Worker(
+  createObservedWorker(
     QUEUE_NAME,
     async () => {
       const purged = await purgeExpiredTrash();
-      if (purged > 0) console.log(`[storage-trash-cron] purged ${purged} expired trash batch(es)`);
+      if (purged > 0) logger.info(`[storage-trash-cron] purged ${purged} expired trash batch(es)`);
     },
     { connection: queueConnection },
   );

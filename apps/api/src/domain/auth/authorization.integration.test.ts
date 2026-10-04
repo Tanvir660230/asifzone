@@ -113,6 +113,11 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/ai/image-alt-text",
   "POST /api/v1/storefront/read-model/rebuild",
   "POST /api/v1/outbox/:id/retry",
+  // Storage page (production branch, pre-Phase-10 requireRole("OWNER")) — mapped to settings.manage in the Phase 11 release merge.
+  "GET /api/storage/unused",
+  "POST /api/storage/unused/trash",
+  "GET /api/storage/trash",
+  "POST /api/storage/trash/:batch/restore",
 ];
 
 let owner: string;
@@ -207,8 +212,8 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 299 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    expect(routes).toHaveLength(299);
+  it("covers all 303 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    expect(routes).toHaveLength(303);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
