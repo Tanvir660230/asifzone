@@ -46,8 +46,8 @@ describe("findUnusedUploads", () => {
     await addFile("banners/old-banner.webp");
     await addFile("editor/just-uploaded.webp", new Date());
     db.values = [
-      `https://asifzone.com/uploads/products/${PRODUCT_ID}-full.webp`,
-      '<p><img src="https://asifzone.com/uploads/banners/in-use.webp?v=2"></p>',
+      `https://store.example/uploads/products/${PRODUCT_ID}-full.webp`,
+      '<p><img src="https://store.example/uploads/banners/in-use.webp?v=2"></p>',
     ];
 
     const report = await findUnusedUploads();
@@ -81,7 +81,7 @@ describe("trash", () => {
 
   it("never moves a file that became referenced after the page was loaded", async () => {
     await addFile("banners/old-banner.webp");
-    db.values = ["https://asifzone.com/uploads/banners/old-banner.webp"];
+    db.values = ["https://store.example/uploads/banners/old-banner.webp"];
     await expect(moveUnusedToTrash(["banners/old-banner.webp"])).resolves.toMatchObject({ moved: 0 });
   });
 

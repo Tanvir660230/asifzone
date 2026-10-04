@@ -783,6 +783,16 @@ export interface StoreSettings {
   onlinePaymentEnabled: boolean;
   epsPaymentEnabled: boolean;
   googleSiteVerification: string | null;
+  /** Phase 12 identity fields (StoreSetting is the identity owner). Each is null until the store sets it. */
+  legalName: string | null;
+  addressLine: string | null;
+  addressCity: string | null;
+  addressRegion: string | null;
+  addressPostalCode: string | null;
+  /** ISO 3166-1 alpha-2. */
+  addressCountry: string | null;
+  legalJurisdiction: string | null;
+  supportHours: string | null;
   updatedAt: string;
 }
 

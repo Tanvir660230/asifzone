@@ -565,7 +565,8 @@ export async function requestOtp(phone: string) {
     data: { phone, codeHash: hashToken(code), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
   });
 
-  await getProviders().sms.send({ to: phone, body: `Your verification code is ${code}. It expires in 5 minutes.` });
+  const { storeName } = await getSettings();
+  await getProviders().sms.send({ to: phone, body: `${storeName}: your verification code is ${code}. It expires in 5 minutes.` });
 }
 
 /** Phone OTP sign-in (Phase 11 — BD-11.1, BD-11.6 a, F-26).

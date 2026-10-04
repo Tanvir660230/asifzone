@@ -78,6 +78,9 @@ function addDays(date: Date, days: number): Date {
   return result;
 }
 
+/** The customer-facing delivery-time sentence, built from the same day ranges as estimateDelivery (one owner). */
+export const BD_DELIVERY_TIME_TEXT = `Inside Dhaka: ${DHAKA_DELIVERY_DAYS[0]}–${DHAKA_DELIVERY_DAYS[1]} business days. Outside Dhaka: ${OUTSIDE_DHAKA_DELIVERY_DAYS[0]}–${OUTSIDE_DHAKA_DELIVERY_DAYS[1]} business days.`;
+
 export function estimateDelivery(district: string, from: Date = new Date()): DeliveryEstimate {
   const [minDays, maxDays] = isInsideDhaka(district) ? DHAKA_DELIVERY_DAYS : OUTSIDE_DHAKA_DELIVERY_DAYS;
   return { minDays, maxDays, minDate: addDays(from, minDays), maxDate: addDays(from, maxDays) };

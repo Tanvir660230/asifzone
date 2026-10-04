@@ -118,6 +118,8 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/storage/unused/trash",
   "GET /api/storage/trash",
   "POST /api/storage/trash/:batch/restore",
+  // Phase 12 D-4: provider status (settings.manage, OWNER-only).
+  "GET /api/v1/ops/providers",
 ];
 
 let owner: string;
@@ -212,8 +214,8 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 303 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    expect(routes).toHaveLength(303);
+  it("covers all 304 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    expect(routes).toHaveLength(304);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

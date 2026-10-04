@@ -85,7 +85,7 @@ export function BasicsStep({ state, categories }: StepProps & { categories: Cate
 
           <div>
             <Label htmlFor="brand">Brand</Label>
-            <Input id="brand" placeholder="e.g. Asif Zone Originals" {...register("brand")} />
+            <Input id="brand" placeholder="e.g. your own label or collection" {...register("brand")} />
           </div>
 
           <div>

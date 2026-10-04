@@ -5,20 +5,12 @@ import Link from "next/link";
 import { ChevronDown, Mail, MapPin, Phone } from "lucide-react";
 import type { PaymentMethodOption, SocialLink, StoreSettings } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
+import { shortAddress } from "@/lib/store-identity";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { SOCIAL_PLATFORM_META, SocialIcon } from "@/components/social-icon";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { NewsletterForm } from "./newsletter-form";
 
-// Shown whenever the admin hasn't uploaded payment-method logos yet, so this section is never
-// simply blank on a freshly-set-up store.
-const FALLBACK_PAYMENT_METHODS = [
-  { name: "bKash", className: "border-transparent bg-[#E2136E]/15 text-[#ff8dbd]" },
-  { name: "Nagad", className: "border-transparent bg-[#F6921E]/15 text-[#ffb066]" },
-  { name: "Visa", className: "border-transparent bg-[#1A1F71]/25 text-[#9aa2f0]" },
-  { name: "Mastercard", className: "border-transparent bg-ink-700 text-cream-200" },
-  { name: "Cash on Delivery", className: "border-ink-700 text-ink-400" },
-];
 
 interface FooterProps {
   categories?: CategoryTreeNode[];
@@ -65,6 +57,7 @@ function FooterLinkGroup({ title, children }: FooterLinkGroupProps) {
 const FOOTER_LINK_CLASS = "text-ink-300 transition-colors duration-200 ease-smooth hover:text-brass-400";
 
 export function Footer({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
+  const address = shortAddress(settings);
   // Depth-first flatten (each parent immediately followed by its own children) so a store with
   // few top-level categories still fills this column meaningfully via subcategories, e.g.
   // Men → Prayer Caps, rather than showing a single lonely link.
@@ -143,10 +136,12 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                   </a>
                 </li>
               )}
-              <li className="flex items-center gap-2 text-ink-300">
-                <MapPin size={14} className="shrink-0 text-ink-500" />
-                Dhaka, Bangladesh
-              </li>
+              {address && (
+                <li className="flex items-center gap-2 text-ink-300">
+                  <MapPin size={14} className="shrink-0 text-ink-500" />
+                  {address}
+                </li>
+              )}
             </ul>
           </div>
 
@@ -241,7 +236,9 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
 
         {/* We Accept — its own full-width moment, same treatment as the brand logo above it,
             so the payment graphic stays large and legible instead of being squeezed into the
-            fine-print bar below. */}
+            fine-print bar below. Rendered only from the store's own configuration (uploaded graphic or
+            PaymentMethodOption entries) — never a hard-coded wallet list (Phase 12 D-7). */}
+        {(settings.paymentMethodsImageUrl || paymentMethods.length > 0) && (
         <div className="mt-14 flex flex-col items-center border-t border-cream-50/10 pt-12 text-center sm:pt-14">
           <p className="mb-5 text-xs uppercase tracking-[0.3em] text-ink-500">We Accept</p>
           {settings.paymentMethodsImageUrl ? (
@@ -267,20 +264,11 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                       </span>
                     ),
                   )
-                : FALLBACK_PAYMENT_METHODS.map((method) => (
-                    <span
-                      key={method.name}
-                      className={cn(
-                        "rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide transition-colors duration-200 ease-smooth",
-                        method.className,
-                      )}
-                    >
-                      {method.name}
-                    </span>
-                  ))}
+                : null}
             </div>
           )}
         </div>
+        )}
 
         {/* Bottom bar — copyright + legal links, kept light and out of the way of the moments
             above (logo, We Accept) that are meant to actually draw the eye. */}

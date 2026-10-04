@@ -8,7 +8,7 @@ const CARE_NAME = `Cotton care ${RUN}`;
 const COTTON = `Cotton ${RUN}`;
 const POLY = `Polyester ${RUN}`;
 const PRODUCT = `Workflow Panjabi ${RUN}`;
-const SEO_TITLE = `Black Panjabi ${RUN} | Asif Zone`;
+const SEO_TITLE = `Black Panjabi ${RUN} | Test Store`;
 const META = `A ${RUN} black cotton panjabi for every occasion.`;
 const CANONICAL = `https://example.com/canonical/${RUN}`;
 

@@ -178,6 +178,14 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   onlinePaymentEnabled: true,
   epsPaymentEnabled: false,
   googleSiteVerification: null,
+  legalName: null,
+  addressLine: null,
+  addressCity: null,
+  addressRegion: null,
+  addressPostalCode: null,
+  addressCountry: null,
+  legalJurisdiction: null,
+  supportHours: null,
   updatedAt: new Date(0).toISOString(),
 };
 

@@ -1578,6 +1578,19 @@ model StoreSetting {
   /// pasted here and rendered as a <meta name="google-site-verification"> tag on every page,
   /// rather than requiring a file upload or DNS change to prove domain ownership.
   googleSiteVerification       String?
+  /// Phase 12 (D-1/D-2): the rest of the store's identity, owned here like name/logo/contact (Phase 7 — StoreSetting is
+  /// the identity owner; there is deliberately no separate StoreProfile). All optional; the storefront renders each
+  /// only when set. Domain/URLs stay deployment configuration (env), never here (D-3).
+  legalName                    String?
+  addressLine                  String?
+  addressCity                  String?
+  addressRegion                String?
+  addressPostalCode            String?
+  /// ISO 3166-1 alpha-2 (e.g. "BD").
+  addressCountry               String?
+  /// Governing-law jurisdiction named on the Terms page (e.g. "Bangladesh").
+  legalJurisdiction            String?
+  supportHours                 String?
   updatedAt                    DateTime @updatedAt
 }
 
@@ -2044,7 +2057,7 @@ model ProductMaterial {
 model CatalogSetting {
   id         String   @id @default("singleton")
   /// The {PREFIX} token of the SKU pattern.
-  skuPrefix  String   @default("AZ")
+  skuPrefix  String   @default("SKU")
   /// Tokens: {PREFIX} {TYPE} {COLOR} {SIZE} {SEQ:n} (n = zero-padded digits). Validated on write.
   skuPattern String   @default("{PREFIX}-{TYPE}-{COLOR}-{SIZE}-{SEQ:3}")
   updatedAt  DateTime @updatedAt

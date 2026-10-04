@@ -14,7 +14,7 @@ interface HeaderProps {
   settings: StoreSettings;
 }
 
-/** "Asif Zone" -> "AZ", "Considered" -> "C" — up to the first two significant words, for the fallback monogram mark shown when no logo image is set. */
+/** "Northwind Goods" -> "NG", "Considered" -> "C" — up to the first two significant words, for the fallback monogram mark shown when no logo image is set. */
 function getInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   return words

@@ -38,3 +38,15 @@ export function uploadPaymentMethodsImage(file: File) {
     isFormData: true,
   });
 }
+
+/** Phase 12 (D-4): booleans-only integration status (GET /api/v1/ops/providers, settings.manage). */
+export interface ProviderStatusEntry {
+  capability: "payments" | "sms" | "email" | "push" | "courier" | "serverEvents";
+  provider: string;
+  enabled: boolean;
+  credentialsPresent: boolean;
+}
+
+export function getProviderStatus() {
+  return apiFetch<{ providers: ProviderStatusEntry[] }>("/api/v1/ops/providers");
+}

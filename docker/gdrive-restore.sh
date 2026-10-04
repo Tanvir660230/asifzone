@@ -13,7 +13,11 @@ set -euo pipefail
 COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="${COMPOSE_PROJECT_NAME:-$(grep -E '^COMPOSE_PROJECT_NAME=' "$COMPOSE_DIR/.env" 2>/dev/null | cut -d= -f2- || true)}"
 PROJECT="${PROJECT:-docker}"
-REMOTE="${GDRIVE_REMOTE:-gdrive:asifzone-backups}"
+# Phase 12 (W10): the store's own backup destination — required, no store default (env or docker/.env).
+REMOTE="${GDRIVE_REMOTE:-$(grep -E '^GDRIVE_REMOTE=' "$COMPOSE_DIR/.env" 2>/dev/null | cut -d= -f2- || true)}"
+[ -n "$REMOTE" ] || { echo "GDRIVE_REMOTE is not set (docker/.env) — refusing to guess another store's backup folder"; exit 1; }
+POSTGRES_DB="${POSTGRES_DB:-$(grep -E '^POSTGRES_DB=' "$COMPOSE_DIR/.env" 2>/dev/null | cut -d= -f2- || true)}"
+POSTGRES_DB="${POSTGRES_DB:-clothing_brand}"
 dc() { docker compose -p "$PROJECT" -f "$COMPOSE_DIR/docker-compose.yml" --project-directory "$COMPOSE_DIR" "$@"; }
 
 WHEN="${1:-}"
@@ -35,13 +39,13 @@ read -rp "নিশ্চিত হলে ঠিক এভাবে লিখু
 
 mkdir -p /var/backups/clothing-brand
 SAFETY="/var/backups/clothing-brand/before-restore-$(date +%Y%m%d-%H%M%S).sql.gz"
-dc exec -T postgres pg_dump -U postgres --no-owner clothing_brand | gzip > "$SAFETY"
+dc exec -T postgres pg_dump -U postgres --no-owner "$POSTGRES_DB" | gzip > "$SAFETY"
 echo "বর্তমান ডাটাবেসের কপি রাখা হলো: $SAFETY"
 
 dc stop api web
-dc exec -T postgres dropdb -U postgres --force clothing_brand
-dc exec -T postgres createdb -U postgres clothing_brand
-gunzip -c "$TMP/database.sql.gz" | dc exec -T postgres psql -U postgres -d clothing_brand -v ON_ERROR_STOP=1 -q
+dc exec -T postgres dropdb -U postgres --force "$POSTGRES_DB"
+dc exec -T postgres createdb -U postgres "$POSTGRES_DB"
+gunzip -c "$TMP/database.sql.gz" | dc exec -T postgres psql -U postgres -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q
 
 if [ "${RESTORE_IMAGES:-0}" = "1" ]; then
   UPLOADS="$(docker volume inspect "${PROJECT}_uploads_data" --format '{{ .Mountpoint }}')"
@@ -51,4 +55,4 @@ fi
 
 dc up -d api web
 dc restart nginx
-echo "ফেরত আনা শেষ। মোট অর্ডার: $(dc exec -T postgres psql -U postgres -d clothing_brand -tAc 'SELECT count(*) FROM "Order"')"
+echo "ফেরত আনা শেষ। মোট অর্ডার: $(dc exec -T postgres psql -U postgres -d "$POSTGRES_DB" -tAc 'SELECT count(*) FROM "Order"')"

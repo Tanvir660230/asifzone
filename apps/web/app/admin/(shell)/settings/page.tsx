@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { adminCan } from "@/lib/auth";
 import { storeCurrencyCode } from "@/lib/format";
+import { ProviderStatusPanel } from "@/components/admin/provider-status-panel";
 
 /** wa.me and api.whatsapp.com/send?phone= are the two URL shapes admins tend to paste (or that this
  * form itself writes) — read whichever one is there back out to a plain number for editing. */
@@ -260,6 +261,14 @@ export default function SettingsPage() {
       onlinePaymentEnabled: s.onlinePaymentEnabled,
       epsPaymentEnabled: s.epsPaymentEnabled,
       googleSiteVerification: s.googleSiteVerification,
+      legalName: s.legalName,
+      addressLine: s.addressLine,
+      addressCity: s.addressCity,
+      addressRegion: s.addressRegion,
+      addressPostalCode: s.addressPostalCode,
+      addressCountry: s.addressCountry,
+      legalJurisdiction: s.legalJurisdiction,
+      supportHours: s.supportHours,
     });
   }, [data, reset]);
 
@@ -402,6 +411,47 @@ export default function SettingsPage() {
             <div>
               <Label htmlFor="contactPhone">Contact phone</Label>
               <Input id="contactPhone" {...register("contactPhone")} />
+            </div>
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="Business identity"
+          description="Your registered business details — shown in the footer, on the contact and terms pages and in search-engine data. Leave a field blank to hide it."
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="legalName">Legal business name</Label>
+              <Input id="legalName" {...register("legalName")} />
+            </div>
+            <div>
+              <Label htmlFor="legalJurisdiction">Governing law (country or region)</Label>
+              <Input id="legalJurisdiction" placeholder="e.g. Bangladesh" {...register("legalJurisdiction")} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="addressLine">Street address</Label>
+              <Input id="addressLine" {...register("addressLine")} />
+            </div>
+            <div>
+              <Label htmlFor="addressCity">City</Label>
+              <Input id="addressCity" {...register("addressCity")} />
+            </div>
+            <div>
+              <Label htmlFor="addressRegion">Region / division</Label>
+              <Input id="addressRegion" {...register("addressRegion")} />
+            </div>
+            <div>
+              <Label htmlFor="addressPostalCode">Postal code</Label>
+              <Input id="addressPostalCode" {...register("addressPostalCode")} />
+            </div>
+            <div>
+              <Label htmlFor="addressCountry">Country code</Label>
+              <Input id="addressCountry" placeholder="e.g. BD" maxLength={2} {...register("addressCountry")} />
+              {errors.addressCountry && <p className="mt-1 text-xs text-danger-600">{errors.addressCountry.message}</p>}
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="supportHours">Support hours</Label>
+              <Input id="supportHours" placeholder="e.g. Sat–Thu, 10am–8pm" {...register("supportHours")} />
             </div>
           </div>
         </FormSection>
@@ -591,6 +641,7 @@ export default function SettingsPage() {
             )}
           </div>
         </FormSection>
+        <ProviderStatusPanel />
         </>
         )}
 

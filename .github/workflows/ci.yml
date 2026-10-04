@@ -186,6 +186,19 @@ jobs:
           # drifting out of sync with the domain the site actually runs on.
           echo "API_ORIGIN=${{ secrets.NEXT_PUBLIC_SITE_URL }}" >> docker/.env
           echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> docker/.env
+          # Phase 12 per-store deployment inputs (non-secret repository variables; docker/deploy.sh refuses to
+          # start without SERVER_NAME / SERVER_ALIASES / CERT_NAME / GDRIVE_REMOTE).
+          echo "SERVER_NAME=${{ vars.SERVER_NAME }}" >> docker/.env
+          echo "SERVER_ALIASES=${{ vars.SERVER_ALIASES }}" >> docker/.env
+          echo "CERT_NAME=${{ vars.CERT_NAME }}" >> docker/.env
+          echo "GDRIVE_REMOTE=${{ vars.GDRIVE_REMOTE }}" >> docker/.env
+          echo "COMPOSE_PROJECT_NAME=${{ vars.COMPOSE_PROJECT_NAME }}" >> docker/.env
+          echo "POSTGRES_DB=${{ vars.POSTGRES_DB }}" >> docker/.env
+          echo "PAYMENT_GATEWAYS=${{ vars.PAYMENT_GATEWAYS }}" >> docker/.env
+          echo "SMS_PROVIDER=${{ vars.SMS_PROVIDER }}" >> docker/.env
+          echo "EMAIL_PROVIDER=${{ vars.EMAIL_PROVIDER }}" >> docker/.env
+          echo "COURIER_PROVIDER=${{ vars.COURIER_PROVIDER }}" >> docker/.env
+          echo "PUSH_PROVIDER=${{ vars.PUSH_PROVIDER }}" >> docker/.env
           echo "REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}" >> docker/.env
           # Optional — docker-compose.yml falls back to a no-op dev mailer (writes to disk instead
           # of sending) when this is empty, so it's not in the required-secrets check above.

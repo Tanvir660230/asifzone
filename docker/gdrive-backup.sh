@@ -3,7 +3,7 @@
 # rclone-এ "gdrive" নামের remote আগে থেকে সেট থাকতে হবে (migrate-to-new-vps.sh-এর gdrive মোড এটা করে)।
 #
 # Drive-এ যেভাবে সাজানো থাকে:
-#   asifzone-backups/
+#   <GDRIVE_REMOTE>/   (e.g. gdrive:<store>-backups)
 #     daily/2026-10-04/database.sql.gz      শেষ ৩০ দিন
 #     monthly/2026-10/database.sql.gz       শেষ ১২ মাস (মাসের প্রথম ব্যাকআপ)
 #     monthly/2026-10/settings.env          সাইটের secret সেটিংস — সার্ভার হারালে সাইট ফেরাতে লাগে
@@ -18,7 +18,11 @@ COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
 PROJECT="${COMPOSE_PROJECT_NAME:-$(grep -E '^COMPOSE_PROJECT_NAME=' "$COMPOSE_DIR/.env" 2>/dev/null | cut -d= -f2- || true)}"
 PROJECT="${PROJECT:-docker}"
-REMOTE="${GDRIVE_REMOTE:-gdrive:asifzone-backups}"
+# Phase 12 (W10): the store's own backup destination — required, no store default (env or docker/.env).
+REMOTE="${GDRIVE_REMOTE:-$(grep -E '^GDRIVE_REMOTE=' "$COMPOSE_DIR/.env" 2>/dev/null | cut -d= -f2- || true)}"
+[ -n "$REMOTE" ] || { echo "GDRIVE_REMOTE is not set (docker/.env) — refusing to guess another store's backup folder"; exit 1; }
+POSTGRES_DB="${POSTGRES_DB:-$(grep -E '^POSTGRES_DB=' "$COMPOSE_DIR/.env" 2>/dev/null | cut -d= -f2- || true)}"
+POSTGRES_DB="${POSTGRES_DB:-clothing_brand}"
 LOCAL_DIR="${BACKUP_DIR:-/var/backups/clothing-brand}"
 DAY="$(TZ=Asia/Dhaka date +%F)"
 MONTH="$(TZ=Asia/Dhaka date +%Y-%m)"
@@ -28,7 +32,7 @@ TMP="$(mktemp -d)"
 dc() { docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --project-directory "$COMPOSE_DIR" "$@"; }
 status() { printf '%s\n' "$@" > "$TMP/last-backup.txt"; rclone copy "$TMP/last-backup.txt" "$REMOTE" --quiet || true; }
 on_error() {
-  status "FAILED — ব্যাকআপ ব্যর্থ হয়েছে" "সময়: $STAMP" "লাইন $1-এ সমস্যা। সার্ভারে লগ দেখুন: /var/log/asifzone-gdrive-backup.log"
+  status "FAILED — ব্যাকআপ ব্যর্থ হয়েছে" "সময়: $STAMP" "লাইন $1-এ সমস্যা। সার্ভারে cron লগ দেখুন।"
 }
 trap 'on_error $LINENO' ERR
 trap 'rm -rf "$TMP"' EXIT
@@ -36,14 +40,14 @@ trap 'rm -rf "$TMP"' EXIT
 echo "[$STAMP] ব্যাকআপ শুরু"
 
 # ১. ডাটাবেস
-dc exec -T postgres pg_dump -U postgres --no-owner clothing_brand | gzip -9 > "$TMP/database.sql.gz"
+dc exec -T postgres pg_dump -U postgres --no-owner "$POSTGRES_DB" | gzip -9 > "$TMP/database.sql.gz"
 gzip -t "$TMP/database.sql.gz"
 [ "$(stat -c %s "$TMP/database.sql.gz")" -gt 1000 ] || { echo "ডাটাবেস dump সন্দেহজনকভাবে ছোট"; false; }
 DB_SIZE="$(du -h "$TMP/database.sql.gz" | cut -f1)"
 
 mkdir -p "$LOCAL_DIR"
-cp "$TMP/database.sql.gz" "$LOCAL_DIR/clothing_brand-$DAY.sql.gz"
-find "$LOCAL_DIR" -name 'clothing_brand-*.sql.gz' -mtime +7 -delete
+cp "$TMP/database.sql.gz" "$LOCAL_DIR/$POSTGRES_DB-$DAY.sql.gz"
+find "$LOCAL_DIR" -name "$POSTGRES_DB-*.sql.gz" -mtime +7 -delete
 
 rclone copy "$TMP/database.sql.gz" "$REMOTE/daily/$DAY" --quiet
 
@@ -67,6 +71,6 @@ rclone delete "$REMOTE/monthly" --min-age 365d --quiet || true
 rclone delete "$REMOTE/deleted-images" --min-age 30d --quiet || true
 rclone rmdirs "$REMOTE" --leave-root --quiet || true
 
-ORDERS="$(dc exec -T postgres psql -U postgres -d clothing_brand -tAc 'SELECT count(*) FROM "Order"' 2>/dev/null || echo '?')"
+ORDERS="$(dc exec -T postgres psql -U postgres -d "$POSTGRES_DB" -tAc 'SELECT count(*) FROM "Order"' 2>/dev/null || echo '?')"
 status "OK — ব্যাকআপ সফল" "সময়: $STAMP" "ডাটাবেস: $DB_SIZE (মোট অর্ডার: $ORDERS)" "ছবি: $IMG_COUNT টি ফাইল"
 echo "[$STAMP] ব্যাকআপ সফল — ডাটাবেস $DB_SIZE, ছবি $IMG_COUNT টি"

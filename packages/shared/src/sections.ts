@@ -1,3 +1,4 @@
+import { DHAKA_DELIVERY_DAYS, OUTSIDE_DHAKA_DELIVERY_DAYS } from "./country/bd";
 import { z } from "zod";
 
 /**
@@ -53,7 +54,7 @@ export const SECTION_REGISTRY = [
     defaultEnabled: true,
     defaultTitle: "Shipping & Returns",
     defaultContent:
-      "Dispatched within 1–2 business days. Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days. Unworn items with tags can be returned or exchanged within 7 days of delivery.",
+      `Dispatched within 1–2 business days. Inside Dhaka: ${DHAKA_DELIVERY_DAYS[0]}–${DHAKA_DELIVERY_DAYS[1]} days, outside Dhaka: ${OUTSIDE_DHAKA_DELIVERY_DAYS[0]}–${OUTSIDE_DHAKA_DELIVERY_DAYS[1]} days. Unworn items with tags can be returned or exchanged within 7 days of delivery.`,
     help: "Delivery and return information. Set the store-wide wording once; a template or product can override it.",
   },
   { key: "returns", label: "Returns (separate)", area: "accordion", content: "text", defaultEnabled: false, defaultTitle: "Returns", help: "A separate returns row, if you'd rather not combine it with shipping." },

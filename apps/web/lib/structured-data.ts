@@ -9,6 +9,7 @@ import {
   type StoreSettings,
 } from "@clothing-brand/shared";
 import { resolveImageUrl } from "./image-url";
+import { postalAddressJsonLd } from "./store-identity";
 import { stripHtml } from "./format";
 import { productDisplayPrice } from "./pricing-display";
 import { availabilityOf } from "./availability-display";
@@ -158,8 +159,10 @@ export function buildOrganizationJsonLd(settings: StoreSettings, siteUrl: string
     "@context": "https://schema.org",
     "@type": "Organization",
     name: settings.storeName,
+    ...(settings.legalName ? { legalName: settings.legalName } : {}),
     url: siteUrl,
     logo: settings.logoUrl || undefined,
+    ...(postalAddressJsonLd(settings) ? { address: postalAddressJsonLd(settings) } : {}),
     ...(hasContact
       ? {
           contactPoint: {
