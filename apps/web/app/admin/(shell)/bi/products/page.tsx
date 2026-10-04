@@ -1,6 +1,6 @@
 "use client";
 
-import { formatVariantLabel } from "@clothing-brand/shared";
+import { DISPLAY_LOCALE, formatVariantLabel } from "@clothing-brand/shared";
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
@@ -93,7 +93,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.views,
-                valueLabel: (p) => p.views.toLocaleString("en-BD"),
+                valueLabel: (p) => p.views.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No views recorded yet."
@@ -110,7 +110,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.count,
-                valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                valueLabel: (p) => p.count.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No wishlist activity yet."
@@ -127,7 +127,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.count,
-                valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                valueLabel: (p) => p.count.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No add-to-cart activity yet for this range."
@@ -144,7 +144,7 @@ export default function ProductIntelligencePage() {
                 key: (p) => p.id,
                 label: (p) => p.name,
                 value: (p) => p.count,
-                valueLabel: (p) => p.count.toLocaleString("en-BD"),
+                valueLabel: (p) => p.count.toLocaleString(DISPLAY_LOCALE),
                 href: (p) => productEditHref(p.id),
               })}
               emptyLabel="No cart-removal activity yet for this range."
@@ -195,7 +195,7 @@ export default function ProductIntelligencePage() {
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>{`Highest revenue (${range === "all" ? "365d" : `${range}D`})`}</CardTitle>
+            <CardTitle>{`Highest net merchandise sales (${range === "all" ? "365d" : `${range}D`})`}</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList
@@ -212,7 +212,7 @@ export default function ProductIntelligencePage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Highest profit (est.)</CardTitle>
+            <CardTitle>Highest profit (recorded cost)</CardTitle>
           </CardHeader>
           <CardContent>
             <RankedBarList
@@ -225,7 +225,7 @@ export default function ProductIntelligencePage() {
               })}
               emptyLabel="No sales recorded yet."
             />
-            <p className="mt-3 text-xs text-ink-400">Profit is revenue minus estimated cost at current cost price — not an exact historical margin.</p>
+            <p className="mt-3 text-xs text-ink-400">Profit uses the cost recorded on each order line when it was sold (excluding VAT); lines with no recorded cost are left out.</p>
           </CardContent>
         </Card>
       </section>
@@ -319,7 +319,7 @@ export default function ProductIntelligencePage() {
                     <th className="pb-2 pr-4">Product</th>
                     <th className="pb-2 pr-4">Size / Color</th>
                     <th className="pb-2 pr-4">Units sold</th>
-                    <th className="pb-2">Revenue</th>
+                    <th className="pb-2">Net merchandise sales</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -400,7 +400,7 @@ export default function ProductIntelligencePage() {
               })}
               emptyLabel="No turnover data yet — needs both sales and cost-priced stock on hand."
             />
-            <p className="mt-3 text-xs text-ink-400">COGS sold ÷ current inventory value — a practical stand-in for average inventory, since stock isn&apos;t snapshotted over time.</p>
+            <p className="mt-3 text-xs text-ink-400">Recorded COGS sold ÷ current inventory value (stock held now at current cost) — a practical stand-in for average inventory, since stock isn&apos;t snapshotted over time.</p>
           </CardContent>
         </Card>
         <Card>

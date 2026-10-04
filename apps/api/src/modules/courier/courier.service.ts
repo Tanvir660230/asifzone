@@ -2,13 +2,12 @@ import { canTransitionOrder, normalizeBdPhone, type OrderStatus } from "@clothin
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
-import {
-  createSteadfastConsignment,
-  createBulkSteadfastConsignments,
-  getSteadfastStatusByConsignmentId,
-} from "../../lib/steadfast";
-import { getOrderById, updateOrderStatus } from "../orders/order.service";
+import { CourierOutcomeUnknownError, createBulkSteadfastConsignments, createSteadfastConsignment, getSteadfastStatusByConsignmentId } from "../../lib/steadfast";
+import { changeOrderStatus, getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
+import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
+import { logger } from "../../lib/observability/logger";
+import { captureError } from "../../lib/observability/error-capture";
 
 // PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
 // anything further for this consignment) even though it still needs an admin to reconcile which
@@ -109,11 +108,43 @@ async function applyCourierStatus(order: { id: string; orderNumber: string; stat
       ? "Steadfast could not deliver this parcel — it was returned to origin after already shipping"
       : `Steadfast delivery status: ${status}`;
 
-  await updateOrderStatus(order.id, { status: mapped, note });
+  // quietNoop: a duplicate / concurrent webhook for a status already applied leaves no second timeline entry, and only
+  // the call that actually changed the status notifies admins (Phase 9).
+  const { changed } = await changeOrderStatus(order.id, { status: mapped, note }, undefined, { quietNoop: true });
+  if (!changed) return;
   notify({
     type: "order.courier_update",
     title: `Order ${order.orderNumber} marked ${mapped.toLowerCase()} by Steadfast`,
     link: `/admin/orders/${order.id}`,
+  });
+}
+
+/** Phase 9 (D-4): a booking holds this claim from just before the Steadfast call until the consignment is saved. */
+export const COURIER_BOOKING_LEASE_MS = 10 * 60_000;
+
+/** Atomically claims the right to book `orderId` (no consignment yet, no live claim). Two concurrent bookings — a double
+ * click, two admins, single + bulk — can't both win, so only one ever reaches Steadfast. */
+export async function claimCourierBooking(orderId: string, now: Date = new Date()): Promise<boolean> {
+  const claimed = await prisma.order.updateMany({
+    where: {
+      id: orderId,
+      courierConsignmentId: null,
+      OR: [{ courierBookingStartedAt: null }, { courierBookingStartedAt: { lt: new Date(now.getTime() - COURIER_BOOKING_LEASE_MS) } }],
+    },
+    data: { courierBookingStartedAt: now },
+  });
+  return claimed.count === 1;
+}
+
+async function releaseCourierBooking(orderId: string) {
+  await prisma.order.updateMany({ where: { id: orderId, courierConsignmentId: null }, data: { courierBookingStartedAt: null } });
+}
+
+/** The claim is KEPT: Steadfast may have created the consignment. Re-booking waits for the lease, and the order says why. */
+async function flagCourierOutcomeUnknown(orderId: string, orderNumber: string, detail: string) {
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { courierSyncError: `Booking outcome unknown (${detail}) — check Steadfast for invoice ${orderNumber} before booking again` },
   });
 }
 
@@ -128,19 +159,31 @@ export async function bookOrderWithSteadfast(orderId: string) {
     throw AppError.badRequest("This order is missing customer/address details — edit the order before booking a courier");
   }
 
-  const codAmount = order.paymentMethod === "COD" ? Number(order.total) : 0;
+  // The payment ledger's cash-to-collect (PL-6): the balance due of an open COD order — 0 when it was prepaid.
+  const codAmount = order.payment.codToCollect;
 
-  const consignment = await createSteadfastConsignment({
-    invoice: order.orderNumber,
-    recipientName: order.customerName,
-    // Steadfast requires exactly 11 digits — checkout normalizes new orders' customerPhone to that
-    // form already, but this defends against rows written before that validation existed (same
-    // reasoning as lib/sms.ts's own re-normalization before dialing out).
-    recipientPhone: normalizeBdPhone(order.customerPhone),
-    recipientAddress: buildRecipientAddress(order),
-    codAmount,
-    note: order.notes ?? undefined,
-  });
+  if (!(await claimCourierBooking(orderId))) {
+    throw AppError.conflict("This order is already booked with a courier, or a booking for it is in progress");
+  }
+
+  let consignment;
+  try {
+    consignment = await createSteadfastConsignment({
+      invoice: order.orderNumber,
+      recipientName: order.customerName,
+      // Steadfast requires exactly 11 digits — checkout normalizes new orders' customerPhone to that
+      // form already, but this defends against rows written before that validation existed (same
+      // reasoning as lib/sms.ts's own re-normalization before dialing out).
+      recipientPhone: normalizeBdPhone(order.customerPhone),
+      recipientAddress: buildRecipientAddress(order),
+      codAmount,
+      note: order.notes ?? undefined,
+    });
+  } catch (err) {
+    if (err instanceof CourierOutcomeUnknownError) await flagCourierOutcomeUnknown(orderId, order.orderNumber, err.message);
+    else await releaseCourierBooking(orderId);
+    throw err;
+  }
 
   await prisma.order.update({
     where: { id: orderId },
@@ -151,6 +194,8 @@ export async function bookOrderWithSteadfast(orderId: string) {
       courierStatus: consignment.status,
       courierTrackingLink: consignment.tracking_link,
       courierBookedAt: new Date(),
+      courierBookingStartedAt: null,
+      courierSyncError: null,
     },
   });
 
@@ -196,22 +241,42 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
     }
   }
 
-  if (!eligible.length) return { booked: [], failed };
+  // Claim each order first (Phase 9 D-4): one another booking already holds is skipped, never sent twice.
+  const claimed: typeof eligible = [];
+  for (const order of eligible) {
+    if (await claimCourierBooking(order.id)) claimed.push(order);
+    else failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "A booking for this order is already in progress" });
+  }
+  if (!claimed.length) return { booked: [], failed };
+  const codAmounts = await codToCollectFor(claimed.map((order) => order.id));
 
-  const results = await createBulkSteadfastConsignments(
-    eligible.map((order) => ({
-      invoice: order.orderNumber,
-      recipientName: order.customerName,
-      recipientPhone: normalizeBdPhone(order.customerPhone),
-      recipientAddress: buildRecipientAddress(order),
-      codAmount: order.paymentMethod === "COD" ? Number(order.total) : 0,
-      note: order.notes ?? undefined,
-    })),
-  );
+  let results;
+  try {
+    results = await createBulkSteadfastConsignments(
+      claimed.map((order) => ({
+        invoice: order.orderNumber,
+        recipientName: order.customerName,
+        recipientPhone: normalizeBdPhone(order.customerPhone),
+        recipientAddress: buildRecipientAddress(order),
+        codAmount: codAmounts.get(order.id) ?? 0,
+        note: order.notes ?? undefined,
+      })),
+    );
+  } catch (err) {
+    if (err instanceof CourierOutcomeUnknownError) {
+      for (const order of claimed) {
+        await flagCourierOutcomeUnknown(order.id, order.orderNumber, err.message);
+        failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Booking outcome unknown — check Steadfast before booking again" });
+      }
+      return { booked: [], failed };
+    }
+    for (const order of claimed) await releaseCourierBooking(order.id);
+    throw err;
+  }
   const byInvoice = new Map(results.map((r) => [r.invoice, r]));
 
   const booked: BulkCourierBookResult["booked"] = [];
-  for (const order of eligible) {
+  for (const order of claimed) {
     const result = byInvoice.get(order.orderNumber);
     // Success is judged by "did Steadfast actually give us a consignment_id + tracking_code", not
     // by matching a specific `status` value — Steadfast's own bulk response format for a *successful*
@@ -221,9 +286,10 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
     if (!result || !result.consignment_id || !result.tracking_code) {
       const reason = result?.message ?? "No result returned by Steadfast";
       if (!result?.message) {
-        console.error(`[steadfast] bulk item for ${order.orderNumber} had no usable result:`, JSON.stringify(result));
+        logger.error(`[steadfast] bulk item for ${order.orderNumber} had no usable result:`, { detail: JSON.stringify(result) });
       }
       failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason });
+      await releaseCourierBooking(order.id);
       continue;
     }
 
@@ -236,6 +302,8 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         courierStatus: "in_review",
         courierTrackingLink: result.tracking_link ?? null,
         courierBookedAt: new Date(),
+        courierBookingStartedAt: null,
+        courierSyncError: null,
       },
     });
     if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {
@@ -315,7 +383,7 @@ export async function bulkSyncCourierStatuses(orderIds: string[]): Promise<BulkC
 }
 
 export interface BulkDeliveryScoreResult {
-  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number }>;
+  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number; volumeRange: string | null }>;
   failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
 }
 
@@ -328,6 +396,9 @@ export interface BulkDeliveryScoreResult {
  * to look up the score, since that's the exact value findOrCreateGuestCustomer wrote to the Customer
  * row at checkout time; the cached result is still stored on the Customer row so it's shared across
  * every one of that customer's orders, not just the ones selected here. */
+const BULK_FRAUD_CHECK_SPACING_MS = 1000;
+const BULK_FRAUD_CHECK_BUDGET_MS = 40000;
+
 export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkDeliveryScoreResult> {
   const orders = await prisma.order.findMany({ where: { id: { in: orderIds } } });
 
@@ -345,11 +416,30 @@ export async function checkDeliveryScoresBulk(orderIds: string[]): Promise<BulkD
     else groupsByCustomerId.set(order.customerId, [order]);
   }
 
+  const startedAt = Date.now();
+  let first = true;
   for (const [customerId, group] of groupsByCustomerId) {
+    // Pacing (and 429 retries inside getSteadfastFraudCheck) make a big selection slow; stop well before
+    // nginx's 60s proxy timeout turns the whole request into a 504 and report the rest as not checked.
+    if (Date.now() - startedAt > BULK_FRAUD_CHECK_BUDGET_MS) {
+      for (const order of group) {
+        failed.push({ orderId: order.id, orderNumber: order.orderNumber, reason: "Not checked yet — run Check score again for these" });
+      }
+      continue;
+    }
+    // Pace the calls: Steadfast's score endpoint answers a burst with HTTP 429.
+    if (!first) await new Promise((resolve) => setTimeout(resolve, BULK_FRAUD_CHECK_SPACING_MS));
+    first = false;
     try {
       const result = await checkAndUpdateDeliveryScore(customerId, group[0]!.customerPhone);
       for (const order of group) {
-        checked.push({ orderId: order.id, orderNumber: order.orderNumber, successRate: result.successRate, totalParcels: result.totalParcels });
+        checked.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          successRate: result.successRate,
+          totalParcels: result.totalParcels,
+          volumeRange: result.volumeRange,
+        });
       }
     } catch (err) {
       const reason = syncErrorMessage(err);
@@ -404,6 +494,7 @@ export async function unlinkCourierBooking(orderId: string) {
       courierStatus: null,
       courierTrackingLink: null,
       courierBookedAt: null,
+      courierBookingStartedAt: null,
       courierStatusSyncedAt: null,
       courierSyncError: null,
     },
@@ -465,7 +556,7 @@ export async function syncPendingCourierStatuses(): Promise<number> {
         await prisma.order.update({ where: { id: order.id }, data: { courierStatusSyncedAt: new Date(), courierSyncError: null } });
       }
     } catch (err) {
-      console.error(`[courier-status-cron] failed to refresh order ${order.id}:`, err);
+      captureError(err, { msg: `[courier-status-cron] failed to refresh order ${order.id}:` });
       await recordCourierSyncError(order.id, syncErrorMessage(err));
     }
   }

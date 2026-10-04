@@ -12,6 +12,7 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Pagination } from "@/components/admin/pagination";
 import * as auditApi from "@/lib/api/audit";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 
 const ACTION_COLOR: Record<string, string> = {
   create: "bg-success-100 text-success-700",
@@ -29,16 +30,16 @@ export default function AuditLogPage() {
   const [page, setPage] = useState(1);
   const pageSize = 30;
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canReadAudit = adminCan(currentAdmin?.admin, "audit.read");
   const { data, isLoading } = useQuery({
     queryKey: ["audit-logs", page],
     queryFn: () => auditApi.listAuditLogs(page, pageSize),
-    enabled: isOwner,
+    enabled: canReadAudit,
   });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
 
-  if (currentAdmin && !isOwner) {
+  if (currentAdmin && !canReadAudit) {
     return (
       <div>
         <PageHeader title="Audit Log" />

@@ -1,4 +1,4 @@
-import type { Order, StoreSettings } from "@clothing-brand/shared";
+import type { Order, OrderPaymentSummary, StoreSettings } from "@clothing-brand/shared";
 import { formatPrice } from "@/lib/format";
 import type { LabelTemplateId } from "@/lib/label-templates";
 import { StoreLogoImage } from "@/components/store-logo-image";
@@ -7,7 +7,8 @@ import { BarcodeSvg } from "./barcode-svg";
 type CompactTemplateId = "sticker-80x50" | "sticker-60x40" | "sticker-50x30";
 
 interface ShippingLabelCompactProps {
-  order: Order;
+  /** Needs the payment ledger position: the COD amount printed is `payment.codToCollect`, never `total`. */
+  order: Order & { payment: OrderPaymentSummary };
   store: StoreSettings | undefined;
   templateId: CompactTemplateId;
   onBarcodeReady?: () => void;
@@ -144,9 +145,9 @@ export function ShippingLabelCompact({ order, store, templateId, onBarcodeReady 
         {addressLine}
       </p>
 
-      {order.paymentMethod === "COD" ? (
+      {order.payment.codToCollect > 0 ? (
         <p className="mt-1 truncate font-extrabold leading-none tabular-nums text-ink-900" style={{ fontSize: `${tier.codPx}px` }}>
-          COD {formatPrice(order.total)}
+          COD {formatPrice(order.payment.codToCollect)}
         </p>
       ) : (
         <p className="mt-1 truncate font-extrabold leading-none text-ink-800" style={{ fontSize: `${tier.codPx}px` }}>

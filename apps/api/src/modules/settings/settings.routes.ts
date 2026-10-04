@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { updateSettingsSchema } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
-import { requireAdmin, requireRole } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { imageUpload } from "../uploads/upload.middleware";
 import * as settingsController from "./settings.controller";
 
@@ -14,26 +14,26 @@ settingsRouter.get("/", settingsController.get);
 // change what the whole store charges or how it's branded.
 // Reconciliation: do the legacy StoreSetting mirrors still match the TaxSetting / ShippingZone authorities?
 // (docs/PRICING_INVARIANTS.md §10). Empty `drift` = consistent.
-settingsRouter.get("/pricing-config-drift", requireAdmin, settingsController.pricingDrift);
-settingsRouter.patch("/", requireAdmin, requireRole("OWNER"), validate(updateSettingsSchema), settingsController.update);
+settingsRouter.get("/pricing-config-drift", requireAdmin, requirePermission("ops.read"), settingsController.pricingDrift);
+settingsRouter.patch("/", requireAdmin, requirePermission("settings.manage"), validate(updateSettingsSchema), settingsController.update);
 settingsRouter.post(
   "/upload-logo",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("settings.manage"),
   imageUpload.single("image"),
   settingsController.uploadLogo,
 );
 settingsRouter.post(
   "/upload-favicon",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("settings.manage"),
   imageUpload.single("image"),
   settingsController.uploadFavicon,
 );
 settingsRouter.post(
   "/upload-payment-methods-image",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("settings.manage"),
   imageUpload.single("image"),
   settingsController.uploadPaymentMethodsImage,
 );

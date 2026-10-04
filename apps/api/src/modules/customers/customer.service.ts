@@ -24,12 +24,25 @@ import {
   type UpdateCustomerAdminFieldsInput,
   type CreateCustomerAdminInput,
   type CustomerSmsVars,
+  type ChangeCustomerPasswordInput,
+  formatDate,
+  formatMoney,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { mapWithConcurrency } from "../../lib/concurrency";
-import { signCustomerAccessToken, signCustomerRefreshToken, verifyCustomerRefreshToken } from "../../lib/customer-jwt";
+import { issueCustomerSession, revokeAllCustomerSessions, rotateCustomerSession, revokeCustomerSession, type IssuedSession } from "./customer-sessions";
+import {
+  assertPhoneOtpBudget,
+  auditCustomerClaim,
+  checkPhoneOtp,
+  consumePhoneOtp,
+  findVerifiedPhoneOwner,
+  isUnclaimedPlaceholder,
+  isVerifiedPhoneConflict,
+  PHONE_IN_USE,
+} from "./customer-identity";
 import { sendMail } from "../../lib/mailer";
 import { sendSms } from "../../lib/sms";
 import { getSteadfastFraudCheck } from "../../lib/steadfast";
@@ -37,6 +50,10 @@ import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken, signPayload, constantTimeEqual } from "../../lib/token-hash";
 import { env } from "../../config/env";
 import { getSettings } from "../settings/settings.service";
+import { customerMetricsIndex } from "../../domain/metrics/metrics.service";
+import { resolveStoreRange } from "../../domain/metrics/store-time";
+import { getCommerceSettings, type CommerceSettings } from "../../domain/config/commerce-settings";
+import { captureError } from "../../lib/observability/error-capture";
 
 // Bulk sends dispatch this many recipients concurrently — same bound as campaign.service.ts's
 // SEND_CONCURRENCY, for the same reason (bounded outbound connections to the SMS provider).
@@ -46,12 +63,8 @@ const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 const EMAIL_VERIFICATION_TTL_MS = 60 * 60 * 1000;
 const OTP_TTL_MS = 5 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
-const OTP_MAX_ATTEMPTS = 5;
-// Requesting a fresh code creates a new PhoneOtp row with its own attempts counter starting at 0
-// — without a phone-level ceiling on top of the per-row one, resending resets the guess budget,
-// turning a "5 wrong guesses" limit into "5 per code, and codes are nearly free to request."
-const OTP_PHONE_LOCKOUT_WINDOW_MS = 30 * 60 * 1000;
-const OTP_PHONE_MAX_TOTAL_ATTEMPTS = 5;
+const CLAIM_TTL_MS = 60 * 60 * 1000;
+// OTP attempt budgets (per code, and per phone across resends) live in ./customer-identity.ts.
 
 /** See apps/api/src/modules/auth/auth.service.ts for why this exists — same timing-side-channel fix,
  * applied to customer login. */
@@ -65,6 +78,7 @@ const publicSelect = {
   email: true,
   emailVerifiedAt: true,
   phone: true,
+  phoneVerifiedAt: true,
   smsMarketingOptIn: true,
   emailMarketingOptIn: true,
   rewardPoints: true,
@@ -76,100 +90,149 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-/** Looks up the customer's current tokenVersion fresh (rather than trusting a possibly-stale value
- * already in hand) so a just-completed password reset is reflected in the very next token issued. */
-async function issueCustomerTokens(customerId: string) {
-  const { tokenVersion } = await prisma.customer.findUniqueOrThrow({
-    where: { id: customerId },
-    select: { tokenVersion: true },
-  });
-  return {
-    accessToken: signCustomerAccessToken({ customerId }),
-    refreshToken: signCustomerRefreshToken({ customerId, tokenVersion }),
-  };
+export interface SessionOptions {
+  persistent?: boolean;
+  userAgent?: string | null;
 }
 
-/** Called from checkout (order.service.ts createOrder) for a guest — every order, phone-only or
- * not, ends up tied to a real Customer row. Matches an existing customer (guest or already-real
- * account, by either email or phone) before creating a new one, so a returning guest — or someone
- * who already has an account but forgot to log in — gets recognized instead of duplicated. */
+/** Every successful sign-in opens a DB-tracked session family (Phase 11 — see ./customer-sessions.ts). */
+function issueCustomerTokens(customerId: string, opts: SessionOptions = {}): Promise<IssuedSession> {
+  return issueCustomerSession(customerId, opts);
+}
+
+/** Called from checkout (order.service.ts createOrder) for a guest — every order ends up tied to a Customer row.
+ * Phase 11 (BD-11.7 a): a guest order joins an existing customer **only through a verified identity** — the customer whose
+ * phone is verified as this phone, else the customer whose email is verified as this email. Otherwise it goes to an unclaimed
+ * guest placeholder keyed by the exact (phone, email) pair — reused for repeat guests, never a login account — so no one can
+ * see another person's orders merely because unverified contact data matches. Nothing already attached is moved. */
 export async function findOrCreateGuestCustomer(
   name: string,
   email: string | null,
   phone: string,
 ): Promise<string> {
   const normalizedEmail = email ? normalizeEmail(email) : null;
-  const or: Prisma.CustomerWhereInput[] = [{ phone }];
-  if (normalizedEmail) or.push({ email: normalizedEmail });
 
-  const existing = await prisma.customer.findFirst({ where: { OR: or } });
+  const verifiedPhoneOwner = await findVerifiedPhoneOwner(phone, { id: true });
+  if (verifiedPhoneOwner) return verifiedPhoneOwner.id;
+
+  let placeholderEmail = normalizedEmail;
+  if (normalizedEmail) {
+    const byEmail = await prisma.customer.findUnique({ where: { email: normalizedEmail } });
+    if (byEmail?.emailVerifiedAt) return byEmail.id;
+    if (byEmail) {
+      // The email belongs to an unverified record: reuse it only when it is the same guest's placeholder (same phone);
+      // otherwise neither attach to it nor key a new placeholder on an email someone else holds.
+      if (isUnclaimedPlaceholder(byEmail) && byEmail.phone === phone) return byEmail.id;
+      placeholderEmail = null;
+    }
+  }
+
+  const findPlaceholder = () =>
+    prisma.customer.findFirst({
+      where: { phone, email: placeholderEmail, passwordHash: null, googleId: null, phoneVerifiedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+  const existing = await findPlaceholder();
   if (existing) return existing.id;
 
   try {
     const created = await prisma.customer.create({
-      data: { name, email: normalizedEmail, phone },
+      data: { name, email: placeholderEmail, phone },
       select: { id: true },
     });
     return created.id;
   } catch (err) {
-    // Two concurrent guest checkouts with the same new email/phone raced past the findFirst above —
-    // the loser here just reuses whichever row the winner created, same as the stock-decrement race
-    // handling in order.service.ts.
+    // Two concurrent guest checkouts with the same new email/phone raced past the lookup above — the loser reuses the
+    // winner's placeholder, same as the stock-decrement race handling in order.service.ts.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      const race = await prisma.customer.findFirst({ where: { OR: or } });
+      const race = await findPlaceholder();
       if (race) return race.id;
     }
     throw err;
   }
 }
 
-/** A customer row with neither a password nor a linked Google account isn't a real, log-in-able
- * account yet — it's either a guest placeholder (see findOrCreateGuestCustomer) or a phone-OTP-only
- * signup. Safe to silently claim (attach new credentials to) rather than reject as a duplicate. */
-function isClaimable(customer: { passwordHash: string | null; googleId: string | null }): boolean {
-  return !customer.passwordHash && !customer.googleId;
-}
+export type RegisterResult =
+  | ({ claimPending: false; customer: Awaited<ReturnType<typeof getCustomerById>> } & IssuedSession)
+  | { claimPending: true };
 
-export async function registerCustomer(input: CustomerRegisterInput) {
+/** Phase 11 (BD-11.6 a): registration never takes over an existing record. A new email → a new account (any phone given is
+ * unverified contact data — registration can't prove a phone, so it never claims by phone). An email held by an unclaimed
+ * placeholder → a claim link is emailed; only following it (proof of the email) attaches this password to that record.
+ * An email held by anything else → 409. */
+export async function registerCustomer(input: CustomerRegisterInput, opts: SessionOptions = {}): Promise<RegisterResult> {
   const email = normalizeEmail(input.email);
   const existingByEmail = await prisma.customer.findUnique({ where: { email } });
-  if (existingByEmail && !isClaimable(existingByEmail)) {
-    throw AppError.conflict("An account with this email already exists");
-  }
-
-  // No email match — but a guest checkout may have already created a placeholder under this same
-  // phone number, which this registration should claim rather than duplicate.
-  const existingByPhone =
-    !existingByEmail && input.phone
-      ? await prisma.customer.findFirst({ where: { phone: input.phone, passwordHash: null, googleId: null } })
-      : null;
-
-  const target = existingByEmail ?? existingByPhone;
   const passwordHash = await bcrypt.hash(input.password, 10);
 
-  const customer = target
-    ? await prisma.customer.update({
-        where: { id: target.id },
-        data: { name: input.name, email, phone: input.phone ?? target.phone, passwordHash },
-        select: publicSelect,
-      })
-    : await prisma.customer.create({
-        data: { name: input.name, email, phone: input.phone ?? null, passwordHash },
-        select: publicSelect,
-      });
+  if (existingByEmail) {
+    if (!isUnclaimedPlaceholder(existingByEmail)) throw AppError.conflict("An account with this email already exists");
+    await startEmailClaim(existingByEmail.id, email, { passwordHash, name: input.name, phone: input.phone ?? null });
+    return { claimPending: true };
+  }
+
+  const customer = await prisma.customer.create({
+    data: { name: input.name, email, phone: input.phone ?? null, passwordHash },
+    select: publicSelect,
+  });
 
   // Best-effort: a transient email-provider hiccup should never block account creation, unlike
   // requestPasswordReset (a flow the customer explicitly retries) where letting it throw is fine.
   try {
     await sendVerificationEmail(customer.id);
   } catch (err) {
-    console.error("[customer] failed to send verification email:", err);
+    captureError(err, { msg: "[customer] failed to send verification email:" });
   }
 
-  return { ...(await issueCustomerTokens(customer.id)), customer };
+  return { claimPending: false, ...(await issueCustomerTokens(customer.id, opts)), customer };
 }
 
-export async function loginCustomer(input: CustomerLoginInput) {
+async function startEmailClaim(customerId: string, email: string, pending: { passwordHash: string; name: string; phone: string | null }) {
+  const token = crypto.randomBytes(32).toString("hex");
+  await prisma.customerClaim.create({
+    data: { customerId, tokenHash: hashToken(token), passwordHash: pending.passwordHash, name: pending.name, phone: pending.phone, expiresAt: new Date(Date.now() + CLAIM_TTL_MS) },
+  });
+  const claimUrl = `${env.webOrigin}/account/claim?token=${token}`;
+  await sendMail({
+    to: email,
+    subject: "Confirm your account",
+    html: await renderEmailLayout({
+      bodyHtml: `
+        <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Confirm it's you</p>
+        <p style="margin:0;">We already have orders under this email address. Confirm that this is your email to finish creating your account and see them. This link expires in 1 hour — if you didn't try to sign up, you can ignore it.</p>
+      `,
+      ctaLabel: "Confirm my account",
+      ctaUrl: claimUrl,
+    }),
+  });
+}
+
+/** BD-11.6 a: the claim link proves the email; the pending password attaches to the placeholder atomically — a concurrent
+ * second claim (or a record that gained a credential meanwhile) fails. Existing history stays exactly where it is. */
+export async function confirmEmailClaim(token: string, opts: SessionOptions = {}) {
+  const now = new Date();
+  const customerId = await prisma.$transaction(async (tx) => {
+    const claim = await tx.customerClaim.findUnique({ where: { tokenHash: hashToken(token) } });
+    if (!claim || claim.usedAt || claim.expiresAt < now) throw AppError.badRequest("This link is invalid or has expired");
+    const used = await tx.customerClaim.updateMany({ where: { id: claim.id, usedAt: null }, data: { usedAt: now } });
+    if (used.count !== 1) throw AppError.badRequest("This link is invalid or has expired");
+
+    const claimed = await tx.customer.updateMany({
+      where: { id: claim.customerId, passwordHash: null, googleId: null, phoneVerifiedAt: null },
+      data: { passwordHash: claim.passwordHash, name: claim.name, emailVerifiedAt: now },
+    });
+    if (claimed.count !== 1) throw AppError.conflict("This account has already been set up — sign in instead");
+    if (claim.phone) await tx.customer.updateMany({ where: { id: claim.customerId, phone: null }, data: { phone: claim.phone } });
+    await tx.customerClaim.updateMany({ where: { customerId: claim.customerId, usedAt: null }, data: { usedAt: now } });
+    return claim.customerId;
+  });
+  auditCustomerClaim(customerId, "email_link");
+  const customer = await getCustomerById(customerId);
+  return { ...(await issueCustomerTokens(customerId, opts)), customer };
+}
+
+export async function loginCustomer(input: CustomerLoginInput, opts: SessionOptions = {}) {
   const email = normalizeEmail(input.email);
   const customer = await prisma.customer.findUnique({ where: { email } });
   const passwordMatches = await bcrypt.compare(input.password, customer?.passwordHash ?? DUMMY_PASSWORD_HASH);
@@ -178,13 +241,14 @@ export async function loginCustomer(input: CustomerLoginInput) {
   }
 
   return {
-    ...(await issueCustomerTokens(customer.id)),
+    ...(await issueCustomerTokens(customer.id, { ...opts, persistent: input.rememberMe !== false })),
     customer: {
       id: customer.id,
       name: customer.name,
       email: customer.email,
       emailVerifiedAt: customer.emailVerifiedAt,
       phone: customer.phone,
+      phoneVerifiedAt: customer.phoneVerifiedAt,
       rewardPoints: customer.rewardPoints,
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
@@ -192,22 +256,17 @@ export async function loginCustomer(input: CustomerLoginInput) {
   };
 }
 
-export async function refreshCustomerSession(refreshToken: string) {
-  let payload;
-  try {
-    payload = verifyCustomerRefreshToken(refreshToken);
-  } catch {
-    throw AppError.unauthorized("Session expired, please log in again");
-  }
+/** Rotation with reuse detection — see ./customer-sessions.ts. */
+export function refreshCustomerSession(refreshToken: string, userAgent?: string | null) {
+  return rotateCustomerSession(refreshToken, userAgent);
+}
 
-  const customer = await prisma.customer.findUnique({ where: { id: payload.customerId } });
-  // tokenVersion mismatch means this refresh token predates a password reset — reject it even
-  // though the JWT signature and expiry are otherwise still valid.
-  if (!customer || customer.tokenVersion !== payload.tokenVersion) {
-    throw AppError.unauthorized("Session expired, please log in again");
-  }
+export function logoutCustomer(refreshToken: string | undefined) {
+  return revokeCustomerSession(refreshToken);
+}
 
-  return signCustomerAccessToken({ customerId: customer.id });
+export function logoutEverywhere(customerId: string) {
+  return revokeAllCustomerSessions(customerId, "logout_all");
 }
 
 export async function getCustomerById(customerId: string) {
@@ -216,9 +275,53 @@ export async function getCustomerById(customerId: string) {
   return customer;
 }
 
+/** BD-11.1: a verified login phone changes only through OTP verification of the new number (requestPhoneVerification /
+ * confirmPhoneVerification) — until then the old verified phone stays the login. An unverified phone is contact data and
+ * may be edited freely; it stays unverified. */
 export async function updateCustomerProfile(customerId: string, input: UpdateCustomerInput) {
-  await getCustomerById(customerId);
-  return prisma.customer.update({ where: { id: customerId }, data: input, select: publicSelect });
+  const current = await getCustomerById(customerId);
+  const data: Prisma.CustomerUpdateInput = { ...input };
+  if (input.phone !== undefined && input.phone !== current.phone) {
+    if (current.phoneVerifiedAt) throw AppError.conflict("Verify your new number with a code to change your sign-in phone");
+    data.phoneVerifiedAt = null;
+  }
+  return prisma.customer.update({ where: { id: customerId }, data, select: publicSelect });
+}
+
+/** Sends an OTP to `phone` so the signed-in customer can verify it (their current phone, or a new login phone). */
+export async function requestPhoneVerification(_customerId: string, phone: string) {
+  await requestOtp(phone);
+}
+
+/** OTP proved `phone`: it becomes this customer's verified login phone (replacing any previous one). Another customer
+ * already verified with it → 409 via the partial unique index; nothing changes. */
+export async function confirmPhoneVerification(customerId: string, phone: string, code: string) {
+  const otpId = await checkPhoneOtp(phone, code);
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await consumePhoneOtp(tx, otpId);
+      return tx.customer.update({ where: { id: customerId }, data: { phone, phoneVerifiedAt: new Date() }, select: publicSelect });
+    });
+  } catch (err) {
+    if (isVerifiedPhoneConflict(err)) throw PHONE_IN_USE();
+    throw err;
+  }
+}
+
+/** Set or change the password while signed in. Every session is revoked; the caller gets a fresh one for this device. */
+export async function changeCustomerPassword(customerId: string, input: ChangeCustomerPasswordInput, opts: SessionOptions = {}) {
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer) throw AppError.notFound("Account not found");
+  if (customer.passwordHash) {
+    const ok = input.currentPassword ? await bcrypt.compare(input.currentPassword, customer.passwordHash) : false;
+    if (!ok) throw AppError.badRequest("Your current password is incorrect");
+  }
+  const passwordHash = await bcrypt.hash(input.newPassword, 10);
+  await prisma.$transaction(async (tx) => {
+    await tx.customer.update({ where: { id: customerId }, data: { passwordHash } });
+    await revokeAllCustomerSessions(customerId, "password_change", tx);
+  });
+  return issueCustomerTokens(customerId, opts);
 }
 
 export async function listAddresses(customerId: string) {
@@ -278,6 +381,9 @@ export async function requestPasswordReset(email: string) {
   // Always return successfully regardless of whether the email exists, so this endpoint
   // can't be used to enumerate registered accounts.
   if (!customer) return;
+  // Phase 11: an account whose only proven sign-in is its phone, with an email nobody has proven, can't gain a password
+  // through that email (its owner sets one while signed in instead) — silently, like an unknown email.
+  if (isPhoneOnlyWithUnprovenEmail(customer)) return;
 
   const token = crypto.randomBytes(32).toString("hex");
   await prisma.passwordResetToken.create({
@@ -293,7 +399,7 @@ export async function requestPasswordReset(email: string) {
     // Non-null — customer was looked up by this exact email a few lines up.
     to: customer.email!,
     subject: "Reset your password",
-    html: renderEmailLayout({
+    html: await renderEmailLayout({
       bodyHtml: `
         <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Reset your password</p>
         <p style="margin:0;">We got a request to reset your password. This link expires in 1 hour — if you didn't ask for this, you can safely ignore it.</p>
@@ -304,6 +410,12 @@ export async function requestPasswordReset(email: string) {
   });
 }
 
+function isPhoneOnlyWithUnprovenEmail(c: { passwordHash: string | null; googleId: string | null; phoneVerifiedAt: Date | null; emailVerifiedAt: Date | null }) {
+  return !c.passwordHash && !c.googleId && !!c.phoneVerifiedAt && !c.emailVerifiedAt;
+}
+
+/** The reset link proves the email. Every session is revoked (Phase 11) and tokenVersion bumps (legacy tokens too). A reset
+ * on an unclaimed placeholder is a claim by email proof (BD-11.6 a) and is audited as one. */
 export async function resetPassword(token: string, newPassword: string) {
   const tokenHash = hashToken(token);
   const resetToken = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
@@ -313,15 +425,20 @@ export async function resetPassword(token: string, newPassword: string) {
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  await prisma.$transaction([
-    // Incrementing tokenVersion invalidates every refresh token issued before this reset —
-    // otherwise a stolen refresh token would keep working for up to 7 more days regardless.
-    prisma.customer.update({
-      where: { id: resetToken.customerId },
-      data: { passwordHash, tokenVersion: { increment: 1 } },
-    }),
-    prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } }),
-  ]);
+  const now = new Date();
+  const wasPlaceholder = await prisma.$transaction(async (tx) => {
+    const used = await tx.passwordResetToken.updateMany({ where: { id: resetToken.id, usedAt: null }, data: { usedAt: now } });
+    if (used.count !== 1) throw AppError.badRequest("This reset link is invalid or has expired");
+    const customer = await tx.customer.findUniqueOrThrow({ where: { id: resetToken.customerId } });
+    if (isPhoneOnlyWithUnprovenEmail(customer)) throw AppError.badRequest("This reset link is invalid or has expired");
+    await tx.customer.update({
+      where: { id: customer.id },
+      data: { passwordHash, emailVerifiedAt: customer.emailVerifiedAt ?? now },
+    });
+    await revokeAllCustomerSessions(customer.id, "password_reset", tx);
+    return isUnclaimedPlaceholder(customer);
+  });
+  if (wasPlaceholder) auditCustomerClaim(resetToken.customerId, "password_reset");
 }
 
 // --- email verification ---
@@ -344,7 +461,7 @@ export async function sendVerificationEmail(customerId: string) {
   await sendMail({
     to: customer.email,
     subject: "Verify your email",
-    html: renderEmailLayout({
+    html: await renderEmailLayout({
       bodyHtml: `
         <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Verify your email</p>
         <p style="margin:0;">Confirm this is your email address to secure your account. This link expires in 1 hour.</p>
@@ -390,47 +507,48 @@ export async function loginWithGoogle(idToken: string) {
     throw AppError.unauthorized("Invalid Google sign-in — please try again");
   }
   if (!payload?.sub || !payload.email) throw AppError.unauthorized("Invalid Google sign-in — please try again");
+  return signInWithGoogleIdentity({ sub: payload.sub, email: payload.email, emailVerified: payload.email_verified, name: payload.name });
+}
 
-  const googleId = payload.sub;
-  const email = normalizeEmail(payload.email);
-  const name = payload.name ?? email;
+/** Phase 11 (F-27, BD-11.6 a). Google proves an email only when it says so (`email_verified`). A proven Google email may:
+ * create a new account; claim an unclaimed placeholder with that email; or link to an account whose email is itself
+ * verified. It never links to an account whose email nobody has proven (that account's owner may not own the address). */
+export async function signInWithGoogleIdentity(identity: { sub: string; email: string; emailVerified?: boolean | null; name?: string | null }, opts: SessionOptions = {}) {
+  if (identity.emailVerified !== true) {
+    throw AppError.unauthorized("Google couldn't confirm this email address — sign in another way");
+  }
+  const googleId = identity.sub;
+  const email = normalizeEmail(identity.email);
+  const name = identity.name ?? email;
 
   let customer = await prisma.customer.findUnique({ where: { googleId }, select: publicSelect });
-
   if (!customer) {
-    // Google has already proven ownership of this email — safe to auto-link an existing
-    // password account, or create a fresh Google-only (no password) account.
-    const existingByEmail = await prisma.customer.findUnique({ where: { email } });
-    customer = existingByEmail
-      ? await prisma.customer.update({
-          where: { id: existingByEmail.id },
-          data: { googleId, emailVerifiedAt: existingByEmail.emailVerifiedAt ?? new Date() },
-          select: publicSelect,
-        })
-      : await prisma.customer.create({
-          data: { name, email, googleId, emailVerifiedAt: new Date() },
-          select: publicSelect,
-        });
+    const existing = await prisma.customer.findUnique({ where: { email } });
+    if (!existing) {
+      customer = await prisma.customer.create({ data: { name, email, googleId, emailVerifiedAt: new Date() }, select: publicSelect });
+    } else if (existing.googleId) {
+      throw AppError.conflict("This email is linked to a different Google account");
+    } else if (isUnclaimedPlaceholder(existing) || existing.emailVerifiedAt) {
+      const wasPlaceholder = isUnclaimedPlaceholder(existing);
+      const linked = await prisma.customer.updateMany({
+        where: { id: existing.id, googleId: null },
+        data: { googleId, emailVerifiedAt: existing.emailVerifiedAt ?? new Date() },
+      });
+      if (linked.count !== 1) throw AppError.conflict("This account was just updated — please try again");
+      if (wasPlaceholder) auditCustomerClaim(existing.id, "google");
+      customer = await getCustomerById(existing.id);
+    } else {
+      throw AppError.conflict("An account with this email already exists — sign in with your password or phone and verify your email first");
+    }
   }
 
-  return { ...(await issueCustomerTokens(customer.id)), customer };
+  return { ...(await issueCustomerTokens(customer.id, opts)), customer };
 }
 
 // --- phone / OTP sign-in ---
 
 function generateOtpCode(): string {
   return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
-}
-
-/** Total wrong guesses this phone has racked up across every code issued to it in the lockout
- * window — the real budget, since a single code's own `attempts` column resets to 0 on resend. */
-async function getRecentOtpAttempts(phone: string): Promise<number> {
-  const windowStart = new Date(Date.now() - OTP_PHONE_LOCKOUT_WINDOW_MS);
-  const result = await prisma.phoneOtp.aggregate({
-    where: { phone, createdAt: { gte: windowStart } },
-    _sum: { attempts: true },
-  });
-  return result._sum.attempts ?? 0;
 }
 
 export async function requestOtp(phone: string) {
@@ -442,9 +560,7 @@ export async function requestOtp(phone: string) {
     throw AppError.badRequest("Please wait a moment before requesting another code");
   }
 
-  if ((await getRecentOtpAttempts(phone)) >= OTP_PHONE_MAX_TOTAL_ATTEMPTS) {
-    throw AppError.badRequest("Too many incorrect attempts recently — please try again later");
-  }
+  await assertPhoneOtpBudget(phone);
 
   const code = generateOtpCode();
   await prisma.phoneOtp.create({
@@ -454,59 +570,67 @@ export async function requestOtp(phone: string) {
   await sendSms({ to: phone, body: `Your verification code is ${code}. It expires in 5 minutes.` });
 }
 
-export async function verifyOtp(input: VerifyOtpInput) {
-  const otp = await prisma.phoneOtp.findFirst({
-    where: { phone: input.phone, consumedAt: null },
-    orderBy: { createdAt: "desc" },
-  });
-  if (!otp || otp.expiresAt < new Date()) throw AppError.badRequest("This code is invalid or has expired");
-  if (otp.attempts >= OTP_MAX_ATTEMPTS) throw AppError.badRequest("Too many incorrect attempts — request a new code");
-  // Phone-level ceiling on top of the per-row one above — catches the case where this particular
-  // code's own attempts count is still under OTP_MAX_ATTEMPTS but the phone as a whole (across
-  // earlier codes in the same lockout window) has already used up its guess budget.
-  if ((await getRecentOtpAttempts(input.phone)) >= OTP_PHONE_MAX_TOTAL_ATTEMPTS) {
-    throw AppError.badRequest("Too many incorrect attempts recently — please try again later");
+/** Phone OTP sign-in (Phase 11 — BD-11.1, BD-11.6 a, F-26).
+ * - A customer whose phone is **verified** as this phone → signed in.
+ * - Otherwise no unverified profile is ever signed in by this OTP. With a name and email, the proof of the phone may claim the
+ *   unclaimed placeholder of this phone (one holding this email, else one with no email), or create a new account — the phone
+ *   becomes verified; the email stays **unverified** until its own verification link is followed. */
+export async function verifyOtp(input: VerifyOtpInput, opts: SessionOptions = {}) {
+  const otpId = await checkPhoneOtp(input.phone, input.code);
+
+  const verified = await findVerifiedPhoneOwner(input.phone, publicSelect);
+  if (verified) {
+    await prisma.$transaction((tx) => consumePhoneOtp(tx, otpId));
+    return { ...(await issueCustomerTokens(verified.id, opts)), customer: verified };
   }
 
-  if (otp.codeHash !== hashToken(input.code)) {
-    await prisma.phoneOtp.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
-    throw AppError.badRequest("Incorrect code");
-  }
+  // Deliberately NOT consuming the code yet if we're about to bounce back for name/email — the frontend resubmits the same
+  // code once it has them (still the same single verified possession of the phone, just split across two requests).
+  if (!input.name || !input.email) throw new AppError(422, "NEW_PHONE_NEEDS_PROFILE");
 
-  let customer = await prisma.customer.findFirst({ where: { phone: input.phone }, select: publicSelect });
-
-  // Deliberately NOT consuming the code yet if we're about to bounce back for name/email — the
-  // frontend resubmits the same code once it has them, and a code that's already been marked used
-  // would fail that resubmit for no real reason (it's still the same single verified possession of
-  // the phone, just split across two requests).
-  if (!customer && (!input.name || !input.email)) {
-    throw new AppError(422, "NEW_PHONE_NEEDS_PROFILE");
-  }
-
-  await prisma.phoneOtp.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
-
-  if (!customer) {
-    const email = normalizeEmail(input.email!);
-    const existingByEmail = await prisma.customer.findUnique({ where: { email } });
-    if (existingByEmail && !isClaimable(existingByEmail)) {
-      throw AppError.conflict("An account with this email already exists — sign in with email instead");
-    }
-    // A guest checkout may have already created a placeholder under this email (different phone,
-    // or no phone at all) — this phone number just proved ownership of *a* phone, not that email,
-    // so only claim rows with no existing credential of their own (see isClaimable).
-    customer = existingByEmail
-      ? await prisma.customer.update({
-          where: { id: existingByEmail.id },
-          data: { name: input.name!, phone: input.phone, emailVerifiedAt: existingByEmail.emailVerifiedAt ?? new Date() },
-          select: publicSelect,
-        })
-      : await prisma.customer.create({
-          data: { name: input.name!, email, phone: input.phone, emailVerifiedAt: new Date() },
-          select: publicSelect,
+  const email = normalizeEmail(input.email);
+  const now = new Date();
+  let claimedId: string | null = null;
+  let customerId: string;
+  try {
+    customerId = await prisma.$transaction(async (tx) => {
+      await consumePhoneOtp(tx, otpId);
+      const byEmail = await tx.customer.findUnique({ where: { email } });
+      if (byEmail && !(isUnclaimedPlaceholder(byEmail) && byEmail.phone === input.phone)) {
+        throw AppError.conflict("An account with this email already exists — sign in with email instead");
+      }
+      const target =
+        byEmail ??
+        (await tx.customer.findFirst({
+          where: { phone: input.phone, email: null, passwordHash: null, googleId: null, phoneVerifiedAt: null },
+          orderBy: { createdAt: "asc" },
+        }));
+      if (target) {
+        const claimed = await tx.customer.updateMany({
+          where: { id: target.id, passwordHash: null, googleId: null, phoneVerifiedAt: null },
+          data: { name: input.name!, email, phone: input.phone, phoneVerifiedAt: now },
         });
+        if (claimed.count !== 1) throw AppError.conflict("This account was just updated — please try again");
+        claimedId = target.id;
+        return target.id;
+      }
+      const created = await tx.customer.create({ data: { name: input.name!, email, phone: input.phone, phoneVerifiedAt: now }, select: { id: true } });
+      return created.id;
+    });
+  } catch (err) {
+    if (isVerifiedPhoneConflict(err)) throw PHONE_IN_USE();
+    throw err;
   }
+  if (claimedId) auditCustomerClaim(claimedId, "phone_otp");
 
-  return { ...(await issueCustomerTokens(customer.id)), customer };
+  // The email was not proven by this OTP — send its own verification link (best effort).
+  try {
+    await sendVerificationEmail(customerId);
+  } catch (err) {
+    captureError(err, { msg: "[customer] failed to send verification email:" });
+  }
+  const customer = await getCustomerById(customerId);
+  return { ...(await issueCustomerTokens(customerId, opts)), customer };
 }
 
 // --- admin ---
@@ -590,29 +714,34 @@ const adminSelect = {
  * derive from the exact same tag logic the customers list already shows, rather than a
  * re-derived approximation that could quietly drift out of sync with it. */
 export async function loadCustomersWithComputedFields(where: Prisma.CustomerWhereInput) {
-  const customers = await prisma.customer.findMany({
-    where,
-    select: {
-      ...adminSelect,
-      addresses: { where: { isDefault: true }, take: 1, select: { district: true } },
-      orders: {
-        where: { deletedAt: null },
-        select: { total: true, status: true, createdAt: true, shippingDistrict: true, courierStatus: true },
-        orderBy: { createdAt: "desc" },
+  const [customers, metrics] = await Promise.all([
+    prisma.customer.findMany({
+      where,
+      select: {
+        ...adminSelect,
+        addresses: { where: { isDefault: true }, take: 1, select: { district: true } },
+        orders: {
+          where: { deletedAt: null },
+          select: { status: true, createdAt: true, shippingDistrict: true, courierStatus: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
-    },
-  });
+    }),
+    customerMetricsIndex(),
+  ]);
 
   return customers.map(({ addresses, orders, ...customer }) => {
-    const totalOrders = orders.length;
-    const totalSpent = orders
-      .filter((o) => o.status !== "CANCELLED")
-      .reduce((sum, o) => sum + Number(o.total), 0);
+    // Spend and order count are the canonical customer metrics (docs/METRICS_REGISTRY.md §4.3, P5-4): realised net sales
+    // and sale orders — the same facts as store revenue. Risk signals keep counting every non-trashed order, since a
+    // cancellation rate needs the cancelled ones.
+    const canonical = metrics.get(customer.id);
+    const totalOrders = canonical?.orders ?? 0;
+    const totalSpent = canonical?.netSpend ?? 0;
     const cancelledOrders = orders.filter((o) => o.status === "CANCELLED").length;
     const holdOrders = orders.filter((o) => o.courierStatus === "hold").length;
     const lastOrderAt = orders[0]?.createdAt ?? null;
     const district = addresses[0]?.district ?? orders[0]?.shippingDistrict ?? null;
-    const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders, cancelledOrders, holdOrders });
+    const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders: orders.length, cancelledOrders, holdOrders });
     const tags = computeCustomerTags({
       createdAt: customer.createdAt,
       totalOrders,
@@ -696,10 +825,15 @@ export async function listCustomersAdmin(query: CustomerListQuery) {
 }
 
 export async function getCustomerStatsAdmin() {
-  const computed = await loadCustomersWithComputedFields({});
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Business-day boundaries in the store timezone (docs/METRICS_REGISTRY.md §1), not the server's local midnight.
+  const [computed, today, month] = await Promise.all([
+    loadCustomersWithComputedFields({}),
+    resolveStoreRange({ preset: "today" }, now),
+    resolveStoreRange({ preset: "this_month" }, now),
+  ]);
+  const startOfToday = today.startUtc;
+  const startOfMonth = month.startUtc;
 
   function inactiveSince(days: number) {
     const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000;
@@ -739,8 +873,8 @@ export async function getCustomerDetailAdmin(customerId: string) {
   });
   if (!customer) throw AppError.notFound("Customer not found");
 
-  const [spendAggregate, orderCounts, holdOrders, smsRecipients] = await Promise.all([
-    prisma.order.aggregate({ where: { customerId, status: { not: "CANCELLED" } }, _sum: { total: true } }),
+  const [metrics, orderCounts, holdOrders, smsRecipients] = await Promise.all([
+    customerMetricsIndex(),
     prisma.order.groupBy({ by: ["status"], where: { customerId, deletedAt: null }, _count: true }),
     prisma.order.count({ where: { customerId, deletedAt: null, courierStatus: "hold" } }),
     prisma.campaignRecipient.findMany({
@@ -751,7 +885,11 @@ export async function getCustomerDetailAdmin(customerId: string) {
     }),
   ]);
 
-  const totalSpent = Number(spendAggregate._sum.total ?? 0);
+  // Canonical customer metrics (P5-4): the same net spend and sale-order count as the CRM list, BI and store revenue.
+  const canonical = metrics.get(customerId);
+  const totalSpent = canonical?.netSpend ?? 0;
+  const saleOrders = canonical?.orders ?? 0;
+  const realisedOrders = canonical?.realisedOrders ?? 0;
   const countsByStatus = new Map(orderCounts.map((r) => [r.status, r._count]));
   const totalOrders = orderCounts.reduce((sum, r) => sum + r._count, 0);
   const deliveredOrders = countsByStatus.get("DELIVERED") ?? 0;
@@ -763,7 +901,7 @@ export async function getCustomerDetailAdmin(customerId: string) {
   const riskSignals = computeRiskSignals({ phone: customer.phone, totalOrders, cancelledOrders, holdOrders });
   const tags = computeCustomerTags({
     createdAt: customer.createdAt,
-    totalOrders,
+    totalOrders: saleOrders,
     totalSpent,
     lastOrderAt,
     isBlocked: customer.isBlocked,
@@ -831,7 +969,8 @@ export async function getCustomerDetailAdmin(customerId: string) {
       deliveredOrders,
       cancelledOrders,
       returnRate: totalOrders > 0 ? (returnedOrders / totalOrders) * 100 : 0,
-      averageOrderValue: totalOrders > 0 ? totalSpent / totalOrders : 0,
+      // Registry `aov` basis: net sales ÷ realised orders (P5-5).
+      averageOrderValue: realisedOrders > 0 ? Math.round((totalSpent / realisedOrders) * 100) / 100 : 0,
       lifetimeSpend: totalSpent,
     },
     smsHistory,
@@ -867,15 +1006,13 @@ export async function updateCustomerAdminFields(customerId: string, input: Updat
 
 /** {{variable}} context for a given computed customer — shared by the individual and bulk send
  * paths below so a template renders identically regardless of which one sent it. */
-function customerSmsVars(c: { name: string; phone: string; totalSpent: number; lastOrderAt: Date | null }): CustomerSmsVars {
+function customerSmsVars(c: { name: string; phone: string; totalSpent: number; lastOrderAt: Date | null }, commerce: CommerceSettings): CustomerSmsVars {
   return {
     customerName: c.name,
     firstName: c.name.split(" ")[0] || c.name,
     phone: c.phone,
-    totalSpent: `৳${Math.round(c.totalSpent).toLocaleString("en-BD")}`,
-    lastOrder: c.lastOrderAt
-      ? c.lastOrderAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
-      : "no orders yet",
+    totalSpent: formatMoney(Math.round(c.totalSpent), commerce.currency),
+    lastOrder: c.lastOrderAt ? formatDate(c.lastOrderAt, commerce.timezone, { year: "numeric", month: "long", day: "numeric" }) : "no orders yet",
     website: env.webOrigin,
   };
 }
@@ -908,7 +1045,7 @@ export async function sendAdHocSmsToCustomer(customerId: string, body: string) {
   if (!customer) throw AppError.notFound("Customer not found");
   if (!customer.phone) throw AppError.badRequest("This customer has no phone number on file");
 
-  const rendered = renderCustomerSmsTemplate(body, customerSmsVars({ ...customer, phone: customer.phone }));
+  const rendered = renderCustomerSmsTemplate(body, customerSmsVars({ ...customer, phone: customer.phone }, await getCommerceSettings()));
   const campaign = await prisma.campaign.create({
     data: { name: "Direct message", channel: "SMS", body, status: "SENDING" },
   });
@@ -938,8 +1075,9 @@ export async function sendBulkSmsToCustomers(customerIds: string[], body: string
 
   let sent = 0;
   let failed = 0;
+  const commerce = await getCommerceSettings();
   await mapWithConcurrency(withPhone, SMS_SEND_CONCURRENCY, async (c) => {
-    const rendered = renderCustomerSmsTemplate(body, customerSmsVars(c));
+    const rendered = renderCustomerSmsTemplate(body, customerSmsVars(c, commerce));
     const result = await dispatchAndLogSms(campaign.id, c.id, c.phone, rendered);
     if (result.status === "SENT") sent++;
     else failed++;
@@ -969,44 +1107,46 @@ export function loyaltyBase(
   return toMajor(rewardableMerchandiseValue({ subtotal: m(order.subtotal), bundleDiscount: bundle, couponDiscount: coupon, exchangeCredit }));
 }
 
-/** Awards points for a delivered order — idempotent per order, so re-marking DELIVERED (e.g. after an
- * accidental status revert) never double-pays. No-ops while the store hasn't configured a reward rate.
+/** The transaction a loyalty write runs in — only what it touches, so both the app's and a raw Prisma transaction fit. */
+type LoyaltyTx = Pick<Prisma.TransactionClient, "$queryRaw" | "rewardPointsEntry" | "customer">;
+
+/** Awards points for a delivered order, INSIDE the delivery transaction (Phase 8: points are business truth — they commit
+ * or roll back with the transition, never after it). Idempotent per order: the customer row is locked first, so two
+ * concurrent deliveries can't both see "no award yet". No-ops while the store hasn't configured a reward rate.
  * `merchandiseBase` is loyaltyBase(order) (D8). */
-export async function awardDeliveryPoints(customerId: string, orderId: string, merchandiseBase: number) {
+export async function awardDeliveryPoints(tx: LoyaltyTx, customerId: string, orderId: string, merchandiseBase: number) {
   const settings = await getSettings();
   const rate = Number(settings.rewardPointsPerCurrency);
   if (rate <= 0) return;
 
-  const already = await prisma.rewardPointsEntry.findFirst({ where: { orderId, reason: "order_delivered" } });
+  await tx.$queryRaw`SELECT id FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+  const already = await tx.rewardPointsEntry.findFirst({ where: { orderId, reason: "order_delivered" } });
   if (already) return;
 
   const points = Math.floor(merchandiseBase * rate);
   if (points <= 0) return;
 
-  await prisma.$transaction([
-    prisma.rewardPointsEntry.create({ data: { customerId, orderId, points, reason: "order_delivered" } }),
-    prisma.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } }),
-  ]);
+  await tx.rewardPointsEntry.create({ data: { customerId, orderId, points, reason: "order_delivered" } });
+  await tx.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } });
 }
 
 /** D8: reverses the points an order earned, in proportion to the merchandise that came back or was refunded
  * (`fraction` 1 = all). Never reverses more than the order earned in total, however many returns/refunds follow, and
- * never takes the balance below zero; the ledger row records exactly what was reversed. */
-export async function reverseDeliveryPoints(customerId: string, orderId: string, fraction: number) {
+ * never takes the balance below zero; the ledger row records exactly what was reversed. Runs in the caller's transaction
+ * (the return/refund that causes it — Phase 8). */
+export async function reverseDeliveryPoints(tx: LoyaltyTx, customerId: string, orderId: string, fraction: number) {
   const f = Math.min(1, Math.max(0, fraction));
   if (f <= 0) return;
-  await prisma.$transaction(async (tx) => {
-    const [customer] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
-    if (!customer) return;
-    const entries = await tx.rewardPointsEntry.findMany({ where: { orderId, reason: { in: ["order_delivered", "order_reversed"] } } });
-    const earned = entries.filter((e) => e.reason === "order_delivered").reduce((a, e) => a + e.points, 0);
-    const reversed = -entries.filter((e) => e.reason === "order_reversed").reduce((a, e) => a + e.points, 0);
-    const wanted = Math.min(earned - reversed, Math.floor(earned * f));
-    const points = Math.min(wanted, Math.max(0, customer.rewardPoints));
-    if (points <= 0) return;
-    await tx.rewardPointsEntry.create({ data: { customerId, orderId, points: -points, reason: "order_reversed" } });
-    await tx.customer.update({ where: { id: customerId }, data: { rewardPoints: { decrement: points } } });
-  });
+  const [customer] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+  if (!customer) return;
+  const entries = await tx.rewardPointsEntry.findMany({ where: { orderId, reason: { in: ["order_delivered", "order_reversed"] } } });
+  const earned = entries.filter((e) => e.reason === "order_delivered").reduce((a, e) => a + e.points, 0);
+  const reversed = -entries.filter((e) => e.reason === "order_reversed").reduce((a, e) => a + e.points, 0);
+  const wanted = Math.min(earned - reversed, Math.floor(earned * f));
+  const points = Math.min(wanted, Math.max(0, customer.rewardPoints));
+  if (points <= 0) return;
+  await tx.rewardPointsEntry.create({ data: { customerId, orderId, points: -points, reason: "order_reversed" } });
+  await tx.customer.update({ where: { id: customerId }, data: { rewardPoints: { decrement: points } } });
 }
 
 /** One Steadfast fraud_check call for a customer, cached onto their Customer row (fraud_check is
@@ -1021,9 +1161,13 @@ export async function checkAndUpdateDeliveryScore(customerId: string, rawPhone: 
     where: { id: customerId },
     data: {
       deliveryTotalParcels: result.totalParcels,
-      deliverySuccessParcels: result.successParcels,
-      deliveryCancelledParcels: result.cancelledParcels,
+      // Steadfast no longer publishes exact delivered/cancelled counts — clear any stale ones.
+      deliverySuccessParcels: null,
+      deliveryCancelledParcels: null,
       deliverySuccessRate: result.successRate,
+      deliveryCancellationRate: result.cancellationRate,
+      deliveryVolumeRange: result.volumeRange,
+      deliveryFraudReports: result.fraudReports,
       deliveryScoreCheckedAt: new Date(),
     },
   });
@@ -1032,17 +1176,33 @@ export async function checkAndUpdateDeliveryScore(customerId: string, rawPhone: 
 
 export async function adjustRewardPoints(customerId: string, points: number, reason: string) {
   if (points === 0) throw AppError.badRequest("Point adjustment cannot be zero");
-  const customer = await getCustomerById(customerId);
-  if (customer.rewardPoints + points < 0) {
-    throw AppError.badRequest(`Customer only has ${customer.rewardPoints} points`);
-  }
+  await getCustomerById(customerId);
 
-  await prisma.$transaction([
-    prisma.rewardPointsEntry.create({ data: { customerId, points, reason: reason || "Manual adjustment" } }),
-    prisma.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } }),
-  ]);
+  // Phase 9 (D-6): the balance check and the write happen under the customer row lock, so two concurrent deductions can't
+  // both pass the check and take the balance below zero.
+  await prisma.$transaction(async (tx) => {
+    const [row] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+    if (!row) throw AppError.notFound("Customer not found");
+    if (row.rewardPoints + points < 0) throw AppError.badRequest(`Customer only has ${row.rewardPoints} points`);
+    await tx.rewardPointsEntry.create({ data: { customerId, points, reason: reason || "Manual adjustment" } });
+    await tx.customer.update({ where: { id: customerId }, data: { rewardPoints: { increment: points } } });
+  });
 
   return prisma.customer.findUnique({ where: { id: customerId }, select: publicSelect });
+}
+
+/** Phase 9 (D-7) — read-only loyalty reconciliation: every points writer changes the ledger (RewardPointsEntry) and the
+ * cached balance (Customer.rewardPoints) together, so any customer whose balance ≠ Σ ledger has drifted. Reported, never
+ * auto-corrected (a repair is an explained manual adjustment). */
+export async function loyaltyDrift(limit = 100) {
+  return prisma.$queryRaw<Array<{ customerId: string; name: string; balance: number; ledgerSum: number }>>`
+    SELECT c.id AS "customerId", c.name, c."rewardPoints" AS balance, COALESCE(SUM(e.points), 0)::int AS "ledgerSum"
+    FROM "Customer" c
+    LEFT JOIN "RewardPointsEntry" e ON e."customerId" = c.id
+    GROUP BY c.id, c.name, c."rewardPoints"
+    HAVING c."rewardPoints" <> COALESCE(SUM(e.points), 0)
+    ORDER BY c.name
+    LIMIT ${limit}`;
 }
 
 export async function listCustomerOrders(customerId: string, query: PaginationQuery) {

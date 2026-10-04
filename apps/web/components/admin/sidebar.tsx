@@ -26,17 +26,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
+import { logoutAdmin, logoutAllDevices, adminCan } from "@/lib/auth";
+import type { Permission } from "@clothing-brand/shared";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { toast } from "@/components/ui/toast";
 
-/** Matches the backend's requireRole("OWNER") gates (audit log, team) — hidden rather than
- * shown-then-403'd, since a STAFF account can never use them regardless. "/admin/settings" is
- * deliberately NOT here even though its own store-info form is owner-only: it's also the shared
- * entry point to Payment Methods/Social Links/Redirects, which STAFF can use (see SettingsSubNav). */
-const OWNER_ONLY_HREFS = new Set(["/admin/audit-log", "/admin/team"]);
+/** Entries that need a permission (the API refuses them otherwise) — hidden rather than shown-then-403'd. "/admin/settings"
+ * is deliberately NOT here even though its own store-info form needs settings.manage: it's also the shared entry point to
+ * Payment Methods/Social Links/Redirects, which STAFF can use (see SettingsSubNav). */
+const HREF_PERMISSION: Partial<Record<string, Permission>> = { "/admin/audit-log": "audit.read", "/admin/team": "users.manage" };
 
 interface NavItem {
   href: string;
@@ -120,6 +120,7 @@ const NAV_SECTIONS: NavSection[] = [
           "/admin/social-links",
           "/admin/redirects",
           "/admin/team",
+          "/admin/storage",
           "/admin/audit-log",
         ],
         label: "Settings",
@@ -142,7 +143,6 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
   const drawerRef = useFocusTrap<HTMLElement>({
     active: mobileOpen,
     onEscape: () => onCloseMobile?.(),
@@ -161,7 +161,10 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
   const visibleSections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => isOwner || !OWNER_ONLY_HREFS.has(item.href)),
+    items: section.items.filter((item) => {
+      const needed = HREF_PERMISSION[item.href];
+      return !needed || adminCan(currentAdmin?.admin, needed);
+    }),
   })).filter((section) => section.items.length > 0);
 
   async function handleLogout() {

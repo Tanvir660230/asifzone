@@ -2,6 +2,8 @@ import crypto from "crypto";
 import https from "https";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
+import { logger } from "../../lib/observability/logger";
+import { captureError } from "../../lib/observability/error-capture";
 
 const BASE_URL = env.eps.sandbox ? "https://sandboxpgapi.eps.com.bd/v1" : "https://pgapi.eps.com.bd/v1";
 
@@ -73,7 +75,7 @@ async function fetchEpsJson<T>(
       return await fetchEpsJsonOnce<T>(url, init);
     } catch (err) {
       lastErr = err;
-      console.error(`[eps] request failed (attempt ${attempt + 1}/${delaysMs.length + 1}):`, err instanceof Error ? err.message : err);
+      logger.error(`[eps] request failed (attempt ${attempt + 1}/${delaysMs.length + 1}):`, { detail: err instanceof Error ? err.message : err });
       if (attempt < delaysMs.length) {
         if (onRetry) await onRetry();
         await sleep(delaysMs[attempt]!);
@@ -118,12 +120,12 @@ async function getEpsToken(): Promise<string> {
     // A network failure or non-JSON response throws here — left unguarded this became an unhandled
     // TypeError/SyntaxError that the generic error handler turned into a raw 500 instead of the same
     // friendly message the "gateway said no" branch below already gives for a well-formed failure.
-    console.error("[eps] token request failed:", err);
+    captureError(err, { msg: "[eps] token request failed:" });
     throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
   }
 
   if (!data.token || !data.expireDate || data.errorMessage || data.errorCode) {
-    console.error("[eps] token request failed:", data.errorMessage);
+    logger.error("[eps] token request failed:", { detail: data.errorMessage });
     throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
   }
 
@@ -235,14 +237,14 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
       },
     );
   } catch (err) {
-    console.error(`[eps] session init request failed for order ${params.orderNumber}:`, err);
+    captureError(err, { msg: `[eps] session init request failed for order ${params.orderNumber}:` });
     throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
   }
 
   if (data.ErrorMessage || data.ErrorCode || !data.RedirectURL) {
     // The gateway's ErrorMessage is an internal/config-facing detail (e.g. bad merchantId) — log it
     // for us, but never surface it to the customer verbatim.
-    console.error(`[eps] session init failed for order ${params.orderNumber}:`, data.ErrorMessage);
+    logger.error(`[eps] session init failed for order ${params.orderNumber}:`, { detail: data.ErrorMessage });
     throw AppError.badRequest("Could not start the payment session. Please try again or choose a different payment method.");
   }
 
@@ -288,7 +290,7 @@ export async function verifyEpsTransaction(merchantTransactionId: string): Promi
     // Same network/non-JSON failure mode as initEpsSession — here it's already documented as
     // "could not verify" (the caller treats null as unverified), so resolve to that instead of
     // throwing an unhandled exception out of a gateway callback route.
-    console.error(`[eps] verify request failed for ${merchantTransactionId}:`, err);
+    captureError(err, { msg: `[eps] verify request failed for ${merchantTransactionId}:` });
     return null;
   }
   if (data.ErrorMessage || data.ErrorCode || !data.MerchantTransactionId || !data.TotalAmount) {

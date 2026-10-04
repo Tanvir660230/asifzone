@@ -12,7 +12,7 @@ import { OrdersSubNav } from "@/components/admin/orders-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
 const STATUS_BADGE: Record<ReturnRequestStatus, string> = {
@@ -109,7 +109,7 @@ export default function AdminReturnRequestsPage() {
                     {r.reason}
                     {r.note && <div className="text-xs text-ink-400">{r.note}</div>}
                   </td>
-                  <td className="px-4 py-3 text-ink-500">{new Date(r.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-ink-500">{formatStoreDate(r.createdAt)}</td>
                   <td className="px-4 py-3">
                     <Badge className={STATUS_BADGE[r.status]}>{r.status}</Badge>
                   </td>

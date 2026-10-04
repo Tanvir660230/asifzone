@@ -29,7 +29,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { SmsComposer } from "@/components/admin/sms-composer";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { TAG_META } from "@/lib/customer-tags";
@@ -144,7 +144,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
             <h1 className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{customer.name}</h1>
           </div>
           <p className="text-sm text-ink-500">
-            {customer.email ?? "No email"} · Joined {new Date(customer.createdAt).toLocaleDateString()}
+            {customer.email ?? "No email"} · Joined {formatStoreDate(customer.createdAt)}
           </p>
           {customer.tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -432,7 +432,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
                 <Link href={`/admin/orders/${order.id}`} className="text-info-600 hover:underline">
                   {order.orderNumber}
                 </Link>
-                <p className="text-xs text-ink-400">{new Date(order.createdAt).toLocaleDateString()}</p>
+                <p className="text-xs text-ink-400">{formatStoreDate(order.createdAt)}</p>
               </div>
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1 text-ink-700">

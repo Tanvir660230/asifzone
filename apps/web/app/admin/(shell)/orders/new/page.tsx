@@ -37,6 +37,7 @@ import { productDisplayPrice, variantDisplayPrice } from "@/lib/pricing-display"
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 
 const formSchema = adminCreateOrderSchema.omit({ items: true, couponCode: true, customerId: true, markPaid: true });
 type FormValues = ReturnType<typeof formSchema.parse>;
@@ -265,7 +266,9 @@ export default function NewOrderPage() {
       quoteToken: quote?.token,
     };
     try {
-      const { order } = await adminOrdersApi.createManualOrder(payload);
+      // Same payload again (double click, retry after a timeout) = same Idempotency-Key = the same order (Phase 9).
+      const { order } = await adminOrdersApi.createManualOrder(payload, idempotencyKeyFor("manual-order", payload));
+      settleIdempotencyKey("manual-order");
       router.push(`/admin/orders/${order.id}`);
     } catch (err) {
       // 409 QUOTE_CHANGED: prices moved since this quote — refresh it so staff confirm the new total before resubmitting.

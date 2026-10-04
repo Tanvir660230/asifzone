@@ -8,6 +8,7 @@ import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { formatPrice, orderStatusLabel } from "@/lib/format";
 import { useBiDateRange } from "@/components/admin/bi-date-range-context";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 function toBarItems<T>(rows: T[] | undefined, opts: { key: (r: T) => string; label: (r: T) => string; value: (r: T) => number; valueLabel: (r: T) => string }): RankedBarListItem[] {
   return (rows ?? []).map((r) => ({ key: opts.key(r), label: opts.label(r), value: opts.value(r), valueLabel: opts.valueLabel(r) }));
@@ -52,7 +53,7 @@ export default function SalesIntelligencePage() {
           </CardHeader>
           <CardContent>
             <RankedBarList
-              items={toBarItems(statusCounts?.counts, { key: (c) => c.status, label: (c) => orderStatusLabel(c.status), value: (c) => c.count, valueLabel: (c) => c.count.toLocaleString("en-BD") })}
+              items={toBarItems(statusCounts?.counts, { key: (c) => c.status, label: (c) => orderStatusLabel(c.status), value: (c) => c.count, valueLabel: (c) => c.count.toLocaleString(DISPLAY_LOCALE) })}
               emptyLabel="No orders yet."
             />
           </CardContent>

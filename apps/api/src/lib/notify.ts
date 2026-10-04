@@ -1,4 +1,5 @@
 import { prisma } from "../config/prisma";
+import { captureError } from "./observability/error-capture";
 
 interface CreateNotificationInput {
   type: string;
@@ -11,5 +12,5 @@ interface CreateNotificationInput {
 export function notify(input: CreateNotificationInput): void {
   prisma.notification
     .create({ data: { type: input.type, title: input.title, body: input.body ?? null, link: input.link ?? null } })
-    .catch((err) => console.error("[notify] failed to record", input.type, err));
+    .catch((err) => captureError(err, { msg: "[notify] failed to record", detail: input.type }));
 }

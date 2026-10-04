@@ -69,7 +69,9 @@ recorded refund.
   fact: the money side lives in `Refund` rows and `paymentStatus`; the goods side is decided by T6/T7.
 - **`RETURNED` restocks** (T7) whether it comes from an approved return request or the admin picker.
   Before, only the return-request path restocked, so the same status meant two different stock states.
-- **COD becomes `PAID` on delivery** (T4, D1): the courier collects the cash at the door. Placing, confirming
+- **COD becomes `PAID` on delivery** (T4, D1): the courier collects the cash at the door. Since Phase 4 this effect
+  records a `COD` payment of the balance due in the payment ledger, and the status is derived from it
+  ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §6). No transition writes `paymentStatus` directly. Placing, confirming
   or shipping a COD order is *not* cash collection. This is what makes *Record refund* possible for a
   delivered COD order.
 
@@ -82,7 +84,9 @@ recorded refund.
 | Reconcile partial delivery | status `PARTIALLY_DELIVERED`, not yet reconciled | `RETURN` for the declared units (capped at what is still out) | courier-loss row; auto-approved return request record |
 | Move to Trash (`deleteOrder`) | not already trashed | pre-shipment: release outstanding units (`CANCELLATION`, note "moved to trash"); other statuses: none (goods already left) | hidden from default lists |
 | Restore from Trash | trashed | pre-shipment: re-reserve the units released at trash time (conditional; 409 if stock is no longer there) | — |
-| Record refund (`refundOrderPayment`) | `paymentStatus = PAID`, or COD order that reached `DELIVERED`/`PARTIALLY_DELIVERED`/`RETURNED` | — | `Refund` row; `paymentStatus → REFUNDED` |
+| Record refund (Phase 4: `recordRefund`, [PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)) | `refundable > 0` (money received minus refunds recorded or requested); amount ≤ refundable | — | `Refund` row; `paymentStatus → PARTIALLY_REFUNDED` or `REFUNDED` (derived) |
+| Record payment (Phase 4: `recordManualPayment`) | amount ≤ balance due; `MANUAL`: not closed, COD not yet courier-booked; `COD_COLLECTED`: COD in `PARTIALLY_DELIVERED` | — | `Payment` row; payment status derived; no status change |
+| Complete requested refund (Phase 4: `completeRefund`) | refund `REQUESTED` (D6 exchange downgrade) | — | `REQUESTED → COMPLETED`; payment status derived; D8 reversal |
 | Courier booked | not closed/fulfilled | — | `PENDING/CONFIRMED/PROCESSING → PACKED` via T1 |
 | Courier status report | booked | — | maps `delivered/partial_delivered/cancelled` onto T4/T5/T6; a report that would be an invalid transition only updates `courierStatus` (no status change) |
 

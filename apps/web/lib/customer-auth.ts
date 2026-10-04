@@ -13,8 +13,30 @@ import type {
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 
+/** Phase 11: when an existing guest record already holds this email, nothing is signed in — the API emails a link that
+ * proves the email (`claimPending: true`). */
 export function registerCustomer(input: CustomerRegisterInput) {
-  return apiFetch<{ customer: Customer }>("/api/customers/register", { method: "POST", body: input });
+  return apiFetch<{ customer: Customer } | { claimPending: true; message: string }>("/api/customers/register", { method: "POST", body: input });
+}
+
+export function confirmCustomerClaim(input: { token: string }) {
+  return apiFetch<{ customer: Customer }>("/api/customers/claim/confirm", { method: "POST", body: input });
+}
+
+export function logoutEverywhere() {
+  return apiFetch<void>("/api/customers/logout-all", { method: "POST" });
+}
+
+export function changeCustomerPassword(input: { currentPassword?: string; newPassword: string }) {
+  return apiFetch<{ ok: true }>("/api/customers/me/password", { method: "POST", body: input });
+}
+
+export function requestPhoneVerification(input: { phone: string }) {
+  return apiFetch<{ message: string }>("/api/customers/me/phone/otp", { method: "POST", body: input });
+}
+
+export function confirmPhoneVerification(input: { phone: string; code: string }) {
+  return apiFetch<{ customer: Customer }>("/api/customers/me/phone/verify", { method: "POST", body: input });
 }
 
 export function loginCustomer(input: CustomerLoginInput) {

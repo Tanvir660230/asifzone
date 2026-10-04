@@ -1,28 +1,23 @@
-import { Prisma } from "@prisma/client";
+import { customerStats, positionTotals, realisedAt, returnEvents } from "@clothing-brand/shared";
+import { loadPositionFacts } from "../../domain/metrics/facts.repository";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { getCustomerInsights, getLowStockVariants, getDeadStockReport, getBestSellingPrediction } from "../analytics/analytics.service";
 import { loadCustomersWithComputedFields } from "../customers/customer.service";
+import { computeMetrics, loadFactsForRange } from "../../domain/metrics/metrics.service";
+import { resolveStoreRange, storeContext, utcInstant } from "../../domain/metrics/store-time";
+import { saleOrderSql } from "../../domain/metrics/sale-order";
 
 const CACHE_TTL_SECONDS = 60;
-const CACHE_KEY = "bi:executive-overview";
-
-/** Naive-timestamp-in-Dhaka-local-time idiom used throughout `analytics.service.ts`
- * (see getTrafficHeatmap): every `createdAt` column is stored as `timestamp` (no time zone),
- * written in UTC — `AT TIME ZONE 'UTC'` first turns that naive UTC value into a real instant,
- * then `AT TIME ZONE 'Asia/Dhaka'` converts that instant into Dhaka's naive local wall-clock time,
- * so it can be compared against calendar boundaries computed the same way from NOW().
- *
- * Wrapped in `Prisma.raw` (not plain string interpolation) because this needs to land in the
- * query as literal SQL, not a bound parameter — safe here since the input is always one of the
- * fixed column references below, never external/user data. */
-const dhakaLocal = (column: string) => Prisma.raw(`(${column} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')`);
+const CACHE_KEY = "bi:executive-overview:v5";
 
 function pctChange(current: number, previous: number): number {
   if (previous === 0) return current > 0 ? 100 : 0;
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
+/** The executive overview — every number is a registry metric (docs/METRICS_REGISTRY.md). "Revenue" fields carry the
+ * headline `realised_net_sales` (PD-5.1), with refunds, returns and collected cash shown beside it. */
 export interface ExecutiveOverview {
   revenueToday: number;
   revenueYesterday: number;
@@ -36,6 +31,9 @@ export interface ExecutiveOverview {
 
   grossProfitLifetime: number;
   profitGrowthPct: number;
+  /** Gross profit covers lines with a recorded cost (Phase 6); older lines and lines without a cost are unknown. */
+  grossProfitCostedLinesLifetime: number;
+  grossProfitUncostedLinesLifetime: number;
 
   totalVisitors: number;
   returningVisitors: number;
@@ -52,75 +50,57 @@ export interface ExecutiveOverview {
   inventoryValue: number;
   pendingPaymentsCount: number;
   pendingPaymentsAmount: number;
+
+  // Phase 5 — the D1 financial breakdown for the current business month, and point-in-time ledger positions.
+  grossMerchandiseThisMonth: number;
+  discountsThisMonth: number;
+  shippingThisMonth: number;
+  returnsThisMonth: number;
+  refundsThisMonth: number;
+  collectedCashThisMonth: number;
+  taxThisMonth: number;
+  taxUnrecordedOrdersThisMonth: number;
+  merchandiseVatThisMonth: number;
+  merchandiseVatUnrecordedOrdersThisMonth: number;
+  merchandiseRefundsThisMonth: number;
+  overpaymentRefundsThisMonth: number;
+  netSalesInclShippingThisMonth: number;
+  outstandingCod: number;
+  refundDue: number;
 }
 
 export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
   const cached = await cacheGet<ExecutiveOverview>(CACHE_KEY);
   if (cached) return cached;
 
-  const localOrderCreated = dhakaLocal(`o."createdAt"`);
-  const localOrderItemOrderCreated = dhakaLocal(`o2."createdAt"`);
-  const localPageViewCreated = dhakaLocal(`"createdAt"`);
+  const now = new Date();
+  const [today, yesterday, week, month, lastMonth, lifetime] = await Promise.all([
+    resolveStoreRange({ preset: "today" }, now),
+    resolveStoreRange({ preset: "yesterday" }, now),
+    resolveStoreRange({ preset: "this_week" }, now),
+    resolveStoreRange({ preset: "this_month" }, now),
+    resolveStoreRange({ preset: "last_month" }, now),
+    resolveStoreRange({ preset: "lifetime" }, now),
+  ]);
+  const { timezone, currency } = await storeContext();
 
-  const [revenueRows, cogsRows, visitorRows, sessionRows, customerInsights, rateRows, inventoryRows, pendingRows] = await Promise.all([
-    // Revenue across every period a business owner checks first thing — all excl. CANCELLED,
-    // matching the NON_REVENUE_STATUSES convention in analytics.service.ts.
-    prisma.$queryRaw<
-      Array<{
-        today: number;
-        yesterday: number;
-        week: number;
-        month: number;
-        lastMonth: number;
-        lifetime: number;
-        lifetimeOrders: bigint;
-      }>
-    >`
-      WITH bounds AS (
-        SELECT
-          date_trunc('day', NOW() AT TIME ZONE 'Asia/Dhaka') AS today_start,
-          date_trunc('day', NOW() AT TIME ZONE 'Asia/Dhaka') - INTERVAL '1 day' AS yesterday_start,
-          date_trunc('week', NOW() AT TIME ZONE 'Asia/Dhaka') AS week_start,
-          date_trunc('month', NOW() AT TIME ZONE 'Asia/Dhaka') AS month_start,
-          date_trunc('month', NOW() AT TIME ZONE 'Asia/Dhaka') - INTERVAL '1 month' AS last_month_start
-      )
-      SELECT
-        COALESCE(SUM(o.total) FILTER (WHERE ${localOrderCreated} >= b.today_start), 0)::float AS today,
-        COALESCE(SUM(o.total) FILTER (WHERE ${localOrderCreated} >= b.yesterday_start AND ${localOrderCreated} < b.today_start), 0)::float AS yesterday,
-        COALESCE(SUM(o.total) FILTER (WHERE ${localOrderCreated} >= b.week_start), 0)::float AS week,
-        COALESCE(SUM(o.total) FILTER (WHERE ${localOrderCreated} >= b.month_start), 0)::float AS month,
-        COALESCE(SUM(o.total) FILTER (WHERE ${localOrderCreated} >= b.last_month_start AND ${localOrderCreated} < b.month_start), 0)::float AS "lastMonth",
-        COALESCE(SUM(o.total), 0)::float AS lifetime,
-        COUNT(*)::bigint AS "lifetimeOrders"
-      FROM "Order" o CROSS JOIN bounds b
-      WHERE o.status != 'CANCELLED'
-    `,
-    // Gross profit is estimated against *current* cost price — OrderItem never snapshotted cost at
-    // sale time, only priceSnapshot. Close enough for a trend signal, not exact historical margin.
-    prisma.$queryRaw<Array<{ lifetime: number; month: number; lastMonth: number }>>`
-      WITH bounds AS (
-        SELECT
-          date_trunc('month', NOW() AT TIME ZONE 'Asia/Dhaka') AS month_start,
-          date_trunc('month', NOW() AT TIME ZONE 'Asia/Dhaka') - INTERVAL '1 month' AS last_month_start
-      )
-      SELECT
-        COALESCE(SUM(oi.quantity * COALESCE(pv."costPrice", p."costPrice", 0)), 0)::float AS lifetime,
-        COALESCE(SUM(oi.quantity * COALESCE(pv."costPrice", p."costPrice", 0)) FILTER (WHERE ${localOrderItemOrderCreated} >= b.month_start), 0)::float AS month,
-        COALESCE(SUM(oi.quantity * COALESCE(pv."costPrice", p."costPrice", 0)) FILTER (WHERE ${localOrderItemOrderCreated} >= b.last_month_start AND ${localOrderItemOrderCreated} < b.month_start), 0)::float AS "lastMonth"
-      FROM "OrderItem" oi
-      JOIN "Order" o2 ON o2.id = oi."orderId"
-      LEFT JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      LEFT JOIN "Product" p ON p.id = pv."productId"
-      CROSS JOIN bounds b
-      WHERE o2.status != 'CANCELLED'
-    `,
-    // Total = every distinct visitor seen, falling back to sessionId for pre-migration rows that
-    // predate the visitorId cookie. Returning = a visitorId whose pageviews span >1 calendar day —
-    // rows with no visitorId can't be evaluated for "returning" status, so they never count toward
-    // that numerator (an undercount until the cookie has had time to roll out, not a bug).
+  const [t, y, w, m, lm, life, monthFinance, positions, lifetimeFacts, visitorRows, sessionRows, pendingRows] = await Promise.all([
+    computeMetrics({ metrics: ["realised_net_sales"], range: today }),
+    computeMetrics({ metrics: ["realised_net_sales"], range: yesterday }),
+    computeMetrics({ metrics: ["realised_net_sales"], range: week }),
+    computeMetrics({ metrics: ["realised_net_sales", "gross_margin"], range: month }),
+    computeMetrics({ metrics: ["realised_net_sales", "gross_margin"], range: lastMonth }),
+    computeMetrics({ metrics: ["realised_net_sales", "orders_realised", "aov", "gross_margin", "orders_placed", "orders_cancelled", "inventory_value"], range: lifetime }),
+    computeMetrics({
+      metrics: ["gross_merchandise_sales", "discounts", "merchandise_vat", "merchandise_refunds", "overpayment_refunds", "net_sales", "shipping_charged", "returns", "refunds", "collected_cash", "tax_collected"],
+      range: month,
+    }),
+    computeMetrics({ metrics: ["outstanding_cod", "refund_due", "amount_due"], range: today }),
+    loadFactsForRange(lifetime),
+    // Visitors (behavioural): every distinct visitor; returning = active on > 1 business day (store timezone).
     prisma.$queryRaw<Array<{ totalVisitors: bigint; returningVisitors: bigint }>>`
       WITH per_visitor_days AS (
-        SELECT "visitorId", COUNT(DISTINCT date_trunc('day', ${localPageViewCreated})) AS active_days
+        SELECT "visitorId", COUNT(DISTINCT date_trunc('day', ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})) AS active_days
         FROM "PageView"
         WHERE "visitorId" IS NOT NULL
         GROUP BY "visitorId"
@@ -129,88 +109,86 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
         (SELECT COUNT(DISTINCT COALESCE("visitorId", 'sess:' || "sessionId")) FROM "PageView")::bigint AS "totalVisitors",
         (SELECT COUNT(*) FROM per_visitor_days WHERE active_days > 1)::bigint AS "returningVisitors"
     `,
-    // Lifetime conversion rate — same converted-session/total-session definition as
-    // getConversionFunnel, just unwindowed.
+    // Lifetime conversion = sessions that placed a sale order ÷ sessions.
     prisma.$queryRaw<Array<{ totalSessions: bigint; convertedSessions: bigint }>>`
       SELECT
         (SELECT COUNT(DISTINCT "sessionId") FROM "PageView")::bigint AS "totalSessions",
-        (SELECT COUNT(DISTINCT "sessionId") FROM "Order" WHERE "sessionId" IS NOT NULL AND status != 'CANCELLED')::bigint AS "convertedSessions"
+        (SELECT COUNT(DISTINCT o."sessionId") FROM "Order" o WHERE o."sessionId" IS NOT NULL AND ${saleOrderSql("o")} AND o."createdAt" < ${utcInstant(lifetime.endUtc)})::bigint AS "convertedSessions"
     `,
-    getCustomerInsights(),
-    // Refund/return rate use lifetime non-cancelled orders as the denominator (a cancelled order
-    // never reached fulfillment, so it can't itself be returned/refunded); cancelled rate is the
-    // one metric that needs *every* order ever placed, cancelled included, as its denominator.
-    prisma.$queryRaw<
-      Array<{ nonCancelledOrders: bigint; allOrders: bigint; refundedOrders: bigint; cancelledOrders: bigint; returnedOrders: bigint }>
-    >`
-      SELECT
-        (SELECT COUNT(*) FROM "Order" WHERE status != 'CANCELLED')::bigint AS "nonCancelledOrders",
-        (SELECT COUNT(*) FROM "Order")::bigint AS "allOrders",
-        (SELECT COUNT(*) FROM "Order" WHERE "paymentStatus" = 'REFUNDED' OR status = 'REFUNDED')::bigint AS "refundedOrders",
-        (SELECT COUNT(*) FROM "Order" WHERE status = 'CANCELLED')::bigint AS "cancelledOrders",
-        (SELECT COUNT(DISTINCT "orderId") FROM "ReturnRequest")::bigint AS "returnedOrders"
-    `,
-    prisma.$queryRaw<Array<{ value: number }>>`
-      SELECT COALESCE(SUM(pv.stock * COALESCE(pv."costPrice", p."costPrice", 0)), 0)::float AS value
-      FROM "ProductVariant" pv
-      JOIN "Product" p ON p.id = pv."productId"
-      WHERE p."isActive" = true AND p."deletedAt" IS NULL
-    `,
-    prisma.$queryRaw<Array<{ count: bigint; amount: number }>>`
-      SELECT COUNT(*)::bigint AS count, COALESCE(SUM(total), 0)::float AS amount
-      FROM "Order"
-      WHERE "paymentStatus" = 'UNPAID' AND status != 'CANCELLED'
-    `,
+    // Orders with a balance still due — counted by the same ledger engine that sums `amount_due`.
+    loadPositionFacts(currency).then((f) => positionTotals(f, currency).amountDueOrders),
   ]);
 
-  const revenue = revenueRows[0]!;
-  const cogs = cogsRows[0]!;
+  // Rates over lifetime realised sale orders (facts): refunded = has a completed refund; returned = has returned units.
+  const orders = lifetimeFacts.orders;
+  const cs = customerStats(orders, lifetime);
+  let realised = 0;
+  let refunded = 0;
+  let returned = 0;
+  for (const o of orders) {
+    if (!realisedAt(o)) continue;
+    realised++;
+    if (o.refunds.some((r) => r.status === "COMPLETED")) refunded++;
+    if (returnEvents(o).length > 0) returned++;
+  }
+  const placed = life.metrics.orders_placed!.value;
+  const cancelled = life.metrics.orders_cancelled!.value;
+
   const visitors = visitorRows[0]!;
   const sessions = sessionRows[0]!;
-  const rates = rateRows[0]!;
-  const inventoryValue = inventoryRows[0]?.value ?? 0;
-  const pending = pendingRows[0]!;
-
-  const lifetimeOrders = Number(revenue.lifetimeOrders);
   const totalVisitors = Number(visitors.totalVisitors);
   const returningVisitors = Number(visitors.returningVisitors);
   const totalSessions = Number(sessions.totalSessions);
   const convertedSessions = Number(sessions.convertedSessions);
-  const nonCancelledOrders = Number(rates.nonCancelledOrders);
-  const allOrders = Number(rates.allOrders);
-
-  const profitThisMonth = revenue.month - cogs.month;
-  const profitLastMonth = revenue.lastMonth - cogs.lastMonth;
+  const insights = await getCustomerInsights();
 
   const result: ExecutiveOverview = {
-    revenueToday: revenue.today,
-    revenueYesterday: revenue.yesterday,
-    revenueThisWeek: revenue.week,
-    revenueThisMonth: revenue.month,
-    revenueLifetime: revenue.lifetime,
-    revenueGrowthPct: pctChange(revenue.month, revenue.lastMonth),
+    revenueToday: t.metrics.realised_net_sales!.value,
+    revenueYesterday: y.metrics.realised_net_sales!.value,
+    revenueThisWeek: w.metrics.realised_net_sales!.value,
+    revenueThisMonth: m.metrics.realised_net_sales!.value,
+    revenueLifetime: life.metrics.realised_net_sales!.value,
+    revenueGrowthPct: pctChange(m.metrics.realised_net_sales!.value, lm.metrics.realised_net_sales!.value),
 
-    ordersLifetime: lifetimeOrders,
-    aovLifetime: lifetimeOrders > 0 ? revenue.lifetime / lifetimeOrders : 0,
+    ordersLifetime: life.metrics.orders_realised!.value,
+    aovLifetime: life.metrics.aov!.value,
 
-    grossProfitLifetime: revenue.lifetime - cogs.lifetime,
-    profitGrowthPct: pctChange(profitThisMonth, profitLastMonth),
+    grossProfitLifetime: life.metrics.gross_margin!.value,
+    grossProfitCostedLinesLifetime: life.metrics.gross_margin!.coverage?.recorded ?? 0,
+    grossProfitUncostedLinesLifetime: life.metrics.gross_margin!.coverage?.missing ?? 0,
+    profitGrowthPct: pctChange(m.metrics.gross_margin!.value, lm.metrics.gross_margin!.value),
 
     totalVisitors,
     returningVisitors,
     returningVisitorRatePct: totalVisitors > 0 ? (returningVisitors / totalVisitors) * 100 : 0,
 
     conversionRatePct: totalSessions > 0 ? (convertedSessions / totalSessions) * 100 : 0,
-    customerLifetimeValue: customerInsights.avgClv,
-    repeatPurchaseRatePct: customerInsights.returningRate,
+    customerLifetimeValue: insights.avgClv,
+    repeatPurchaseRatePct: cs.repeatCustomerRate * 100,
 
-    refundRatePct: nonCancelledOrders > 0 ? (Number(rates.refundedOrders) / nonCancelledOrders) * 100 : 0,
-    returnRatePct: nonCancelledOrders > 0 ? (Number(rates.returnedOrders) / nonCancelledOrders) * 100 : 0,
-    cancelledRatePct: allOrders > 0 ? (Number(rates.cancelledOrders) / allOrders) * 100 : 0,
+    refundRatePct: realised > 0 ? (refunded / realised) * 100 : 0,
+    returnRatePct: realised > 0 ? (returned / realised) * 100 : 0,
+    cancelledRatePct: placed + cancelled > 0 ? (cancelled / (placed + cancelled)) * 100 : 0,
 
-    inventoryValue,
-    pendingPaymentsCount: Number(pending.count),
-    pendingPaymentsAmount: pending.amount,
+    inventoryValue: life.metrics.inventory_value!.value,
+    pendingPaymentsCount: pendingRows,
+    pendingPaymentsAmount: positions.metrics.amount_due!.value,
+
+    grossMerchandiseThisMonth: monthFinance.metrics.gross_merchandise_sales!.value,
+    discountsThisMonth: monthFinance.metrics.discounts!.value,
+    shippingThisMonth: monthFinance.metrics.shipping_charged!.value,
+    returnsThisMonth: monthFinance.metrics.returns!.value,
+    refundsThisMonth: monthFinance.metrics.refunds!.value,
+    collectedCashThisMonth: monthFinance.metrics.collected_cash!.value,
+    taxThisMonth: monthFinance.metrics.tax_collected!.value,
+    taxUnrecordedOrdersThisMonth: monthFinance.metrics.tax_collected!.coverage?.missing ?? 0,
+    merchandiseVatThisMonth: monthFinance.metrics.merchandise_vat!.value,
+    merchandiseVatUnrecordedOrdersThisMonth: monthFinance.metrics.merchandise_vat!.coverage?.missing ?? 0,
+    merchandiseRefundsThisMonth: monthFinance.metrics.merchandise_refunds!.value,
+    overpaymentRefundsThisMonth: monthFinance.metrics.overpayment_refunds!.value,
+    netSalesInclShippingThisMonth: monthFinance.metrics.net_sales!.value,
+    outstandingCod: positions.metrics.outstanding_cod!.value,
+    refundDue: positions.metrics.refund_due!.value,
   };
 
   await cacheSet(CACHE_KEY, result, CACHE_TTL_SECONDS);
@@ -231,18 +209,19 @@ export interface AutomatedInsight {
   detail: string;
 }
 
-const INSIGHTS_CACHE_KEY = "bi:automated-insights";
+const INSIGHTS_CACHE_KEY = "bi:automated-insights:v5";
 
 export async function getAutomatedInsights(): Promise<AutomatedInsight[]> {
   const cached = await cacheGet<AutomatedInsight[]>(INSIGHTS_CACHE_KEY);
   if (cached) return cached;
 
-  const [overview, lowStock, deadStock, bestSelling, customers] = await Promise.all([
+  const [overview, lowStock, deadStock, bestSelling, customers, { currency }] = await Promise.all([
     getExecutiveOverview(),
     getLowStockVariants(),
     getDeadStockReport(90, 5),
     getBestSellingPrediction(3),
     loadCustomersWithComputedFields({}),
+    storeContext(),
   ]);
 
   const insights: AutomatedInsight[] = [];
@@ -261,8 +240,8 @@ export async function getAutomatedInsights(): Promise<AutomatedInsight[]> {
     insights.push({
       id: "dead-stock",
       severity: "warning",
-      title: `৳${Math.round(deadStockValue).toLocaleString("en-BD")} tied up in dead stock`,
-      detail: `${deadStock.length} variant(s) with stock on hand but zero sales in the last 90 days.`,
+      title: `${currency} ${Math.round(deadStockValue).toLocaleString("en-US")} tied up in dead stock`,
+      detail: `${deadStock.length} variant(s) with stock on hand but zero orders in the last 90 days.`,
     });
   }
 
@@ -270,14 +249,14 @@ export async function getAutomatedInsights(): Promise<AutomatedInsight[]> {
     insights.push({
       id: "revenue-decline",
       severity: "critical",
-      title: `Revenue down ${Math.abs(overview.revenueGrowthPct).toFixed(1)}% this month`,
-      detail: "Compared to last month, lifetime non-cancelled orders.",
+      title: `Net sales down ${Math.abs(overview.revenueGrowthPct).toFixed(1)}% this month`,
+      detail: "Compared to last month (realised net sales).",
     });
   } else if (overview.revenueGrowthPct >= 10) {
     insights.push({
       id: "revenue-growth",
       severity: "info",
-      title: `Revenue up ${overview.revenueGrowthPct.toFixed(1)}% this month`,
+      title: `Net sales up ${overview.revenueGrowthPct.toFixed(1)}% this month`,
       detail: "Compared to last month.",
     });
   }
@@ -288,6 +267,15 @@ export async function getAutomatedInsights(): Promise<AutomatedInsight[]> {
       severity: "warning",
       title: `Return rate at ${overview.returnRatePct.toFixed(1)}%`,
       detail: "Higher than a healthy baseline — check the risk table under Product Intelligence.",
+    });
+  }
+
+  if (overview.refundDue > 0) {
+    insights.push({
+      id: "refund-due",
+      severity: "warning",
+      title: `${currency} ${Math.round(overview.refundDue).toLocaleString("en-US")} owed back to customers`,
+      detail: "Cancelled/returned orders or overpayments with money still held — see the orders refund queue.",
     });
   }
 
@@ -306,7 +294,7 @@ export async function getAutomatedInsights(): Promise<AutomatedInsight[]> {
       id: "best-selling",
       severity: "info",
       title: `Likely best seller: ${bestSelling[0]!.name}`,
-      detail: "Based on recent sales velocity — see the prediction table below.",
+      detail: "Based on recent demand — see the prediction table below.",
     });
   }
 

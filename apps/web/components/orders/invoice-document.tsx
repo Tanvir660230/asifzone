@@ -1,6 +1,6 @@
 import { formatVariantSuffix } from "@clothing-brand/shared";
 import type { Order, StoreSettings } from "@clothing-brand/shared";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 
 interface InvoiceDocumentProps {
   order: Order;
@@ -21,7 +21,7 @@ export function InvoiceDocument({ order, store }: InvoiceDocumentProps) {
         <div className="text-right">
           <h2 className="font-display text-xl text-ink-900">Invoice</h2>
           <p className="text-sm text-ink-500">{order.orderNumber}</p>
-          <p className="text-sm text-ink-500">{new Date(order.createdAt).toLocaleDateString()}</p>
+          <p className="text-sm text-ink-500">{formatStoreDate(order.createdAt)}</p>
         </div>
       </div>
 

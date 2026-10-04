@@ -1,5 +1,6 @@
 import { env } from "../config/env";
 import { AppError } from "./app-error";
+import { logger } from "./observability/logger";
 
 interface CreateConsignmentInput {
   invoice: string;
@@ -70,6 +71,32 @@ function normalizeBulkResultItem(item: RawSteadfastBulkResultItem): SteadfastBul
   };
 }
 
+/** Every Steadfast call is bounded (Phase 9 D-5). */
+export const STEADFAST_TIMEOUT_MS = 20_000;
+
+/** A booking whose result we can't know: the request timed out, the connection dropped, or Steadfast answered 5xx —
+ * it may or may not have created the consignment. The caller keeps its booking claim (no automatic re-booking) and the
+ * order is flagged for an operator to check Steadfast before retrying (Phase 9 D-4). */
+export class CourierOutcomeUnknownError extends AppError {
+  readonly outcomeUnknown = true;
+  constructor(message: string) {
+    super(502, message, { code: "COURIER_OUTCOME_UNKNOWN" });
+    this.name = "CourierOutcomeUnknownError";
+  }
+}
+
+async function steadfastFetch(url: string, init: RequestInit, opts: { booking?: boolean } = {}): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(STEADFAST_TIMEOUT_MS) });
+  } catch (err) {
+    if (opts.booking) throw new CourierOutcomeUnknownError(`Steadfast booking outcome unknown (${err instanceof Error ? err.message : String(err)})`);
+    throw err;
+  }
+  if (opts.booking && res.status >= 500) throw new CourierOutcomeUnknownError(`Steadfast booking outcome unknown (HTTP ${res.status})`);
+  return res;
+}
+
 function authHeaders(): Record<string, string> {
   return {
     "Content-Type": "application/json",
@@ -105,7 +132,7 @@ function requireConfigured() {
 export async function createSteadfastConsignment(input: CreateConsignmentInput): Promise<SteadfastConsignment> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/create_order`, {
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/create_order`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
@@ -116,7 +143,7 @@ export async function createSteadfastConsignment(input: CreateConsignmentInput):
       cod_amount: input.codAmount,
       note: input.note,
     }),
-  });
+  }, { booking: true });
 
   const { data: parsed, rawText } = await readSteadfastResponse(res);
   const data = parsed as SteadfastEnvelope<SteadfastConsignment> | null;
@@ -125,7 +152,7 @@ export async function createSteadfastConsignment(input: CreateConsignmentInput):
   // in-body status is the real signal, same "don't trust the transport code alone" pattern as
   // lib/sms.ts's BulkSMSBD handling.
   if (!res.ok || !data || data.status !== 200 || !data.consignment) {
-    if (!data) console.error(`[steadfast] booking failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] booking failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast booking failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -155,15 +182,15 @@ export async function createBulkSteadfastConsignments(
     note: input.note,
   }));
 
-  const res = await fetch(`${env.steadfast.baseUrl}/create_order/bulk-order`, {
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/create_order/bulk-order`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ data: JSON.stringify(payload) }),
-  });
+  }, { booking: true });
 
   const { data, rawText } = await readSteadfastResponse(res);
   if (!res.ok || !data) {
-    console.error(`[steadfast] bulk booking failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    logger.error(`[steadfast] bulk booking failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast bulk booking failed: ${(data as { message?: string } | null)?.message ?? `HTTP ${res.status}`}`,
       { status: res.status, body: rawText.slice(0, 2000) },
@@ -181,7 +208,7 @@ export async function createBulkSteadfastConsignments(
       : [];
 
   if (!rawResults.length) {
-    console.error("[steadfast] bulk booking returned no results:", rawText.slice(0, 2000));
+    logger.error("[steadfast] bulk booking returned no results:", { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast bulk booking failed: ${(data as { message?: string }).message ?? "no results returned"}`,
       data,
@@ -194,12 +221,12 @@ export async function createBulkSteadfastConsignments(
 export async function getSteadfastBalance(): Promise<number> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/get_balance`, { headers: authHeaders() });
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/get_balance`, { headers: authHeaders() });
   const { data: parsed, rawText } = await readSteadfastResponse(res);
   const data = parsed as SteadfastEnvelope<never> | null;
 
   if (!res.ok || !data || data.status !== 200 || typeof data.current_balance !== "number") {
-    if (!data) console.error(`[steadfast] balance check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] balance check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast balance check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -210,61 +237,92 @@ export async function getSteadfastBalance(): Promise<number> {
 }
 
 export interface SteadfastFraudCheck {
+  /** Lower bound of Steadfast's volume range ("25+" -> 25, "6-10" -> 6); 0 means no history. */
   totalParcels: number;
-  successParcels: number;
-  cancelledParcels: number;
-  /** 0-100, or null when totalParcels is 0 — no delivery history yet, not the same as a bad score. */
+  /** As reported, e.g. "2" or "25+" — exact counts are no longer published. Null when there's no history. */
+  volumeRange: string | null;
+  /** 0-100, or null when there's no delivery history yet — not the same as a bad score. */
   successRate: number | null;
+  cancellationRate: number | null;
+  fraudReports: number;
 }
 
-/** Response shape confirmed against a live account: {total_parcels, total_delivered, total_cancelled,
- * total_fraud_reports} — no {status, message} envelope at all, unlike every other endpoint here.
- * (Earlier field-name guesses — total_parcel/success_parcel/cancelled_parcel, singular — never matched
- * a real response, so every check silently failed with "HTTP 200" as the only clue.) `status` is still
- * treated as optional in case it ever appears. Success rate is computed locally from the two counts
- * rather than trusted from the API, so rounding/definition can't drift. */
-interface RawSteadfastFraudCheck {
+/** Response shape confirmed against a live account on 2026-10-03:
+ * {status: 200, phone, score, level, reasons, scoring_disabled, doubtful_reports, total_reports,
+ *  delivery_ratio, cancellation_ratio, return_ratio, volume_band, volume_range, fraud_categories}.
+ * This replaced GET /fraud_check/{phone}, which since 2026-09-27 answers HTTP 200 with every count
+ * set to 0 plus a `notice` — so it kept "working" while silently turning every customer into
+ * "No history". Ratios are already percentages; exact parcel counts are gone for good. */
+interface RawSteadfastFraudScore {
   status?: number;
   message?: string;
-  total_parcels?: number;
-  total_delivered?: number;
-  total_cancelled?: number;
+  delivery_ratio?: number | null;
+  cancellation_ratio?: number | null;
+  volume_range?: string | number | null;
+  total_reports?: number | null;
+}
+
+function parseVolumeLowerBound(range: string | null): number {
+  const match = range?.match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+// The score endpoint rate-limits much harder than the retired count endpoint did — an admin's bulk
+// "Check score" over a page of orders gets HTTP 429 after a handful of calls. Wait and retry instead
+// of failing the row: honour Retry-After when Steadfast sends it, otherwise back off 2s/4s/8s.
+const FRAUD_CHECK_RETRY_DELAYS_MS = [2000, 4000, 8000];
+const MAX_RETRY_AFTER_MS = 15000;
+
+async function fetchFraudScore(url: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    // Through steadfastFetch: the one raw fetch, with the provider timeout (Phase 9).
+    const res = await steadfastFetch(url, { headers: authHeaders() });
+    if (res.status !== 429 || attempt >= FRAUD_CHECK_RETRY_DELAYS_MS.length) return res;
+    const retryAfterSec = Number(res.headers.get("retry-after"));
+    const delay = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+      ? Math.min(retryAfterSec * 1000, MAX_RETRY_AFTER_MS)
+      : FRAUD_CHECK_RETRY_DELAYS_MS[attempt]!;
+    await res.body?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
 }
 
 export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFraudCheck> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/fraud_check/${encodeURIComponent(phone)}`, {
-    headers: authHeaders(),
-  });
+  const res = await fetchFraudScore(`${env.steadfast.baseUrl}/fraud_check/score/${encodeURIComponent(phone)}`);
+  if (res.status === 429) {
+    throw AppError.badRequest("Steadfast is limiting fraud checks right now (HTTP 429) — try again in a minute");
+  }
 
   const { data: parsed, rawText } = await readSteadfastResponse(res);
-  const data = parsed as RawSteadfastFraudCheck | null;
+  const data = parsed as RawSteadfastFraudScore | null;
 
-  if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || typeof data.total_parcels !== "number") {
-    if (!data) console.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+  if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || !("delivery_ratio" in data)) {
+    if (!data) logger.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast fraud check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
     );
   }
 
-  const totalParcels = Number(data.total_parcels);
-  const successParcels = Number(data.total_delivered ?? 0);
-  const cancelledParcels = Number(data.total_cancelled ?? 0);
+  const volumeRange = data.volume_range === null || data.volume_range === undefined ? null : String(data.volume_range);
+  const totalParcels = parseVolumeLowerBound(volumeRange);
+  const hasHistory = totalParcels > 0 && typeof data.delivery_ratio === "number";
 
   return {
-    totalParcels,
-    successParcels,
-    cancelledParcels,
-    successRate: totalParcels > 0 ? Math.round((successParcels / totalParcels) * 1000) / 10 : null,
+    totalParcels: hasHistory ? totalParcels : 0,
+    volumeRange: hasHistory ? volumeRange : null,
+    successRate: hasHistory ? Number(data.delivery_ratio) : null,
+    cancellationRate: hasHistory && typeof data.cancellation_ratio === "number" ? data.cancellation_ratio : null,
+    fraudReports: Number(data.total_reports ?? 0),
   };
 }
 
 export async function getSteadfastStatusByConsignmentId(consignmentId: string): Promise<string> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/status_by_cid/${encodeURIComponent(consignmentId)}`, {
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/status_by_cid/${encodeURIComponent(consignmentId)}`, {
     headers: authHeaders(),
   });
 
@@ -272,7 +330,7 @@ export async function getSteadfastStatusByConsignmentId(consignmentId: string): 
   const data = parsed as SteadfastEnvelope<never> | null;
 
   if (!res.ok || !data || data.status !== 200 || !data.delivery_status) {
-    if (!data) console.error(`[steadfast] status check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] status check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast status check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },

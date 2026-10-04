@@ -13,6 +13,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "read-model:rebuild": "tsx scripts/read-model-rebuild.ts",
+    "payment-ledger:reconcile": "tsx scripts/payment-ledger-reconcile.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:presets": "tsx prisma/seed-presets.ts",
     "db:test:migrate": "tsx scripts/with-test-db.ts npx prisma migrate deploy",

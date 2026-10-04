@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import { env } from "./env";
+import { logger } from "../lib/observability/logger";
 
 export const redis = new Redis(env.redisUrl, {
   lazyConnect: true,
@@ -14,7 +15,7 @@ export const redis = new Redis(env.redisUrl, {
 let loggedConnectionError = false;
 redis.on("error", (err) => {
   if (!loggedConnectionError) {
-    console.error("[redis] connection error (further errors suppressed):", err.message);
+    logger.error("[redis] connection error (further errors suppressed):", { detail: err.message });
     loggedConnectionError = true;
   }
 });

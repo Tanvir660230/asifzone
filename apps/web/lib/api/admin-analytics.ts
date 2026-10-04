@@ -693,7 +693,8 @@ export interface ProfitTrendPoint {
 }
 
 export function getProfitTrend(days = 30) {
-  return apiFetch<{ series: ProfitTrendPoint[] }>(`/api/analytics/profit-trend${windowParams({ days })}`);
+  // costCoverage: order lines in the window with / without a recorded cost (Phase 6) — margin covers the recorded ones.
+  return apiFetch<{ series: ProfitTrendPoint[]; costCoverage: { recorded: number; missing: number } }>(`/api/analytics/profit-trend${windowParams({ days })}`);
 }
 
 export interface FinancialCostBreakdown {
@@ -707,11 +708,17 @@ export function getFinancialCostBreakdown(days?: number) {
   return apiFetch<FinancialCostBreakdown>(`/api/analytics/financial-costs${windowParams({ days })}`);
 }
 
+/** VAT from each order's own tax snapshot (registry `tax_collected`) — never the current rate applied to history. */
 export interface EstimatedTax {
   taxEnabled: boolean;
   defaultTaxRatePct: number;
+  /** Σ tax snapshot of realised orders in the window. */
   estimatedTax: number;
+  /** Net sales in the window. */
   revenue: number;
+  taxRecordedOrders?: number;
+  /** Realised orders placed before tax was snapshotted (counted, not estimated). */
+  taxUnrecordedOrders?: number;
 }
 
 export function getEstimatedTax(days?: number) {

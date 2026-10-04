@@ -16,10 +16,13 @@ import { PushNotificationToggle } from "@/components/account/push-notification-t
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { SmartOrderTracker } from "@/components/account/smart-order-tracker";
 import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
+import { PhoneVerificationPanel } from "@/components/account/phone-verification-panel";
+import { AccountSecurity } from "@/components/account/account-security";
 
 export default function AccountProfilePage() {
   const { data, isLoading, refetch } = useCurrentCustomer();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [verifyingPhone, setVerifyingPhone] = useState(false);
   // Forces the loading skeleton on the very first client render regardless of how fast the query
   // resolves — react-query can settle before hydration's DOM comparison in some navigation timings,
   // which would otherwise make the client's first paint (form) diverge from the server's (skeleton).
@@ -56,6 +59,8 @@ export default function AccountProfilePage() {
   }
 
   const profileLoading = !mounted || isLoading || !data?.customer;
+  // Phase 11: a verified phone is the sign-in phone — it changes only through a code sent to the new number.
+  const phoneVerified = Boolean(data?.customer.phoneVerifiedAt);
 
   return (
     <div>
@@ -85,7 +90,25 @@ export default function AccountProfilePage() {
 
           <div>
             <Label htmlFor="phone">Phone</Label>
-            <Input id="phone" placeholder="01XXXXXXXXX" {...register("phone")} />
+            <Input id="phone" placeholder="01XXXXXXXXX" {...register("phone", { disabled: phoneVerified })} />
+            {phoneVerified ? (
+              <p className="mt-1 text-xs text-ink-500">
+                Verified — you can sign in with this number.{" "}
+                <button type="button" className="underline hover:text-ink-900" onClick={() => setVerifyingPhone(true)}>
+                  Change sign-in phone
+                </button>
+              </p>
+            ) : (
+              data!.customer.phone && (
+                <p className="mt-1 text-xs text-ink-500">
+                  Not verified yet.{" "}
+                  <button type="button" className="underline hover:text-ink-900" onClick={() => setVerifyingPhone(true)}>
+                    Verify this number
+                  </button>{" "}
+                  to sign in with it.
+                </p>
+              )
+            )}
           </div>
 
           <label className="flex items-center gap-2 text-sm text-ink-700">
@@ -105,6 +128,25 @@ export default function AccountProfilePage() {
           </Button>
         </form>
       )}
+
+      {verifyingPhone && data?.customer && (
+        <div className="mt-4 max-w-md">
+          <PhoneVerificationPanel
+            initialPhone={phoneVerified ? "" : (data.customer.phone ?? "")}
+            onCancel={() => setVerifyingPhone(false)}
+            onVerified={async () => {
+              setVerifyingPhone(false);
+              await refetch();
+              toast.success("Phone verified");
+            }}
+          />
+        </div>
+      )}
+
+      <div className="mt-8">
+        <h2 className="mb-3 font-display text-lg text-ink-900">Security</h2>
+        <AccountSecurity hasEmail={Boolean(data?.customer.email)} />
+      </div>
 
       <div className="mt-8 max-w-md">
         <h2 className="mb-3 font-display text-lg text-ink-900">Notifications</h2>

@@ -18,6 +18,7 @@ import * as adminFeedbackApi from "@/lib/api/admin-feedback";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
+import { formatStoreDate } from "@/lib/format";
 
 const PAGE_SIZE = 20;
 
@@ -148,7 +149,7 @@ export default function AdminFeedbackPage() {
                   <td className="max-w-xs truncate px-4 py-3 text-ink-500" title={f.message}>
                     {f.message}
                   </td>
-                  <td className="px-4 py-3 text-ink-500">{new Date(f.createdAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-ink-500">{formatStoreDate(f.createdAt)}</td>
                   <td className="px-4 py-3">
                     <Badge className={f.readAt ? "" : "bg-sale-50 text-sale-600"}>{f.readAt ? "Read" : "Unread"}</Badge>
                   </td>

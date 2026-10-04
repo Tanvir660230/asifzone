@@ -1,3 +1,4 @@
+import { currentCorrelationId } from "../../lib/observability/context";
 import { Queue } from "bullmq";
 import type { Customer, Campaign } from "@prisma/client";
 import type { CampaignListQuery, CreateCampaignInput, SegmentType, UpdateCampaignInput } from "@clothing-brand/shared";
@@ -12,6 +13,7 @@ import { sendSms } from "../../lib/sms";
 import { sendPush } from "../../lib/push";
 import { renderEmailLayout, emailLink } from "../../lib/email-template";
 import { generateEmailUnsubscribeToken } from "../customers/customer.service";
+import { captureError } from "../../lib/observability/error-capture";
 
 /** Every SMS a customer receives — bulk campaign or a one-off admin message (see
  * customer.service.ts's sendAdHocSmsToCustomer) — is recorded as a Campaign + CampaignRecipient
@@ -63,7 +65,7 @@ async function dispatchToRecipient(campaign: Campaign, customer: Customer): Prom
       await sendMail({
         to: customer.email,
         subject: title,
-        html: renderEmailLayout({
+        html: await renderEmailLayout({
           bodyHtml: campaign.body,
           footerHtml: `Don't want these emails? ${emailLink(unsubscribeUrl, "Unsubscribe")}`,
         }),
@@ -244,7 +246,8 @@ export async function queueCampaignSend(id: string) {
   ]);
 
   const queue = new Queue(CAMPAIGN_SEND_QUEUE, { connection: queueConnection });
-  await queue.add("send", { campaignId: id });
+  // Phase 11: the send job inherits the request's correlation ID (observability only).
+  await queue.add("send", { campaignId: id, correlationId: currentCorrelationId() });
 }
 
 /** The actual send loop, run by the campaign-send worker. Each recipient's outcome is recorded
@@ -293,7 +296,7 @@ export async function promoteDueCampaigns(): Promise<number> {
     select: { id: true },
   });
   for (const { id } of due) {
-    await queueCampaignSend(id).catch((err) => console.error(`[campaign-scheduler] failed to promote ${id}:`, err));
+    await queueCampaignSend(id).catch((err) => captureError(err, { msg: `[campaign-scheduler] failed to promote ${id}:` }));
   }
   return due.length;
 }

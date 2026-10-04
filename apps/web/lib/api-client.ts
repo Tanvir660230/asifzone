@@ -50,6 +50,8 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   isFormData?: boolean;
+  /** Sent as the Idempotency-Key header (Phase 9 — see lib/idempotency.ts). */
+  idempotencyKey?: string;
 }
 
 /** Reads the (deliberately non-httpOnly) csrf_token cookie the API sets alongside the admin session, so
@@ -96,7 +98,7 @@ function refreshSession(): Promise<boolean> {
  * (15 min) by design, and callers (useCurrentAdmin/useCurrentCustomer) should only redirect to login
  * once this has already failed. */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}, _retried = false): Promise<T> {
-  const { method = "GET", body, isFormData = false } = options;
+  const { method = "GET", body, isFormData = false, idempotencyKey } = options;
   const csrfToken = method === "GET" ? undefined : readCsrfCookie();
 
   const res = await fetch(`${env.apiUrl}${path}`, {
@@ -105,6 +107,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: body === undefined ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
   });

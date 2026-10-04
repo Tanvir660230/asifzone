@@ -4,6 +4,7 @@ import { env } from "../../config/env";
 import { constantTimeEqual } from "../../lib/token-hash";
 import { getSteadfastBalance } from "../../lib/steadfast";
 import { handleSteadfastWebhook } from "./courier.service";
+import { captureError } from "../../lib/observability/error-capture";
 
 interface SteadfastWebhookBody {
   consignment_id?: number | string;
@@ -30,7 +31,7 @@ export const webhook = asyncHandler(async (req: Request, res: Response) => {
     // Steadfast doesn't retry non-2xx responses, so letting this throw would drop the status push
     // outright — log and still 200 as documented above; syncPendingCourierStatuses' 15-min sweep
     // (jobs/courier-status-cron.ts) is the backstop that catches it from here.
-    console.error("[steadfast-webhook] failed to process:", err);
+    captureError(err, { msg: "[steadfast-webhook] failed to process:" });
   }
   res.status(200).json({ received: true });
 });

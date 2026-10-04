@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { Request } from "express";
 import { normalizeBdPhone } from "@clothing-brand/shared";
 import { env } from "../../config/env";
+import { liveProvidersEnabled } from "../provider-guard";
 
 /** Low-level Meta Conversions API client — config gate, Meta's customer-information normalization
  * + SHA-256 hashing rules, and the one HTTP call to the Graph API. Knows nothing about orders; see
@@ -64,7 +65,7 @@ const REQUEST_TIMEOUT_MS = 8000;
  * additionally requires a test event code. */
 export function isMetaCapiEnabled(): boolean {
   const { pixelId, accessToken, testEventCode } = env.meta;
-  if (!pixelId || !accessToken) return false;
+  if (!pixelId || !accessToken || !liveProvidersEnabled()) return false;
   return env.nodeEnv === "production" || Boolean(testEventCode);
 }
 

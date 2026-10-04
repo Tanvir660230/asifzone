@@ -26,7 +26,7 @@ function buildShippingDetails(settings: StoreSettings) {
   return [
     {
       "@type": "OfferShippingDetails",
-      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeDhaka, currency: "BDT" },
+      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeDhaka, currency: settings.currency },
       shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: "Dhaka" },
       deliveryTime: {
         "@type": "ShippingDeliveryTime",
@@ -36,7 +36,7 @@ function buildShippingDetails(settings: StoreSettings) {
     },
     {
       "@type": "OfferShippingDetails",
-      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeOutsideDhaka, currency: "BDT" },
+      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeOutsideDhaka, currency: settings.currency },
       shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: NON_DHAKA_DIVISIONS },
       deliveryTime: {
         "@type": "ShippingDeliveryTime",
@@ -63,7 +63,7 @@ export function buildProductJsonLd(product: Product, siteUrl: string, settings: 
     offers: {
       "@type": "Offer",
       url: `${siteUrl}/product/${product.slug}`,
-      priceCurrency: product.pricing?.currency ?? "BDT",
+      priceCurrency: product.pricing?.currency ?? settings.currency,
       price,
       availability: inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       // Every product in the catalog is new stock — there's no used/refurbished concept anywhere

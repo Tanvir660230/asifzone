@@ -1,6 +1,8 @@
-import { Queue, Worker } from "bullmq";
+import { createObservedWorker } from "../lib/observability/jobs";
+import { Queue } from "bullmq";
 import { queueConnection } from "../lib/queue";
 import { expireStalePaymentSessions, reconcileStuckEpsSessions } from "../modules/payments/payment.service";
+import { logger } from "../lib/observability/logger";
 
 const QUEUE_NAME = "payment-reconciliation";
 
@@ -17,13 +19,13 @@ const QUEUE_NAME = "payment-reconciliation";
 export async function startPaymentReconciliationCron() {
   const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
 
-  new Worker(
+  createObservedWorker(
     QUEUE_NAME,
     async () => {
       const recovered = await reconcileStuckEpsSessions();
       const expired = await expireStalePaymentSessions();
-      if (recovered > 0) console.log(`[payment-reconciliation-cron] recovered ${recovered} stuck EPS session(s)`);
-      if (expired > 0) console.log(`[payment-reconciliation-cron] expired ${expired} stale session(s)`);
+      if (recovered > 0) logger.info(`[payment-reconciliation-cron] recovered ${recovered} stuck EPS session(s)`);
+      if (expired > 0) logger.info(`[payment-reconciliation-cron] expired ${expired} stale session(s)`);
     },
     { connection: queueConnection },
   );

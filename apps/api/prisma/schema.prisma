@@ -1,9 +1,12 @@
 generator client {
-  provider      = "prisma-client-js"
+  provider        = "prisma-client-js"
   // "native" for local dev (whatever the host is); the musl target is what the node:20-alpine
   // Docker image actually runs on, and its Alpine base ships OpenSSL 3.x, not the 1.1 the
   // default musl engine binary needs.
-  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+  // Global `omit` (config/prisma.ts) keeps OrderItem.unitCostSnapshot out of every read unless selected explicitly —
+  // recorded cost is internal and must never reach a customer response (docs/PHASE_6_AUDIT.md G6).
+  previewFeatures = ["omitApi"]
 }
 
 datasource db {
@@ -111,16 +114,23 @@ enum PaymentMethod {
   EPS_PG
 }
 
+/// A projection of the order's payment ledger (Payment + Refund rows) — written only by
+/// domain/payments/payment-ledger.service.ts (docs/PAYMENT_LEDGER.md §4). PARTIALLY_REFUNDED: Phase 4.
 enum PaymentStatus {
   UNPAID
   PAID
   FAILED
   REFUNDED
+  PARTIALLY_REFUNDED
 }
 
+/// SSLCOMMERZ/EPS_PG: gateway settlements. COD: cash the courier collected on delivery (D1). MANUAL: an
+/// out-of-band payment staff recorded (bKash/bank/cash). COD and MANUAL never appear on a PaymentSession.
 enum PaymentProvider {
   SSLCOMMERZ
   EPS_PG
+  COD
+  MANUAL
 }
 
 /// ACTIVE -> SUCCEEDED/FAILED (a definitive, re-verified gateway answer) or CANCELLED (customer
@@ -240,6 +250,8 @@ model AdminUser {
   deletedOrders          Order[]              @relation("OrderDeletedBy")
   stockMovements         StockMovement[]
   refundsRequested       Refund[]             @relation("RefundRequestedBy")
+  refundsCompleted       Refund[]             @relation("RefundCompletedBy")
+  paymentsRecorded       Payment[]            @relation("PaymentRecordedBy")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -651,6 +663,10 @@ model Customer {
   /// (Google verifies email ownership itself; phone-OTP accounts skip email verification entirely).
   emailVerifiedAt          DateTime?
   phone                    String?
+  /// Phase 11 (BD-11.1): set only when an OTP to exactly this `phone` succeeded — the phone is then the customer's
+  /// login identifier. NULL = unverified contact data (may repeat across customers). Cleared whenever `phone` changes.
+  /// A partial unique index (migration phase11_customer_identity) allows at most one customer per verified phone.
+  phoneVerifiedAt          DateTime?
   passwordHash             String?
   /// Google "sub" claim — set for accounts created or linked via Google sign-in. Null for
   /// email/password-only or phone-OTP-only accounts.
@@ -681,16 +697,25 @@ model Customer {
   deliveryTotalParcels     Int?
   deliverySuccessParcels   Int?
   deliveryCancelledParcels Int?
-  /// Percentage (0-100), computed from the three counts above rather than trusted from Steadfast's
-  /// response directly — see getSteadfastFraudCheck's comment on why. Null when totalParcels is 0
-  /// (no delivery history yet — not the same as a bad score, so the UI must not treat null as 0%).
+  /// deliveryTotalParcels is now the lower bound of Steadfast's volume range (exact counts are no longer
+  /// published); the success/cancelled counts stay null for checks made after 2026-09-27.
+  /// Percentage (0-100), Steadfast's delivery_ratio. Null when there's no delivery history yet — not
+  /// the same as a bad score, so the UI must not treat null as 0%.
   deliverySuccessRate      Float?
+  /// From Steadfast's /fraud_check/score endpoint (the count-based one went dark 2026-09-27): cancellation
+  /// percentage, the parcel-volume bucket it reports instead of an exact count (e.g. "2", "25+"), and
+  /// the number of fraud reports other merchants have filed against this phone.
+  deliveryCancellationRate Float?
+  deliveryVolumeRange      String?
+  deliveryFraudReports     Int?
   deliveryScoreCheckedAt   DateTime?
   addresses                Address[]
   orders                   Order[]
   wishlistItems            WishlistItem[]
   passwordResetTokens      PasswordResetToken[]
   emailVerificationTokens  EmailVerificationToken[]
+  refreshTokens            CustomerRefreshToken[]
+  claims                   CustomerClaim[]
   pointsLedger             RewardPointsEntry[]
   cart                     Cart?
   stockAlerts              StockAlert[]
@@ -726,6 +751,50 @@ model PasswordResetToken {
   expiresAt  DateTime
   usedAt     DateTime?
   createdAt  DateTime  @default(now())
+
+  @@index([customerId])
+}
+
+/// Phase 11 (BD-11.3): a DB-tracked customer refresh session. One login = one family (`familyId`); every refresh rotates
+/// to a new row in the same family with the same fixed `expiresAt` (7 days from login, never extended). Presenting a
+/// rotated or revoked token outside the short concurrency grace window revokes the whole family (reuse detection).
+model CustomerRefreshToken {
+  id            String    @id @default(cuid())
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  familyId      String
+  tokenHash     String    @unique
+  /// Customer.tokenVersion when issued — a password reset / logout-everywhere bump invalidates older tokens too.
+  tokenVersion  Int
+  /// false = "remember me" unchecked: the rotated cookie stays a browser-session cookie.
+  persistent    Boolean   @default(true)
+  expiresAt     DateTime
+  rotatedAt     DateTime?
+  replacedById  String?
+  revokedAt     DateTime?
+  /// logout | logout_all | password_change | password_reset | reuse_detected
+  revokedReason String?
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+
+  @@index([customerId])
+  @@index([familyId])
+}
+
+/// Phase 11 (BD-11.6 a): a pending claim of an existing passwordless customer record matched by email. Registration
+/// stores the chosen password hash here and emails a link; only following that link (proof of the email) attaches the
+/// credential to the existing record. Never moves any record between customers.
+model CustomerClaim {
+  id           String    @id @default(cuid())
+  customerId   String
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  passwordHash String
+  name         String
+  phone        String?
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([customerId])
 }
@@ -933,22 +1002,26 @@ model Order {
 
   /// Steadfast's internal id for the booked consignment — the key used to poll status and to
   /// match incoming webhooks back to this order. Null until "Book with Steadfast" is used.
-  courierConsignmentId  String?
+  courierConsignmentId    String?
   /// Raw delivery_status string from Steadfast (e.g. "in_review", "delivered", "cancelled"),
   /// shown to the admin as-is; see mapSteadfastStatusToOrderStatus for how it affects `status`.
-  courierStatus         String?
-  courierBookedAt       DateTime?
+  courierStatus           String?
+  courierBookedAt         DateTime?
+  /// Phase 9 (D-4): booking claim — set atomically (conditional update) before the Steadfast call so two concurrent
+  /// bookings can't both reach the provider; cleared when the booking is saved or definitely failed, KEPT when the
+  /// outcome is unknown (timeout / 5xx) until an operator checks Steadfast or the 10-min lease lapses.
+  courierBookingStartedAt DateTime?
   /// Steadfast's own trackable URL (https://steadfast.com.bd/tl/{opaque-token}) — only present in
   /// the create_order/bulk-order response body, not derivable from tracking_code and not returned
   /// by status_by_cid, so bookings made before this field existed will have it null forever.
-  courierTrackingLink   String?
+  courierTrackingLink     String?
   /// Last time `courierStatus` was confirmed against Steadfast's API (webhook, cron sweep, or a
   /// manual/bulk sync) — null until the first successful sync. Drives the admin UI's "last synced"
   /// label and the staleness check in getOrderByIdWithAutoSync.
-  courierStatusSyncedAt DateTime?
+  courierStatusSyncedAt   DateTime?
   /// Message from the most recent failed sync attempt; cleared on the next successful one. Lets the
   /// admin UI show "sync failed" instead of silently displaying a possibly-stale courierStatus.
-  courierSyncError      String?
+  courierSyncError        String?
 
   // ── Pricing snapshot (Phase 2, docs/PRICING_INVARIANTS.md §8). Immutable historical facts written once at order
   // creation by the canonical pricing pipeline; never recomputed from current products, promotions or settings.
@@ -1139,8 +1212,9 @@ model Payment {
   /// created for a failed/cancelled attempt, so this row (not an Order) is the payment log.
   orderId               String?
   order                 Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  paymentSessionId      String           @unique
-  paymentSession        PaymentSession   @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
+  /// Null for a settlement with no gateway session — COD collected on delivery, or a MANUAL payment (Phase 4).
+  paymentSessionId      String?          @unique
+  paymentSession        PaymentSession?  @relation(fields: [paymentSessionId], references: [id], onDelete: Cascade)
   provider              PaymentProvider
   status                PaymentTxnStatus
   amount                Decimal          @db.Decimal(10, 2)
@@ -1148,6 +1222,14 @@ model Payment {
   /// SSLCommerz bank_tran_id (falls back to val_id) / EPS EpsTransactionId.
   providerTransactionId String?
   rawResponse           Json?
+  /// Free-text context: how a manual payment was made ("bKash 01…"), or why a backfilled row exists.
+  note                  String?
+  recordedByAdminId     String?
+  recordedByAdmin       AdminUser?       @relation("PaymentRecordedBy", fields: [recordedByAdminId], references: [id], onDelete: SetNull)
+  /// Idempotency-Key of the admin request that recorded a manual payment — a repeat returns this row.
+  idempotencyKey        String?          @unique
+  /// True for rows the Phase 4 backfill inserted from an order's own recorded status (docs/PAYMENT_LEDGER.md §11).
+  backfilled            Boolean          @default(false)
   settledAt             DateTime         @default(now())
   refunds               Refund[]
   createdAt             DateTime         @default(now())
@@ -1173,10 +1255,10 @@ model PaymentEvent {
 
 /// A manual, out-of-band refund record — neither SSLCommerz nor EPS expose a refund API (see the
 /// comment above ReturnRequest), so an admin transfers money back themselves (bKash/bank/cash) and
-/// logs it here. This table is the record of what happened, not a trigger: creating a COMPLETED
-/// Refund is the only thing (besides settlePaymentSession/markPaymentSessionFailed) allowed to move
-/// Order.paymentStatus to REFUNDED — see refundOrderPayment in payment.service.ts, and
-/// syncOrderPaymentStatus's explicit exclusion of REFUNDED orders from its own writes.
+/// logs it here. This table is the record of what happened, not a trigger. REQUESTED = owed (a D6
+/// exchange downgrade), COMPLETED = paid out; the only mutation is REQUESTED → COMPLETED. Written only by
+/// domain/payments/payment-ledger.service.ts, which derives Order.paymentStatus from these rows and the
+/// Payment rows (docs/PAYMENT_LEDGER.md).
 model Refund {
   id                 String       @id @default(cuid())
   orderId            String
@@ -1191,6 +1273,10 @@ model Refund {
   status             RefundStatus @default(REQUESTED)
   requestedByAdminId String?
   requestedByAdmin   AdminUser?   @relation("RefundRequestedBy", fields: [requestedByAdminId], references: [id], onDelete: SetNull)
+  completedByAdminId String?
+  completedByAdmin   AdminUser?   @relation("RefundCompletedBy", fields: [completedByAdminId], references: [id], onDelete: SetNull)
+  /// Idempotency-Key of the admin request that recorded this refund — a repeat returns this row.
+  idempotencyKey     String?      @unique
   completedAt        DateTime?
   createdAt          DateTime     @default(now())
 
@@ -1253,6 +1339,20 @@ model OrderItem {
   /// This line's share of the order's bundle / coupon discount (proportional allocation, sums to the order amount).
   bundleDiscountAllocated Decimal? @db.Decimal(10, 2)
   couponDiscountAllocated Decimal? @db.Decimal(10, 2)
+  /// Historical facts (Phase 6, docs/PHASE_6_AUDIT.md) — captured once, in the transaction that writes this line
+  /// (order creation or exchange-replacement creation), never updated. No FKs: history outlives the catalog.
+  /// Per-unit cost in MINOR units of the store currency (StoreSetting.currency, locked once orders exist):
+  /// variant.costPrice ?? product.costPrice at order time. NULL = unknown (no cost configured, or before Phase 6) —
+  /// never 0 by default. Omitted from every Prisma read unless selected (config/prisma.ts).
+  unitCostSnapshot        Int?
+  /// The variant's product (backfilled for older lines from ProductVariant.productId — a variant never changes product).
+  productIdSnapshot       String?
+  /// The product's category and its name at order time. NULL = not recorded (line predates Phase 6); every product has
+  /// a category, so a recorded line always has categoryIdSnapshot.
+  categoryIdSnapshot      String?
+  categoryNameSnapshot    String?
+  /// Product.brand at order time (free text; no brand id exists). NULL with categoryIdSnapshot set = unbranded.
+  brandSnapshot           String?
 
   @@index([orderId])
   @@index([flashSaleItemId])
@@ -1429,6 +1529,8 @@ model StoreSetting {
   logoOnDarkUrl                String?
   faviconUrl                   String?
   currency                     String   @default("BDT")
+  /// IANA timezone of the store's business day (metrics, "today", reports) — docs/METRICS_REGISTRY.md §1. Phase 5.
+  timezone                     String   @default("Asia/Dhaka")
   contactEmail                 String?
   contactPhone                 String?
   shippingFeeDhaka             Decimal  @default(60) @db.Decimal(10, 2)
@@ -2062,4 +2164,49 @@ model ProductReadModel {
   @@index([minSellingPrice])
   @@index([validUntil])
   @@index([volatile])
+}
+
+/// Phase 8 (docs/PHASE_8_AUDIT.md) — delivery state of one outbox row.
+enum OutboxStatus {
+  PENDING
+  ENQUEUED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+/// Transactional outbox (Phase 8): the durable INTENT to perform one external side effect, written in the same
+/// transaction as the business change it follows — never business truth itself. One row per (consumer, eventKey), so a
+/// producer can't record the same intent twice. Written only by domain/outbox/outbox.ts; delivered by the dispatcher
+/// (→ BullMQ) and the worker (domain/outbox/processor.ts), at least once, to idempotent consumers.
+model OutboxEvent {
+  id            String       @id @default(cuid())
+  /// Versioned business event the intent follows, e.g. "order.placed.v1" (the version governs the payload shape).
+  eventType     String
+  /// The single consumer that performs the side effect, e.g. "customer-order-sms".
+  consumer      String
+  /// Business idempotency key, e.g. "order:<id>:placed" — unique per consumer.
+  eventKey      String
+  aggregateType String
+  aggregateId   String
+  /// Minimal, versioned, secret-free payload (ids + what the consumer can't re-read later).
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  /// Processing attempts made (dispatch/enqueue attempts don't count).
+  attempts      Int          @default(0)
+  /// Not before this instant (retry backoff).
+  availableAt   DateTime     @default(now())
+  /// Lease of whoever holds the row right now (dispatcher claim, or worker while PROCESSING).
+  claimedUntil  DateTime?
+  enqueuedAt    DateTime?
+  processedAt   DateTime?
+  lastError     String?
+  /// Phase 11: the correlation ID of the request that recorded this intent (observability only — never business data).
+  correlationId String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([consumer, eventKey])
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId])
 }

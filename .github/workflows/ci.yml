@@ -221,12 +221,9 @@ jobs:
           echo "EPS_STORE_ID=${{ secrets.EPS_STORE_ID }}" >> docker/.env
           echo "EPS_SANDBOX=${{ secrets.EPS_SANDBOX }}" >> docker/.env
 
-      - name: Build and restart the stack
-        run: |
-          set -e
-          docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
-          docker compose -f docker/docker-compose.yml exec -T api npx prisma migrate deploy
-          # api/web just got recreated with fresh container IPs, and nginx.conf may have
-          # changed too (its ./nginx/nginx.conf mount does not itself trigger a reload) — always
-          # restart nginx so it never keeps proxying to a dead container.
-          docker compose -f docker/docker-compose.yml restart nginx
+      # Phase 11 (BD-11.5, docs/DEPLOYMENT.md): backup → verify → build → migrate (before new code serves) → switch →
+      # readiness gate (120 s) → restart nginx. Any failing step fails the job with rollback instructions.
+      - name: Deploy (backup, migrate, switch, readiness gate)
+        run: bash docker/deploy.sh
+        env:
+          DEPLOY_SHA: ${{ github.sha }}

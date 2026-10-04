@@ -21,6 +21,8 @@ import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.
 import { recordSale, releaseOrderLines } from "../inventory/inventory.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
+import { recordExchangeCovered, requestRefund } from "../../domain/payments/payment-ledger.service";
+import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 
 const include = {
   order: { select: { id: true, orderNumber: true, status: true, total: true, createdAt: true } },
@@ -56,6 +58,7 @@ export async function createReturnRequest(customerId: string, input: CreateRetur
   if (input.type === "EXCHANGE") {
     const item = order.items.find((i) => i.id === input.orderItemId);
     if (!item) throw AppError.badRequest("Select an item from this order to exchange");
+    if (item.restockedQuantity > 0) throw AppError.conflict("This item has already been returned or exchanged");
 
     const requestedVariant = await prisma.productVariant.findUnique({ where: { id: input.requestedVariantId } });
     if (!requestedVariant) throw AppError.badRequest("The selected item is no longer available");
@@ -169,7 +172,8 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
  * stock-limit aware; no bundle or coupon, no shipping) and compared with what the customer actually paid for the item
  * being returned (its order-line snapshot, net of the discounts allocated to it — history, not the current price).
  *   • replacement costs more  → the difference is the new order's total, collected COD on delivery;
- *   • replacement costs less  → the difference is owed back: a REQUESTED Refund on the original order for an admin to pay out;
+ *   • replacement costs less  → the difference is owed back: a REQUESTED Refund on the original order (payment ledger),
+ *                                completed by an admin once paid out;
  *   • equal                   → a free exchange.
  * Then: takes the replacement out of stock (re-checked — it may have sold out since the request), puts the original
  * item back (a RETURN on the original order's line, so it can never be restocked twice), and opens the companion Order
@@ -184,6 +188,11 @@ async function createExchangeOrder(
 
   const originalItem = originalOrder.items.find((i) => i.id === request.orderItemId);
   if (!originalItem) throw AppError.badRequest("The original item on this order could not be found");
+  // Phase 9 (D-1): a replacement ships only in exchange for units that actually come back. A line already restocked (an
+  // earlier exchange of the same item, a return, a partial-delivery reconciliation) can't be exchanged again.
+  if (originalItem.restockedQuantity > 0) {
+    throw AppError.conflict("This item has already been returned or exchanged — it can't be exchanged again");
+  }
   if (!request.requestedVariantId) throw AppError.badRequest("No replacement size/color was recorded for this exchange");
 
   const requestedVariant = await tx.productVariant.findUnique({
@@ -225,13 +234,15 @@ async function createExchangeOrder(
         ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(refundDue)} owed back to the customer (refund requested)`
         : `Free exchange for order ${originalOrder.orderNumber} (${label})`;
 
+  const replacementSnapshots = await captureLineSnapshots(tx, [requestedVariant.id], cur);
   const exchangeOrder = await tx.order.create({
     data: {
       orderNumber: generateOrderNumber(),
       customerId: originalOrder.customerId,
       status: "CONFIRMED",
       paymentMethod: amountDue.amount > 0 ? "COD" : originalOrder.paymentMethod,
-      paymentStatus: amountDue.amount > 0 ? "UNPAID" : "PAID",
+      // Payment status is derived by the payment ledger: UNPAID until the COD difference is collected, or settled at
+      // zero just below when the returned item covers the whole price.
       customerName: originalOrder.customerName,
       customerEmail: originalOrder.customerEmail,
       customerPhone: originalOrder.customerPhone,
@@ -270,6 +281,8 @@ async function createExchangeOrder(
           flashSaleItemId: seg.flash?.flashSaleItemId ?? null,
           bundleDiscountAllocated: 0,
           couponDiscountAllocated: 0,
+          // Recorded for the replacement line; a replacement is not a sale, so no COGS/sales read it (P6-5).
+          ...lineSnapshotData(replacementSnapshots, requestedVariant.id),
         })),
       },
       statusHistory: {
@@ -297,23 +310,25 @@ async function createExchangeOrder(
     }
     throw err;
   }
-  await releaseOrderLines(tx, originalOrder.id, "return", {
+  const { released } = await releaseOrderLines(tx, originalOrder.id, "return", {
     adminId,
     note: "Stock restored — exchange approved",
     lines: [{ orderItemId: originalItem.id, quantity: originalItem.quantity }],
   });
+  // The release is a conditional update: if a concurrent return/exchange took these units first, nothing was released —
+  // then the whole approval (replacement order, its stock, any refund) rolls back instead of shipping a second item.
+  const returnedUnits = released.filter((r) => r.orderItemId === originalItem.id).reduce((n, r) => n + r.quantity, 0);
+  if (returnedUnits !== originalItem.quantity) {
+    throw AppError.conflict("This item has already been returned or exchanged — it can't be exchanged again");
+  }
 
-  // D6: a cheaper replacement means money is owed back — recorded as a refund to be paid out (no gateway refund API).
+  // Fully covered by the returned item: nothing to collect — settled at zero in the ledger (status PAID, as before).
+  if (amountDue.amount === 0) await recordExchangeCovered(tx, exchangeOrder.id, adminId);
+
+  // D6: a cheaper replacement means money is owed back — a REQUESTED refund on the original order (no gateway refund
+  // API), completed by an admin once paid out. Capped by what was received for that order (PL-2).
   if (refundDue.amount > 0) {
-    await tx.refund.create({
-      data: {
-        orderId: originalOrder.id,
-        amount: toMajor(refundDue),
-        reason: `Exchange price difference — ${label}`,
-        status: "REQUESTED",
-        requestedByAdminId: adminId,
-      },
-    });
+    await requestRefund(tx, originalOrder.id, { amount: toMajor(refundDue), reason: `Exchange price difference — ${label}` }, adminId);
   }
 
   await tx.returnRequest.update({ where: { id: request.id }, data: { exchangeOrderId: exchangeOrder.id } });

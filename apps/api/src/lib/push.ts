@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { env } from "../config/env";
+import { logger } from "./observability/logger";
 
 const vapidConfigured = Boolean(env.webPush.publicKey && env.webPush.privateKey);
 
@@ -28,7 +29,7 @@ interface PushInput {
 // log instead of sending, same fallback spirit as lib/mailer.ts and lib/sms.ts.
 export async function sendPush({ subscription, title, body, url }: PushInput): Promise<void> {
   if (!vapidConfigured) {
-    console.log(`[push] (dev mode, not actually sent) To: ${subscription.endpoint} | ${title}`);
+    logger.info(`[push] (dev mode, not actually sent) To: ${subscription.endpoint} | ${title}`);
     return;
   }
 

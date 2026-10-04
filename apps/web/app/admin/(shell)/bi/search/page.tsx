@@ -10,6 +10,7 @@ import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -37,20 +38,20 @@ export default function SearchAnalyticsPage() {
     key: `${c.city}-${i}`,
     label: c.city,
     value: c.sessions,
-    valueLabel: c.sessions.toLocaleString("en-BD"),
+    valueLabel: c.sessions.toLocaleString(DISPLAY_LOCALE),
   }));
 
   const deviceItems: RankedBarListItem[] = (audience?.devices ?? []).map((d, i) => ({
     key: `${d.device}-${i}`,
     label: d.device,
     value: d.sessions,
-    valueLabel: d.sessions.toLocaleString("en-BD"),
+    valueLabel: d.sessions.toLocaleString(DISPLAY_LOCALE),
   }));
 
   const customerTypeItems: RankedBarListItem[] = audience
     ? [
-        { key: "guest", label: "Guest", value: audience.guest, valueLabel: audience.guest.toLocaleString("en-BD") },
-        { key: "logged-in", label: "Logged In", value: audience.loggedIn, valueLabel: audience.loggedIn.toLocaleString("en-BD") },
+        { key: "guest", label: "Guest", value: audience.guest, valueLabel: audience.guest.toLocaleString(DISPLAY_LOCALE) },
+        { key: "logged-in", label: "Logged In", value: audience.loggedIn, valueLabel: audience.loggedIn.toLocaleString(DISPLAY_LOCALE) },
       ]
     : [];
 
@@ -85,7 +86,7 @@ export default function SearchAnalyticsPage() {
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Total Searches" value={overview.totalSearches.toLocaleString("en-BD")} icon={<Search size={18} />} />
+              <StatTile label="Total Searches" value={overview.totalSearches.toLocaleString(DISPLAY_LOCALE)} icon={<Search size={18} />} />
               <ConversionMetricCard
                 label="Zero-Result Rate"
                 value={`${overview.zeroResultRate.toFixed(1)}%`}
@@ -93,7 +94,7 @@ export default function SearchAnalyticsPage() {
                 pct={overview.zeroResultRate}
                 tone={overview.zeroResultRate > 20 ? "warning" : "default"}
               />
-              <StatTile label="Zero-Result Searches" value={overview.zeroResultSearches.toLocaleString("en-BD")} icon={<XCircle size={18} />} />
+              <StatTile label="Zero-Result Searches" value={overview.zeroResultSearches.toLocaleString(DISPLAY_LOCALE)} icon={<XCircle size={18} />} />
             </>
           )}
         </div>
@@ -106,7 +107,7 @@ export default function SearchAnalyticsPage() {
           </CardHeader>
           <CardContent>
             <RankedBarList
-              items={(overview?.topQueries ?? []).map((q, i) => ({ key: `${q.query}-${i}`, label: q.query, value: q.count, valueLabel: q.count.toLocaleString("en-BD") }))}
+              items={(overview?.topQueries ?? []).map((q, i) => ({ key: `${q.query}-${i}`, label: q.query, value: q.count, valueLabel: q.count.toLocaleString(DISPLAY_LOCALE) }))}
               emptyLabel="No searches recorded yet for this range."
             />
           </CardContent>
@@ -174,7 +175,7 @@ export default function SearchAnalyticsPage() {
               <ConversionMetricCard
                 label="Searches Leading to Purchase"
                 value={`${conversion.purchaseRatePct.toFixed(1)}%`}
-                caption={`${conversion.purchasedSessions.toLocaleString("en-BD")} of ${conversion.searchSessions.toLocaleString("en-BD")} correlated search sessions`}
+                caption={`${conversion.purchasedSessions.toLocaleString(DISPLAY_LOCALE)} of ${conversion.searchSessions.toLocaleString(DISPLAY_LOCALE)} correlated search sessions`}
                 icon={<ShoppingBag size={18} />}
                 pct={conversion.purchaseRatePct}
                 tone="accent"
@@ -182,7 +183,7 @@ export default function SearchAnalyticsPage() {
               <ConversionMetricCard
                 label="Searches Leading to Exit"
                 value={`${conversion.exitRatePct.toFixed(1)}%`}
-                caption={`${conversion.exitedSessions.toLocaleString("en-BD")} left right after searching`}
+                caption={`${conversion.exitedSessions.toLocaleString(DISPLAY_LOCALE)} left right after searching`}
                 icon={<LogOut size={18} />}
                 pct={conversion.exitRatePct}
                 tone={conversion.exitRatePct > 40 ? "warning" : "default"}

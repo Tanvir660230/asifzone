@@ -1,0 +1,60 @@
+name: Migrate to new VPS
+
+# Runs docker/migrate-to-new-vps.sh on the new VPS in non-interactive "auto" mode. Started by a push
+# that changes .github/migrate-trigger.env (which holds the old VPS's host/port/user — not secret),
+# or manually. Passwords come only from repository secrets and are never echoed: they are piped to
+# the new VPS over SSH stdin into a root-only file the script deletes as soon as it reads it.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/charming-gauss-e26lar]
+    paths: [.github/migrate-trigger.env]
+
+concurrency:
+  group: migrate-vps
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NEW_HOST: 187.77.137.12
+      SSHPASS: ${{ secrets.NEW_VPS_PASSWORD }}
+      OLD_PASS: ${{ secrets.OLD_VPS_PASSWORD }}
+      # The old VPS only accepts key logins — this is the same deploy key validate-nginx.yml uses.
+      OLD_KEY: ${{ secrets.VPS_SSH_KEY }}
+      # rclone token for the nightly Google Drive backup (docker/gdrive-backup.sh); only used by MODE=gdrive.
+      GDRIVE_TOKEN: ${{ secrets.GDRIVE_RCLONE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        run: |
+          [ -n "$SSHPASS" ] || { echo "::error::NEW_VPS_PASSWORD secret is missing"; exit 1; }
+          [ -n "$OLD_PASS" ] || [ -n "$OLD_KEY" ] || { echo "::error::OLD_VPS_PASSWORD or VPS_SSH_KEY secret is missing"; exit 1; }
+          [ -n "$OLD_KEY" ] && echo "VPS_SSH_KEY is set" || echo "VPS_SSH_KEY is not set"
+          sudo apt-get install -y sshpass >/dev/null
+
+      - name: Copy script and credentials to the new VPS
+        run: |
+          . .github/migrate-trigger.env
+          SSH="sshpass -e ssh -o StrictHostKeyChecking=accept-new root@$NEW_HOST"
+          sshpass -e scp -o StrictHostKeyChecking=accept-new docker/migrate-to-new-vps.sh root@$NEW_HOST:/root/migrate.sh
+          {
+            printf 'OLD_HOST=%q\nOLD_PORT=%q\nOLD_USER=%q\n' "$OLD_HOST" "${OLD_PORT:-22}" "${OLD_USER:-root}"
+            printf 'export SSHPASS=%q\n' "$OLD_PASS"
+          } | $SSH 'umask 077; cat > /root/.asifzone-migrate.secrets'
+          if [ -n "$OLD_KEY" ]; then
+            printf '%s\n' "$OLD_KEY" | $SSH 'umask 077; mkdir -p /root/.ssh; cat > /root/.ssh/asifzone-old-key'
+          fi
+          if [ "$MODE" = "gdrive" ]; then
+            [ -n "$GDRIVE_TOKEN" ] || { echo "::error::GDRIVE_RCLONE_TOKEN secret is missing"; exit 1; }
+            printf '%s\n' "$GDRIVE_TOKEN" | $SSH 'umask 077; cat > /root/.asifzone-gdrive-token'
+          fi
+
+      - name: Run the migration on the new VPS
+        run: |
+          . .github/migrate-trigger.env
+          sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 \
+            root@$NEW_HOST "bash /root/migrate.sh ${MODE:-auto} 2>&1"

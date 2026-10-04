@@ -6,6 +6,7 @@ import { useCurrentCustomer } from "@/hooks/use-current-customer";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { listMyPointsLedger } from "@/lib/api/customers";
+import { formatStoreDate } from "@/lib/format";
 
 export default function AccountRewardPointsPage() {
   const { data: customerData } = useCurrentCustomer();
@@ -42,7 +43,7 @@ export default function AccountRewardPointsPage() {
           <div key={entry.id} className="flex items-center justify-between py-4 text-sm">
             <div>
               <p className="text-ink-900">{entry.reason}</p>
-              <p className="text-xs text-ink-400">{new Date(entry.createdAt).toLocaleDateString()}</p>
+              <p className="text-xs text-ink-400">{formatStoreDate(entry.createdAt)}</p>
             </div>
             <span className={entry.points >= 0 ? "text-success-600" : "text-danger-600"}>
               {entry.points >= 0 ? "+" : ""}

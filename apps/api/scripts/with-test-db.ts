@@ -24,6 +24,19 @@ if (!existsSync(envPath)) {
 }
 
 const parsed = config({ path: envPath, processEnv: {} }).parsed ?? {};
+// Phase 9: this wrapper runs destructive commands (migrate reset, seeds), so it refuses any database but the test one.
+const TEST_DATABASE = "clothing_brand_test";
+let databaseName = "";
+try {
+  databaseName = decodeURIComponent(new URL(parsed.DATABASE_URL ?? "").pathname.replace(/^\//, ""));
+} catch {
+  // unparsable URL: refused below
+}
+if (databaseName !== TEST_DATABASE) {
+  console.error(`[with-test-db] refusing to run: .env.test DATABASE_URL must name "${TEST_DATABASE}" (got "${databaseName || "nothing"}").`);
+  process.exit(1);
+}
+
 const [command, ...args] = process.argv.slice(2);
 
 if (!command) {

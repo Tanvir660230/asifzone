@@ -34,6 +34,7 @@ import {
   type MaterialRef,
 } from "./product-csv-format";
 import { createProduct, getProductById, updateProduct } from "./product.service";
+import { captureError } from "../../lib/observability/error-capture";
 
 /* ───────────────────────── the format ─────────────────────────
  * One row per variant. A product's own columns are written on its first row and left blank on the rest (on import they may be
@@ -620,7 +621,7 @@ export async function runProductImport(csv: string, opts: { skipInvalid?: boolea
       }
     } catch (err) {
       result.failed.push({ slug: p.slug, message: err instanceof AppError ? err.message : "Unexpected error" });
-      if (!(err instanceof AppError)) console.error("[product-import] unexpected failure for", p.slug, err);
+      if (!(err instanceof AppError)) captureError(err, { msg: "[product-import] unexpected failure for", detail: p.slug });
     }
   }
   recordAudit({

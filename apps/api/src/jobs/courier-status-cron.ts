@@ -1,6 +1,8 @@
-import { Queue, Worker } from "bullmq";
+import { createObservedWorker } from "../lib/observability/jobs";
+import { Queue } from "bullmq";
 import { queueConnection } from "../lib/queue";
 import { syncPendingCourierStatuses } from "../modules/courier/courier.service";
+import { logger } from "../lib/observability/logger";
 
 const QUEUE_NAME = "courier-status-sync";
 
@@ -12,11 +14,11 @@ const QUEUE_NAME = "courier-status-sync";
 export async function startCourierStatusCron() {
   const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
 
-  new Worker(
+  createObservedWorker(
     QUEUE_NAME,
     async () => {
       const changed = await syncPendingCourierStatuses();
-      if (changed > 0) console.log(`[courier-status-cron] status changed for ${changed} order(s)`);
+      if (changed > 0) logger.info(`[courier-status-cron] status changed for ${changed} order(s)`);
     },
     { connection: queueConnection },
   );

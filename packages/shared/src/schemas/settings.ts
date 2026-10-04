@@ -1,3 +1,5 @@
+import { isValidTimeZone } from "../metrics/business-time";
+import { SUPPORTED_CURRENCIES, isSupportedCurrency } from "../engines/money";
 import { z } from "zod";
 import { nullableEmail, nullableString, nullableUrl } from "./common";
 
@@ -23,7 +25,19 @@ export const updateSettingsSchema = z.object({
   logoUrl: nullableUrl(),
   logoOnDarkUrl: nullableUrl(),
   faviconUrl: nullableUrl(),
-  currency: z.string().min(1).max(8).optional(),
+  // ISO 4217 code the money engine represents exactly (SUPPORTED_CURRENCIES). Locked once orders exist (Phase 6, P6-4);
+  // validity is enforced here so an unsupported code can never become the implied currency of every amount (Phase 7 D-8).
+  currency: z
+    .string()
+    .refine(isSupportedCurrency, { message: `Unsupported currency — use one of: ${SUPPORTED_CURRENCIES.join(", ")}` })
+    .optional(),
+  // IANA timezone (e.g. "Asia/Dhaka") — the store's business day for metrics and reports (docs/METRICS_REGISTRY.md §1).
+  timezone: z
+    .string()
+    .min(1)
+    .max(64)
+    .refine(isValidTimeZone, "Unknown timezone")
+    .optional(),
   contactEmail: nullableEmail(),
   contactPhone: nullableString(32),
   shippingFeeDhaka: optionalNonNegativeNumber(),
