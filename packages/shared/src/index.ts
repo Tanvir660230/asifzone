@@ -33,7 +33,7 @@ export * from "./schemas/ai";
 export * from "./schemas/campaign";
 export * from "./schemas/push";
 export * from "./search-synonyms";
-export * from "./delivery";
+export * from "./country/bd";
 export * from "./sms-templates";
 export * from "./customer-sms-templates";
 export * from "./config/product-types";

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { bdPhoneSchema, nullableBdPhone, nullableEmail, nullableString, paginationQuerySchema } from "./common";
-import { BD_DIVISIONS } from "./order";
+import { BD_DIVISIONS } from "../country/bd";
 
 export const customerRegisterSchema = z.object({
   name: z.string().min(1, "Enter your name").max(200),

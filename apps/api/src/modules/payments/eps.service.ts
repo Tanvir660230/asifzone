@@ -4,6 +4,7 @@ import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
+import { BD_COUNTRY_CODE, BD_DEFAULT_GATEWAY_CITY } from "@clothing-brand/shared";
 
 const BASE_URL = env.eps.sandbox ? "https://sandboxpgapi.eps.com.bd/v1" : "https://pgapi.eps.com.bd/v1";
 
@@ -190,10 +191,10 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
     customerEmail: params.customerEmail || "no-reply@example.com",
     CustomerAddress: params.customerAddress,
     CustomerAddress2: "",
-    CustomerCity: params.customerCity || "Dhaka",
-    CustomerState: params.customerState || "Dhaka",
+    CustomerCity: params.customerCity || BD_DEFAULT_GATEWAY_CITY,
+    CustomerState: params.customerState || BD_DEFAULT_GATEWAY_CITY,
     CustomerPostcode: "1000",
-    CustomerCountry: "BD",
+    CustomerCountry: BD_COUNTRY_CODE,
     CustomerPhone: params.customerPhone,
     ShipmentName: "",
     ShipmentAddress: "",

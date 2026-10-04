@@ -18,7 +18,7 @@ import {
   History,
   Radar,
 } from "lucide-react";
-import { normalizeBdPhone } from "@clothing-brand/shared";
+import { toBdInternationalDigits } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,8 +44,7 @@ interface CustomerDetailPanelProps {
 }
 
 function waLink(phone: string, message: string): string {
-  const local = normalizeBdPhone(phone);
-  return `https://wa.me/880${local.slice(1)}?text=${encodeURIComponent(message)}`;
+  return `https://wa.me/${toBdInternationalDigits(phone)}?text=${encodeURIComponent(message)}`;
 }
 
 export function CustomerDetailPanel({ customerId: id, onClose, variant = "page", focusSms }: CustomerDetailPanelProps) {

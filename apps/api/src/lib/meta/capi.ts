@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import type { Request } from "express";
-import { normalizeBdPhone } from "@clothing-brand/shared";
+import { isBdMobileLocal, normalizeBdPhone, toBdInternationalDigits } from "@clothing-brand/shared";
 import { env } from "../../config/env";
 import { liveProvidersEnabled } from "../provider-guard";
 
@@ -81,7 +81,7 @@ export function normalizeEmail(email: string): string {
 /** Meta wants digits only, country code included, no leading "+" or trunk 0 — 01712345678 → 8801712345678. */
 export function normalizePhone(phone: string): string | null {
   const local = normalizeBdPhone(phone);
-  return /^01\d{9}$/.test(local) ? `880${local.slice(1)}` : null;
+  return isBdMobileLocal(local) ? toBdInternationalDigits(local) : null;
 }
 
 /** Names, city, state: lowercase with punctuation and whitespace stripped. Unicode-aware so a

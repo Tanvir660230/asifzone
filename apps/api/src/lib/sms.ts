@@ -1,4 +1,4 @@
-import { normalizeBdPhone } from "@clothing-brand/shared";
+import { toBdInternationalDigits } from "@clothing-brand/shared";
 import { env } from "../config/env";
 import { liveProvidersEnabled } from "./provider-guard";
 import { logger } from "./observability/logger";
@@ -27,11 +27,11 @@ export const SMS_TIMEOUT_MS = 20_000;
 
 // BulkSMSBD expects the international "8801XXXXXXXXX" form. Phones are validated/normalized to
 // local "01XXXXXXXXX" at every input (see bdPhoneSchema in packages/shared/src/schemas/common.ts),
-// but normalizeBdPhone runs again here as a defense against rows written before that validation
+// but normalization runs again here (toBdInternationalDigits) as a defense against rows written before that validation
 // existed — otherwise a stray "+880..."/"00880..." value stored back then would silently fail to
 // send forever, since BulkSMSBD returns HTTP 200 even on a rejected number.
 function toBulkSmsBdNumber(phone: string): string {
-  return `88${normalizeBdPhone(phone)}`;
+  return toBdInternationalDigits(phone);
 }
 
 // No BULKSMSBD_API_KEY configured yet: log instead of sending, same fallback spirit as

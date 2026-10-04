@@ -21,7 +21,7 @@ import {
   ArrowUpDown,
   UserX,
 } from "lucide-react";
-import { BD_ALL_DISTRICTS, normalizeBdPhone, type CustomerTag } from "@clothing-brand/shared";
+import { BD_ALL_DISTRICTS, type CustomerTag, toBdInternationalDigits } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -92,8 +92,7 @@ function initials(name: string): string {
 }
 
 function waLink(phone: string): string {
-  const local = normalizeBdPhone(phone);
-  return `https://wa.me/880${local.slice(1)}`;
+  return `https://wa.me/${toBdInternationalDigits(phone)}`;
 }
 
 function CustomerCardSkeleton({ first = false }: { first?: boolean }) {

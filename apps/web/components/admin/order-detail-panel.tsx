@@ -1,6 +1,6 @@
 "use client";
 
-import { addDays, businessDate, businessDayStartUtc, canTransitionOrder, formatVariantLabel, formatVariantSuffix } from "@clothing-brand/shared";
+import { addDays, businessDate, businessDayStartUtc, canTransitionOrder, formatVariantLabel, formatVariantSuffix, toBdInternationalDigits } from "@clothing-brand/shared";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,7 +41,6 @@ import type {
 import {
   updateOrderDetailsSchema,
   adjustOrderPriceSchema,
-  normalizeBdPhone,
   BD_ALL_DISTRICTS,
   BD_AREAS_BY_DISTRICT,
   BD_ALL_AREA_OPTIONS,
@@ -128,8 +127,7 @@ function suggestedNextStatus(current: OrderStatus): OrderStatus | null {
 }
 
 function waLink(phone: string, message: string): string {
-  const local = normalizeBdPhone(phone);
-  return `https://wa.me/880${local.slice(1)}?text=${encodeURIComponent(message)}`;
+  return `https://wa.me/${toBdInternationalDigits(phone)}?text=${encodeURIComponent(message)}`;
 }
 
 interface OrderDetailPanelProps {

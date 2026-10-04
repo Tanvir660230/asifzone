@@ -3,6 +3,7 @@ import { AppError } from "../../lib/app-error";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
+import { BD_COUNTRY_NAME, BD_DEFAULT_GATEWAY_CITY } from "@clothing-brand/shared";
 
 const BASE_URL = env.sslcommerz.isLive
   ? "https://securepay.sslcommerz.com"
@@ -47,9 +48,9 @@ export async function initSslcommerzSession(params: InitSessionParams): Promise<
     cus_name: params.customerName,
     cus_email: params.customerEmail || "no-reply@example.com",
     cus_add1: params.customerAddress,
-    cus_city: "Dhaka",
+    cus_city: BD_DEFAULT_GATEWAY_CITY,
     cus_postcode: "1000",
-    cus_country: "Bangladesh",
+    cus_country: BD_COUNTRY_NAME,
     cus_phone: params.customerPhone,
     shipping_method: "NO",
     product_name: "Order " + params.orderNumber,
