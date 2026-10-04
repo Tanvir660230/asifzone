@@ -33,6 +33,7 @@ import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { TAG_META } from "@/lib/customer-tags";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 interface CustomerDetailPanelProps {
   customerId: string;
@@ -48,6 +49,7 @@ function waLink(phone: string, message: string): string {
 }
 
 export function CustomerDetailPanel({ customerId: id, onClose, variant = "page", focusSms }: CustomerDetailPanelProps) {
+  const { sms: smsAvailable } = useProviderCapabilities(); // Phase 12 D-4: the SMS composer only when SMS is configured
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [pointsDelta, setPointsDelta] = useState("");
@@ -252,6 +254,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
         </Card>
       )}
 
+      {smsAvailable && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -287,6 +290,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           )}
         </CardContent>
       </Card>
+      )}
 
       {customer.smsHistory.length > 0 && (
         <Card>

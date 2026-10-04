@@ -77,6 +77,7 @@ import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, 
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -368,6 +369,8 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
+  // Phase 12 D-4: courier actions are offered only when the courier provider is configured on this deployment.
+  const { courier: courierAvailable } = useProviderCapabilities();
   const canDeleteOrders = adminCan(currentAdmin?.admin, "orders.delete");
   const debouncedSearch = useDebouncedValue(search, 350);
 
@@ -875,6 +878,7 @@ export default function OrdersPage() {
   // running into it.
   function renderDeliveryScoreBadge(order: AdminOrderListItem) {
     if (!order.deliveryScore) {
+      if (!courierAvailable) return null;
       const isChecking = rowCheckDeliveryScoreMutation.isPending && rowCheckDeliveryScoreMutation.variables?.[0] === order.id;
       return (
         <button
@@ -921,9 +925,11 @@ export default function OrdersPage() {
     return [
       { label: "View order", icon: Eye, onClick: () => setDrawerOrderId(order.id) },
       { label: "Print label", icon: Printer, onClick: () => handlePrintLabels([order.id]) },
-      ...(!order.courierConsignmentId
-        ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
-        : [{ label: "Sync courier status", icon: RefreshCw, onClick: () => syncCourierMutation.mutate(order.id) }]),
+      ...(!courierAvailable
+        ? []
+        : !order.courierConsignmentId
+          ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
+          : [{ label: "Sync courier status", icon: RefreshCw, onClick: () => syncCourierMutation.mutate(order.id) }]),
       ...(canDeleteOrders
         ? [{ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => handleDelete(order.orderNumber, order.id) }]
         : []),
@@ -1620,6 +1626,8 @@ export default function OrdersPage() {
                     Apply
                   </Button>
                 </div>
+                {courierAvailable && (
+                <>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1636,9 +1644,12 @@ export default function OrdersPage() {
                 >
                   <RefreshCw size={14} /> Sync courier status
                 </Button>
+                </>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
+                  hidden={!courierAvailable}
                   disabled={bulkCheckDeliveryScoreMutation.isPending}
                   onClick={handleBulkCheckDeliveryScore}
                 >

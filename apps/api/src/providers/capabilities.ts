@@ -125,10 +125,14 @@ export interface Providers {
   payments: PaymentGateways;
 }
 
-/** Booleans-only view for admin/ops (never a credential, never a value). */
+/** OWNER view for admin/ops: booleans and credential variable NAMES only (never a value). */
 export interface ProviderStatusEntry {
   capability: "payments" | "sms" | "email" | "push" | "courier" | "serverEvents";
   provider: string;
   enabled: boolean;
   credentialsPresent: boolean;
+  /** Selected AND credentials present — whether the UI offers this capability's actions (Phase 12 D-4). */
+  available: boolean;
+  /** Names of the credential variables still unset (e.g. "STEADFAST_SECRET_KEY"). */
+  missingCredentials: string[];
 }

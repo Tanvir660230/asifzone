@@ -25,11 +25,16 @@ export function ProviderStatusPanel() {
       {data && (
         <ul className="divide-y divide-ink-100 rounded-lg border border-ink-100">
           {data.providers.map((p) => {
-            const state = !p.enabled ? "Off" : p.credentialsPresent ? "Connected" : "Missing credentials";
-            const tone = !p.enabled ? "text-ink-400" : p.credentialsPresent ? "text-success-600" : "text-warning-600";
+            const state = !p.enabled ? "Off" : p.available ? "Connected" : "Missing credentials";
+            const tone = !p.enabled ? "text-ink-400" : p.available ? "text-success-600" : "text-warning-600";
             return (
               <li key={p.capability} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
-                <span className="text-ink-900">{CAPABILITY_LABEL[p.capability]}</span>
+                <span className="flex flex-col">
+                  <span className="text-ink-900">{CAPABILITY_LABEL[p.capability]}</span>
+                  {p.missingCredentials.length > 0 && (
+                    <span className="text-xs text-ink-400">Set on the server: {p.missingCredentials.join(", ")}</span>
+                  )}
+                </span>
                 <span className="flex items-center gap-3">
                   <span className="text-ink-500">{p.enabled ? p.provider : "—"}</span>
                   <span className={`text-xs font-medium ${tone}`}>{state}</span>

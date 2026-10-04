@@ -138,3 +138,36 @@ export function validateProviderSelection(raw: RawProviderSelection, hasValue: (
   if (all.length) throw new ProviderConfigError(all);
   return selection;
 }
+
+/** The credential variables a provider still lacks — NAMES only, never values. Empty for "none". */
+export function missingCredentials(id: string, hasValue: (envVar: string) => boolean): string[] {
+  if (id === "none") return [];
+  return (REQUIRED_CREDENTIALS[id as keyof typeof REQUIRED_CREDENTIALS] ?? []).filter((v) => !hasValue(v));
+}
+
+export interface CapabilityAvailability {
+  sms: boolean;
+  email: boolean;
+  push: boolean;
+  courier: boolean;
+  payments: { SSLCOMMERZ: boolean; EPS_PG: boolean };
+}
+
+/**
+ * Phase 12 D-4: is each capability usable on this deployment — selected (not "none", and for gateways listed in
+ * PAYMENT_GATEWAYS) AND its credentials present. The UI offers a provider action only when this is true; the store's
+ * own business toggles (StoreSetting) still apply on top. Booleans only.
+ */
+export function capabilityAvailability(selection: ProviderSelection, hasValue: (envVar: string) => boolean): CapabilityAvailability {
+  const ok = (id: string) => id !== "none" && missingCredentials(id, hasValue).length === 0;
+  return {
+    sms: ok(selection.sms),
+    email: ok(selection.email),
+    push: ok(selection.push),
+    courier: ok(selection.courier),
+    payments: {
+      SSLCOMMERZ: selection.paymentGateways.includes("sslcommerz") && ok("sslcommerz"),
+      EPS_PG: selection.paymentGateways.includes("eps") && ok("eps"),
+    },
+  };
+}

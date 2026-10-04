@@ -26,7 +26,7 @@ import * as sslcommerz from "./payment/sslcommerz";
 import * as eps from "./payment/eps";
 import { gatewayIdForPaymentMethod } from "./capabilities";
 import { ProviderNotConfiguredError } from "./errors";
-import { buildProviders, getProviders, providerStatus, setProviderSelectionForTests } from "./registry";
+import { buildProviders, capabilities, getProviders, providerStatus, setProviderSelectionForTests } from "./registry";
 import { resolveProviderSelection, type RawProviderSelection } from "./selection";
 
 const UNSET: RawProviderSelection = { paymentGateways: "", sms: "", email: "", courier: "", push: "" };
@@ -117,11 +117,51 @@ describe("provider status — booleans only", () => {
       const json = JSON.stringify(status);
       expect(json).not.toContain(sentinel.apiKey);
       expect(json).not.toContain(sentinel.senderId);
-      expect(status.find((s) => s.capability === "sms")).toEqual({ capability: "sms", provider: "bulksmsbd", enabled: true, credentialsPresent: true });
-      expect(status.find((s) => s.capability === "courier")).toEqual({ capability: "courier", provider: "none", enabled: false, credentialsPresent: false });
-      for (const entry of status) expect(Object.keys(entry).sort()).toEqual(["capability", "credentialsPresent", "enabled", "provider"]);
+      expect(status.find((s) => s.capability === "sms")).toEqual({ capability: "sms", provider: "bulksmsbd", enabled: true, credentialsPresent: true, available: true, missingCredentials: [] });
+      expect(status.find((s) => s.capability === "courier")).toEqual({ capability: "courier", provider: "none", enabled: false, credentialsPresent: false, available: false, missingCredentials: [] });
+      for (const entry of status) expect(Object.keys(entry).sort()).toEqual(["available", "capability", "credentialsPresent", "enabled", "missingCredentials", "provider"]);
     } finally {
       Object.assign(env.bulkSmsBd, before);
     }
+  });
+});
+
+describe("provider availability (D-4) — what the UI may offer", () => {
+  it("a selected provider with missing credentials is unavailable, and the status names the missing variables (never values)", () => {
+    const before = { ...env.steadfast };
+    Object.assign(env.steadfast, { apiKey: "SENTINEL-COURIER-KEY-31f", secretKey: "" });
+    try {
+      setProviderSelectionForTests(sel({ courier: "steadfast" }));
+      expect(capabilities().courier).toBe(false);
+      const courier = providerStatus().find((s) => s.capability === "courier")!;
+      expect(courier).toMatchObject({ provider: "steadfast", enabled: true, credentialsPresent: false, available: false, missingCredentials: ["STEADFAST_SECRET_KEY"] });
+      expect(JSON.stringify(providerStatus())).not.toContain("SENTINEL-COURIER-KEY-31f");
+      Object.assign(env.steadfast, { secretKey: "SENTINEL-COURIER-SECRET-9" });
+      expect(capabilities().courier).toBe(true);
+      expect(JSON.stringify({ c: capabilities(), s: providerStatus() })).not.toMatch(/SENTINEL/);
+    } finally {
+      Object.assign(env.steadfast, before);
+    }
+  });
+
+  it("an explicitly disabled capability or a gateway left out of PAYMENT_GATEWAYS is unavailable even with credentials", () => {
+    const before = { sms: { ...env.bulkSmsBd }, ssl: { ...env.sslcommerz } };
+    Object.assign(env.bulkSmsBd, { apiKey: "k", senderId: "s" });
+    Object.assign(env.sslcommerz, { storeId: "id", storePassword: "pw" });
+    try {
+      setProviderSelectionForTests(sel({ sms: "none", paymentGateways: "eps" }));
+      expect(capabilities()).toMatchObject({ sms: false, payments: { SSLCOMMERZ: false } });
+      setProviderSelectionForTests(sel({}));
+      expect(capabilities()).toMatchObject({ sms: true, payments: { SSLCOMMERZ: true } });
+    } finally {
+      Object.assign(env.bulkSmsBd, before.sms);
+      Object.assign(env.sslcommerz, before.ssl);
+    }
+  });
+
+  it("capabilities() is booleans only", () => {
+    const c = capabilities();
+    expect(Object.keys(c).sort()).toEqual(["courier", "email", "payments", "push", "sms"]);
+    for (const v of [c.sms, c.email, c.push, c.courier, c.payments.SSLCOMMERZ, c.payments.EPS_PG]) expect(typeof v).toBe("boolean");
   });
 });

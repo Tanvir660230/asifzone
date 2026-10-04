@@ -120,6 +120,11 @@ describe("second store — provider selection is configuration", () => {
     expect(p.payments.forNewSession("EPS_PG").id).toBe("EPS_PG");
     await expect(p.courier.balance()).rejects.toBeInstanceOf(ProviderNotConfiguredError);
 
+    // D-4: checkout learns which gateways can work (booleans only) — SSLCommerz is not offered for Store B.
+    const pub = await request(app).get("/api/settings");
+    expect(pub.body.settings.onlineGateways).toEqual({ SSLCOMMERZ: false, EPS_PG: expect.any(Boolean) });
+    expect(JSON.stringify(pub.body)).not.toMatch(/STORE_ID|PASSWORD|API_KEY|apiKey|storePassword/);
+
     const status = Object.fromEntries(providerStatus().map((x) => [x.capability, x]));
     expect(status.sms).toMatchObject({ provider: "none", enabled: false });
     expect(status.payments).toMatchObject({ provider: "eps", enabled: true });

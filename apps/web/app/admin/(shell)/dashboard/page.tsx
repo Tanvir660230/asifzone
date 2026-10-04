@@ -51,6 +51,7 @@ import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as categoriesApi from "@/lib/api/categories";
 import { computeTrendPct, formatPrice, formatStoreDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 type AnalyticsTab = "sales" | "catalog" | "marketing" | "customers";
 
@@ -86,9 +87,11 @@ export default function DashboardPage() {
   const { data: orderStats } = useQuery({ queryKey: ["admin-order-stats"], queryFn: adminOrdersApi.getOrderStats });
   // Hidden (not shown as an error toast) whenever Steadfast isn't configured for this store —
   // getSteadfastBalance throws in that case, and a missing balance tile is a perfectly normal state.
+  const { courier: courierAvailable } = useProviderCapabilities(); // Phase 12 D-4
   const { data: balanceData } = useQuery({
     queryKey: ["steadfast-balance"],
     queryFn: adminOrdersApi.getSteadfastBalance,
+    enabled: courierAvailable,
     retry: false,
     staleTime: 60_000,
   });
@@ -321,7 +324,7 @@ export default function DashboardPage() {
                   icon={<PhoneCall size={22} />}
                   tone={orderStats.followUpDue > 0 ? "warning" : "default"}
                 />
-                {balanceData && (
+                {courierAvailable && balanceData && (
                   <StatTile
                     label="Steadfast balance"
                     value={formatPrice(balanceData.balance)}

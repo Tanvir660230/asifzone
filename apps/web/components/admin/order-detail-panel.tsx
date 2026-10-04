@@ -70,6 +70,7 @@ import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { getStoreConfig } from "@/lib/store-config";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 const TERMINAL_ORDER_STATUSES: OrderStatus[] = ["DELIVERED", "PARTIALLY_DELIVERED", "CANCELLED", "REFUNDED", "RETURNED"];
 
@@ -150,6 +151,8 @@ const PAYMENT_PROVIDER_LABELS: Record<string, string> = {
 };
 
 export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: OrderDetailPanelProps) {
+  // Phase 12 D-4: courier actions only when the courier provider is configured on this deployment.
+  const { courier: courierAvailable } = useProviderCapabilities();
   const queryClient = useQueryClient();
   const [statusNote, setStatusNote] = useState("");
   const [statusPickerOpen, setStatusPickerOpen] = useState(false);
@@ -1096,14 +1099,16 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
                     </button>
                   )}
                   <div className="ml-auto flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={refreshCourierMutation.isPending || !!order.deletedAt}
-                      onClick={() => refreshCourierMutation.mutate()}
-                    >
-                      Sync Now
-                    </Button>
+                    {courierAvailable && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={refreshCourierMutation.isPending || !!order.deletedAt}
+                        onClick={() => refreshCourierMutation.mutate()}
+                      >
+                        Sync Now
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -1147,7 +1152,9 @@ export function OrderDetailPanel({ orderId: id, onClose, variant = "page" }: Ord
             ) : (
               <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm text-ink-500">Not yet booked with a courier.</p>
+                {!courierAvailable && <p className="text-xs text-ink-400">Courier booking isn&apos;t configured on this server.</p>}
                 <Button
+                  hidden={!courierAvailable}
                   size="sm"
                   disabled={bookCourierMutation.isPending || !!order.deletedAt}
                   onClick={async () => {

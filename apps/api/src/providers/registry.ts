@@ -15,7 +15,14 @@ import * as sslcommerz from "./payment/sslcommerz";
 import * as webPush from "./push/web-push";
 import * as bulksmsbd from "./sms/bulksmsbd";
 import { ProviderNotConfiguredError } from "./errors";
-import { REQUIRED_CREDENTIALS, validateProviderSelection, type PaymentGatewayKey, type ProviderSelection } from "./selection";
+import {
+  capabilityAvailability,
+  missingCredentials,
+  validateProviderSelection,
+  type CapabilityAvailability,
+  type PaymentGatewayKey,
+  type ProviderSelection,
+} from "./selection";
 import type {
   CourierProvider,
   EmailSender,
@@ -157,27 +164,41 @@ export function setProviderSelectionForTests(next: ProviderSelection | null): vo
   providers = next ? buildProviders(next) : null;
 }
 
-/** Booleans only — which provider backs each capability and whether its credentials are present. */
+/** Phase 12 D-4: which capabilities are usable (selected AND credentials present) — booleans only, safe for any admin. */
+export function capabilities(): CapabilityAvailability {
+  return capabilityAvailability(selection ?? validateProviderConfig(), hasValue);
+}
+
+/** Booleans and variable NAMES only — which provider backs each capability, whether it is usable, and which credential
+ * variables are missing (never a value). OWNER-only (settings.manage). */
 export function providerStatus(): ProviderStatusEntry[] {
   const current = selection ?? validateProviderConfig();
-  const has = (id: string) => (REQUIRED_CREDENTIALS[id as keyof typeof REQUIRED_CREDENTIALS] ?? []).every(hasValue);
-  const single = (capability: ProviderStatusEntry["capability"], id: string): ProviderStatusEntry => ({
-    capability,
-    provider: id,
-    enabled: id !== "none",
-    credentialsPresent: id === "none" ? false : has(id),
-  });
+  const usable = capabilityAvailability(current, hasValue);
+  const single = (capability: "sms" | "email" | "push" | "courier", id: string): ProviderStatusEntry => {
+    const missing = missingCredentials(id, hasValue);
+    return { capability, provider: id, enabled: id !== "none", credentialsPresent: id !== "none" && missing.length === 0, available: usable[capability], missingCredentials: missing };
+  };
+  const gatewayMissing = current.paymentGateways.flatMap((g) => missingCredentials(g, hasValue));
   return [
     {
       capability: "payments",
       provider: current.paymentGateways.join(",") || "none",
       enabled: current.paymentGateways.length > 0,
-      credentialsPresent: current.paymentGateways.length > 0 && current.paymentGateways.every(has),
+      credentialsPresent: current.paymentGateways.length > 0 && gatewayMissing.length === 0,
+      available: usable.payments.SSLCOMMERZ || usable.payments.EPS_PG,
+      missingCredentials: gatewayMissing,
     },
     single("sms", current.sms),
     single("email", current.email),
     single("push", current.push),
     single("courier", current.courier),
-    { capability: "serverEvents", provider: "meta", enabled: metaCapi.isMetaCapiEnabled(), credentialsPresent: Boolean(env.meta.pixelId && env.meta.accessToken) },
+    {
+      capability: "serverEvents",
+      provider: "meta",
+      enabled: metaCapi.isMetaCapiEnabled(),
+      credentialsPresent: Boolean(env.meta.pixelId && env.meta.accessToken),
+      available: metaCapi.isMetaCapiEnabled(),
+      missingCredentials: [],
+    },
   ];
 }
