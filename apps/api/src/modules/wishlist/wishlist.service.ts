@@ -1,5 +1,4 @@
 import { prisma } from "../../config/prisma";
-import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
@@ -9,6 +8,7 @@ import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS, PURCHASABLE_PRODUCT_WHER
 import { formatMoney } from "@clothing-brand/shared";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
 
 // A customer's wishlist shows the storefront's view of each product. (`include: { product: … }` used to return the whole row,
 // including the product's cost price and tax rate, and every variant's cost price.)
@@ -68,7 +68,7 @@ export async function notifyPriceDrop(productId: string, newPrice: number) {
     try {
       const productUrl = `${env.webOrigin}/product/${item.product.slug}`;
       const oldPrice = Number(item.priceAtAdd);
-      await sendMail({
+      await getProviders().email.send({
         // Non-null by the query filter above — Prisma's include type just can't express that.
         to: item.customer.email!,
         subject: `Price drop: ${item.product.name}`,

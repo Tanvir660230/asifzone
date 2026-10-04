@@ -1,12 +1,11 @@
 import crypto from "crypto";
 import type { Request } from "express";
 import { isBdMobileLocal, normalizeBdPhone, toBdInternationalDigits } from "@clothing-brand/shared";
-import { env } from "../../config/env";
-import { liveProvidersEnabled } from "../provider-guard";
 
-/** Low-level Meta Conversions API client — config gate, Meta's customer-information normalization
- * + SHA-256 hashing rules, and the one HTTP call to the Graph API. Knows nothing about orders; see
- * purchase.ts for the Purchase event built on top of this. */
+/** Meta Conversions API payload helpers — Meta's customer-information normalization + SHA-256 hashing rules and the
+ * event shapes. The config gate and the one HTTP call to the Graph API are the provider
+ * (providers/events/meta-capi.ts, reached through providers/registry.ts). Knows nothing about orders; see purchase.ts
+ * for the Purchase event built on top of this. */
 
 /** Per-request signals only the shopper's own browser request carries. Captured at checkout time
  * (never at settlement — a gateway IPN or the reconciliation cron has no shopper browser behind it)
@@ -47,27 +46,7 @@ export interface MetaServerEvent {
   custom_data?: Record<string, unknown>;
 }
 
-/** Thrown for a failed send. `retryable` separates "try again later" (network, timeout, 5xx, 429,
- * Meta's own is_transient flag) from a payload/credential problem that no retry will ever fix. */
-export class MetaApiError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-  ) {
-    super(message);
-    this.name = "MetaApiError";
-  }
-}
 
-const REQUEST_TIMEOUT_MS = 8000;
-
-/** Configured AND allowed to send from this environment — see env.meta for why non-production
- * additionally requires a test event code. */
-export function isMetaCapiEnabled(): boolean {
-  const { pixelId, accessToken, testEventCode } = env.meta;
-  if (!pixelId || !accessToken || !liveProvidersEnabled()) return false;
-  return env.nodeEnv === "production" || Boolean(testEventCode);
-}
 
 export function sha256(value: string): string {
   return crypto.createHash("sha256").update(value, "utf8").digest("hex");
@@ -153,44 +132,4 @@ export function buildUserData(customer: MetaCustomerInfo, context: MetaRequestCo
   };
   // Meta rejects empty strings/arrays in user_data — drop anything that ended up unset.
   return Object.fromEntries(Object.entries(userData).filter(([, v]) => v !== undefined && v !== "")) as MetaUserData;
-}
-
-interface GraphErrorBody {
-  error?: { message?: string; code?: number; error_subcode?: number; is_transient?: boolean; fbtrace_id?: string };
-  events_received?: number;
-}
-
-/** POSTs one event to /{pixel-id}/events with a hard timeout. The access token goes in the JSON
- * body, not the query string, so it can't end up in any proxy/access log. Error messages carry
- * Meta's own error code/message/fbtrace_id only — never the request payload. */
-export async function sendMetaEvent(event: MetaServerEvent): Promise<{ eventsReceived: number }> {
-  const { pixelId, accessToken, apiVersion, testEventCode } = env.meta;
-  const url = `https://graph.facebook.com/${apiVersion}/${pixelId}/events`;
-
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        data: [event],
-        access_token: accessToken,
-        ...(testEventCode ? { test_event_code: testEventCode } : {}),
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (err) {
-    throw new MetaApiError(`request failed: ${err instanceof Error ? err.message : String(err)}`, true);
-  }
-
-  const body = (await res.json().catch(() => ({}))) as GraphErrorBody;
-  if (!res.ok) {
-    const e = body.error ?? {};
-    const retryable = res.status >= 500 || res.status === 429 || e.is_transient === true;
-    throw new MetaApiError(
-      `HTTP ${res.status} code=${e.code ?? "?"}/${e.error_subcode ?? "-"} "${e.message ?? "unknown error"}" fbtrace_id=${e.fbtrace_id ?? "-"}`,
-      retryable,
-    );
-  }
-  return { eventsReceived: body.events_received ?? 0 };
 }

@@ -48,7 +48,7 @@ export const env = {
     isLive: process.env.SSLCOMMERZ_IS_LIVE === "true",
   },
   // Optional — without these, EPS_PG checkout returns a clear "could not start payment session"
-  // error (see eps.service.ts's getEpsToken). hashKey is the base64 HMAC signing key EPS issues
+  // error (see providers/payment/eps.ts's getEpsToken). hashKey is the base64 HMAC signing key EPS issues
   // alongside the username/password/merchantId/storeId — contact EPS support (info@eps.com.bd) for
   // sandbox or live credentials.
   eps: {
@@ -109,5 +109,14 @@ export const env = {
     secretKey: process.env.STEADFAST_SECRET_KEY ?? "",
     baseUrl: process.env.STEADFAST_BASE_URL ?? "https://portal.packzy.com/api/v1",
     webhookToken: process.env.STEADFAST_WEBHOOK_TOKEN ?? "",
+  },
+  // Phase 12 W5 (docs/PHASE_12_IMPLEMENTATION_CONTRACT.md §15): which concrete provider backs each capability. Raw strings,
+  // parsed and validated only by providers/selection.ts; unset or blank = today's behaviour (see DEFAULT_SELECTION there).
+  providers: {
+    paymentGateways: process.env.PAYMENT_GATEWAYS ?? "",
+    sms: process.env.SMS_PROVIDER ?? "",
+    email: process.env.EMAIL_PROVIDER ?? "",
+    courier: process.env.COURIER_PROVIDER ?? "",
+    push: process.env.PUSH_PROVIDER ?? "",
   },
 };

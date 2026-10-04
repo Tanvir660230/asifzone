@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, vi } from "vitest";
 import request from "supertest";
 
-vi.mock("../../lib/mailer", () => ({ sendMail: async () => undefined }));
+vi.mock("../../providers/email/resend", () => ({ sendMail: async () => undefined }));
 
 import crypto from "node:crypto";
 import { app } from "../../app";

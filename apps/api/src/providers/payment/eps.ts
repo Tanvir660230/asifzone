@@ -22,8 +22,22 @@ function signHash(value: string): string {
  * hours even after the retry landed. `agent: false` opts every EPS call out of that pool entirely and
  * opens a fresh, unpooled TCP+TLS connection per call — the same thing a one-off curl does, which never
  * reproduced the failure no matter how many times it was run back-to-back. */
+/** Phase 12 W6 (contract P-2): each EPS attempt is bounded. 20 s matches the other provider timeouts. The timer destroys the
+ * request, which rejects this attempt like any other transport failure — the existing attempt loop in fetchEpsJson
+ * (3 attempts, 300 ms / 1 s apart) is unchanged, so the worst case is now bounded (~61 s) instead of unbounded. */
+export const EPS_TIMEOUT_MS = 20_000;
+
 function fetchEpsJsonOnce<T>(url: string, init: { method?: string; headers: Record<string, string>; body?: string }): Promise<T> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolveOuter, rejectOuter) => {
+    const timer: { id?: NodeJS.Timeout } = {};
+    const resolve = (value: T) => {
+      clearTimeout(timer.id);
+      resolveOuter(value);
+    };
+    const reject = (err: unknown) => {
+      clearTimeout(timer.id);
+      rejectOuter(err);
+    };
     const target = new URL(url);
     const req = https.request(
       {
@@ -34,6 +48,7 @@ function fetchEpsJsonOnce<T>(url: string, init: { method?: string; headers: Reco
         agent: false,
       },
       (res) => {
+        res.on("error", reject);
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("end", () => {
@@ -46,6 +61,12 @@ function fetchEpsJsonOnce<T>(url: string, init: { method?: string; headers: Reco
       },
     );
     req.on("error", reject);
+    timer.id = setTimeout(() => {
+      // Named TimeoutError so the Phase 11 logger classifies it as provider_timeout.
+      const err = new Error(`EPS request timed out after ${EPS_TIMEOUT_MS} ms`);
+      err.name = "TimeoutError";
+      req.destroy(err);
+    }, EPS_TIMEOUT_MS);
     if (init.body) req.write(init.body);
     req.end();
   });

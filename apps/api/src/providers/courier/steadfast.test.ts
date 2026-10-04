@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { env } from "../config/env";
+import { env } from "../../config/env";
 import { getSteadfastFraudCheck } from "./steadfast";
 
 // Real response bodies captured 2026-10-03 (phone redacted).

@@ -7,8 +7,8 @@ import { z } from "zod";
 import { prisma } from "../../config/prisma";
 import { deliverAdminOrderAlertSms, deliverCustomerOrderSms } from "../../lib/order-sms";
 import { deliverPaymentConfirmationEmail } from "../../lib/order-mailer";
-import { isMetaCapiEnabled } from "../../lib/meta/capi";
 import { processMetaPurchase } from "../../lib/meta/purchase";
+import { getProviders } from "../../providers/registry";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
 
@@ -73,7 +73,7 @@ export const OUTBOX_CONSUMERS = {
     payload: orderIdPayload.extend({ context: z.record(z.string(), z.unknown()) }),
     idempotency: "Outbox row claim + Meta event_id purchase_<orderNumber> (Meta keeps one event per id for 48 h).",
     async handle({ orderId, context }) {
-      if (!isMetaCapiEnabled()) return "disabled";
+      if (!getProviders().serverEvents.enabled()) return "disabled";
       await processMetaPurchase({ orderId, context });
       return "sent";
     },

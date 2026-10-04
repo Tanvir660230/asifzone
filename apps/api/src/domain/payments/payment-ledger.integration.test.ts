@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 // The courier client is replaced so booking never reaches Steadfast; it records the cod_amount it was asked to collect.
 const booked = vi.hoisted(() => [] as Array<{ invoice: string; codAmount: number }>);
-vi.mock("../../lib/steadfast", () => ({
+vi.mock("../../providers/courier/steadfast", () => ({
   createSteadfastConsignment: vi.fn(async (input: { invoice: string; codAmount: number }) => {
     booked.push({ invoice: input.invoice, codAmount: input.codAmount });
     return { consignment_id: Date.now(), tracking_code: `T${Date.now()}`, status: "in_review", tracking_link: null };

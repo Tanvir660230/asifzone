@@ -17,9 +17,13 @@ const EMAIL = /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9])[A-Za-z0-9.-]*\.
 // A JWT or a long opaque hex token appearing inside free text (e.g. an error message echoing a URL).
 const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
 const LONG_HEX = /\b[a-f0-9]{48,}\b/gi;
+// Phase 12 W7: a credential carried in a URL query string (BulkSMSBD's api_key, SSLCommerz's store_passwd, …) — masked
+// wherever a URL ends up in free text (error messages, stacks, provider diagnostics), whatever the value's shape.
+export const CREDENTIAL_PARAM = /([?&;](?:api[_-]?key|apikey|key|store_passwd|passw(?:or)?d|secret(?:[_-]?key)?|access_token|token|hash[_-]?key|signature)=)[^&\s"'#]+/gi;
 
 export function maskText(value: string): string {
   return value
+    .replace(CREDENTIAL_PARAM, "$1[redacted]")
     .replace(JWT, "[redacted-jwt]")
     .replace(LONG_HEX, "[redacted-token]")
     .replace(PHONE, (_m, a: string, _b: string, c: string) => `${a}******${c}`)

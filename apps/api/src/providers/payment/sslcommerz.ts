@@ -5,6 +5,11 @@ import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
 import { BD_COUNTRY_NAME, BD_DEFAULT_GATEWAY_CITY } from "@clothing-brand/shared";
 
+/** Phase 12 W6 (contract P-1): every SSLCommerz call is bounded. 20 s matches the other provider timeouts (SMS_TIMEOUT_MS,
+ * STEADFAST_TIMEOUT_MS, MAIL_TIMEOUT_MS). A timeout surfaces exactly like a network failure today: init → the same
+ * friendly "could not start the payment session" error, validation → null ("could not verify"). */
+export const SSLCOMMERZ_TIMEOUT_MS = 20_000;
+
 const BASE_URL = env.sslcommerz.isLive
   ? "https://securepay.sslcommerz.com"
   : "https://sandbox.sslcommerz.com";
@@ -65,6 +70,7 @@ export async function initSslcommerzSession(params: InitSessionParams): Promise<
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
+      signal: AbortSignal.timeout(SSLCOMMERZ_TIMEOUT_MS),
     });
     data = (await res.json()) as SslSessionResponse;
   } catch (err) {
@@ -106,7 +112,9 @@ export async function validateSslcommerzTransaction(valId: string): Promise<SslV
 
   let data: { status?: string; tran_id?: string; amount?: string };
   try {
-    const res = await fetch(`${BASE_URL}/validator/api/validationserverAPI.php?${query.toString()}`);
+    const res = await fetch(`${BASE_URL}/validator/api/validationserverAPI.php?${query.toString()}`, {
+      signal: AbortSignal.timeout(SSLCOMMERZ_TIMEOUT_MS),
+    });
     data = (await res.json()) as { status?: string; tran_id?: string; amount?: string };
   } catch (err) {
     // Same network/non-JSON failure mode as initSslcommerzSession — here it's already documented

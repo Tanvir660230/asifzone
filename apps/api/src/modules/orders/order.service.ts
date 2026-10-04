@@ -46,7 +46,6 @@ import { paginate } from "../../lib/paginate";
 import { notify } from "../../lib/notify";
 import type { CustomerTouchpoint } from "../../lib/order-sms";
 import { recordOutboxEvents, type OutboxIntent } from "../../domain/outbox/outbox";
-import { isMetaCapiEnabled } from "../../lib/meta/capi";
 import { incrementCouponUsage } from "../coupons/coupon.service";
 import { flashUnitsSold, priceProductsForDisplay, quoteCart, toQuoteDto, type PricedQuote, type PriceableProduct } from "../../domain/pricing/pricing.service";
 import { LEGACY_ZONE_KEYS, loadShippingZones } from "../../domain/pricing/pricing-config";
@@ -68,6 +67,7 @@ import {
 import type { MetaRequestContext } from "../../lib/meta/capi";
 import { getCurrency, getTimezone } from "../../domain/config/commerce-settings";
 import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
 
 const include = {
   items: true,
@@ -408,7 +408,7 @@ export async function insertOrderRecord(
     if (opts.gatewaySettlement) {
       intents.push({ aggregateType: "Order", aggregateId: created.id, eventType: "payment.settled.v1", consumer: "payment-receipt-email", eventKey: `order:${created.id}:paid`, payload: { orderId: created.id } });
     }
-    if (opts.metaContext && isMetaCapiEnabled()) {
+    if (opts.metaContext && getProviders().serverEvents.enabled()) {
       intents.push({ ...placed, consumer: "meta-capi-purchase", eventKey: `order:${created.id}`, payload: { orderId: created.id, context: { ...opts.metaContext } } });
     }
     await recordOutboxEvents(tx, intents);
@@ -1015,7 +1015,7 @@ export async function exportOrdersCsv(query: OrderListQuery): Promise<string> {
   return [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
-/** Steadfast exposes no per-order fee, only a merchant wallet balance (lib/steadfast.ts) — this is
+/** Steadfast exposes no per-order fee, only a merchant wallet balance (providers/courier/steadfast.ts) — this is
  * an admin-entered estimate of their return-leg fee (StoreSetting.courierReturnFeeDhaka/
  * OutsideDhaka), zone-matched the same way shippingFee is at checkout. Only called from the two
  * places that actually log a CourierLossEvent, not on every order lookup. */

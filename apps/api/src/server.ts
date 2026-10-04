@@ -14,10 +14,23 @@ import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.servic
 import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard";
 import { logger } from "./lib/observability/logger";
 import { captureError } from "./lib/observability/error-capture";
+import { validateProviderConfig } from "./providers/registry";
 
 let shuttingDown = false;
 
 async function main() {
+  // Phase 12 W5: refuse to start on an invalid provider selection (unknown name, or an explicitly selected provider
+  // without its credentials in production). The error names variables only. Failing here keeps /health/ready red, so
+  // docker/deploy.sh stops before the proxy switch.
+  const providers = validateProviderConfig();
+  logger.info("[providers] selection", {
+    sms: providers.sms,
+    email: providers.email,
+    courier: providers.courier,
+    push: providers.push,
+    paymentGateways: providers.paymentGateways.join(",") || "none",
+  });
+
   await prisma.$connect();
   await redis.connect().catch((err) => logger.warn("[redis] not connected yet:", { detail: err.message }));
 

@@ -1,8 +1,9 @@
-import { env } from "../config/env";
-import { AppError } from "./app-error";
-import { logger } from "./observability/logger";
+import { env } from "../../config/env";
+import { AppError } from "../../lib/app-error";
+import { logger } from "../../lib/observability/logger";
+import { CourierOutcomeUnknownError } from "../errors";
 
-interface CreateConsignmentInput {
+export interface CreateConsignmentInput {
   invoice: string;
   recipientName: string;
   recipientPhone: string;
@@ -11,7 +12,7 @@ interface CreateConsignmentInput {
   note?: string;
 }
 
-interface SteadfastConsignment {
+export interface SteadfastConsignment {
   consignment_id: number;
   invoice: string;
   tracking_code: string;
@@ -27,7 +28,7 @@ interface SteadfastEnvelope<T> {
   current_balance?: number;
 }
 
-interface SteadfastBulkResultItem {
+export interface SteadfastBulkResultItem {
   invoice: string;
   status?: string | number;
   consignment_id?: number;
@@ -74,16 +75,6 @@ function normalizeBulkResultItem(item: RawSteadfastBulkResultItem): SteadfastBul
 /** Every Steadfast call is bounded (Phase 9 D-5). */
 export const STEADFAST_TIMEOUT_MS = 20_000;
 
-/** A booking whose result we can't know: the request timed out, the connection dropped, or Steadfast answered 5xx —
- * it may or may not have created the consignment. The caller keeps its booking claim (no automatic re-booking) and the
- * order is flagged for an operator to check Steadfast before retrying (Phase 9 D-4). */
-export class CourierOutcomeUnknownError extends AppError {
-  readonly outcomeUnknown = true;
-  constructor(message: string) {
-    super(502, message, { code: "COURIER_OUTCOME_UNKNOWN" });
-    this.name = "CourierOutcomeUnknownError";
-  }
-}
 
 async function steadfastFetch(url: string, init: RequestInit, opts: { booking?: boolean } = {}): Promise<Response> {
   let res: Response;
@@ -120,7 +111,7 @@ async function readSteadfastResponse(res: Response): Promise<{ data: unknown; ra
   return { data, rawText };
 }
 
-// Unlike lib/sms.ts (which no-ops silently when unconfigured, since a missed SMS is low-stakes),
+// Unlike providers/sms/bulksmsbd.ts (which no-ops silently when unconfigured, since a missed SMS is low-stakes),
 // booking a courier is a real-world action — silently faking success here would leave an admin
 // believing a shipment exists when it doesn't. Fail loudly instead.
 function requireConfigured() {
@@ -150,7 +141,7 @@ export async function createSteadfastConsignment(input: CreateConsignmentInput):
 
   // Steadfast responds HTTP 200 with an in-body status even on some validation errors — the
   // in-body status is the real signal, same "don't trust the transport code alone" pattern as
-  // lib/sms.ts's BulkSMSBD handling.
+  // providers/sms/bulksmsbd.ts's BulkSMSBD handling.
   if (!res.ok || !data || data.status !== 200 || !data.consignment) {
     if (!data) logger.error(`[steadfast] booking failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(

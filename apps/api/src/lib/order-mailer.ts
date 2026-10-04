@@ -1,11 +1,11 @@
 import type { Order } from "@prisma/client";
-import { sendMail } from "./mailer";
 import { renderEmailLayout } from "./email-template";
 import { escapeHtml } from "./html";
 import { getSmsSettings } from "../modules/sms-settings/sms-settings.service";
 import { env } from "../config/env";
 import { formatMoney } from "@clothing-brand/shared";
 import { getCurrency } from "../domain/config/commerce-settings";
+import { getProviders } from "../providers/registry";
 
 
 /** The payment receipt email — awaited by its outbox consumer (Phase 8). `idempotencyKey` (the outbox event id) makes a
@@ -36,7 +36,7 @@ export async function deliverPaymentConfirmationEmail(
     <p style="margin:0;">You can track this order any time using the link below.</p>
   `;
 
-  await sendMail({
+  await getProviders().email.send({
     to: order.customerEmail,
     subject: `Payment confirmed — Order ${order.orderNumber}`,
     html: await renderEmailLayout({

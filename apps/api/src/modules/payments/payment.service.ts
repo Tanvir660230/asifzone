@@ -11,10 +11,10 @@ import { recordOutboxEvents } from "../../domain/outbox/outbox";
 import { applyOrderTransition, deriveOrderPricing, insertOrderRecord, type OrderItemSnapshot, type OrderPricingSnapshot } from "../orders/order.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { listRefunds, recordFailedAttempt, recordGatewaySettlement, recordRefund } from "../../domain/payments/payment-ledger.service";
-import { initEpsSession, verifyEpsTransaction } from "./eps.service";
-import { initSslcommerzSession } from "./sslcommerz.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
 import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
+import { gatewayIdForPaymentMethod } from "../../providers/capabilities";
 
 /** What's snapshotted onto PaymentSession.checkoutPayload when a storefront digital-payment
  * checkout starts a session with no Order yet (see initiatePendingPayment). `pricing`/
@@ -92,6 +92,8 @@ export async function startPaymentSession(
   ipAddress?: string,
 ): Promise<{ gatewayUrl: string; sessionId: string }> {
   if (order.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
+  // Phase 12: the one gateway selection point (registry), before any session row exists.
+  const gateway = getProviders().payments.forNewSession(gatewayIdForPaymentMethod(order.paymentMethod));
 
   const attemptRef = newAttemptRef();
   let session;
@@ -99,7 +101,7 @@ export async function startPaymentSession(
     session = await prisma.paymentSession.create({
       data: {
         orderId: order.id,
-        provider: order.paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ",
+        provider: gateway.id,
         status: "ACTIVE",
         gatewayTransactionRef: attemptRef,
         expiresAt: new Date(Date.now() + SESSION_TTL_MS),
@@ -134,10 +136,7 @@ export async function startPaymentSession(
   };
 
   try {
-    const { gatewayUrl, providerTransactionId } =
-      order.paymentMethod === "EPS_PG"
-        ? await initEpsSession(gatewayParams).then((r) => ({ gatewayUrl: r.gatewayUrl, providerTransactionId: r.transactionId }))
-        : await initSslcommerzSession(gatewayParams).then((r) => ({ gatewayUrl: r.gatewayUrl, providerTransactionId: r.sessionKey }));
+    const { gatewayUrl, providerTransactionId } = await gateway.createSession(gatewayParams);
 
     await prisma.paymentSession.update({ where: { id: session.id }, data: { gatewayUrl, providerTransactionId } });
     recordEvent(session.id, "INITIATED");
@@ -183,6 +182,9 @@ export async function initiatePendingPayment(
   void _c; void _q; void _t; void _r; void _i;
   const checkoutPayload: PendingCheckoutPayload = { input, customerId: pricing.customerId, pricing: snapshot, itemSnapshots, metaContext };
 
+  // Phase 12: the one gateway selection point (registry), before the double-submit lock or any session row.
+  const gateway = getProviders().payments.forNewSession(gatewayIdForPaymentMethod(input.paymentMethod));
+
   // Same double-submit guard as createOrder's sessionLockKey (order.service.ts) — a double-click on
   // "Place Order" before the first request's response comes back would otherwise open two live
   // gateway sessions for the same cart. Scoped to still-pre-order (orderId: null) ACTIVE sessions
@@ -223,7 +225,7 @@ export async function initiatePendingPayment(
   const session = await prisma.paymentSession.create({
     data: {
       orderId: null,
-      provider: input.paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ",
+      provider: gateway.id,
       status: "ACTIVE",
       gatewayTransactionRef: attemptRef,
       idempotencyKey: idempotencyKey ?? null,
@@ -249,10 +251,7 @@ export async function initiatePendingPayment(
   };
 
   try {
-    const { gatewayUrl, providerTransactionId } =
-      input.paymentMethod === "EPS_PG"
-        ? await initEpsSession(gatewayParams).then((r) => ({ gatewayUrl: r.gatewayUrl, providerTransactionId: r.transactionId }))
-        : await initSslcommerzSession(gatewayParams).then((r) => ({ gatewayUrl: r.gatewayUrl, providerTransactionId: r.sessionKey }));
+    const { gatewayUrl, providerTransactionId } = await gateway.createSession(gatewayParams);
 
     await prisma.paymentSession.update({ where: { id: session.id }, data: { gatewayUrl, providerTransactionId } });
     recordEvent(session.id, "INITIATED");
@@ -493,7 +492,7 @@ export async function reconcileStuckEpsSessions(): Promise<number> {
   let recovered = 0;
   for (const { gatewayTransactionRef } of stuck) {
     try {
-      const validation = await verifyEpsTransaction(gatewayTransactionRef);
+      const validation = await getProviders().payments.adapter("EPS_PG").verify(gatewayTransactionRef);
       const verified =
         validation && validation.status.toLowerCase() === "success" && validation.merchantTransactionId === gatewayTransactionRef;
       if (verified) {

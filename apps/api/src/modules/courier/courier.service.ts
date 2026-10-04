@@ -2,12 +2,13 @@ import { canTransitionOrder, normalizeBdPhone, type OrderStatus } from "@clothin
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
-import { CourierOutcomeUnknownError, createBulkSteadfastConsignments, createSteadfastConsignment, getSteadfastStatusByConsignmentId } from "../../lib/steadfast";
 import { changeOrderStatus, getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
 import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
+import { CourierOutcomeUnknownError } from "../../providers/errors";
 
 // PARTIALLY_DELIVERED is terminal from the courier's point of view (Steadfast won't report
 // anything further for this consignment) even though it still needs an admin to reconcile which
@@ -168,12 +169,12 @@ export async function bookOrderWithSteadfast(orderId: string) {
 
   let consignment;
   try {
-    consignment = await createSteadfastConsignment({
+    consignment = await getProviders().courier.createShipment({
       invoice: order.orderNumber,
       recipientName: order.customerName,
       // Steadfast requires exactly 11 digits — checkout normalizes new orders' customerPhone to that
       // form already, but this defends against rows written before that validation existed (same
-      // reasoning as lib/sms.ts's own re-normalization before dialing out).
+      // reasoning as providers/sms/bulksmsbd.ts's own re-normalization before dialing out).
       recipientPhone: normalizeBdPhone(order.customerPhone),
       recipientAddress: buildRecipientAddress(order),
       codAmount,
@@ -252,7 +253,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
 
   let results;
   try {
-    results = await createBulkSteadfastConsignments(
+    results = await getProviders().courier.createShipments(
       claimed.map((order) => ({
         invoice: order.orderNumber,
         recipientName: order.customerName,
@@ -340,7 +341,7 @@ export async function refreshSteadfastStatus(orderId: string) {
   if (!order.courierConsignmentId) throw AppError.badRequest("This order has not been booked with a courier yet");
 
   try {
-    const status = await getSteadfastStatusByConsignmentId(order.courierConsignmentId);
+    const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId);
     await applyCourierStatus(order, status);
   } catch (err) {
     await recordCourierSyncError(orderId, syncErrorMessage(err));
@@ -369,7 +370,7 @@ export async function bulkSyncCourierStatuses(orderIds: string[]): Promise<BulkC
       continue;
     }
     try {
-      const status = await getSteadfastStatusByConsignmentId(order.courierConsignmentId);
+      const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId);
       await applyCourierStatus(order, status);
       synced.push({ orderId: order.id, orderNumber: order.orderNumber, courierStatus: status });
     } catch (err) {
@@ -513,7 +514,7 @@ export async function unlinkCourierBooking(orderId: string) {
 /** Webhook payloads from Steadfast carry no signature — rather than trusting the posted status
  * directly, this re-fetches the status from Steadfast's own API using only the consignment_id out
  * of the payload, mirroring the SSLCommerz IPN handler's "verify server-to-server, never trust the
- * callback body" pattern (payments/sslcommerz.service.ts). Silently no-ops on an unrecognized
+ * callback body" pattern (providers/payment/sslcommerz.ts). Silently no-ops on an unrecognized
  * consignment_id or malformed payload — Steadfast doesn't require (or check) a response body, and
  * there is nothing useful to do with a webhook we can't tie back to one of our orders. */
 export async function handleSteadfastWebhook(payload: { consignment_id?: number | string }) {
@@ -526,7 +527,7 @@ export async function handleSteadfastWebhook(payload: { consignment_id?: number 
   });
   if (!order) return;
 
-  const status = await getSteadfastStatusByConsignmentId(consignmentId);
+  const status = await getProviders().courier.statusByConsignment(consignmentId);
   await applyCourierStatus(order, status);
 }
 
@@ -546,7 +547,7 @@ export async function syncPendingCourierStatuses(): Promise<number> {
   let changed = 0;
   for (const order of pending) {
     try {
-      const status = await getSteadfastStatusByConsignmentId(order.courierConsignmentId!);
+      const status = await getProviders().courier.statusByConsignment(order.courierConsignmentId!);
       if (status !== order.courierStatus) {
         await applyCourierStatus(order, status);
         changed++;
