@@ -51,8 +51,11 @@ async function eventually(check: () => Promise<boolean>, timeoutMs = 5_000) {
 /** OWNER-only routes: the pre-Phase-10 `requireRole("OWNER")` set from the audit's route walk (TARGET §15: the initial
  * mapping preserves it exactly), plus the owner's PD-10.1 decision — permanent coupon / category delete. */
 const PD_10_1_ROUTES = ["DELETE /api/coupons/:id/permanent", "DELETE /api/categories/:id/permanent"];
+/** The Storage page (unused uploads → trash → restore), OWNER-only by its own design, via `storage.manage`. */
+const STORAGE_ROUTES = ["GET /api/storage/unused", "POST /api/storage/unused/trash", "GET /api/storage/trash", "POST /api/storage/trash/:batch/restore"];
 const OWNER_ONLY_ROUTES = [
   ...PD_10_1_ROUTES,
+  ...STORAGE_ROUTES,
   "GET /api/auth/admins",
   "PATCH /api/auth/admins/:id/active",
   "PATCH /api/auth/admins/:id",
@@ -207,8 +210,8 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 299 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    expect(routes).toHaveLength(299);
+  it("covers all 303 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    expect(routes).toHaveLength(303);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

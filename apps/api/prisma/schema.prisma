@@ -697,10 +697,17 @@ model Customer {
   deliveryTotalParcels     Int?
   deliverySuccessParcels   Int?
   deliveryCancelledParcels Int?
-  /// Percentage (0-100), computed from the three counts above rather than trusted from Steadfast's
-  /// response directly — see getSteadfastFraudCheck's comment on why. Null when totalParcels is 0
-  /// (no delivery history yet — not the same as a bad score, so the UI must not treat null as 0%).
+  /// deliveryTotalParcels is now the lower bound of Steadfast's volume range (exact counts are no longer
+  /// published); the success/cancelled counts stay null for checks made after 2026-09-27.
+  /// Percentage (0-100), Steadfast's delivery_ratio. Null when there's no delivery history yet — not
+  /// the same as a bad score, so the UI must not treat null as 0%.
   deliverySuccessRate      Float?
+  /// From Steadfast's /fraud_check/score endpoint (the count-based one went dark 2026-09-27): cancellation
+  /// percentage, the parcel-volume bucket it reports instead of an exact count (e.g. "2", "25+"), and
+  /// the number of fraud reports other merchants have filed against this phone.
+  deliveryCancellationRate Float?
+  deliveryVolumeRange      String?
+  deliveryFraudReports     Int?
   deliveryScoreCheckedAt   DateTime?
   addresses                Address[]
   orders                   Order[]

@@ -39,6 +39,7 @@ export const PERMISSIONS = [
   "content.manage", // banners, sections, reviews, feedback, payment methods, editor uploads
   "storefront.configure", // redirects, social links
   "settings.manage", // store settings, SMS provider settings, branding
+  "storage.manage", // find unused uploads, move them to trash, restore (OWNER-only, as designed with the Storage page)
   // customers
   "customers.read",
   "customers.manage", // CRM flags, admin notes, manual customer
@@ -67,6 +68,7 @@ export const OWNER_ONLY_PERMISSIONS = [
   "orders.delete",
   "storefront.configure",
   "settings.manage",
+  "storage.manage",
   "ops.repair",
 ] as const satisfies readonly Permission[];
 

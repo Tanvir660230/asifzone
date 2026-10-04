@@ -477,9 +477,16 @@ export interface OrderListItemSummary {
 export interface DeliveryScore {
   /** 0-100, or null when totalParcels is 0 — no delivery history yet, not the same as a bad score. */
   successRate: number | null;
+  /** Exact for checks before 2026-09-27; since then the lower bound of volumeRange. */
   totalParcels: number;
-  successParcels: number;
-  cancelledParcels: number;
+  /** Exact counts — only present on checks made before Steadfast stopped publishing them (2026-09-27). */
+  successParcels: number | null;
+  cancelledParcels: number | null;
+  /** From Steadfast's newer score endpoint; null on older checks. */
+  cancellationRate: number | null;
+  /** e.g. "2" or "25+". */
+  volumeRange: string | null;
+  fraudReports: number | null;
   checkedAt: string;
 }
 

@@ -233,6 +233,26 @@ export function courierStatusDescription(status: string): string {
 /** Tone thresholds for Steadfast's fraud_check delivery success rate (Customer.deliverySuccessRate)
  * — same red/amber/green vocabulary as courierStatusBadgeClass above, chosen so an admin scanning
  * the orders list gets an instant "safe to book COD" read without doing the math themselves. */
+/** Hover text for the delivery-score badge. Checks before 2026-09-27 carry exact counts; newer ones
+ * only have Steadfast's ratios and a volume range ("25+"), so word whichever we actually have. */
+export function deliveryScoreSummary(score: {
+  successRate: number | null;
+  totalParcels: number;
+  successParcels: number | null;
+  cancelledParcels: number | null;
+  cancellationRate: number | null;
+  volumeRange: string | null;
+  fraudReports: number | null;
+}): string {
+  if (score.successRate === null) return "No delivery history with Steadfast";
+  const reports = score.fraudReports ? ` · ${score.fraudReports} fraud report(s)` : "";
+  if (score.volumeRange !== null) {
+    const cancelled = score.cancellationRate === null ? "" : `, ${score.cancellationRate}% cancelled`;
+    return `${score.successRate}% delivered${cancelled} of ${score.volumeRange} parcel(s)${reports}`;
+  }
+  return `${score.successParcels ?? 0} delivered, ${score.cancelledParcels ?? 0} cancelled of ${score.totalParcels} parcel(s)${reports}`;
+}
+
 export function deliveryScoreBadgeClass(rate: number | null): string {
   if (rate === null) return "bg-ink-100 text-ink-700";
   if (rate >= 80) return "bg-success-100 text-success-700";

@@ -7,6 +7,7 @@ import { startCampaignSendWorker } from "./jobs/campaign-send-worker";
 import { startCampaignSchedulerCron } from "./jobs/campaign-scheduler-cron";
 import { startCourierStatusCron } from "./jobs/courier-status-cron";
 import { startPaymentReconciliationCron } from "./jobs/payment-reconciliation-cron";
+import { startStorageTrashCron } from "./jobs/storage-trash-cron";
 import { startMetaCapiWorker } from "./jobs/meta-capi-worker";
 import { startOutboxWorker } from "./jobs/outbox-worker";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
@@ -39,6 +40,7 @@ async function main() {
   startCampaignSchedulerCron().catch((err) => captureError(err, { msg: "[campaign-scheduler-cron] failed to start:" }));
   startCourierStatusCron().catch((err) => captureError(err, { msg: "[courier-status-cron] failed to start:" }));
   startPaymentReconciliationCron().catch((err) => captureError(err, { msg: "[payment-reconciliation-cron] failed to start:" }));
+  startStorageTrashCron().catch((err) => captureError(err, { msg: "[storage-trash-cron] failed to start:" }));
   startMetaCapiWorker().catch((err) => captureError(err, { msg: "[meta-capi] worker failed to start:" }));
   startOutboxWorker().catch((err) => captureError(err, { msg: "[outbox] worker failed to start:" }));
 

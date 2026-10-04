@@ -73,7 +73,7 @@ import type {
   BulkDeliveryScoreResult,
   AdminOrderListParams,
 } from "@/lib/api/admin-orders";
-import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, deliveryScoreBadgeClass, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel, paymentStatusLabel, paymentStatusTextClass, timeAgo } from "@/lib/format";
+import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, deliveryScoreBadgeClass, deliveryScoreSummary, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel, paymentStatusLabel, paymentStatusTextClass, timeAgo } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
@@ -889,14 +889,14 @@ export default function OrdersPage() {
         </button>
       );
     }
-    const { successRate, totalParcels, successParcels, cancelledParcels, checkedAt } = order.deliveryScore;
+    const { successRate, checkedAt } = order.deliveryScore;
     return (
       <span
         className={cn(
           "inline-flex shrink-0 items-center rounded px-1.5 py-[1px] text-[10px] font-semibold leading-tight",
           deliveryScoreBadgeClass(successRate),
         )}
-        title={`${successParcels} delivered, ${cancelledParcels} cancelled of ${totalParcels} parcel(s) — Steadfast fraud check · checked ${timeAgo(checkedAt)}`}
+        title={`${deliveryScoreSummary(order.deliveryScore)} — Steadfast fraud check · checked ${timeAgo(checkedAt)}`}
       >
         {successRate === null ? "No history" : `${successRate}%`}
       </span>
@@ -1838,8 +1838,8 @@ export default function OrdersPage() {
                         {c.orderNumber}
                       </button>
                       <span className="text-ink-400">
-                        {c.successRate === null ? "No history" : `${c.successRate}%`} ({c.totalParcels} parcel
-                        {c.totalParcels === 1 ? "" : "s"})
+                        {c.successRate === null ? "No history" : `${c.successRate}%`} ({c.volumeRange ?? c.totalParcels} parcel
+                        {(c.volumeRange ?? String(c.totalParcels)) === "1" ? "" : "s"})
                       </span>
                     </li>
                   ))}
