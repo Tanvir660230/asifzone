@@ -8,6 +8,7 @@ import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { cn } from "@/lib/utils";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -57,7 +58,7 @@ export default function UserBehaviorPage() {
           </CardHeader>
           <CardContent>
             <RankedBarList
-              items={toBarItems(mostWishlisted?.products, { key: (p) => p.id, label: (p) => p.name, value: (p) => p.count, valueLabel: (p) => p.count.toLocaleString("en-BD") })}
+              items={toBarItems(mostWishlisted?.products, { key: (p) => p.id, label: (p) => p.name, value: (p) => p.count, valueLabel: (p) => p.count.toLocaleString(DISPLAY_LOCALE) })}
               emptyLabel="No wishlist activity yet."
             />
           </CardContent>
@@ -71,8 +72,8 @@ export default function UserBehaviorPage() {
               <StatTileSkeleton />
             ) : (
               <div className="grid grid-cols-3 gap-3">
-                <StatTile label="Wishlisted" value={wishlistConv.totalWishlisted.toLocaleString("en-BD")} icon={<Heart size={18} />} />
-                <StatTile label="Later bought" value={wishlistConv.converted.toLocaleString("en-BD")} icon={<Heart size={18} />} />
+                <StatTile label="Wishlisted" value={wishlistConv.totalWishlisted.toLocaleString(DISPLAY_LOCALE)} icon={<Heart size={18} />} />
+                <StatTile label="Later bought" value={wishlistConv.converted.toLocaleString(DISPLAY_LOCALE)} icon={<Heart size={18} />} />
                 <StatTile label="Conversion" value={`${wishlistConv.conversionRatePct.toFixed(1)}%`} icon={<Heart size={18} />} tone="accent" />
               </div>
             )}
@@ -135,9 +136,9 @@ export default function UserBehaviorPage() {
             Array.from({ length: 3 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Submissions" value={feedback.total.toLocaleString("en-BD")} icon={<MessageSquare size={18} />} />
-              <StatTile label="Read" value={feedback.read.toLocaleString("en-BD")} icon={<MessageSquare size={18} />} />
-              <StatTile label="Unread" value={feedback.unread.toLocaleString("en-BD")} icon={<MessageSquare size={18} />} tone={feedback.unread > 0 ? "warning" : "default"} />
+              <StatTile label="Submissions" value={feedback.total.toLocaleString(DISPLAY_LOCALE)} icon={<MessageSquare size={18} />} />
+              <StatTile label="Read" value={feedback.read.toLocaleString(DISPLAY_LOCALE)} icon={<MessageSquare size={18} />} />
+              <StatTile label="Unread" value={feedback.unread.toLocaleString(DISPLAY_LOCALE)} icon={<MessageSquare size={18} />} tone={feedback.unread > 0 ? "warning" : "default"} />
             </>
           )}
         </div>

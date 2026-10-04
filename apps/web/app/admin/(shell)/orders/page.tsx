@@ -64,6 +64,7 @@ import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import type {
@@ -72,19 +73,7 @@ import type {
   BulkDeliveryScoreResult,
   AdminOrderListParams,
 } from "@/lib/api/admin-orders";
-import {
-  formatPrice,
-  initials,
-  orderStatusBadgeClass,
-  orderStatusLabel,
-  orderStatusShortLabel,
-  courierStatusBadgeClass,
-  courierStatusLabel,
-  courierStatusDescription,
-  deliveryScoreBadgeClass,
-  deliveryScoreSummary,
-  timeAgo,
-} from "@/lib/format";
+import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, deliveryScoreBadgeClass, deliveryScoreSummary, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel, paymentStatusLabel, paymentStatusTextClass, timeAgo } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
@@ -379,7 +368,7 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canDeleteOrders = adminCan(currentAdmin?.admin, "orders.delete");
   const debouncedSearch = useDebouncedValue(search, 350);
 
   // "/" or ⌘K focuses search from anywhere on the page — skipped while already typing somewhere
@@ -916,7 +905,7 @@ export default function OrdersPage() {
 
   function rowMenuItems(order: AdminOrderListItem): DropdownMenuItem[] {
     if (order.deletedAt) {
-      return isOwner
+      return canDeleteOrders
         ? [
             { label: "View order", icon: Eye, onClick: () => setDrawerOrderId(order.id) },
             { label: "Restore", icon: RotateCcw, onClick: () => handleRestore(order.orderNumber, order.id) },
@@ -935,7 +924,7 @@ export default function OrdersPage() {
       ...(!order.courierConsignmentId
         ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
         : [{ label: "Sync courier status", icon: RefreshCw, onClick: () => syncCourierMutation.mutate(order.id) }]),
-      ...(isOwner
+      ...(canDeleteOrders
         ? [{ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => handleDelete(order.orderNumber, order.id) }]
         : []),
     ];
@@ -1003,7 +992,7 @@ export default function OrdersPage() {
           {stats ? (
             <>
               <StatTile label="Today's orders" value={String(stats.todayOrders)} icon={<ShoppingBag size={18} />} />
-              <StatTile label="Today's revenue" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={18} />} tone="accent" />
+              <StatTile label="Today's realised net sales" value={formatPrice(stats.todayRevenue)} icon={<Wallet size={18} />} tone="accent" />
               <StatTile label="Pending" value={String(stats.pending)} icon={<Clock size={18} />} tone="warning" />
               <StatTile label="Needs attention" value={String(stats.needsAttention)} icon={<AlertTriangle size={18} />} tone="warning" />
               {/* A plain button wrapper, not a StatTile prop — this is the only tile on the page
@@ -1040,7 +1029,7 @@ export default function OrdersPage() {
           scrolling order rows (order #, status pills), and translucency there let row text visibly
           bleed/cut through the bar's bottom edge as it scrolled underneath. */}
       <div className="sticky top-14 z-10 -mx-4 space-y-3 border-b border-ink-100 bg-cream-50 px-4 pb-3 pt-2.5 sm:-mx-8 sm:px-8">
-        {isOwner && (
+        {canDeleteOrders && (
           <div className="flex items-center gap-1">
             {(["active", "trash"] as const).map((t) => (
               <button
@@ -1455,16 +1444,9 @@ export default function OrdersPage() {
                       {order.paymentMethod === "COD" ? "COD" : "Online"}
                     </Badge>
                     <span
-                      className={cn(
-                        "text-[11px] font-medium",
-                        order.paymentStatus === "PAID"
-                          ? "text-success-600"
-                          : order.paymentStatus === "FAILED"
-                            ? "text-danger-600"
-                            : "text-warning-600",
-                      )}
+                      className={cn("text-[11px] font-medium", paymentStatusTextClass(order.paymentStatus))}
                     >
-                      {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+                      {paymentStatusLabel(order.paymentStatus)}
                     </span>
                   </div>
                 </td>
@@ -1472,9 +1454,9 @@ export default function OrdersPage() {
                 <td className="px-3 py-2.5 align-middle">{renderStatusCell(order)}</td>
                 <td className="px-3 py-2.5 align-middle">{renderCourierCell(order)}</td>
                 <td className="px-3 py-2.5 align-middle text-ink-500">
-                  <div>{new Date(order.createdAt).toLocaleDateString()}</div>
+                  <div>{formatStoreDate(order.createdAt)}</div>
                   <div className="text-xs text-ink-400">
-                    {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    {formatStoreTime(order.createdAt)}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 align-middle">
@@ -1532,8 +1514,8 @@ export default function OrdersPage() {
                       <span className="font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</span>
                     </div>
                     <div className="mt-0.5 text-xs text-ink-400">
-                      {new Date(order.createdAt).toLocaleDateString()} ·{" "}
-                      {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {formatStoreDate(order.createdAt)} ·{" "}
+                      {formatStoreTime(order.createdAt)}
                     </div>
                   </button>
                 </div>
@@ -1544,16 +1526,9 @@ export default function OrdersPage() {
                     {order.paymentMethod === "COD" ? "COD" : "Online"}
                   </Badge>
                   <span
-                    className={cn(
-                      "text-[11px] font-medium",
-                      order.paymentStatus === "PAID"
-                        ? "text-success-600"
-                        : order.paymentStatus === "FAILED"
-                          ? "text-danger-600"
-                          : "text-warning-600",
-                    )}
+                    className={cn("text-[11px] font-medium", paymentStatusTextClass(order.paymentStatus))}
                   >
-                    {order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "FAILED" ? "Failed" : "Unpaid"}
+                    {paymentStatusLabel(order.paymentStatus)}
                   </span>
                   <span className="ml-auto flex items-center gap-2">{renderCourierCell(order)}</span>
                 </div>
@@ -1581,7 +1556,7 @@ export default function OrdersPage() {
                     so the card doesn't turn into a wall of buttons. */}
                 <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-ink-100 pt-2.5">
                   {order.deletedAt ? (
-                    isOwner ? (
+                    canDeleteOrders ? (
                       <Button variant="outline" size="sm" onClick={() => handleRestore(order.orderNumber, order.id)}>
                         <RotateCcw size={13} /> Restore
                       </Button>
@@ -1672,7 +1647,7 @@ export default function OrdersPage() {
                 <Button variant="outline" size="sm" onClick={() => handlePrintLabels()}>
                   <Printer size={14} /> Print Labels
                 </Button>
-                {isOwner && (
+                {canDeleteOrders && (
                   <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
                     <Trash2 size={14} /> Move to Trash
                   </Button>

@@ -1,51 +1,73 @@
-import { Prisma, type OrderStatus } from "@prisma/client";
 import geoip from "geoip-lite";
-import type { TrackPageViewInput, TrackPageExitInput, TrackFunnelEventInput } from "@clothing-brand/shared";
+import { enumerateBuckets, previousRange, type TrackPageViewInput, type TrackPageExitInput, type TrackFunnelEventInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { ABANDONMENT_THRESHOLD_MS } from "../cart/cart.service";
 import { loadCustomersWithComputedFields } from "../customers/customer.service";
-import { getSettings } from "../settings/settings.service";
-import { taxIncludedIn } from "@clothing-brand/shared";
+import { resolveLegacyWindow, resolveStoreRange, storeContext, utcInstant } from "../../domain/metrics/store-time";
+import { saleOrderSql } from "../../domain/metrics/sale-order";
+import { getCustomerInsights } from "./sales-analytics.service";
 
 const CACHE_TTL_SECONDS = 300;
-const NON_REVENUE_STATUSES: OrderStatus[] = ["CANCELLED"];
 
-function daysAgo(days: number): Date {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  return since;
-}
-
-/** Optional lookback window shared by every "windowed" read below — `undefined` means lifetime
- * (no lower bound at all), the "All" option in the days range selector on /admin/bi/visitors. */
-function daysAgoOrUndefined(days: number | undefined): Date | undefined {
-  return days === undefined ? undefined : daysAgo(days);
-}
-
+// Sales, product, customer, promotion and financial reports are cuts of the metrics SSOT (Phase 5,
+// docs/METRICS_REGISTRY.md) — implemented in sales-analytics.service.ts, re-exported here so every caller keeps one import.
+export {
+  getRevenueSeries,
+  getOrderStatusCounts,
+  getTopProducts,
+  getLowStockVariants,
+  getDashboardSummary,
+  getCustomerInsights,
+  getCohortRetention,
+  getTopCategories,
+  getTopBrands,
+  getSlowMovingProducts,
+  getBestSellingPrediction,
+  getDemandForecast,
+  getCampaignPerformance,
+  getProductConversionRates,
+  getHighestProfitProducts,
+  getProductRiskMetrics,
+  getFrequentlyBoughtTogetherPairs,
+  getProductSalesHeatmap,
+  getVariantPerformance,
+  getSizeColorPerformance,
+  getInventoryTurnover,
+  getFavoritePaymentMethod,
+  getPurchaseTimeDistribution,
+  getCustomerLocationBreakdown,
+  getCouponEffectiveness,
+  getBundlePerformance,
+  getFlashSalePerformance,
+  getDiscountUsageBreakdown,
+  getProfitTrend,
+  getFinancialCostBreakdown,
+  getEstimatedTaxCollected,
+  getDeadStockReport,
+  getOrderFulfillmentTime,
+  getLifetimeYearlyTrend,
+  type ProductSalesHeatmap,
+} from "./sales-analytics.service";
+/** Every window below resolves through the canonical business-time mechanism (docs/METRICS_REGISTRY.md §1): "last N
+ * days" = N business days in the store timezone ending today; a picker's dateFrom/dateTo = the business dates they fall
+ * on, inclusive; undefined = lifetime. Ranges are half-open [since, until), and every bound instant reaches SQL through
+ * `utcInstant` (raw comparisons against the naive-UTC columns were 6 h off — PHASE_5_METRICS_AUDIT §2). */
 interface ResolvedDateRange {
   since: Date;
   until: Date;
-  /** Stable fragment for cache keys. Mirrors the pre-existing `${days ?? "all"}` shape when no
-   * custom range is given, so caching for the common (days-only) case is unchanged — `until`
-   * otherwise defaults to "now" on every call, and keying on that would produce a unique cache key
-   * per request and defeat caching entirely. Widens to the actual since/until timestamps only when
-   * an explicit dateFrom/dateTo (a custom Google-Analytics-style range) is supplied. */
   cacheKeyPart: string;
+  timezone: string;
 }
 
-/** Absolute `dateFrom`/`dateTo` (a custom range picked in the BI date-range picker) wins over the
- * legacy `days`-back-from-now lookback when either is present; with neither, `since` falls back to
- * the epoch (lifetime) and `until` to now, matching the pre-existing "since only, no upper bound"
- * behavior of every function below (there's never future data, so an explicit upper bound of "now"
- * doesn't change results — it only matters for the cache key, handled via `cacheKeyPart` above). */
-function resolveDateRange(days: number | undefined, dateFrom?: Date, dateTo?: Date): ResolvedDateRange {
-  if (dateFrom || dateTo) {
-    const since = dateFrom ?? new Date(0);
-    const until = dateTo ?? new Date();
-    return { since, until, cacheKeyPart: `${since.toISOString()}:${until.toISOString()}` };
-  }
-  return { since: daysAgoOrUndefined(days) ?? new Date(0), until: new Date(), cacheKeyPart: String(days ?? "all") };
+async function resolveDateRange(days: number | undefined, dateFrom?: Date, dateTo?: Date): Promise<ResolvedDateRange> {
+  const r = await resolveLegacyWindow(days, dateFrom, dateTo);
+  return { since: r.startUtc, until: r.endUtc, timezone: r.timezone, cacheKeyPart: `${r.timezone}:${r.startUtc.toISOString()}:${r.endUtc.toISOString()}` };
+}
+
+/** Lower bound of a "last N days" window (epoch for lifetime). */
+async function windowStart(days: number | undefined): Promise<Date> {
+  return (await resolveLegacyWindow(days)).startUtc;
 }
 
 /** Best-effort geoip-lite lookup off the request IP — offline/free database, so misses (private/
@@ -67,179 +89,6 @@ function primaryLanguage(acceptLanguage: string | null): string | null {
   return first || null;
 }
 
-/** Daily order count + gross order value for the last N days, zero-filled so the chart has no gaps. */
-export async function getRevenueSeries(days = 30) {
-  const cacheKey = `analytics:revenue:${days}`;
-  const cached = await cacheGet<Array<{ date: string; revenue: number; orders: number }>>(cacheKey);
-  if (cached) return cached;
-
-  // UTC throughout, so the day-keys generated here always match Postgres's UTC-based date_trunc,
-  // regardless of the Node process's local timezone.
-  const since = new Date();
-  since.setUTCDate(since.getUTCDate() - (days - 1));
-  since.setUTCHours(0, 0, 0, 0);
-
-  const rows = await prisma.$queryRaw<Array<{ day: Date; revenue: number; orders: bigint }>>`
-    SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day,
-           COALESCE(SUM(total), 0)::float AS revenue,
-           COUNT(*)::bigint AS orders
-    FROM "Order"
-    WHERE "createdAt" >= ${since} AND status != 'CANCELLED'
-    GROUP BY day
-    ORDER BY day ASC
-  `;
-
-  const byDay = new Map(rows.map((r) => [r.day.toISOString().slice(0, 10), { revenue: r.revenue, orders: Number(r.orders) }]));
-
-  const series = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(since);
-    d.setUTCDate(d.getUTCDate() + i);
-    const key = d.toISOString().slice(0, 10);
-    const point = byDay.get(key);
-    series.push({ date: key, revenue: point?.revenue ?? 0, orders: point?.orders ?? 0 });
-  }
-
-  await cacheSet(cacheKey, series, CACHE_TTL_SECONDS);
-  return series;
-}
-
-export async function getOrderStatusCounts() {
-  const cacheKey = "analytics:status-counts";
-  const cached = await cacheGet<Array<{ status: string; count: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const grouped = await prisma.order.groupBy({ by: ["status"], _count: { _all: true } });
-  const result = grouped.map((g) => ({ status: g.status, count: g._count._all }));
-
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-export async function getTopProducts(days = 30, limit = 5) {
-  const cacheKey = `analytics:top-products:${days}:${limit}`;
-  const cached =
-    await cacheGet<Array<{ name: string; quantitySold: number; revenue: number; productId: string | null; imageUrl: string | null }>>(
-      cacheKey,
-    );
-  if (cached) return cached;
-
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-
-  // OrderItem deliberately snapshots name/sku/price instead of foreign-keying the live Product —
-  // history has to stay accurate even after a product is renamed or deleted. `variantId` is still
-  // a real column though (just not a Prisma relation), so it's usable here to resolve a *current*
-  // thumbnail for products that are still live — grouped separately below, not joined into the
-  // aggregate query, since ProductImage is one-to-many and would multiply the SUM() rows.
-  const rows = await prisma.$queryRaw<Array<{ name: string; quantitySold: bigint; revenue: number; productId: string | null }>>`
-    SELECT oi."productNameSnapshot" AS name,
-           SUM(oi.quantity)::bigint AS "quantitySold",
-           SUM(oi.quantity * oi."priceSnapshot")::float AS revenue,
-           (ARRAY_AGG(pv."productId") FILTER (WHERE pv."productId" IS NOT NULL))[1] AS "productId"
-    FROM "OrderItem" oi
-    JOIN "Order" o ON o.id = oi."orderId"
-    LEFT JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-    WHERE o."createdAt" >= ${since} AND o.status != 'CANCELLED'
-    GROUP BY oi."productNameSnapshot"
-    ORDER BY revenue DESC
-    LIMIT ${limit}
-  `;
-
-  const productIds = rows.map((r) => r.productId).filter((id): id is string => Boolean(id));
-  const images = productIds.length
-    ? await prisma.productImage.findMany({
-        where: { productId: { in: productIds } },
-        orderBy: { sortOrder: "asc" },
-        select: { productId: true, url: true },
-      })
-    : [];
-  const imageByProduct = new Map<string, string>();
-  for (const img of images) if (!imageByProduct.has(img.productId)) imageByProduct.set(img.productId, img.url);
-
-  const result = rows.map((r) => ({
-    name: r.name,
-    quantitySold: Number(r.quantitySold),
-    revenue: r.revenue,
-    productId: r.productId,
-    imageUrl: r.productId ? (imageByProduct.get(r.productId) ?? null) : null,
-  }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-export async function getLowStockVariants(threshold = 5, limit = 20) {
-  return prisma.productVariant.findMany({
-    where: { stock: { lte: threshold }, product: { isActive: true } },
-    include: {
-      // `image` is this variant's own photo (e.g. the black colorway shot); falls back to the
-      // product's first gallery image when the variant has none of its own.
-      image: { select: { url: true } },
-      product: { select: { id: true, name: true, slug: true, images: { take: 1, orderBy: { sortOrder: "asc" }, select: { url: true } } } },
-    },
-    orderBy: { stock: "asc" },
-    take: limit,
-  });
-}
-
-export async function getDashboardSummary() {
-  const since = new Date();
-  since.setDate(since.getDate() - 30);
-  const prevSince = new Date();
-  prevSince.setDate(prevSince.getDate() - 60);
-
-  const [revenueAgg, orderCount, prevRevenueAgg, prevOrderCount, pendingCount, lowStockCount, visitorRows, courierLossAgg] =
-    await Promise.all([
-      prisma.order.aggregate({
-        where: { createdAt: { gte: since }, status: { notIn: NON_REVENUE_STATUSES } },
-        _sum: { total: true },
-      }),
-      prisma.order.count({ where: { createdAt: { gte: since }, status: { notIn: NON_REVENUE_STATUSES } } }),
-      // Prior 30-day window (day -60 to -30) — the baseline the dashboard's trend deltas compare against.
-      prisma.order.aggregate({
-        where: { createdAt: { gte: prevSince, lt: since }, status: { notIn: NON_REVENUE_STATUSES } },
-        _sum: { total: true },
-      }),
-      prisma.order.count({ where: { createdAt: { gte: prevSince, lt: since }, status: { notIn: NON_REVENUE_STATUSES } } }),
-      prisma.order.count({ where: { status: "PENDING" } }),
-      prisma.productVariant.count({ where: { stock: { lte: 5 }, product: { isActive: true } } }),
-      // Unique visitors = distinct sessionId, current vs. prior 30-day window (same FILTER pattern as
-      // the revenue/order aggregates above).
-      prisma.$queryRaw<Array<{ current: bigint; previous: bigint }>>`
-      SELECT
-        COUNT(DISTINCT "sessionId") FILTER (WHERE "createdAt" >= ${since})::bigint AS current,
-        COUNT(DISTINCT "sessionId") FILTER (WHERE "createdAt" >= ${prevSince} AND "createdAt" < ${since})::bigint AS previous
-      FROM "PageView"
-      WHERE "createdAt" >= ${prevSince}
-    `,
-      // Estimated money lost to courier round trips (post-booking cancellations + partial-delivery
-      // returns) — see CourierLossEvent in schema.prisma and order.service.ts's getCourierReturnFee.
-      prisma.courierLossEvent.aggregate({
-        where: { createdAt: { gte: since } },
-        _sum: { amount: true },
-        _count: true,
-      }),
-    ]);
-
-  const revenue30d = Number(revenueAgg._sum?.total ?? 0);
-  const revenuePrev30d = Number(prevRevenueAgg._sum?.total ?? 0);
-
-  return {
-    revenue30d,
-    orders30d: orderCount,
-    revenuePrev30d,
-    ordersPrev30d: prevOrderCount,
-    pendingOrders: pendingCount,
-    lowStockCount,
-    aov30d: orderCount > 0 ? revenue30d / orderCount : 0,
-    aovPrev30d: prevOrderCount > 0 ? revenuePrev30d / prevOrderCount : 0,
-    uniqueVisitors30d: Number(visitorRows[0]?.current ?? 0),
-    uniqueVisitorsPrev30d: Number(visitorRows[0]?.previous ?? 0),
-    courierLoss30d: Number(courierLossAgg._sum?.amount ?? 0),
-    courierLossCount30d: courierLossAgg._count,
-  };
-}
-
 /** Daily unique-visitor + pageview counts for the last N days, zero-filled — the visitor-side
  * counterpart to getRevenueSeries. "Visitor" here means a distinct PageView.sessionId, the closest
  * this anonymous, cookie-based system gets to a person. */
@@ -249,38 +98,24 @@ export async function getDashboardSummary() {
 const MAX_SERIES_DAYS = 400;
 
 export async function getVisitorSeries(days = 30, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
-  const cacheKey = `analytics:visitors:${range.cacheKeyPart}`;
+  const window = await resolveLegacyWindow(days, dateFrom, dateTo);
+  const cacheKey = `analytics:visitors:${window.timezone}:${window.startUtc.toISOString()}:${window.endUtc.toISOString()}`;
   const cached = await cacheGet<Array<{ date: string; visitors: number; pageViews: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = new Date(range.since);
-  since.setUTCHours(0, 0, 0, 0);
-  const until = range.until;
-
-  const rows = await prisma.$queryRaw<Array<{ day: Date; visitors: bigint; pageViews: bigint }>>`
-    SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day,
+  const rows = await prisma.$queryRaw<Array<{ day: string; visitors: bigint; pageViews: bigint }>>`
+    SELECT to_char((("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${window.timezone}), 'YYYY-MM-DD') AS day,
            COUNT(DISTINCT "sessionId")::bigint AS visitors,
            COUNT(*)::bigint AS "pageViews"
     FROM "PageView"
-    WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+    WHERE "createdAt" >= ${utcInstant(window.startUtc)} AND "createdAt" < ${utcInstant(window.endUtc)}
     GROUP BY day
-    ORDER BY day ASC
   `;
-
-  const byDay = new Map(
-    rows.map((r) => [r.day.toISOString().slice(0, 10), { visitors: Number(r.visitors), pageViews: Number(r.pageViews) }]),
-  );
-
-  const dayCount = Math.min(Math.floor((until.getTime() - since.getTime()) / 86_400_000) + 1, MAX_SERIES_DAYS);
-  const series = [];
-  for (let i = 0; i < dayCount; i++) {
-    const d = new Date(since);
-    d.setUTCDate(d.getUTCDate() + i);
-    const key = d.toISOString().slice(0, 10);
-    const point = byDay.get(key);
-    series.push({ date: key, visitors: point?.visitors ?? 0, pageViews: point?.pageViews ?? 0 });
-  }
+  const byDay = new Map(rows.map((r) => [r.day, { visitors: Number(r.visitors), pageViews: Number(r.pageViews) }]));
+  // A lifetime window starts at the first day with traffic; any window is capped at MAX_SERIES_DAYS buckets.
+  const firstDay = window.preset === "lifetime" ? ([...byDay.keys()].sort()[0] ?? window.to) : window.from;
+  const keys = enumerateBuckets({ ...window, from: firstDay }, "day", Number.MAX_SAFE_INTEGER).slice(-MAX_SERIES_DAYS);
+  const series = keys.map((date) => ({ date, visitors: byDay.get(date)?.visitors ?? 0, pageViews: byDay.get(date)?.pageViews ?? 0 }));
 
   await cacheSet(cacheKey, series, CACHE_TTL_SECONDS);
   return series;
@@ -380,12 +215,12 @@ export async function getMostViewedProducts(days = 30, limit = 10) {
   const cached = await cacheGet<Array<{ id: string; name: string; slug: string; views: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgo(days);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ id: string; name: string; slug: string; views: bigint }>>`
     SELECT p.id, p.name, p.slug, COUNT(*)::bigint AS views
     FROM "ProductViewLog" v
     JOIN "Product" p ON p.id = v."productId"
-    WHERE v."createdAt" >= ${since}
+    WHERE v."createdAt" >= ${utcInstant(since)}
     GROUP BY p.id, p.name, p.slug
     ORDER BY views DESC
     LIMIT ${limit}
@@ -400,7 +235,9 @@ export async function getMostViewedProducts(days = 30, limit = 10) {
  * before — the view-based counterpart to getBestSellingPrediction (which tracks sales velocity
  * instead of interest). Surfaces items gaining attention before that shows up in sales. */
 export async function getTrendingProducts(limit = 10) {
-  const cacheKey = `analytics:trending-products:${limit}`;
+  const recent = await resolveStoreRange({ preset: "last_7_days" });
+  const prior = previousRange(recent);
+  const cacheKey = `analytics:trending-products:${limit}:${recent.timezone}:${recent.from}`;
   const cached = await cacheGet<
     Array<{ id: string; name: string; slug: string; recentViews: number; priorViews: number; growthPct: number }>
   >(cacheKey);
@@ -412,13 +249,13 @@ export async function getTrendingProducts(limit = 10) {
     WITH recent AS (
       SELECT "productId", COUNT(*)::bigint AS views
       FROM "ProductViewLog"
-      WHERE "createdAt" >= NOW() - INTERVAL '7 days'
+      WHERE "createdAt" >= ${utcInstant(recent.startUtc)}
       GROUP BY "productId"
     ),
     prior AS (
       SELECT "productId", COUNT(*)::bigint AS views
       FROM "ProductViewLog"
-      WHERE "createdAt" >= NOW() - INTERVAL '14 days' AND "createdAt" < NOW() - INTERVAL '7 days'
+      WHERE "createdAt" >= ${utcInstant(prior.startUtc)} AND "createdAt" < ${utcInstant(prior.endUtc)}
       GROUP BY "productId"
     )
     SELECT p.id, p.name, p.slug, r.views AS "recentViews", COALESCE(pr.views, 0) AS "priorViews"
@@ -451,12 +288,12 @@ export async function getSearchAnalytics(days = 30, limit = 10) {
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgo(days);
+  const since = await windowStart(days);
   const [topQueries, totals] = await Promise.all([
     prisma.$queryRaw<Array<{ query: string; count: bigint }>>`
       SELECT query, COUNT(*)::bigint AS count
       FROM "SearchLog"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${utcInstant(since)}
       GROUP BY query
       ORDER BY count DESC
       LIMIT ${limit}
@@ -464,7 +301,7 @@ export async function getSearchAnalytics(days = 30, limit = 10) {
     prisma.$queryRaw<Array<{ total: bigint; zeroResult: bigint }>>`
       SELECT COUNT(*)::bigint AS total, COUNT(*) FILTER (WHERE "resultCount" = 0)::bigint AS "zeroResult"
       FROM "SearchLog"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${utcInstant(since)}
     `,
   ]);
 
@@ -485,7 +322,9 @@ export async function getSearchAnalytics(days = 30, limit = 10) {
  * recent-vs-prior-7-day shape as getTrendingProducts, just over SearchLog instead of
  * ProductViewLog. */
 export async function getSearchTrends(limit = 10) {
-  const cacheKey = `analytics:search-trends:${limit}`;
+  const recent = await resolveStoreRange({ preset: "last_7_days" });
+  const prior = previousRange(recent);
+  const cacheKey = `analytics:search-trends:${limit}:${recent.timezone}:${recent.from}`;
   const cached = await cacheGet<Array<{ query: string; recentCount: number; priorCount: number; growthPct: number }>>(cacheKey);
   if (cached) return cached;
 
@@ -493,13 +332,13 @@ export async function getSearchTrends(limit = 10) {
     WITH recent AS (
       SELECT query, COUNT(*)::bigint AS count
       FROM "SearchLog"
-      WHERE "createdAt" >= NOW() - INTERVAL '7 days'
+      WHERE "createdAt" >= ${utcInstant(recent.startUtc)}
       GROUP BY query
     ),
     prior AS (
       SELECT query, COUNT(*)::bigint AS count
       FROM "SearchLog"
-      WHERE "createdAt" >= NOW() - INTERVAL '14 days' AND "createdAt" < NOW() - INTERVAL '7 days'
+      WHERE "createdAt" >= ${utcInstant(prior.startUtc)} AND "createdAt" < ${utcInstant(prior.endUtc)}
       GROUP BY query
     )
     SELECT r.query, r.count AS "recentCount", COALESCE(p.count, 0) AS "priorCount"
@@ -529,7 +368,7 @@ export async function getNoResultSearches(days?: number, limit = 20) {
   const cached = await cacheGet<Array<{ query: string; count: number; lastSearchedAt: string; suggestion: string | null }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ query: string; count: bigint; lastSearchedAt: Date; suggestion: string | null }>>`
     SELECT
       query,
@@ -537,7 +376,7 @@ export async function getNoResultSearches(days?: number, limit = 20) {
       MAX("createdAt") AS "lastSearchedAt",
       (array_agg("suggestion") FILTER (WHERE "suggestion" IS NOT NULL))[1] AS suggestion
     FROM "SearchLog"
-    WHERE "resultCount" = 0 AND "createdAt" >= ${since}
+    WHERE "resultCount" = 0 AND "createdAt" >= ${utcInstant(since)}
     GROUP BY query
     ORDER BY count DESC
     LIMIT ${limit}
@@ -566,16 +405,16 @@ export async function getSearchConversion(days?: number) {
   );
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ searchSessions: bigint; purchasedSessions: bigint; exitedSessions: bigint }>>`
     WITH searched_sessions AS (
-      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since}
+      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${utcInstant(since)}
     ),
     converted AS (
       SELECT DISTINCT o."sessionId"
       FROM "Order" o
       JOIN searched_sessions s ON s."sessionId" = o."sessionId"
-      WHERE o.status != 'CANCELLED'
+      WHERE ${saleOrderSql("o")}
     ),
     last_touch AS (
       SELECT DISTINCT ON (pv."sessionId") pv."sessionId", pv.path
@@ -618,10 +457,10 @@ export async function getSearchAudience(days?: number) {
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ device: string; sessions: bigint }>>`
     WITH search_sessions AS (
-      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since}
+      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${utcInstant(since)}
     ),
     first_touch AS (
       SELECT DISTINCT ON (pv."sessionId") pv."sessionId", pv."userAgent", pv."isLoggedIn"
@@ -644,7 +483,7 @@ export async function getSearchAudience(days?: number) {
 
   const loggedInRows = await prisma.$queryRaw<Array<{ loggedIn: bigint; guest: bigint }>>`
     WITH search_sessions AS (
-      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since}
+      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${utcInstant(since)}
     ),
     first_touch AS (
       SELECT DISTINCT ON (pv."sessionId") pv."sessionId", pv."isLoggedIn"
@@ -674,10 +513,10 @@ export async function getSearchesByCity(days?: number, limit = 10) {
   const cached = await cacheGet<Array<{ city: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ city: string; sessions: bigint }>>`
     WITH search_sessions AS (
-      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since}
+      SELECT DISTINCT "sessionId" FROM "SearchLog" WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${utcInstant(since)}
     ),
     first_touch AS (
       SELECT DISTINCT ON (pv."sessionId") pv."sessionId", pv."city"
@@ -712,7 +551,7 @@ export async function getCartAbandonmentSummary() {
     JOIN "CartItem" ci ON ci."cartId" = c.id
     JOIN "ProductVariant" pv ON pv.id = ci."variantId"
     JOIN "Product" p ON p.id = pv."productId"
-    WHERE c."updatedAt" <= ${cutoff}
+    WHERE c."updatedAt" <= ${utcInstant(cutoff)}
   `;
 
   const result = {
@@ -723,166 +562,11 @@ export async function getCartAbandonmentSummary() {
   return result;
 }
 
-/** Store-wide returning-customer rate and average customer lifetime value, computed over every
- * customer with at least one non-cancelled order (all-time, not windowed by `days`). */
-export async function getCustomerInsights() {
-  const cacheKey = "analytics:customer-insights";
-  const cached = await cacheGet<{ totalCustomers: number; returningCustomers: number; returningRate: number; avgClv: number }>(
-    cacheKey,
-  );
-  if (cached) return cached;
-
-  const rows = await prisma.$queryRaw<Array<{ totalCustomers: bigint; returningCustomers: bigint; avgClv: number }>>`
-    WITH per_customer AS (
-      SELECT o."customerId" AS cid, COUNT(*) AS cnt, SUM(o.total) AS spend
-      FROM "Order" o
-      WHERE o."customerId" IS NOT NULL AND o.status != 'CANCELLED'
-      GROUP BY o."customerId"
-    )
-    SELECT COUNT(*)::bigint AS "totalCustomers",
-           COUNT(*) FILTER (WHERE cnt > 1)::bigint AS "returningCustomers",
-           COALESCE(AVG(spend), 0)::float AS "avgClv"
-    FROM per_customer
-  `;
-
-  const totalCustomers = Number(rows[0]?.totalCustomers ?? 0);
-  const returningCustomers = Number(rows[0]?.returningCustomers ?? 0);
-
-  const result = {
-    totalCustomers,
-    returningCustomers,
-    returningRate: totalCustomers > 0 ? (returningCustomers / totalCustomers) * 100 : 0,
-    avgClv: rows[0]?.avgClv ?? 0,
-  };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** New-customer cohorts by first-order month, and what fraction of each cohort placed another
- * order in each subsequent month — the standard cohort-retention grid. Cancelled orders don't
- * count toward "first order" or "active", so a cancelled/refunded order can't manufacture a false
- * first touch. Covers the last 6 cohort months, up to 5 months of retention each. */
-export async function getCohortRetention() {
-  const cacheKey = "analytics:cohort-retention";
-  const cached = await cacheGet<
-    Array<{ cohortMonth: string; cohortSize: number; retention: Array<{ monthOffset: number; activeCustomers: number; retentionPct: number }> }>
-  >(cacheKey);
-  if (cached) return cached;
-
-  const since = new Date();
-  since.setMonth(since.getMonth() - 5);
-  since.setDate(1);
-  since.setHours(0, 0, 0, 0);
-
-  const rows = await prisma.$queryRaw<Array<{ cohortMonth: Date; monthOffset: number; activeCustomers: bigint }>>`
-    WITH first_order AS (
-      SELECT "customerId", date_trunc('month', MIN("createdAt")) AS cohort_month
-      FROM "Order"
-      WHERE "customerId" IS NOT NULL AND status != 'CANCELLED'
-      GROUP BY "customerId"
-    ),
-    activity AS (
-      SELECT DISTINCT "customerId", date_trunc('month', "createdAt") AS active_month
-      FROM "Order"
-      WHERE "customerId" IS NOT NULL AND status != 'CANCELLED'
-    )
-    SELECT
-      fo.cohort_month AS "cohortMonth",
-      (
-        (EXTRACT(YEAR FROM a.active_month) - EXTRACT(YEAR FROM fo.cohort_month)) * 12
-        + (EXTRACT(MONTH FROM a.active_month) - EXTRACT(MONTH FROM fo.cohort_month))
-      )::int AS "monthOffset",
-      COUNT(DISTINCT a."customerId")::bigint AS "activeCustomers"
-    FROM first_order fo
-    JOIN activity a ON a."customerId" = fo."customerId" AND a.active_month >= fo.cohort_month
-    WHERE fo.cohort_month >= ${since}
-    GROUP BY fo.cohort_month, "monthOffset"
-    ORDER BY fo.cohort_month ASC, "monthOffset" ASC
-  `;
-
-  const byCohort = new Map<string, { cohortSize: number; points: Map<number, number> }>();
-  for (const r of rows) {
-    const key = r.cohortMonth.toISOString().slice(0, 10);
-    const entry = byCohort.get(key) ?? { cohortSize: 0, points: new Map<number, number>() };
-    const active = Number(r.activeCustomers);
-    if (r.monthOffset === 0) entry.cohortSize = active;
-    entry.points.set(r.monthOffset, active);
-    byCohort.set(key, entry);
-  }
-
-  const now = new Date();
-  const result = Array.from(byCohort.entries()).map(([cohortMonth, { cohortSize, points }]) => {
-    const cohortDate = new Date(cohortMonth);
-    const monthsElapsed = (now.getFullYear() - cohortDate.getFullYear()) * 12 + (now.getMonth() - cohortDate.getMonth());
-    const maxOffset = Math.min(5, monthsElapsed);
-    const retention = [];
-    for (let offset = 0; offset <= maxOffset; offset++) {
-      const activeCustomers = points.get(offset) ?? 0;
-      retention.push({ monthOffset: offset, activeCustomers, retentionPct: cohortSize > 0 ? (activeCustomers / cohortSize) * 100 : 0 });
-    }
-    return { cohortMonth, cohortSize, retention };
-  });
-
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-export async function getTopCategories(days = 30, limit = 10) {
-  const cacheKey = `analytics:top-categories:${days}:${limit}`;
-  const cached = await cacheGet<Array<{ name: string; quantitySold: number; revenue: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgo(days);
-  const rows = await prisma.$queryRaw<Array<{ name: string; quantitySold: bigint; revenue: number }>>`
-    SELECT c.name AS name,
-           SUM(oi.quantity)::bigint AS "quantitySold",
-           SUM(oi.quantity * oi."priceSnapshot")::float AS revenue
-    FROM "OrderItem" oi
-    JOIN "Order" o ON o.id = oi."orderId"
-    JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-    JOIN "Product" p ON p.id = pv."productId"
-    JOIN "Category" c ON c.id = p."categoryId"
-    WHERE o."createdAt" >= ${since} AND o.status != 'CANCELLED'
-    GROUP BY c.id, c.name
-    ORDER BY revenue DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ name: r.name, quantitySold: Number(r.quantitySold), revenue: r.revenue }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-export async function getTopBrands(days = 30, limit = 10) {
-  const cacheKey = `analytics:top-brands:${days}:${limit}`;
-  const cached = await cacheGet<Array<{ name: string; quantitySold: number; revenue: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgo(days);
-  const rows = await prisma.$queryRaw<Array<{ name: string; quantitySold: bigint; revenue: number }>>`
-    SELECT COALESCE(p.brand, 'Unbranded') AS name,
-           SUM(oi.quantity)::bigint AS "quantitySold",
-           SUM(oi.quantity * oi."priceSnapshot")::float AS revenue
-    FROM "OrderItem" oi
-    JOIN "Order" o ON o.id = oi."orderId"
-    JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-    JOIN "Product" p ON p.id = pv."productId"
-    WHERE o."createdAt" >= ${since} AND o.status != 'CANCELLED'
-    GROUP BY COALESCE(p.brand, 'Unbranded')
-    ORDER BY revenue DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ name: r.name, quantitySold: Number(r.quantitySold), revenue: r.revenue }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
 /** Conversion rate = sessions that placed an order ÷ total sessions; bounce rate = sessions with
  * exactly one pageview ÷ total sessions. Both require the PageView beacon to actually be firing —
  * return zeros (not an error) when there's no pageview data yet for the window. */
 export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:funnel:${range.cacheKeyPart}`;
   const cached = await cacheGet<{ totalSessions: number; bouncedSessions: number; convertedSessions: number; conversionRate: number; bounceRate: number }>(
     cacheKey,
@@ -894,13 +578,13 @@ export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: D
     WITH sessions AS (
       SELECT "sessionId", COUNT(*) AS views
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       GROUP BY "sessionId"
     ),
     converted AS (
       SELECT DISTINCT "sessionId"
-      FROM "Order"
-      WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since} AND "createdAt" <= ${until} AND status != 'CANCELLED'
+      FROM "Order" o
+      WHERE o."sessionId" IS NOT NULL AND o."createdAt" >= ${utcInstant(since)} AND o."createdAt" < ${utcInstant(until)} AND ${saleOrderSql("o")}
     )
     SELECT
       (SELECT COUNT(*) FROM sessions)::bigint AS "totalSessions",
@@ -926,7 +610,7 @@ export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: D
 /** Sessions grouped by first-touch source: an explicit utm_source if present, else the referring
  * site's domain, else "Direct" (no referrer — typed URL, bookmark, or an app with no referrer). */
 export async function getTrafficSources(days = 30, limit = 10, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:traffic-sources:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<Array<{ source: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
@@ -936,7 +620,7 @@ export async function getTrafficSources(days = 30, limit = 10, dateFrom?: Date, 
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", referrer, "utmSource"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -957,127 +641,6 @@ export async function getTrafficSources(days = 30, limit = 10, dateFrom?: Date, 
   return result;
 }
 
-/** Active products with stock on hand but little or no recent sales — candidates for a markdown,
- * bundle, or featured placement before they tie up capital indefinitely. */
-export async function getSlowMovingProducts(days = 30, limit = 10) {
-  const cacheKey = `analytics:slow-moving:${days}:${limit}`;
-  const cached = await cacheGet<Array<{ id: string; name: string; slug: string; unitsSold: number; totalStock: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgo(days);
-  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; slug: string; unitsSold: bigint; totalStock: bigint }>>`
-    SELECT p.id, p.name, p.slug,
-           COALESCE(sold.qty, 0)::bigint AS "unitsSold",
-           COALESCE(stock.total, 0)::bigint AS "totalStock"
-    FROM "Product" p
-    LEFT JOIN LATERAL (
-      SELECT SUM(oi.quantity) AS qty
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      WHERE pv."productId" = p.id AND o."createdAt" >= ${since} AND o.status != 'CANCELLED'
-    ) sold ON true
-    LEFT JOIN LATERAL (
-      SELECT SUM(stock) AS total FROM "ProductVariant" WHERE "productId" = p.id
-    ) stock ON true
-    WHERE p."isActive" = true AND p."deletedAt" IS NULL AND COALESCE(stock.total, 0) > 0
-    ORDER BY "unitsSold" ASC, "totalStock" DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    slug: r.slug,
-    unitsSold: Number(r.unitsSold),
-    totalStock: Number(r.totalStock),
-  }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Products whose sales velocity is accelerating — this week's units sold vs. the week before —
- * ranked by growth. A simple trend signal, not a statistical forecast model. */
-export async function getBestSellingPrediction(limit = 10) {
-  const cacheKey = `analytics:best-selling-prediction:${limit}`;
-  const cached = await cacheGet<Array<{ name: string; recentUnits: number; priorUnits: number; growthPct: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const rows = await prisma.$queryRaw<Array<{ name: string; recentUnits: bigint; priorUnits: bigint }>>`
-    WITH recent AS (
-      SELECT oi."productNameSnapshot" AS name, SUM(oi.quantity) AS qty
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      WHERE o."createdAt" >= NOW() - INTERVAL '7 days' AND o.status != 'CANCELLED'
-      GROUP BY oi."productNameSnapshot"
-    ),
-    prior AS (
-      SELECT oi."productNameSnapshot" AS name, SUM(oi.quantity) AS qty
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      WHERE o."createdAt" >= NOW() - INTERVAL '14 days' AND o."createdAt" < NOW() - INTERVAL '7 days' AND o.status != 'CANCELLED'
-      GROUP BY oi."productNameSnapshot"
-    )
-    SELECT r.name, r.qty AS "recentUnits", COALESCE(p.qty, 0) AS "priorUnits"
-    FROM recent r
-    LEFT JOIN prior p ON p.name = r.name
-    ORDER BY (r.qty - COALESCE(p.qty, 0)) DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => {
-    const recentUnits = Number(r.recentUnits);
-    const priorUnits = Number(r.priorUnits);
-    const growthPct = priorUnits > 0 ? ((recentUnits - priorUnits) / priorUnits) * 100 : recentUnits > 0 ? 100 : 0;
-    return { name: r.name, recentUnits, priorUnits, growthPct };
-  });
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Variants projected to sell out soonest, from recent daily sales velocity — ranked by estimated
- * days of stock remaining. Only includes variants that have actually been selling (velocity > 0). */
-export async function getDemandForecast(days = 14, limit = 10) {
-  const cacheKey = `analytics:demand-forecast:${days}:${limit}`;
-  const cached = await cacheGet<
-    Array<{ variantId: string; productName: string; sku: string; stock: number; dailyVelocity: number; projected7d: number; daysUntilStockout: number }>
-  >(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgo(days);
-  const rows = await prisma.$queryRaw<Array<{ variantId: string; productName: string; sku: string; stock: number; unitsSold: bigint }>>`
-    SELECT pv.id AS "variantId", p.name AS "productName", pv.sku, pv.stock,
-           SUM(oi.quantity)::bigint AS "unitsSold"
-    FROM "OrderItem" oi
-    JOIN "Order" o ON o.id = oi."orderId"
-    JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-    JOIN "Product" p ON p.id = pv."productId"
-    WHERE o."createdAt" >= ${since} AND o.status != 'CANCELLED' AND p."isActive" = true AND pv.stock > 0
-    GROUP BY pv.id, p.name, pv.sku, pv.stock
-    HAVING SUM(oi.quantity) > 0
-  `;
-
-  const result = rows
-    .map((r) => {
-      const unitsSold = Number(r.unitsSold);
-      const dailyVelocity = unitsSold / days;
-      return {
-        variantId: r.variantId,
-        productName: r.productName,
-        sku: r.sku,
-        stock: r.stock,
-        dailyVelocity,
-        projected7d: dailyVelocity * 7,
-        daysUntilStockout: dailyVelocity > 0 ? r.stock / dailyVelocity : Infinity,
-      };
-    })
-    .sort((a, b) => a.daysUntilStockout - b.daysUntilStockout)
-    .slice(0, limit);
-
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
 /** Sessions active in the last N minutes — deliberately uncached (or cached only briefly) since
  * "how many people are on the site right now" is only useful if it's actually current. */
 export async function getActiveVisitorCount(windowMinutes = 5) {
@@ -1089,7 +652,7 @@ export async function getActiveVisitorCount(windowMinutes = 5) {
   const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
     SELECT COUNT(DISTINCT "sessionId")::bigint AS count
     FROM "PageView"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${utcInstant(since)}
   `;
 
   const result = Number(rows[0]?.count ?? 0);
@@ -1097,22 +660,23 @@ export async function getActiveVisitorCount(windowMinutes = 5) {
   return result;
 }
 
-/** Pageview counts bucketed by day-of-week × hour-of-day, in Bangladesh local time (this store's
- * market) rather than UTC — "9pm is the busiest hour" is only actionable in wall-clock time.
+/** Pageview counts bucketed by day-of-week × hour-of-day, in the store timezone (StoreSetting.timezone)
+ * rather than UTC — "9pm is the busiest hour" is only actionable in wall-clock time.
  * Zero-filled across all 7×24 = 168 cells so the heatmap has no gaps. */
 export async function getTrafficHeatmap(days = 30) {
-  const cacheKey = `analytics:traffic-heatmap:${days}`;
+  const { timezone: tz } = await storeContext();
+  const cacheKey = `analytics:traffic-heatmap:${days}:${tz}`;
   const cached = await cacheGet<Array<{ dow: number; hour: number; count: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgo(days);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ dow: number; hour: number; count: bigint }>>`
     SELECT
-      EXTRACT(DOW FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')::int AS dow,
-      EXTRACT(HOUR FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')::int AS hour,
+      EXTRACT(DOW FROM ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz})::int AS dow,
+      EXTRACT(HOUR FROM ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz})::int AS hour,
       COUNT(*)::bigint AS count
     FROM "PageView"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${utcInstant(since)}
     GROUP BY dow, hour
   `;
 
@@ -1132,7 +696,7 @@ export async function getTrafficHeatmap(days = 30) {
  * Deliberately simple substring/regex matching (no UA-parsing library) — good enough for a
  * mobile-vs-desktop split, not meant to identify exact devices. */
 export async function getDeviceBreakdown(days = 30, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:devices:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ device: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
@@ -1142,7 +706,7 @@ export async function getDeviceBreakdown(days = 30, dateFrom?: Date, dateTo?: Da
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1167,7 +731,7 @@ export async function getDeviceBreakdown(days = 30, dateFrom?: Date, dateTo?: Da
  * getDeviceBreakdown. Match order matters — Edge/Opera UAs also contain "Chrome/", and
  * Chrome/Edge/Opera UAs all contain "Safari/", so the more specific tokens are checked first. */
 export async function getBrowserBreakdown(days = 30, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:browsers:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ browser: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
@@ -1177,7 +741,7 @@ export async function getBrowserBreakdown(days = 30, dateFrom?: Date, dateTo?: D
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1201,37 +765,6 @@ export async function getBrowserBreakdown(days = 30, dateFrom?: Date, dateTo?: D
   return result;
 }
 
-/** Revenue/order count attributed to each `utm_campaign`, via the session that placed the order —
- * only sessions that arrived with a campaign tag are counted, so organic/direct traffic (the
- * majority) never shows up here. */
-export async function getCampaignPerformance(days = 30, limit = 10) {
-  const cacheKey = `analytics:campaigns:${days}:${limit}`;
-  const cached = await cacheGet<Array<{ campaign: string; orders: number; revenue: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgo(days);
-  const rows = await prisma.$queryRaw<Array<{ campaign: string; orders: bigint; revenue: number }>>`
-    WITH first_touch AS (
-      SELECT DISTINCT ON ("sessionId") "sessionId", "utmCampaign"
-      FROM "PageView"
-      WHERE "utmCampaign" IS NOT NULL AND "createdAt" >= ${since}
-      ORDER BY "sessionId", "createdAt" ASC
-    )
-    SELECT ft."utmCampaign" AS campaign,
-           COUNT(o.id)::bigint AS orders,
-           COALESCE(SUM(o.total), 0)::float AS revenue
-    FROM first_touch ft
-    JOIN "Order" o ON o."sessionId" = ft."sessionId" AND o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    GROUP BY ft."utmCampaign"
-    ORDER BY revenue DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ campaign: r.campaign, orders: Number(r.orders), revenue: r.revenue }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
 /** Same device-classification regex as the SQL CASE in getDeviceBreakdown, as a plain JS
  * function — getRecentSessions builds its rows in JS from a raw userAgent column instead of a
  * grouped SQL aggregate, so it needs the equivalent logic client-side (server-side) here. */
@@ -1245,7 +778,7 @@ function deviceFromUserAgent(userAgent: string | null): string {
 /** OS family, sniffed from the same User-Agent header as getDeviceBreakdown/getBrowserBreakdown —
  * Android/iOS checked before Linux/Mac since their UAs also contain those substrings. */
 export async function getOsBreakdown(days?: number, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:os:${range.cacheKeyPart}`;
   const cached = await cacheGet<Array<{ os: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
@@ -1255,7 +788,7 @@ export async function getOsBreakdown(days?: number, dateFrom?: Date, dateTo?: Da
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "userAgent"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1281,7 +814,7 @@ export async function getOsBreakdown(days?: number, dateFrom?: Date, dateTo?: Da
 
 /** Sessions grouped by first-touch Accept-Language primary tag. */
 export async function getLanguageBreakdown(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:languages:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<Array<{ language: string; sessions: number }>>(cacheKey);
   if (cached) return cached;
@@ -1291,7 +824,7 @@ export async function getLanguageBreakdown(days?: number, limit = 10, dateFrom?:
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "language"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT COALESCE("language", 'Unknown') AS language, COUNT(*)::bigint AS sessions
@@ -1309,7 +842,7 @@ export async function getLanguageBreakdown(days?: number, limit = 10, dateFrom?:
 /** Top countries/regions/cities by first-touch session — all from the geoip-lite lookup recorded
  * at pageview time (see trackPageView), so accuracy is only as good as that offline database. */
 export async function getGeoBreakdown(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:geo:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<{
     countries: Array<{ countryCode: string; sessions: number }>;
@@ -1324,7 +857,7 @@ export async function getGeoBreakdown(days?: number, limit = 10, dateFrom?: Date
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", "countryCode"
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "countryCode" IS NOT NULL
+        WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)} AND "countryCode" IS NOT NULL
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT "countryCode", COUNT(*)::bigint AS sessions
@@ -1337,7 +870,7 @@ export async function getGeoBreakdown(days?: number, limit = 10, dateFrom?: Date
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", "region", "countryCode"
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "region" IS NOT NULL
+        WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)} AND "region" IS NOT NULL
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT (COALESCE("countryCode", '') || '-' || "region") AS region, COUNT(*)::bigint AS sessions
@@ -1350,7 +883,7 @@ export async function getGeoBreakdown(days?: number, limit = 10, dateFrom?: Date
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", "city"
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "city" IS NOT NULL AND "city" != ''
+        WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)} AND "city" IS NOT NULL AND "city" != ''
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT "city", COUNT(*)::bigint AS sessions
@@ -1374,7 +907,7 @@ export async function getGeoBreakdown(days?: number, limit = 10, dateFrom?: Date
  * pageview — a session that logs in partway through still counts as "guest" here, same
  * first-touch simplification getDeviceBreakdown/getTrafficSources already make. */
 export async function getLoggedInVsGuest(days?: number, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:logged-in-vs-guest:${range.cacheKeyPart}`;
   const cached = await cacheGet<{ loggedIn: number; guest: number }>(cacheKey);
   if (cached) return cached;
@@ -1384,7 +917,7 @@ export async function getLoggedInVsGuest(days?: number, dateFrom?: Date, dateTo?
     WITH first_touch AS (
       SELECT DISTINCT ON ("sessionId") "sessionId", "isLoggedIn"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       ORDER BY "sessionId", "createdAt" ASC
     )
     SELECT
@@ -1401,7 +934,7 @@ export async function getLoggedInVsGuest(days?: number, dateFrom?: Date, dateTo?
 /** Top landing pages (first pageview of a session) and top exit pages (last pageview) — the
  * "where visitors arrive" / "where visitors give up" pair. */
 export async function getEntryExitPages(days?: number, limit = 10, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:entry-exit-pages:${range.cacheKeyPart}:${limit}`;
   const cached = await cacheGet<{
     entryPages: Array<{ path: string; sessions: number }>;
@@ -1415,7 +948,7 @@ export async function getEntryExitPages(days?: number, limit = 10, dateFrom?: Da
       WITH first_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", path
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+        WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
         ORDER BY "sessionId", "createdAt" ASC
       )
       SELECT path, COUNT(*)::bigint AS sessions
@@ -1428,7 +961,7 @@ export async function getEntryExitPages(days?: number, limit = 10, dateFrom?: Da
       WITH last_touch AS (
         SELECT DISTINCT ON ("sessionId") "sessionId", path
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+        WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
         ORDER BY "sessionId", "createdAt" DESC
       )
       SELECT path, COUNT(*)::bigint AS sessions
@@ -1451,7 +984,7 @@ export async function getEntryExitPages(days?: number, limit = 10, dateFrom?: Da
  * actually landed (durationMs IS NOT NULL); a tab killed before that beacon fires just isn't
  * counted, rather than skewing the average with a false zero. */
 export async function getEngagementSummary(days?: number, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:engagement:${range.cacheKeyPart}`;
   const cached = await cacheGet<{
     avgTimePerPageMs: number;
@@ -1470,13 +1003,13 @@ export async function getEngagementSummary(days?: number, dateFrom?: Date, dateT
         COALESCE(AVG("scrollDepthPct"), 0)::float AS "avgScroll",
         COALESCE(AVG("clickCount"), 0)::float AS "avgClicks"
       FROM "PageView"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until} AND "durationMs" IS NOT NULL
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)} AND "durationMs" IS NOT NULL
     `,
     prisma.$queryRaw<Array<{ avgSessionDuration: number; avgPages: number }>>`
       WITH per_session AS (
         SELECT "sessionId", COALESCE(SUM("durationMs"), 0) AS total_duration, COUNT(*) AS pages
         FROM "PageView"
-        WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+        WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
         GROUP BY "sessionId"
       )
       SELECT COALESCE(AVG(total_duration), 0)::float AS "avgSessionDuration", COALESCE(AVG(pages), 0)::float AS "avgPages"
@@ -1495,17 +1028,18 @@ export async function getEngagementSummary(days?: number, dateFrom?: Date, dateT
   return result;
 }
 
-/** Histogram of how many distinct calendar days (lifetime, Asia/Dhaka) each known visitor has been
+/** Histogram of how many distinct calendar days (lifetime, store timezone) each known visitor has been
  * active on — "how sticky is the audience", not windowed since frequency is inherently a lifetime
  * measure. Visitors with no visitorId (pre-Phase-2 traffic) can't be bucketed and are excluded. */
 export async function getReturningVisitorFrequency() {
-  const cacheKey = "analytics:returning-visitor-frequency";
+  const { timezone: tz } = await storeContext();
+  const cacheKey = `analytics:returning-visitor-frequency:${tz}`;
   const cached = await cacheGet<Array<{ bucket: string; visitors: number }>>(cacheKey);
   if (cached) return cached;
 
   const rows = await prisma.$queryRaw<Array<{ bucket: string; visitors: bigint }>>`
     WITH per_visitor_days AS (
-      SELECT "visitorId", COUNT(DISTINCT date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')) AS "activeDays"
+      SELECT "visitorId", COUNT(DISTINCT date_trunc('day', ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${tz})) AS "activeDays"
       FROM "PageView"
       WHERE "visitorId" IS NOT NULL
       GROUP BY "visitorId"
@@ -1652,7 +1186,7 @@ export async function getVisitorJourneyFunnel(days?: number): Promise<VisitorJou
   const cached = await cacheGet<VisitorJourneyFunnel>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
 
   const [pageRows, eventRows, orderRows, customerInsights] = await Promise.all([
     prisma.$queryRaw<Array<{ landing: bigint; category: bigint; product: bigint; checkout: bigint; success: bigint }>>`
@@ -1663,19 +1197,19 @@ export async function getVisitorJourneyFunnel(days?: number): Promise<VisitorJou
         COUNT(DISTINCT "sessionId") FILTER (WHERE path = '/checkout')::bigint AS checkout,
         COUNT(DISTINCT "sessionId") FILTER (WHERE path LIKE '/order-confirmation/%')::bigint AS success
       FROM "PageView"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${utcInstant(since)}
     `,
     prisma.$queryRaw<Array<{ variant: bigint; addToCart: bigint }>>`
       SELECT
         COUNT(DISTINCT "sessionId") FILTER (WHERE type = 'VARIANT_SELECTED')::bigint AS variant,
         COUNT(DISTINCT "sessionId") FILTER (WHERE type = 'ADD_TO_CART')::bigint AS "addToCart"
       FROM "FunnelEvent"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${utcInstant(since)}
     `,
     prisma.$queryRaw<Array<{ payment: bigint }>>`
       SELECT COUNT(DISTINCT "sessionId")::bigint AS payment
       FROM "Order"
-      WHERE "sessionId" IS NOT NULL AND "createdAt" >= ${since}
+      WHERE "deletedAt" IS NULL AND "sessionId" IS NOT NULL AND "createdAt" >= ${utcInstant(since)}
     `,
     getCustomerInsights(),
   ]);
@@ -1743,12 +1277,12 @@ export async function getMostAddedToCart(days?: number, limit = 10) {
   const cached = await cacheGet<Array<{ id: string; name: string; slug: string; count: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ id: string; name: string; slug: string; count: bigint }>>`
     SELECT p.id, p.name, p.slug, COUNT(*)::bigint AS count
     FROM "FunnelEvent" fe
     JOIN "Product" p ON p.id = fe."productId"
-    WHERE fe.type = 'ADD_TO_CART' AND fe."createdAt" >= ${since}
+    WHERE fe.type = 'ADD_TO_CART' AND fe."createdAt" >= ${utcInstant(since)}
     GROUP BY p.id, p.name, p.slug
     ORDER BY count DESC
     LIMIT ${limit}
@@ -1764,12 +1298,12 @@ export async function getMostRemovedFromCart(days?: number, limit = 10) {
   const cached = await cacheGet<Array<{ id: string; name: string; slug: string; count: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ id: string; name: string; slug: string; count: bigint }>>`
     SELECT p.id, p.name, p.slug, COUNT(*)::bigint AS count
     FROM "FunnelEvent" fe
     JOIN "Product" p ON p.id = fe."productId"
-    WHERE fe.type = 'REMOVE_FROM_CART' AND fe."createdAt" >= ${since}
+    WHERE fe.type = 'REMOVE_FROM_CART' AND fe."createdAt" >= ${utcInstant(since)}
     GROUP BY p.id, p.name, p.slug
     ORDER BY count DESC
     LIMIT ${limit}
@@ -1798,362 +1332,6 @@ export async function getMostWishlisted(limit = 10) {
   `;
 
   const result = rows.map((r) => ({ id: r.id, name: r.name, slug: r.slug, count: Number(r.count) }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Browse-to-buy ratio per product: distinct orders containing the product ÷ ProductViewLog views
- * in the window. Returns the full ranked list (capped at 500 for safety, not the usual small
- * `limit`) rather than a single top-N — the UI reads both ends of the same sorted array for
- * "highest" and "lowest" conversion, so there's no need for two endpoints. Only products with at
- * least one view are included; a product nobody viewed has no meaningful conversion rate to rank. */
-export async function getProductConversionRates(days?: number) {
-  const cacheKey = `analytics:product-conversion:${days ?? "all"}`;
-  const cached = await cacheGet<Array<{ id: string; name: string; slug: string; views: number; orders: number; conversionRatePct: number }>>(
-    cacheKey,
-  );
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; slug: string; views: bigint; orders: bigint }>>`
-    WITH views AS (
-      SELECT "productId", COUNT(*)::bigint AS views
-      FROM "ProductViewLog"
-      WHERE "createdAt" >= ${since}
-      GROUP BY "productId"
-    ),
-    product_orders AS (
-      SELECT pv."productId" AS "productId", COUNT(DISTINCT oi."orderId")::bigint AS orders
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-      GROUP BY pv."productId"
-    )
-    SELECT p.id, p.name, p.slug, v.views, COALESCE(po.orders, 0) AS orders
-    FROM views v
-    JOIN "Product" p ON p.id = v."productId"
-    LEFT JOIN product_orders po ON po."productId" = p.id
-    ORDER BY (COALESCE(po.orders, 0)::float / v.views) DESC
-    LIMIT 500
-  `;
-
-  const result = rows.map((r) => {
-    const views = Number(r.views);
-    const orders = Number(r.orders);
-    return { id: r.id, name: r.name, slug: r.slug, views, orders, conversionRatePct: views > 0 ? (orders / views) * 100 : 0 };
-  });
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Revenue minus estimated COGS per product — same current-cost-price approximation Phase 1's
- * executive overview already accepts for gross profit (OrderItem never snapshotted cost at sale
- * time), applied per product instead of store-wide. */
-export async function getHighestProfitProducts(days?: number, limit = 10) {
-  const cacheKey = `analytics:highest-profit-products:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<Array<{ id: string; name: string; slug: string; revenue: number; cogs: number; profit: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; slug: string; revenue: number; cogs: number }>>`
-    SELECT p.id, p.name, p.slug,
-      SUM(oi.quantity * oi."priceSnapshot")::float AS revenue,
-      SUM(oi.quantity * COALESCE(pv."costPrice", p."costPrice", 0))::float AS cogs
-    FROM "OrderItem" oi
-    JOIN "Order" o ON o.id = oi."orderId"
-    JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-    JOIN "Product" p ON p.id = pv."productId"
-    WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    GROUP BY p.id, p.name, p.slug
-    ORDER BY (SUM(oi.quantity * oi."priceSnapshot") - SUM(oi.quantity * COALESCE(pv."costPrice", p."costPrice", 0))) DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ id: r.id, name: r.name, slug: r.slug, revenue: r.revenue, cogs: r.cogs, profit: r.revenue - r.cogs }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Return rate uses OrderItem.returnedQuantity — the correct, unambiguous per-line-item source
- * (ReturnRequest.orderItemId is only ever populated for EXCHANGE, not the common RETURN case, so
- * it can't reliably attribute a return to one product). Refund rate is necessarily an order-level
- * proxy instead: of orders containing this product, what fraction ended up paymentStatus =
- * REFUNDED — neither ReturnRequest nor Order snapshots a per-item refund amount, so this is a
- * signal about the order, not an exact per-item figure. Ranked by return rate. */
-export async function getProductRiskMetrics(days?: number, limit = 10) {
-  const cacheKey = `analytics:product-risk:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<
-    Array<{ id: string; name: string; slug: string; returnRatePct: number; refundRatePct: number; totalOrders: number }>
-  >(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<
-    Array<{ id: string; name: string; slug: string; totalQty: bigint; returnedQty: bigint; totalOrders: bigint; refundedOrders: bigint }>
-  >`
-    WITH item_stats AS (
-      SELECT pv."productId" AS "productId",
-        SUM(oi.quantity)::bigint AS "totalQty",
-        SUM(oi."returnedQuantity")::bigint AS "returnedQty",
-        COUNT(DISTINCT oi."orderId")::bigint AS "totalOrders",
-        COUNT(DISTINCT oi."orderId") FILTER (WHERE o."paymentStatus" = 'REFUNDED')::bigint AS "refundedOrders"
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-      GROUP BY pv."productId"
-    )
-    SELECT p.id, p.name, p.slug, s."totalQty", s."returnedQty", s."totalOrders", s."refundedOrders"
-    FROM item_stats s
-    JOIN "Product" p ON p.id = s."productId"
-    WHERE s."totalQty" > 0
-    ORDER BY (s."returnedQty"::float / s."totalQty") DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => {
-    const totalQty = Number(r.totalQty);
-    const totalOrders = Number(r.totalOrders);
-    return {
-      id: r.id,
-      name: r.name,
-      slug: r.slug,
-      returnRatePct: totalQty > 0 ? (Number(r.returnedQty) / totalQty) * 100 : 0,
-      refundRatePct: totalOrders > 0 ? (Number(r.refundedOrders) / totalOrders) * 100 : 0,
-      totalOrders,
-    };
-  });
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Admin-wide co-purchase pairs, distinct from the single-product getFrequentlyBoughtTogether in
- * product.service.ts (storefront-facing, scoped to one product's own recommendations) — same
- * join shape, aggregated across the whole catalog instead. `a."productId" < b."productId"`
- * dedupes symmetric pairs (A,B) and (B,A) into one row and excludes self-pairs in a single
- * condition. */
-export async function getFrequentlyBoughtTogetherPairs(days?: number, limit = 10) {
-  const cacheKey = `analytics:fbt-pairs:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<Array<{ productA: string; productB: string; coCount: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<Array<{ productA: string; productB: string; coCount: bigint }>>`
-    WITH order_products AS (
-      SELECT DISTINCT o.id AS order_id, pv."productId" AS "productId"
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    ),
-    pairs AS (
-      SELECT a."productId" AS product_a, b."productId" AS product_b, COUNT(DISTINCT a.order_id)::bigint AS "coCount"
-      FROM order_products a
-      JOIN order_products b ON a.order_id = b.order_id AND a."productId" < b."productId"
-      GROUP BY a."productId", b."productId"
-    )
-    SELECT pa.name AS "productA", pb.name AS "productB", pairs."coCount"
-    FROM pairs
-    JOIN "Product" pa ON pa.id = pairs.product_a
-    JOIN "Product" pb ON pb.id = pairs.product_b
-    ORDER BY pairs."coCount" DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ productA: r.productA, productB: r.productB, coCount: Number(r.coCount) }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-export interface ProductSalesHeatmap {
-  products: Array<{ id: string; name: string; totalQty: number }>;
-  days: string[];
-  /** cells[productId][date] = units sold, zero-filled for every product×day combination. */
-  cells: Record<string, Record<string, number>>;
-}
-
-/** Top-N-products × last-N-days units-sold intensity grid — "Product Heatmap" has no established
- * BI-specific meaning distinct from Section 12's click/scroll heatmaps, so this interprets it as
- * "which products are hot on which days", the same day-grid pattern already used by
- * traffic-heatmap.tsx for site-wide traffic. Always windowed (no "all time" option — a 365-day-wide
- * grid isn't a readable heatmap), defaulting to 14 days. */
-export async function getProductSalesHeatmap(days = 14, limit = 10): Promise<ProductSalesHeatmap> {
-  const cacheKey = `analytics:product-sales-heatmap:${days}:${limit}`;
-  const cached = await cacheGet<ProductSalesHeatmap>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgo(days);
-  const topProducts = await prisma.$queryRaw<Array<{ id: string; name: string; totalQty: bigint }>>`
-    SELECT p.id, p.name, SUM(oi.quantity)::bigint AS "totalQty"
-    FROM "OrderItem" oi
-    JOIN "Order" o ON o.id = oi."orderId"
-    JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-    JOIN "Product" p ON p.id = pv."productId"
-    WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    GROUP BY p.id, p.name
-    ORDER BY "totalQty" DESC
-    LIMIT ${limit}
-  `;
-
-  const dayKeys: string[] = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(since);
-    d.setUTCDate(d.getUTCDate() + i);
-    dayKeys.push(d.toISOString().slice(0, 10));
-  }
-
-  const cells: Record<string, Record<string, number>> = {};
-  for (const p of topProducts) cells[p.id] = Object.fromEntries(dayKeys.map((k) => [k, 0]));
-
-  if (topProducts.length > 0) {
-    const productIds = topProducts.map((p) => p.id);
-    const dailyRows = await prisma.$queryRaw<Array<{ productId: string; day: Date; qty: bigint }>>`
-      SELECT pv."productId" AS "productId", date_trunc('day', o."createdAt") AS day, SUM(oi.quantity)::bigint AS qty
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since} AND pv."productId" IN (${Prisma.join(productIds)})
-      GROUP BY pv."productId", day
-    `;
-    for (const row of dailyRows) {
-      const key = row.day.toISOString().slice(0, 10);
-      if (cells[row.productId] && key in cells[row.productId]!) cells[row.productId]![key] = Number(row.qty);
-    }
-  }
-
-  const result: ProductSalesHeatmap = {
-    products: topProducts.map((p) => ({ id: p.id, name: p.name, totalQty: Number(p.totalQty) })),
-    days: dayKeys,
-    cells,
-  };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Units/revenue by exact SKU, from OrderItem's own snapshot fields — deliberately not joined to
- * the live ProductVariant/Product (unlike the other new rankings in this file), the same reasoning
- * getTopProducts already applies: a variant-level "what sold" report needs to survive that exact
- * variant being renamed or deleted since, to stay historically accurate. */
-export async function getVariantPerformance(days?: number, limit = 10) {
-  const cacheKey = `analytics:variant-performance:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<Array<{ sku: string; productName: string; size: string; color: string; unitsSold: number; revenue: number }>>(
-    cacheKey,
-  );
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<
-    Array<{ sku: string; productName: string; size: string; color: string; unitsSold: bigint; revenue: number }>
-  >`
-    SELECT oi."skuSnapshot" AS sku, oi."productNameSnapshot" AS "productName", oi."sizeSnapshot" AS size, oi."colorSnapshot" AS color,
-      SUM(oi.quantity)::bigint AS "unitsSold",
-      SUM(oi.quantity * oi."priceSnapshot")::float AS revenue
-    FROM "OrderItem" oi
-    JOIN "Order" o ON o.id = oi."orderId"
-    WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    GROUP BY oi."skuSnapshot", oi."productNameSnapshot", oi."sizeSnapshot", oi."colorSnapshot"
-    ORDER BY "unitsSold" DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({
-    sku: r.sku,
-    productName: r.productName,
-    size: r.size,
-    color: r.color,
-    unitsSold: Number(r.unitsSold),
-    revenue: r.revenue,
-  }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Size and color breakdowns, one query each but one function/cache-entry — same "combine related
- * breakdowns in one call" pattern as getSearchAudience. Snapshot-based, same reasoning as
- * getVariantPerformance above. */
-export async function getSizeColorPerformance(days?: number) {
-  const cacheKey = `analytics:size-color-performance:${days ?? "all"}`;
-  const cached = await cacheGet<{
-    sizes: Array<{ value: string; unitsSold: number; revenue: number }>;
-    colors: Array<{ value: string; unitsSold: number; revenue: number }>;
-  }>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const [sizeRows, colorRows] = await Promise.all([
-    prisma.$queryRaw<Array<{ value: string; unitsSold: bigint; revenue: number }>>`
-      SELECT oi."sizeSnapshot" AS value, SUM(oi.quantity)::bigint AS "unitsSold", SUM(oi.quantity * oi."priceSnapshot")::float AS revenue
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-      GROUP BY oi."sizeSnapshot"
-      ORDER BY "unitsSold" DESC
-    `,
-    prisma.$queryRaw<Array<{ value: string; unitsSold: bigint; revenue: number }>>`
-      SELECT oi."colorSnapshot" AS value, SUM(oi.quantity)::bigint AS "unitsSold", SUM(oi.quantity * oi."priceSnapshot")::float AS revenue
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-      GROUP BY oi."colorSnapshot"
-      ORDER BY "unitsSold" DESC
-    `,
-  ]);
-
-  const result = {
-    sizes: sizeRows.map((r) => ({ value: r.value, unitsSold: Number(r.unitsSold), revenue: r.revenue })),
-    colors: colorRows.map((r) => ({ value: r.value, unitsSold: Number(r.unitsSold), revenue: r.revenue })),
-  };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** COGS sold in the window ÷ current inventory value, per product — the standard practical
- * substitute for time-weighted average inventory when (as here) there's no historical stock
- * snapshot to compute a true average from, same class of approximation as Phase 1's
- * current-cost-price gross profit. Ranked descending: highest turnover = moving fastest relative
- * to what's currently held. */
-export async function getInventoryTurnover(days?: number, limit = 10) {
-  const cacheKey = `analytics:inventory-turnover:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<Array<{ id: string; name: string; slug: string; cogsSold: number; inventoryValue: number; turnoverRatio: number }>>(
-    cacheKey,
-  );
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<Array<{ id: string; name: string; slug: string; inventoryValue: number; cogsSold: number }>>`
-    WITH sold AS (
-      SELECT pv."productId" AS "productId", SUM(oi.quantity * COALESCE(pv."costPrice", p."costPrice", 0))::float AS "cogsSold"
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      JOIN "Product" p ON p.id = pv."productId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-      GROUP BY pv."productId"
-    ),
-    inventory AS (
-      SELECT p.id, p.name, p.slug, SUM(pv.stock * COALESCE(pv."costPrice", p."costPrice", 0))::float AS "inventoryValue"
-      FROM "Product" p
-      JOIN "ProductVariant" pv ON pv."productId" = p.id
-      WHERE p."isActive" = true AND p."deletedAt" IS NULL
-      GROUP BY p.id, p.name, p.slug
-    )
-    SELECT inv.id, inv.name, inv.slug, inv."inventoryValue", COALESCE(sold."cogsSold", 0) AS "cogsSold"
-    FROM inventory inv
-    LEFT JOIN sold ON sold."productId" = inv.id
-    WHERE inv."inventoryValue" > 0
-    ORDER BY (COALESCE(sold."cogsSold", 0) / inv."inventoryValue") DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    slug: r.slug,
-    cogsSold: r.cogsSold,
-    inventoryValue: r.inventoryValue,
-    turnoverRatio: r.inventoryValue > 0 ? r.cogsSold / r.inventoryValue : 0,
-  }));
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
   return result;
 }
@@ -2214,207 +1392,12 @@ export async function getPurchaseFrequencyDistribution() {
   return result;
 }
 
-/** Order count/revenue by payment method — COD vs. the two online gateways. */
-export async function getFavoritePaymentMethod(days?: number, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
-  const cacheKey = `analytics:favorite-payment-method:${range.cacheKeyPart}`;
-  const cached = await cacheGet<Array<{ method: string; orders: number; revenue: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const { since, until } = range;
-  const rows = await prisma.$queryRaw<Array<{ method: string; orders: bigint; revenue: number }>>`
-    SELECT "paymentMethod" AS method, COUNT(*)::bigint AS orders, COALESCE(SUM(total), 0)::float AS revenue
-    FROM "Order"
-    WHERE status != 'CANCELLED' AND "createdAt" >= ${since} AND "createdAt" <= ${until}
-    GROUP BY "paymentMethod"
-    ORDER BY orders DESC
-  `;
-
-  const result = rows.map((r) => ({ method: r.method, orders: Number(r.orders), revenue: r.revenue }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Hour-of-day (0-23) and day-of-week order counts, Asia/Dhaka local time — same
- * naive-timestamp-in-local-time idiom as getTrafficHeatmap, applied to Order.createdAt instead of
- * PageView.createdAt. One dimension at a time (not a 7×24 grid) since "most purchased time" is
- * asked as a single question, not a matrix. */
-export async function getPurchaseTimeDistribution(days?: number) {
-  const cacheKey = `analytics:purchase-time:${days ?? "all"}`;
-  const cached = await cacheGet<{ byHour: Array<{ hour: number; orders: number }>; byDayOfWeek: Array<{ dow: number; orders: number }> }>(
-    cacheKey,
-  );
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<Array<{ hour: number; dow: number; orders: bigint }>>`
-    SELECT
-      EXTRACT(HOUR FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')::int AS hour,
-      EXTRACT(DOW FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')::int AS dow,
-      COUNT(*)::bigint AS orders
-    FROM "Order"
-    WHERE status != 'CANCELLED' AND "createdAt" >= ${since}
-    GROUP BY hour, dow
-  `;
-
-  const byHourMap = new Map<number, number>();
-  const byDowMap = new Map<number, number>();
-  for (const r of rows) {
-    byHourMap.set(r.hour, (byHourMap.get(r.hour) ?? 0) + Number(r.orders));
-    byDowMap.set(r.dow, (byDowMap.get(r.dow) ?? 0) + Number(r.orders));
-  }
-
-  const result = {
-    byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, orders: byHourMap.get(hour) ?? 0 })),
-    byDayOfWeek: Array.from({ length: 7 }, (_, dow) => ({ dow, orders: byDowMap.get(dow) ?? 0 })),
-  };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Orders grouped by shipping division and district — "which city buys the most", one query/
- * cache-entry for both groupings, same pattern as Phase 4's getSearchAudience. */
-export async function getCustomerLocationBreakdown(days?: number, limit = 10) {
-  const cacheKey = `analytics:customer-location:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<{
-    divisions: Array<{ division: string; orders: number; revenue: number }>;
-    districts: Array<{ district: string; orders: number; revenue: number }>;
-  }>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const [divisionRows, districtRows] = await Promise.all([
-    prisma.$queryRaw<Array<{ division: string; orders: bigint; revenue: number }>>`
-      SELECT "shippingDivision" AS division, COUNT(*)::bigint AS orders, COALESCE(SUM(total), 0)::float AS revenue
-      FROM "Order"
-      WHERE status != 'CANCELLED' AND "createdAt" >= ${since}
-      GROUP BY "shippingDivision"
-      ORDER BY orders DESC
-      LIMIT ${limit}
-    `,
-    prisma.$queryRaw<Array<{ district: string; orders: bigint; revenue: number }>>`
-      SELECT "shippingDistrict" AS district, COUNT(*)::bigint AS orders, COALESCE(SUM(total), 0)::float AS revenue
-      FROM "Order"
-      WHERE status != 'CANCELLED' AND "createdAt" >= ${since}
-      GROUP BY "shippingDistrict"
-      ORDER BY orders DESC
-      LIMIT ${limit}
-    `,
-  ]);
-
-  const result = {
-    divisions: divisionRows.map((r) => ({ division: r.division, orders: Number(r.orders), revenue: r.revenue })),
-    districts: districtRows.map((r) => ({ district: r.district, orders: Number(r.orders), revenue: r.revenue })),
-  };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
 // ---------------------------------------------------------------------------
 // Section 7 — Marketing Intelligence. Traffic-source/UTM attribution and campaign performance
 // already exist above (getTrafficSources, getCampaignPerformance, Phase 2) — these are the
 // remaining marketing levers: coupons, bundles, flash sales, bulk email/SMS/push campaigns, and
 // the reward-points ledger. No referral program exists anywhere in the schema, so it isn't here.
 // ---------------------------------------------------------------------------
-
-/** Per-coupon redemption volume, discount given, and revenue attributed — join on Order.couponId,
- * the only place a coupon's usage is recorded. */
-export async function getCouponEffectiveness(days?: number, limit = 10) {
-  const cacheKey = `analytics:coupon-effectiveness:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<Array<{ code: string; type: string; orders: number; discountGiven: number; revenue: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<Array<{ code: string; type: string; orders: bigint; discountGiven: number; revenue: number }>>`
-    SELECT c.code, c.type::text AS type, COUNT(o.id)::bigint AS orders,
-      COALESCE(SUM(o.discount), 0)::float AS "discountGiven", COALESCE(SUM(o.total), 0)::float AS revenue
-    FROM "Coupon" c
-    JOIN "Order" o ON o."couponId" = c.id
-    WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    GROUP BY c.id, c.code, c.type
-    ORDER BY orders DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ code: r.code, type: r.type, orders: Number(r.orders), discountGiven: r.discountGiven, revenue: r.revenue }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Per-bundle redemption volume, discount given, and revenue — the category cross-sell bundles
- * (see Bundle model), not coupons. */
-export async function getBundlePerformance(days?: number, limit = 10) {
-  const cacheKey = `analytics:bundle-performance:${days ?? "all"}:${limit}`;
-  const cached = await cacheGet<Array<{ name: string; orders: number; discountGiven: number; revenue: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<Array<{ name: string; orders: bigint; discountGiven: number; revenue: number }>>`
-    SELECT b.name, COUNT(o.id)::bigint AS orders,
-      COALESCE(SUM(o."bundleDiscount"), 0)::float AS "discountGiven", COALESCE(SUM(o.total), 0)::float AS revenue
-    FROM "Bundle" b
-    JOIN "Order" o ON o."bundleId" = b.id
-    WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    GROUP BY b.id, b.name
-    ORDER BY orders DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({ name: r.name, orders: Number(r.orders), discountGiven: r.discountGiven, revenue: r.revenue }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Units/revenue actually sold *during* each flash sale's own window, for the products it
- * discounted — not just any sale of those products. There's no direct OrderItem -> FlashSaleItem
- * link, so a sale is attributed to a flash sale by matching product + the order falling inside
- * that sale's [startsAt, endsAt]. */
-export async function getFlashSalePerformance(limit = 10) {
-  const cacheKey = `analytics:flash-sale-performance:${limit}`;
-  const cached = await cacheGet<
-    Array<{ id: string; name: string; startsAt: string; endsAt: string; unitsSold: number; revenue: number }>
-  >(cacheKey);
-  if (cached) return cached;
-
-  const rows = await prisma.$queryRaw<
-    Array<{ id: string; name: string; startsAt: Date; endsAt: Date; unitsSold: bigint; revenue: number }>
-  >`
-    WITH sale_variants AS (
-      SELECT fs.id AS "flashSaleId", fs.name, fs."startsAt", fs."endsAt", pv.id AS "variantId"
-      FROM "FlashSale" fs
-      JOIN "FlashSaleItem" fsi ON fsi."flashSaleId" = fs.id
-      JOIN "ProductVariant" pv ON pv."productId" = fsi."productId"
-    ),
-    sales AS (
-      SELECT sv."flashSaleId", SUM(oi.quantity)::bigint AS "unitsSold", SUM(oi.quantity * oi."priceSnapshot")::float AS revenue
-      FROM sale_variants sv
-      JOIN "OrderItem" oi ON oi."variantId" = sv."variantId"
-      JOIN "Order" o ON o.id = oi."orderId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= sv."startsAt" AND o."createdAt" <= sv."endsAt"
-      GROUP BY sv."flashSaleId"
-    ),
-    sales_meta AS (
-      SELECT DISTINCT "flashSaleId", name, "startsAt", "endsAt" FROM sale_variants
-    )
-    SELECT m."flashSaleId" AS id, m.name, m."startsAt", m."endsAt",
-      COALESCE(s."unitsSold", 0)::bigint AS "unitsSold", COALESCE(s.revenue, 0)::float AS revenue
-    FROM sales_meta m
-    LEFT JOIN sales s ON s."flashSaleId" = m."flashSaleId"
-    ORDER BY m."startsAt" DESC
-    LIMIT ${limit}
-  `;
-
-  const result = rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    startsAt: r.startsAt.toISOString(),
-    endsAt: r.endsAt.toISOString(),
-    unitsSold: Number(r.unitsSold),
-    revenue: r.revenue,
-  }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
 
 /** Per-campaign delivery outcome for the bulk email/SMS/push sender — distinct from
  * getCampaignPerformance above, which attributes storefront revenue to a UTM campaign string;
@@ -2483,57 +1466,11 @@ export async function getLoyaltyPointsOverview() {
 // discount usage, return/exchange reasons, and courier delivery performance/loss.
 // ---------------------------------------------------------------------------
 
-/** How much of order revenue is discounted, lifetime or windowed — coupon and bundle discounts
- * counted separately since they're independent mechanisms (an order can carry either or both). */
-export async function getDiscountUsageBreakdown(days?: number, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
-  const cacheKey = `analytics:discount-usage:${range.cacheKeyPart}`;
-  const cached = await cacheGet<{
-    totalOrders: number;
-    ordersWithDiscount: number;
-    discountedOrderRatePct: number;
-    couponDiscountTotal: number;
-    bundleDiscountTotal: number;
-    subtotalTotal: number;
-    discountRatePct: number;
-  }>(cacheKey);
-  if (cached) return cached;
-
-  const { since, until } = range;
-  const rows = await prisma.$queryRaw<
-    Array<{ totalOrders: bigint; ordersWithDiscount: bigint; couponDiscountTotal: number; bundleDiscountTotal: number; subtotalTotal: number }>
-  >`
-    SELECT COUNT(*)::bigint AS "totalOrders",
-      COUNT(*) FILTER (WHERE "couponId" IS NOT NULL OR "bundleId" IS NOT NULL)::bigint AS "ordersWithDiscount",
-      COALESCE(SUM(discount), 0)::float AS "couponDiscountTotal",
-      COALESCE(SUM("bundleDiscount"), 0)::float AS "bundleDiscountTotal",
-      COALESCE(SUM(subtotal), 0)::float AS "subtotalTotal"
-    FROM "Order"
-    WHERE status != 'CANCELLED' AND "createdAt" >= ${since} AND "createdAt" <= ${until}
-  `;
-
-  const row = rows[0]!;
-  const totalOrders = Number(row.totalOrders);
-  const ordersWithDiscount = Number(row.ordersWithDiscount);
-  const totalDiscount = row.couponDiscountTotal + row.bundleDiscountTotal;
-  const result = {
-    totalOrders,
-    ordersWithDiscount,
-    discountedOrderRatePct: totalOrders > 0 ? (ordersWithDiscount / totalOrders) * 100 : 0,
-    couponDiscountTotal: row.couponDiscountTotal,
-    bundleDiscountTotal: row.bundleDiscountTotal,
-    subtotalTotal: row.subtotalTotal,
-    discountRatePct: row.subtotalTotal > 0 ? (totalDiscount / row.subtotalTotal) * 100 : 0,
-  };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
 /** Return/exchange request volume by type + status, plus the most common reasons — `reason` is
  * free text (customers type it), so only exact repeats group together; it's a signal, not a
  * clustered taxonomy. */
 export async function getReturnRequestAnalytics(days?: number, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:return-request-analytics:${range.cacheKeyPart}`;
   const cached = await cacheGet<{
     byTypeStatus: Array<{ type: string; status: string; count: number }>;
@@ -2546,14 +1483,14 @@ export async function getReturnRequestAnalytics(days?: number, dateFrom?: Date, 
     prisma.$queryRaw<Array<{ type: string; status: string; count: bigint }>>`
       SELECT type::text AS type, status::text AS status, COUNT(*)::bigint AS count
       FROM "ReturnRequest"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       GROUP BY type, status
       ORDER BY count DESC
     `,
     prisma.$queryRaw<Array<{ reason: string; count: bigint }>>`
       SELECT reason, COUNT(*)::bigint AS count
       FROM "ReturnRequest"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       GROUP BY reason
       ORDER BY count DESC
       LIMIT 10
@@ -2573,7 +1510,7 @@ export async function getReturnRequestAnalytics(days?: number, dateFrom?: Date, 
  * and what is it costing us", since Steadfast's API exposes no per-order fee to compute the
  * latter from directly (see CourierLossEvent's schema comment). */
 export async function getCourierPerformance(days?: number, dateFrom?: Date, dateTo?: Date) {
-  const range = resolveDateRange(days, dateFrom, dateTo);
+  const range = await resolveDateRange(days, dateFrom, dateTo);
   const cacheKey = `analytics:courier-performance:${range.cacheKeyPart}`;
   const cached = await cacheGet<{
     byStatus: Array<{ status: string; count: number }>;
@@ -2587,14 +1524,14 @@ export async function getCourierPerformance(days?: number, dateFrom?: Date, date
     prisma.$queryRaw<Array<{ status: string | null; count: bigint }>>`
       SELECT "courierStatus" AS status, COUNT(*)::bigint AS count
       FROM "Order"
-      WHERE "courierConsignmentId" IS NOT NULL AND "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "deletedAt" IS NULL AND "courierConsignmentId" IS NOT NULL AND "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       GROUP BY "courierStatus"
       ORDER BY count DESC
     `,
     prisma.$queryRaw<Array<{ reason: string; count: bigint; amount: number }>>`
       SELECT reason::text AS reason, COUNT(*)::bigint AS count, COALESCE(SUM(amount), 0)::float AS amount
       FROM "CourierLossEvent"
-      WHERE "createdAt" >= ${since} AND "createdAt" <= ${until}
+      WHERE "createdAt" >= ${utcInstant(since)} AND "createdAt" < ${utcInstant(until)}
       GROUP BY reason
       ORDER BY amount DESC
     `,
@@ -2618,108 +1555,6 @@ export async function getCourierPerformance(days?: number, dateFrom?: Date, date
 // so this is StoreSetting's flat rate applied to windowed revenue, not a historical figure).
 // ---------------------------------------------------------------------------
 
-/** Daily revenue vs. estimated COGS (current cost price, same COALESCE(variant, product, 0)
- * convention as getInventoryTurnover/getHighestProfitProducts) vs. the resulting profit, zero-filled
- * across the window — the revenue-series idiom, extended with a cost side. */
-export async function getProfitTrend(days = 30) {
-  const cacheKey = `analytics:profit-trend:${days}`;
-  const cached = await cacheGet<Array<{ date: string; revenue: number; cogs: number; profit: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const since = new Date();
-  since.setUTCDate(since.getUTCDate() - (days - 1));
-  since.setUTCHours(0, 0, 0, 0);
-
-  const [revenueRows, cogsRows] = await Promise.all([
-    prisma.$queryRaw<Array<{ day: Date; revenue: number }>>`
-      SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day, COALESCE(SUM(total), 0)::float AS revenue
-      FROM "Order"
-      WHERE "createdAt" >= ${since} AND status != 'CANCELLED'
-      GROUP BY day
-    `,
-    prisma.$queryRaw<Array<{ day: Date; cogs: number }>>`
-      SELECT date_trunc('day', o."createdAt" AT TIME ZONE 'UTC') AS day,
-        COALESCE(SUM(oi.quantity * COALESCE(pv."costPrice", p."costPrice", 0)), 0)::float AS cogs
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      JOIN "ProductVariant" pv ON pv.id = oi."variantId"
-      JOIN "Product" p ON p.id = pv."productId"
-      WHERE o."createdAt" >= ${since} AND o.status != 'CANCELLED'
-      GROUP BY day
-    `,
-  ]);
-
-  const revenueByDay = new Map(revenueRows.map((r) => [r.day.toISOString().slice(0, 10), r.revenue]));
-  const cogsByDay = new Map(cogsRows.map((r) => [r.day.toISOString().slice(0, 10), r.cogs]));
-
-  const series = [];
-  for (let i = 0; i < days; i++) {
-    const d = new Date(since);
-    d.setUTCDate(d.getUTCDate() + i);
-    const key = d.toISOString().slice(0, 10);
-    const revenue = revenueByDay.get(key) ?? 0;
-    const cogs = cogsByDay.get(key) ?? 0;
-    series.push({ date: key, revenue, cogs, profit: revenue - cogs });
-  }
-
-  await cacheSet(cacheKey, series, CACHE_TTL_SECONDS);
-  return series;
-}
-
-/** The three "money leaving the business" figures that aren't plain revenue/COGS: refunded-order
- * value, discounts given away (coupon + bundle), and courier round-trip losses — summed for the
- * window so Financial Analytics can show a real cost line beyond COGS. */
-export async function getFinancialCostBreakdown(days?: number) {
-  const cacheKey = `analytics:financial-cost-breakdown:${days ?? "all"}`;
-  const cached = await cacheGet<{ refundCost: number; discountCost: number; courierLossCost: number; courierLossCount: number }>(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const [orderRows, lossRows] = await Promise.all([
-    prisma.$queryRaw<Array<{ refundCost: number; discountCost: number }>>`
-      SELECT COALESCE(SUM(total) FILTER (WHERE "paymentStatus" = 'REFUNDED'), 0)::float AS "refundCost",
-        COALESCE(SUM(discount + "bundleDiscount"), 0)::float AS "discountCost"
-      FROM "Order"
-      WHERE "createdAt" >= ${since} AND status != 'CANCELLED'
-    `,
-    prisma.$queryRaw<Array<{ amount: number; count: bigint }>>`
-      SELECT COALESCE(SUM(amount), 0)::float AS amount, COUNT(*)::bigint AS count
-      FROM "CourierLossEvent"
-      WHERE "createdAt" >= ${since}
-    `,
-  ]);
-
-  const order = orderRows[0] ?? { refundCost: 0, discountCost: 0 };
-  const loss = lossRows[0] ?? { amount: 0, count: 0n };
-  const result = { refundCost: order.refundCost, discountCost: order.discountCost, courierLossCost: loss.amount, courierLossCount: Number(loss.count) };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
-/** Estimated VAT contained in windowed revenue at StoreSetting's flat `defaultTaxRate`. Prices are tax-inclusive
- * (D3, docs/PRICING_PIPELINE.md §3), so the VAT is the inclusive share `revenue × r / (100 + r)` — this used to
- * apply the exclusive formula `revenue × r / 100`, overstating it. Order never
- * snapshots a tax amount per line, so this can only ever be a forward estimate against the
- * store's *current* rate, not a real historical figure; zero (with `taxEnabled: false`) when tax
- * collection isn't turned on. */
-export async function getEstimatedTaxCollected(days?: number) {
-  const cacheKey = `analytics:estimated-tax:${days ?? "all"}`;
-  const cached = await cacheGet<{ taxEnabled: boolean; defaultTaxRatePct: number; estimatedTax: number; revenue: number }>(cacheKey);
-  if (cached) return cached;
-
-  const [settings, since] = [await getSettings(), daysAgoOrUndefined(days) ?? new Date(0)];
-  const rows = await prisma.$queryRaw<Array<{ revenue: number }>>`
-    SELECT COALESCE(SUM(total), 0)::float AS revenue
-    FROM "Order"
-    WHERE status != 'CANCELLED' AND "createdAt" >= ${since}
-  `;
-  const revenue = rows[0]?.revenue ?? 0;
-  const rate = settings.taxEnabled && settings.defaultTaxRate ? Number(settings.defaultTaxRate) : 0;
-  const result = { taxEnabled: settings.taxEnabled, defaultTaxRatePct: rate, estimatedTax: taxIncludedIn(revenue, rate), revenue };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
 // ---------------------------------------------------------------------------
 // Section 10 — Inventory Intelligence. Turnover, low stock, and slow-moving already exist above
 // (getInventoryTurnover, getLowStockVariants, getSlowMovingProducts) — these add a strict
@@ -2728,40 +1563,6 @@ export async function getEstimatedTaxCollected(days?: number) {
 // and ledger-vs-actual drift, reused as-is on the frontend rather than rebuilt here.
 // ---------------------------------------------------------------------------
 
-/** Variants with stock on hand but *zero* sales in the window — stricter than "slow moving"
- * (lowest velocity), this is genuinely dead: capital sitting on a shelf with no signal it will
- * ever move. Ranked by how much inventory value is tied up. */
-export async function getDeadStockReport(days = 90, limit = 10) {
-  const cacheKey = `analytics:dead-stock:${days}:${limit}`;
-  const cached = await cacheGet<
-    Array<{ productId: string; name: string; variantId: string; sku: string; size: string; color: string; stock: number; tiedUpValue: number }>
-  >(cacheKey);
-  if (cached) return cached;
-
-  const since = daysAgo(days);
-  const rows = await prisma.$queryRaw<
-    Array<{ productId: string; name: string; variantId: string; sku: string; size: string; color: string; stock: number; tiedUpValue: number }>
-  >`
-    WITH sold_variants AS (
-      SELECT DISTINCT oi."variantId"
-      FROM "OrderItem" oi
-      JOIN "Order" o ON o.id = oi."orderId"
-      WHERE o.status != 'CANCELLED' AND o."createdAt" >= ${since}
-    )
-    SELECT p.id AS "productId", p.name, pv.id AS "variantId", pv.sku, pv.size, pv.color, pv.stock,
-      (pv.stock * COALESCE(pv."costPrice", p."costPrice", 0))::float AS "tiedUpValue"
-    FROM "ProductVariant" pv
-    JOIN "Product" p ON p.id = pv."productId"
-    WHERE pv.stock > 0 AND p."deletedAt" IS NULL AND p."isActive" = true
-      AND pv.id NOT IN (SELECT "variantId" FROM sold_variants)
-    ORDER BY "tiedUpValue" DESC
-    LIMIT ${limit}
-  `;
-
-  await cacheSet(cacheKey, rows, CACHE_TTL_SECONDS);
-  return rows;
-}
-
 /** Stock-change volume by reason (order fulfillment, restock, manual adjustment, return) — the
  * aggregate view over what listStockMovements already shows row-by-row. */
 export async function getStockMovementSummary(days?: number) {
@@ -2769,11 +1570,11 @@ export async function getStockMovementSummary(days?: number) {
   const cached = await cacheGet<Array<{ reason: string; movements: number; units: number }>>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ reason: string; movements: bigint; units: bigint }>>`
     SELECT reason::text AS reason, COUNT(*)::bigint AS movements, COALESCE(SUM(ABS(change)), 0)::bigint AS units
     FROM "StockMovement"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${utcInstant(since)}
     GROUP BY reason
     ORDER BY movements DESC
   `;
@@ -2790,48 +1591,6 @@ export async function getStockMovementSummary(days?: number) {
 // table exists anywhere in the schema; that would need new instrumentation, not a report.
 // ---------------------------------------------------------------------------
 
-/** Average hours from order placed -> first shipped -> first delivered, over delivered orders in
- * the window. Uses the first OrderStatusHistory row for each status (an order can revisit a
- * status, e.g. after a courier hiccup — "first" is when it *initially* got there). */
-export async function getOrderFulfillmentTime(days?: number) {
-  const cacheKey = `analytics:fulfillment-time:${days ?? "all"}`;
-  const cached = await cacheGet<{ avgHoursToShip: number | null; avgHoursShipToDeliver: number | null; avgHoursToDeliver: number | null; deliveredOrders: number }>(
-    cacheKey,
-  );
-  if (cached) return cached;
-
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
-  const rows = await prisma.$queryRaw<
-    Array<{ avgHoursToShip: number | null; avgHoursShipToDeliver: number | null; avgHoursToDeliver: number | null; deliveredOrders: bigint }>
-  >`
-    WITH first_shipped AS (
-      SELECT "orderId", MIN("createdAt") AS "shippedAt" FROM "OrderStatusHistory" WHERE status = 'SHIPPED' GROUP BY "orderId"
-    ),
-    first_delivered AS (
-      SELECT "orderId", MIN("createdAt") AS "deliveredAt" FROM "OrderStatusHistory" WHERE status = 'DELIVERED' GROUP BY "orderId"
-    )
-    SELECT
-      AVG(EXTRACT(EPOCH FROM (fs."shippedAt" - o."createdAt")) / 3600)::float AS "avgHoursToShip",
-      AVG(EXTRACT(EPOCH FROM (fd."deliveredAt" - fs."shippedAt")) / 3600)::float AS "avgHoursShipToDeliver",
-      AVG(EXTRACT(EPOCH FROM (fd."deliveredAt" - o."createdAt")) / 3600)::float AS "avgHoursToDeliver",
-      COUNT(fd."orderId")::bigint AS "deliveredOrders"
-    FROM "Order" o
-    LEFT JOIN first_shipped fs ON fs."orderId" = o.id
-    LEFT JOIN first_delivered fd ON fd."orderId" = o.id
-    WHERE o."createdAt" >= ${since} AND o.status != 'CANCELLED'
-  `;
-
-  const row = rows[0]!;
-  const result = {
-    avgHoursToShip: row.avgHoursToShip,
-    avgHoursShipToDeliver: row.avgHoursShipToDeliver,
-    avgHoursToDeliver: row.avgHoursToDeliver,
-    deliveredOrders: Number(row.deliveredOrders),
-  };
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}
-
 /** Admin action volume, by admin and by action type — straight off the existing AuditLog table
  * (already written on every admin mutation), never previously aggregated for a report. */
 export async function getAdminActivitySummary(days?: number, limit = 10) {
@@ -2841,13 +1600,13 @@ export async function getAdminActivitySummary(days?: number, limit = 10) {
   );
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const [adminRows, actionRows] = await Promise.all([
     prisma.$queryRaw<Array<{ id: string; name: string; actions: bigint }>>`
       SELECT a.id, a.name, COUNT(*)::bigint AS actions
       FROM "AuditLog" al
       JOIN "AdminUser" a ON a.id = al."adminId"
-      WHERE al."createdAt" >= ${since}
+      WHERE al."createdAt" >= ${utcInstant(since)}
       GROUP BY a.id, a.name
       ORDER BY actions DESC
       LIMIT ${limit}
@@ -2855,7 +1614,7 @@ export async function getAdminActivitySummary(days?: number, limit = 10) {
     prisma.$queryRaw<Array<{ action: string; count: bigint }>>`
       SELECT action, COUNT(*)::bigint AS count
       FROM "AuditLog"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${utcInstant(since)}
       GROUP BY action
       ORDER BY count DESC
       LIMIT ${limit}
@@ -2886,15 +1645,15 @@ export async function getWishlistConversionRate(days?: number) {
   const cached = await cacheGet<{ totalWishlisted: number; converted: number; conversionRatePct: number }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ totalWishlisted: bigint; converted: bigint }>>`
     WITH wishlisted AS (
-      SELECT id, "customerId", "productId", "createdAt" FROM "WishlistItem" WHERE "createdAt" >= ${since}
+      SELECT id, "customerId", "productId", "createdAt" FROM "WishlistItem" WHERE "createdAt" >= ${utcInstant(since)}
     ),
     converted AS (
       SELECT DISTINCT w.id
       FROM wishlisted w
-      JOIN "Order" o ON o."customerId" = w."customerId" AND o."createdAt" >= w."createdAt" AND o.status != 'CANCELLED'
+      JOIN "Order" o ON o."customerId" = w."customerId" AND o."createdAt" >= w."createdAt" AND ${saleOrderSql("o")}
       JOIN "OrderItem" oi ON oi."orderId" = o.id
       JOIN "ProductVariant" pv ON pv.id = oi."variantId" AND pv."productId" = w."productId"
     )
@@ -2919,15 +1678,15 @@ export async function getReviewBehaviorStats(days?: number) {
   }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const [ratingRows, statusRows] = await Promise.all([
     prisma.$queryRaw<Array<{ rating: number; count: bigint }>>`
-      SELECT rating, COUNT(*)::bigint AS count FROM "ProductReview" WHERE "createdAt" >= ${since} GROUP BY rating ORDER BY rating ASC
+      SELECT rating, COUNT(*)::bigint AS count FROM "ProductReview" WHERE "createdAt" >= ${utcInstant(since)} GROUP BY rating ORDER BY rating ASC
     `,
     prisma.$queryRaw<Array<{ status: string; count: bigint; verified: bigint }>>`
       SELECT status::text AS status, COUNT(*)::bigint AS count, COUNT(*) FILTER (WHERE "isVerifiedPurchase")::bigint AS verified
       FROM "ProductReview"
-      WHERE "createdAt" >= ${since}
+      WHERE "createdAt" >= ${utcInstant(since)}
       GROUP BY status
     `,
   ]);
@@ -2950,11 +1709,11 @@ export async function getFeedbackVolume(days?: number) {
   const cached = await cacheGet<{ total: number; read: number; unread: number }>(cacheKey);
   if (cached) return cached;
 
-  const since = daysAgoOrUndefined(days) ?? new Date(0);
+  const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ total: bigint; read: bigint }>>`
     SELECT COUNT(*)::bigint AS total, COUNT(*) FILTER (WHERE "readAt" IS NOT NULL)::bigint AS read
     FROM "Feedback"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${utcInstant(since)}
   `;
 
   const row = rows[0]!;
@@ -2972,22 +1731,3 @@ export async function getFeedbackVolume(days?: number) {
 // piece, a year-over-year trend, which none of those provide.
 // ---------------------------------------------------------------------------
 
-/** Orders and revenue grouped by calendar year, Asia/Dhaka local, all-time. */
-export async function getLifetimeYearlyTrend() {
-  const cacheKey = "analytics:lifetime-yearly-trend";
-  const cached = await cacheGet<Array<{ year: number; orders: number; revenue: number }>>(cacheKey);
-  if (cached) return cached;
-
-  const rows = await prisma.$queryRaw<Array<{ year: number; orders: bigint; revenue: number }>>`
-    SELECT EXTRACT(YEAR FROM "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dhaka')::int AS year,
-      COUNT(*)::bigint AS orders, COALESCE(SUM(total), 0)::float AS revenue
-    FROM "Order"
-    WHERE status != 'CANCELLED'
-    GROUP BY year
-    ORDER BY year ASC
-  `;
-
-  const result = rows.map((r) => ({ year: r.year, orders: Number(r.orders), revenue: r.revenue }));
-  await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
-  return result;
-}

@@ -17,6 +17,7 @@ import * as aiApi from "@/lib/api/ai";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 
 const CONTENT_TYPES: Array<{ value: AiContentType; label: string }> = [
   { value: "product_description", label: "Product description" },
@@ -33,7 +34,7 @@ const PRODUCT_TYPES = new Set<AiContentType>(["product_description", "seo_title"
 export default function AiAssistantPage() {
   const { data: aiStatus } = useQuery({ queryKey: ["ai-status"], queryFn: aiApi.getAiStatus });
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canUseAi = adminCan(currentAdmin?.admin, "ai.use");
   const { data: slowMoving } = useQuery({ queryKey: ["ai-slow-moving"], queryFn: () => analyticsApi.getSlowMovingProducts(30, 8) });
   const { data: bestSelling } = useQuery({ queryKey: ["ai-best-selling"], queryFn: () => analyticsApi.getBestSellingPrediction(8) });
   const { data: demandForecast } = useQuery({ queryKey: ["ai-demand-forecast"], queryFn: () => analyticsApi.getDemandForecast(14, 8) });
@@ -153,7 +154,7 @@ export default function AiAssistantPage() {
                 enable product descriptions, SEO copy, marketing copy, emails, and campaign ideas.
               </span>
             </div>
-          ) : !isOwner ? (
+          ) : !canUseAi ? (
             <div className="flex items-center gap-3 rounded-lg border border-ink-100 bg-cream-50 p-4 text-sm text-ink-600">
               <Bot size={18} className="shrink-0 text-brass-500" />
               <span>AI generation uses billed API usage, so it&rsquo;s restricted to store owners.</span>

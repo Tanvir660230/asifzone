@@ -5,7 +5,9 @@ import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix } from "../../config/redis";
 import { signAccessToken } from "../../lib/jwt";
 
-/** The admin-only "sold in the last 7 days" figure shown on the storefront product page. */
+/** The admin-only "ordered in the last 7 days" figure shown on the storefront product page — the registry's `units_ordered`
+ * (docs/METRICS_REGISTRY.md, P5-9): units on sale orders (not trashed, not cancelled, not exchange replacements) placed in the
+ * last 7 business days in the store timezone. */
 const RUN = Date.now();
 const CSRF = "vitest-csrf";
 let ownerId: string;
@@ -76,31 +78,36 @@ describe("GET /api/products/:id/sales-summary", () => {
     expect(res.body).toMatchObject({ productId, days: 7, unitsSold: 0, orders: 0, byVariant: [] });
   });
 
-  it("counts units and orders from the last 7 days, and only sales", async () => {
+  it("counts units and orders from the last 7 business days, on sale orders only", async () => {
     await order("PENDING", 1, [{ variant: 0, quantity: 2 }]); // counts (placed, not yet delivered)
     await order("DELIVERED", 3, [{ variant: 0, quantity: 1 }, { variant: 1, quantity: 4 }]); // counts, two lines in one order
-    await order("SHIPPED", 6.5, [{ variant: 1, quantity: 1 }]); // counts: inside the window
-    await order("CANCELLED", 1, [{ variant: 0, quantity: 10 }]); // not a sale
-    await order("REFUNDED", 2, [{ variant: 1, quantity: 10 }]); // not a sale
+    await order("SHIPPED", 6, [{ variant: 1, quantity: 1 }]); // counts: inside the 7-business-day window
+    await order("CANCELLED", 1, [{ variant: 0, quantity: 10 }]); // not a sale order
+    // Phase 5 (P5-9): a refunded order was still ordered — `units_ordered` excludes only cancelled, trashed and exchange
+    // replacement orders (TARGET §11 SALE_ORDER). Before Phase 5 this panel used its own NOT IN (CANCELLED, REFUNDED).
+    await order("REFUNDED", 2, [{ variant: 1, quantity: 10 }]);
     await order("DELIVERED", 8, [{ variant: 0, quantity: 10 }]); // too old
 
     const res = await as("STAFF").get(`/api/products/${productId}/sales-summary`); // any admin, not only the owner
     expect(res.status).toBe(200);
-    expect(res.body.unitsSold).toBe(2 + 1 + 4 + 1);
-    expect(res.body.orders).toBe(3);
+    expect(res.body.unitsSold).toBe(2 + 1 + 4 + 1 + 10);
+    expect(res.body.orders).toBe(4);
     // Per variant, biggest first, from what the order recorded at the time.
     expect(res.body.byVariant.map((v: { sku: string; units: number }) => [v.sku, v.units])).toEqual([
-      [variants[1]!.sku, 5],
+      [variants[1]!.sku, 15],
       [variants[0]!.sku, 3],
     ]);
-    expect(new Date(res.body.since).getTime()).toBeLessThan(Date.now() - 6.9 * 24 * 60 * 60 * 1000);
+    // The window starts at local midnight six business days ago: between 6 and 7 days back.
+    const since = new Date(res.body.since).getTime();
+    expect(since).toBeLessThanOrEqual(Date.now() - 6 * 24 * 60 * 60 * 1000);
+    expect(since).toBeGreaterThan(Date.now() - 7 * 24 * 60 * 60 * 1000);
   });
 
   it("the public signals carry no sales numbers — only 'selling fast', by the same 7-day rule", async () => {
     const publicSignals = await request(app).get(`/api/products/${productId}/urgency-signals`);
     const admin = await as("OWNER").get(`/api/products/${productId}/sales-summary`);
     expect(publicSignals.status).toBe(200);
-    expect(publicSignals.body).toEqual({ isFastSelling: false }); // 8 sold vs 100 in stock
+    expect(publicSignals.body).toEqual({ isFastSelling: false }); // 18 ordered vs 100 in stock
     expect(publicSignals.body).not.toHaveProperty("unitsSoldLast7Days");
     expect(publicSignals.body).not.toHaveProperty("recentPurchaseCount");
 

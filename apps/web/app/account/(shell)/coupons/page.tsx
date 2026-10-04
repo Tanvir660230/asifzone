@@ -7,7 +7,7 @@ import type { Coupon } from "@clothing-brand/shared";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { listActiveCoupons } from "@/lib/api/coupons";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 
 function discountLine(coupon: Coupon): string {
   if (coupon.type === "FREE_SHIPPING") return "Free shipping";
@@ -72,7 +72,7 @@ export default function AccountCouponsPage() {
               </p>
               {targetLine(coupon) && <p className="text-xs text-ink-500">{targetLine(coupon)}</p>}
               {coupon.expiresAt && (
-                <p className="text-xs text-ink-400">Expires {new Date(coupon.expiresAt).toLocaleDateString()}</p>
+                <p className="text-xs text-ink-400">Expires {formatStoreDate(coupon.expiresAt)}</p>
               )}
             </div>
             <button

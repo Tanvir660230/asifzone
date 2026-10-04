@@ -23,7 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { Modal } from "@/components/ui/modal";
 import { ProductPicker } from "@/components/admin/product-picker";
 import * as categoriesApi from "@/lib/api/categories";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, storeCurrencyCode, storeCurrencySymbol } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
 interface CouponFormProps {
@@ -137,18 +137,18 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
     previewLine = "Waives the shipping fee at checkout.";
   } else if (value && value > 0) {
     // Illustration only, but computed by the one coupon engine (no second discount formula in the UI).
-    const sample = fromMajor(String(sampleSubtotal), "BDT");
+    const sample = fromMajor(String(sampleSubtotal), storeCurrencyCode());
     const result = evaluateCoupon(
       {
         id: "preview", code: "PREVIEW", type, value, scope: "ALL_PRODUCTS", productIds: [], categoryIds: [],
-        minOrderAmount: null, maxDiscountAmount: maxDiscountAmount ? fromMajor(String(maxDiscountAmount), "BDT") : null,
+        minOrderAmount: null, maxDiscountAmount: maxDiscountAmount ? fromMajor(String(maxDiscountAmount), storeCurrencyCode()) : null,
         minQuantity: null, usageLimit: null, usedCount: 0, perCustomerLimit: null, firstOrderOnly: false,
         startsAt: null, expiresAt: null, isActive: true, deleted: false,
       },
       [{ key: "sample", productId: "sample", categoryId: "sample", quantity: 1, amount: sample }],
       {},
       { now: new Date(), customerRedemptions: null, customerPriorOrders: null },
-      "BDT",
+      storeCurrencyCode(),
       DEFAULT_ROUNDING_POLICY,
     );
     const previewDiscount = result.ok ? toMajor(result.discount) : 0;
@@ -180,7 +180,7 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
           {type !== "FREE_SHIPPING" && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="value">{type === "PERCENTAGE" ? "Percentage (%)" : "Amount (৳)"}</Label>
+                <Label htmlFor="value">{type === "PERCENTAGE" ? "Percentage (%)" : `Amount (${storeCurrencySymbol()})`}</Label>
                 <Input id="value" type="number" step="0.01" {...register("value", { valueAsNumber: true })} />
                 {errors.value && <p className="mt-1 text-xs text-danger-600">{errors.value.message}</p>}
               </div>

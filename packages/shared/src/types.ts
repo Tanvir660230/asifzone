@@ -349,8 +349,53 @@ export interface Refund {
   status: "REQUESTED" | "COMPLETED";
   requestedByAdminId: string | null;
   requestedByAdmin?: { name: string } | null;
+  completedByAdminId?: string | null;
+  completedByAdmin?: { name: string } | null;
   completedAt: string | null;
   createdAt: string;
+}
+
+export type OrderPaymentStatus = "UNPAID" | "PAID" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED";
+
+/** The order's payment position from the payment ledger (docs/PAYMENT_LEDGER.md §7) — every number is server-derived
+ * by `derivePaymentPosition`; the web renders these and computes none of them. Money in major units. */
+export interface OrderPaymentSummary {
+  status: OrderPaymentStatus;
+  currency: string;
+  total: number;
+  paid: number;
+  refunded: number;
+  refundPending: number;
+  netPaid: number;
+  amountDue: number;
+  /** What the courier collects at the door (balance due of an open COD order). */
+  codToCollect: number;
+  /** The most a new refund may be. */
+  refundable: number;
+  /** Money owed back to the customer (cancelled/returned: everything received; otherwise an overpayment). */
+  refundDue: number;
+  overpaid: number;
+  payments: Array<{
+    id: string;
+    provider: "SSLCOMMERZ" | "EPS_PG" | "COD" | "MANUAL";
+    status: "SUCCEEDED" | "FAILED";
+    amount: number;
+    note: string | null;
+    backfilled: boolean;
+    settledAt: string;
+    recordedBy: string | null;
+  }>;
+  refunds: Array<{
+    id: string;
+    status: "REQUESTED" | "COMPLETED";
+    amount: number;
+    reason: string | null;
+    method: string | null;
+    requestedBy: string | null;
+    completedBy: string | null;
+    completedAt: string | null;
+    createdAt: string;
+  }>;
 }
 
 export interface Order {
@@ -369,7 +414,7 @@ export interface Order {
     | "RETURNED"
     | "REFUNDED";
   paymentMethod: "COD" | "SSLCOMMERZ" | "EPS_PG";
-  paymentStatus: "UNPAID" | "PAID" | "FAILED" | "REFUNDED";
+  paymentStatus: OrderPaymentStatus;
   customerName: string;
   customerEmail: string | null;
   customerPhone: string;
@@ -401,6 +446,8 @@ export interface Order {
   statusHistory: OrderStatusHistoryEntry[];
   items: OrderItem[];
   returnRequests?: ReturnRequest[];
+  /** Admin order detail / bulk label fetch only — the payment ledger position (Phase 4). */
+  payment?: OrderPaymentSummary;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -588,6 +635,8 @@ export interface Customer {
   email: string | null;
   emailVerifiedAt: string | null;
   phone: string | null;
+  /** Phase 11: set once an OTP to this phone succeeded — only then is the phone a login identifier. */
+  phoneVerifiedAt?: string | null;
   smsMarketingOptIn: boolean;
   emailMarketingOptIn: boolean;
   rewardPoints: number;
@@ -710,6 +759,8 @@ export interface StoreSettings {
   logoOnDarkUrl: string | null;
   faviconUrl: string | null;
   currency: string;
+  /** IANA timezone of the store's business day (Phase 5/7). */
+  timezone: string;
   contactEmail: string | null;
   contactPhone: string | null;
   shippingFeeDhaka: string;

@@ -1,5 +1,6 @@
 import type {
   Order,
+  OrderPaymentSummary,
   AdminOrderListItem,
   OrderStatus,
   BulkOrderStatusResult,
@@ -85,7 +86,8 @@ export function downloadOrdersCsvUrl(params: AdminOrderListParams = {}) {
 }
 
 export function bulkGetOrders(ids: string[]) {
-  return apiFetch<{ orders: Order[] }>("/api/orders/bulk/get", { method: "POST", body: { ids } });
+  // Each order carries its payment ledger position — labels print `payment.codToCollect` as the COD amount.
+  return apiFetch<{ orders: Array<Order & { payment: OrderPaymentSummary }> }>("/api/orders/bulk/get", { method: "POST", body: { ids } });
 }
 
 /** sessionStorage key the Orders list page writes selected ids to and the print-labels page reads
@@ -99,8 +101,8 @@ export function getOrder(id: string) {
 /** Admin "Create order" page — phone/Facebook orders a staff member types in themselves. Goes
  * through the same server-side createOrder pipeline as storefront checkout (stock decrement,
  * pricing, snapshotting), just via an admin-only endpoint that skips the online-gateway path. */
-export function createManualOrder(input: AdminCreateOrderInput) {
-  return apiFetch<{ order: Order }>("/api/orders/admin", { method: "POST", body: input });
+export function createManualOrder(input: AdminCreateOrderInput, idempotencyKey?: string) {
+  return apiFetch<{ order: Order }>("/api/orders/admin", { method: "POST", body: input, idempotencyKey });
 }
 
 export function updateOrderStatus(id: string, status: OrderStatus, note?: string) {

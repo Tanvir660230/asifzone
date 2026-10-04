@@ -2,8 +2,10 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
+import { toCustomerOrder } from "./customer-order-view";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import { metaContextFromRequest } from "../../lib/meta/capi";
+import { completeRefund, getOrderPaymentSummary, recordManualPayment } from "../../domain/payments/payment-ledger.service";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -35,7 +37,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 
   if (req.body.paymentMethod === "COD") {
     const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { idempotencyKey: idempotencyKeyOf(req), metaContext });
-    return res.status(201).json({ order });
+    return res.status(201).json({ order: toCustomerOrder(order) });
   }
 
   const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req), metaContext);
@@ -44,7 +46,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 
 export const track = asyncHandler(async (req: Request, res: Response) => {
   const { orderNumber, phone } = req.body;
-  res.json({ order: await orderService.trackOrder(orderNumber, phone) });
+  res.json({ order: toCustomerOrder(await orderService.trackOrder(orderNumber, phone)) });
 });
 
 export const retryPayment = asyncHandler(async (req: Request, res: Response) => {
@@ -60,8 +62,20 @@ export const createManual = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const createRefund = asyncHandler(async (req: Request, res: Response) => {
-  const refund = await refundOrderPayment(req.params.id!, req.body, req.admin!.adminId);
-  res.status(201).json({ refund });
+  const { summary, ...refund } = await refundOrderPayment(req.params.id!, req.body, req.admin!.adminId, idempotencyKeyOf(req));
+  res.status(201).json({ refund, summary });
+});
+
+export const completeRefundRequest = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await completeRefund(req.params.id!, req.params.refundId!, req.body, req.admin!.adminId));
+});
+
+export const recordPayment = asyncHandler(async (req: Request, res: Response) => {
+  res.status(201).json(await recordManualPayment(req.params.id!, req.body, req.admin!.adminId, idempotencyKeyOf(req)));
+});
+
+export const getPayment = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ payment: await getOrderPaymentSummary(req.params.id!) });
 });
 
 export const listRefunds = asyncHandler(async (req: Request, res: Response) => {

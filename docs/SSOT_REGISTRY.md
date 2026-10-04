@@ -5,6 +5,12 @@
 
 **Approved business decisions (2026-09-28):** all of D1–D10 — the register is [BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md). Highlights: D1 revenue recognition (COD is realised at `DELIVERED`; returns and refunds subtracted separately; creation is never cash collection), D2 bundles on the post-flash price, D3 tax-inclusive prices with an inclusive VAT component. Details and the Phase 1 changes: [TARGET_ARCHITECTURE.md §16–16a](TARGET_ARCHITECTURE.md), [ORDER_STATE_MACHINE.md](ORDER_STATE_MACHINE.md), [INVENTORY_INVARIANTS.md](INVENTORY_INVARIANTS.md), [PRICING_PIPELINE.md](PRICING_PIPELINE.md).
 
+**Phase 4 (2026-09-29):** the payment and refund truth has one owner, the Payment Ledger
+([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)). See B5 and invariants I9, I23–I26. Audit and duplicate-truth matrix:
+[PHASE_4_AUDIT.md](PHASE_4_AUDIT.md).
+
+**Phase 5 (2026-09-30):** every business number has one definition in the metrics registry ([METRICS_REGISTRY.md](METRICS_REGISTRY.md)). See B7 and invariants I11, I27, I28. Audit: [PHASE_5_METRICS_AUDIT.md](PHASE_5_METRICS_AUDIT.md).
+
 **Legend.** *Status today*: ✅ single authority and single writer · ⚠️ authority clear but duplicated logic or a writer outside the owner · ❌ conflicting definitions or known drift path. *Class*: **M** master data · **S** transaction snapshot (immutable history — not duplication) · **P** projection/cache (derivable, must be reconciled) · **D** computed on demand (never stored).
 
 ---
@@ -180,10 +186,11 @@
 | Fact | Class | Authoritative source | Authoritative service | Projection / cache | Consumers | Mutation path | Reconciliation | Status |
 |---|---|---|---|---|---|---|---|---|
 | Payment attempt | M | `PaymentSession` (+ `checkoutPayload` S — carries the full quote pricing snapshot and split line snapshots since Phase 2; + `idempotencyKey` unique) | PaymentService | — | callbacks, retry, reconciliation | initiate / callbacks / cron | expiry sweep | ✅ |
-| Settlement | S | `Payment` (+ `rawResponse`) | PaymentService | — | refunds, overview | `settlePaymentSession` atomic claim | amount re-verified | ✅ |
+| Settlement (money received) | S | `Payment` status `SUCCEEDED`: gateway (`SSLCOMMERZ`/`EPS_PG`, + `rawResponse`), `COD` (collected at delivery, D1), `MANUAL` (staff-recorded) | PaymentLedger (`domain/payments/payment-ledger.service.ts`) — sole writer | — | position, refunds, overview, (Phase 5) collected cash | gateway settle (atomic claim, amount re-verified); T4 `recordCodCollection`; `POST /orders/:id/payments`; manual order `markPaid` | append-only; backfilled rows flagged `backfilled` | ✅ Phase 4 |
 | Payment timeline | S | `PaymentEvent` | PaymentService | — | admin | fire-and-forget writes | — | ⚠️ fire-and-forget (target: outbox) |
-| Refund | S | `Refund` | PaymentService | — | order, BI, overview | `refundOrderPayment` | — | ⚠️ no partial state; STAFF can create |
-| Order payment status | P | Payment + Refund + COD collected on `DELIVERED` (D1) | PaymentService; the DELIVERED transition for COD | `Order.paymentStatus` | filters, courier COD, BI | `syncOrderPaymentStatus` (no longer revives a cancelled order), `refundOrderPayment`, `createManualOrder(markPaid)`, T4 | target report | ⚠️ `REFUNDED` order status now requires `paymentStatus = REFUNDED` |
+| Refund | S | `Refund` (`REQUESTED → COMPLETED`, one-way) | PaymentLedger — sole writer | — | position, order, BI, overview | `POST /orders/:id/refunds` (partial + repeated, ≤ refundable, `Idempotency-Key`); exchange downgrade `requestRefund`; `POST …/refunds/:id/complete` | PL-2 violation report | ✅ Phase 4 (STAFF can still record — Phase 10) |
+| Payment position (paid, refunded, pending, balance due, `codToCollect`, refundable, refund due, overpaid) | D | `derivePaymentPosition` (`packages/shared/src/engines/payment-ledger.ts`) over the order's `Payment` + `Refund` rows + `Order.total` | PaymentLedger | none stored; `OrderPaymentSummary` read model (`order.payment`) | courier `cod_amount` (single + bulk), admin order page, shipping labels, refund form, price-adjustment guard | — | derived per read | ✅ Phase 4 |
+| Order payment status | P | `derivePaymentPosition(...).status` (PAYMENT_LEDGER §4): UNPAID / PAID / FAILED / PARTIALLY_REFUNDED / REFUNDED | PaymentLedger `refreshPaymentStatus` — sole writer | `Order.paymentStatus` | filters, refund queue (`REFUND_QUEUE_WHERE`), T8 guard, BI | every ledger command, in its transaction | `GET /api/payment-admin/ledger/drift`; `POST …/repair` (OWNER, dry run default); `pnpm --filter api payment-ledger:reconcile [--apply]` | ✅ Phase 4 (I9 implemented) |
 | Payment method enablement | M | `StoreSetting.codEnabled/onlinePaymentEnabled/epsPaymentEnabled` → target `ProviderConfig.enabled` | Config / Payment | settings cache 300 s | checkout UI + server guard | settings PATCH | — | ⚠️ `updateSettings` guard ignores EPS |
 | Provider credentials | M | env vars → target `ProviderConfig` (encrypted) | Config | — | providers | deploy / setup wizard | — | ❌ env only |
 
@@ -202,23 +209,37 @@
 | Server cart mirror | P | browser cart (authoritative) | cart.service | `Cart`, `CartItem` | abandonment analytics | debounced sync | — | ⚠️ `reminderSentAt` unused, recovery job missing |
 | Wishlist | M | `WishlistItem` (+ `priceAtAdd` S) | wishlist.service | local store for guests | account, price-drop | wishlist endpoints | merge on login | ⚠️ price-drop compares `basePrice` only |
 
-### B7. Analytics & metrics (target definitions in TARGET_ARCHITECTURE §11)
+### B7. Analytics & metrics — Phase 5 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md))
 
-| Metric | Authority | Service | Current implementations | Status |
-|---|---|---|---|---|
-| Revenue / gross sales | `Order.total` over `SALE_ORDER` | MetricsService | `getOrderStats.todayRevenue`, `getDashboardSummary`, `getRevenueSeries`, BI `revenue*`, ~50 raw SQL copies | ❌ |
-| Net sales | gross − returns − refunds | MetricsService | none | ❌ |
-| Orders count / AOV | `SALE_ORDER` | MetricsService | dashboard, BI, customer drawer | ❌ |
-| Units sold | `OrderItem.quantity − returnedQuantity` | MetricsService | analytics (`!= CANCELLED`), product sales panel (`NOT_A_SALE`) | ❌ |
-| Gross profit / COGS | snapshot cost (target) | MetricsService | BI (current cost) | ⚠️ |
-| Conversion rate | sessions with sale ÷ sessions | MetricsService | analytics funnel, BI | ⚠️ |
-| Visitors / returning | `PageView` | MetricsService | analytics, BI | ⚠️ |
-| Refund / return / cancel rates | `Refund`, `ReturnRequest(APPROVED)`, status | MetricsService | BI (counts any return request incl. rejected/pending) | ❌ |
-| Low-stock count | `InventoryRules.isLowStock` | MetricsService | dashboard (`≤ 5`) | ❌ |
-| Stock value | `stock × cost` purchasable | MetricsService | BI | ⚠️ |
-| Courier loss | `CourierLossEvent` | MetricsService | dashboard | ✅ |
-| Estimated tax | `TaxEngine` / snapshot (`Order.taxAmount` for orders with `pricingVersion`) | MetricsService | analytics estimate (inclusive formula over revenue; PRICING_INVARIANTS §9) | ⚠️ switch to Σ snapshot in Phase 5 |
-| Business day / timezone | `CommerceSettings.timezone` | ConfigService | server-local, UTC and Asia/Dhaka in different places | ❌ |
+Every business number is a registry metric. Its one definition is `packages/shared/src/metrics` (pure engine: business
+time, facts, registry, aggregation). The only fact loader is `domain/metrics/facts.repository.ts` (snapshots +
+ledger + RETURN movements; never current prices, tax, zones, coupons or flash sales). The service is
+`domain/metrics/metrics.service.ts`, the API `GET /api/v1/metrics`. No metric is stored, so there are no projections to
+rebuild. Reconciliation is `GET /api/v1/metrics/consistency` (M-3).
+
+| Metric (registry key) | Authority | Consumers | Status |
+|---|---|---|---|
+| Gross merchandise sales (`gross_merchandise_sales`) | `OrderItem.priceSnapshot × quantity` of realised orders (D1), as charged (VAT-inclusive on inclusive orders) | BI financial, reports | ✅ Phase 5 |
+| Discounts / bundle / coupon / flash (`discounts`, `bundle_discount`, `coupon_discount`, `flash_discount`) | `Order` discount snapshots (Phase 2 split; flash with coverage) | BI financial/marketing, discount usage (double count removed) | ✅ Phase 5 |
+| Shipping, adjustments, tax (`shipping_charged`, `price_adjustments`, `tax_collected`) | `Order` snapshots (tax: `taxAmount`, NULL counted as coverage, never estimated) | BI financial | ✅ Phase 5 (current-rate estimate removed) |
+| Returns (`returns`, `units_returned`) | stock-ledger `RETURN` rows × line net unit value; exchange-returned units excluded (P5-3) | BI, product risk | ✅ Phase 5 |
+| **Realised net sales (`realised_net_sales`) — headline** | realised merchandise ex VAT (tax snapshot; `merchandise_vat`) − merchandise part of completed refunds (overpayment first, then goods first, capped: `merchandise_refunds`); a realised order cancelled later is reversed at the cancellation instant (PD-5.1, P5-2) | dashboard, KPI strip, BI headline, AOV, CRM spend/VIP/RFM, exports | ✅ Phase 5 (PD-5.1 resolved) |
+| Net merchandise sales / net sales (`net_merchandise_sales`, `net_sales` = "Net sales incl. shipping, less returns") | as charged, goods-returned basis (secondary) | product/category rankings, BI financial breakdown | ✅ Phase 5 |
+| Refunds, payments, collected cash (`refunds`, `payments_received`, `collected_cash`) | Phase 4 ledger | BI financial, payments overview | ✅ Phase 5 |
+| Outstanding COD / amount due / refunds owed (`outstanding_cod`, `amount_due`, `refund_due`) | `derivePaymentPosition` per order (Phase 4), point in time | BI financial, insights | ✅ Phase 5 |
+| Orders placed / realised / cancelled, AOV (`orders_placed`, `orders_realised`, `orders_cancelled`, `aov`) | SALE_ORDER / realisation / operational predicates; AOV = net sales ÷ realised (P5-5) | dashboard, KPI strip, BI, customer drawer | ✅ Phase 5 |
+| Units ordered / sold / net (`units_ordered`, `units_sold`, `net_units_sold`) | sale-order lines (placement) / realised lines, net of returns | storefront urgency/trending/FBT, product sales panel, heatmaps, forecasts | ✅ Phase 5 (P5-9) |
+| Customer spend, orders, repeat rate, CLV (`customer_*`) | groupings of `realised_net_sales` / `orders_placed` | CRM list/drawer, VIP tags, SMS vars, RFM, BI customers | ✅ Phase 5 (P5-4) |
+| COGS / gross margin (`cogs`, `gross_margin`) | net units × **recorded** cost (`OrderItem.unitCostSnapshot`), costed lines only, with line coverage | BI financial/overview/products, inventory turnover | ✅ Phase 6 (current-cost estimate removed) |
+| Order-line cost (`OrderItem.unitCostSnapshot`) | captured once when the line is written (`domain/orders/line-snapshots.ts`): `variant.costPrice ?? product.costPrice`, minor units; NULL = unknown; omitted from every read except the metrics loader | cogs, gross_margin | ✅ Phase 6 |
+| Order-line attribution (`productIdSnapshot`, `categoryIdSnapshot`, `categoryNameSnapshot`, `brandSnapshot`) | captured once when the line is written (same writer); no FKs; pre-Phase-6 lines "Not recorded" (product backfilled from the variant) | product/category/brand groupings, top categories/brands, product reports | ✅ Phase 6 |
+| Store currency (`StoreSetting.currency`) | owner: settings; engine-supported ISO codes only (P7-1); **locked once any order exists** (P6-4) — the recorded currency of all order money; read only via `domain/config/commerce-settings` | every money snapshot and conversion, gateway charge, Meta events, emails/SMS, web display (`<StoreConfig>`) | ✅ Phase 6–7 |
+| Store timezone (`StoreSetting.timezone`) | owner: settings (IANA); read only via `domain/config/commerce-settings`; interprets UTC instants, never rewrites them | metrics business time, analytics windows, order notes, SMS dates, every web business-date display | ✅ Phase 5–7 |
+| Store identity (`StoreSetting.storeName/tagline/…`) | owner: settings | web layout/SEO, SMS, **emails** (no hard-coded brand) | ✅ Phase 7 |
+| Stock on hand / low / out of stock / value (`stock_on_hand`, `low_stock_variants`, `out_of_stock_variants`, `inventory_value`) | `ProductVariant.stock` (read-only) + `variantStockState` (D5, per variant) | dashboard, BI inventory, insights | ✅ Phase 5 (`≤ 5` rule removed) |
+| Courier loss (`courier_loss`) | `CourierLossEvent` | dashboard, BI | ✅ |
+| Conversion rate / visitors (behavioural) | `PageView` sessions ÷ sessions with a sale order (SALE_ORDER) | dashboard, BI | ✅ Phase 5 (predicate + windows canonical; visits are their own facts) |
+| Business day / timezone | `StoreSetting.timezone` (IANA, default `Asia/Dhaka`) → `resolveBusinessRange`; SQL instants via `utcInstant` | every metric, analytics window, KPI strip, payments overview, CRM "new today" | ✅ Phase 5 (6 h raw-SQL skew fixed) |
 
 ### B8. Settings, content, notifications, audit
 
@@ -267,5 +288,22 @@
 | I21 | legacy `StoreSetting` tax/shipping mirrors equal `TaxSetting` / legacy zone rates (`pricingConfigDrift` empty) | Pricing |
 | I22 | no client-supplied price or subtotal influences a quote or an order | Pricing |
 
+| I23 | Σ completed refunds ≤ Σ settled payments per order; a new refund ≤ `refundable` | Payments |
+| I24 | only `payment-ledger.service.ts` writes `Payment`, `Refund`, `Order.paymentStatus` | Payments (architecture test) |
+| I25 | the courier COD amount = `codToCollect` (balance due of a COD order); a prepaid order is booked with 0 | Payments |
+| I26 | a paid order's total never changes (price adjustment refused once `paid > 0`) | Orders / Payments |
+| I27 | business numbers come only from the metrics engine; financial metrics read snapshots and the ledger, never current configuration (M-1, M-2) | Metrics (guard + integration test) |
+| I28 | every business-day boundary and SQL time comparison follows `StoreSetting.timezone` via `resolveBusinessRange` / `utcInstant` (M-4) | Metrics (guard + integration test) |
+| I29 | realised net sales: refunds reduce it only by their merchandise part (overpayment first, goods first, capped), merchandise VAT comes from the order's snapshot, and a cancellation after realisation is a reversal in the cancellation period, never a rewrite of earlier periods (M-5, M-8–M-10) | Metrics (engine + mutation + integration tests) |
+| I30 | an order line's cost, product, category and brand are captured once, by one writer, in the transaction that writes the line, and never change; historical COGS, margin and attribution read only them; unknown values stay unknown (M-11–M-13) | Orders / Metrics (guard + engine + mutation + integration tests) |
+| I31 | recorded cost never appears in a customer or storefront response (global Prisma `omit`) | Orders (integration test) |
+| I32 | the store currency can't change once any order exists (409 `CURRENCY_LOCKED`) | Settings (integration test) |
+| I34 | a side effect that must follow a commit (order/transition SMS, admin alert, payment receipt, Meta purchase) is an `OutboxEvent` intent written by `recordOutboxEvents(tx, …)` in the same transaction; delivery is at least once to consumers with a stated idempotency boundary; outbox code never writes business truth; loyalty points are written inside their business transaction | Outbox (guard + integration + mutation tests) |
+| I33 | currency and timezone are read only through `domain/config/commerce-settings`; no runtime code hard-codes a business currency, currency symbol, timezone or fixed offset; each settings table has one owning module; a settings save leaves no stale API or storefront copy | Config (guard + integration + mutation tests) |
+| I35 | a money- or shipment-creating operation happens once per intent under retries and concurrency: checkout, manual order, refund and manual payment are keyed by a client `Idempotency-Key` on a unique column; a courier booking holds an atomic DB claim before calling the provider, kept when the outcome is unknown; an exchange replacement exists only if the original units were released; manual points deductions are row-locked; automated tests and `LIVE_PROVIDERS=off` servers cannot reach a live provider | Reliability (guard + integration/concurrency + mutation tests) |
+| I36 | every admin request is authenticated against the database (an existing, active admin; the current role decides) and every admin route states one permission from the single vocabulary in `packages/shared/src/permissions.ts`; the role → permission map lives only there, and the web reads the resolved list from `/api/auth/me`; customers reach only resources they own, and everything a customer or guest receives about an order goes through `toCustomerOrder` (no staff notes, staff identities, operational fields, internal attribution or cost); the store always keeps an active OWNER | Authorization (guard + route-matrix + ownership + mutation tests) |
+| I37 | unverified contact data never grants access: a phone is a login identifier only with `phoneVerifiedAt` (one verified owner per phone, partial unique index); an unclaimed passwordless record is claimed only with proof of the matched identity (email link, phone OTP, Google `email_verified`, reset link), atomically and audited, never moving history; a guest order joins an existing customer only through a verified phone or email; customer sessions are DB-tracked rotating families (fixed 7-day maximum, reuse revokes the family, server-side logout / logout-everywhere / password change / reset); observability (correlation IDs, redacted logs, error capture, readiness, attention) never writes business state | Identity & operations (guard + integration/concurrency + mutation tests) |
+
 Phase 1 implements and tests I1 (reconciliation test), I3, I7, I12–I17. Phase 2 implements and tests I8 (via
-`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`).
+`computeOrderTotals`), I18–I22 (`pricing.integration.test.ts`, `pricing-engines.test.ts`). Phase 5 implements and tests I11 (as M-3, with `GET /api/v1/metrics/consistency`), I27, I28 and I29 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md) §8). Phase 6 implements and tests I30–I32 ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)). Phase 7 implements and tests I33 ([PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)). Phase 8 implements and tests I34 ([PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)). Phase 9 implements and tests I35 ([PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)). Phase 10 implements and tests I36 ([PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)). Phase 11 implements and tests I37 ([PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)). Phase 4 implements and tests
+I9 (as PAYMENT_LEDGER PL-1, with a drift report) and I23–I26 ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md) §13).

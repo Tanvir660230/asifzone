@@ -24,7 +24,7 @@ async function fetchSummary(productId: string): Promise<{ status: "ok"; summary:
   }
 }
 
-/** "Sold in the last 7 days" and the lifetime view count, for the shop's own admins only. Renders nothing for everyone else and, because it only asks the API when
+/** "Ordered in the last 7 days" (units on sale orders — docs/METRICS_REGISTRY.md `units_ordered`) and the lifetime view count, for the shop's own admins only. Renders nothing for everyone else and, because it only asks the API when
  * this browser carries the admin marker, costs customers no request at all. The API is what enforces who may see the numbers. */
 export function AdminSalesBadge({ productId }: { productId: string }) {
   const [summary, setSummary] = useState<ProductSalesSummary | null>(null);
@@ -50,7 +50,7 @@ export function AdminSalesBadge({ productId }: { productId: string }) {
         <BarChart3 size={14} className="shrink-0 text-brass-700" />
         <span className="text-[11px] font-medium uppercase tracking-wide text-brass-800">Admin only</span>
         <span>
-          Sold in the last {summary.days} days: <strong data-testid="admin-sales-7d-units">{summary.unitsSold}</strong> unit{summary.unitsSold === 1 ? "" : "s"}
+          Ordered in the last {summary.days} days: <strong data-testid="admin-sales-7d-units">{summary.unitsSold}</strong> unit{summary.unitsSold === 1 ? "" : "s"}
           {summary.orders > 0 && (
             <span className="text-ink-500">
               {" "}

@@ -8,6 +8,7 @@ import { AccountPageHeader } from "@/components/account/account-page-header";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { Button } from "@/components/ui/button";
 import { listMyOrders } from "@/lib/api/customers";
+import { formatStoreDate } from "@/lib/format";
 
 function OrderSummaryCardSkeleton() {
   return (
@@ -58,7 +59,7 @@ export default function AccountOrdersPage() {
               <Link href={`/account/orders/${order.id}`} className="text-sm font-medium text-ink-900 hover:text-brass-600">
                 {order.orderNumber}
               </Link>
-              <span className="text-xs text-ink-400">{new Date(order.createdAt).toLocaleDateString()}</span>
+              <span className="text-xs text-ink-400">{formatStoreDate(order.createdAt)}</span>
             </div>
             <OrderSummaryCard order={order} />
           </div>

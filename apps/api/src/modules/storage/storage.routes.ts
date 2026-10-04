@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { requireAdmin, requireRole } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { asyncHandler } from "../../lib/async-handler";
 import { validate } from "../../middlewares/validate";
 import { findUnusedUploads, listTrash, moveUnusedToTrash, restoreTrashBatch } from "./storage.service";
@@ -8,7 +8,7 @@ import { findUnusedUploads, listTrash, moveUnusedToTrash, restoreTrashBatch } fr
 export const storageRouter = Router();
 
 // OWNER-only: moving files out of the live uploads folder is a store-wide action.
-storageRouter.use(requireAdmin, requireRole("OWNER"));
+storageRouter.use(requireAdmin, requirePermission("settings.manage"));
 
 storageRouter.get(
   "/unused",

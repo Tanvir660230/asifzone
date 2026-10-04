@@ -20,7 +20,7 @@ import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { ProductPicker } from "@/components/admin/product-picker";
 import * as flashSalesApi from "@/lib/api/admin-flash-sales";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, storeCurrencySymbol } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
 /** Same rule the server prices with (packages/shared flashSalePhase): live = switched on and inside the window. */
@@ -290,7 +290,7 @@ function FlashSaleItemsManager({
         <div className="mt-3 grid grid-cols-[auto_auto_auto] items-start gap-2">
           <Select {...register("discountType")} className="w-28">
             <option value="PERCENTAGE">% off</option>
-            <option value="FIXED">৳ off</option>
+            <option value="FIXED">{storeCurrencySymbol()} off</option>
           </Select>
           <div>
             <Input type="number" step="any" placeholder="Value" {...register("discountValue", { valueAsNumber: true })} className="w-24" />

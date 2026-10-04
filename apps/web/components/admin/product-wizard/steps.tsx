@@ -20,7 +20,7 @@ import { AiGenerateButton } from "@/components/admin/product-form";
 import { buildCategoryOptions } from "@/components/admin/product-form-state";
 import type { WizardActions, WizardState } from "./types";
 import * as aiApi from "@/lib/api/ai";
-import { stripHtml } from "@/lib/format";
+import { storeCurrencyCode, stripHtml } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isBlankAttributeValue, slugify, type Category } from "@clothing-brand/shared";
 import { AlertTriangle, Check, ExternalLink } from "lucide-react";
@@ -215,7 +215,7 @@ export function PricingStep({ state }: StepProps) {
       <FormSection title="Pricing & tax">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <Label htmlFor="basePrice">Base price (BDT)</Label>
+            <Label htmlFor="basePrice">Base price ({storeCurrencyCode()})</Label>
             <Input id="basePrice" type="number" step="0.01" {...register("basePrice", { valueAsNumber: true })} />
             {errors.basePrice && <p className="mt-1 text-xs text-danger-600">{errors.basePrice.message}</p>}
           </div>

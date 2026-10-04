@@ -1,4 +1,6 @@
 import {
+  formatDateTime,
+  formatMoney,
   describeRefusedTransition,
   formatVariantLabel,
   formatVariantSuffix,
@@ -13,7 +15,10 @@ import {
   type Quote,
   orderStatusEnum,
   PRE_SHIPMENT_STATUSES,
+  MONEY_HELD_PAYMENT_STATUSES,
   type OrderTransitionRule,
+  clampNonNegative,
+  subtract,
 } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
@@ -32,13 +37,16 @@ import type {
   BulkOrderStatusResult,
 } from "@clothing-brand/shared";
 import { Prisma } from "@prisma/client";
-import { prisma } from "../../config/prisma";
+import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
+import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
 import { paginate } from "../../lib/paginate";
 import { notify } from "../../lib/notify";
-import { sendAdminOrderAlertSms, sendCustomerOrderSms, type CustomerTouchpoint } from "../../lib/order-sms";
+import type { CustomerTouchpoint } from "../../lib/order-sms";
+import { recordOutboxEvents, type OutboxIntent } from "../../domain/outbox/outbox";
+import { isMetaCapiEnabled } from "../../lib/meta/capi";
 import { incrementCouponUsage } from "../coupons/coupon.service";
 import { flashUnitsSold, priceProductsForDisplay, quoteCart, toQuoteDto, type PricedQuote, type PriceableProduct } from "../../domain/pricing/pricing.service";
 import { LEGACY_ZONE_KEYS, loadShippingZones } from "../../domain/pricing/pricing-config";
@@ -48,8 +56,18 @@ import { clearCart } from "../cart/cart.service";
 import { startPaymentSession } from "../payments/payment.service";
 import { csvCell } from "../../lib/csv";
 import { notifyReplenished, recordSale, releaseOrderLines, reReserveOrderLines } from "../inventory/inventory.service";
-import { enqueueMetaPurchase } from "../../lib/meta/purchase";
+import { computeMetrics } from "../../domain/metrics/metrics.service";
+import {
+  REFUND_QUEUE_WHERE,
+  getOrderPaymentSummary,
+  recordCodCollection,
+  recordGatewaySettlement,
+  recordMarkedPaid,
+  summarizeOrderPayments,
+} from "../../domain/payments/payment-ledger.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
+import { getCurrency, getTimezone } from "../../domain/config/commerce-settings";
+import { captureError } from "../../lib/observability/error-capture";
 
 const include = {
   items: true,
@@ -154,7 +172,7 @@ function assertOrderable(quote: Quote, input: CheckoutInput, rows: PricedQuote["
  *
  * `input.quoteToken` (the quote the customer was shown): when present and no longer matching the server's price, the
  * order is refused with 409 QUOTE_CHANGED carrying the fresh quote — a stale price is never charged. */
-export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null, db: Prisma.TransactionClient | typeof prisma = prisma): Promise<DerivedOrderPricing> {
+export async function deriveOrderPricing(input: CheckoutInput, customerId: string | null, db: Db = prisma): Promise<DerivedOrderPricing> {
   // A guest (no session cookie) still gets tied to a real Customer row, matched by email/phone —
   // see findOrCreateGuestCustomer for why (repeat-guest recognition, and a base to merge into once
   // they register/log in).
@@ -240,9 +258,11 @@ async function claimFlashUnits(tx: Prisma.TransactionClient, snapshots: OrderIte
 /** Inserts the actual Order row (+ items/statusHistory/StockMovement, coupon-usage increment) and
  * fires the post-commit side effects (admin notification, customer SMS, cart-mirror clear,
  * low-stock alerts) — the one place that writes an Order at all. `init` picks the row's starting
- * state: PENDING/UNPAID for a checkout that hasn't been paid yet (COD, admin-entered), or
- * CONFIRMED/PAID for a storefront digital payment materializing its order only now that the
- * gateway has confirmed success (see payment.service.ts's settlePaymentSession).
+ * status: PENDING for a checkout that hasn't been paid yet (COD, admin-entered), or CONFIRMED for a
+ * storefront digital payment materializing its order only now that the gateway has confirmed success
+ * (see payment.service.ts's settlePaymentSession). The payment status is never set here: the order
+ * starts UNPAID and the payment ledger derives it from the settlement recorded in this same
+ * transaction (`gatewaySettlement`, or an admin's `markPaidByAdminId`) — docs/PAYMENT_LEDGER.md.
  *
  * Every price comes from `pricing` (the canonical quote, or — for a settling gateway payment — the snapshot of the quote
  * the customer paid). Nothing here computes a price.
@@ -253,7 +273,7 @@ async function claimFlashUnits(tx: Prisma.TransactionClient, snapshots: OrderIte
 export async function insertOrderRecord(
   input: CheckoutInput,
   pricing: OrderPricingSnapshot & { customerId: string | null; itemSnapshots?: OrderItemSnapshot[]; rows?: PricedQuote["rows"] },
-  init: { status: OrderStatus; paymentStatus: PaymentStatus },
+  init: { status: OrderStatus },
   opts: {
     changedByAdminId?: string;
     statusNote?: string;
@@ -267,6 +287,18 @@ export async function insertOrderRecord(
     // what marks this as a website conversion to report to Meta. An admin-entered phone/Facebook
     // order never passes it: that sale didn't happen on the website.
     metaContext?: MetaRequestContext;
+    // The verified gateway payment that pays for this order (a settling pre-order session) — recorded in the ledger in
+    // the same transaction, so the order is never PAID without its Payment row.
+    gatewaySettlement?: {
+      paymentSessionId: string;
+      provider: "SSLCOMMERZ" | "EPS_PG";
+      amount: number;
+      verifiedAmount: number;
+      providerTransactionId: string;
+      rawResponse?: unknown;
+    };
+    // An admin-entered order the staff member ticked "paid" on — a MANUAL settlement in the same transaction.
+    markPaidByAdminId?: string;
   } = {},
 ) {
   const snapshots = opts.itemSnapshots ?? pricing.itemSnapshots ?? [];
@@ -274,8 +306,11 @@ export async function insertOrderRecord(
   const oversoldItems: { name: string; size: string; color: string }[] = [];
   let stockAfter = new Map<string, number>();
   const untracked = new Set([...(pricing.rows?.values() ?? [])].filter((r) => !r.product.trackInventory).map((r) => r.id));
+  const currency = await getCurrency();
 
   const order = await prisma.$transaction(async (tx) => {
+    // Phase 6: cost and attribution as the catalog stands when the line is written (docs/PHASE_6_AUDIT.md).
+    const lineSnapshots = await captureLineSnapshots(tx, snapshots.map((s) => s.variantId), currency);
     const created = await tx.order.create({
       data: {
         orderNumber: generateOrderNumber(),
@@ -311,7 +346,6 @@ export async function insertOrderRecord(
         taxAmount: pricing.taxAmount ?? null,
         shippingTaxAmount: pricing.shippingTaxAmount ?? null,
         status: init.status,
-        paymentStatus: init.paymentStatus,
         items: {
           create: snapshots.map((s) => ({
             variantId: s.variantId,
@@ -326,6 +360,7 @@ export async function insertOrderRecord(
             flashSaleItemId: s.flashSaleItemId ?? null,
             bundleDiscountAllocated: s.bundleDiscountAllocated ?? null,
             couponDiscountAllocated: s.couponDiscountAllocated ?? null,
+            ...lineSnapshotData(lineSnapshots, s.variantId),
           })),
         },
         statusHistory: {
@@ -360,7 +395,25 @@ export async function insertOrderRecord(
 
     if (pricing.couponId) await incrementCouponUsage(tx, pricing.couponId);
 
-    return created;
+    // Payment ledger (docs/PAYMENT_LEDGER.md): the settlement that pays for this order, in the same transaction.
+    if (opts.gatewaySettlement) await recordGatewaySettlement(tx, { orderId: created.id, ...opts.gatewaySettlement });
+    if (opts.markPaidByAdminId) await recordMarkedPaid(tx, created.id, opts.markPaidByAdminId);
+
+    // Phase 8: the side-effect intents commit (or roll back) WITH the order — delivered afterwards by the outbox worker.
+    const placed = { aggregateType: "Order", aggregateId: created.id, eventType: "order.placed.v1" } as const;
+    const intents: OutboxIntent[] = [
+      { ...placed, consumer: "customer-order-sms", eventKey: `order:${created.id}:placed`, payload: { orderId: created.id, touchpoint: opts.customerSmsTouchpoint ?? "PLACED" } },
+      { ...placed, consumer: "admin-order-alert-sms", eventKey: `order:${created.id}:placed`, payload: { orderId: created.id } },
+    ];
+    if (opts.gatewaySettlement) {
+      intents.push({ aggregateType: "Order", aggregateId: created.id, eventType: "payment.settled.v1", consumer: "payment-receipt-email", eventKey: `order:${created.id}:paid`, payload: { orderId: created.id } });
+    }
+    if (opts.metaContext && isMetaCapiEnabled()) {
+      intents.push({ ...placed, consumer: "meta-capi-purchase", eventKey: `order:${created.id}`, payload: { orderId: created.id, context: { ...opts.metaContext } } });
+    }
+    await recordOutboxEvents(tx, intents);
+
+    return opts.gatewaySettlement || opts.markPaidByAdminId ? tx.order.findUniqueOrThrow({ where: { id: created.id }, include }) : created;
   });
 
   notify({
@@ -379,22 +432,17 @@ export async function insertOrderRecord(
     });
   }
 
-  sendCustomerOrderSms(order, opts.customerSmsTouchpoint ?? "PLACED");
-  sendAdminOrderAlertSms(order);
-
-  if (opts.metaContext) enqueueMetaPurchase(order.id, opts.metaContext);
-
   // A real purchase just happened — the server-side cart mirror (if any) is stale now, so the
   // abandonment sweep must not fire on it.
   if (pricing.customerId) {
-    clearCart(pricing.customerId).catch((err) => console.error("[cart] clear after order failed:", err));
+    clearCart(pricing.customerId).catch((err) => captureError(err, { msg: "[cart] clear after order failed:" }));
 
     // Same Steadfast fraud_check the admin used to trigger by hand with "Check score" on the order
     // list — fired automatically the moment the order lands, so the delivery-score badge is already
     // populated by the time anyone opens the order. Fire-and-forget: Steadfast being slow/down must
     // never delay or fail checkout.
     checkAndUpdateDeliveryScore(pricing.customerId, order.customerPhone).catch((err) =>
-      console.error(`[courier] auto delivery-score check failed for order ${order.orderNumber}:`, err),
+      captureError(err, { msg: `[courier] auto delivery-score check failed for order ${order.orderNumber}:` }),
     );
   }
 
@@ -420,7 +468,7 @@ export async function createOrder(
   // Only the admin "Create order" path sets changedByAdminId/statusNote — attributes the order's opening PENDING
   // statusHistory entry to the staff member who entered it. idempotencyKey comes from the Idempotency-Key header;
   // metaContext (storefront checkout only) marks a website conversion to report to Meta.
-  opts: { changedByAdminId?: string; statusNote?: string; idempotencyKey?: string | null; metaContext?: MetaRequestContext } = {},
+  opts: { changedByAdminId?: string; statusNote?: string; idempotencyKey?: string | null; metaContext?: MetaRequestContext; markPaidByAdminId?: string } = {},
 ) {
   // Idempotency: one lock-and-dedupe mechanism, keyed by the Idempotency-Key header when the client sends one (durable:
   // Order.idempotencyKey is unique), else by the storefront's own client-generated sessionId (the pre-existing
@@ -473,11 +521,12 @@ export async function createOrder(
   }
 
   try {
-    return await insertOrderRecord(input, pricing, { status: "PENDING", paymentStatus: "UNPAID" }, {
+    return await insertOrderRecord(input, pricing, { status: "PENDING" }, {
       changedByAdminId: opts.changedByAdminId,
       statusNote: opts.statusNote,
       idempotencyKey: key,
       metaContext: opts.metaContext,
+      markPaidByAdminId: opts.markPaidByAdminId,
     });
   } catch (err) {
     // Two requests with the same key raced past the lock (Redis down): the unique index let exactly one in.
@@ -496,20 +545,17 @@ export async function createOrder(
  * themselves. Deliberately a thin wrapper around createOrder rather than a parallel implementation:
  * routing through the exact same stock-decrement/pricing/snapshot transaction is what guarantees a
  * manually-entered order can never drift out of sync with real stock or the catalog's current
- * price — there is only one order-creation code path, admin or storefront. `markPaid` is applied
- * as a separate, explicit follow-up write (never silently folded into createOrder) so a manual
- * order defaults to the same UNPAID-until-collected state as any other COD order unless staff
- * tick the box themselves. */
+ * price — there is only one order-creation code path, admin or storefront. A manual order defaults
+ * to the same UNPAID-until-collected state as any other COD order unless staff tick "paid"; then the
+ * payment ledger records a MANUAL settlement inside the order's own insert transaction (never a
+ * separate follow-up write that could half-apply). */
 export async function createManualOrder(input: AdminCreateOrderInput, adminId: string, idempotencyKey?: string | null) {
   const order = await createOrder(input, input.customerId ?? null, {
     changedByAdminId: adminId,
     statusNote: "Order manually entered from the admin panel",
     idempotencyKey,
+    markPaidByAdminId: input.markPaid ? adminId : undefined,
   });
-
-  if (input.markPaid) {
-    await prisma.order.update({ where: { id: order.id }, data: { paymentStatus: "PAID" } });
-  }
 
   return getOrderById(order.id);
 }
@@ -583,16 +629,17 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
 export async function getOrderById(id: string) {
   const order = await prisma.order.findUnique({ where: { id }, include });
   if (!order) throw AppError.notFound("Order not found");
-  const items = await attachLiveItemInfo(order.items, { requireAvailable: false });
-  return { ...order, items };
+  const [items, payment] = await Promise.all([attachLiveItemInfo(order.items, { requireAvailable: false }), getOrderPaymentSummary(id)]);
+  return { ...order, items, payment };
 }
 
 /** Powers bulk label printing — fetches many orders in one round-trip instead of N single-order
  * GETs. Re-sorts to match the caller's id order and silently drops any id no longer found (e.g. an
  * order permanently deleted between selection and print) rather than failing the whole batch. */
 export async function getOrdersByIds(ids: string[]) {
-  const orders = await prisma.order.findMany({ where: { id: { in: ids } }, include });
-  const byId = new Map(orders.map((o) => [o.id, o]));
+  const [orders, payments] = await Promise.all([prisma.order.findMany({ where: { id: { in: ids } }, include }), summarizeOrderPayments(ids)]);
+  // Labels print the courier's COD amount from the payment ledger (`payment.codToCollect`), never `total`.
+  const byId = new Map(orders.map((o) => [o.id, { ...o, payment: payments.get(o.id) }]));
   return ids.map((id) => byId.get(id)).filter((o): o is NonNullable<typeof o> => Boolean(o));
 }
 
@@ -638,7 +685,7 @@ export async function retryPayment(orderNumber: string, phone: string, ipAddress
   const order = await prisma.order.findUnique({ where: { orderNumber }, include: { items: true } });
   if (!order || order.deletedAt || order.customerPhone !== phone) throw AppError.notFound("Order not found");
   if (order.paymentMethod === "COD") throw AppError.badRequest("This order is Cash on Delivery");
-  if (order.paymentStatus === "PAID" || order.paymentStatus === "REFUNDED") {
+  if (order.paymentStatus === "PAID" || order.paymentStatus === "REFUNDED" || order.paymentStatus === "PARTIALLY_REFUNDED") {
     throw AppError.badRequest("This order is already settled");
   }
   if (order.status !== "PENDING") {
@@ -693,9 +740,9 @@ function buildOrderWhere(query: OrderListQuery) {
     // `statusIn` above resolved to, since the frontend only ever sends this on its own (same
     // mutually-exclusive pattern as the other quick filters).
     ...(query.followUpDue === "true" ? { status: "PENDING" as const, followUpAt: { lte: new Date() } } : {}),
-    // The refund-risk queue — CANCELLED orders where the gateway payment was never refunded back
-    // out, surfaced via the "Cancelled but paid" admin alert (updateOrderStatus/getOrderStats).
-    ...(query.cancelledButPaid === "true" ? { status: "CANCELLED" as const, paymentStatus: "PAID" as const } : {}),
+    // The refund-risk queue — CANCELLED orders still holding customer money (one shared predicate from the payment
+    // ledger), surfaced via the "Cancelled but paid" admin alert (updateOrderStatus/getOrderStats).
+    ...(query.cancelledButPaid === "true" ? REFUND_QUEUE_WHERE : {}),
     ...(query.dateFrom || query.dateTo
       ? {
           createdAt: {
@@ -865,15 +912,12 @@ async function buildItemsSummary(orderIds: string[]) {
  * joins) rather than pulling every order into Node to tally, so it stays cheap as order history grows. */
 export async function getOrderStats() {
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const [todayOrders, todayRevenue, pending, needsAttention, followUpDue, cancelledButPaidCount, statusGroups] = await Promise.all([
-    prisma.order.count({ where: { deletedAt: null, createdAt: { gte: startOfToday } } }),
-    prisma.order.aggregate({
-      where: { deletedAt: null, createdAt: { gte: startOfToday } },
-      _sum: { total: true },
-    }),
+  // "Today" = the store's business day; orders placed = sale orders placed today, revenue = today's realised net sales —
+  // the registry's `orders_placed` / `realised_net_sales` (docs/METRICS_REGISTRY.md), the same numbers as the dashboard and BI.
+  const [today, pending, needsAttention, followUpDue, cancelledButPaidCount, statusGroups] = await Promise.all([
+    computeMetrics({ metrics: ["orders_placed", "realised_net_sales"], range: { preset: "today" } }, now),
     prisma.order.count({ where: { deletedAt: null, status: { in: ["PENDING", "CONFIRMED"] } } }),
     // A fresh PENDING order isn't "stuck" yet — only one sitting unconfirmed for a day, one whose
     // payment gateway callback actually failed, one Steadfast has put "on hold" (couldn't reach the
@@ -888,7 +932,7 @@ export async function getOrderStats() {
           { paymentStatus: "FAILED" },
           { courierStatus: "hold" },
           { status: "PENDING", followUpAt: { lte: now } },
-          { status: "CANCELLED", paymentStatus: "PAID" },
+          REFUND_QUEUE_WHERE,
         ],
       },
     }),
@@ -898,7 +942,7 @@ export async function getOrderStats() {
     prisma.order.count({ where: { deletedAt: null, status: "PENDING", followUpAt: { lte: now } } }),
     // Same reasoning as followUpDue above — its own number so the "Cancelled but paid" tile/pill can
     // show the exact refund-risk count, not just its share of the combined needsAttention bucket.
-    prisma.order.count({ where: { deletedAt: null, status: "CANCELLED", paymentStatus: "PAID" } }),
+    prisma.order.count({ where: { deletedAt: null, ...REFUND_QUEUE_WHERE } }),
     // Powers the status-filter pills' "(N)" counts — one row per status that has at least one
     // order, zero-filled below for the rest so every pill always shows a count.
     prisma.order.groupBy({ by: ["status"], where: { deletedAt: null }, _count: true }),
@@ -908,8 +952,8 @@ export async function getOrderStats() {
   for (const group of statusGroups) statusCounts[group.status] = group._count;
 
   return {
-    todayOrders,
-    todayRevenue: Number(todayRevenue._sum.total ?? 0),
+    todayOrders: today.metrics.orders_placed!.value,
+    todayRevenue: today.metrics.realised_net_sales!.value,
     pending,
     needsAttention,
     followUpDue,
@@ -979,7 +1023,7 @@ async function getCourierReturnFee(shippingDistrict: string, shippingDivision?: 
   const settings = await getSettings();
   // Zone-matched by the same shipping-zone configuration that priced the delivery (no hard-coded geography): the
   // estimate for the seeded "inside Dhaka district" zone, else the outside estimate.
-  const zone = resolveZone(await loadShippingZones(settings.currency || "BDT"), { district: shippingDistrict, division: shippingDivision });
+  const zone = resolveZone(await loadShippingZones(await getCurrency()), { district: shippingDistrict, division: shippingDivision });
   return zone?.key === LEGACY_ZONE_KEYS.insideDhaka ? Number(settings.courierReturnFeeDhaka) : Number(settings.courierReturnFeeOutsideDhaka);
 }
 
@@ -1006,7 +1050,9 @@ export async function applyOrderTransition(
   tx: Prisma.TransactionClient,
   orderId: string,
   input: UpdateOrderStatusInput,
-  actor: { adminId?: string | null } = {},
+  /** `quietNoop`: an automated source (courier webhook / sync) — a same-status call leaves no timeline entry, so a
+   * duplicate or late provider push never adds noise (Phase 9). */
+  actor: { adminId?: string | null; quietNoop?: boolean } = {},
 ): Promise<OrderTransitionOutcome> {
   const [locked] = await tx.$queryRaw<
     Array<{
@@ -1036,7 +1082,7 @@ export async function applyOrderTransition(
   // Same status: nothing happens — no stock, SMS, points or courier loss (so a re-applied bulk action or a
   // double-clicked button is harmless). A note still lands on the timeline so admins can annotate.
   if (from === to) {
-    const order = input.note
+    const order = input.note && !actor.quietNoop
       ? await tx.order.update({
           where: { id: orderId },
           data: { statusHistory: { create: { status: to, note: input.note, changedByAdminId: actor.adminId ?? null } } },
@@ -1069,14 +1115,14 @@ export async function applyOrderTransition(
     await tx.$executeRaw`UPDATE "Coupon" SET "usedCount" = GREATEST("usedCount" - 1, 0) WHERE id = ${locked.couponId}`;
   }
 
-  // D1: Cash on Delivery money is collected by the courier at the door — delivery is the collection point.
-  const codCollected = rule.codCollected && locked.paymentMethod === "COD" && locked.paymentStatus === "UNPAID";
+  // D1: Cash on Delivery money is collected by the courier at the door — delivery is the collection point. The payment
+  // ledger records a COD settlement of the balance due and derives the status (docs/PAYMENT_LEDGER.md §6).
+  if (rule.codCollected && locked.paymentMethod === "COD") await recordCodCollection(tx, orderId, actor);
 
   const order = await tx.order.update({
     where: { id: orderId },
     data: {
       status: to,
-      ...(codCollected ? { paymentStatus: "PAID" as const } : {}),
       ...(releaseCoupon ? { couponReleasedAt: new Date() } : {}),
       // Leaving PENDING means the confirmation call resolved — an outstanding follow-up hold is stale. Moving *to*
       // PENDING leaves it alone; only the explicit hold action sets it.
@@ -1085,47 +1131,61 @@ export async function applyOrderTransition(
     },
     include,
   });
+
+  // D8 loyalty points are business truth: awarded / reversed IN this transaction (Phase 8), never after it.
+  if (rule.awardPoints && order.customerId) await awardDeliveryPoints(tx, order.customerId, order.id, loyaltyBase(order, await getCurrency()));
+  if (rule.reversesPoints && order.customerId) await reverseDeliveryPoints(tx, order.customerId, order.id, 1);
+
+  // The customer's status SMS: an outbox intent committed with the transition, keyed by the history row just written.
+  if (rule.customerSms) {
+    const historyId = order.statusHistory.at(-1)!.id;
+    await recordOutboxEvents(tx as AppTransactionClient, [
+      {
+        eventType: "order.status_changed.v1",
+        consumer: "customer-order-sms",
+        eventKey: `status:${historyId}`,
+        aggregateType: "Order",
+        aggregateId: orderId,
+        payload: { orderId, touchpoint: rule.customerSms as CustomerTouchpoint },
+      },
+    ]);
+  }
   return { ...base, order, changed: true, replenished };
 }
 
-/** Post-commit effects of a transition: customer SMS, loyalty points, admin alerts, back-in-stock emails. Never
- * run inside the transaction — a slow SMS gateway must not hold the order row lock, and a rolled-back
- * transition must not have messaged anyone. */
-export async function runTransitionSideEffects(outcome: OrderTransitionOutcome, opts: { sms?: boolean } = {}) {
+/** Best-effort post-commit effects of a transition: admin alerts and back-in-stock emails. The customer SMS and loyalty
+ * points are NOT here any more — the SMS is an outbox intent and the points are written inside the transition's
+ * transaction (Phase 8), so neither can be lost after the transition commits. */
+export async function runTransitionSideEffects(outcome: OrderTransitionOutcome) {
   const { order, rule, changed, previousPaymentStatus } = outcome;
   if (!changed) return;
 
-  // D8: points on merchandise after discounts, excluding shipping (and the admin adjustment) — from the order snapshot.
-  if (rule.awardPoints && order.customerId) {
-    await awardDeliveryPoints(order.customerId, order.id, loyaltyBase(order, (await getSettings()).currency || "BDT")).catch((err) =>
-      console.error(`[loyalty] points for ${order.orderNumber} failed:`, err),
-    );
-  }
-  if (rule.reversesPoints && order.customerId) {
-    await reverseDeliveryPoints(order.customerId, order.id, 1).catch((err) => console.error(`[loyalty] reversal for ${order.orderNumber} failed:`, err));
-  }
-
   // Money-risk alerts: the payment was already collected, and nothing here sends it back.
-  if (rule.alertIfPaid && previousPaymentStatus === "PAID") {
+  if (rule.alertIfPaid && MONEY_HELD_PAYMENT_STATUSES.includes(previousPaymentStatus)) {
     notify({
       type: rule.alertIfPaid,
       title: rule.alertIfPaid === "order.cancelled_but_paid" ? `Cancelled but paid: ${order.orderNumber}` : `Returned — refund may be owed: ${order.orderNumber}`,
-      body: `${order.customerName} · ${formatBdt(Number(order.total))} — refund may be owed`,
+      body: `${order.customerName} · ${formatMoney(Number(order.total), await getCurrency())} — refund may be owed`,
       link: `/admin/orders/${order.id}`,
     });
   }
 
-  if (rule.customerSms && opts.sms !== false) sendCustomerOrderSms(order, rule.customerSms as CustomerTouchpoint);
   notifyReplenished(outcome.replenished);
 }
 
 /** The one command every status change goes through (admin picker, bulk, courier, returns): its own transaction +
  * post-commit side effects. Throws 400 for a transition the matrix doesn't allow. */
-export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string) {
-  const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, input, { adminId: changedByAdminId }));
+export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string, opts: { quietNoop?: boolean } = {}) {
+  return (await changeOrderStatus(id, input, changedByAdminId, opts)).order;
+}
+
+/** `updateOrderStatus`, also saying whether the locked transition actually changed the status (`false`: a same-status
+ * no-op — e.g. a duplicate courier webhook that lost the race), so a caller's own follow-up can run exactly once. */
+export async function changeOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string, opts: { quietNoop?: boolean } = {}) {
+  const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, input, { adminId: changedByAdminId, quietNoop: opts.quietNoop }));
   await runTransitionSideEffects(outcome);
   const items = await attachLiveItemInfo(outcome.order.items, { requireAvailable: false });
-  return { ...outcome.order, items };
+  return { order: { ...outcome.order, items }, changed: outcome.changed };
 }
 
 const ORDER_DETAIL_FIELD_LABELS = {
@@ -1183,12 +1243,6 @@ export async function updateOrderDetails(id: string, input: UpdateOrderDetailsIn
   });
 }
 
-/** Node ships with full ICU by default, so Intl can format directly into Asia/Dhaka regardless of
- * the server process's own timezone — Bangladesh has one fixed UTC+6 offset with no DST, so this is
- * a pure display concern; followUpAt itself is always stored/compared as an absolute UTC instant. */
-function formatBdDateTime(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dhaka", dateStyle: "medium", timeStyle: "short" }).format(date);
-}
 
 /** Records the outcome of a confirmation call that was neither a clear yes nor a clear no — sets a
  * follow-up time and bumps the lifetime call-attempt counter, but deliberately does NOT touch
@@ -1201,9 +1255,9 @@ export async function holdOrderForFollowUp(id: string, input: HoldOrderInput, ch
     throw AppError.badRequest("Only pending orders can be put on a follow-up hold");
   }
 
-  const note = input.note
-    ? `On hold — follow up ${formatBdDateTime(input.followUpAt)}: ${input.note}`
-    : `On hold — follow up ${formatBdDateTime(input.followUpAt)}`;
+  // Display only, in the store timezone (Phase 7); followUpAt itself is stored and compared as an absolute UTC instant.
+  const followUp = formatDateTime(input.followUpAt, await getTimezone());
+  const note = input.note ? `On hold — follow up ${followUp}: ${input.note}` : `On hold — follow up ${followUp}`;
 
   return prisma.order.update({
     where: { id },
@@ -1236,9 +1290,6 @@ export async function clearOrderHold(id: string, changedByAdminId?: string) {
 
 const PRICE_ADJUSTMENT_LOCKED_STATUSES: OrderStatus[] = ["CANCELLED", "REFUNDED", "RETURNED", "DELIVERED"];
 
-function formatBdt(amount: number): string {
-  return `৳${Math.round(amount).toLocaleString("en-BD")}`;
-}
 
 /** Lets an admin nudge the order total up or down during the confirmation call (a negotiated
  * discount, a remote-area surcharge) — replaces whatever priceAdjustment was already set, it isn't
@@ -1257,6 +1308,11 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
 
   const previousAdjustment = Number(existing.priceAdjustment);
   if (previousAdjustment === input.priceAdjustment) return existing;
+  // PL-7 (docs/PAYMENT_LEDGER.md): once money was received, the total it was received against is frozen — a correction
+  // after payment is a refund, never a silent change to what "paid" means.
+  if (existing.payment.paid > 0) {
+    throw new AppError(409, "This order already has a payment recorded — record a refund instead of adjusting its total", { code: "ORDER_ALREADY_PAID" });
+  }
 
   // The one totals formula, fed ONLY by this order's own immutable snapshot (PRICING_INVARIANTS §9) — never the live
   // coupon, flash sale, product price or tax setting. Whether shipping was charged is itself a snapshot
@@ -1264,13 +1320,14 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   if (existing.shippingWaived === null) {
     throw AppError.conflict("This order's pricing snapshot is incomplete (shipping waiver unknown) — it can't be adjusted automatically");
   }
-  const cur = (await getSettings()).currency || "BDT";
+  const cur = await getCurrency();
   const m = (v: unknown) => fromMajor(String(v ?? 0), cur);
   const bundle = m(existing.bundleDiscount);
   const totals = computeOrderTotals({
     subtotal: m(existing.subtotal),
     bundleDiscount: bundle,
-    couponDiscount: m(existing.couponDiscount ?? Math.max(0, Number(existing.discount) - Number(existing.bundleDiscount))),
+    // Pre-Phase-2 orders have no couponDiscount snapshot: derive it exactly in minor units (Phase 11, F-20 — never floats).
+    couponDiscount: existing.couponDiscount != null ? m(existing.couponDiscount) : clampNonNegative(subtract(m(existing.discount), bundle)),
     shippingCharged: existing.shippingWaived ? m(0) : m(existing.shippingFee),
     taxAdded: existing.taxMode === "EXCLUSIVE" ? m(existing.taxAmount) : m(0),
     priceAdjustment: fromMajor(String(input.priceAdjustment), cur),
@@ -1279,17 +1336,25 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   const newTotal = toMajor(totals.total);
 
   const note =
-    `Price adjustment: ${formatBdt(previousAdjustment)} -> ${formatBdt(input.priceAdjustment)} (total ${formatBdt(Number(existing.total))} -> ${formatBdt(newTotal)})` +
+    `Price adjustment: ${formatMoney(previousAdjustment, cur)} -> ${formatMoney(input.priceAdjustment, cur)} (total ${formatMoney(Number(existing.total), cur)} -> ${formatMoney(newTotal, cur)})` +
     (input.note ? ` — ${input.note}` : "");
 
-  return prisma.order.update({
-    where: { id },
-    data: {
-      priceAdjustment: input.priceAdjustment,
-      total: newTotal,
-      statusHistory: { create: { status: existing.status, note, changedByAdminId: changedByAdminId ?? null } },
-    },
-    include,
+  return prisma.$transaction(async (tx) => {
+    // Re-checked under the row lock: a payment recorded between the read above and this write must win.
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
+    const paidRows = await tx.payment.count({ where: { orderId: id, status: "SUCCEEDED", amount: { gt: 0 } } });
+    if (paidRows > 0) {
+      throw new AppError(409, "This order already has a payment recorded — record a refund instead of adjusting its total", { code: "ORDER_ALREADY_PAID" });
+    }
+    return tx.order.update({
+      where: { id },
+      data: {
+        priceAdjustment: input.priceAdjustment,
+        total: newTotal,
+        statusHistory: { create: { status: existing.status, note, changedByAdminId: changedByAdminId ?? null } },
+      },
+      include,
+    });
   });
 }
 
@@ -1467,7 +1532,7 @@ export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, 
     } catch (err) {
       const orderNumber = (await prisma.order.findUnique({ where: { id }, select: { orderNumber: true } }))?.orderNumber ?? null;
       result.failed.push({ id, orderNumber, reason: err instanceof AppError ? err.message : "Unexpected error" });
-      if (!(err instanceof AppError)) console.error(`[orders] bulk status ${id} failed:`, err);
+      if (!(err instanceof AppError)) captureError(err, { msg: `[orders] bulk status ${id} failed:` });
     }
   }
   return result;

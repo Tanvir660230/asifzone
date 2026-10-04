@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
 import Link from "next/link";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 import { useQuery } from "@tanstack/react-query";
 import {
   Wallet,
@@ -42,7 +42,8 @@ import { useBiDateRange } from "@/components/admin/bi-date-range-context";
 import * as biApi from "@/lib/api/bi";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as notificationsApi from "@/lib/api/notifications";
-import { formatPrice, computeTrendPct, timeAgo } from "@/lib/format";
+import * as metricsApi from "@/lib/api/metrics";
+import { formatPrice, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function toBarItems<T>(
@@ -90,11 +91,12 @@ export default function ExecutiveOverviewPage() {
   const { data: customerInsights } = useQuery({ queryKey: ["bi-overview-customers"], queryFn: analyticsApi.getCustomerInsights });
   const { data: activity } = useQuery({ queryKey: ["bi-overview-activity"], queryFn: notificationsApi.listNotifications, refetchInterval: 30_000 });
 
-  // Fetches 2x the selected window so the first half can serve as the "prior period" comparison
-  // baseline for the trend badge, without a dedicated comparison endpoint.
+  // Realised net sales, orders realised, the daily series and the prior-period comparison — all computed by the server's metrics
+  // engine for exactly the picked business dates (docs/METRICS_REGISTRY.md); nothing is summed here.
   const { data: revenueSeries } = useQuery({
     queryKey: ["bi-overview-revenue", rangeKey],
-    queryFn: () => analyticsApi.getRevenueSeries(rangeDays * 2),
+    queryFn: () =>
+      metricsApi.getMetrics({ metrics: ["realised_net_sales", "orders_realised"], from: metricsApi.pickedDate(range.from), to: metricsApi.pickedDate(range.to), groupBy: "day", compare: "previous" }),
   });
   // getJourneyFunnel/getTopProducts/getTopCategories/getCampaignPerformance/getCustomerLocationBreakdown
   // only accept a rolling "days" window (not an explicit dateFrom/dateTo like getFavoritePaymentMethod
@@ -124,20 +126,10 @@ export default function ExecutiveOverviewPage() {
     queryFn: () => analyticsApi.getReturnRequestAnalytics(undefined, range.from, range.to),
   });
 
-  const { currentSeries, periodRevenue, periodOrders, revenueTrendPct } = useMemo(() => {
-    const all = revenueSeries?.series ?? [];
-    const current = all.slice(-rangeDays);
-    const previous = all.slice(0, Math.max(0, all.length - rangeDays));
-    const currentSum = current.reduce((sum, p) => sum + p.revenue, 0);
-    const previousSum = previous.reduce((sum, p) => sum + p.revenue, 0);
-    const currentOrders = current.reduce((sum, p) => sum + p.orders, 0);
-    return {
-      currentSeries: current,
-      periodRevenue: currentSum,
-      periodOrders: currentOrders,
-      revenueTrendPct: previous.length > 0 ? computeTrendPct(currentSum, previousSum) : null,
-    };
-  }, [revenueSeries, rangeDays]);
+  const currentSeries = revenueSeries?.groups ?? [];
+  const periodRevenue = revenueSeries?.metrics.realised_net_sales?.value ?? 0;
+  const periodOrders = revenueSeries?.metrics.orders_realised?.value ?? 0;
+  const revenueTrendPct = revenueSeries?.previous?.changePct.realised_net_sales ?? null;
 
   const topInsights = insights?.insights.slice(0, 3) ?? [];
   const recentActivity = activity?.items.slice(0, 6) ?? [];
@@ -164,20 +156,20 @@ export default function ExecutiveOverviewPage() {
         {revenueSeries ? (
           <HeroRevenueCard
             className="lg:col-span-2"
-            label={`Revenue — ${rangeDays} day${rangeDays === 1 ? "" : "s"} selected`}
+            label={`Realised net sales — ${rangeDays} day${rangeDays === 1 ? "" : "s"} selected`}
             value={formatPrice(periodRevenue)}
             todayOrders={periodOrders}
             ordersSuffix="in this period"
             trendPct={revenueTrendPct}
             trendLabel="vs. prior period"
-            series={currentSeries.map((p) => p.revenue)}
+            series={currentSeries.map((g) => g.metrics.realised_net_sales ?? 0)}
           />
         ) : (
           <div className="h-[15.5rem] animate-pulse rounded-3xl bg-ink-100 lg:col-span-2" />
         )}
 
-        {/* Single column on phones — at 2-up, a 6-digit ৳ value with the label/icon left almost
-            no room and clipped ("৳108,1…"), which defeats the point of a KPI tile. Full-width
+        {/* Single column on phones — at 2-up, a 6-digit price with the label/icon left almost
+            no room and clipped ("108,1…"), which defeats the point of a KPI tile. Full-width
             rows cost a little more scroll but the numbers are always readable, which review
             criterion #4 (data readability) treats as non-negotiable for a KPI card. */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:col-span-3 lg:grid-cols-3">
@@ -186,7 +178,7 @@ export default function ExecutiveOverviewPage() {
           ) : (
             <>
               <StatTile
-                label="Gross profit (lifetime)"
+                label="Gross profit (lifetime, recorded cost)"
                 value={formatPrice(overview.grossProfitLifetime)}
                 icon={<TrendingUp size={20} />}
                 trendPct={overview.profitGrowthPct}
@@ -194,7 +186,7 @@ export default function ExecutiveOverviewPage() {
               />
               <StatTile
                 label="Customers"
-                value={customerInsights ? customerInsights.totalCustomers.toLocaleString("en-BD") : "…"}
+                value={customerInsights ? customerInsights.totalCustomers.toLocaleString(DISPLAY_LOCALE) : "…"}
                 icon={<Users size={20} />}
               />
               <StatTile label="Conversion rate" value={`${overview.conversionRatePct.toFixed(1)}%`} icon={<Target size={20} />} />
@@ -206,7 +198,7 @@ export default function ExecutiveOverviewPage() {
                 tone={overview.refundRatePct > 5 ? "warning" : "default"}
               />
               <StatTile
-                label="Revenue growth (30d)"
+                label="Realised net sales growth (30d)"
                 value={`${overview.revenueGrowthPct >= 0 ? "+" : ""}${overview.revenueGrowthPct.toFixed(1)}%`}
                 icon={<Wallet size={20} />}
                 tone={overview.revenueGrowthPct >= 0 ? "accent" : "warning"}
@@ -258,14 +250,18 @@ export default function ExecutiveOverviewPage() {
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">Sales trend</p>
-            <p className="mt-1 text-sm text-ink-500">Daily revenue for the selected range.</p>
+            <p className="mt-1 text-sm text-ink-500">Daily realised net sales for the selected range.</p>
           </div>
           <Link href="/admin/bi/sales" className="flex shrink-0 items-center gap-1 text-sm font-medium text-ink-500 hover:text-ink-900">
             Sales Intelligence <ArrowUpRight size={14} />
           </Link>
         </div>
         <div className="mt-6">
-          {currentSeries.length > 0 ? <RevenueChart data={currentSeries} /> : <div className="h-[17.5rem] animate-pulse rounded-2xl bg-ink-50" />}
+          {currentSeries.length > 0 ? (
+            <RevenueChart data={currentSeries.map((g) => ({ date: g.key, revenue: g.metrics.realised_net_sales ?? 0, orders: g.metrics.orders_realised ?? 0 }))} />
+          ) : (
+            <div className="h-[17.5rem] animate-pulse rounded-2xl bg-ink-50" />
+          )}
         </div>
       </Card>
 

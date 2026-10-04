@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { listMyReturnRequests } from "@/lib/api/return-requests";
+import { formatStoreDate } from "@/lib/format";
 
 export default function AccountReturnsPage() {
   const { data, isLoading } = useQuery({ queryKey: ["my-return-requests"], queryFn: () => listMyReturnRequests() });
@@ -82,7 +83,7 @@ export default function AccountReturnsPage() {
             {request.status === "REJECTED" && request.adminNote && (
               <p className="mt-1 text-ink-500">Note from support: {request.adminNote}</p>
             )}
-            <p className="mt-2 text-xs text-ink-400">Requested {new Date(request.createdAt).toLocaleDateString()}</p>
+            <p className="mt-2 text-xs text-ink-400">Requested {formatStoreDate(request.createdAt)}</p>
           </div>
         ))}
       </div>

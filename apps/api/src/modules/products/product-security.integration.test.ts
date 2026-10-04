@@ -78,8 +78,10 @@ describe("product and catalog API security", () => {
       const routes = routesOf("../catalog/catalog.routes.ts", "catalogRouter");
       const writes = routes.filter((r) => r.method !== "GET");
       expect(writes.length).toBeGreaterThan(15);
-      const staffWritable = writes.filter((r) => !/ownerOnly|requireRole\("OWNER"\)/.test(r.args)).map((r) => `${r.method} ${r.path}`);
+      // Phase 10: catalog configuration writes need `catalog.configure` (OWNER-only in the role map, packages/shared permissions).
+      const staffWritable = writes.filter((r) => !/requirePermission\("catalog\.configure"\)/.test(r.args)).map((r) => `${r.method} ${r.path}`);
       expect(staffWritable).toEqual(["POST /sku/generate"]);
+      expect(routes.find((r) => r.path === "/sku/generate")!.args).toMatch(/requirePermission\("catalog\.manage"\)/);
       // The whole router sits behind an admin session.
       expect(fs.readFileSync(path.join(__dirname, "../catalog/catalog.routes.ts"), "utf-8")).toMatch(/catalogRouter\.use\(requireAdmin\)/);
     });

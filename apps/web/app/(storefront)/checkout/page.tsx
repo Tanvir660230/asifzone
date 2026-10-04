@@ -39,6 +39,7 @@ import { getActivePaymentMethods } from "@/lib/api/payment-methods";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 
 const checkoutFormSchema = checkoutSchema.omit({ items: true, couponCode: true });
 type CheckoutFormValues = ReturnType<typeof checkoutFormSchema.parse>;
@@ -304,7 +305,10 @@ function CheckoutForm() {
     };
 
     try {
-      const { order, gatewayUrl } = await createOrder(payload);
+      // Same checkout again (double submit, retry after a timeout) = same Idempotency-Key = the first order / payment attempt,
+      // never a second one — enforced by a unique column, with or without Redis (Phase 9).
+      const { order, gatewayUrl } = await createOrder(payload, idempotencyKeyFor("checkout", payload));
+      settleIdempotencyKey("checkout");
       sessionStorage.setItem("lastOrderPhone", values.customerPhone);
       // Only now that the server has accepted the checkout — a validation/stock error above never
       // gets here. Purchase is NOT fired here: it fires on the confirmation page once the backend

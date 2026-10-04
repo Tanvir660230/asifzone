@@ -4,6 +4,7 @@ import type {
   AcceptAdminInviteInput,
   UpdateAdminInput,
   GoogleLoginInput,
+  Permission,
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 import { clearAdminHint } from "./admin-hint";
@@ -13,6 +14,14 @@ export interface AdminUser {
   name: string;
   email: string;
   role: "OWNER" | "STAFF";
+  /** Resolved by the API from the admin's current role (Phase 10). */
+  permissions: Permission[];
+}
+
+/** UX only — hides what the API would refuse anyway. The API enforces every permission itself (requirePermission); the
+ * web never re-derives permissions from the role. */
+export function adminCan(admin: Pick<AdminUser, "permissions"> | null | undefined, permission: Permission): boolean {
+  return Boolean(admin?.permissions?.includes(permission));
 }
 
 export interface AdminAccount {

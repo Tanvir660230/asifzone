@@ -10,6 +10,7 @@ import * as biApi from "@/lib/api/bi";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { formatDuration } from "@/lib/format";
 import { useBiDateRange } from "@/components/admin/bi-date-range-context";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 function countryName(code: string): string {
   try {
@@ -90,7 +91,7 @@ export default function VisitorAnalyticsPage() {
   const totalPageViews = visitorSeries?.series.reduce((sum, p) => sum + p.pageViews, 0) ?? 0;
 
   function toBarItems<T extends { sessions: number }>(rows: T[] | undefined, label: (r: T) => string): RankedBarListItem[] {
-    return (rows ?? []).map((r, i) => ({ key: `${label(r)}-${i}`, label: label(r), value: r.sessions, valueLabel: r.sessions.toLocaleString("en-BD") }));
+    return (rows ?? []).map((r, i) => ({ key: `${label(r)}-${i}`, label: label(r), value: r.sessions, valueLabel: r.sessions.toLocaleString(DISPLAY_LOCALE) }));
   }
 
   return (
@@ -108,19 +109,19 @@ export default function VisitorAnalyticsPage() {
             Array.from({ length: 6 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Total Visitors" value={overview.totalVisitors.toLocaleString("en-BD")} icon={<Users size={18} />} tone="accent" />
+              <StatTile label="Total Visitors" value={overview.totalVisitors.toLocaleString(DISPLAY_LOCALE)} icon={<Users size={18} />} tone="accent" />
               <ConversionMetricCard
                 label="Returning Visitors"
-                value={overview.returningVisitors.toLocaleString("en-BD")}
+                value={overview.returningVisitors.toLocaleString(DISPLAY_LOCALE)}
                 caption="lifetime"
                 icon={<Repeat size={18} />}
                 pct={overview.returningVisitorRatePct}
               />
-              <StatTile label="Sessions" value={funnel.totalSessions.toLocaleString("en-BD")} icon={<Radio size={18} />} />
-              <StatTile label="Pages Viewed" value={totalPageViews.toLocaleString("en-BD")} icon={<FileText size={18} />} />
-              <StatTile label="Logged In" value={loggedInVsGuest.loggedIn.toLocaleString("en-BD")} icon={<LogIn size={18} />} />
-              <StatTile label="Guest" value={loggedInVsGuest.guest.toLocaleString("en-BD")} icon={<Users size={18} />} />
-              <StatTile label="Live Right Now" value={(activeVisitors?.count ?? 0).toLocaleString("en-BD")} icon={<Radio size={18} />} tone="warning" />
+              <StatTile label="Sessions" value={funnel.totalSessions.toLocaleString(DISPLAY_LOCALE)} icon={<Radio size={18} />} />
+              <StatTile label="Pages Viewed" value={totalPageViews.toLocaleString(DISPLAY_LOCALE)} icon={<FileText size={18} />} />
+              <StatTile label="Logged In" value={loggedInVsGuest.loggedIn.toLocaleString(DISPLAY_LOCALE)} icon={<LogIn size={18} />} />
+              <StatTile label="Guest" value={loggedInVsGuest.guest.toLocaleString(DISPLAY_LOCALE)} icon={<Users size={18} />} />
+              <StatTile label="Live Right Now" value={(activeVisitors?.count ?? 0).toLocaleString(DISPLAY_LOCALE)} icon={<Radio size={18} />} tone="warning" />
               <ConversionMetricCard label="Bounce Rate" value={`${funnel.bounceRate.toFixed(1)}%`} icon={<Globe2 size={18} />} pct={funnel.bounceRate} />
             </>
           )}
@@ -183,7 +184,7 @@ export default function VisitorAnalyticsPage() {
                   key: `${r.countryCode}-${i}`,
                   label: countryName(r.countryCode),
                   value: r.sessions,
-                  valueLabel: r.sessions.toLocaleString("en-BD"),
+                  valueLabel: r.sessions.toLocaleString(DISPLAY_LOCALE),
                 }))}
                 emptyLabel="No location data yet."
               />
@@ -216,7 +217,7 @@ export default function VisitorAnalyticsPage() {
           </CardHeader>
           <CardContent>
             <RankedBarList
-              items={(devices?.devices ?? []).map((r, i) => ({ key: `${r.device}-${i}`, label: r.device, value: r.sessions, valueLabel: r.sessions.toLocaleString("en-BD") }))}
+              items={(devices?.devices ?? []).map((r, i) => ({ key: `${r.device}-${i}`, label: r.device, value: r.sessions, valueLabel: r.sessions.toLocaleString(DISPLAY_LOCALE) }))}
               emptyLabel="No data yet."
             />
           </CardContent>
@@ -227,7 +228,7 @@ export default function VisitorAnalyticsPage() {
           </CardHeader>
           <CardContent>
             <RankedBarList
-              items={(browsers?.browsers ?? []).map((r, i) => ({ key: `${r.browser}-${i}`, label: r.browser, value: r.sessions, valueLabel: r.sessions.toLocaleString("en-BD") }))}
+              items={(browsers?.browsers ?? []).map((r, i) => ({ key: `${r.browser}-${i}`, label: r.browser, value: r.sessions, valueLabel: r.sessions.toLocaleString(DISPLAY_LOCALE) }))}
               emptyLabel="No data yet."
             />
           </CardContent>
@@ -269,7 +270,7 @@ export default function VisitorAnalyticsPage() {
               Distinct days each known visitor has been active on, lifetime — how sticky the audience is, not just how many show up once.
             </p>
             <RankedBarList
-              items={(frequency?.buckets ?? []).map((b) => ({ key: b.bucket, label: b.bucket, value: b.visitors, valueLabel: b.visitors.toLocaleString("en-BD") }))}
+              items={(frequency?.buckets ?? []).map((b) => ({ key: b.bucket, label: b.bucket, value: b.visitors, valueLabel: b.visitors.toLocaleString(DISPLAY_LOCALE) }))}
               emptyLabel="No returning-visitor data yet."
             />
           </CardContent>

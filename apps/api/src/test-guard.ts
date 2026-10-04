@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { AppPrismaClient } from "./config/prisma";
 
 /**
  * Tests here run against a real database and clean up after themselves with `deleteMany({ where: { categoryId } })`. Prisma treats
@@ -23,7 +23,7 @@ export function isEmptyClause(where: unknown): boolean {
   return entries.length === 1 && Array.isArray(or) && or.some(isEmptyClause);
 }
 
-export function installUnfilteredDeleteGuard(prisma: PrismaClient): void {
+export function installUnfilteredDeleteGuard(prisma: AppPrismaClient): void {
   (prisma as unknown as { $use: (fn: (params: { model?: string; action: string; args?: { where?: unknown } }, next: (p: unknown) => Promise<unknown>) => Promise<unknown>) => void }).$use(
     async (params, next) => {
       if ((params.action === "deleteMany" || params.action === "updateMany") && !UNFILTERED_OK.has(params.model ?? "") && isEmptyClause(params.args?.where)) {

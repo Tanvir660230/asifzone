@@ -3,6 +3,7 @@ import request from "supertest";
 import type { Prisma } from "@prisma/client";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
+import { cacheDel, redis } from "../../config/redis";
 import {
   RUN,
   asOwner,
@@ -29,6 +30,25 @@ let originalStore: {
   rewardPointsPerCurrency: Prisma.Decimal;
   shippingFeeDhaka: Prisma.Decimal;
 } | null;
+
+/** StoreSetting written directly (no admin endpoint for these fields) must also drop the cached row that getSettings()
+ * serves for 5 minutes, or code under test reads the stale value whenever Redis is connected. The client is lazy and has
+ * no offline queue (config/redis.ts), so a command sent before the first connection fails — and cacheDel swallows it —
+ * which is exactly what happens when this is the process's first Redis call (e.g. `-t D8`). Wait for the connection
+ * first; without Redis there is no cache to drop. */
+async function setStoreSetting(data: Prisma.StoreSettingUpdateInput) {
+  await prisma.storeSetting.update({ where: { id: "singleton" }, data });
+  if (redis.status !== "ready") {
+    if (redis.status === "wait") redis.connect().catch(() => undefined);
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      redis.once("ready", done);
+      redis.once("error", done);
+      setTimeout(done, 2500);
+    });
+  }
+  await cacheDel("settings:singleton");
+}
 
 const quote = (body: object) => request(app).post("/api/v1/checkout/quote").send(body);
 
@@ -109,10 +129,7 @@ afterAll(async () => {
       taxEnabled: originalTax?.enabled ?? false,
       defaultTaxRate: originalTax?.defaultRate ? Number(originalTax.defaultRate) : null,
     });
-    await prisma.storeSetting.update({
-      where: { id: "singleton" },
-      data: { rewardPointsPerCurrency: originalStore.rewardPointsPerCurrency },
-    });
+    await setStoreSetting({ rewardPointsPerCurrency: originalStore.rewardPointsPerCurrency });
   }
   await prisma.flashSale.deleteMany({
     where: { id: { in: made.flashSaleIds } },
@@ -691,10 +708,7 @@ describe("every order path uses the same pricing", () => {
 
 describe("loyalty points (D8)", () => {
   it("earn on merchandise after discounts (no shipping), reversed on return and capped across refunds", async () => {
-    await prisma.storeSetting.update({
-      where: { id: "singleton" },
-      data: { rewardPointsPerCurrency: 0.1 },
-    });
+    await setStoreSetting({ rewardPointsPerCurrency: 0.1 });
     const { variants } = await createStockedProduct({
       stocks: [5],
       basePrice: 1000,
@@ -715,7 +729,7 @@ describe("loyalty points (D8)", () => {
     expect(net._sum.points).toBe(0);
   });
   it("the rewardable value can't include shipping, shipping VAT, tax or the admin price adjustment", async () => {
-    await prisma.storeSetting.update({ where: { id: "singleton" }, data: { rewardPointsPerCurrency: 0.1 } });
+    await setStoreSetting({ rewardPointsPerCurrency: 0.1 });
     try {
       // Exclusive VAT so tax visibly adds to the total, shipping taxable (D10), and an admin adjustment on top.
       await prisma.taxSetting.update({ where: { id: "singleton" }, data: { enabled: true, mode: "EXCLUSIVE", defaultRate: 15, shippingTaxable: true } });

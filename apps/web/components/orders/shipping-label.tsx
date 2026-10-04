@@ -1,11 +1,12 @@
-import type { Order, StoreSettings } from "@clothing-brand/shared";
-import { formatPrice } from "@/lib/format";
+import type { Order, OrderPaymentSummary, StoreSettings } from "@clothing-brand/shared";
+import { formatPrice, paymentStatusLabel } from "@/lib/format";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { BarcodeSvg } from "./barcode-svg";
 import { QrCodeSvg } from "./qr-code-svg";
 
 interface ShippingLabelProps {
-  order: Order;
+  /** Needs the payment ledger position: the COD amount printed is `payment.codToCollect`, never `total`. */
+  order: Order & { payment: OrderPaymentSummary };
   store: StoreSettings | undefined;
   /** Forwarded to the internal BarcodeSvg — the label-printing capture pipeline uses this to know
    * when it's safe to rasterize this label (JsBarcode draws in an effect, after mount). */
@@ -98,20 +99,20 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
           labels. Paid orders get the same shape at a fraction of the weight — a light gray hairline
           instead of black, small instead of large — so which one needs action is obvious without
           either needing color. */}
-      {order.paymentMethod === "COD" ? (
+      {order.payment.codToCollect > 0 ? (
         <div className="mt-2 flex items-baseline justify-between border-y-2 border-ink-900 py-1.5">
           <span className="text-[8px] font-semibold uppercase tracking-[0.15em] text-ink-700">
             Cash on delivery
           </span>
           <span className="text-[19px] font-extrabold leading-none tabular-nums text-ink-900">
-            {formatPrice(order.total)}
+            {formatPrice(order.payment.codToCollect)}
           </span>
         </div>
       ) : (
         <div className="mt-2 flex items-baseline justify-between border-y border-ink-200 py-1">
           <span className="text-[8px] font-semibold uppercase tracking-[0.15em] text-ink-700">Payment</span>
           <span className="text-[10px] font-semibold text-ink-800">
-            {order.paymentStatus === "PAID" ? "Paid online" : `Online — ${order.paymentStatus}`}
+            {order.paymentMethod === "COD" ? "Paid — collect nothing" : order.paymentStatus === "PAID" ? "Paid online" : `Online — ${paymentStatusLabel(order.paymentStatus)}`}
           </span>
         </div>
       )}

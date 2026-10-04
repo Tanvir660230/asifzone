@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import * as storageApi from "@/lib/api/storage";
@@ -46,11 +47,11 @@ export default function StoragePage() {
   const queryClient = useQueryClient();
   const { confirm, dialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canManage = adminCan(currentAdmin?.admin, "settings.manage");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const unusedQuery = useQuery({ queryKey: ["storage", "unused"], queryFn: storageApi.getUnusedUploads, enabled: isOwner });
-  const trashQuery = useQuery({ queryKey: ["storage", "trash"], queryFn: storageApi.listTrash, enabled: isOwner });
+  const unusedQuery = useQuery({ queryKey: ["storage", "unused"], queryFn: storageApi.getUnusedUploads, enabled: canManage });
+  const trashQuery = useQuery({ queryKey: ["storage", "trash"], queryFn: storageApi.listTrash, enabled: canManage });
   const report = unusedQuery.data;
 
   const selectedBytes = useMemo(
@@ -104,7 +105,7 @@ export default function StoragePage() {
 
   const allSelected = Boolean(report?.unused.length) && selected.size === report?.unused.length;
 
-  if (currentAdmin && !isOwner) {
+  if (currentAdmin && !canManage) {
     return (
       <div>
         <PageHeader title="Storage" />

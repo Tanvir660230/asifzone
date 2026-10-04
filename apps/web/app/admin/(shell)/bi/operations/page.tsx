@@ -8,6 +8,7 @@ import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { cn } from "@/lib/utils";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -64,7 +65,7 @@ export default function OperationalAnalyticsPage() {
               <StatTile label="Placed → Shipped" value={formatHours(fulfillment.avgHoursToShip)} icon={<Clock size={18} />} />
               <StatTile label="Shipped → Delivered" value={formatHours(fulfillment.avgHoursShipToDeliver)} icon={<Truck size={18} />} />
               <StatTile label="Placed → Delivered" value={formatHours(fulfillment.avgHoursToDeliver)} icon={<CheckCircle2 size={18} />} tone="accent" />
-              <StatTile label="Delivered orders (basis)" value={fulfillment.deliveredOrders.toLocaleString("en-BD")} icon={<CheckCircle2 size={18} />} />
+              <StatTile label="Delivered orders (basis)" value={fulfillment.deliveredOrders.toLocaleString(DISPLAY_LOCALE)} icon={<CheckCircle2 size={18} />} />
             </>
           )}
         </div>
@@ -78,7 +79,7 @@ export default function OperationalAnalyticsPage() {
           </CardHeader>
           <CardContent>
             <RankedBarList
-              items={toBarItems(activity?.byAdmin, { key: (a) => a.id, label: (a) => a.name, value: (a) => a.actions, valueLabel: (a) => a.actions.toLocaleString("en-BD") })}
+              items={toBarItems(activity?.byAdmin, { key: (a) => a.id, label: (a) => a.name, value: (a) => a.actions, valueLabel: (a) => a.actions.toLocaleString(DISPLAY_LOCALE) })}
               emptyLabel="No admin activity recorded yet for this range."
             />
           </CardContent>
@@ -89,7 +90,7 @@ export default function OperationalAnalyticsPage() {
           </CardHeader>
           <CardContent>
             <RankedBarList
-              items={toBarItems(activity?.byAction, { key: (a) => a.action, label: (a) => a.action, value: (a) => a.count, valueLabel: (a) => a.count.toLocaleString("en-BD") })}
+              items={toBarItems(activity?.byAction, { key: (a) => a.action, label: (a) => a.action, value: (a) => a.count, valueLabel: (a) => a.count.toLocaleString(DISPLAY_LOCALE) })}
               emptyLabel="No admin activity recorded yet for this range."
             />
           </CardContent>

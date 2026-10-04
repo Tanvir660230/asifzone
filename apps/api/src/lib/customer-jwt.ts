@@ -15,16 +15,21 @@ export interface CustomerRefreshTokenPayload extends CustomerTokenPayload {
 const accessTokenOptions: SignOptions = { expiresIn: env.accessTokenTtl as SignOptions["expiresIn"] };
 const refreshTokenOptions: SignOptions = { expiresIn: env.refreshTokenTtl as SignOptions["expiresIn"] };
 
+const CUSTOMER_TOKEN_TYPE = "customer";
+
 export function signCustomerAccessToken(payload: CustomerTokenPayload): string {
-  return jwt.sign(payload, env.jwtCustomerAccessSecret, accessTokenOptions);
+  return jwt.sign({ ...payload, typ: CUSTOMER_TOKEN_TYPE }, env.jwtCustomerAccessSecret, accessTokenOptions);
 }
 
 export function signCustomerRefreshToken(payload: CustomerRefreshTokenPayload): string {
   return jwt.sign(payload, env.jwtCustomerRefreshSecret, refreshTokenOptions);
 }
 
+/** Only a customer access token passes — never an admin token (Phase 10), whatever the secrets are configured to. */
 export function verifyCustomerAccessToken(token: string): CustomerTokenPayload {
-  return jwt.verify(token, env.jwtCustomerAccessSecret) as CustomerTokenPayload;
+  const payload = jwt.verify(token, env.jwtCustomerAccessSecret) as Partial<CustomerTokenPayload> & { typ?: unknown };
+  if (payload.typ !== CUSTOMER_TOKEN_TYPE || typeof payload.customerId !== "string") throw new Error("not a customer access token");
+  return { customerId: payload.customerId };
 }
 
 export function verifyCustomerRefreshToken(token: string): CustomerRefreshTokenPayload {

@@ -1,5 +1,6 @@
 import IORedis from "ioredis";
 import { env } from "../config/env";
+import { logger } from "./observability/logger";
 
 // BullMQ needs its own Redis connection: it issues blocking commands and manages its own
 // retry/backoff, which conflicts with config/redis.ts's cache connection (enableOfflineQueue:
@@ -11,5 +12,5 @@ export const queueConnection = new IORedis(env.redisUrl, {
 });
 
 queueConnection.on("error", (err) => {
-  console.error("[queue] redis connection error:", err.message);
+  logger.error("[queue] redis connection error:", { detail: err.message });
 });

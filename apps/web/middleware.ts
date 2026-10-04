@@ -88,7 +88,8 @@ export async function middleware(req: NextRequest) {
     // bounced away either direction, unlike the auth pages below. /account/unsubscribe needs the
     // same treatment: it's a one-click link from a marketing email, almost always clicked while
     // logged out, and carries its own customerId/token query params that a login-redirect would drop.
-    if (pathname === "/account/verify-email" || pathname === "/account/unsubscribe") {
+    // /account/claim (Phase 11): the emailed link that proves an existing guest record's email — clicked while logged out.
+    if (pathname === "/account/verify-email" || pathname === "/account/unsubscribe" || pathname === "/account/claim") {
       return NextResponse.next();
     }
 

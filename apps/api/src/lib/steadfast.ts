@@ -1,5 +1,6 @@
 import { env } from "../config/env";
 import { AppError } from "./app-error";
+import { logger } from "./observability/logger";
 
 interface CreateConsignmentInput {
   invoice: string;
@@ -70,6 +71,32 @@ function normalizeBulkResultItem(item: RawSteadfastBulkResultItem): SteadfastBul
   };
 }
 
+/** Every Steadfast call is bounded (Phase 9 D-5). */
+export const STEADFAST_TIMEOUT_MS = 20_000;
+
+/** A booking whose result we can't know: the request timed out, the connection dropped, or Steadfast answered 5xx —
+ * it may or may not have created the consignment. The caller keeps its booking claim (no automatic re-booking) and the
+ * order is flagged for an operator to check Steadfast before retrying (Phase 9 D-4). */
+export class CourierOutcomeUnknownError extends AppError {
+  readonly outcomeUnknown = true;
+  constructor(message: string) {
+    super(502, message, { code: "COURIER_OUTCOME_UNKNOWN" });
+    this.name = "CourierOutcomeUnknownError";
+  }
+}
+
+async function steadfastFetch(url: string, init: RequestInit, opts: { booking?: boolean } = {}): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(STEADFAST_TIMEOUT_MS) });
+  } catch (err) {
+    if (opts.booking) throw new CourierOutcomeUnknownError(`Steadfast booking outcome unknown (${err instanceof Error ? err.message : String(err)})`);
+    throw err;
+  }
+  if (opts.booking && res.status >= 500) throw new CourierOutcomeUnknownError(`Steadfast booking outcome unknown (HTTP ${res.status})`);
+  return res;
+}
+
 function authHeaders(): Record<string, string> {
   return {
     "Content-Type": "application/json",
@@ -105,7 +132,7 @@ function requireConfigured() {
 export async function createSteadfastConsignment(input: CreateConsignmentInput): Promise<SteadfastConsignment> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/create_order`, {
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/create_order`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
@@ -116,7 +143,7 @@ export async function createSteadfastConsignment(input: CreateConsignmentInput):
       cod_amount: input.codAmount,
       note: input.note,
     }),
-  });
+  }, { booking: true });
 
   const { data: parsed, rawText } = await readSteadfastResponse(res);
   const data = parsed as SteadfastEnvelope<SteadfastConsignment> | null;
@@ -125,7 +152,7 @@ export async function createSteadfastConsignment(input: CreateConsignmentInput):
   // in-body status is the real signal, same "don't trust the transport code alone" pattern as
   // lib/sms.ts's BulkSMSBD handling.
   if (!res.ok || !data || data.status !== 200 || !data.consignment) {
-    if (!data) console.error(`[steadfast] booking failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] booking failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast booking failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -155,15 +182,15 @@ export async function createBulkSteadfastConsignments(
     note: input.note,
   }));
 
-  const res = await fetch(`${env.steadfast.baseUrl}/create_order/bulk-order`, {
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/create_order/bulk-order`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ data: JSON.stringify(payload) }),
-  });
+  }, { booking: true });
 
   const { data, rawText } = await readSteadfastResponse(res);
   if (!res.ok || !data) {
-    console.error(`[steadfast] bulk booking failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    logger.error(`[steadfast] bulk booking failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast bulk booking failed: ${(data as { message?: string } | null)?.message ?? `HTTP ${res.status}`}`,
       { status: res.status, body: rawText.slice(0, 2000) },
@@ -181,7 +208,7 @@ export async function createBulkSteadfastConsignments(
       : [];
 
   if (!rawResults.length) {
-    console.error("[steadfast] bulk booking returned no results:", rawText.slice(0, 2000));
+    logger.error("[steadfast] bulk booking returned no results:", { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast bulk booking failed: ${(data as { message?: string }).message ?? "no results returned"}`,
       data,
@@ -194,12 +221,12 @@ export async function createBulkSteadfastConsignments(
 export async function getSteadfastBalance(): Promise<number> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/get_balance`, { headers: authHeaders() });
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/get_balance`, { headers: authHeaders() });
   const { data: parsed, rawText } = await readSteadfastResponse(res);
   const data = parsed as SteadfastEnvelope<never> | null;
 
   if (!res.ok || !data || data.status !== 200 || typeof data.current_balance !== "number") {
-    if (!data) console.error(`[steadfast] balance check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] balance check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast balance check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -248,7 +275,7 @@ const MAX_RETRY_AFTER_MS = 15000;
 
 async function fetchFraudScore(url: string): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers: authHeaders() });
+    const res = await steadfastFetch(url, { headers: authHeaders() });
     if (res.status !== 429 || attempt >= FRAUD_CHECK_RETRY_DELAYS_MS.length) return res;
     const retryAfterSec = Number(res.headers.get("retry-after"));
     const delay = Number.isFinite(retryAfterSec) && retryAfterSec > 0
@@ -271,7 +298,7 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
   const data = parsed as RawSteadfastFraudScore | null;
 
   if (!res.ok || !data || (data.status !== undefined && data.status !== 200) || !("delivery_ratio" in data)) {
-    if (!data) console.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] fraud check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast fraud check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },
@@ -294,7 +321,7 @@ export async function getSteadfastFraudCheck(phone: string): Promise<SteadfastFr
 export async function getSteadfastStatusByConsignmentId(consignmentId: string): Promise<string> {
   requireConfigured();
 
-  const res = await fetch(`${env.steadfast.baseUrl}/status_by_cid/${encodeURIComponent(consignmentId)}`, {
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/status_by_cid/${encodeURIComponent(consignmentId)}`, {
     headers: authHeaders(),
   });
 
@@ -302,7 +329,7 @@ export async function getSteadfastStatusByConsignmentId(consignmentId: string): 
   const data = parsed as SteadfastEnvelope<never> | null;
 
   if (!res.ok || !data || data.status !== 200 || !data.delivery_status) {
-    if (!data) console.error(`[steadfast] status check failed (HTTP ${res.status}):`, rawText.slice(0, 2000));
+    if (!data) logger.error(`[steadfast] status check failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
     throw AppError.badRequest(
       `Steadfast status check failed: ${data?.message ?? `HTTP ${res.status}`}`,
       data ?? { status: res.status, body: rawText.slice(0, 2000) },

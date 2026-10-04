@@ -62,10 +62,13 @@ import {
   type TypeWithTemplate,
 } from "../catalog/catalog.presenter";
 import { recordAudit } from "../../lib/audit";
+import { SALE_ORDER_WHERE } from "../../domain/metrics/sale-order";
+import { resolveLegacyWindow, utcInstant } from "../../domain/metrics/store-time";
 import { layerFromRows, loadGlobalRows, overridesFromRows, saveProductSections, type SectionRow } from "../catalog/sections.service";
 import { PRODUCT_CACHE_PREFIX, invalidateProductCache, triggerStorefrontRevalidation, type RevalidationContext } from "./product.cache";
 import { diffProduct, type AuditSnapshot } from "./product-audit";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "./product-public-select";
+import { captureError } from "../../lib/observability/error-capture";
 
 const CACHE_PREFIX = PRODUCT_CACHE_PREFIX;
 const CACHE_TTL_SECONDS = 120;
@@ -303,8 +306,8 @@ export async function invalidateCache(context?: RevalidationContext) {
   // Eager projection refresh for the products this write touched (best-effort — the read-time freshness guard catches
   // anything missed, e.g. a crash between the write and this line).
   const touched = [...(context?.productId ? [context.productId] : []), ...(context?.productIds ?? [])];
-  if (touched.length) await refreshReadModels(touched).catch((err) => console.error("[read-model] eager refresh failed:", err));
-  void triggerStorefrontRevalidation(context).catch((err) => console.error("[revalidate] unexpected failure:", err));
+  if (touched.length) await refreshReadModels(touched).catch((err) => captureError(err, { msg: "[read-model] eager refresh failed:" }));
+  void triggerStorefrontRevalidation(context).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));
 }
 
 // Price sorts use the canonical selling price from the Storefront Read Model projection — never basePrice.
@@ -755,11 +758,12 @@ export async function getPopularSearches(limit = 8) {
   const cached = await cacheGet<string[]>(POPULAR_SEARCHES_CACHE_KEY);
   if (cached) return cached.slice(0, limit);
 
-  const since = new Date(Date.now() - POPULAR_SEARCHES_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  // Business-time window + utcInstant: a bare bound Date against the naive-UTC column was 6 h off (METRICS_REGISTRY §1).
+  const window = await resolveLegacyWindow(POPULAR_SEARCHES_LOOKBACK_DAYS);
   const rows = await prisma.$queryRaw<Array<{ query: string; count: bigint }>>`
     SELECT lower(query) AS query, COUNT(*)::bigint AS count
     FROM "SearchLog"
-    WHERE "createdAt" >= ${since}
+    WHERE "createdAt" >= ${utcInstant(window.startUtc)}
     GROUP BY lower(query)
     ORDER BY count DESC
     LIMIT 50
@@ -834,7 +838,7 @@ export async function getFrequentlyBoughtTogether(productId: string, limit = 4) 
           ...new Set(
             (
               await prisma.orderItem.findMany({
-                where: { variantId: { in: variantIds }, order: { status: { notIn: ["CANCELLED", "REFUNDED"] } } },
+                where: { variantId: { in: variantIds }, order: SALE_ORDER_WHERE },
                 select: { orderId: true },
               })
             ).map((i) => i.orderId),
@@ -899,9 +903,10 @@ export async function getTrendingProducts({
   let pool = await cacheGet<PublicProduct[]>(TRENDING_CACHE_KEY);
 
   if (!pool) {
-    const since = new Date(Date.now() - TRENDING_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+    // Demand = units ordered on sale orders (docs/METRICS_REGISTRY.md `units_ordered`, P5-9) over N business days.
+    const window = await resolveLegacyWindow(TRENDING_LOOKBACK_DAYS);
     const items = await prisma.orderItem.findMany({
-      where: { order: { status: { notIn: ["CANCELLED", "REFUNDED"] }, createdAt: { gte: since } } },
+      where: { order: { ...SALE_ORDER_WHERE, createdAt: { gte: window.startUtc, lt: window.endUtc } } },
       select: { variantId: true, quantity: true },
     });
 
@@ -1082,19 +1087,19 @@ const URGENCY_CACHE_TTL_SECONDS = 60;
 
 /** Every field here is a real, currently-true count (or null/0/false) — never fabricated.
  * Redis-cached briefly since it's read on every PDP load but only needs to feel "recent". */
-/** Orders that do not count as a sale. One definition, shared by the customer-facing urgency line and the admin sales panel,
- * so the two numbers can never disagree. */
-const NOT_A_SALE = ["CANCELLED", "REFUNDED"] as const;
 
 /** Admin-only: how many units of a product sold in the last `days` days, in how many orders, and its lifetime page views.
  * Not cached (few readers). */
 export async function getProductSalesSummary(productId: string, days = 7): Promise<ProductSalesSummary> {
   if (!(await prisma.product.findUnique({ where: { id: productId }, select: { id: true } }))) throw AppError.notFound("Product not found");
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  // Units ordered on sale orders over the last `days` business days — the registry's `units_ordered` (P5-9), the same
+  // predicate and window mechanism as the storefront urgency line, so the two can never disagree.
+  const window = await resolveLegacyWindow(days);
+  const since = window.startUtc;
   const variantIds = (await prisma.productVariant.findMany({ where: { productId }, select: { id: true } })).map((v) => v.id);
   const items = variantIds.length
     ? await prisma.orderItem.findMany({
-        where: { variantId: { in: variantIds }, order: { status: { notIn: [...NOT_A_SALE] }, createdAt: { gte: since } } },
+        where: { variantId: { in: variantIds }, order: { ...SALE_ORDER_WHERE, createdAt: { gte: since, lt: window.endUtc } } },
         select: { orderId: true, variantId: true, quantity: true, skuSnapshot: true, sizeSnapshot: true, colorSnapshot: true },
       })
     : [];
@@ -1124,7 +1129,7 @@ export async function getUrgencySignals(productId: string) {
   const cached = await cacheGet<UrgencySignals>(cacheKey);
   if (cached) return cached;
 
-  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const week = await resolveLegacyWindow(7);
 
   const variantIds = (await prisma.productVariant.findMany({ where: { productId }, select: { id: true } })).map(
     (v) => v.id,
@@ -1135,7 +1140,7 @@ export async function getUrgencySignals(productId: string) {
       ? prisma.orderItem.findMany({
           where: {
             variantId: { in: variantIds },
-            order: { status: { notIn: [...NOT_A_SALE] }, createdAt: { gte: since7d } },
+            order: { ...SALE_ORDER_WHERE, createdAt: { gte: week.startUtc, lt: week.endUtc } },
           },
           select: { quantity: true },
         })
@@ -1681,7 +1686,7 @@ export async function updateProduct(
   // allowed to block or fail the admin's product save.
   notifyReplenished(replenished);
   if (input.basePrice !== undefined && input.basePrice < Number(existing.basePrice)) {
-    notifyPriceDrop(id, input.basePrice).catch((err) => console.error("[price-drop] notify failed:", err));
+    notifyPriceDrop(id, input.basePrice).catch((err) => captureError(err, { msg: "[price-drop] notify failed:" }));
   }
 
   const updated = await getProductById(id);

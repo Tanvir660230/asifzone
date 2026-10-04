@@ -39,6 +39,9 @@ export const env = {
   // instead of appearing immediately. Must match the web app's REVALIDATE_SECRET (apps/web/.env).
   revalidateSecret: process.env.REVALIDATE_SECRET ?? "",
   uploadsDir: process.env.UPLOADS_DIR ?? "uploads",
+  // Phase 11 (contract §6.5): optional bearer token for an external monitor polling GET /api/v1/ops/attention (counts only).
+  // Unset = only an admin session with ops.read can read it.
+  opsMonitorToken: process.env.OPS_MONITOR_TOKEN ?? "",
   sslcommerz: {
     storeId: process.env.SSLCOMMERZ_STORE_ID ?? "",
     storePassword: process.env.SSLCOMMERZ_STORE_PASSWORD ?? "",

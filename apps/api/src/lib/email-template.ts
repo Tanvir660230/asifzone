@@ -1,5 +1,5 @@
-const BRAND_NAME = "ASIF ZONE";
-const BRAND_TAGLINE = "Premium clothing, delivered fast.";
+import { getSettings } from "../modules/settings/settings.service";
+import { escapeHtml } from "./html";
 const FONT = "Arial, Helvetica, sans-serif";
 
 interface EmailLayoutOptions {
@@ -19,7 +19,15 @@ interface EmailLayoutOptions {
  * across every transactional/marketing email `sendMail` sends. Inline styles only and a table
  * layout throughout: email clients strip `<style>` blocks and don't support modern CSS (flexbox,
  * grid, external stylesheets), so this is intentionally written like it's still 2005. */
-export function renderEmailLayout({ bodyHtml, ctaLabel, ctaUrl, footerHtml }: EmailLayoutOptions): string {
+/** Store identity comes from settings (StoreSetting.storeName / tagline — the identity owner), never from code: Phase 7 D-5. */
+export async function renderEmailLayout(options: EmailLayoutOptions): Promise<string> {
+  const settings = await getSettings();
+  return layoutHtml(options, { name: settings.storeName, tagline: settings.tagline });
+}
+
+function layoutHtml({ bodyHtml, ctaLabel, ctaUrl, footerHtml }: EmailLayoutOptions, store: { name: string; tagline: string | null }): string {
+  const brandName = escapeHtml(store.name.toUpperCase());
+  const brandTagline = store.tagline ? escapeHtml(store.tagline) : "";
   const cta =
     ctaLabel && ctaUrl
       ? `
@@ -41,7 +49,7 @@ export function renderEmailLayout({ bodyHtml, ctaLabel, ctaUrl, footerHtml }: Em
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#ffffff;border-radius:12px;border:1px solid #ececec;overflow:hidden;">
             <tr>
               <td style="background-color:#111111;padding:22px 32px;text-align:center;">
-                <span style="color:#ffffff;font-size:19px;font-weight:700;letter-spacing:2px;font-family:${FONT};">${BRAND_NAME}</span>
+                <span style="color:#ffffff;font-size:19px;font-weight:700;letter-spacing:2px;font-family:${FONT};">${brandName}</span>
               </td>
             </tr>
             <tr>
@@ -52,8 +60,8 @@ export function renderEmailLayout({ bodyHtml, ctaLabel, ctaUrl, footerHtml }: Em
             </tr>
             <tr>
               <td style="padding:24px 32px;background-color:#f8f8f8;border-top:1px solid #ececec;text-align:center;">
-                <p style="margin:0;font-size:12px;color:#666666;font-family:${FONT};">${BRAND_TAGLINE}</p>
-                <p style="margin:8px 0 0;font-size:11px;color:#999999;font-family:${FONT};">&copy; ${new Date().getFullYear()} Asif Zone. All rights reserved.</p>
+                ${brandTagline ? `<p style="margin:0;font-size:12px;color:#666666;font-family:${FONT};">${brandTagline}</p>` : ""}
+                <p style="margin:8px 0 0;font-size:11px;color:#999999;font-family:${FONT};">&copy; ${new Date().getFullYear()} ${escapeHtml(store.name)}. All rights reserved.</p>
                 ${footerHtml ? `<p style="margin:8px 0 0;font-size:11px;color:#999999;font-family:${FONT};">${footerHtml}</p>` : ""}
               </td>
             </tr>

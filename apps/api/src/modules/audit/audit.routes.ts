@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAdmin, requireRole } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { asyncHandler } from "../../lib/async-handler";
 import { prisma } from "../../config/prisma";
 
@@ -10,7 +10,7 @@ export const auditRouter = Router();
 auditRouter.get(
   "/",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("audit.read"),
   asyncHandler(async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 30));

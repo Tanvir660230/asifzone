@@ -20,7 +20,7 @@ import { ProductHistory } from "./product-history";
 import { SectionSettingsEditor, layerOf } from "./section-settings-editor";
 import { FaqEditor, RelatedProductsEditor } from "./product-content-editors";
 import { ProductStatusPanel, type FixTarget } from "./product-status-panel";
-import { stripHtml } from "@/lib/format";
+import { storeCurrencyCode, stripHtml } from "@/lib/format";
 import type { StagedImage } from "./image-uploader";
 import { cn } from "@/lib/utils";
 import { buildCategoryOptions, useProductFormState } from "./product-form-state";
@@ -333,7 +333,7 @@ export function ProductForm({
       <FormSection title="Pricing & tax">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <Label htmlFor="basePrice">Base price (BDT)</Label>
+            <Label htmlFor="basePrice">Base price ({storeCurrencyCode()})</Label>
             <Input id="basePrice" type="number" step="0.01" {...register("basePrice", { valueAsNumber: true })} />
             {errors.basePrice && <p className="mt-1 text-xs text-danger-600">{errors.basePrice.message}</p>}
           </div>

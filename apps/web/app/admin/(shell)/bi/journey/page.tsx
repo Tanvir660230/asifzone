@@ -8,6 +8,7 @@ import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { JourneyFunnel } from "@/components/admin/journey-funnel";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import { cn } from "@/lib/utils";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 type RangeOption = 7 | 30 | 90 | "all";
 const RANGE_OPTIONS: RangeOption[] = [7, 30, 90, "all"];
@@ -75,7 +76,7 @@ export default function VisitorJourneyPage() {
           )}
           {funnel && (
             <Card className="flex items-center p-4 text-sm text-ink-500 sm:p-5">
-              {funnel.repeatPurchase.customers.toLocaleString("en-BD")} of {funnel.repeatPurchase.totalCustomers.toLocaleString("en-BD")}{" "}
+              {funnel.repeatPurchase.customers.toLocaleString(DISPLAY_LOCALE)} of {funnel.repeatPurchase.totalCustomers.toLocaleString(DISPLAY_LOCALE)}{" "}
               customers have placed more than one order — lifetime, a customer-level measure, not part of the session funnel above.
             </Card>
           )}
