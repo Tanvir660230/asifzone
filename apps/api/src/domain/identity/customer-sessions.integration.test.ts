@@ -85,6 +85,35 @@ describe("reuse detection and the 10-second grace window", () => {
     await expect(rotateCustomerSession(next.refreshToken!)).rejects.toMatchObject({ statusCode: 401 }); // the legitimate holder too
   });
 
+  it("grace replays are anchored to the original rotation: repeated replays never fork, extend or re-open the window", async () => {
+    const c = await newCustomer();
+    const next = await rotateCustomerSession(c.refreshToken);
+    await ageRotation(c.refreshToken, 9_000);
+    const anchored = await row(c.refreshToken);
+
+    for (let i = 0; i < 3; i++) {
+      const replay = await rotateCustomerSession(c.refreshToken);
+      expect(replay.refreshToken).toBeNull();
+      expect(replay.accessToken).toBeTruthy();
+    }
+    const after = await row(c.refreshToken);
+    expect(after.rotatedAt!.getTime()).toBe(anchored.rotatedAt!.getTime()); // a replay never moves the anchor
+    const family = await prisma.customerRefreshToken.findMany({ where: { familyId: after.familyId } });
+    expect(family).toHaveLength(2); // the original and its one successor — no branch
+    expect(new Set(family.map((t) => t.expiresAt.getTime())).size).toBe(1); // lifetime never extended
+
+    await ageRotation(c.refreshToken, 10_500); // past the original rotation + 10 s
+    await expect(rotateCustomerSession(c.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
+    await expect(rotateCustomerSession(next.refreshToken!)).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("revocation wins over the grace window: after logout-everywhere a just-rotated token gets nothing", async () => {
+    const c = await newCustomer();
+    await rotateCustomerSession(c.refreshToken);
+    await revokeAllCustomerSessions(c.id, "logout_all");
+    await expect(rotateCustomerSession(c.refreshToken)).rejects.toMatchObject({ statusCode: 401 });
+  });
+
   it("a revoked token can't be replayed", async () => {
     const c = await newCustomer();
     await revokeCustomerSession(c.refreshToken);

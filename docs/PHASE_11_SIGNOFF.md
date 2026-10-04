@@ -118,18 +118,18 @@ the per-code cap can't be exceeded through a race. Existing limits are unchanged
 
 | Contract | Implemented | Why |
 |---|---|---|
-| §5.2: inside the grace window "answer 401 without revoking" | access token issued, **no** refresh token, no revocation (P11-5) | A 401 would sign the second tab out; this keeps it working with no fork and no unlimited window |
-| §5.1: verifying an existing account's phone | additionally, an OTP sign-in by the owner of an unclaimed record (R-1) claims it, after asking for name and email | This is how existing OTP-only customers regain OTP login (R-1) without auto-verification |
+| §5.2: inside the grace window "answer 401 without revoking" | access token issued, **no** refresh token, no revocation (P11-5) | A 401 would sign the second tab out; this keeps it working with no fork and no unlimited window. Reviewed and accepted as policy **P11-7** (§9.4) |
+| §5.1: verifying an existing account's phone | additionally, an OTP sign-in by the owner of an unclaimed record (R-1) claims it, after asking for name and email | This is how existing OTP-only customers regain OTP login (R-1) without auto-verification. Reviewed and accepted as policy **P11-6** (§9.4) |
 | — | guest placeholders keyed by the exact (phone, email) pair (P11-1) | Needed so a later claim can't expose another guest's orders (found while implementing BD-11.7) |
 
 ## 9. Evidence
 
-### 9.1 Tests added (60 in the Phase 11 suites, plus updated Phase 10 guards)
+### 9.1 Tests added (62 in the Phase 11 suites, plus updated Phase 10 guards)
 
 | Suite | Tests | Covers |
 |---|---|---|
 | `domain/identity/customer-identity.integration.test.ts` | 16 | Phone identity: attacker sets the victim's phone (victim's OTP and later guest order never reach the attacker); unverified can't sign in, verified can; unverified duplicates allowed, a second verified owner refused (service 409 and DB P2002); phone change only by OTP with the old phone kept until then; OTP sign-up doesn't verify the email; concurrent wrong guesses capped; a deterministic stale-pre-check race can't push a code past its cap. Claims: email-matched → link only (202, nothing attached), history kept, audited, single-use; phone-matched → only OTP (registration makes a separate account); a different phone's OTP can't claim an email match; concurrent claims → exactly one wins; an OTP account can't be taken by registering or resetting through its unproven email. Guest attachment: verified phone/email attach; unverified don't (separate placeholder, foreign email not used as key, repeat guest reuses). Google: customer verified creates/claims/links; unverified refused; no link to an account with an unproven email; admin verified signs in, unverified refused with no link. `isBlocked` doesn't gate sign-in |
-| `domain/identity/customer-sessions.integration.test.ts` | 14 | issue (7-day family); rotate (same family, expiry never extended); expired refused; concurrent refresh (one rotates, one gets an access token only, family alive); grace replay vs replay after 11 s (whole family revoked, the legitimate holder too); the grace constant is exactly 10 s; revoked token can't replay; logout (only this session); logout-all; password change (all revoked, new session works, wrong current password refused); password reset (all revoked, `tokenVersion` +1); `isBlocked` irrelevant; legacy JWT accepted once then reuse; logout-all kills unconverted legacy tokens; over HTTP the cookie rotates, remember-me-off stays a session cookie, and logout revokes server-side; logout-all needs a session |
+| `domain/identity/customer-sessions.integration.test.ts` | 16 | issue (7-day family); rotate (same family, expiry never extended); expired refused; concurrent refresh (one rotates, one gets an access token only, family alive); grace replay vs replay after 11 s (whole family revoked, the legitimate holder too); the grace constant is exactly 10 s; repeated grace replays keep the original anchor, add no row and never extend the expiry, and 10.5 s after the original rotation the family is revoked (added in review); revocation beats the grace window (added in review); revoked token can't replay; logout (only this session); logout-all; password change (all revoked, new session works, wrong current password refused); password reset (all revoked, `tokenVersion` +1); `isBlocked` irrelevant; legacy JWT accepted once then reuse; logout-all kills unconverted legacy tokens; over HTTP the cookie rotates, remember-me-off stays a session cookie, and logout revokes server-side; logout-all needs a session |
 | `domain/observability/observability.integration.test.ts` | 11 | correlation generated / preserved / unsafe replaced; request → outbox rows → consumer context; job context inherited or new; redaction of keys, phones, emails, JWTs and long tokens; login and OTP requests leave no password, code or phone in the logs; 5xx captured and 4xx not; worker and outbox-consumer failures captured (and re-thrown); readiness per dependency, hung probe times out, real endpoint matches actual Redis state, `/health` stays liveness; attention 401 (anonymous, customer), 200 (`ops.read`, monitor token), monitor path disabled when unset, wrong token refused, counts only |
 | `domain/identity/hardening.integration.test.ts` | 5 | each new limiter blocks past its limit with earlier calls allowed (coupons/best, both refresh routes, resend-verification); seed credential rules; legacy price adjustment exact |
 | `domain/identity/deploy-script.test.ts` | 4 | `docker/deploy.sh` with stubbed steps: success order; failed or empty backup stops before anything; failed migration stops before switch; readiness timeout fails with rollback text and no proxy restart |
@@ -209,11 +209,89 @@ the remaining 7 were re-run cleanly: 7/7 killed.
 - 0 outbound provider attempts. Provider credentials were blank, the guard was installed, and courier errors were
   "not configured" `AppError`s.
 
+### 9.4 Review closure (2026-10-04)
+
+The owner's review asked for four items to be closed explicitly.
+
+**1. OTP-only customer first sign-in (R-1).** Accepted as policy **P11-6** in BUSINESS_DECISIONS. The path is
+`verifyOtp` in `customer.service.ts`:
+- Only an unclaimed record that holds the proven phone can be claimed. An email-matched record without that phone is
+  refused with 409; the mutant that removes this is killed.
+- The name and email only select which record and complete the profile. The email stays unverified (F-26).
+- Without the code nothing happens: the code is 6 digits and a phone gets 5 wrong guesses per code and per 30 minutes,
+  counted atomically.
+
+No code change was needed.
+
+**2. Grace window.** Accepted as policy **P11-7**:
+- **Anchor:** the window runs from the single `rotatedAt`, written once by the request that wins the rotation.
+- **What a replay gets:** a 15-minute access token only. It gets no refresh token, adds no row and doesn't change the
+  fixed expiry.
+- **Revocation:** checked before the grace path.
+
+Two tests pin this. Three new mutants were all killed: a replay moving the anchor, a replay forking a second branch,
+and the grace path honoured before revocation. The anchor mutant would have survived the earlier tests. No production
+code changed.
+
+**3. Playwright first-run failure: root cause, reproduced deterministically.**
+- **Not the suspected causes:** no product was deleted, and it was not the API's Redis cache (TTL 120 s).
+- **Mechanism:**
+  1. The web's Next data cache (`.next/cache/fetch-cache`) survives `next build` and server restarts.
+  2. Its entry for `GET /api/products/slug/aromatherapy-ceramic-diffuser` (revalidate 60 s) came from an earlier
+     `clothing_brand_test`. The seed product had id `cmutme73p…`, created 09:30Z.
+  3. That database had been rebuilt: same slugs, new ids.
+  4. The first product page visit was served the stale entry (stale-while-revalidate). The page rendered the dead id,
+     its rails were cached under it, and add-to-wishlist posted it. `addToWishlist` answered 404 "Product not found",
+     which is correct.
+  5. The background revalidation fixed the entry, which is why the mobile project, the isolated run and the rerun
+     passed.
+- **Reproduction:** rebuild the test DB and start the API *without Redis*. Start the web with its existing cache, then
+  run `customer-accounts.spec.ts` on desktop: the same 404 on `/api/wishlist`, and the page requests the dead id.
+- **Classification:**
+  - It is a test-setup isolation defect, not an application race. CI is unaffected (fresh checkout, no cache).
+  - In production a slug keeps its product id.
+  - Deploys build a fresh image, so no cache is carried over.
+- **Fix:** `apps/web` gains `start:e2e` (`scripts/clear-data-cache.mjs`, then `next start`), CI's e2e job uses it, and
+  the README documents it. Production behaviour is unchanged.
+- **Verified:** the same stale state was recreated with the DB rebuilt again, and the spec passed (2/2). The full suite
+  then ran on the fixed setup.
+
+**4. Historical `emailVerifiedAt`.** The recommended policy is **P11-8**: leave it untouched now, the owner identifies
+affected rows with the query in §10, and any clearing is a separate approved data fix. Risk analysis is in §10.
+
 ## 10. Known limitations
 
-- **Historical `emailVerifiedAt`:** OTP sign-ups before Phase 11 had their email marked verified without proof
-  (F-26). That historical data isn't changed, so such records can still be linked by a verified Google email
-  (P11-4).
+- **Historical `emailVerifiedAt` (P11-8):** before Phase 11, OTP sign-up set `emailVerifiedAt` without email proof.
+  That covers new accounts and the F-24 takeovers of an existing record. These values are unchanged.
+
+  Today the flag grants three things:
+  - guest checkout attaches orders placed with that email (`findOrCreateGuestCustomer`);
+  - Google links to the record (P11-4);
+  - a password reset is allowed on a phone-verified record (P11-3).
+
+  The risk exists only where the email typed at that OTP sign-up was not the customer's own (a typo or a foreign
+  address):
+  - the phone holder could see later guest orders placed with that email;
+  - the email's real owner could enter the phone holder's account.
+
+  Read-only identification, for the owner to run on production before the deploy:
+
+  ```sql
+  SELECT count(*) AS unproven_email_verified,
+         count(*) FILTER (WHERE EXISTS (SELECT 1 FROM "Order" o WHERE o."customerId" = c.id)) AS with_orders
+  FROM "Customer" c
+  WHERE c."emailVerifiedAt" IS NOT NULL
+    AND c."googleId" IS NULL
+    AND NOT EXISTS (SELECT 1 FROM "EmailVerificationToken" t WHERE t."customerId" = c.id AND t."usedAt" IS NOT NULL)
+    AND NOT EXISTS (SELECT 1 FROM "PasswordResetToken"     t WHERE t."customerId" = c.id AND t."usedAt" IS NOT NULL);
+  ```
+
+  Used tokens are never deleted, so a row here never had its email proven. The local dev and test databases return 0.
+  If production returns rows, clearing their `emailVerifiedAt` is a data fix only (no migration of the schema). It
+  needs owner approval, an audit entry recording the old value, and must be reversible. The cost for a genuine owner is
+  one "verify email" click.
+- **Local e2e:** start the web with `pnpm --filter web start:e2e` (§9.4 item 3); a plain `next start` after
+  rebuilding the test database can serve stale product ids.
 - **Access tokens:** a revoked session's access token stays valid for up to 15 minutes (stateless; per-request
   revocation is deferred).
 - **Rate limits:** in-memory and per process, unchanged until the worker/scaling phase.
