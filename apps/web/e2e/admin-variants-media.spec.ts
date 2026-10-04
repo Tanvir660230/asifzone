@@ -29,6 +29,10 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
 
   test("1. create a two-colour product using the SKU generator", async ({ page }) => {
     await login(page);
+    // The prefix is store configuration (CatalogSetting.skuPrefix — "SKU" on a fresh store since Phase 12 D-8, "AZ" on
+    // the original store): read it rather than assume one.
+    const prefix = String((await (await page.request.get(`${API}/api/catalog/sku-settings`)).json()).settings.skuPrefix).toUpperCase();
+    expect(prefix).toMatch(/^[A-Z0-9]+$/);
     await page.goto("/admin/products/new");
     await page.getByLabel("Product name").fill(PRODUCT);
     await page.getByLabel("Category").selectOption({ index: 1 });
@@ -41,7 +45,7 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
     await page.locator('input[name="variants.0.color"]').fill("Black");
     await page.locator('input[name="variants.0.stock"]').fill("10");
     await page.getByRole("button", { name: "Generate" }).first().click();
-    await expect(page.getByPlaceholder("SKU-001").first()).toHaveValue(/^AZ-CLO-BLA-M-\d{3}$/);
+    await expect(page.getByPlaceholder("SKU-001").first()).toHaveValue(new RegExp(`^${prefix}-CLO-BLA-M-[0-9]{3}$`));
     generated.push(await page.getByPlaceholder("SKU-001").first().inputValue());
 
     // Variant 2: White / M.
@@ -50,7 +54,7 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
     await page.locator('input[name="variants.1.color"]').fill("White");
     await page.locator('input[name="variants.1.stock"]').fill("10");
     await page.getByRole("button", { name: "Generate" }).nth(1).click();
-    await expect(page.locator('input[name="variants.1.sku"]')).toHaveValue(/^AZ-CLO-WHI-M-\d{3}$/);
+    await expect(page.locator('input[name="variants.1.sku"]')).toHaveValue(new RegExp(`^${prefix}-CLO-WHI-M-[0-9]{3}$`));
     generated.push(await page.locator('input[name="variants.1.sku"]').inputValue());
     expect(new Set(generated).size).toBe(2); // two rows in one form never get the same SKU
 
