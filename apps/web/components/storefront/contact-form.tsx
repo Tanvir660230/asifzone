@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useFeedbackForm } from "@/hooks/use-feedback-form";
-import { pixelContact } from "@/lib/meta-pixel";
+import { pixelContact } from "@/lib/pixels";
 
 /** Inline (non-modal) version of the same message-us form the floating contact widget offers —
  * embedded directly on the Contact page so a visitor who lands here from search/a footer link

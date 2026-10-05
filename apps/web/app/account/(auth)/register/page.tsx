@@ -20,7 +20,7 @@ import { registerCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
 import { env } from "@/lib/env";
-import { pixelCompleteRegistration } from "@/lib/meta-pixel";
+import { pixelCompleteRegistration } from "@/lib/pixels";
 
 type Mode = "email" | "phone";
 

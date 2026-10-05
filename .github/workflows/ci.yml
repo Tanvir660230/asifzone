@@ -173,6 +173,9 @@ jobs:
           echo "META_ACCESS_TOKEN=${{ secrets.META_ACCESS_TOKEN }}" >> docker/.env
           echo "META_API_VERSION=${{ secrets.META_API_VERSION }}" >> docker/.env
           echo "META_TEST_EVENT_CODE=${{ secrets.META_TEST_EVENT_CODE }}" >> docker/.env
+          # Optional — empty keeps the TikTok Pixel inert (apps/web/lib/pixels/tiktok.ts). Public id,
+          # baked into the web image at build time (docker-compose.yml build args).
+          echo "NEXT_PUBLIC_TIKTOK_PIXEL_ID=${{ secrets.NEXT_PUBLIC_TIKTOK_PIXEL_ID }}" >> docker/.env
           # Optional — docker-compose.yml already defaults both to empty, which keeps the Google
           # button/One Tap prompt hidden on both admin and customer login (GoogleButton renders
           # nothing without a client ID) rather than failing, so neither is in the required-secrets

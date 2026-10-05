@@ -7,6 +7,8 @@
  * (the order number) — no id ever needs to be minted on one side and shipped to the other. Order
  * numbers are unique and never change, which also makes every server retry of the same Purchase
  * collapse into one event on Meta's side. */
+/** Shared by every ad platform, not just Meta: the browser TikTok Pixel sends the same id (apps/web/lib/pixels/index.ts's
+ * purchaseEventId), so a future TikTok Events API sender must reuse this function too. */
 export function metaPurchaseEventId(orderNumber: string): string {
   return `purchase_${orderNumber}`;
 }

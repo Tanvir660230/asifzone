@@ -73,7 +73,9 @@ const SECTIONS = [
         city with Meta only in hashed (irreversibly encoded) form, so they can be matched to a Meta account.
         We never share payment details or passwords. You can disable cookies in your browser settings, though
         some parts of checkout may not work correctly without them, and manage ad preferences in your Facebook
-        account settings.
+        account settings. We also use the TikTok Pixel to measure our TikTok ads: it records the same kinds of shopping
+        events (pages and products viewed, items added to cart, checkout and completed orders with their items and
+        totals), but we do not send it your name, email, phone number, address or any payment details.
       </p>
     ),
   },
