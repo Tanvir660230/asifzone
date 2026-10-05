@@ -73,10 +73,10 @@ export function StatTile({ label, value, icon, tone = "default", trendPct }: Sta
 export function StatTileSkeleton() {
   return (
     <Card className="flex items-center gap-3 p-4 sm:gap-3.5 sm:p-5">
-      <div className="h-10 w-10 shrink-0 animate-pulse rounded-2xl bg-ink-100 sm:h-11 sm:w-11" />
+      <div className="h-10 w-10 shrink-0 rounded-2xl ui-skeleton sm:h-11 sm:w-11" />
       <div className="flex-1 space-y-2">
-        <div className="h-3 w-16 animate-pulse rounded bg-ink-100" />
-        <div className="h-7 w-20 animate-pulse rounded bg-ink-100" />
+        <div className="h-3 w-16 rounded ui-skeleton" />
+        <div className="h-7 w-20 rounded ui-skeleton" />
       </div>
     </Card>
   );

@@ -3,10 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCcw, Search, ShieldAlert, Undo2 } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCcw, ShieldAlert, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -66,15 +66,12 @@ export default function PaymentsOverviewPage() {
           Look Up a Customer&apos;s Payment Attempts
         </h2>
         <Card className="p-4">
-          <div className="relative max-w-sm">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-            <Input
-              value={phoneInput}
-              onChange={(e) => setPhoneInput(e.target.value)}
-              placeholder="Search by phone number (01XXXXXXXXX)…"
-              className="pl-9"
-            />
-          </div>
+          <SearchInput
+            wrapperClassName="max-w-sm"
+            value={phoneInput}
+            onChange={setPhoneInput}
+            placeholder="Search by phone number (01XXXXXXXXX)…"
+          />
           <p className="mt-2 text-xs text-ink-400">
             Covers attempts that never became an order too — a failed or abandoned gateway checkout still
             leaves a record here, keyed on the phone number entered at checkout.

@@ -106,7 +106,7 @@ export function AttributeFields({ fields, control, errors, title, description }:
                 render={({ field: rhf }) => <AttributeInput field={field} value={rhf.value} onChange={rhf.onChange} />}
               />
               {field.helpText && <p className="mt-1 text-xs text-ink-400">{field.helpText}</p>}
-              {error && <p className="mt-1 text-xs text-danger-600">{error}</p>}
+              {error && <p className="ui-field-error">{error}</p>}
             </div>
           );
         })}

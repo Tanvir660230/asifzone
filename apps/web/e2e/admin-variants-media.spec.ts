@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { continueTo, createDraft, goToStep } from "./support/product-builder";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -32,10 +33,10 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
     await page.goto("/admin/products/new");
     await page.getByLabel("Product name").fill(PRODUCT);
     await page.getByLabel("Category").selectOption({ index: 1 });
-    await page.getByRole("button", { name: "Pricing & Inventory" }).click();
+    await continueTo(page, "pricing");
     await page.getByLabel("Base price (BDT)").fill("1200");
 
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await continueTo(page, "variants");
     // Variant 1: Black / M — fill the options first, then let the pattern build the SKU from them.
     await page.getByPlaceholder(/e\.g\. S, M, L/).first().fill("M");
     await page.locator('input[name="variants.0.color"]').fill("Black");
@@ -54,14 +55,13 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
     generated.push(await page.locator('input[name="variants.1.sku"]').inputValue());
     expect(new Set(generated).size).toBe(2); // two rows in one form never get the same SKU
 
-    await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
-    editUrl = new URL(page.url()).pathname;
+    editUrl = await createDraft(page);
   });
 
   test("2. upload three images, caption one, and see the stored size", async ({ page }) => {
     await login(page);
     await page.goto(editUrl);
+    await goToStep(page, "media");
     await page.locator('input[type="file"]').first().setInputFiles([
       { name: "black-1.png", mimeType: "image/png", buffer: PNG },
       { name: "black-2.png", mimeType: "image/png", buffer: PNG },
@@ -74,14 +74,14 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
     const first = page.getByLabel("Image caption").first();
     await first.fill("Front view");
     await first.blur();
-    await page.reload();
+    await page.reload(); // the step is kept in the URL, so the reload lands back on Media
     await expect(page.getByLabel("Image caption").first()).toHaveValue("Front view");
   });
 
   test("3. give each colour its own gallery, price and compare-at price, then publish", async ({ page }) => {
     await login(page);
     await page.goto(editUrl);
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await goToStep(page, "variants");
 
     // Black gets black-1 then black-2 (order matters: the first is its main image); White gets white-1.
     const gallery1 = page.getByRole("group", { name: "Variant 1 gallery" });
@@ -140,7 +140,7 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
   test("5. switching a variant off removes it from the storefront API but keeps it in the admin (checkout refusal is covered by the API integration test)", async ({ page }) => {
     await login(page);
     await page.goto(editUrl);
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await goToStep(page, "variants");
     const whiteRow = page.locator('input[name="variants.1.color"]');
     await expect(whiteRow).toHaveValue("White");
     await page.locator('input[name="variants.1.isActive"]').uncheck();
@@ -152,7 +152,7 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
 
     // Still there in the editor after a reload, unchecked.
     await page.reload();
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await goToStep(page, "variants");
     await expect(page.locator('input[name="variants.1.color"]')).toHaveValue("White");
     await expect(page.locator('input[name="variants.1.isActive"]')).not.toBeChecked();
   });

@@ -232,8 +232,8 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
     <div>
       <div
         className={cn(
-          "mb-3 grid grid-cols-2 gap-3 rounded-lg border-2 border-dashed p-2 transition-colors sm:grid-cols-4",
-          isDraggingFiles ? "border-brass-400 bg-brass-50/40" : "border-transparent",
+          "mb-4 grid grid-cols-2 gap-3 rounded-2xl border-2 border-dashed p-2 transition-colors duration-base sm:grid-cols-3 lg:grid-cols-4",
+          isDraggingFiles ? "border-accent/40 bg-ink-900/[0.03]" : "border-transparent",
         )}
         onDragOver={(e) => {
           e.preventDefault();
@@ -254,7 +254,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                     <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
                     <button
                       onClick={() => removeStaged(item.key)}
-                      className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50 opacity-0 transition-opacity group-hover:opacity-100"
+                      className="absolute right-1.5 top-1.5 rounded-full bg-ink-900/70 p-1.5 text-cream-50 backdrop-blur-sm opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                       aria-label="Remove image"
                     >
                       <X size={14} />
@@ -272,7 +272,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                       />
                       <button
                         onClick={() => deleteMutation.mutate(img.id)}
-                        className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50 opacity-0 transition-opacity group-hover:opacity-100"
+                        className="absolute right-1.5 top-1.5 rounded-full bg-ink-900/70 p-1.5 text-cream-50 backdrop-blur-sm opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                         aria-label="Remove image"
                       >
                         <X size={14} />
@@ -282,6 +282,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                       <Input
                         value={altValue(img)}
                         placeholder="Alt text"
+                        aria-label="Image alt text"
                         className="h-7 text-xs"
                         onChange={(e) => setAltDrafts((d) => ({ ...d, [img.id]: e.target.value }))}
                         onBlur={() => {
@@ -295,7 +296,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                           onClick={() => handleGenerateAlt(img)}
                           disabled={generatingId === img.id}
                           aria-label="Generate alt text with AI"
-                          className="shrink-0 rounded p-1 text-brass-600 hover:bg-brass-50 disabled:opacity-50"
+                          className="shrink-0 rounded-md p-1.5 text-ink-500 hover:bg-ink-900/[0.05] hover:text-fg disabled:opacity-50"
                         >
                           <Sparkles size={13} />
                         </button>
@@ -313,7 +314,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                       }}
                     />
                     {img.width && img.height && (
-                      <p className="text-[10px] text-ink-400">
+                      <p className="text-[10px] text-fg-subtle">
                         {img.width}×{img.height}px
                       </p>
                     )}
@@ -324,11 +325,11 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
 
         {!staticMode &&
           queue.map((item) => (
-            <div key={item.key} className="relative aspect-square overflow-hidden rounded border border-ink-100" data-testid="upload-item" data-status={item.status}>
+            <div key={item.key} className="relative aspect-square overflow-hidden rounded-xl border border-line-subtle" data-testid="upload-item" data-status={item.status}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={item.previewUrl} alt="" className={cn("h-full w-full object-cover", item.status !== "failed" && "opacity-50")} />
               {item.status === "failed" ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-cream-50/90 p-2 text-center" role="alert">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-surface/90 p-2 text-center backdrop-blur-sm" role="alert">
                   <p className="text-[11px] font-medium text-danger-700">Couldn&rsquo;t upload {item.file.name}</p>
                   <p className="line-clamp-2 text-[10px] text-ink-500">{item.error}</p>
                   <div className="flex items-center gap-2">
@@ -352,9 +353,17 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
           ))}
 
         {count === 0 && (
-          <div className="col-span-2 flex aspect-square items-center justify-center rounded border border-dashed border-ink-200 text-center text-xs text-ink-400 sm:col-span-4 sm:aspect-[4/1]">
-            Drag &amp; drop images here, or use the button below
-          </div>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="col-span-2 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line-strong bg-surface-muted/60 px-4 py-10 text-center transition-colors duration-base hover:border-ink-400 hover:bg-surface-muted sm:col-span-3 lg:col-span-4"
+          >
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-surface text-ink-600 shadow-sm ring-1 ring-line-subtle">
+              <Upload size={18} aria-hidden="true" />
+            </span>
+            <span className="text-sm font-medium text-fg">Drop photos here, or browse</span>
+            <span className="text-xs text-fg-muted">JPEG, PNG or WebP · up to 8 MB each · stored as optimised WebP</span>
+          </button>
         )}
       </div>
 
@@ -368,8 +377,9 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
       />
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
-          <Upload size={14} /> Upload images
+          <Upload size={14} aria-hidden="true" /> Upload images
         </Button>
+        {count > 0 && <span className="text-xs text-fg-muted">Drag to reorder · the first photo is the cover</span>}
         {inFlightCount > 0 && (
           <span className="text-xs text-ink-500" role="status" data-testid="upload-status">
             Uploading {inFlightCount} image{inFlightCount === 1 ? "" : "s"}…
@@ -407,14 +417,14 @@ function SortableThumb({ id, isMain, onSetMain, children }: SortableThumbProps) 
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group relative aspect-square overflow-hidden rounded border border-ink-100",
-        isDragging && "z-10 shadow-float ring-2 ring-brass-300",
+        "group relative aspect-square overflow-hidden rounded-xl border border-line-subtle bg-surface-muted",
+        isDragging && "z-10 shadow-floatLg ring-2 ring-accent/20",
       )}
     >
       {children}
       <button
         type="button"
-        className="absolute left-1 top-1 touch-none rounded-full bg-ink-900/70 p-1 text-cream-50 opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+        className="absolute left-1.5 top-1.5 touch-none rounded-full bg-ink-900/70 p-1.5 text-cream-50 backdrop-blur-sm active:cursor-grabbing opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
         aria-label="Drag to reorder"
         {...attributes}
         {...listeners}
@@ -422,16 +432,16 @@ function SortableThumb({ id, isMain, onSetMain, children }: SortableThumbProps) 
         <GripVertical size={14} />
       </button>
       {isMain ? (
-        <span className="absolute bottom-1 left-1 flex items-center gap-1 rounded-full bg-ink-900/80 px-1.5 py-0.5 text-[10px] text-cream-50">
-          <Star size={10} className="fill-brass-400 text-brass-400" /> Main
+        <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-ink-900/80 px-2 py-0.5 text-[10px] font-medium text-cream-50 backdrop-blur-sm">
+          <Star size={10} className="fill-current" aria-hidden="true" /> Cover
         </span>
       ) : (
         <button
           type="button"
           onClick={onSetMain}
-          className="absolute bottom-1 left-1 rounded-full bg-ink-900/70 px-1.5 py-0.5 text-[10px] text-cream-50 opacity-0 transition-opacity group-hover:opacity-100"
+          className="absolute bottom-1.5 left-1.5 rounded-full bg-ink-900/70 px-2 py-0.5 text-[10px] font-medium text-cream-50 backdrop-blur-sm opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
         >
-          Set main
+          Make cover
         </button>
       )}
     </div>

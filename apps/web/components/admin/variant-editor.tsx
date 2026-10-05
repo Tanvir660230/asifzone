@@ -2,26 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Controller, useFieldArray, type Control, type UseFormRegister, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-  sortableKeyboardCoordinates,
-} from "@dnd-kit/sortable";
+import { Controller, useFieldArray, useFormState, type Control, type UseFormRegister, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
+import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, GripVertical, History, Sparkles, Star, Trash2, Wand2 } from "lucide-react";
+import { ChevronDown, GripVertical, History, Plus, Sparkles, Star, Trash2, Wand2 } from "lucide-react";
 import { findDuplicateSkus, type Attribute, type AttributeValue, type CreateProductInput, type ProductImage, type VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { IconButton } from "@/components/ui/icon-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/components/ui/toast";
 import * as catalogApi from "@/lib/api/catalog";
@@ -30,7 +19,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { StagedImage } from "./image-uploader";
 
 interface VariantEditorProps {
   control: Control<CreateProductInput>;
@@ -39,12 +27,6 @@ interface VariantEditorProps {
   setValue: UseFormSetValue<CreateProductInput>;
   attributes: Attribute[];
   productImages: ProductImage[];
-  /** Only passed while creating a new product — images picked in the gallery uploader above
-   * aren't saved yet, so variant image assignment has to work off these in-memory files instead
-   * of `productImages` (which is always empty until the product exists). */
-  stagedImages?: StagedImage[];
-  variantImageKeys?: Record<number, string>;
-  onVariantImageKeyChange?: (index: number, key: string) => void;
   skuPrefix?: string;
   /** The selected type's variant dimensions (which of size/colour it uses, and how they are labelled). */
   variantDimensions?: VariantDimension[];
@@ -63,6 +45,9 @@ const BULK_FIELDS = [
 ] as const;
 type BulkField = (typeof BULK_FIELDS)[number]["key"];
 
+/** Variant count above which the editor opens with rows folded to their summaries. */
+const FOLD_ABOVE = 6;
+
 function slugPart(s: string) {
   return s
     .trim()
@@ -72,12 +57,12 @@ function slugPart(s: string) {
 }
 
 function cartesianProduct(groups: AttributeValue[][]): AttributeValue[][] {
-  return groups.reduce<AttributeValue[][]>(
-    (acc, group) => acc.flatMap((combo) => group.map((value) => [...combo, value])),
-    [[]],
-  );
+  return groups.reduce<AttributeValue[][]>((acc, group) => acc.flatMap((combo) => group.map((value) => [...combo, value])), [[]]);
 }
 
+/** The variant matrix: generate from option values, edit each variant (folded into a summary row once there are
+ * many), bulk-set stock/prices, generate SKUs from the catalog's pattern, reorder (the first is the default) and pick
+ * each variant's gallery. Used by the Product Builder for both new and existing products. */
 export function VariantEditor({
   control,
   register,
@@ -85,9 +70,6 @@ export function VariantEditor({
   setValue,
   attributes,
   productImages,
-  stagedImages,
-  variantImageKeys,
-  onVariantImageKeyChange,
   skuPrefix = "SKU",
   variantDimensions = [],
   typeName = "this product type",
@@ -161,20 +143,15 @@ export function VariantEditor({
     }
   }
 
-  /** Asks the server for the next SKU from the configured pattern, telling it which SKUs this form already holds
-   * so two unsaved rows can't be handed the same one. */
+  /** Asks the server for the next SKU from the configured pattern, telling it which SKUs this form already holds so
+   * two unsaved rows can't be handed the same one. */
   async function handleGenerateSku(index: number) {
     if (!typeId) return;
     setGeneratingSku(index);
     try {
       const all = (watch("variants") ?? []) as { sku?: string; color?: string | null; size?: string | null }[];
       const row = all[index];
-      const { sku } = await catalogApi.generateSku({
-        typeId,
-        color: row?.color,
-        size: row?.size,
-        taken: all.map((v) => v.sku ?? "").filter(Boolean),
-      });
+      const { sku } = await catalogApi.generateSku({ typeId, color: row?.color, size: row?.size, taken: all.map((v) => v.sku ?? "").filter(Boolean) });
       setValue(`variants.${index}.sku`, sku, { shouldDirty: true, shouldValidate: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't generate a SKU");
@@ -182,9 +159,9 @@ export function VariantEditor({
       setGeneratingSku(null);
     }
   }
+
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
-  // Attributes load asynchronously (separate query), so this can't be a one-shot useState initializer —
-  // it needs to open as soon as attributes actually arrive, not just at first mount.
+  // Attributes load asynchronously, so the generator opens as soon as they arrive (not just at first mount).
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [autoOpened, setAutoOpened] = useState(false);
   if (!autoOpened && attributes.length > 0 && fields.length <= 1) {
@@ -192,10 +169,22 @@ export function VariantEditor({
     setGeneratorOpen(true);
   }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
+  // Rows start open; a large matrix (more than FOLD_ABOVE variants) starts folded to its summary rows so it stays
+  // scannable. Rows added later are open (they aren't in the initial set), and a row with a validation error is always
+  // open. Folded details stay mounted (just hidden), so every variant's fields stay registered with the form.
+  const [folded, setFolded] = useState<Set<string>>(() => (fields.length > FOLD_ABOVE ? new Set(fields.map((f) => f.id)) : new Set()));
+  const { errors: formErrors } = useFormState({ control, name: "variants" });
+  const rowErrors = (formErrors.variants ?? []) as unknown as Array<Record<string, { message?: string }> | undefined>;
+  function toggleFold(rowId: string) {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  }
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -218,18 +207,13 @@ export function VariantEditor({
   }
 
   function handleGenerate() {
-    const groups = attributes
-      .map((attr) => ({ attr, values: attr.values.filter((v) => selected[attr.id]?.has(v.id)) }))
-      .filter((g) => g.values.length > 0);
+    const groups = attributes.map((attr) => ({ attr, values: attr.values.filter((v) => selected[attr.id]?.has(v.id)) })).filter((g) => g.values.length > 0);
     if (groups.length === 0) return;
 
-    const combos = cartesianProduct(groups.map((g) => g.values));
-
-    for (const combo of combos) {
+    for (const combo of cartesianProduct(groups.map((g) => g.values))) {
       const sizeValue = combo.find((v) => groups.find((g) => g.attr.id === v.attributeId)?.attr.name.toLowerCase() === "size");
       const colorValue = combo.find((v) => groups.find((g) => g.attr.id === v.attributeId)?.attr.name.toLowerCase() === "color");
       const suggestedSku = [slugPart(skuPrefix), ...combo.map((v) => slugPart(v.value))].filter(Boolean).join("-");
-
       append({
         sku: suggestedSku,
         barcode: null,
@@ -247,26 +231,30 @@ export function VariantEditor({
     }
   }
 
+  const sizeDim = variantDimensions.find((d) => d.targetField === "size");
+  const colorDim = variantDimensions.find((d) => d.targetField === "color");
+
   return (
-    <div>
+    <div className="space-y-4">
       {attributes.length > 0 && (
-        <div className="mb-4 rounded-lg border border-dashed border-brass-300 bg-brass-50/40 p-3">
+        <div className="rounded-xl border border-line-subtle bg-surface-muted/60 p-4">
           <button
             type="button"
             onClick={() => setGeneratorOpen((o) => !o)}
-            className="flex w-full items-center justify-between text-left text-sm font-medium text-ink-900"
+            aria-expanded={generatorOpen}
+            className="flex w-full items-center justify-between gap-3 text-left text-sm font-medium text-fg"
           >
             <span className="flex items-center gap-2">
-              <Sparkles size={15} className="text-brass-500" /> Generate variants from attributes
+              <Sparkles size={15} className="text-ink-500" aria-hidden="true" /> Generate variants from attributes
             </span>
-            <ChevronDown size={16} className={cn("transition-transform", generatorOpen && "rotate-180")} />
+            <ChevronDown size={16} className={cn("shrink-0 transition-transform duration-base ease-smooth", generatorOpen && "rotate-180")} aria-hidden="true" />
           </button>
 
           {generatorOpen && (
-            <div className="mt-3 space-y-3">
+            <div className="mt-4 space-y-4">
               {attributes.map((attr) => (
-                <div key={attr.id}>
-                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-ink-500">{attr.name}</p>
+                <fieldset key={attr.id}>
+                  <legend className="mb-2 text-caption font-semibold uppercase text-fg-muted">{attr.name}</legend>
                   <div className="flex flex-wrap gap-2">
                     {attr.values.map((v) => {
                       const checked = selected[attr.id]?.has(v.id) ?? false;
@@ -275,53 +263,60 @@ export function VariantEditor({
                           type="button"
                           key={v.id}
                           onClick={() => toggleValue(attr.id, v.id)}
+                          aria-pressed={checked}
                           className={cn(
-                            "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
-                            checked
-                              ? "border-ink-900 bg-ink-900 text-cream-50"
-                              : "border-ink-200 bg-cream-50 text-ink-600 hover:border-ink-400",
+                            "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-fast ease-smooth",
+                            checked ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-ink-600 hover:border-line-strong hover:text-fg",
                           )}
                         >
-                          {v.colorHex && <span className="h-2.5 w-2.5 rounded-full border border-cream-50/60" style={{ backgroundColor: v.colorHex }} />}
+                          {v.colorHex && <span className="h-3 w-3 rounded-full ring-1 ring-ink-900/10" style={{ backgroundColor: v.colorHex }} aria-hidden="true" />}
                           {v.value}
                         </button>
                       );
                     })}
-                    {attr.values.length === 0 && <span className="text-xs text-ink-400">No values yet — add some on the Attributes page.</span>}
+                    {attr.values.length === 0 && <span className="text-xs text-fg-subtle">No values yet — add some under Products → Variant options.</span>}
                   </div>
-                </div>
+                </fieldset>
               ))}
-              <Button type="button" variant="brass" size="sm" onClick={handleGenerate}>
-                <Sparkles size={14} /> Generate combinations
-              </Button>
-              <p className="text-xs text-ink-400">
-                {variantDimensions.length
-                  ? `Variants for ${typeName} are defined by ${variantDimensions.map((d) => d.label).join(" & ")}.`
-                  : `${typeName} has no size or colour dimension — each variant is a single option.`}
-              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" size="sm" onClick={handleGenerate}>
+                  <Sparkles size={14} aria-hidden="true" /> Generate combinations
+                </Button>
+                <p className="text-xs text-fg-muted">
+                  {variantDimensions.length
+                    ? `Variants for ${typeName} are defined by ${variantDimensions.map((d) => d.label).join(" & ")}.`
+                    : `${typeName} has no size or colour dimension — each variant is a single option.`}
+                </p>
+              </div>
             </div>
           )}
         </div>
       )}
 
       {duplicateSkuRows.size > 0 && (
-        <p className="mb-2 rounded-md bg-danger-50 px-3 py-2 text-xs text-danger-700" role="alert" data-testid="duplicate-sku-warning">
+        <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700" role="alert" data-testid="duplicate-sku-warning">
           {duplicateSkuRows.size} variants share a SKU — each variant needs its own before this can be saved.
         </p>
       )}
 
       {fields.length > 1 && (
-        <div className="mb-3 flex flex-wrap items-end gap-2 rounded-lg border border-ink-100 bg-white p-3" data-testid="variant-bulk-bar">
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-line-subtle bg-surface p-3" data-testid="variant-bulk-bar">
           <div>
-            <Label className="text-[11px]" htmlFor="bulk-field">Set</Label>
+            <Label className="text-xs" htmlFor="bulk-field">
+              Set
+            </Label>
             <Select id="bulk-field" value={bulkField} onChange={(e) => setBulkField(e.target.value as BulkField)} className="h-9 text-xs">
               {BULK_FIELDS.map((f) => (
-                <option key={f.key} value={f.key}>{f.label}</option>
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
               ))}
             </Select>
           </div>
           <div>
-            <Label className="text-[11px]" htmlFor="bulk-value">to</Label>
+            <Label className="text-xs" htmlFor="bulk-value">
+              to
+            </Label>
             <Input
               id="bulk-value"
               type="number"
@@ -336,23 +331,17 @@ export function VariantEditor({
             Apply to {selectedRows.size ? `${targetIndexes.length} selected` : `all ${fields.length}`}
           </Button>
           {selectedRows.size > 0 && (
-            <button type="button" onClick={() => setSelectedRows(new Set())} className="pb-2 text-xs text-ink-500 underline hover:text-ink-900">
+            <Button type="button" variant="link" size="sm" onClick={() => setSelectedRows(new Set())}>
               Clear selection
-            </button>
+            </Button>
           )}
+          <p className="basis-full text-xs text-fg-muted">
+            Drag <GripVertical size={11} className="-mt-0.5 inline" aria-hidden="true" /> to reorder — the top variant is what customers see selected by default.
+          </p>
         </div>
       )}
 
-      {fields.length > 1 && (
-        <p className="mb-2 text-xs text-ink-400">
-          Drag <GripVertical size={11} className="inline -mt-0.5" /> to reorder — the top variant&rsquo;s color and size are what
-          customers see selected by default on the product page.
-        </p>
-      )}
-
-      {/* Explicit id: dnd-kit auto-generates aria-describedby ids from a render-order counter when
-          none is given, which drifts between the server render and the client hydration pass in
-          Next.js and throws a "Prop did not match" warning — a fixed id makes it deterministic. */}
+      {/* Explicit id: dnd-kit's auto-generated ids drift between server render and hydration. */}
       <DndContext id="variant-editor-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={fields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-3">
@@ -367,179 +356,220 @@ export function VariantEditor({
                   return null;
                 })
                 .filter(Boolean) as string[];
+              const row = (watch(`variants.${index}`) ?? {}) as { sku?: string; size?: string; color?: string; stock?: number; isActive?: boolean; colorHex?: string | null };
+              const hasError = Boolean(rowErrors[index]) || duplicateSkuRows.has(index);
+              const open = hasError || !folded.has(field.id);
+              const title = [sizeDim && row.size, colorDim && row.color].filter(Boolean).join(" / ") || `Variant ${index + 1}`;
+              const id = (key: string) => `variant-${field.id}-${key}`;
+              const err = (key: string) => rowErrors[index]?.[key]?.message;
 
               return (
-                <SortableVariantRow key={field.id} id={field.id} isDefault={index === 0}>
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {fields.length > 1 && (
-                        <Checkbox className="mr-1" checked={selectedRows.has(field.id)} onChange={() => toggleRow(field.id)} aria-label={`Select variant ${index + 1}`} />
-                      )}
-                      {chips.map((chip) => (
-                        <span key={chip} className="rounded-full bg-ink-100 px-2 py-0.5 text-[11px] text-ink-600">
-                          {chip}
+                <SortableVariantRow key={field.id} id={field.id} hasError={hasError}>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    {fields.length > 1 && <Checkbox checked={selectedRows.has(field.id)} onChange={() => toggleRow(field.id)} aria-label={`Select variant ${index + 1}`} />}
+                    {row.colorHex && /^#[0-9a-fA-F]{6}$/.test(row.colorHex) && (
+                      <span className="h-4 w-4 shrink-0 rounded-full ring-1 ring-ink-900/10" style={{ backgroundColor: row.colorHex }} aria-hidden="true" />
+                    )}
+                    <span className="min-w-0 truncate text-sm font-medium text-fg">{title}</span>
+                    {index === 0 ? (
+                      <Badge variant="accent" className="gap-1 px-2 py-0 text-[0.6875rem]">
+                        <Star size={10} className="fill-current" aria-hidden="true" /> Default
+                      </Badge>
+                    ) : (
+                      <button type="button" onClick={() => move(index, 0)} className="rounded-full px-2 py-0.5 text-[0.6875rem] text-fg-muted hover:bg-ink-900/[0.05] hover:text-fg">
+                        Set as default
+                      </button>
+                    )}
+                    {row.isActive === false && (
+                      <Badge variant="neutral" className="px-2 py-0 text-[0.6875rem]">
+                        Off sale
+                      </Badge>
+                    )}
+                    {chips.map((chip) => (
+                      <span key={chip} className="rounded-full bg-surface-muted px-2 py-0.5 text-[0.6875rem] text-ink-600">
+                        {chip}
+                      </span>
+                    ))}
+                    <span className="ml-auto flex items-center gap-1">
+                      {!open && (
+                        <span className="hidden text-xs tabular-nums text-fg-muted sm:inline">
+                          {row.sku || "No SKU"} · {Number.isFinite(row.stock) ? row.stock : 0} in stock
                         </span>
-                      ))}
-                      {index !== 0 && (
-                        <button
-                          type="button"
-                          onClick={() => move(index, 0)}
-                          className="rounded-full px-2 py-0.5 text-[11px] text-ink-400 hover:bg-brass-50 hover:text-brass-700"
-                        >
-                          Set as default
-                        </button>
                       )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => remove(index)}
-                      className="shrink-0 text-ink-400 hover:text-danger-600"
-                      aria-label="Remove variant"
-                      disabled={fields.length === 1}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                      <IconButton
+                        size="sm"
+                        onClick={() => toggleFold(field.id)}
+                        aria-expanded={open}
+                        aria-label={`${open ? "Hide" : "Show"} details for variant ${index + 1}`}
+                        disabled={hasError}
+                      >
+                        <ChevronDown size={16} className={cn("transition-transform duration-base ease-smooth", open && "rotate-180")} />
+                      </IconButton>
+                      <IconButton size="sm" variant="danger" onClick={() => remove(index)} aria-label="Remove variant" disabled={fields.length === 1}>
+                        <Trash2 size={15} />
+                      </IconButton>
+                    </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                    <div>
-                      {/* The button sits beside the label, not inside it: a control nested in a <label> becomes that label's
-                          labelled element and disappears from the accessibility tree as a button of its own. */}
-                      <div className="flex items-center justify-between">
-                        <Label className="text-[11px]">SKU</Label>
-                        <button
-                          type="button"
-                          disabled={!typeId || generatingSku === index}
-                          onClick={() => handleGenerateSku(index)}
-                          className="flex items-center gap-0.5 text-[11px] text-brass-600 hover:text-brass-700 disabled:opacity-40"
-                          title="Generate from the SKU pattern (Catalog setup → SKUs)"
-                        >
-                          <Wand2 size={11} /> {generatingSku === index ? "…" : "Generate"}
-                        </button>
-                      </div>
-                      <Input placeholder="SKU-001" aria-invalid={duplicateSkuRows.has(index) || undefined} {...register(`variants.${index}.sku`)} />
-                      {duplicateSkuRows.has(index) && <p className="mt-0.5 text-[11px] text-danger-600">Same SKU as another variant</p>}
-                    </div>
-                    <div>
-                      <Label className="text-[11px]">Barcode</Label>
-                      <Input placeholder="Optional" {...register(`variants.${index}.barcode`)} />
-                    </div>
-                    {(() => {
-                      // Strictly by target field: a type with only a color dimension (Accessory) has no
-                      // size input at all — the schema stores "Standard" — instead of the color dimension
-                      // being rendered a second time in the size slot.
-                      const sizeDim = variantDimensions.find((d) => d.targetField === "size");
-                      const colorDim = variantDimensions.find((d) => d.targetField === "color");
-                      return (
-                        <>
-                          {sizeDim && (
-                            <div>
-                              <Label className="text-[11px]">{sizeDim.label}</Label>
-                              <Input
-                                placeholder={sizeDim.options?.length ? `e.g. ${sizeDim.options.join(", ")}` : "Standard"}
-                                {...register(`variants.${index}.size`)}
-                              />
-                            </div>
-                          )}
-                          {sizeDim?.label.trim().toLowerCase() === "size" && (
-                            <div>
-                              <Label className="text-[11px]">Equivalent size</Label>
-                              <Input placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
-                            </div>
-                          )}
-                          {colorDim && (
-                            <>
-                              <div>
-                                <Label className="text-[11px]">{colorDim.label}</Label>
-                                <Input placeholder={colorDim.options?.[0] ?? "Black"} {...register(`variants.${index}.color`)} />
-                              </div>
-                              <div>
-                                <Label className="text-[11px]">Color code</Label>
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="color"
-                                    value={/^#[0-9a-fA-F]{6}$/.test(watch(`variants.${index}.colorHex`) ?? "") ? (watch(`variants.${index}.colorHex`) as string) : "#000000"}
-                                    onChange={(e) => setValue(`variants.${index}.colorHex`, e.target.value, { shouldDirty: true })}
-                                    className="h-9 w-9 shrink-0 cursor-pointer rounded border border-ink-200 bg-transparent p-0.5"
-                                    aria-label="Pick color"
-                                  />
-                                  <Input placeholder="#000000" {...register(`variants.${index}.colorHex`)} />
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <div>
-                      <Label className="text-[11px]">Price override</Label>
-                      <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.price`, { valueAsNumber: true })} />
-                    </div>
-                    <div>
-                      <Label className="text-[11px]">Cost price</Label>
-                      <Input type="number" step="0.01" placeholder="—" {...register(`variants.${index}.costPrice`, { valueAsNumber: true })} />
-                    </div>
-                    <div>
-                      <Label className="flex items-center justify-between text-[11px]">
-                        Stock
-                        {watch(`variants.${index}.id`) && (
-                          <Link
-                            href={`/admin/inventory?variantId=${watch(`variants.${index}.id`)}`}
-                            target="_blank"
-                            className="flex items-center gap-0.5 font-normal normal-case text-ink-400 hover:text-brass-600"
-                            title="View stock history"
-                          >
-                            <History size={11} /> History
-                          </Link>
+                  <div className="mt-4 space-y-4" hidden={!open}>
+                    {(sizeDim || colorDim) && (
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {/* Strictly by target field: a colour-only type has no size input at all. */}
+                        {sizeDim && (
+                          <div>
+                            <Label htmlFor={id("size")} className="text-xs">
+                              {sizeDim.label}
+                            </Label>
+                            <Input
+                              id={id("size")}
+                              placeholder={sizeDim.options?.length ? `e.g. ${sizeDim.options.join(", ")}` : "Standard"}
+                              aria-invalid={Boolean(err("size")) || undefined}
+                              {...register(`variants.${index}.size`)}
+                            />
+                            {err("size") && <p className="ui-field-error">{err("size")}</p>}
+                          </div>
                         )}
-                      </Label>
-                      <Input type="number" {...register(`variants.${index}.stock`, { valueAsNumber: true })} />
+                        {sizeDim?.label.trim().toLowerCase() === "size" && (
+                          <div>
+                            <Label htmlFor={id("sizeLabel")} className="text-xs">
+                              Equivalent size
+                            </Label>
+                            <Input id={id("sizeLabel")} placeholder="e.g. L (optional)" {...register(`variants.${index}.sizeLabel`)} />
+                          </div>
+                        )}
+                        {colorDim && (
+                          <>
+                            <div>
+                              <Label htmlFor={id("color")} className="text-xs">
+                                {colorDim.label}
+                              </Label>
+                              <Input id={id("color")} placeholder={colorDim.options?.[0] ?? "Black"} aria-invalid={Boolean(err("color")) || undefined} {...register(`variants.${index}.color`)} />
+                              {err("color") && <p className="ui-field-error">{err("color")}</p>}
+                            </div>
+                            <div>
+                              <Label htmlFor={id("colorHex")} className="text-xs">
+                                Color code
+                              </Label>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="color"
+                                  value={/^#[0-9a-fA-F]{6}$/.test(row.colorHex ?? "") ? (row.colorHex as string) : "#000000"}
+                                  onChange={(e) => setValue(`variants.${index}.colorHex`, e.target.value, { shouldDirty: true })}
+                                  className="h-10 w-10 shrink-0 cursor-pointer rounded-lg border border-line bg-transparent p-1"
+                                  aria-label="Pick color"
+                                />
+                                <Input id={id("colorHex")} placeholder="#000000" {...register(`variants.${index}.colorHex`)} />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="col-span-2">
+                        {/* The button sits beside the label, not inside it: a control nested in a <label> stops being a
+                            button of its own for assistive tech. */}
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <Label htmlFor={id("sku")} className="mb-0 text-xs">
+                            SKU
+                          </Label>
+                          <button
+                            type="button"
+                            disabled={!typeId || generatingSku === index}
+                            onClick={() => handleGenerateSku(index)}
+                            className="flex items-center gap-1 rounded-full px-1.5 text-xs font-medium text-ink-600 hover:bg-ink-900/[0.05] hover:text-fg disabled:opacity-40"
+                            title="Generate from the SKU pattern (Catalog setup → SKUs)"
+                          >
+                            <Wand2 size={12} aria-hidden="true" /> {generatingSku === index ? "…" : "Generate"}
+                          </button>
+                        </div>
+                        <Input
+                          id={id("sku")}
+                          placeholder="SKU-001"
+                          aria-invalid={duplicateSkuRows.has(index) || Boolean(err("sku")) || undefined}
+                          {...register(`variants.${index}.sku`)}
+                        />
+                        {duplicateSkuRows.has(index) && <p className="ui-field-error">Same SKU as another variant</p>}
+                        {err("sku") && <p className="ui-field-error">{err("sku")}</p>}
+                      </div>
+                      <div className="col-span-2">
+                        <Label htmlFor={id("barcode")} className="text-xs">
+                          Barcode
+                        </Label>
+                        <Input id={id("barcode")} placeholder="Optional" {...register(`variants.${index}.barcode`)} />
+                      </div>
                     </div>
-                    <div>
-                      <Label className="text-[11px]">Weight (kg)</Label>
-                      <Input type="number" step="0.01" placeholder="Optional" {...register(`variants.${index}.weight`, { valueAsNumber: true })} />
-                    </div>
-                    <div>
-                      <Label className="text-[11px]">Compare-at price</Label>
-                      <Input type="number" step="0.01" placeholder="Optional" {...register(`variants.${index}.compareAtPrice`, { valueAsNumber: true })} />
-                    </div>
-                    <div className="flex items-end pb-2">
-                      <label className="flex items-center gap-2 text-sm text-ink-700" title="Inactive variants are hidden from the storefront and can't be bought">
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div>
+                        <Label htmlFor={id("price")} className="text-xs">
+                          Price override
+                        </Label>
+                        <Input id={id("price")} type="number" step="0.01" inputMode="decimal" placeholder="Base price" {...register(`variants.${index}.price`, { valueAsNumber: true })} />
+                      </div>
+                      <div>
+                        <Label htmlFor={id("compareAtPrice")} className="text-xs">
+                          Compare-at price
+                        </Label>
+                        <Input
+                          id={id("compareAtPrice")}
+                          type="number"
+                          step="0.01"
+                          inputMode="decimal"
+                          placeholder="Optional"
+                          {...register(`variants.${index}.compareAtPrice`, { valueAsNumber: true })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={id("costPrice")} className="text-xs">
+                          Cost price
+                        </Label>
+                        <Input id={id("costPrice")} type="number" step="0.01" inputMode="decimal" placeholder="—" {...register(`variants.${index}.costPrice`, { valueAsNumber: true })} />
+                      </div>
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <Label htmlFor={id("stock")} className="mb-0 text-xs">
+                            Stock
+                          </Label>
+                          {watch(`variants.${index}.id`) && (
+                            <Link
+                              href={`/admin/inventory?variantId=${watch(`variants.${index}.id`)}`}
+                              target="_blank"
+                              className="flex items-center gap-0.5 text-xs text-fg-muted hover:text-fg"
+                              title="View stock history"
+                            >
+                              <History size={11} aria-hidden="true" /> History
+                            </Link>
+                          )}
+                        </div>
+                        <Input id={id("stock")} type="number" inputMode="numeric" aria-invalid={Boolean(err("stock")) || undefined} {...register(`variants.${index}.stock`, { valueAsNumber: true })} />
+                        {err("stock") && <p className="ui-field-error">{err("stock")}</p>}
+                      </div>
+                      <div>
+                        <Label htmlFor={id("weight")} className="text-xs">
+                          Weight (kg)
+                        </Label>
+                        <Input id={id("weight")} type="number" step="0.01" inputMode="decimal" placeholder="Optional" {...register(`variants.${index}.weight`, { valueAsNumber: true })} />
+                      </div>
+                      <label className="flex items-center gap-2 self-end pb-2.5 text-sm text-ink-700" title="Inactive variants are hidden from the storefront and can't be bought">
                         <Checkbox {...register(`variants.${index}.isActive`)} />
                         On sale
                       </label>
                     </div>
-                    <div className={productImages.length > 0 ? "col-span-2 sm:col-span-3 lg:col-span-6" : "col-span-2"}>
-                      <Label className="text-[11px]">{productImages.length > 0 ? "Variant images" : "Variant image"}</Label>
+
+                    <div>
+                      <p className="ui-label text-xs">Variant images</p>
                       {productImages.length > 0 ? (
                         <Controller
                           control={control}
                           name={`variants.${index}.imageIds`}
-                          render={({ field }) => (
-                            <VariantGalleryPicker
-                              images={productImages}
-                              value={(field.value as string[] | undefined) ?? []}
-                              onChange={field.onChange}
-                              label={`Variant ${index + 1}`}
-                            />
+                          render={({ field: f }) => (
+                            <VariantGalleryPicker images={productImages} value={(f.value as string[] | undefined) ?? []} onChange={f.onChange} label={`Variant ${index + 1}`} />
                           )}
                         />
-                      ) : stagedImages && stagedImages.length > 0 ? (
-                        <Select
-                          value={variantImageKeys?.[index] ?? ""}
-                          onChange={(e) => onVariantImageKeyChange?.(index, e.target.value)}
-                        >
-                          <option value="">Use default product image</option>
-                          {stagedImages.map((img) => (
-                            <option key={img.key} value={img.key}>
-                              {img.file.name}
-                            </option>
-                          ))}
-                        </Select>
                       ) : (
-                        <Select disabled>
-                          <option value="">Upload product images first…</option>
-                        </Select>
+                        <p className="text-xs text-fg-muted">Upload product photos first (Media), then choose which belong to this variant.</p>
                       )}
                     </div>
                   </div>
@@ -550,19 +580,14 @@ export function VariantEditor({
         </SortableContext>
       </DndContext>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => append({ sku: "", size: "", color: "", stock: 0, isActive: true, attributeValueIds: [] })}
-        >
-          Add variant manually
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => append({ sku: "", size: "", color: "", stock: 0, isActive: true, attributeValueIds: [] })}>
+          <Plus size={14} aria-hidden="true" /> Add variant manually
         </Button>
-        {/* After the rows, not in the bulk bar above them: each row's own "Generate" keeps its place in the page order. */}
+        {/* After the rows, not in the bulk bar: each row's own "Generate" keeps its place in the page order. */}
         {typeId && fields.length > 1 && liveVariants.some((v) => !v?.sku?.trim()) && (
-          <Button type="button" variant="outline" size="sm" onClick={generateMissingSkus} disabled={generatingAll}>
-            <Wand2 size={14} /> {generatingAll ? "Generating…" : "Generate missing SKUs"}
+          <Button type="button" variant="outline" size="sm" onClick={generateMissingSkus} loading={generatingAll}>
+            <Wand2 size={14} aria-hidden="true" /> Generate missing SKUs
           </Button>
         )}
       </div>
@@ -572,11 +597,11 @@ export function VariantEditor({
 
 interface SortableVariantRowProps {
   id: string;
-  isDefault: boolean;
+  hasError: boolean;
   children: React.ReactNode;
 }
 
-function SortableVariantRow({ id, isDefault, children }: SortableVariantRowProps) {
+function SortableVariantRow({ id, hasError, children }: SortableVariantRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition };
 
@@ -585,24 +610,20 @@ function SortableVariantRow({ id, isDefault, children }: SortableVariantRowProps
       ref={setNodeRef}
       style={style}
       className={cn(
-        "rounded-lg border border-ink-100 bg-cream-50 p-3 pl-9 relative",
-        isDragging && "z-10 shadow-float ring-2 ring-brass-300",
+        "relative rounded-xl border bg-surface p-4 pl-10 transition-shadow duration-base ease-smooth",
+        hasError ? "border-danger-200 ring-1 ring-danger-100" : "border-line-subtle",
+        isDragging && "z-10 shadow-floatLg ring-2 ring-accent/15",
       )}
     >
       <button
         type="button"
-        className="absolute left-2 top-3 touch-none rounded p-1 text-ink-300 hover:text-ink-600 active:cursor-grabbing"
+        className="absolute left-1.5 top-3 touch-none rounded-md p-2 text-ink-300 hover:bg-ink-900/[0.05] hover:text-ink-600 active:cursor-grabbing"
         aria-label="Drag to reorder"
         {...attributes}
         {...listeners}
       >
         <GripVertical size={15} />
       </button>
-      {isDefault && (
-        <span className="absolute left-8 top-2 flex items-center gap-1 rounded-full bg-brass-100 px-2 py-0.5 text-[10px] font-medium text-brass-700">
-          <Star size={10} className="fill-brass-500 text-brass-500" /> Default
-        </span>
-      )}
       {children}
     </div>
   );

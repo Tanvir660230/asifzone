@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, Download, RotateCcw, XCircle, ArchiveX, Copy, FileSpreadsheet } from "lucide-react";
+import { Plus, Pencil, Trash2, Download, RotateCcw, XCircle, ArchiveX, Copy, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Select } from "@/components/ui/select";
 import { ProductStatusBadge, PRODUCT_STATUS_LABELS } from "@/components/admin/product-status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -27,7 +27,7 @@ import { ApiError } from "@/lib/api-client";
 import { DuplicateProductDialog } from "@/components/admin/duplicate-product-dialog";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { adminCan } from "@/lib/auth";
-import { CLASSIC_PRODUCT_NEW_HREF, PRODUCT_NEW_HREF, productEditHref } from "@/lib/admin-routes";
+import { PRODUCT_NEW_HREF, productEditHref } from "@/lib/admin-routes";
 import { formatPrice } from "@/lib/format";
 
 function ProductRowCardSkeleton({ first = false }: { first?: boolean }) {
@@ -259,9 +259,6 @@ export default function ProductsPage() {
                 <FileSpreadsheet size={16} /> Import / export
               </Button>
             </Link>
-            <Link href={CLASSIC_PRODUCT_NEW_HREF} className="text-xs text-ink-500 underline hover:text-ink-900">
-              Classic editor
-            </Link>
             <Link href={PRODUCT_NEW_HREF}>
               <Button variant="brass">
                 <Plus size={16} /> Add product
@@ -294,18 +291,15 @@ export default function ProductsPage() {
       </div>
 
       <div className="mb-4 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Search size={16} className="text-ink-400" />
-          <Input
-            placeholder="Search products…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="max-w-xs"
-          />
-        </div>
+        <SearchInput
+          wrapperClassName="w-full max-w-xs"
+          placeholder="Search products…"
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
+        />
         <div className="flex flex-wrap items-center gap-2">
           <Select
             className="h-9 w-40"
@@ -407,8 +401,8 @@ export default function ProductsPage() {
           Orders/Customers admin pages. */}
       <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
         <HScrollShadow className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="w-10 px-4 py-3">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />

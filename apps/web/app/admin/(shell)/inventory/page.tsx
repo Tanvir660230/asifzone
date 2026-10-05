@@ -135,8 +135,8 @@ export default function InventoryPage() {
           admin list pages. */}
       <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Product</th>

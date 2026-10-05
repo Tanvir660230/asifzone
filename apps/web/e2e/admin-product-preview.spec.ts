@@ -1,3 +1,4 @@
+import { openBuilderWithPreview } from "./support/product-builder";
 import { test, expect, type Page, type FrameLocator } from "@playwright/test";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
@@ -35,7 +36,7 @@ test.describe("product wizard: live preview", () => {
 
   test("1. the preview shows unsaved values as they're typed, then the options chosen, and the draft gets created", async ({ page }) => {
     await login(page);
-    await page.goto("/admin/products/wizard/new");
+    await openBuilderWithPreview(page, "/admin/products/new");
     await page.getByLabel("Product name").fill(PRODUCT);
     await page.getByLabel("Category").selectOption({ index: 1 });
     await page.getByLabel("Product type").selectOption({ label: "Clothing" });
@@ -58,14 +59,14 @@ test.describe("product wizard: live preview", () => {
     await shot(page, "02-new-variants");
 
     await page.getByRole("button", { name: "Continue" }).click(); // creates the draft
-    await expect(page).toHaveURL(/\/admin\/products\/wizard\/[^/]+\/edit/);
-    productId = page.url().match(/wizard\/([^/]+)\/edit/)![1]!;
+    await expect(page).toHaveURL(/\/admin\/products\/[^/]+\/edit/);
+    productId = page.url().match(/products\/([^/]+)\/edit/)![1]!;
     await expect(frame(page).getByRole("heading", { level: 1, name: PRODUCT })).toBeVisible();
   });
 
   test("2. device modes render at the device's real width, so the storefront's own layout changes", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${productId}/edit`);
+    await openBuilderWithPreview(page, `/admin/products/${productId}/edit`);
     const h1 = frame(page).getByRole("heading", { level: 1, name: PRODUCT });
     await expect(h1).toBeVisible();
 
@@ -86,7 +87,7 @@ test.describe("product wizard: live preview", () => {
 
   test("3. listing, search, social and Google surfaces — and they follow the SEO step as it's typed", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${productId}/edit`);
+    await openBuilderWithPreview(page, `/admin/products/${productId}/edit`);
 
     await page.getByTestId("preview-mode-tab-listing").click();
     await expect(frame(page).getByTestId("preview-mode-listing").getByRole("heading", { name: PRODUCT })).toBeVisible();
@@ -114,7 +115,7 @@ test.describe("product wizard: live preview", () => {
 
   test("4. sections switched off disappear from the preview: care, size guide, FAQ, reviews", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${productId}/edit`);
+    await openBuilderWithPreview(page, `/admin/products/${productId}/edit`);
     await expect(frame(page).getByRole("heading", { level: 1, name: PRODUCT })).toBeVisible();
 
     // Clothing's template brings a care guide and a size guide; reviews are a page block.
@@ -142,7 +143,7 @@ test.describe("product wizard: live preview", () => {
 
   test("5. admin-authored HTML is sanitized in the preview (browser DOMPurify), not just on the server page", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${productId}/edit`);
+    await openBuilderWithPreview(page, `/admin/products/${productId}/edit`);
     // Write a description that would run script if rendered raw — straight through the API, as a stored value would be.
     const status = await page.evaluate(
       async ({ api, id }) => {
@@ -168,7 +169,7 @@ test.describe("product wizard: live preview", () => {
 
   test("6. links and cart actions inside the preview don't navigate it away or touch the admin's own cart", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${productId}/edit`);
+    await openBuilderWithPreview(page, `/admin/products/${productId}/edit`);
     const h1 = frame(page).getByRole("heading", { level: 1, name: PRODUCT });
     await expect(h1).toBeVisible();
     await frame(page).getByRole("link", { name: "Home" }).click();

@@ -8,7 +8,7 @@ export function SlowMovingTable({ products }: { products: SlowMovingProduct[] })
   }
 
   return (
-    <table className="w-full text-sm">
+    <table className="ui-table">
       <thead className="text-left text-xs uppercase tracking-wide text-ink-500">
         <tr>
           <th className="pb-2">Product</th>

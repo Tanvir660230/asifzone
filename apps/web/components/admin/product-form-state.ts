@@ -59,8 +59,8 @@ function setNestedError(target: Record<string, any>, path: (string | number)[], 
 }
 
 /** zod checks the payload's shape; the product type's template (fetched, so it can be data) adds the rules
- * zod can't know — required attributes, option lists, per-type variant dimensions. Shared by the tabbed
- * ProductForm and the step-by-step wizard so a product is validated the same way in both. */
+ * zod can't know — required attributes, option lists, per-type variant dimensions. Every Product Builder save
+ * path validates with it. */
 export function buildResolver(getConfig: () => ResolvedTypeConfig | undefined): Resolver<CreateProductInput> {
   const zod = zodResolver(createProductSchema);
   return async (values, context, options) => {
@@ -174,11 +174,11 @@ export interface UseProductFormStateOptions {
   stagedImages?: StagedImage[];
 }
 
-/** Everything a product editor UI (the tabbed ProductForm, or the step-by-step wizard) needs: the
+/** Everything the Product Builder needs about the product being edited: the
  * react-hook-form instance (config-driven validation via buildResolver), the fetched type/attribute/
  * category reference data, the currently-selected type's resolved config, this product's resolved page
  * sections, and the live completeness score — computed exactly the way the server gates publishing.
- * One source of truth so the two UIs can never drift on what's required or what's complete. */
+ * One source of truth for what's required and what's complete. */
 export function useProductFormState({ initial, stagedImages }: UseProductFormStateOptions) {
   const { data: typesData } = useQuery({ queryKey: ["catalog-types", "all"], queryFn: () => catalogApi.listTypes(true) });
   const types = useMemo(() => typesData?.types ?? [], [typesData]);

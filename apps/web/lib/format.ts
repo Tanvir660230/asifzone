@@ -100,6 +100,12 @@ export function formatDateShort(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Moderation-style status (return requests, reviews) → shared Badge variant. One mapping for every
+ * PENDING / APPROVED / REJECTED workflow instead of a color map per page. */
+export function approvalStatusBadgeVariant(status: "PENDING" | "APPROVED" | "REJECTED"): "warning" | "success" | "danger" {
+  return status === "APPROVED" ? "success" : status === "REJECTED" ? "danger" : "warning";
+}
+
 // Order status → color, one source of truth for every screen that shows an order's status
 // (admin orders list/detail, account orders list/detail) — previously the admin orders list
 // defined this mapping locally and the two account pages showed status as plain uncolored

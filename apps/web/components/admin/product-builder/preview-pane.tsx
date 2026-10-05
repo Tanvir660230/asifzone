@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Monitor, Smartphone, Tablet } from "lucide-react";
 import type { Product } from "@clothing-brand/shared";
-import { cn } from "@/lib/utils";
+import { SegmentedControl } from "@/components/ui/tabs";
 import {
   PREVIEW_DEVICE_WIDTH,
   PREVIEW_FRAME_PATH,
@@ -72,48 +72,26 @@ export function PreviewPane({ product, height }: { product: Product; height: num
   const scale = boxWidth > 0 ? Math.min(1, boxWidth / deviceWidth) : 1;
 
   return (
-    <div className="flex flex-col gap-3" data-testid="preview-pane">
+    <div className="flex flex-col gap-3 rounded-2xl border border-line-subtle bg-surface-muted/70 p-3 sm:p-4" data-testid="preview-pane">
+      <p className="px-1 text-caption font-semibold uppercase text-fg-subtle">Live preview</p>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-1" role="tablist" aria-label="Preview surface">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              role="tab"
-              aria-selected={mode === m.id}
-              onClick={() => setMode(m.id)}
-              data-testid={`preview-mode-tab-${m.id}`}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-150 ease-smooth",
-                mode === m.id ? "bg-ink-900 text-cream-50" : "text-ink-500 hover:bg-ink-50 hover:text-ink-900",
-              )}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1" aria-label="Device">
-          {DEVICES.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              aria-label={label}
-              aria-pressed={device === id}
-              onClick={() => setDevice(id)}
-              data-testid={`preview-device-${id}`}
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-md transition-colors duration-150 ease-smooth",
-                device === id ? "bg-ink-900 text-cream-50" : "text-ink-400 hover:bg-ink-50 hover:text-ink-900",
-              )}
-            >
-              <Icon size={14} />
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="Preview surface"
+          options={MODES.map((m) => ({ value: m.id, label: m.label, testId: `preview-mode-tab-${m.id}` }))}
+          value={mode}
+          onChange={setMode}
+          className="max-w-full overflow-x-auto"
+        />
+        <SegmentedControl
+          aria-label="Device"
+          options={DEVICES.map(({ id, label, icon: Icon }) => ({ value: id, label: <Icon size={14} aria-hidden="true" />, ariaLabel: label, testId: `preview-device-${id}` }))}
+          value={device}
+          onChange={setDevice}
+        />
       </div>
 
       <div ref={boxRef} className="w-full">
-        <div className="mx-auto overflow-hidden rounded-xl border border-ink-100 bg-white" style={{ width: deviceWidth * scale, height }}>
+        <div className="mx-auto overflow-hidden rounded-xl border border-line-subtle bg-white shadow-glass" style={{ width: deviceWidth * scale, height }}>
           <iframe
             ref={frameRef}
             src={PREVIEW_FRAME_PATH}
@@ -124,7 +102,7 @@ export function PreviewPane({ product, height }: { product: Product; height: num
           />
         </div>
       </div>
-      <p className="text-[11px] text-ink-400">
+      <p className="px-1 text-[11px] text-fg-subtle">
         {deviceWidth}px wide{scale < 1 ? `, shown at ${Math.round(scale * 100)}%` : ""} · updates as you type, before anything is saved
       </p>
     </div>

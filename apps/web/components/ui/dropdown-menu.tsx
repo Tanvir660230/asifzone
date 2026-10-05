@@ -38,12 +38,9 @@ export function DropdownMenu({ open, onClose, anchorRef, items, align = "end" }:
               item.onClick();
               onClose();
             }}
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150 ease-smooth disabled:pointer-events-none disabled:opacity-40",
-              item.destructive ? "text-danger-600 hover:bg-danger-50" : "text-ink-700 hover:bg-ink-50",
-            )}
+            className={cn("ui-menu-item", item.destructive && "text-danger-600 hover:bg-danger-50 focus-visible:bg-danger-50")}
           >
-            {Icon && <Icon size={15} className={item.destructive ? "text-danger-500" : "text-ink-400"} />}
+            {Icon && <Icon size={15} className={item.destructive ? "text-danger-500" : "text-fg-subtle"} aria-hidden="true" />}
             {item.label}
           </button>
         );

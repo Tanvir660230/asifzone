@@ -128,7 +128,7 @@ export function BannerForm({ banner, submitLabel, onSubmit, onCancel }: BannerFo
           className="hidden"
           onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
         />
-        {errors.imageUrl && <p className="mt-1 text-xs text-danger-600">{errors.imageUrl.message}</p>}
+        {errors.imageUrl && <p className="ui-field-error">{errors.imageUrl.message}</p>}
       </div>
       <div>
         <Label>Mobile image (optional)</Label>

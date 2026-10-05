@@ -166,7 +166,7 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
             <div>
               <Label htmlFor="code">Code</Label>
               <Input id="code" placeholder="EID2026" {...register("code")} />
-              {errors.code && <p className="mt-1 text-xs text-danger-600">{errors.code.message}</p>}
+              {errors.code && <p className="ui-field-error">{errors.code.message}</p>}
             </div>
             <div>
               <Label htmlFor="type">Type</Label>
@@ -182,7 +182,7 @@ export function CouponForm({ open, onClose, title, submitLabel, seed, onSubmit }
               <div>
                 <Label htmlFor="value">{type === "PERCENTAGE" ? "Percentage (%)" : `Amount (${storeCurrencySymbol()})`}</Label>
                 <Input id="value" type="number" step="0.01" {...register("value", { valueAsNumber: true })} />
-                {errors.value && <p className="mt-1 text-xs text-danger-600">{errors.value.message}</p>}
+                {errors.value && <p className="ui-field-error">{errors.value.message}</p>}
               </div>
               <div>
                 <Label htmlFor="maxDiscountAmount">Max discount cap (optional)</Label>

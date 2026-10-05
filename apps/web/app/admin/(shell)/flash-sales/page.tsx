@@ -113,8 +113,8 @@ export default function FlashSalesPage() {
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Status</th>
@@ -285,7 +285,7 @@ function FlashSaleItemsManager({
         <p className="mb-2 text-xs uppercase tracking-wide text-ink-500">Add product</p>
         {error && <p className="mb-2 text-xs text-danger-600">{error}</p>}
         <ProductPicker selected={selectedProduct ? [selectedProduct] : []} onChange={pickProduct} />
-        {errors.productId && <p className="mt-1 text-xs text-danger-600">Select a product</p>}
+        {errors.productId && <p className="ui-field-error">Select a product</p>}
 
         <div className="mt-3 grid grid-cols-[auto_auto_auto] items-start gap-2">
           <Select {...register("discountType")} className="w-28">
@@ -294,7 +294,7 @@ function FlashSaleItemsManager({
           </Select>
           <div>
             <Input type="number" step="any" placeholder="Value" {...register("discountValue", { valueAsNumber: true })} className="w-24" />
-            {errors.discountValue && <p className="mt-1 text-xs text-danger-600">Required</p>}
+            {errors.discountValue && <p className="ui-field-error">Required</p>}
           </div>
           <Button type="submit" variant="outline" disabled={isSubmitting}>
             Add

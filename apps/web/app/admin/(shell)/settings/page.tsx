@@ -202,7 +202,7 @@ function LogoUploadField({
         className="hidden"
         onChange={(e) => handleSelected(e.target.files?.[0] ?? null)}
       />
-      {error && <p className="mt-1 text-xs text-danger-600">{error}</p>}
+      {error && <p className="ui-field-error">{error}</p>}
       <p className="mt-1 text-xs text-ink-400">{helpText}</p>
     </div>
   );
@@ -322,7 +322,7 @@ export default function SettingsPage() {
             <div>
               <Label htmlFor="storeName">Store name</Label>
               <Input id="storeName" {...register("storeName")} />
-              {errors.storeName && <p className="mt-1 text-xs text-danger-600">{errors.storeName.message}</p>}
+              {errors.storeName && <p className="ui-field-error">{errors.storeName.message}</p>}
             </div>
             <div>
               <Label htmlFor="currency">Currency code</Label>
@@ -482,7 +482,7 @@ export default function SettingsPage() {
             <div>
               <Label htmlFor="shippingFeeDhaka">Shipping fee — inside Dhaka district ({storeCurrencyCode()})</Label>
               <Input id="shippingFeeDhaka" type="number" step="0.01" {...register("shippingFeeDhaka", { valueAsNumber: true })} />
-              {errors.shippingFeeDhaka && <p className="mt-1 text-xs text-danger-600">{errors.shippingFeeDhaka.message}</p>}
+              {errors.shippingFeeDhaka && <p className="ui-field-error">{errors.shippingFeeDhaka.message}</p>}
             </div>
             <div>
               <Label htmlFor="shippingFeeOutsideDhaka">Shipping fee — outside Dhaka ({storeCurrencyCode()})</Label>
@@ -493,7 +493,7 @@ export default function SettingsPage() {
                 {...register("shippingFeeOutsideDhaka", { valueAsNumber: true })}
               />
               {errors.shippingFeeOutsideDhaka && (
-                <p className="mt-1 text-xs text-danger-600">{errors.shippingFeeOutsideDhaka.message}</p>
+                <p className="ui-field-error">{errors.shippingFeeOutsideDhaka.message}</p>
               )}
             </div>
             <div>
@@ -505,7 +505,7 @@ export default function SettingsPage() {
                 {...register("courierReturnFeeDhaka", { valueAsNumber: true })}
               />
               {errors.courierReturnFeeDhaka && (
-                <p className="mt-1 text-xs text-danger-600">{errors.courierReturnFeeDhaka.message}</p>
+                <p className="ui-field-error">{errors.courierReturnFeeDhaka.message}</p>
               )}
               <p className="mt-1 text-xs text-ink-400">
                 Estimated round-trip cost when a booked order is cancelled or partially returned — Steadfast doesn&apos;t
@@ -521,7 +521,7 @@ export default function SettingsPage() {
                 {...register("courierReturnFeeOutsideDhaka", { valueAsNumber: true })}
               />
               {errors.courierReturnFeeOutsideDhaka && (
-                <p className="mt-1 text-xs text-danger-600">{errors.courierReturnFeeOutsideDhaka.message}</p>
+                <p className="ui-field-error">{errors.courierReturnFeeOutsideDhaka.message}</p>
               )}
             </div>
             <div>
@@ -534,7 +534,7 @@ export default function SettingsPage() {
                 {...register("rewardPointsPerCurrency", { valueAsNumber: true })}
               />
               {errors.rewardPointsPerCurrency && (
-                <p className="mt-1 text-xs text-danger-600">{errors.rewardPointsPerCurrency.message}</p>
+                <p className="ui-field-error">{errors.rewardPointsPerCurrency.message}</p>
               )}
             </div>
             <label className="flex items-center gap-2 pt-6 text-sm text-ink-700">
@@ -550,7 +550,7 @@ export default function SettingsPage() {
                 disabled={!taxEnabled}
                 {...register("defaultTaxRate", { valueAsNumber: true })}
               />
-              {errors.defaultTaxRate && <p className="mt-1 text-xs text-danger-600">{errors.defaultTaxRate.message}</p>}
+              {errors.defaultTaxRate && <p className="ui-field-error">{errors.defaultTaxRate.message}</p>}
             </div>
             {/* D10: stored on the central tax config (TaxSetting), applied by the tax engine — shipping is VAT-inclusive. */}
             <label className="flex items-center gap-2 text-sm text-ink-700">

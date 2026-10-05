@@ -105,7 +105,7 @@ export function SearchableSelect({
           autoComplete={autoComplete}
           disabled={disabled}
           className={cn(
-            "h-10 w-full rounded-lg border border-ink-200 bg-cream-50 px-3 pr-9 text-sm text-ink-900 transition-all duration-200 ease-smooth placeholder:text-ink-400 focus:border-brass-400 focus:shadow-glow disabled:opacity-50",
+            "ui-control pr-9",
             className,
           )}
           placeholder={placeholder}
@@ -124,7 +124,7 @@ export function SearchableSelect({
         />
         <ChevronDown
           className={cn(
-            "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400 transition-transform duration-200",
+            "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-subtle transition-transform duration-base ease-smooth",
             open && "rotate-180",
           )}
         />
@@ -133,7 +133,7 @@ export function SearchableSelect({
         <ul
           id={id ? `${id}-listbox` : undefined}
           role="listbox"
-          className="animate-fade-in absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-ink-200 bg-white py-1 shadow-lg"
+          className="ui-floating absolute z-overlay mt-1.5 max-h-60 w-full overflow-auto p-1 animate-pop-in"
         >
           {filtered.length === 0 && <li className="px-3 py-2 text-sm text-ink-400">{emptyText}</li>}
           {filtered.map((option, index) => (
@@ -150,12 +150,12 @@ export function SearchableSelect({
               }}
               onMouseEnter={() => setHighlighted(index)}
               className={cn(
-                "flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-ink-900",
-                index === highlighted && "bg-cream-200",
+                "flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-fg",
+                index === highlighted && "bg-ink-900/[0.05]",
               )}
             >
               {option}
-              {option === value && <Check className="h-4 w-4 text-brass-500" />}
+              {option === value && <Check className="h-4 w-4 text-fg" aria-hidden="true" />}
             </li>
           ))}
         </ul>

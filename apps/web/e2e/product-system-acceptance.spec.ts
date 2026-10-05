@@ -8,6 +8,7 @@
  * Test 6 (existing products) is `storefront-existing-products.spec.ts`; it is not repeated here.
  */
 import { test, expect, type Page } from "@playwright/test";
+import { continueTo, createDraft, goToStep, stepChip } from "./support/product-builder";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -64,10 +65,10 @@ async function createProduct(page: Page, p: ProductSpec) {
     else await control.fill(value);
   }
 
-  await page.getByRole("button", { name: "Pricing & Inventory" }).click();
+  await continueTo(page, "pricing");
   await page.getByLabel("Base price (BDT)").fill(String(p.price));
 
-  await page.getByRole("button", { name: "Variants", exact: true }).click();
+  await continueTo(page, "variants");
   for (const [i, v] of p.variants.entries()) {
     if (i > 0) await page.getByRole("button", { name: "Add variant manually" }).click();
     await page.locator(`input[name="variants.${i}.size"]`).fill(v.size);
@@ -77,12 +78,11 @@ async function createProduct(page: Page, p: ProductSpec) {
     await page.getByRole("button", { name: "Generate" }).nth(i).click();
     await expect(page.locator(`input[name="variants.${i}.sku"]`)).toHaveValue(/.+/);
   }
-  await page.getByRole("button", { name: "Create product" }).click();
-  await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
-  return new URL(page.url()).pathname;
+  return createDraft(page);
 }
 
 async function uploadImages(page: Page, names: string[]) {
+  await goToStep(page, "media");
   await page.locator('input[type="file"]').first().setInputFiles(names.map((name) => ({ name, mimeType: "image/png", buffer: PNG })));
   await expect(page.getByLabel("Image caption")).toHaveCount(names.length, { timeout: 30_000 });
 }
@@ -97,7 +97,7 @@ async function publish(page: Page) {
 }
 
 const slugFrom = async (page: Page) => {
-  await page.getByRole("button", { name: "SEO", exact: true }).click();
+  await goToStep(page, "seo");
   return page.getByLabel("URL slug").inputValue();
 };
 
@@ -209,7 +209,6 @@ test.describe("product management system — the brief's acceptance tests", () =
     for (const label of ["Material", "Fabric", "Fit", "Collar", "Sleeve", "Pattern", EMBROIDERY]) await expect(page.getByLabel(label, { exact: true }).first()).toBeVisible();
     await expect(page.getByLabel("Closure Type")).toHaveCount(0);
     await expect(page.getByLabel("Movement")).toHaveCount(0);
-    await expect(page.getByText("Show Size Guide on Storefront")).toBeVisible();
 
     edit.panjabi = await createProduct(page, {
       name: N.panjabi,
@@ -223,8 +222,10 @@ test.describe("product management system — the brief's acceptance tests", () =
         { size: "L", color: "White", stock: 8, price: 1400 },
       ],
     });
+    // Panjabi's template has a size guide, so the product has a Size Guide step.
+    await expect(stepChip(page, "sizeGuide")).toBeVisible();
     // Variant 1 and 2 got distinct generated SKUs from the Panjabi code.
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await goToStep(page, "variants");
     const skus = await Promise.all([0, 1, 2, 3].map((i) => page.locator(`input[name="variants.${i}.sku"]`).inputValue()));
     expect(new Set(skus).size).toBe(4);
     expect(skus.every((s) => s.includes("PNJ"))).toBe(true);
@@ -235,19 +236,19 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.goto(edit.panjabi);
     await uploadImages(page, ["black-1.png", "black-2.png", "white-1.png"]);
 
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await goToStep(page, "variants");
     for (const [n, images] of [[1, ["black-1", "black-2"]], [2, ["black-1", "black-2"]], [3, ["white-1"]], [4, ["white-1"]]] as const) {
       const gallery = page.getByRole("group", { name: `Variant ${n} gallery` });
       for (const img of images) await gallery.getByRole("button", { name: new RegExp(`${img}\\.png`) }).click();
     }
 
     // Test 3: assign a care preset at product level.
-    await page.getByRole("button", { name: "Care & Material" }).click();
+    await goToStep(page, "care");
     await page.getByLabel("Care guide").selectOption({ label: CARE_A });
     await expect(page.getByTestId("care-preview")).toContainText("Store hanging");
 
     // Test 8: SEO.
-    await page.getByRole("button", { name: "SEO", exact: true }).click();
+    await goToStep(page, "seo");
     await page.getByLabel("URL slug").fill(SLUG.panjabi);
     await page.getByLabel("SEO title").fill(`Embroidered Panjabi ${RUN} | Asif Zone`);
     await page.getByLabel("Meta description").fill(`A hand-embroidered black or white panjabi (${RUN}).`);
@@ -258,7 +259,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     await page.getByLabel("Social image URL").fill("https://example.com/og.png");
 
     // Test 7 (set-up half): page content — FAQ, highlights, and a section order/visibility change.
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await page.getByLabel("Highlights visibility").selectOption("true");
     await page.getByLabel("Highlights text").fill("Hand embroidered collar\nBreathable fine cotton");
     await page.getByLabel("Shipping & returns visibility").selectOption("false");
@@ -287,7 +288,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     });
     await uploadImages(page, ["cap.png"]);
     // Test 2: product-level override — this cap says 53–55 becomes 52–54, in its own table, without touching the preset.
-    await page.getByRole("button", { name: "Basic Info" }).click();
+    await goToStep(page, "sizeGuide");
     await expect(page.getByText(/Using the .* size guide from Cap/)).toBeVisible();
     await page.locator('input[value="53–55"]').first().fill("52–54");
     await page.getByTestId("product-status-panel").getByRole("button", { name: "Save draft" }).click();
@@ -308,7 +309,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     });
     await uploadImages(page, ["shoe.png"]);
     // Test 3: a product-specific care override (not a preset).
-    await page.getByRole("button", { name: "Care & Material" }).click();
+    await goToStep(page, "care");
     await page.getByLabel("Write custom care steps for this product").check();
     await page.getByLabel("Care steps (one per line)").fill("Use a shoe tree\nPolish monthly");
     await page.getByTestId("product-status-panel").getByRole("button", { name: "Save draft" }).click();
@@ -324,14 +325,14 @@ test.describe("product management system — the brief's acceptance tests", () =
     for (const label of ["Movement", "Dial Size", "Case Material", "Strap Material", "Water Resistance", "Glass", "Warranty"]) {
       await expect(page.getByLabel(label, { exact: true }).first()).toBeVisible();
     }
-    await expect(page.getByText("Show Size Guide on Storefront")).toHaveCount(0);
     edit.watch = await createProduct(page, {
       name: N.watch, type: "Watch", price: 5200,
       fields: [["Dial Size", "40"], ["Case Material", "Stainless Steel"], ["Strap Material", "Genuine Leather"], ["Glass", "Sapphire Crystal"], ["Water Resistance", "50m"], ["Warranty", "2 years"]],
       variants: [{ size: "40mm", color: "Silver", stock: 3 }],
     });
+    await expect(stepChip(page, "sizeGuide")).toHaveCount(0);
     await uploadImages(page, ["watch.png"]);
-    await page.getByRole("button", { name: "Care & Material" }).click();
+    await goToStep(page, "care");
     await page.getByLabel("Care guide").selectOption({ label: CARE_B });
     await page.getByTestId("product-status-panel").getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByText("Product saved")).toBeVisible();
@@ -516,7 +517,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     const payload = `<img src=x onerror="window.__xss = 'img'"><script>window.__xss = 'script'</script><a href="javascript:window.__xss='link'">click</a>Safe words`;
     await login(page);
     await page.goto(edit.panjabi);
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await page.getByLabel("Highlights text").fill(payload);
     await page.getByLabel("Answer 1", { exact: true }).fill(payload);
     await page.getByTestId("product-status-panel").getByRole("button", { name: /^Save/ }).click();
@@ -541,7 +542,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     expect(await page.locator("main script").filter({ hasText: "__xss" }).count()).toBe(0);
     // The admin's own list and editor show the raw text as text, too (React escapes it).
     await page.goto(`${edit.panjabi}`);
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await expect(page.getByLabel("Highlights text")).toHaveValue(payload);
 
     // The live page also writes structured data (JSON-LD) from the same text, which the preview does not. A "</script>" in a FAQ
@@ -550,7 +551,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     const fresh = await createProduct(page, { name: `E2E Accept XSS ${RUN}`, type: "Cap", price: 300, fields: [], variants: [{ size: "M", color: "Navy", stock: 2 }] });
     void fresh;
     await uploadImages(page, ["xss.png"]);
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await page.getByRole("button", { name: "Add question" }).click();
     await page.getByLabel("Question 1", { exact: true }).fill("Is it safe?");
     await page.getByLabel("Answer 1", { exact: true }).fill(payload);

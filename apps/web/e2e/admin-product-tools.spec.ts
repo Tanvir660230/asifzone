@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
+import { continueTo, createDraft, goToStep } from "./support/product-builder";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -45,10 +46,10 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     await page.getByLabel("Product name").fill(SOURCE);
     await page.getByLabel("Category").selectOption({ index: 1 });
     await page.getByLabel("Short description").fill("The original product for the tools spec.");
-    await page.getByRole("button", { name: "Pricing & Inventory" }).click();
+    await continueTo(page, "pricing");
     await page.getByLabel("Base price (BDT)").fill("1800");
 
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await continueTo(page, "variants");
     await page.getByPlaceholder("SKU-001").first().fill(SKU_A);
     await page.getByPlaceholder(/e\.g\. S, M, L/).first().fill("M");
     await page.locator('input[name="variants.0.color"]').fill("Black");
@@ -58,21 +59,20 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     await page.locator('input[name="variants.1.size"]').fill("L");
     await page.locator('input[name="variants.1.color"]').fill("Black");
     await page.locator('input[name="variants.1.stock"]').fill("6");
-    await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
-    editUrl = new URL(page.url()).pathname;
+    editUrl = await createDraft(page);
 
+    await goToStep(page, "media");
     await page.locator('input[type="file"]').first().setInputFiles({ name: "src.png", mimeType: "image/png", buffer: PNG });
     await expect(page.getByLabel("Image caption")).toHaveCount(1, { timeout: 30_000 });
 
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await page.getByRole("button", { name: "Add question" }).click();
     await page.getByLabel("Question 1", { exact: true }).fill("Is it the original?");
     await page.getByLabel("Answer 1", { exact: true }).fill("Yes.");
     await page.getByTestId("product-status-panel").getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByText("Product saved")).toBeVisible();
 
-    await page.getByRole("button", { name: "SEO", exact: true }).click();
+    await goToStep(page, "seo");
     slug = await page.getByLabel("URL slug").inputValue();
     expect(slug).toContain("e2e-tools-source");
   });
@@ -101,7 +101,7 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     await page.waitForURL((url) => /\/admin\/products\/.+\/edit$/.test(url.pathname) && url.pathname !== editUrl); // the copy's page, not the source's
     await expect(page.getByLabel("Product name")).toHaveValue(`${SOURCE} (copy)`);
     await expect(page.getByTestId("product-status-panel")).toContainText("Draft");
-    await page.getByTestId("wizard-step-media").click(); // "Open the copy" goes to the step-by-step editor
+    await goToStep(page, "media");
     await expect(page.getByLabel("Image caption")).toHaveCount(1); // its own copy of the photo
 
     await page.getByTestId("wizard-step-variants").click();
@@ -143,7 +143,7 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
   test("4. the original is untouched and its history says it was duplicated; earlier events read in plain words", async ({ page }) => {
     await login(page);
     await page.goto(editUrl);
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await goToStep(page, "variants");
     await expect(page.locator('input[name="variants.0.sku"]')).toHaveValue(SKU_A);
     await expect(page.locator('input[name="variants.0.stock"]')).toHaveValue("8");
     await page.getByRole("button", { name: "History" }).click();
@@ -208,13 +208,14 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     // The source: price and stock changed, everything else (image, FAQ, name) kept.
     await page.goto(editUrl);
     await expect(page.getByLabel("Product name")).toHaveValue(SOURCE);
-    await page.getByRole("button", { name: "Pricing & Inventory" }).click();
+    await goToStep(page, "pricing");
     await expect(page.getByLabel("Base price (BDT)")).toHaveValue("2100");
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await goToStep(page, "variants");
     await expect(page.locator('input[name="variants.0.stock"]')).toHaveValue("11");
     await expect(page.locator('input[name="variants.1.stock"]')).toHaveValue("6");
+    await goToStep(page, "media");
     await expect(page.getByLabel("Image caption")).toHaveCount(1);
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await expect(page.getByLabel("Question 1", { exact: true })).toHaveValue("Is it the original?");
     await page.getByRole("button", { name: "History" }).click();
     await expect(page.getByTestId("product-history")).toContainText("Price changed");

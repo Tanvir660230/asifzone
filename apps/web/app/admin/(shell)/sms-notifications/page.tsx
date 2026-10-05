@@ -147,7 +147,7 @@ export default function SmsNotificationsPage() {
                 {...register("adminAlertPhones")}
               />
               <p className="mt-1 text-xs text-ink-400">Comma-separated if you want more than one phone to receive the alert.</p>
-              {errors.adminAlertPhones && <p className="mt-1 text-xs text-danger-600">{errors.adminAlertPhones.message}</p>}
+              {errors.adminAlertPhones && <p className="ui-field-error">{errors.adminAlertPhones.message}</p>}
             </div>
           </div>
         </FormSection>
@@ -185,7 +185,7 @@ export default function SmsNotificationsPage() {
                   {...register(t.templateField)}
                 />
                 {errors[t.templateField] && (
-                  <p className="mt-1 text-xs text-danger-600">{errors[t.templateField]?.message}</p>
+                  <p className="ui-field-error">{errors[t.templateField]?.message}</p>
                 )}
               </div>
             ))}

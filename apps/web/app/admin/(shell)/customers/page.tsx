@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Search,
   XCircle,
   SlidersHorizontal,
   Users,
@@ -23,6 +22,7 @@ import {
 } from "lucide-react";
 import { BD_ALL_DISTRICTS, normalizeBdPhone, type CustomerTag } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -436,30 +436,15 @@ export default function CustomersPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-3 shadow-sm">
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative w-full sm:w-72">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-              <Input
-                placeholder="Search name, phone, email, order #…"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                className="pl-9 pr-8"
-              />
-              {search && (
-                <button
-                  onClick={() => {
-                    setSearch("");
-                    setPage(1);
-                  }}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-300 transition-colors hover:text-ink-600"
-                  aria-label="Clear search"
-                >
-                  <XCircle size={14} />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              wrapperClassName="w-full sm:w-72"
+              placeholder="Search name, phone, email, order #…"
+              value={search}
+              onChange={(value) => {
+                setSearch(value);
+                setPage(1);
+              }}
+            />
             <button
               onClick={() => setShowMoreFilters((v) => !v)}
               className={cn(
@@ -579,7 +564,7 @@ export default function CustomersPage() {
           sm and up: the table below. Below sm: a card list (below that). */}
       <div className="mt-4 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:block">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="ui-table">
             <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
               <tr>
                 <th className="w-10 px-4 py-3">

@@ -1,25 +1,28 @@
-/** Matches the shape actually exported by index.js — plain nested string records, the same shape
- * Tailwind's own `theme.extend` accepts for colors/boxShadow/etc. */
-type ColorScale = Record<string, string>;
+/** Mirrors the shape exported by index.js — plain records, the same shapes Tailwind's
+ * `theme.extend` accepts, plus the raw palette/motion values for JS consumers. */
+type Scale = Record<string, string>;
+type CubicBezier = [number, number, number, number];
 
 interface UiTokens {
-  colors: {
-    ink: ColorScale;
-    cream: ColorScale;
-    brass: ColorScale;
-    sale: ColorScale;
-    success: ColorScale;
-    warning: ColorScale;
-    danger: ColorScale;
-    info: ColorScale;
+  /** Raw hex values per scale — for places that genuinely need a literal color (e.g. canvas/SVG export). */
+  palette: Record<string, Scale>;
+  /** Semantic role -> palette reference ("canvas" -> "cream-100"). */
+  semantic: Record<string, string>;
+  /** `:root` custom properties: `--color-<scale>-<step>` (RGB channels) and `--color-<role>`. */
+  cssVariables: Record<string, string>;
+  colors: Record<string, Scale>;
+  fontFamily: { sans: string[]; display: string[] };
+  fontSize: Record<string, [string, { lineHeight: string; letterSpacing?: string }]>;
+  borderRadius: Scale;
+  boxShadow: Scale;
+  zIndex: Scale;
+  motion: {
+    duration: { instant: number; fast: number; base: number; slow: number; slower: number };
+    easing: { smooth: CubicBezier; standard: CubicBezier; exit: CubicBezier };
+    spring: { stiffness: number; damping: number; mass: number };
   };
-  fontFamily: {
-    sans: string[];
-    display: string[];
-  };
-  borderRadius: Record<string, string>;
-  boxShadow: Record<string, string>;
-  transitionTimingFunction: Record<string, string>;
+  transitionTimingFunction: Scale;
+  transitionDuration: Scale;
 }
 
 declare const tokens: UiTokens;

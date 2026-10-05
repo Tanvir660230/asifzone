@@ -117,8 +117,8 @@ export default function AdminFeedbackPage() {
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">From</th>
                 <th className="px-4 py-3">Subject</th>

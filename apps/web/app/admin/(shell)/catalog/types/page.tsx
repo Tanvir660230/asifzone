@@ -122,8 +122,8 @@ export default function ProductTypesPage() {
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="px-4 py-3">Type</th>
               <th className="hidden px-4 py-3 sm:table-cell">Template</th>

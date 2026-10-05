@@ -58,7 +58,7 @@ export function DuplicateProductDialog({ product, onClose }: DuplicateProductDia
             Brought over: {Object.entries(result.copied).map(([k, n]) => `${n} ${k}`).join(", ") || "the basics"}.
           </p>
           {result.warnings.length > 0 && (
-            <ul className="list-disc space-y-1 rounded-lg bg-brass-50 p-3 pl-7 text-sm text-ink-800" data-testid="duplicate-warnings">
+            <ul className="list-disc space-y-1 rounded-lg border border-warning-200 bg-warning-50 p-3 pl-7 text-sm text-ink-800" data-testid="duplicate-warnings">
               {result.warnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}

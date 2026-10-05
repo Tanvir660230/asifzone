@@ -160,8 +160,8 @@ export default function CampaignsPage() {
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Channel</th>
@@ -238,7 +238,7 @@ export default function CampaignsPage() {
           <div>
             <Label htmlFor="name">Name</Label>
             <Input id="name" placeholder="August restock announcement" {...register("name")} />
-            {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+            {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -285,7 +285,7 @@ export default function CampaignsPage() {
                 {...register("body")}
               />
             )}
-            {errors.body && <p className="mt-1 text-xs text-danger-600">{errors.body.message}</p>}
+            {errors.body && <p className="ui-field-error">{errors.body.message}</p>}
           </div>
 
           {!editing && (

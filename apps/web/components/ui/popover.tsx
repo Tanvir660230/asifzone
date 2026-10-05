@@ -89,7 +89,7 @@ export function Popover({ open, onClose, anchorRef, align = "start", className, 
       tabIndex={-1}
       style={{ position: "fixed", top: style?.top ?? -9999, left: style?.left ?? -9999 }}
       className={cn(
-        "z-50 max-h-[70vh] overflow-y-auto rounded-xl border border-ink-100 bg-cream-50 shadow-floatLg animate-modal-in",
+        "ui-floating z-overlay max-h-[70vh] overflow-y-auto animate-pop-in",
         className,
       )}
       // Popovers routinely open on top of a Drawer/Modal, which has its own useFocusTrap Escape

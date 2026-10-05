@@ -114,7 +114,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
       <div>
         <Label htmlFor="name">Name</Label>
         <Input id="name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
 
       <div>
@@ -168,7 +168,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
           className="hidden"
           onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
         />
-        {uploadError && <p className="mt-1 text-xs text-danger-600">{uploadError}</p>}
+        {uploadError && <p className="ui-field-error">{uploadError}</p>}
       </div>
 
       <div>
@@ -210,7 +210,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
           className="hidden"
           onChange={(e) => handleBannerSelected(e.target.files?.[0] ?? null)}
         />
-        {bannerUploadError && <p className="mt-1 text-xs text-danger-600">{bannerUploadError}</p>}
+        {bannerUploadError && <p className="ui-field-error">{bannerUploadError}</p>}
       </div>
 
       <div className="grid grid-cols-2 gap-4">

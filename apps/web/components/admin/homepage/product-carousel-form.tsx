@@ -44,7 +44,7 @@ export function ProductCarouselForm({ initialConfig, onSubmit, onCancel, onValue
       <div>
         <Label htmlFor="heading">Heading</Label>
         <Input id="heading" {...register("heading")} />
-        {errors.heading && <p className="mt-1 text-xs text-danger-600">{errors.heading.message}</p>}
+        {errors.heading && <p className="ui-field-error">{errors.heading.message}</p>}
       </div>
       <div>
         <Label htmlFor="subtitle">Subtitle (optional)</Label>
@@ -69,7 +69,7 @@ export function ProductCarouselForm({ initialConfig, onSubmit, onCancel, onValue
               </option>
             ))}
           </Select>
-          {errors.category && <p className="mt-1 text-xs text-danger-600">{errors.category.message}</p>}
+          {errors.category && <p className="ui-field-error">{errors.category.message}</p>}
         </div>
       )}
       <div>

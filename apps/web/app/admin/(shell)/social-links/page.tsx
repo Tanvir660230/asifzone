@@ -183,7 +183,7 @@ export default function SocialLinksPage() {
             <div>
               <Label htmlFor="label">Label</Label>
               <Input id="label" placeholder="e.g. Pinterest" {...register("label")} />
-              {errors.label && <p className="mt-1 text-xs text-danger-600">{errors.label.message}</p>}
+              {errors.label && <p className="ui-field-error">{errors.label.message}</p>}
             </div>
           )}
           <div>
@@ -193,7 +193,7 @@ export default function SocialLinksPage() {
               placeholder={platform === "WHATSAPP" ? "https://wa.me/8801XXXXXXXXX" : "https://…"}
               {...register("url")}
             />
-            {errors.url && <p className="mt-1 text-xs text-danger-600">{errors.url.message}</p>}
+            {errors.url && <p className="ui-field-error">{errors.url.message}</p>}
           </div>
           <label className="flex items-center gap-2 text-sm text-ink-700">
             <Checkbox {...register("isActive")} defaultChecked />

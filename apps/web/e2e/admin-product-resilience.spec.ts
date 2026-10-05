@@ -43,7 +43,7 @@ test.describe("product wizard: upload failures, save failures, variant bulk tool
       return route.continue();
     });
 
-    await page.goto("/admin/products/wizard/new");
+    await page.goto("/admin/products/new");
     await page.getByLabel("Product name").fill(PRODUCT);
     await page.getByLabel("Category").selectOption({ index: 1 });
     await page.getByLabel("Product type").selectOption({ label: "Clothing" });
@@ -62,8 +62,8 @@ test.describe("product wizard: upload failures, save failures, variant bulk tool
     await page.getByRole("button", { name: "Continue" }).click(); // creates the draft
 
     // Lands on Media, where the two staged photos upload: one fails, one lands.
-    await expect(page).toHaveURL(/\/wizard\/[^/]+\/edit\?step=media/);
-    productId = page.url().match(/wizard\/([^/]+)\/edit/)![1]!;
+    await expect(page).toHaveURL(/\/products\/[^/]+\/edit\?step=media/);
+    productId = page.url().match(/products\/([^/]+)\/edit/)![1]!;
     await expect(stepChip(page, "media")).toHaveAttribute("aria-current", "step");
     const failed = page.locator('[data-testid="upload-item"][data-status="failed"]');
     await expect(failed).toHaveCount(1);
@@ -80,7 +80,7 @@ test.describe("product wizard: upload failures, save failures, variant bulk tool
 
   test("2. a failed save keeps what was typed, says so, and the next edit saves it", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${productId}/edit`);
+    await page.goto(`/admin/products/${productId}/edit`);
 
     await page.route(`**/api/products/${productId}`, (route) => (route.request().method() === "PATCH" ? route.abort("internetdisconnected") : route.continue()));
     await page.getByLabel("Short description").fill(`Written offline ${RUN}`);
@@ -96,7 +96,7 @@ test.describe("product wizard: upload failures, save failures, variant bulk tool
 
   test("3. duplicate SKUs are flagged while typing; bulk set stock/price; generate missing SKUs", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${productId}/edit?step=variants`);
+    await page.goto(`/admin/products/${productId}/edit?step=variants`);
     await expect(stepChip(page, "variants")).toHaveAttribute("aria-current", "step");
 
     await page.getByRole("button", { name: "Add variant manually" }).click();

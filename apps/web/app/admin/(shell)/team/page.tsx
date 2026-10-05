@@ -46,12 +46,12 @@ function InviteForm({ onSubmit, onCancel }: { onSubmit: (values: CreateAdminInvi
       <div>
         <Label htmlFor="name">Full name</Label>
         <Input id="name" autoComplete="name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
       <div>
         <Label htmlFor="email">Email</Label>
         <Input id="email" type="email" autoComplete="email" {...register("email")} />
-        {errors.email && <p className="mt-1 text-xs text-danger-600">{errors.email.message}</p>}
+        {errors.email && <p className="ui-field-error">{errors.email.message}</p>}
       </div>
       <div>
         <Label htmlFor="role">Role</Label>
@@ -98,12 +98,12 @@ function EditAdminForm({
       <div>
         <Label htmlFor="edit-name">Full name</Label>
         <Input id="edit-name" autoComplete="name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
       <div>
         <Label htmlFor="edit-email">Email</Label>
         <Input id="edit-email" type="email" autoComplete="email" {...register("email")} />
-        {errors.email && <p className="mt-1 text-xs text-danger-600">{errors.email.message}</p>}
+        {errors.email && <p className="ui-field-error">{errors.email.message}</p>}
       </div>
       <div>
         <Label htmlFor="edit-role">Role</Label>
@@ -142,7 +142,7 @@ function SetPasswordForm({
       <div>
         <Label htmlFor="new-password">New password</Label>
         <PasswordInput id="new-password" autoComplete="new-password" {...register("password")} />
-        {errors.password && <p className="mt-1 text-xs text-danger-600">{errors.password.message}</p>}
+        {errors.password && <p className="ui-field-error">{errors.password.message}</p>}
       </div>
       <p className="text-xs text-ink-500">They&rsquo;ll be signed out everywhere and need to log in again with this password.</p>
       <div className="flex justify-end gap-2 pt-2">
@@ -251,8 +251,8 @@ export default function AdminTeamPage() {
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
@@ -321,8 +321,8 @@ export default function AdminTeamPage() {
           <h2 className="mb-3 mt-8 font-display text-lg text-ink-900">Pending invites</h2>
           <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
             <HScrollShadow className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <table className="ui-table">
+                <thead className="ui-table-head">
                   <tr>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Email</th>

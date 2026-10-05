@@ -2,9 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Playfair Display's "&" is an ornate italic swash that reads as broken/off at heading sizes.
-   This unicode-range trick pulls just that one glyph from a plain system serif instead — every
-   other character in font-display headings still renders in Playfair, untouched. */
+/* Design-system recipe layer. Values come from @clothing-brand/ui-tokens (via Tailwind); this file
+   defines each shared UI "recipe" exactly once — glass surfaces, form controls, tables, skeletons,
+   overlays, menus — and the React primitives in components/ui apply these classes. Page code should
+   use the primitives (or, for plain repeated markup, the `ui-*` classes) rather than re-spelling
+   the utility strings. See docs/DESIGN_SYSTEM.md. */
+
+/* Playfair Display's "&" is an ornate italic swash that reads as broken at heading sizes. This
+   unicode-range trick pulls just that glyph from a plain system serif instead. */
 @font-face {
   font-family: "Ampersand Fix";
   src:
@@ -15,14 +20,8 @@
   unicode-range: U+0026;
 }
 
-body {
-  @apply bg-cream-100 text-ink-900 antialiased;
-}
-
-/* Desktop screens sit further from the eye than phones, so text/spacing that reads fine on
-   mobile looks cramped and small on a large monitor. Bumping the root font-size at wider
-   breakpoints scales every rem-based Tailwind utility (font sizes, padding, gaps) together,
-   giving a proportional "zoom" without touching every className individually. */
+/* Desktop screens sit further from the eye than phones — bumping the root font-size at wider
+   breakpoints scales every rem-based utility together, a proportional "zoom". */
 @media (min-width: 1024px) {
   html {
     font-size: 17px;
@@ -35,25 +34,28 @@ body {
 }
 
 @layer base {
-  /* Sitewide keyboard-focus ring — every interactive element gets a visible, on-brand outline
-     instead of relying on (or suppressing) the browser default. */
-  :focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-ink-900;
+  body {
+    @apply bg-canvas text-fg antialiased;
   }
 
   html {
     scroll-behavior: smooth;
   }
 
-  ::selection {
-    @apply bg-ink-200 text-ink-900;
+  /* Sitewide keyboard-focus ring — visible, on-brand, never suppressed. Form controls replace it
+     with their own softer ring (see .ui-control). */
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-accent;
   }
 
-  /* Thin, low-contrast scrollbars read as more considered than the chunky OS default —
-     the same instinct behind macOS's overlay scrollbars. Firefox + WebKit both covered. */
+  ::selection {
+    @apply bg-ink-200 text-fg;
+  }
+
+  /* Thin, low-contrast scrollbars (macOS overlay-scrollbar feel). Firefox + WebKit. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: theme("colors.ink.200") transparent;
+    scrollbar-color: rgb(var(--color-ink-200)) transparent;
   }
   *::-webkit-scrollbar {
     width: 10px;
@@ -70,33 +72,150 @@ body {
   *::-webkit-scrollbar-thumb:hover {
     @apply bg-ink-300;
   }
+
+  /* Reduced motion: keep state changes, drop the movement. Framer Motion follows the same
+     preference through <MotionConfig reducedMotion="user"> (app/providers.tsx). */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
-  /* Frosted-glass surface for anything that floats above content — sticky headers, dropdowns,
-     modals. Reads as premium/native because content behind it stays partially legible instead
-     of being fully occluded, the same trick used by macOS/iOS translucent chrome. */
+  /* ── Surfaces ───────────────────────────────────────────────────────────────────────────────
+     Glass is used selectively: chrome that floats above content (sticky headers, menus, dialogs,
+     toasts, bottom bars). Content cards stay solid for readability. */
+
+  /* Translucent fill only — for elements that bring their own border/shape (e.g. sticky headers). */
   .glass {
-    @apply bg-cream-50/75 backdrop-blur-xl backdrop-saturate-150;
+    @apply bg-surface/75 backdrop-blur-xl backdrop-saturate-150;
   }
   .glass-dark {
     @apply bg-ink-900/75 backdrop-blur-xl backdrop-saturate-150;
   }
+  /* A complete floating glass panel: translucent fill, hairline light edge, lit top highlight, soft
+     depth. Used by menus, popovers, dialogs, toasts. */
+  .glass-panel {
+    @apply border border-white/70 bg-surface/85 shadow-glass ring-1 ring-ink-900/[0.04] backdrop-blur-2xl backdrop-saturate-150;
+  }
+  /* Browsers without backdrop-filter get an opaque surface instead of an unreadable see-through one. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass,
+    .glass-panel {
+      @apply bg-surface;
+    }
+    .glass-dark {
+      @apply bg-ink-900;
+    }
+  }
 
-  /* Glossy "liquid glass" sheen for filled buttons/pills/swatches — a bright top highlight over a
-     soft inset shadow, so a solid-color control reads as a lit glass capsule (iOS 26 Liquid Glass)
-     instead of a flat color fill. Layered as background-image so it works on top of any Tailwind
-     bg-* color and never fights with the element's own content for z-index/pointer-events. */
+  /* Glossy sheen for filled buttons/pills — bright top highlight over a soft inset shade, so a
+     solid fill reads as a lit capsule rather than a flat color. Layered as background-image so it
+     sits on top of any bg-* color. */
   .glossy {
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 45%, rgba(255, 255, 255, 0) 65%);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0) 65%);
     box-shadow:
-      inset 0 1px 1px rgba(255, 255, 255, 0.5),
-      inset 0 -2px 5px rgba(0, 0, 0, 0.14);
+      inset 0 1px 1px rgba(255, 255, 255, 0.45),
+      inset 0 -2px 5px rgba(0, 0, 0, 0.12);
   }
   .glossy:active {
     box-shadow:
       inset 0 1px 2px rgba(0, 0, 0, 0.22),
       inset 0 -1px 1px rgba(255, 255, 255, 0.15);
+  }
+
+  /* Dimmed, lightly blurred backdrop behind modal layers (dialogs, drawers, mobile nav). */
+  .ui-overlay {
+    @apply bg-ink-950/30 backdrop-blur-[6px];
+  }
+
+  /* ── Form controls ──────────────────────────────────────────────────────────────────────── */
+
+  /* Shared by Input, Select, Textarea, SearchableSelect and IconPicker. */
+  .ui-control {
+    @apply h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-fg shadow-inset transition-[border-color,box-shadow,background-color] duration-base ease-smooth placeholder:text-fg-subtle;
+  }
+  .ui-control:hover:not(:disabled):not(:focus) {
+    @apply border-line-strong;
+  }
+  .ui-control:focus,
+  .ui-control:focus-visible {
+    @apply border-ink-400 outline-none ring-4 ring-accent/10;
+  }
+  .ui-control:disabled {
+    @apply cursor-not-allowed bg-surface-muted text-fg-muted opacity-70;
+  }
+  .ui-control[aria-invalid="true"] {
+    @apply border-danger-400;
+  }
+  .ui-control[aria-invalid="true"]:focus {
+    @apply border-danger-500 ring-danger-500/15;
+  }
+  /* Native <select> with a consistent chevron instead of each OS's own arrow. */
+  .ui-select {
+    @apply appearance-none bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+  }
+
+  .ui-label {
+    @apply mb-1.5 block text-[0.8125rem] font-medium text-ink-700;
+  }
+  .ui-field-hint {
+    @apply mt-1 text-xs text-fg-muted;
+  }
+  .ui-field-error {
+    @apply mt-1 text-xs text-danger-600;
+  }
+
+  /* ── Data tables ────────────────────────────────────────────────────────────────────────── */
+
+  .ui-table-container {
+    @apply overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-sm;
+  }
+  .ui-table {
+    @apply w-full text-left text-sm;
+  }
+  .ui-table-head {
+    @apply bg-surface-muted text-left text-xs font-medium uppercase tracking-wide text-fg-muted;
+  }
+  .ui-table-row {
+    @apply border-t border-line-subtle transition-colors duration-fast ease-smooth;
+  }
+  .ui-table-row-interactive {
+    @apply cursor-pointer hover:bg-ink-50/70;
+  }
+
+  /* ── Menus (dropdowns, popovers, comboboxes) ────────────────────────────────────────────── */
+
+  .ui-floating {
+    @apply glass-panel rounded-xl;
+  }
+  .ui-menu-item {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] focus-visible:bg-ink-900/[0.05] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  /* ── Loading ────────────────────────────────────────────────────────────────────────────── */
+
+  /* Shimmering placeholder block. Size it with utilities (h-4 w-1/2 …). */
+  .ui-skeleton {
+    @apply animate-shimmer rounded-md;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--color-ink-100)) 0%,
+      rgb(var(--color-ink-50)) 50%,
+      rgb(var(--color-ink-100)) 100%
+    );
+    background-size: 200% 100%;
   }
 }
 
@@ -124,7 +243,7 @@ body {
   @apply mb-3 list-decimal space-y-1 pl-5;
 }
 .tiptap-content blockquote {
-  @apply mb-3 border-l-2 border-brass-400 pl-4 italic text-ink-500;
+  @apply mb-3 border-l-2 border-ink-300 pl-4 italic text-ink-500;
 }
 .tiptap-content code {
   @apply rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-800;
@@ -136,7 +255,7 @@ body {
   @apply bg-transparent p-0 text-cream-100;
 }
 .tiptap-content a {
-  @apply text-brass-600 underline underline-offset-2;
+  @apply text-ink-900 underline underline-offset-2;
 }
 .tiptap-content img {
   @apply mb-3 rounded-md;
@@ -158,4 +277,3 @@ body {
   content: attr(data-placeholder);
   @apply pointer-events-none float-left h-0 text-ink-300;
 }
-

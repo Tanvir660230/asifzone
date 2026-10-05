@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { continueTo, createDraft, goToStep, stepChip } from "./support/product-builder";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -53,25 +54,29 @@ test.describe("product workflow: draft → ready → published → unpublished",
   test("2. a new product starts as a draft, and the panel says exactly what's missing", async ({ page }) => {
     await login(page);
     await page.goto("/admin/products/new");
-    const panel = page.getByTestId("product-status-panel");
-    await expect(panel.getByText("New product")).toBeVisible();
-    // Nothing is filled in yet: the meter is low and the required list names what to do.
-    await expect(panel).toContainText("required missing");
+    // Nothing exists yet: the builder says so, and only the steps needed to create a draft are offered.
+    await expect(page.getByTestId("wizard-autosave-status")).toContainText("Not saved yet");
+    await expect(stepChip(page, "care")).toHaveCount(0);
 
     await page.getByLabel("Product name").fill(PRODUCT);
     await page.getByLabel("Category").selectOption({ index: 1 });
     await page.getByLabel("Short description").fill("A black cotton panjabi.");
-    await page.getByRole("button", { name: "Pricing & Inventory" }).click();
+    await continueTo(page, "pricing");
     await page.getByLabel("Base price (BDT)").fill("1850");
 
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await continueTo(page, "variants");
     await page.getByPlaceholder("SKU-001").first().fill(`WF-${RUN}-M`);
     await page.getByPlaceholder(/e\.g\. S, M, L/).first().fill("M");
     await page.locator('input[name="variants.0.color"]').fill("Black");
     await page.locator('input[name="variants.0.stock"]').fill("12");
+    editUrl = await createDraft(page);
+    const panel = page.getByTestId("product-status-panel");
+    await expect(panel).toContainText("Draft");
+    // The panel names what's still required (a photo, at this point).
+    await expect(panel).toContainText(/required/);
 
     // Care & Material: a shared care guide and a 80/20 composition.
-    await page.getByRole("button", { name: "Care & Material" }).click();
+    await goToStep(page, "care");
     await page.getByLabel("Care guide").selectOption({ label: CARE_NAME });
     await expect(page.getByTestId("care-preview")).toContainText("Do not bleach");
     await page.getByRole("button", { name: /add material/i }).click();
@@ -88,7 +93,7 @@ test.describe("product workflow: draft → ready → published → unpublished",
     await page.getByLabel("Material 2 percentage").fill("20");
 
     // SEO: nothing is auto-filled into the fields, but the preview shows the defaults and the manual values.
-    await page.getByRole("button", { name: "SEO", exact: true }).click();
+    await goToStep(page, "seo");
     await page.getByLabel("SEO title").fill(SEO_TITLE);
     await page.getByLabel("Meta description").fill(META);
     await page.getByLabel("Focus keyword").fill(`black panjabi ${RUN}`);
@@ -97,10 +102,8 @@ test.describe("product workflow: draft → ready → published → unpublished",
     await expect(page.getByTestId("serp-preview")).toContainText(META);
     await expect(page.getByTestId("keyword-checks")).toContainText("Keyword appears in the SEO title");
 
-    await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
-    editUrl = new URL(page.url()).pathname;
-    await expect(page.getByTestId("product-status-panel")).toContainText("Draft");
+    await panel.getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("Product saved")).toBeVisible();
   });
 
   test("3. publishing is blocked until there's an image; then ready → published", async ({ page }) => {
@@ -115,6 +118,7 @@ test.describe("product workflow: draft → ready → published → unpublished",
     await expect(panel).toContainText("Upload at least one image");
 
     // Upload a real image through the real uploader.
+    await goToStep(page, "media");
     await page.locator('input[type="file"]').first().setInputFiles({ name: "cap.png", mimeType: "image/png", buffer: PNG });
     await expect(panel.getByRole("button", { name: "Publish" })).toBeEnabled({ timeout: 30_000 });
     await expect(panel.getByTestId("completeness-score")).not.toHaveText("0%");

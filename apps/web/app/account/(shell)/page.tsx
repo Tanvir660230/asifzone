@@ -80,7 +80,7 @@ export default function AccountProfilePage() {
           <div>
             <Label htmlFor="name">Full name</Label>
             <Input id="name" {...register("name")} />
-            {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+            {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
           </div>
 
           <div>

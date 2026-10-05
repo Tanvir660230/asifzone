@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
-import type { ReturnRequestStatus } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -12,14 +11,8 @@ import { OrdersSubNav } from "@/components/admin/orders-subnav";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
-import { formatPrice, formatStoreDate } from "@/lib/format";
+import { formatPrice, formatStoreDate, approvalStatusBadgeVariant } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
-
-const STATUS_BADGE: Record<ReturnRequestStatus, string> = {
-  PENDING: "",
-  APPROVED: "bg-success-100 text-success-700",
-  REJECTED: "bg-danger-100 text-danger-700",
-};
 
 export default function AdminReturnRequestsPage() {
   const queryClient = useQueryClient();
@@ -58,8 +51,8 @@ export default function AdminReturnRequestsPage() {
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Order</th>
                 <th className="px-4 py-3">Customer</th>
@@ -111,7 +104,7 @@ export default function AdminReturnRequestsPage() {
                   </td>
                   <td className="px-4 py-3 text-ink-500">{formatStoreDate(r.createdAt)}</td>
                   <td className="px-4 py-3">
-                    <Badge className={STATUS_BADGE[r.status]}>{r.status}</Badge>
+                    <Badge variant={approvalStatusBadgeVariant(r.status)} dot>{r.status}</Badge>
                   </td>
                   <td className="px-4 py-3">
                     {r.status === "PENDING" && r.order && (

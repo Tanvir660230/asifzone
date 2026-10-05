@@ -350,7 +350,7 @@ export default function NewOrderPage() {
                   aria-invalid={!!errors.customerName}
                   {...register("customerName")}
                 />
-                {errors.customerName && <p className="mt-1 text-xs text-danger-600">{errors.customerName.message}</p>}
+                {errors.customerName && <p className="ui-field-error">{errors.customerName.message}</p>}
               </div>
               <div>
                 <Label htmlFor="customerPhone">Phone</Label>
@@ -360,7 +360,7 @@ export default function NewOrderPage() {
                   aria-invalid={!!errors.customerPhone}
                   {...register("customerPhone")}
                 />
-                {errors.customerPhone && <p className="mt-1 text-xs text-danger-600">{errors.customerPhone.message}</p>}
+                {errors.customerPhone && <p className="ui-field-error">{errors.customerPhone.message}</p>}
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="customerEmail">Email (optional)</Label>
@@ -387,7 +387,7 @@ export default function NewOrderPage() {
                   placeholder="Search district..."
                 />
                 {errors.shippingDistrict && (
-                  <p className="mt-1 text-xs text-danger-600">{errors.shippingDistrict.message}</p>
+                  <p className="ui-field-error">{errors.shippingDistrict.message}</p>
                 )}
               </div>
               <div>
@@ -400,7 +400,7 @@ export default function NewOrderPage() {
                   options={areaOptions}
                   placeholder={shippingDistrict ? "Search area/thana..." : "Search area/thana (any district)..."}
                 />
-                {errors.shippingArea && <p className="mt-1 text-xs text-danger-600">{errors.shippingArea.message}</p>}
+                {errors.shippingArea && <p className="ui-field-error">{errors.shippingArea.message}</p>}
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="shippingAddressLine">House / Road / Details</Label>
@@ -411,7 +411,7 @@ export default function NewOrderPage() {
                   {...register("shippingAddressLine")}
                 />
                 {errors.shippingAddressLine && (
-                  <p className="mt-1 text-xs text-danger-600">{errors.shippingAddressLine.message}</p>
+                  <p className="ui-field-error">{errors.shippingAddressLine.message}</p>
                 )}
               </div>
               <div className="sm:col-span-2">
@@ -568,7 +568,7 @@ export default function NewOrderPage() {
                   Apply
                 </Button>
               </div>
-              {couponError && <p className="mt-1 text-xs text-danger-600">{couponError}</p>}
+              {couponError && <p className="ui-field-error">{couponError}</p>}
               {quote?.coupon && <p className="mt-1 text-xs text-success-600">Coupon &ldquo;{quote.coupon.code}&rdquo; applied</p>}
             </div>
 

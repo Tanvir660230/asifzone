@@ -55,7 +55,7 @@ export function BundleForm({ categories, initial, onSubmit, onCancel }: BundleFo
       <div>
         <Label htmlFor="name">Name</Label>
         <Input id="name" placeholder="e.g. Panjabi Essentials" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
 
       <div>
@@ -68,7 +68,7 @@ export function BundleForm({ categories, initial, onSubmit, onCancel }: BundleFo
             </option>
           ))}
         </Select>
-        {errors.anchorCategoryId && <p className="mt-1 text-xs text-danger-600">{errors.anchorCategoryId.message}</p>}
+        {errors.anchorCategoryId && <p className="ui-field-error">{errors.anchorCategoryId.message}</p>}
       </div>
 
       <div>
@@ -83,7 +83,7 @@ export function BundleForm({ categories, initial, onSubmit, onCancel }: BundleFo
           ))}
         </div>
         {errors.suggestionCategoryIds && (
-          <p className="mt-1 text-xs text-danger-600">Pick at least one suggested category</p>
+          <p className="ui-field-error">Pick at least one suggested category</p>
         )}
       </div>
 
@@ -98,7 +98,7 @@ export function BundleForm({ categories, initial, onSubmit, onCancel }: BundleFo
         <div>
           <Label htmlFor="discountValue">Discount value</Label>
           <Input id="discountValue" type="number" step="0.01" {...register("discountValue", { valueAsNumber: true })} />
-          {errors.discountValue && <p className="mt-1 text-xs text-danger-600">{errors.discountValue.message}</p>}
+          {errors.discountValue && <p className="ui-field-error">{errors.discountValue.message}</p>}
         </div>
       </div>
 

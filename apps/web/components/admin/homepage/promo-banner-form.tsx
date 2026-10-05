@@ -98,7 +98,7 @@ export function PromoBannerForm({ initialConfig, onSubmit, onCancel, onValuesCha
           className="hidden"
           onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
         />
-        {errors.imageUrl && <p className="mt-1 text-xs text-danger-600">{errors.imageUrl.message}</p>}
+        {errors.imageUrl && <p className="ui-field-error">{errors.imageUrl.message}</p>}
         <p className="mt-1 text-xs text-ink-400">
           Recommended size: 1920×1080px (16:9). This section crops to 16:9 on mobile and 3:1 on desktop — keep
           important content centered so it isn&rsquo;t cut off at either width.

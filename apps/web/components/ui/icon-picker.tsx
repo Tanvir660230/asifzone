@@ -84,16 +84,16 @@ export function IconPicker({ id, value, onChange }: IconPickerProps) {
         aria-controls={id ? `${id}-listbox` : undefined}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={handleKeyDown}
-        className="flex h-10 w-full items-center gap-2 rounded-lg border border-ink-200 bg-cream-50 px-3 text-left text-sm text-ink-900 transition-all duration-200 ease-smooth focus:border-brass-400 focus:shadow-glow"
+        className="ui-control flex items-center gap-2 text-left"
       >
-        <SelectedIcon size={16} className="shrink-0 text-brass-500" />
+        <SelectedIcon size={16} className="shrink-0 text-ink-600" aria-hidden="true" />
         <span className="flex-1 truncate">{value || "Choose an icon…"}</span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-ink-400 transition-transform duration-200", open && "rotate-180")} />
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-fg-subtle transition-transform duration-base ease-smooth", open && "rotate-180")} />
       </button>
 
       {open && (
-        <div className="animate-fade-in absolute z-20 mt-1 w-64 rounded-lg border border-ink-200 bg-white shadow-lg">
-          <div className="border-b border-ink-100 p-2">
+        <div className="ui-floating absolute z-overlay mt-1.5 w-64 animate-pop-in">
+          <div className="border-b border-line-subtle p-2">
             <input
               autoFocus
               type="text"
@@ -101,7 +101,7 @@ export function IconPicker({ id, value, onChange }: IconPickerProps) {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search icons…"
-              className="h-8 w-full rounded-md border border-ink-200 px-2 text-sm text-ink-900 focus:border-brass-400 focus:outline-none"
+              className="ui-control h-8 px-2"
             />
           </div>
           <div id={id ? `${id}-listbox` : undefined} role="listbox" className="grid max-h-56 grid-cols-4 gap-1 overflow-y-auto p-2">
@@ -122,8 +122,8 @@ export function IconPicker({ id, value, onChange }: IconPickerProps) {
                   onMouseEnter={() => setHighlighted(index)}
                   className={cn(
                     "flex flex-col items-center gap-1 rounded-md p-2 text-ink-600 transition-colors",
-                    index === highlighted && "bg-cream-200",
-                    name === value && "bg-brass-100 text-brass-700",
+                    index === highlighted && "bg-ink-900/[0.05]",
+                    name === value && "bg-ink-900/[0.08] text-fg",
                   )}
                 >
                   <Icon size={18} />

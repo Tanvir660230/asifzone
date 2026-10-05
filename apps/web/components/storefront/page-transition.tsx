@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
+import { durations, easings } from "@/lib/motion";
 
 /** Keyed on pathname so only real route changes trigger the fade (not search-param-only updates,
  * e.g. facet filters) — AnimatePresence needs a stable key change to know something replaced.
@@ -21,7 +22,7 @@ export function PageTransition({ children }: { children: ReactNode }) {
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.13, ease: [0.4, 0, 0.2, 1] }}
+        transition={{ duration: durations.fast, ease: easings.standard }}
       >
         {children}
       </motion.div>

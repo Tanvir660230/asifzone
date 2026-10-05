@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { continueTo, createDraft, goToStep, stepChip } from "./support/product-builder";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -98,29 +99,31 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await expect(page.getByText(`${TYPE_NAME} details`)).toBeVisible();
     await expect(page.getByLabel(ATTR_LABEL)).toBeVisible();
     await expect(page.getByLabel("Material")).toHaveCount(0);
-    await expect(page.getByText("Show Size Guide on Storefront")).toBeVisible();
 
-    await page.getByRole("button", { name: "Pricing & Inventory" }).click();
+    await continueTo(page, "pricing");
     await page.getByLabel("Base price (BDT)").fill("450");
 
-    await page.getByRole("button", { name: "Variants", exact: true }).click();
+    await continueTo(page, "variants");
     // The variant form speaks the template's language: "Cap size", and no colour input at all.
     await expect(page.getByText("Cap size").first()).toBeVisible();
     await page.getByPlaceholder("SKU-001").first().fill(`E2E-CAP-${RUN}-M`);
     await page.getByPlaceholder(/e\.g\. S, M, L/).first().fill("M");
     await page.locator('input[name="variants.0.stock"]').fill("7");
 
-    // Required attribute left empty -> blocked with a clear message.
-    await page.getByRole("button", { name: "Create product" }).click();
-    await page.getByRole("button", { name: "Basic Info" }).click();
-    await expect(page.getByText(`${ATTR_LABEL} is required`)).toBeVisible();
+    // Required attribute left empty -> creating is blocked, and the builder goes to the field with a clear message.
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(stepChip(page, "basics")).toHaveAttribute("aria-current", "step");
+    await expect(page.getByText(`${ATTR_LABEL} is required`).first()).toBeVisible();
 
     await page.getByLabel(ATTR_LABEL).selectOption("Hand Embroidery");
-    await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
+    await createDraft(page);
 
-    // A draft has no public page, so the editor offers Preview rather than "View on site"; read the slug from the SEO tab.
-    await page.getByRole("button", { name: "SEO", exact: true }).click();
+    // The type's size guide is its own step once the product exists.
+    await goToStep(page, "sizeGuide");
+    await expect(page.getByText("Show Size Guide on Storefront")).toBeVisible();
+
+    // A draft has no public page, so the editor offers Preview rather than "View on site"; read the slug from SEO.
+    await goToStep(page, "seo");
     productSlug = await page.getByLabel("URL slug").inputValue();
     expect(productSlug).toContain("e2e-cap");
   });
@@ -142,7 +145,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
     // New products are drafts. Publishing needs an image, so upload one and go live.
     const panel = page.getByTestId("product-status-panel");
     await expect(panel).toContainText("Draft");
-    await page.getByTestId("wizard-step-media").click(); // the list opens the step-by-step editor; photos are on its Media step
+    await goToStep(page, "media");
     await page.locator('input[type="file"]').first().setInputFiles({ name: "cap.png", mimeType: "image/png", buffer: PNG });
     await expect(panel.getByRole("button", { name: "Publish" })).toBeEnabled({ timeout: 30_000 });
     await panel.getByRole("button", { name: "Publish" }).click();

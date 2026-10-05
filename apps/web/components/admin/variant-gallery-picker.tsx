@@ -32,13 +32,13 @@ export function VariantGalleryPicker({ images, value, onChange, label }: Variant
               aria-label={`${selected ? "Remove" : "Add"} ${img.altText || "image"} ${selected ? `(position ${position + 1})` : ""}`.trim()}
               className={cn(
                 "relative h-14 w-14 overflow-hidden rounded border-2 transition",
-                selected ? "border-brass-500" : "border-ink-100 opacity-70 hover:opacity-100",
+                selected ? "border-accent ring-2 ring-accent/15" : "border-ink-100 opacity-70 hover:opacity-100",
               )}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={resolveImageUrl(img.url)} alt="" className="h-full w-full object-cover" />
               {selected && (
-                <span className="absolute left-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brass-600 px-1 text-[10px] font-semibold text-white">
+                <span className="absolute left-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-fg">
                   {position + 1}
                 </span>
               )}

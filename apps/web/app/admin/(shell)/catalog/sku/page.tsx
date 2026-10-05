@@ -98,7 +98,7 @@ export default function SkuSettingsPage() {
             <div>
               <Label htmlFor="sku-pattern">Pattern</Label>
               <Input id="sku-pattern" value={pattern} onChange={(e) => setPattern(e.target.value)} disabled={!canManage} className="font-mono" aria-invalid={Boolean(patternError)} />
-              {patternError && <p className="mt-1 text-xs text-danger-600">{patternError}</p>}
+              {patternError && <p className="ui-field-error">{patternError}</p>}
             </div>
           </div>
 
@@ -142,8 +142,8 @@ export default function SkuSettingsPage() {
 
         <FormSection title="SKU code per product type" description="Used by {TYPE}. Leave blank to use the first three letters of the type's name (shown greyed).">
           <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-            <table className="w-full text-sm">
-              <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+            <table className="ui-table">
+              <thead className="ui-table-head">
                 <tr>
                   <th className="px-4 py-2">Product type</th>
                   <th className="px-4 py-2">Code</th>

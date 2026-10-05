@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { continueTo, createDraft, goToStep } from "./support/product-builder";
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -27,18 +28,20 @@ async function login(page: Page) {
 /** The accordion rows on a product page, in the order a customer sees them. */
 const accordionTitles = (page: Page) => page.locator("button[aria-expanded]").allTextContents().then((t) => t.map((s) => s.trim()));
 
-async function createDraft(page: Page, name: string, sku: string, opts: { type?: string } = {}) {
+/** Fills a new product in the builder up to the point of creating it. */
+async function startDraft(page: Page, name: string, sku: string, opts: { type?: string } = {}) {
   await page.goto("/admin/products/new");
   await page.getByLabel("Product name").fill(name);
   await page.getByLabel("Category").selectOption({ index: 1 });
   if (opts.type) await page.getByLabel("Product type").selectOption({ label: opts.type });
   await page.getByLabel("Short description").fill(`${name} — a test product.`);
-  await page.getByRole("button", { name: "Pricing & Inventory" }).click();
+  await continueTo(page, "pricing");
   await page.getByLabel("Base price (BDT)").fill("1500");
-  await page.getByRole("button", { name: "Variants", exact: true }).click();
-  await page.getByPlaceholder("SKU-001").first().fill(sku);
+  // Clothing's template has size + colour options (a Variants step); the new type has none, so its SKU and stock sit
+  // on Pricing — the same fields either way.
+  if (!opts.type) await continueTo(page, "variants");
+  await page.locator('input[name="variants.0.sku"]').fill(sku);
   await page.locator('input[name="variants.0.stock"]').fill("9");
-  // Clothing's template requires a size and a colour on every variant; the new type's template asks for neither.
   if (!opts.type) {
     await page.getByPlaceholder(/e\.g\. S, M, L/).first().fill("M");
     await page.locator('input[name="variants.0.color"]').fill("Black");
@@ -48,6 +51,7 @@ async function createDraft(page: Page, name: string, sku: string, opts: { type?:
 async function publish(page: Page, editUrl: string) {
   await page.goto(editUrl);
   const panel = page.getByTestId("product-status-panel");
+  await goToStep(page, "media");
   await page.locator('input[type="file"]').first().setInputFiles({ name: "p.png", mimeType: "image/png", buffer: PNG });
   await expect(panel.getByRole("button", { name: "Publish" })).toBeEnabled({ timeout: 30_000 });
   await panel.getByRole("button", { name: "Publish" }).click();
@@ -112,10 +116,8 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
 
   test("4. an ordinary Clothing product is created and published", async ({ page }) => {
     await login(page);
-    await createDraft(page, PRODUCT_A, `SEC-A-${RUN}`);
-    await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
-    editA = new URL(page.url()).pathname;
+    await startDraft(page, PRODUCT_A, `SEC-A-${RUN}`);
+    editA = await createDraft(page);
     await publish(page, editA);
   });
 
@@ -137,9 +139,11 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
 
   test("6. a draft of the new type carries FAQ, video, highlights and a hand-picked list from the product form", async ({ page }) => {
     await login(page);
-    await createDraft(page, PRODUCT_B, `SEC-B-${RUN}`, { type: TYPE });
+    await startDraft(page, PRODUCT_B, `SEC-B-${RUN}`, { type: TYPE });
+    editB = await createDraft(page);
+    idB = editB.split("/")[3]!;
 
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     // Product-level editor: shows the template's choices as inherited.
     await expect(page.getByLabel("Highlights visibility")).toContainText("Inherit (shown)");
     await page.getByLabel("Highlights text").fill("Lightweight cotton\nHand finished collar");
@@ -159,16 +163,14 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
     await related.getByRole("button", { name: new RegExp(PRODUCT_A) }).click();
     await expect(related.getByText(PRODUCT_A)).toBeVisible();
 
-    await page.getByRole("button", { name: "Create product" }).click();
-    await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/, { timeout: 30_000 });
-    editB = new URL(page.url()).pathname;
-    idB = editB.split("/")[3]!;
+    await page.getByTestId("product-status-panel").getByRole("button", { name: "Save draft" }).click();
+    await expect(page.getByText("Product saved")).toBeVisible();
   });
 
   test("7. it all survives a reload of the editor", async ({ page }) => {
     await login(page);
     await page.goto(editB);
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await expect(page.getByLabel("Highlights text")).toHaveValue("Lightweight cotton\nHand finished collar");
     await expect(page.getByLabel("Product video link")).toHaveValue(VIDEO);
     await expect(page.getByLabel("Question 1", { exact: true })).toHaveValue("Does it shrink?");
@@ -210,7 +212,7 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
   test("9. product level: hide the inherited shipping row and put the FAQ first", async ({ page }) => {
     await login(page);
     await page.goto(editB);
-    await page.getByRole("button", { name: "Page content" }).click();
+    await goToStep(page, "content");
     await page.getByLabel("Shipping & returns visibility").selectOption("false");
     const up = page.getByRole("button", { name: "Move FAQ up" });
     for (let i = 0; i < 14 && (await up.isEnabled()); i++) await up.click();

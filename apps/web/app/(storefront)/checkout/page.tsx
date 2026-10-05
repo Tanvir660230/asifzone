@@ -428,7 +428,7 @@ function CheckoutForm() {
                     Apply
                   </Button>
                 </div>
-                {couponError && <p className="mt-1 text-xs text-danger-600">{couponError}</p>}
+                {couponError && <p className="ui-field-error">{couponError}</p>}
                 {coupon && (
                   <p className="mt-1 text-xs text-success-600">
                     Coupon &ldquo;{coupon.code}&rdquo; applied{coupon.freeShipping ? " — free shipping" : ""}

@@ -4,9 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence, motion } from "framer-motion";
 import {
-  Search,
   Trash2,
   RotateCcw,
   Eye,
@@ -49,6 +47,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { Drawer } from "@/components/ui/drawer";
+import { BulkActionBar } from "@/components/ui/bulk-action-bar";
+import { SearchInput } from "@/components/ui/search-input";
 import { Popover } from "@/components/ui/popover";
 import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -1140,35 +1140,19 @@ export default function OrdersPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5">
             <div className="flex flex-wrap items-center gap-2.5">
-              <div className="relative w-full sm:w-64 lg:w-56">
-                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-                <Input
-                  ref={searchInputRef}
-                  placeholder="Search order #, name, phone…"
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(1);
-                  }}
-                  className="pl-9 pr-8"
-                />
-                {search ? (
-                  <button
-                    onClick={() => {
-                      setSearch("");
-                      setPage(1);
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-300 transition-colors hover:text-ink-600"
-                    aria-label="Clear search"
-                  >
-                    <XCircle size={14} />
-                  </button>
-                ) : (
-                  <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-ink-200 px-1 py-0.5 font-sans text-[10px] font-medium text-ink-300 sm:inline-block">
-                    /
-                  </kbd>
-                )}
-              </div>
+              <SearchInput
+                ref={searchInputRef}
+                wrapperClassName="w-full sm:w-64 lg:w-56"
+                placeholder="Search order #, name, phone…"
+                value={search}
+                onChange={(value) => {
+                  setSearch(value);
+                  setPage(1);
+                }}
+                emptyAdornment={
+                  <kbd className="hidden rounded border border-line px-1 py-0.5 font-sans text-[10px] font-medium text-ink-300 sm:inline-block">/</kbd>
+                }
+              />
               <button
                 ref={moreFiltersButtonRef}
                 onClick={() => setShowMoreFilters((v) => !v)}
@@ -1345,7 +1329,7 @@ export default function OrdersPage() {
           scroll here was deliberately chosen to avoid. */}
       <div className="mt-5 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow xl:block">
         <HScrollShadow className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="ui-table">
           <thead className="border-b border-ink-100 bg-ink-50/70 text-left text-xs font-semibold uppercase tracking-wider text-ink-500">
             <tr>
               <th className="w-10 px-3 py-2">
@@ -1586,93 +1570,77 @@ export default function OrdersPage() {
       <Pagination page={page} totalPages={totalPages} onChange={setPage} />
       {confirmDialog}
 
-      <AnimatePresence>
-        {selected.size > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 rounded-2xl border border-ink-200 bg-cream-50 px-4 py-3 text-sm shadow-floatLg"
-          >
-            <span className="flex items-center gap-1.5 font-medium text-ink-800">
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-ink-900 px-1.5 text-xs font-semibold text-cream-50">
-                {selected.size}
-              </span>
-              selected
-            </span>
-            {tab === "active" ? (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <Select
-                    className="h-8 w-40"
-                    value={bulkStatusValue}
-                    onChange={(e) => setBulkStatusValue(e.target.value as OrderStatus | "")}
-                  >
-                    <option value="">Set status…</option>
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button variant="outline" size="sm" disabled={!bulkStatusValue} onClick={handleBulkStatus}>
-                    Apply
-                  </Button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={bulkBookCourierMutation.isPending}
-                  onClick={handleBulkBookCourier}
-                >
-                  <Truck size={14} /> Book with Steadfast
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={bulkSyncCourierMutation.isPending}
-                  onClick={handleBulkSyncCourier}
-                >
-                  <RefreshCw size={14} /> Sync courier status
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={bulkCheckDeliveryScoreMutation.isPending}
-                  onClick={handleBulkCheckDeliveryScore}
-                >
-                  <ShieldCheck size={14} /> Check delivery score
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => handlePrintLabels()}>
-                  <Printer size={14} /> Print Labels
-                </Button>
-                {canDeleteOrders && (
-                  <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
-                    <Trash2 size={14} /> Move to Trash
-                  </Button>
-                )}
-              </>
-            ) : (
-              <>
-                <Button variant="outline" size="sm" onClick={handleBulkRestore}>
-                  <RotateCcw size={14} /> Restore selected
-                </Button>
-                <Button variant="destructive" size="sm" onClick={handleBulkPermanentDelete}>
-                  <Trash2 size={14} /> Delete forever
-                </Button>
-              </>
-            )}
-            <button
-              onClick={() => setSelected(new Set())}
-              className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
-              aria-label="Clear selection"
+      <BulkActionBar count={selected.size} itemLabel="orders">
+        {tab === "active" ? (
+          <>
+            <div className="flex items-center gap-1.5">
+              <Select
+                className="h-8 w-40"
+                value={bulkStatusValue}
+                onChange={(e) => setBulkStatusValue(e.target.value as OrderStatus | "")}
+              >
+                <option value="">Set status…</option>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+              <Button variant="outline" size="sm" disabled={!bulkStatusValue} onClick={handleBulkStatus}>
+                Apply
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={bulkBookCourierMutation.isPending}
+              onClick={handleBulkBookCourier}
             >
-              <XCircle size={16} />
-            </button>
-          </motion.div>
+              <Truck size={14} /> Book with Steadfast
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={bulkSyncCourierMutation.isPending}
+              onClick={handleBulkSyncCourier}
+            >
+              <RefreshCw size={14} /> Sync courier status
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={bulkCheckDeliveryScoreMutation.isPending}
+              onClick={handleBulkCheckDeliveryScore}
+            >
+              <ShieldCheck size={14} /> Check delivery score
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handlePrintLabels()}>
+              <Printer size={14} /> Print Labels
+            </Button>
+            {canDeleteOrders && (
+              <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                <Trash2 size={14} /> Move to Trash
+              </Button>
+            )}
+          </>
+        ) : (
+          <>
+            <Button variant="outline" size="sm" onClick={handleBulkRestore}>
+              <RotateCcw size={14} /> Restore selected
+            </Button>
+            <Button variant="destructive" size="sm" onClick={handleBulkPermanentDelete}>
+              <Trash2 size={14} /> Delete forever
+            </Button>
+          </>
         )}
-      </AnimatePresence>
+        <button
+          onClick={() => setSelected(new Set())}
+          className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
+          aria-label="Clear selection"
+        >
+          <XCircle size={16} />
+        </button>
+      </BulkActionBar>
 
       <Drawer
         open={Boolean(drawerOrderId)}
@@ -1684,6 +1652,7 @@ export default function OrdersPage() {
         prevDisabled={!hasPrevOrder}
         nextDisabled={!hasNextOrder}
         navLabel={drawerIndex !== -1 ? `${drawerIndex + 1} of ${items.length}` : undefined}
+        navItemLabel="order"
       >
         {drawerOrderId && (
           <OrderDetailPanel orderId={drawerOrderId} onClose={() => setDrawerOrderId(null)} variant="drawer" />

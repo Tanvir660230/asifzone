@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { IconButton } from "./icon-button";
 
 interface DrawerProps {
   open: boolean;
@@ -21,6 +22,8 @@ interface DrawerProps {
   nextDisabled?: boolean;
   /** e.g. "3 of 20" — shown next to the nav buttons on sm and up. */
   navLabel?: string;
+  /** What the prev/next buttons step through, for their accessible names ("Previous order"). */
+  navItemLabel?: string;
 }
 
 function isTypingTarget(el: EventTarget | null): boolean {
@@ -28,8 +31,8 @@ function isTypingTarget(el: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean((el as HTMLElement | null)?.isContentEditable);
 }
 
-/** Right-side slide-in panel — same portal/backdrop/focus-trap recipe as `cart-drawer.tsx`,
- * generalized with `Modal`'s title/children API so it can host arbitrary admin content. */
+/** Right-side slide-in panel (full width on mobile) — portal, backdrop-click and Escape to close,
+ * focus trap, optional prev/next stepping (Arrow Up/Down) through the list it was opened from. */
 export function Drawer({
   open,
   onClose,
@@ -41,6 +44,7 @@ export function Drawer({
   prevDisabled,
   nextDisabled,
   navLabel,
+  navItemLabel = "item",
 }: DrawerProps) {
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose });
 
@@ -71,7 +75,7 @@ export function Drawer({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="ui-overlay fixed inset-0 z-overlay animate-fade-in" onClick={onClose}>
       <div
         ref={panelRef}
         role="dialog"
@@ -80,40 +84,26 @@ export function Drawer({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "ml-auto flex h-full w-full flex-col bg-cream-50 shadow-floatLg animate-slide-in-right",
+          "ml-auto flex h-full w-full flex-col border-l border-white/70 bg-surface shadow-glass-lg animate-slide-in-right",
           widthClassName,
         )}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-ink-100 px-5 py-4">
-          <div className="min-w-0 flex-1 truncate font-display text-lg text-ink-900">{title}</div>
+        <div className="glass sticky top-0 z-raised flex shrink-0 items-center gap-3 border-b border-line-subtle px-5 py-3.5">
+          <div className="min-w-0 flex-1 truncate font-display text-lg tracking-tight text-fg">{title}</div>
           {(onPrev || onNext) && (
             <div className="flex shrink-0 items-center gap-1">
-              {navLabel && <span className="hidden text-xs tabular-nums text-ink-400 sm:inline">{navLabel}</span>}
-              <button
-                onClick={onPrev}
-                disabled={!onPrev || prevDisabled}
-                aria-label="Previous order"
-                className="rounded-full p-1.5 text-ink-500 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900 disabled:opacity-30 disabled:hover:bg-transparent"
-              >
+              {navLabel && <span className="hidden text-xs tabular-nums text-fg-subtle sm:inline">{navLabel}</span>}
+              <IconButton size="sm" onClick={onPrev} disabled={!onPrev || prevDisabled} aria-label={`Previous ${navItemLabel}`}>
                 <ChevronUp size={18} />
-              </button>
-              <button
-                onClick={onNext}
-                disabled={!onNext || nextDisabled}
-                aria-label="Next order"
-                className="rounded-full p-1.5 text-ink-500 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900 disabled:opacity-30 disabled:hover:bg-transparent"
-              >
+              </IconButton>
+              <IconButton size="sm" onClick={onNext} disabled={!onNext || nextDisabled} aria-label={`Next ${navItemLabel}`}>
                 <ChevronDown size={18} />
-              </button>
+              </IconButton>
             </div>
           )}
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 rounded-full p-1.5 text-ink-400 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900"
-          >
-            <X size={20} />
-          </button>
+          <IconButton size="sm" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </IconButton>
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>

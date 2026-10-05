@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import type { RevenuePoint } from "@/lib/api/admin-analytics";
 import { Card } from "@/components/ui/card";
+import { SegmentedControl } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import { RevenueChart } from "@/components/admin/revenue-chart";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -40,26 +42,18 @@ export function RevenueChartCard({ series, range, onRangeChange, loading }: Reve
           <p className="mt-1.5 text-sm text-ink-500">{series ? `${totalOrders} order${totalOrders === 1 ? "" : "s"} in this period` : "Loading…"}</p>
         </div>
 
-        {/* Segmented range control — an explicit, self-contained filter for this chart only; it
-            doesn't touch the 30-day queries other cards on the dashboard rely on. */}
-        <div className="inline-flex shrink-0 items-center gap-0.5 self-start rounded-full border border-ink-100 bg-ink-50/60 p-1">
-          {RANGE_OPTIONS.map((days) => (
-            <button
-              key={days}
-              onClick={() => onRangeChange(days)}
-              className={cn(
-                "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 ease-smooth",
-                range === days ? "bg-ink-900 text-cream-50 shadow-sm" : "text-ink-500 hover:text-ink-900",
-              )}
-            >
-              {days}D
-            </button>
-          ))}
-        </div>
+        {/* Range control for this chart only; it doesn't touch the 30-day queries other cards rely on. */}
+        <SegmentedControl
+          aria-label="Revenue range"
+          className="self-start"
+          options={RANGE_OPTIONS.map((days) => ({ value: days, label: `${days}D` }))}
+          value={range}
+          onChange={onRangeChange}
+        />
       </div>
 
       <div className={cn("mt-6 transition-opacity duration-200 ease-smooth", loading && "opacity-40")}>
-        {series ? <RevenueChart data={series} /> : <div className="h-[17.5rem] animate-pulse rounded-2xl bg-ink-50" />}
+        {series ? <RevenueChart data={series} /> : <Skeleton className="h-[17.5rem] rounded-2xl" />}
       </div>
     </Card>
   );

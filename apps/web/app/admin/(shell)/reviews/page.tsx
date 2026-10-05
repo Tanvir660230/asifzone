@@ -17,15 +17,9 @@ import { StarRating } from "@/components/storefront/star-rating";
 import { cn } from "@/lib/utils";
 import * as adminReviewsApi from "@/lib/api/admin-reviews";
 import { ApiError } from "@/lib/api-client";
-import { formatStoreDate } from "@/lib/format";
+import { formatStoreDate, approvalStatusBadgeVariant } from "@/lib/format";
 
 const PAGE_SIZE = 20;
-
-const STATUS_BADGE: Record<ReviewStatus, string> = {
-  PENDING: "",
-  APPROVED: "bg-success-100 text-success-700",
-  REJECTED: "bg-danger-100 text-danger-700",
-};
 
 const TABS: Array<{ label: string; value: ReviewStatus | "ALL" }> = [
   { label: "Pending", value: "PENDING" },
@@ -114,8 +108,8 @@ export default function AdminReviewsPage() {
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Product</th>
                 <th className="px-4 py-3">Customer</th>
@@ -151,7 +145,7 @@ export default function AdminReviewsPage() {
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-ink-500">{formatStoreDate(review.createdAt)}</td>
                   <td className="px-4 py-3">
-                    <Badge className={STATUS_BADGE[review.status]}>{review.status}</Badge>
+                    <Badge variant={approvalStatusBadgeVariant(review.status)} dot>{review.status}</Badge>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-3">

@@ -68,13 +68,13 @@ function LoginForm() {
         <div>
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" autoComplete="email" {...register("email")} />
-          {errors.email && <p className="mt-1 text-xs text-danger-600">{errors.email.message}</p>}
+          {errors.email && <p className="ui-field-error">{errors.email.message}</p>}
         </div>
 
         <div>
           <Label htmlFor="password">Password</Label>
           <Input id="password" type="password" autoComplete="current-password" {...register("password")} />
-          {errors.password && <p className="mt-1 text-xs text-danger-600">{errors.password.message}</p>}
+          {errors.password && <p className="ui-field-error">{errors.password.message}</p>}
         </div>
 
         {serverError && <p className="text-sm text-danger-600">{serverError}</p>}

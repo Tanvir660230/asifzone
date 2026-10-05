@@ -41,7 +41,7 @@ export function AttributeForm({ initial, onSubmit, onCancel }: AttributeFormProp
       <div>
         <Label htmlFor="name">Attribute name</Label>
         <Input id="name" placeholder="e.g. Fabric, Pattern, Material" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
 
       <div>
@@ -81,7 +81,7 @@ export function AttributeForm({ initial, onSubmit, onCancel }: AttributeFormProp
             );
           })}
         </div>
-        {errors.values && <p className="mt-1 text-xs text-danger-600">Every value needs text.</p>}
+        {errors.values && <p className="ui-field-error">Every value needs text.</p>}
 
         <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => append({ value: "", sortOrder: fields.length })}>
           <Plus size={14} /> Add value

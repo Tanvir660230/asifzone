@@ -8,7 +8,7 @@ import { ProductCardSkeleton } from "./product-card-skeleton";
 export function ProductCarouselSkeleton() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mb-6 h-6 w-48 animate-pulse rounded bg-ink-100" />
+      <div className="mb-6 h-6 w-48 rounded ui-skeleton" />
       <div className="flex gap-4 overflow-x-hidden">
         {Array.from({ length: 4 }, (_, i) => (
           <div key={i} className="w-[45vw] shrink-0 sm:w-56">

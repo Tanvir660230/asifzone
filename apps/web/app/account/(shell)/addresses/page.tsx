@@ -254,12 +254,12 @@ function AddressForm({
         <div>
           <Label htmlFor="fullName">Full name</Label>
           <Input id="fullName" {...register("fullName")} />
-          {errors.fullName && <p className="mt-1 text-xs text-danger-600">{errors.fullName.message}</p>}
+          {errors.fullName && <p className="ui-field-error">{errors.fullName.message}</p>}
         </div>
         <div>
           <Label htmlFor="phone">Phone</Label>
           <Input id="phone" placeholder="01XXXXXXXXX" {...register("phone")} />
-          {errors.phone && <p className="mt-1 text-xs text-danger-600">{errors.phone.message}</p>}
+          {errors.phone && <p className="ui-field-error">{errors.phone.message}</p>}
         </div>
       </div>
       <div>
@@ -271,7 +271,7 @@ function AddressForm({
           options={BD_ALL_DISTRICTS}
           placeholder="Search district..."
         />
-        {errors.district && <p className="mt-1 text-xs text-danger-600">{errors.district.message}</p>}
+        {errors.district && <p className="ui-field-error">{errors.district.message}</p>}
       </div>
       <div>
         <Label htmlFor="area">Area / Thana</Label>
@@ -282,12 +282,12 @@ function AddressForm({
           options={areaOptions}
           placeholder={district ? "Search area/thana..." : "Search area/thana (any district)..."}
         />
-        {errors.area && <p className="mt-1 text-xs text-danger-600">{errors.area.message}</p>}
+        {errors.area && <p className="ui-field-error">{errors.area.message}</p>}
       </div>
       <div>
         <Label htmlFor="addressLine">House / Road / Details</Label>
         <Textarea id="addressLine" rows={2} {...register("addressLine")} />
-        {errors.addressLine && <p className="mt-1 text-xs text-danger-600">{errors.addressLine.message}</p>}
+        {errors.addressLine && <p className="ui-field-error">{errors.addressLine.message}</p>}
       </div>
       <label className="flex items-center gap-2 text-sm text-ink-700">
         <Checkbox {...register("isDefault")} />
