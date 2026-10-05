@@ -30,7 +30,7 @@ import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
 import { createOrder } from "@/lib/api/orders";
 import { getSessionId } from "@/lib/analytics";
-import { pixelAddPaymentInfo, pixelInitiateCheckout, type MetaLineItem } from "@/lib/meta-pixel";
+import { pixelAddPaymentInfo, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { getQuote, getBestCouponQuote } from "@/lib/api/quote";
 import { useQuote, quoteLineAmount } from "@/hooks/use-quote";
 import { listAddresses } from "@/lib/api/customers";
@@ -65,9 +65,10 @@ function CheckoutForm() {
   const clearExpressItem = useExpressCheckoutStore((s) => s.clear);
   const isExpress = expressItem !== null;
   const items = isExpress ? [expressItem] : cartItems;
-  // Meta line items — a marketing signal from the cart's add-time display prices, never a charged amount
+  // Ad-pixel line items — a marketing signal from the cart's add-time display prices, never a charged amount
   // (PRICING_INVARIANTS §9); every total on this page comes from the server quote.
-  const metaItems = (): MetaLineItem[] => items.map((i) => ({ id: i.variantId, quantity: i.quantity, price: i.price }));
+  const pixelItems = (): PixelLineItem[] =>
+    items.map((i) => ({ id: i.variantId, name: i.productName, quantity: i.quantity, price: i.price }));
 
   // A "Buy Now" express item is meant to be one-shot. It's cleared explicitly on successful order
   // below, and the cart page clears any leftover one when the shopper visits their full cart —
@@ -82,7 +83,7 @@ function CheckoutForm() {
   // doesn't count as a new one.
   useEffect(() => {
     if (!mounted || items.length === 0) return;
-    pixelInitiateCheckout(metaItems());
+    pixelInitiateCheckout(pixelItems());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, items.length]);
 
@@ -314,7 +315,7 @@ function CheckoutForm() {
       // Only now that the server has accepted the checkout — a validation/stock error above never
       // gets here. Purchase is NOT fired here: it fires on the confirmation page once the backend
       // reports a real order (and server-side from the API), never from this optimistic step.
-      pixelAddPaymentInfo(metaItems(), values.paymentMethod);
+      pixelAddPaymentInfo(pixelItems(), values.paymentMethod);
       if (gatewayUrl) {
         // No Order exists yet for this attempt — it's only created once the gateway confirms
         // success (order.controller.ts / payment.service.ts's settlePaymentSession). Cart is left

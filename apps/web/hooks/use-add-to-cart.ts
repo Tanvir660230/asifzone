@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
-import { pixelAddToCart } from "@/lib/meta-pixel";
+import { pixelAddToCart } from "@/lib/pixels";
 import { trackFunnelEvent } from "@/lib/analytics";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 
@@ -51,7 +51,7 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
   function addToCart(quantity: number, variant?: ProductVariant) {
     const item = buildCartItem(variant);
     if (!item) return;
-    // The Meta AddToCart event fires inside addItem itself, with the quantity the cart actually gained.
+    // The ad-pixel AddToCart event fires inside addItem itself, with the quantity the cart actually gained.
     addItem(item, quantity);
     trackFunnelEvent("ADD_TO_CART", { productId: item.productId, variantId: item.variantId });
     setJustAdded(true);
@@ -62,7 +62,7 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     const item = buildCartItem(variant);
     if (!item) return;
     setExpressItem({ ...item, quantity });
-    pixelAddToCart({ id: item.variantId, quantity, price: item.price }, productName);
+    pixelAddToCart({ id: item.variantId, name: productName, quantity, price: item.price });
     // Buy Now skips the cart drawer but still puts the item into the checkout flow, so it counts
     // the same as an explicit Add to Cart for funnel purposes.
     trackFunnelEvent("ADD_TO_CART", { productId: item.productId, variantId: item.variantId });

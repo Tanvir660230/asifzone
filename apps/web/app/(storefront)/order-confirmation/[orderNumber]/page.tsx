@@ -13,7 +13,7 @@ import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
 import { trackOrder, retryPayment } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
 import { formatDateShort } from "@/lib/format";
-import { pixelPurchase } from "@/lib/meta-pixel";
+import { pixelPurchase } from "@/lib/pixels";
 import { useCartStore } from "@/store/cart";
 
 const SESSION_KEY = "lastOrderPhone";

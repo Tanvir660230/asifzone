@@ -79,6 +79,7 @@ const WEB_ENV_ALLOWLIST = new Set([
   "NEXT_PUBLIC_TAWKTO_WIDGET_ID",
   "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
   "NEXT_PUBLIC_VAPID_PUBLIC_KEY",
+  "NEXT_PUBLIC_TIKTOK_PIXEL_ID", // public ad-pixel id, like the Meta one (apps/web/lib/pixels/tiktok.ts)
   "REVALIDATE_SECRET", // server-only route handler shared with the API (never NEXT_PUBLIC_, never in the bundle)
   "NODE_ENV",
 ]);
