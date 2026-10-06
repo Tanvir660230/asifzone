@@ -240,3 +240,6 @@ server {
         add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     }
 }
+
+# Other installations on this VPS that this nginx fronts (docker/nginx/sites.d/README.md). No files = no-op.
+include /etc/nginx/sites.d/*.conf;

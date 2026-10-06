@@ -144,6 +144,8 @@ services:
       - uploads_data:/uploads:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
+      # Extra stores on this VPS (docker/nginx/sites.d/README.md); server-local files, empty by default.
+      - ./nginx/sites.d:/etc/nginx/sites.d:ro
     environment:
       # Per-store, required (no store default): the public host, its aliases (e.g. www.<host>), and the Let's Encrypt
       # certificate directory name under /etc/letsencrypt/live/.
