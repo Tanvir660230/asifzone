@@ -6,10 +6,10 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { signAccessToken } from "../../lib/jwt";
-import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken } from "../../lib/token-hash";
 import { env } from "../../config/env";
+import { getProviders } from "../../providers/registry";
 
 const googleClient = env.google.clientId ? new OAuth2Client(env.google.clientId) : null;
 
@@ -249,7 +249,7 @@ export async function createAdminInvite(input: CreateAdminInviteInput, invitedBy
   });
 
   const acceptUrl = `${env.webOrigin}/admin/accept-invite?token=${token}`;
-  await sendMail({
+  await getProviders().email.send({
     to: email,
     subject: "You've been invited to the admin console",
     html: await renderEmailLayout({

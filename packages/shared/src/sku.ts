@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** Tokens a SKU pattern may contain. `{SEQ:n}` zero-pads the counter to n digits (1–6). */
 export const SKU_TOKEN_HELP = [
-  { token: "{PREFIX}", meaning: "The store prefix set below (e.g. AZ)" },
+  { token: "{PREFIX}", meaning: "The store prefix set below (e.g. SKU)" },
   { token: "{TYPE}", meaning: "The product type's SKU code (e.g. PNJ)" },
   { token: "{COLOR}", meaning: "First three letters of the colour (Black → BLA)" },
   { token: "{SIZE}", meaning: "The size or volume as typed (M, 42, 50ML)" },

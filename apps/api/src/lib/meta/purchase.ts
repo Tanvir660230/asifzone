@@ -3,8 +3,10 @@ import { metaPurchaseEventId } from "@clothing-brand/shared";
 import { getCurrency } from "../../domain/config/commerce-settings";
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
-import { buildUserData, MetaApiError, sendMetaEvent, type MetaRequestContext, type MetaServerEvent } from "./capi";
+import { buildUserData, type MetaRequestContext, type MetaServerEvent } from "./capi";
+import { MetaApiError } from "../../providers/errors";
 import { logger } from "../observability/logger";
+import { getProviders } from "../../providers/registry";
 
 /** Server-side Purchase via the Conversions API — the authoritative copy of every storefront
  * conversion. The browser Pixel fires its own Purchase from the order-confirmation page with the
@@ -81,7 +83,7 @@ export async function processMetaPurchase({ orderId, context }: MetaPurchaseJobD
 
   const orderNumber = event.custom_data?.order_id;
   try {
-    const { eventsReceived } = await sendMetaEvent(event);
+    const { eventsReceived } = await getProviders().serverEvents.send(event);
     logger.info(`[meta-capi] Purchase sent for order ${orderNumber} (events_received=${eventsReceived}${env.meta.testEventCode ? ", test event" : ""})`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

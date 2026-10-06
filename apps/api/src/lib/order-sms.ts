@@ -1,10 +1,10 @@
 import type { Order } from "@prisma/client";
 import { DEFAULT_CUSTOMER_SMS_TEMPLATES, renderOrderSms, type CustomerSmsTouchpoint } from "@clothing-brand/shared";
-import { sendSms } from "./sms";
 import * as smsTemplates from "./sms-templates";
 import { getSmsSettings } from "../modules/sms-settings/sms-settings.service";
 import { getSettings } from "../modules/settings/settings.service";
 import { captureError } from "./observability/error-capture";
+import { getProviders } from "../providers/registry";
 
 export type CustomerTouchpoint = CustomerSmsTouchpoint;
 type SmsSettings = Awaited<ReturnType<typeof getSmsSettings>>;
@@ -42,7 +42,7 @@ export async function deliverCustomerOrderSms(order: OrderSmsFacts, touchpoint: 
     storeName: storeSettings.storeName,
     customerName: order.customerName,
   });
-  await sendSms({ to: order.customerPhone, body });
+  await getProviders().sms.send({ to: order.customerPhone, body });
   return "sent";
 }
 
@@ -65,7 +65,7 @@ export async function deliverAdminOrderAlertSms(order: OrderSmsFacts): Promise<"
     customerPhone: order.customerPhone,
     total: Number(order.total),
   });
-  const results = await Promise.allSettled(phones.map((to) => sendSms({ to, body })));
+  const results = await Promise.allSettled(phones.map((to) => getProviders().sms.send({ to, body })));
   const failures = results.flatMap((r, i) => (r.status === "rejected" ? [{ to: phones[i]!, err: r.reason as unknown }] : []));
   for (const f of failures) captureError(f.err, { msg: `[order-sms] admin alert to ${f.to} failed:` });
   if (failures.length === phones.length) throw failures[0]!.err;

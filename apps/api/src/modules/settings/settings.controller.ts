@@ -3,10 +3,13 @@ import { asyncHandler } from "../../lib/async-handler";
 import { processLogoImage, processFaviconImage, processPaymentMethodsImage } from "../uploads/upload.service";
 import * as settingsService from "./settings.service";
 import { loadTaxConfig, pricingConfigDrift } from "../../domain/pricing/pricing-config";
+import { capabilities } from "../../providers/registry";
 
-/** StoreSetting plus the one tax field that lives only in the TaxSetting authority (D10). */
+/** StoreSetting plus the one tax field that lives only in the TaxSetting authority (D10), plus (Phase 12 D-4) which online
+ * gateways this deployment can actually use — booleans only — so checkout never offers a gateway that cannot work. The
+ * store's own toggles (onlinePaymentEnabled / epsPaymentEnabled) are unchanged and still apply on top. */
 async function withTaxConfig<T extends object>(settings: T) {
-  return { ...settings, shippingTaxable: (await loadTaxConfig()).shippingTaxable };
+  return { ...settings, shippingTaxable: (await loadTaxConfig()).shippingTaxable, onlineGateways: capabilities().payments };
 }
 
 export const get = asyncHandler(async (_req: Request, res: Response) => {

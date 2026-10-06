@@ -8,16 +8,30 @@ import { startCampaignSendWorker } from "./jobs/campaign-send-worker";
 import { startCampaignSchedulerCron } from "./jobs/campaign-scheduler-cron";
 import { startCourierStatusCron } from "./jobs/courier-status-cron";
 import { startPaymentReconciliationCron } from "./jobs/payment-reconciliation-cron";
+import { startStorageTrashCron } from "./jobs/storage-trash-cron";
 import { startMetaCapiWorker } from "./jobs/meta-capi-worker";
 import { startOutboxWorker } from "./jobs/outbox-worker";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
 import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard";
 import { logger } from "./lib/observability/logger";
 import { captureError } from "./lib/observability/error-capture";
+import { validateProviderConfig } from "./providers/registry";
 
 let shuttingDown = false;
 
 async function main() {
+  // Phase 12 W5: refuse to start on an invalid provider selection (unknown name, or an explicitly selected provider
+  // without its credentials in production). The error names variables only. Failing here keeps /health/ready red, so
+  // docker/deploy.sh stops before the proxy switch.
+  const providers = validateProviderConfig();
+  logger.info("[providers] selection", {
+    sms: providers.sms,
+    email: providers.email,
+    courier: providers.courier,
+    push: providers.push,
+    paymentGateways: providers.paymentGateways.join(",") || "none",
+  });
+
   await prisma.$connect();
   // Demo mirror guard (docs/DEMO_DATA.md §5): refuses a half-built or mislabeled demo database.
   const database = await verifyDatabaseRole(prisma, env.nodeEnv);
@@ -51,6 +65,7 @@ async function main() {
     startCourierStatusCron().catch((err) => captureError(err, { msg: "[courier-status-cron] failed to start:" }));
     startPaymentReconciliationCron().catch((err) => captureError(err, { msg: "[payment-reconciliation-cron] failed to start:" }));
   }
+  startStorageTrashCron().catch((err) => captureError(err, { msg: "[storage-trash-cron] failed to start:" }));
   startMetaCapiWorker().catch((err) => captureError(err, { msg: "[meta-capi] worker failed to start:" }));
   startOutboxWorker().catch((err) => captureError(err, { msg: "[outbox] worker failed to start:" }));
 

@@ -1,24 +1,14 @@
-import { normalizeBdPhone } from "@clothing-brand/shared";
-import { env } from "../config/env";
-import { liveProvidersEnabled } from "./provider-guard";
-import { logger } from "./observability/logger";
+import { toBdInternationalDigits } from "@clothing-brand/shared";
+import { env } from "../../config/env";
+import { liveProvidersEnabled } from "../../lib/provider-guard";
+import { logger, maskText } from "../../lib/observability/logger";
+import { SmsProviderError } from "../errors";
 
-interface SmsInput {
+export interface SmsInput {
   to: string;
   body: string;
 }
 
-/** A failed send. `retryable` separates "try again later" (network, timeout, HTTP 5xx/429) from the provider actively
- * rejecting the message (invalid number, bad sender id, credentials) — which no retry will fix (Phase 8 retry policy). */
-export class SmsProviderError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-  ) {
-    super(message);
-    this.name = "SmsProviderError";
-  }
-}
 
 const BULKSMSBD_ENDPOINT = "https://bulksmsbd.net/api/smsapi";
 /** Well inside the outbox worker's 5-min lease (Phase 9 D-5): a hung provider call can never outlive the lease and be
@@ -27,15 +17,15 @@ export const SMS_TIMEOUT_MS = 20_000;
 
 // BulkSMSBD expects the international "8801XXXXXXXXX" form. Phones are validated/normalized to
 // local "01XXXXXXXXX" at every input (see bdPhoneSchema in packages/shared/src/schemas/common.ts),
-// but normalizeBdPhone runs again here as a defense against rows written before that validation
+// but normalization runs again here (toBdInternationalDigits) as a defense against rows written before that validation
 // existed — otherwise a stray "+880..."/"00880..." value stored back then would silently fail to
 // send forever, since BulkSMSBD returns HTTP 200 even on a rejected number.
 function toBulkSmsBdNumber(phone: string): string {
-  return `88${normalizeBdPhone(phone)}`;
+  return toBdInternationalDigits(phone);
 }
 
 // No BULKSMSBD_API_KEY configured yet: log instead of sending, same fallback spirit as
-// lib/mailer.ts, so local dev/CI never needs a real account.
+// providers/email/resend.ts, so local dev/CI never needs a real account.
 export async function sendSms({ to, body }: SmsInput): Promise<void> {
   if (!env.bulkSmsBd.apiKey || !liveProvidersEnabled()) {
     logger.info("[sms] (dev mode, not actually sent)", { to, bodyLength: body.length });
@@ -50,8 +40,15 @@ export async function sendSms({ to, body }: SmsInput): Promise<void> {
     message: body,
   });
 
-  // A network failure/timeout here throws a plain Error — retryable by default.
-  const res = await fetch(`${BULKSMSBD_ENDPOINT}?${params.toString()}`, { signal: AbortSignal.timeout(SMS_TIMEOUT_MS) });
+  // BulkSMSBD's API takes the key in the query string (provider-imposed). The URL is never logged, and a transport failure
+  // (network/timeout) is rethrown with a masked message so neither logs nor the outbox's lastError can carry the key
+  // (Phase 12 W7). Still retryable, exactly as before.
+  let res: Response;
+  try {
+    res = await fetch(`${BULKSMSBD_ENDPOINT}?${params.toString()}`, { signal: AbortSignal.timeout(SMS_TIMEOUT_MS) });
+  } catch (err) {
+    throw new SmsProviderError(`[sms] BulkSMSBD request failed: ${maskText(err instanceof Error ? err.message : String(err))}`, true);
+  }
   if (!res.ok) throw new SmsProviderError(`[sms] BulkSMSBD HTTP ${res.status}`, res.status >= 500 || res.status === 429);
   const data = (await res.json().catch(() => null)) as { response_code?: number } | null;
 

@@ -15,7 +15,7 @@ import { cacheDel, cacheGet, cacheSet } from "../../config/redis";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder } from "../../test-fixtures";
 import { getSettings, updateSettings } from "../../modules/settings/settings.service";
 import { holdOrderForFollowUp, updateOrderStatus } from "../../modules/orders/order.service";
-import { initSslcommerzSession } from "../../modules/payments/sslcommerz.service";
+import { initSslcommerzSession } from "../../providers/payment/sslcommerz";
 import { buildPurchaseEvent } from "../../lib/meta/purchase";
 import { renderEmailLayout } from "../../lib/email-template";
 import { recordRefund } from "../payments/payment-ledger.service";

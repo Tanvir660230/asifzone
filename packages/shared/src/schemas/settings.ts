@@ -65,6 +65,18 @@ export const updateSettingsSchema = z.object({
   onlinePaymentEnabled: z.boolean().optional(),
   epsPaymentEnabled: z.boolean().optional(),
   googleSiteVerification: nullableString(255),
+  // Phase 12 identity (D-2). Optional; blank clears.
+  legalName: nullableString(200),
+  addressLine: nullableString(300),
+  addressCity: nullableString(100),
+  addressRegion: nullableString(100),
+  addressPostalCode: nullableString(20),
+  addressCountry: z.preprocess(
+    (v) => (typeof v === "string" ? (v.trim() === "" ? null : v.trim().toUpperCase()) : v),
+    z.string().regex(/^[A-Z]{2}$/, "Use a two-letter ISO country code (e.g. BD)").nullable().optional(),
+  ),
+  legalJurisdiction: nullableString(120),
+  supportHours: nullableString(200),
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

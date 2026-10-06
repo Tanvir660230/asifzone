@@ -8,7 +8,7 @@ const SHOTS = process.env.PREVIEW_SHOTS_DIR;
 
 const RUN = String(Date.now()).slice(-8);
 const PRODUCT = `Preview Panjabi ${RUN}`;
-const SEO_TITLE = `Black Preview Panjabi ${RUN} | Asif Zone`;
+const SEO_TITLE = `Black Preview Panjabi ${RUN} | Test Store`;
 const META = `A ${RUN} black cotton panjabi, previewed before it was saved.`;
 
 async function login(page: Page) {

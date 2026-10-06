@@ -1,11 +1,12 @@
 import fs from "fs";
 import path from "path";
 import { Resend } from "resend";
-import { env } from "../config/env";
-import { liveProvidersEnabled } from "./provider-guard";
-import { logger } from "./observability/logger";
+import { env } from "../../config/env";
+import { liveProvidersEnabled } from "../../lib/provider-guard";
+import { logger } from "../../lib/observability/logger";
+import { MailProviderError } from "../errors";
 
-interface MailInput {
+export interface MailInput {
   to: string;
   subject: string;
   html: string;
@@ -13,16 +14,6 @@ interface MailInput {
   idempotencyKey?: string;
 }
 
-/** A failed send; `retryable` is false when the provider rejected the request itself (validation, domain, credentials). */
-export class MailProviderError extends Error {
-  constructor(
-    message: string,
-    readonly retryable: boolean,
-  ) {
-    super(message);
-    this.name = "MailProviderError";
-  }
-}
 
 const devMailDir = path.join(process.cwd(), ".devmail");
 /** Inside the outbox lease (Phase 9 D-5). The SDK takes no signal, so the send is raced against a timer: a late delivery of

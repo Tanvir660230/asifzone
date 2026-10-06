@@ -3,7 +3,7 @@ import request from "supertest";
 
 // Claim links are emailed: capture outgoing mail so a test can follow the link (the only way to learn the token).
 const sent = vi.hoisted(() => [] as Array<{ to: string; subject: string; html: string }>);
-vi.mock("../../lib/mailer", () => ({ sendMail: async (m: { to: string; subject: string; html: string }) => void sent.push(m) }));
+vi.mock("../../providers/email/resend", () => ({ sendMail: async (m: { to: string; subject: string; html: string }) => void sent.push(m) }));
 
 import bcrypt from "bcryptjs";
 import { app } from "../../app";

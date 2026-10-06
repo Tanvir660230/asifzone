@@ -73,10 +73,11 @@ import type {
   BulkDeliveryScoreResult,
   AdminOrderListParams,
 } from "@/lib/api/admin-orders";
-import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, deliveryScoreBadgeClass, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel, paymentStatusLabel, paymentStatusTextClass, timeAgo } from "@/lib/format";
+import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, deliveryScoreBadgeClass, deliveryScoreSummary, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel, paymentStatusLabel, paymentStatusTextClass, timeAgo } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -368,6 +369,8 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const { data: currentAdmin } = useCurrentAdmin();
+  // Phase 12 D-4: courier actions are offered only when the courier provider is configured on this deployment.
+  const { courier: courierAvailable } = useProviderCapabilities();
   const canDeleteOrders = adminCan(currentAdmin?.admin, "orders.delete");
   const debouncedSearch = useDebouncedValue(search, 350);
 
@@ -875,6 +878,7 @@ export default function OrdersPage() {
   // running into it.
   function renderDeliveryScoreBadge(order: AdminOrderListItem) {
     if (!order.deliveryScore) {
+      if (!courierAvailable) return null;
       const isChecking = rowCheckDeliveryScoreMutation.isPending && rowCheckDeliveryScoreMutation.variables?.[0] === order.id;
       return (
         <button
@@ -889,14 +893,14 @@ export default function OrdersPage() {
         </button>
       );
     }
-    const { successRate, totalParcels, successParcels, cancelledParcels, checkedAt } = order.deliveryScore;
+    const { successRate, checkedAt } = order.deliveryScore;
     return (
       <span
         className={cn(
           "inline-flex shrink-0 items-center rounded px-1.5 py-[1px] text-[10px] font-semibold leading-tight",
           deliveryScoreBadgeClass(successRate),
         )}
-        title={`${successParcels} delivered, ${cancelledParcels} cancelled of ${totalParcels} parcel(s) — Steadfast fraud check · checked ${timeAgo(checkedAt)}`}
+        title={`${deliveryScoreSummary(order.deliveryScore)} — Steadfast fraud check · checked ${timeAgo(checkedAt)}`}
       >
         {successRate === null ? "No history" : `${successRate}%`}
       </span>
@@ -921,9 +925,11 @@ export default function OrdersPage() {
     return [
       { label: "View order", icon: Eye, onClick: () => setDrawerOrderId(order.id) },
       { label: "Print label", icon: Printer, onClick: () => handlePrintLabels([order.id]) },
-      ...(!order.courierConsignmentId
-        ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
-        : [{ label: "Sync courier status", icon: RefreshCw, onClick: () => syncCourierMutation.mutate(order.id) }]),
+      ...(!courierAvailable
+        ? []
+        : !order.courierConsignmentId
+          ? [{ label: "Book with Steadfast", icon: Truck, onClick: () => handleBookCourier(order) }]
+          : [{ label: "Sync courier status", icon: RefreshCw, onClick: () => syncCourierMutation.mutate(order.id) }]),
       ...(canDeleteOrders
         ? [{ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => handleDelete(order.orderNumber, order.id) }]
         : []),
@@ -1590,30 +1596,34 @@ export default function OrdersPage() {
                 Apply
               </Button>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={bulkBookCourierMutation.isPending}
-              onClick={handleBulkBookCourier}
-            >
-              <Truck size={14} /> Book with Steadfast
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={bulkSyncCourierMutation.isPending}
-              onClick={handleBulkSyncCourier}
-            >
-              <RefreshCw size={14} /> Sync courier status
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={bulkCheckDeliveryScoreMutation.isPending}
-              onClick={handleBulkCheckDeliveryScore}
-            >
-              <ShieldCheck size={14} /> Check delivery score
-            </Button>
+            {courierAvailable && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkBookCourierMutation.isPending}
+                  onClick={handleBulkBookCourier}
+                >
+                  <Truck size={14} /> Book with Steadfast
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkSyncCourierMutation.isPending}
+                  onClick={handleBulkSyncCourier}
+                >
+                  <RefreshCw size={14} /> Sync courier status
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={bulkCheckDeliveryScoreMutation.isPending}
+                  onClick={handleBulkCheckDeliveryScore}
+                >
+                  <ShieldCheck size={14} /> Check delivery score
+                </Button>
+              </>
+            )}
             <Button variant="outline" size="sm" onClick={() => handlePrintLabels()}>
               <Printer size={14} /> Print Labels
             </Button>
@@ -1807,8 +1817,8 @@ export default function OrdersPage() {
                         {c.orderNumber}
                       </button>
                       <span className="text-ink-400">
-                        {c.successRate === null ? "No history" : `${c.successRate}%`} ({c.totalParcels} parcel
-                        {c.totalParcels === 1 ? "" : "s"})
+                        {c.successRate === null ? "No history" : `${c.successRate}%`} ({c.volumeRange ?? c.totalParcels} parcel
+                        {(c.volumeRange ?? String(c.totalParcels)) === "1" ? "" : "s"})
                       </span>
                     </li>
                   ))}

@@ -38,7 +38,7 @@ describe("outbox — architecture guards", () => {
 
   it("business-transaction modules never call an SMS/email/Meta provider or deliverer directly", () => {
     const BUSINESS = ["modules/orders/order.service.ts", "modules/payments/payment.service.ts", "domain/payments/payment-ledger.service.ts", "modules/return-requests/return-request.service.ts", "modules/inventory/inventory.service.ts"];
-    const SENDERS = /\b(sendSms|sendMail|deliverCustomerOrderSms|deliverAdminOrderAlertSms|deliverPaymentConfirmationEmail|sendMetaEvent|processMetaPurchase|enqueueMetaPurchase|sendCustomerOrderSms|sendAdminOrderAlertSms|sendPaymentConfirmationEmail)\b/;
+    const SENDERS = /\.(sms|email|push)\.send\(|serverEvents\.send\(|\b(sendSms|sendMail|deliverCustomerOrderSms|deliverAdminOrderAlertSms|deliverPaymentConfirmationEmail|sendMetaEvent|processMetaPurchase|enqueueMetaPurchase|sendCustomerOrderSms|sendAdminOrderAlertSms|sendPaymentConfirmationEmail)\b/;
     const offenders = BUSINESS.filter((f) => SENDERS.test(code(join(SRC, f))));
     expect(offenders).toEqual([]);
   });

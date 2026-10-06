@@ -10,9 +10,7 @@ import { applyOrderTransition, updateOrderStatus } from "../../modules/orders/or
 import { settlePaymentSession } from "../../modules/payments/payment.service";
 import { awardDeliveryPoints } from "../../modules/customers/customer.service";
 import { updateSettings } from "../../modules/settings/settings.service";
-import { SmsProviderError } from "../../lib/sms";
-import { MailProviderError } from "../../lib/mailer";
-import { MetaApiError } from "../../lib/meta/capi";
+import { MailProviderError, MetaApiError, SmsProviderError } from "../../providers/errors";
 import { recordOutboxEvents } from "./outbox";
 import { OUTBOX_CONSUMERS, type OutboxConsumer } from "./consumers";
 import {
@@ -296,6 +294,17 @@ describe("worker", () => {
     expect(await processOutboxEvent(e.id, { consumers, now: new Date(now.getTime() + retryDelayMs(1) + 1) })).toMatchObject({ outcome: "processed" });
     expect(calls).toHaveLength(2);
     expect([retryDelayMs(1), retryDelayMs(2), retryDelayMs(3)]).toEqual([30_000, 60_000, 120_000]);
+  });
+
+  it("Phase 12 W7: a provider credential carried in an error URL never reaches the persisted lastError", async () => {
+    const leaked = await testEvent();
+    const r = recorder(async () => {
+      throw new SmsProviderError("[sms] BulkSMSBD request failed: GET https://bulksmsbd.net/api/smsapi?api_key=SENTINEL-KEY-77a1&number=8801700000000", false);
+    });
+    expect(await processOutboxEvent(leaked.id, { consumers: r.consumers })).toMatchObject({ outcome: "failed" });
+    const { lastError } = await rowOf(leaked.id);
+    expect(lastError).not.toContain("SENTINEL-KEY-77a1");
+    expect(lastError).toContain("api_key=[redacted]");
   });
 
   it("non-retryable failure → FAILED at once; max attempts → FAILED; an operator retry sends it round again", async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import request from "supertest";
 
-vi.mock("../../lib/mailer", () => ({ sendMail: async () => undefined }));
+vi.mock("../../providers/email/resend", () => ({ sendMail: async () => undefined }));
 
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";

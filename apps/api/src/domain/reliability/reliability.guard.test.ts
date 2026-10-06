@@ -14,7 +14,7 @@ const read = (base: string, file: string) =>
 
 describe("reliability — architecture guards", () => {
   it("provider adapters gate on liveProvidersEnabled(), never on NODE_ENV alone", () => {
-    for (const f of ["lib/sms.ts", "lib/mailer.ts", "lib/meta/capi.ts"]) {
+    for (const f of ["providers/sms/bulksmsbd.ts", "providers/email/resend.ts", "providers/events/meta-capi.ts"]) {
       const code = read(API, f);
       expect(code, f).toMatch(/liveProvidersEnabled\(\)/);
       expect(code, f).not.toMatch(/NODE_ENV === "test"/);
@@ -29,10 +29,10 @@ describe("reliability — architecture guards", () => {
   });
 
   it("every outbound provider call is bounded by a timeout inside the outbox lease", () => {
-    expect(read(API, "lib/sms.ts")).toMatch(/signal: AbortSignal\.timeout\(SMS_TIMEOUT_MS\)/);
-    expect(read(API, "lib/mailer.ts")).toMatch(/Promise\.race\(\[/);
-    expect(read(API, "lib/meta/capi.ts")).toMatch(/AbortSignal\.timeout/);
-    const steadfast = read(API, "lib/steadfast.ts");
+    expect(read(API, "providers/sms/bulksmsbd.ts")).toMatch(/signal: AbortSignal\.timeout\(SMS_TIMEOUT_MS\)/);
+    expect(read(API, "providers/email/resend.ts")).toMatch(/Promise\.race\(\[/);
+    expect(read(API, "providers/events/meta-capi.ts")).toMatch(/AbortSignal\.timeout/);
+    const steadfast = read(API, "providers/courier/steadfast.ts");
     // One raw fetch (inside steadfastFetch, which applies the timeout) — every endpoint goes through it.
     expect(steadfast.match(/\bawait fetch\(/g)).toHaveLength(1);
     expect(steadfast).toMatch(/signal: AbortSignal\.timeout\(STEADFAST_TIMEOUT_MS\)/);
@@ -42,9 +42,11 @@ describe("reliability — architecture guards", () => {
     const code = read(API, "modules/courier/courier.service.ts");
     const single = code.slice(code.indexOf("export async function bookOrderWithSteadfast"), code.indexOf("export interface BulkCourierBookResult"));
     expect(single.indexOf("claimCourierBooking(")).toBeGreaterThan(-1);
-    expect(single.indexOf("claimCourierBooking(")).toBeLessThan(single.indexOf("createSteadfastConsignment("));
+    expect(single.indexOf("courier.createShipment(")).toBeGreaterThan(-1);
+    expect(single.indexOf("claimCourierBooking(")).toBeLessThan(single.indexOf("courier.createShipment("));
     const bulk = code.slice(code.indexOf("export async function bookOrdersWithSteadfastBulk"));
-    expect(bulk.indexOf("claimCourierBooking(")).toBeLessThan(bulk.indexOf("createBulkSteadfastConsignments("));
+    expect(bulk.indexOf("courier.createShipments(")).toBeGreaterThan(-1);
+    expect(bulk.indexOf("claimCourierBooking(")).toBeLessThan(bulk.indexOf("courier.createShipments("));
   });
 
   it("an exchange replacement is conditional on the original units actually being released", () => {

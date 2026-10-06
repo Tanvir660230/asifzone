@@ -6,7 +6,7 @@ import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, stockOf, trackOrder } from "../../test-fixtures";
 import { LiveProviderBlockedError, liveProvidersEnabled, networkGuardInstalled } from "../../lib/provider-guard";
-import { sendSms } from "../../lib/sms";
+import { sendSms } from "../../providers/sms/bulksmsbd";
 import { updateOrderStatus } from "../../modules/orders/order.service";
 import { createOrder } from "../../modules/orders/order.service";
 import { reviewReturnRequest, createReturnRequest } from "../../modules/return-requests/return-request.service";

@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { adminCan } from "@/lib/auth";
 import { storeCurrencyCode } from "@/lib/format";
+import { ProviderStatusPanel } from "@/components/admin/provider-status-panel";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 /** wa.me and api.whatsapp.com/send?phone= are the two URL shapes admins tend to paste (or that this
  * form itself writes) — read whichever one is there back out to a plain number for editing. */
@@ -212,6 +214,7 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<SettingsTab>("branding");
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: settingsApi.getSettings });
+  const gateways = useProviderCapabilities(); // Phase 12 D-4
   const { data: currentAdmin } = useCurrentAdmin();
   const canManageSettings = adminCan(currentAdmin?.admin, "settings.manage");
 
@@ -260,6 +263,14 @@ export default function SettingsPage() {
       onlinePaymentEnabled: s.onlinePaymentEnabled,
       epsPaymentEnabled: s.epsPaymentEnabled,
       googleSiteVerification: s.googleSiteVerification,
+      legalName: s.legalName,
+      addressLine: s.addressLine,
+      addressCity: s.addressCity,
+      addressRegion: s.addressRegion,
+      addressPostalCode: s.addressPostalCode,
+      addressCountry: s.addressCountry,
+      legalJurisdiction: s.legalJurisdiction,
+      supportHours: s.supportHours,
     });
   }, [data, reset]);
 
@@ -402,6 +413,47 @@ export default function SettingsPage() {
             <div>
               <Label htmlFor="contactPhone">Contact phone</Label>
               <Input id="contactPhone" {...register("contactPhone")} />
+            </div>
+          </div>
+        </FormSection>
+
+        <FormSection
+          title="Business identity"
+          description="Your registered business details — shown in the footer, on the contact and terms pages and in search-engine data. Leave a field blank to hide it."
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="legalName">Legal business name</Label>
+              <Input id="legalName" {...register("legalName")} />
+            </div>
+            <div>
+              <Label htmlFor="legalJurisdiction">Governing law (country or region)</Label>
+              <Input id="legalJurisdiction" placeholder="e.g. Bangladesh" {...register("legalJurisdiction")} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="addressLine">Street address</Label>
+              <Input id="addressLine" {...register("addressLine")} />
+            </div>
+            <div>
+              <Label htmlFor="addressCity">City</Label>
+              <Input id="addressCity" {...register("addressCity")} />
+            </div>
+            <div>
+              <Label htmlFor="addressRegion">Region / division</Label>
+              <Input id="addressRegion" {...register("addressRegion")} />
+            </div>
+            <div>
+              <Label htmlFor="addressPostalCode">Postal code</Label>
+              <Input id="addressPostalCode" {...register("addressPostalCode")} />
+            </div>
+            <div>
+              <Label htmlFor="addressCountry">Country code</Label>
+              <Input id="addressCountry" placeholder="e.g. BD" maxLength={2} {...register("addressCountry")} />
+              {errors.addressCountry && <p className="mt-1 text-xs text-danger-600">{errors.addressCountry.message}</p>}
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="supportHours">Support hours</Label>
+              <Input id="supportHours" placeholder="e.g. Sat–Thu, 10am–8pm" {...register("supportHours")} />
             </div>
           </div>
         </FormSection>
@@ -576,21 +628,24 @@ export default function SettingsPage() {
               <div>
                 <p className="text-sm font-medium text-ink-900">Online Payment (SSLCommerz)</p>
                 <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via SSLCommerz.</p>
+                {gateways.loaded && !gateways.payments.SSLCOMMERZ && <p className="mt-1 text-xs text-warning-600">Not configured on this server — see Integrations below.</p>}
               </div>
-              <Checkbox {...register("onlinePaymentEnabled")} disabled={onlinePaymentEnabled && isLastPaymentMethodEnabled} />
+              <Checkbox {...register("onlinePaymentEnabled")} disabled={(onlinePaymentEnabled && isLastPaymentMethodEnabled) || (!onlinePaymentEnabled && !gateways.payments.SSLCOMMERZ)} />
             </label>
             <label className="flex items-center justify-between rounded-lg border border-ink-100 p-4">
               <div>
                 <p className="text-sm font-medium text-ink-900">Online Payment (EPS-PG)</p>
                 <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via EPS. Requires EPS_* env vars to be set.</p>
+                {gateways.loaded && !gateways.payments.EPS_PG && <p className="mt-1 text-xs text-warning-600">Not configured on this server — see Integrations below.</p>}
               </div>
-              <Checkbox {...register("epsPaymentEnabled")} disabled={epsPaymentEnabled && isLastPaymentMethodEnabled} />
+              <Checkbox {...register("epsPaymentEnabled")} disabled={(epsPaymentEnabled && isLastPaymentMethodEnabled) || (!epsPaymentEnabled && !gateways.payments.EPS_PG)} />
             </label>
             {!codEnabled && !onlinePaymentEnabled && !epsPaymentEnabled && (
               <p className="text-xs text-danger-600">At least one payment method must stay enabled.</p>
             )}
           </div>
         </FormSection>
+        <ProviderStatusPanel />
         </>
         )}
 

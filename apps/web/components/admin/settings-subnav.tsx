@@ -12,6 +12,7 @@ const TABS: Array<{ label: string; href: string; permission?: Permission }> = [
   { label: "Social Links", href: "/admin/social-links" },
   { label: "Redirects", href: "/admin/redirects" },
   { label: "Team", href: "/admin/team", permission: "users.manage" },
+  { label: "Storage", href: "/admin/storage", permission: "settings.manage" },
   { label: "Audit Log", href: "/admin/audit-log", permission: "audit.read" },
 ];
 

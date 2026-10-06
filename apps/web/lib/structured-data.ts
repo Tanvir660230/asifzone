@@ -1,11 +1,20 @@
 import type { ReactNode } from "react";
-import { BD_DIVISIONS, type Product, type StoreSettings } from "@clothing-brand/shared";
+import {
+  BD_COUNTRY_CODE,
+  BD_DHAKA,
+  BD_DIVISIONS,
+  DHAKA_DELIVERY_DAYS,
+  OUTSIDE_DHAKA_DELIVERY_DAYS,
+  type Product,
+  type StoreSettings,
+} from "@clothing-brand/shared";
 import { resolveImageUrl } from "./image-url";
+import { postalAddressJsonLd } from "./store-identity";
 import { stripHtml } from "./format";
 import { productDisplayPrice } from "./pricing-display";
 import { availabilityOf } from "./availability-display";
 
-const NON_DHAKA_DIVISIONS = BD_DIVISIONS.filter((d) => d !== "Dhaka");
+const NON_DHAKA_DIVISIONS = BD_DIVISIONS.filter((d) => d !== BD_DHAKA);
 
 // Mirrors the 7-day unworn/tags-attached window described on the /shipping-returns page — kept
 // as one literal here since that's the only place the policy is defined; update both together.
@@ -15,7 +24,7 @@ const MERCHANT_RETURN_POLICY = {
   merchantReturnDays: 7,
   returnMethod: "https://schema.org/ReturnByMail",
   returnFees: "https://schema.org/ReturnShippingFeesCustomerResponsibility",
-  applicableCountry: "BD",
+  applicableCountry: BD_COUNTRY_CODE,
 };
 
 /** Mirrors packages/shared/src/delivery.ts's estimateDelivery exactly: the fee/ETA split is by
@@ -27,21 +36,21 @@ function buildShippingDetails(settings: StoreSettings) {
     {
       "@type": "OfferShippingDetails",
       shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeDhaka, currency: settings.currency },
-      shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: "Dhaka" },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: BD_COUNTRY_CODE, addressRegion: BD_DHAKA },
       deliveryTime: {
         "@type": "ShippingDeliveryTime",
         handlingTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
-        transitTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
+        transitTime: { "@type": "QuantitativeValue", minValue: DHAKA_DELIVERY_DAYS[0], maxValue: DHAKA_DELIVERY_DAYS[1], unitCode: "DAY" },
       },
     },
     {
       "@type": "OfferShippingDetails",
       shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeOutsideDhaka, currency: settings.currency },
-      shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: NON_DHAKA_DIVISIONS },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: BD_COUNTRY_CODE, addressRegion: NON_DHAKA_DIVISIONS },
       deliveryTime: {
         "@type": "ShippingDeliveryTime",
         handlingTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
-        transitTime: { "@type": "QuantitativeValue", minValue: 3, maxValue: 5, unitCode: "DAY" },
+        transitTime: { "@type": "QuantitativeValue", minValue: OUTSIDE_DHAKA_DELIVERY_DAYS[0], maxValue: OUTSIDE_DHAKA_DELIVERY_DAYS[1], unitCode: "DAY" },
       },
     },
   ];
@@ -150,8 +159,10 @@ export function buildOrganizationJsonLd(settings: StoreSettings, siteUrl: string
     "@context": "https://schema.org",
     "@type": "Organization",
     name: settings.storeName,
+    ...(settings.legalName ? { legalName: settings.legalName } : {}),
     url: siteUrl,
     logo: settings.logoUrl || undefined,
+    ...(postalAddressJsonLd(settings) ? { address: postalAddressJsonLd(settings) } : {}),
     ...(hasContact
       ? {
           contactPoint: {

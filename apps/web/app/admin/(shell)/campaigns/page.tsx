@@ -23,6 +23,7 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { ApiError } from "@/lib/api-client";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 // Tiptap + its ~9 sub-packages are large and admin-only — split out of the main bundle and only
 // fetched once an EMAIL campaign's body field actually renders it (see below).
@@ -47,6 +48,7 @@ const SEGMENT_OPTIONS: Array<{ value: CreateCampaignInput["segmentType"]; label:
 ];
 
 export default function CampaignsPage() {
+  const channels = useProviderCapabilities(); // Phase 12 D-4: a channel without a configured provider can't be chosen
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["admin-campaigns"], queryFn: () => campaignsApi.listCampaigns() });
   const [showCompose, setShowCompose] = useState(false);
@@ -245,9 +247,9 @@ export default function CampaignsPage() {
             <div>
               <Label htmlFor="channel">Channel</Label>
               <Select id="channel" {...register("channel")}>
-                <option value="EMAIL">Email</option>
-                <option value="SMS">SMS</option>
-                <option value="PUSH">Push notification</option>
+                <option value="EMAIL" disabled={!channels.email}>Email{channels.loaded && !channels.email ? " (not configured)" : ""}</option>
+                <option value="SMS" disabled={!channels.sms}>SMS{channels.loaded && !channels.sms ? " (not configured)" : ""}</option>
+                <option value="PUSH" disabled={!channels.push}>Push notification{channels.loaded && !channels.push ? " (not configured)" : ""}</option>
               </Select>
             </div>
             <div>

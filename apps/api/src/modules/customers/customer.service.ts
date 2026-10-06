@@ -43,9 +43,6 @@ import {
   isVerifiedPhoneConflict,
   PHONE_IN_USE,
 } from "./customer-identity";
-import { sendMail } from "../../lib/mailer";
-import { sendSms } from "../../lib/sms";
-import { getSteadfastFraudCheck } from "../../lib/steadfast";
 import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken, signPayload, constantTimeEqual } from "../../lib/token-hash";
 import { env } from "../../config/env";
@@ -54,6 +51,7 @@ import { customerMetricsIndex } from "../../domain/metrics/metrics.service";
 import { resolveStoreRange } from "../../domain/metrics/store-time";
 import { getCommerceSettings, type CommerceSettings } from "../../domain/config/commerce-settings";
 import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
 
 // Bulk sends dispatch this many recipients concurrently — same bound as campaign.service.ts's
 // SEND_CONCURRENCY, for the same reason (bounded outbound connections to the SMS provider).
@@ -194,7 +192,7 @@ async function startEmailClaim(customerId: string, email: string, pending: { pas
     data: { customerId, tokenHash: hashToken(token), passwordHash: pending.passwordHash, name: pending.name, phone: pending.phone, expiresAt: new Date(Date.now() + CLAIM_TTL_MS) },
   });
   const claimUrl = `${env.webOrigin}/account/claim?token=${token}`;
-  await sendMail({
+  await getProviders().email.send({
     to: email,
     subject: "Confirm your account",
     html: await renderEmailLayout({
@@ -395,7 +393,7 @@ export async function requestPasswordReset(email: string) {
   });
 
   const resetUrl = `${env.webOrigin}/account/reset-password?token=${token}`;
-  await sendMail({
+  await getProviders().email.send({
     // Non-null — customer was looked up by this exact email a few lines up.
     to: customer.email!,
     subject: "Reset your password",
@@ -458,7 +456,7 @@ export async function sendVerificationEmail(customerId: string) {
   });
 
   const verifyUrl = `${env.webOrigin}/account/verify-email?token=${token}`;
-  await sendMail({
+  await getProviders().email.send({
     to: customer.email,
     subject: "Verify your email",
     html: await renderEmailLayout({
@@ -567,7 +565,8 @@ export async function requestOtp(phone: string) {
     data: { phone, codeHash: hashToken(code), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
   });
 
-  await sendSms({ to: phone, body: `Your verification code is ${code}. It expires in 5 minutes.` });
+  const { storeName } = await getSettings();
+  await getProviders().sms.send({ to: phone, body: `${storeName}: your verification code is ${code}. It expires in 5 minutes.` });
 }
 
 /** Phone OTP sign-in (Phase 11 — BD-11.1, BD-11.6 a, F-26).
@@ -1025,7 +1024,7 @@ async function dispatchAndLogSms(campaignId: string, customerId: string, phone: 
     data: { campaignId, customerId, renderedBody },
   });
   try {
-    await sendSms({ to: phone, body: renderedBody });
+    await getProviders().sms.send({ to: phone, body: renderedBody });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to send SMS";
     await prisma.campaignRecipient.update({ where: { id: recipient.id }, data: { status: "FAILED", error: message } });
@@ -1156,14 +1155,18 @@ export async function reverseDeliveryPoints(tx: LoyaltyTx, customerId: string, o
  * failure — the checkout call site must catch and log rather than let it fail the order. */
 export async function checkAndUpdateDeliveryScore(customerId: string, rawPhone: string) {
   const phone = normalizeBdPhone(rawPhone);
-  const result = await getSteadfastFraudCheck(phone);
+  const result = await getProviders().courier.deliveryScore(phone);
   await prisma.customer.update({
     where: { id: customerId },
     data: {
       deliveryTotalParcels: result.totalParcels,
-      deliverySuccessParcels: result.successParcels,
-      deliveryCancelledParcels: result.cancelledParcels,
+      // Steadfast no longer publishes exact delivered/cancelled counts — clear any stale ones.
+      deliverySuccessParcels: null,
+      deliveryCancelledParcels: null,
       deliverySuccessRate: result.successRate,
+      deliveryCancellationRate: result.cancellationRate,
+      deliveryVolumeRange: result.volumeRange,
+      deliveryFraudReports: result.fraudReports,
       deliveryScoreCheckedAt: new Date(),
     },
   });

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Mail, MapPin, Package, Phone, HelpCircle, Truck } from "lucide-react";
+import { Clock, Mail, MapPin, Package, Phone, HelpCircle, Truck } from "lucide-react";
 import { getSiteSettings, getActiveSocialLinksSafe } from "@/lib/api/storefront";
+import { fullAddressLines } from "@/lib/store-identity";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
@@ -55,10 +56,15 @@ export default async function ContactPage() {
       href: whatsapp.url,
       external: true,
     },
-    {
+    fullAddressLines(settings).length > 0 && {
       icon: MapPin,
       label: "Address",
-      value: "Dhaka, Bangladesh",
+      value: fullAddressLines(settings).join(", "),
+    },
+    settings.supportHours && {
+      icon: Clock,
+      label: "Hours",
+      value: settings.supportHours,
     },
   ].filter(Boolean) as {
     icon: typeof Mail | null;

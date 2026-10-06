@@ -1,3 +1,7 @@
+# Phase 12 (W10): one compose project per store. Defaults reproduce the original single-store stack
+# (project "docker", database "clothing_brand"); a second store sets its own values in its docker/.env.
+name: ${COMPOSE_PROJECT_NAME:-docker}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,7 +9,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: clothing_brand
+      POSTGRES_DB: ${POSTGRES_DB:-clothing_brand}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,7 +38,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/clothing_brand?schema=public
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clothing_brand}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_CUSTOMER_ACCESS_SECRET: ${JWT_CUSTOMER_ACCESS_SECRET}
@@ -84,6 +88,13 @@ services:
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
       META_API_VERSION: ${META_API_VERSION:-}
       META_TEST_EVENT_CODE: ${META_TEST_EVENT_CODE:-}
+      # Phase 12 provider selection (apps/api/src/providers/selection.ts). Blank = today's wiring; "none" disables a
+      # capability explicitly; an explicitly selected provider must have its credentials or the API refuses to start.
+      PAYMENT_GATEWAYS: ${PAYMENT_GATEWAYS:-}
+      SMS_PROVIDER: ${SMS_PROVIDER:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-}
+      COURIER_PROVIDER: ${COURIER_PROVIDER:-}
+      PUSH_PROVIDER: ${PUSH_PROVIDER:-}
     volumes:
       - uploads_data:/repo/apps/api/uploads
     ports:
@@ -129,10 +140,17 @@ services:
       - web
       - api
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - uploads_data:/uploads:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
+    environment:
+      # Per-store, required (no store default): the public host, its aliases (e.g. www.<host>), and the Let's Encrypt
+      # certificate directory name under /etc/letsencrypt/live/.
+      SERVER_NAME: ${SERVER_NAME:?set SERVER_NAME in docker/.env}
+      SERVER_ALIASES: ${SERVER_ALIASES:?set SERVER_ALIASES in docker/.env}
+      CERT_NAME: ${CERT_NAME:?set CERT_NAME in docker/.env}
+      NGINX_ENVSUBST_FILTER: "^(SERVER_NAME|SERVER_ALIASES|CERT_NAME)$$"
     ports:
       - "80:80"
       - "443:443"
@@ -140,7 +158,7 @@ services:
     # itself trigger nginx to reread the files, and nginx never reloads on its own otherwise.
     entrypoint: "/bin/sh -c"
     command:
-      - "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g 'daemon off;'"
+      - "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g 'daemon off;'"
 
   certbot:
     image: certbot/certbot:latest
@@ -150,7 +168,7 @@ services:
     # No command previously — the image's default entrypoint ("certbot" with no args) tries to
     # auto-configure a web server plugin and fails immediately in this webroot-only setup, so
     # nothing was ever actually renewing. `certbot renew` reuses the authenticator/webroot path
-    # already recorded in /etc/letsencrypt/renewal/asifzone.com.conf from the original issuance.
+    # already recorded in /etc/letsencrypt/renewal/<CERT_NAME>.conf from the original issuance.
     entrypoint: "/bin/sh -c"
     command:
       - "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"

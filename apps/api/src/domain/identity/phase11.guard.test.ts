@@ -68,8 +68,8 @@ describe("Phase 11 — identity, sessions, observability guards", () => {
   it("no console.* outside the logger; the SMS dev log never includes the message body (it can be an OTP)", () => {
     const offenders = source.filter((f) => !/observability/.test(f) && /console\.(log|warn|error|info|debug)\(/.test(code(f))).map((f) => relative(API, f));
     expect(offenders).toEqual([]);
-    expect(read("lib/sms.ts")).toMatch(/bodyLength: body\.length/);
-    expect(read("lib/sms.ts")).not.toMatch(/Body: \$\{body\}/);
+    expect(read("providers/sms/bulksmsbd.ts")).toMatch(/bodyLength: body\.length/);
+    expect(read("providers/sms/bulksmsbd.ts")).not.toMatch(/Body: \$\{body\}/);
     expect(read("lib/observability/logger.ts")).toMatch(/pass\(word\|code\)\?\|otp\|\^code\$\|token\|secret/);
   });
 

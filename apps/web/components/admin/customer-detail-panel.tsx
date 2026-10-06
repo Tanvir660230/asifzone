@@ -18,7 +18,7 @@ import {
   History,
   Radar,
 } from "lucide-react";
-import { normalizeBdPhone } from "@clothing-brand/shared";
+import { toBdInternationalDigits } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { TAG_META } from "@/lib/customer-tags";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 interface CustomerDetailPanelProps {
   customerId: string;
@@ -44,11 +45,11 @@ interface CustomerDetailPanelProps {
 }
 
 function waLink(phone: string, message: string): string {
-  const local = normalizeBdPhone(phone);
-  return `https://wa.me/880${local.slice(1)}?text=${encodeURIComponent(message)}`;
+  return `https://wa.me/${toBdInternationalDigits(phone)}?text=${encodeURIComponent(message)}`;
 }
 
 export function CustomerDetailPanel({ customerId: id, onClose, variant = "page", focusSms }: CustomerDetailPanelProps) {
+  const { sms: smsAvailable } = useProviderCapabilities(); // Phase 12 D-4: the SMS composer only when SMS is configured
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [pointsDelta, setPointsDelta] = useState("");
@@ -253,6 +254,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
         </Card>
       )}
 
+      {smsAvailable && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -288,6 +290,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           )}
         </CardContent>
       </Card>
+      )}
 
       {customer.smsHistory.length > 0 && (
         <Card>

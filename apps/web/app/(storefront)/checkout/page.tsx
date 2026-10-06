@@ -149,8 +149,9 @@ function CheckoutForm() {
   // load; EPS-PG defaults false to match its own server-side default (off until an admin configures
   // credentials and flips epsPaymentEnabled on).
   const codEnabled = settingsData?.settings.codEnabled ?? true;
-  const onlinePaymentEnabled = settingsData?.settings.onlinePaymentEnabled ?? true;
-  const epsPaymentEnabled = settingsData?.settings.epsPaymentEnabled ?? false;
+  // Phase 12 D-4: and only when this deployment can actually use the gateway (onlineGateways, booleans from the API).
+  const onlinePaymentEnabled = (settingsData?.settings.onlinePaymentEnabled ?? true) && (settingsData?.settings.onlineGateways?.SSLCOMMERZ ?? true);
+  const epsPaymentEnabled = (settingsData?.settings.epsPaymentEnabled ?? false) && (settingsData?.settings.onlineGateways?.EPS_PG ?? true);
   const anyPaymentMethodEnabled = codEnabled || onlinePaymentEnabled || epsPaymentEnabled;
   const paymentMethod = watch("paymentMethod");
 

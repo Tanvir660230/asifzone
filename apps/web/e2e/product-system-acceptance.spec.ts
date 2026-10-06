@@ -250,7 +250,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     // Test 8: SEO.
     await goToStep(page, "seo");
     await page.getByLabel("URL slug").fill(SLUG.panjabi);
-    await page.getByLabel("SEO title").fill(`Embroidered Panjabi ${RUN} | Asif Zone`);
+    await page.getByLabel("SEO title").fill(`Embroidered Panjabi ${RUN} | Test Store`);
     await page.getByLabel("Meta description").fill(`A hand-embroidered black or white panjabi (${RUN}).`);
     await page.getByLabel("Focus keyword").fill(`embroidered panjabi ${RUN}`);
     await page.getByLabel("Canonical URL").fill(`https://example.com/canonical/${RUN}`);
@@ -416,7 +416,7 @@ test.describe("product management system — the brief's acceptance tests", () =
   test("8. SEO: title, description, slug, canonical and Open Graph data reach the live page", async ({ page }) => {
     await page.goto(`/product/${slug.panjabi}`);
     await expect(page).toHaveURL(new RegExp(`/product/${SLUG.panjabi}$`)); // the slug the admin chose
-    await expect.poll(() => page.title()).toContain(`Embroidered Panjabi ${RUN} | Asif Zone`);
+    await expect.poll(() => page.title()).toContain(`Embroidered Panjabi ${RUN} | Test Store`);
     await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", `A hand-embroidered black or white panjabi (${RUN}).`);
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://example.com/canonical/${RUN}`);
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", `OG title ${RUN}`);

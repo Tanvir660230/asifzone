@@ -65,8 +65,8 @@ export default function SkuSettingsPage() {
   }, [data]);
 
   const patternError = pattern ? validateSkuPattern(pattern) : null;
-  const example = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "AZ", typeCode: "PNJ", color: "Black", size: "M", seq: 1 }) : "";
-  const example2 = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "AZ", typeCode: "SHO", color: "Brown", size: "42", seq: 2 }) : "";
+  const example = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "SKU", typeCode: "PNJ", color: "Black", size: "M", seq: 1 }) : "";
+  const example2 = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "SKU", typeCode: "SHO", color: "Brown", size: "42", seq: 2 }) : "";
   const dirty = data && (prefix !== data.settings.skuPrefix || pattern !== data.settings.skuPattern);
 
   const save = useMutation({

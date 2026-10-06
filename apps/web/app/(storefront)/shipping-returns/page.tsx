@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Truck, MapPin, Wallet, PackageCheck, Ban } from "lucide-react";
+import { BD_DELIVERY_TIME_TEXT } from "@clothing-brand/shared";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
@@ -40,7 +41,7 @@ const SHIPPING_FACTS = [
   {
     icon: MapPin,
     title: "Delivery time",
-    body: "Inside Dhaka: 1–2 business days. Outside Dhaka: 3–5 business days via courier.",
+    body: `${BD_DELIVERY_TIME_TEXT.replace(/\.$/, "")} via courier.`,
   },
   {
     icon: Wallet,

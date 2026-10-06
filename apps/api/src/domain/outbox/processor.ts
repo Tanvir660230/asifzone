@@ -19,6 +19,7 @@ import { utcInstant } from "../metrics/store-time";
 import { outboxConsumer, type OutboxConsumer } from "./consumers";
 import { currentCorrelationId, newCorrelationId, runWithContext } from "../../lib/observability/context";
 import { captureError } from "../../lib/observability/error-capture";
+import { maskText } from "../../lib/observability/logger";
 
 export const OUTBOX_MAX_ATTEMPTS = 8;
 export const DISPATCH_LEASE_MS = 30_000;
@@ -53,7 +54,8 @@ export function isRetryable(err: unknown): boolean {
 }
 
 const plus = (d: Date, ms: number) => new Date(d.getTime() + ms);
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 2000);
+// Masked before it is persisted (lastError is shown on /api/v1/outbox/status): Phase 12 W7.
+const errorText = (err: unknown) => maskText(err instanceof Error ? err.message : String(err)).slice(0, 2000);
 
 export type Enqueue = (job: { eventId: string; jobId: string }) => Promise<void>;
 

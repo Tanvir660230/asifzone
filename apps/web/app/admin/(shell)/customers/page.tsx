@@ -20,7 +20,7 @@ import {
   ArrowUpDown,
   UserX,
 } from "lucide-react";
-import { BD_ALL_DISTRICTS, normalizeBdPhone, type CustomerTag } from "@clothing-brand/shared";
+import { BD_ALL_DISTRICTS, type CustomerTag, toBdInternationalDigits } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { SearchInput } from "@/components/ui/search-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -46,6 +46,7 @@ import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { TAG_META, primaryTag } from "@/lib/customer-tags";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 const PAGE_SIZE = 20;
 const TAG_OPTIONS: CustomerTag[] = [
@@ -92,8 +93,7 @@ function initials(name: string): string {
 }
 
 function waLink(phone: string): string {
-  const local = normalizeBdPhone(phone);
-  return `https://wa.me/880${local.slice(1)}`;
+  return `https://wa.me/${toBdInternationalDigits(phone)}`;
 }
 
 function CustomerCardSkeleton({ first = false }: { first?: boolean }) {
@@ -138,6 +138,7 @@ function SortableHeader({
 }
 
 export default function CustomersPage() {
+  const { sms: smsAvailable } = useProviderCapabilities(); // Phase 12 D-4: SMS actions only when SMS is configured
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<CustomerTag | "">("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
@@ -303,6 +304,7 @@ export default function CustomersPage() {
         {customer.phone && (
           <>
             <button
+              hidden={!smsAvailable}
               onClick={() => setDrawer({ id: customer.id, focusSms: true })}
               className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-info-600")}
               aria-label="Send SMS"
@@ -544,9 +546,11 @@ export default function CustomersPage() {
               </span>
               selected
             </span>
-            <Button variant="outline" size="sm" onClick={() => setBulkSmsOpen(true)}>
-              <Send size={14} /> Send SMS
-            </Button>
+            {smsAvailable && (
+              <Button variant="outline" size="sm" onClick={() => setBulkSmsOpen(true)}>
+                <Send size={14} /> Send SMS
+              </Button>
+            )}
             <button
               onClick={() => setSelected(new Set())}
               className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}

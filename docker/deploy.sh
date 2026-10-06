@@ -14,6 +14,11 @@
 set -euo pipefail
 
 COMPOSE="${COMPOSE:-docker compose -f docker/docker-compose.yml --env-file docker/.env}"
+ENV_FILE="${ENV_FILE:-docker/.env}"
+# Phase 12 (W10): per-store values come from docker/.env (a shell env var wins). POSTGRES_DB defaults to the original name.
+env_value() { local v="${!1:-}"; [ -n "$v" ] || v="$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)"; printf '%s' "$v"; }
+POSTGRES_DB="$(env_value POSTGRES_DB)"; POSTGRES_DB="${POSTGRES_DB:-clothing_brand}"
+REQUIRED_STORE_VARS="${REQUIRED_STORE_VARS:-SERVER_NAME SERVER_ALIASES CERT_NAME GDRIVE_REMOTE}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/backups/predeploy}"
 READY_TIMEOUT="${READY_TIMEOUT:-120}"
 READY_POLL="${READY_POLL:-3}"
@@ -21,7 +26,7 @@ MIN_BACKUP_BYTES="${MIN_BACKUP_BYTES:-1024}"
 SHA="${DEPLOY_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 BACKUP_FILE="${BACKUP_FILE:-$BACKUP_DIR/predeploy-$SHA-$(date +%Y%m%d-%H%M%S).sql.gz}"
 
-do_backup()        { $COMPOSE exec -T postgres pg_dump -U postgres clothing_brand | gzip > "$BACKUP_FILE"; }
+do_backup()        { $COMPOSE exec -T postgres pg_dump -U postgres "$POSTGRES_DB" | gzip > "$BACKUP_FILE"; }
 do_build()         { $COMPOSE build api web; }
 do_migrate()       { $COMPOSE run --rm api npx prisma migrate deploy; }
 do_switch()        { $COMPOSE up -d api web; }
@@ -39,6 +44,11 @@ fail() {
   echo "expanded schema); data — restore $BACKUP_FILE ONLY for data corruption (writes made since the backup are lost)." >&2
   exit 1
 }
+
+# 0. preflight — per-store configuration present (fails before anything is touched)
+missing=""
+for v in $REQUIRED_STORE_VARS; do [ -n "$(env_value "$v")" ] || missing="$missing $v"; done
+[ -z "$missing" ] || fail "missing per-store configuration in $ENV_FILE:$missing (see docs/STORE_DEPLOYMENT.md) — nothing was changed"
 
 mkdir -p "$(dirname "$BACKUP_FILE")"
 

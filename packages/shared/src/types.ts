@@ -477,9 +477,16 @@ export interface OrderListItemSummary {
 export interface DeliveryScore {
   /** 0-100, or null when totalParcels is 0 — no delivery history yet, not the same as a bad score. */
   successRate: number | null;
+  /** Exact for checks before 2026-09-27; since then the lower bound of volumeRange. */
   totalParcels: number;
-  successParcels: number;
-  cancelledParcels: number;
+  /** Exact counts — only present on checks made before Steadfast stopped publishing them (2026-09-27). */
+  successParcels: number | null;
+  cancelledParcels: number | null;
+  /** From Steadfast's newer score endpoint; null on older checks. */
+  cancellationRate: number | null;
+  /** e.g. "2" or "25+". */
+  volumeRange: string | null;
+  fraudReports: number | null;
   checkedAt: string;
 }
 
@@ -776,6 +783,19 @@ export interface StoreSettings {
   onlinePaymentEnabled: boolean;
   epsPaymentEnabled: boolean;
   googleSiteVerification: string | null;
+  /** Phase 12 identity fields (StoreSetting is the identity owner). Each is null until the store sets it. */
+  legalName: string | null;
+  addressLine: string | null;
+  addressCity: string | null;
+  addressRegion: string | null;
+  addressPostalCode: string | null;
+  /** ISO 3166-1 alpha-2. */
+  addressCountry: string | null;
+  legalJurisdiction: string | null;
+  supportHours: string | null;
+  /** Phase 12 D-4 (derived, read-only): which online gateways this deployment can actually use. Checkout offers a gateway
+   * only when the store's own toggle is on AND this is true. Absent on old API responses → treated as available. */
+  onlineGateways?: { SSLCOMMERZ: boolean; EPS_PG: boolean };
   updatedAt: string;
 }
 

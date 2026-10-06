@@ -6,7 +6,7 @@ import { buildFaqJsonLd } from "@/lib/structured-data";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { FaqAccordion, type FaqGroup } from "@/components/storefront/faq-accordion";
-import { jsonLdString } from "@clothing-brand/shared";
+import { BD_DELIVERY_TIME_TEXT, jsonLdString, OUTSIDE_DHAKA_DELIVERY_DAYS } from "@clothing-brand/shared";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
 // `next build` would try to statically prerender the page and fail (the api container isn't
@@ -57,7 +57,7 @@ const FAQ_GROUPS: FaqGroup[] = [
     items: [
       {
         question: "How long does delivery take?",
-        answer: "Inside Dhaka: 1–2 business days. Outside Dhaka: 3–5 business days.",
+        answer: BD_DELIVERY_TIME_TEXT,
       },
       {
         question: "Do you offer Cash on Delivery?",
@@ -65,7 +65,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         question: "Do you deliver outside Dhaka?",
-        answer: "Yes, we deliver nationwide via courier partners, typically within 3–5 business days.",
+        answer: `Yes, we deliver nationwide via courier partners, typically within ${OUTSIDE_DHAKA_DELIVERY_DAYS[0]}–${OUTSIDE_DHAKA_DELIVERY_DAYS[1]} business days.`,
       },
     ],
   },

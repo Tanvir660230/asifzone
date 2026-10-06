@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 vi.hoisted(() => {
   process.env.LOG_LEVEL = "debug";
 });
-vi.mock("../../lib/mailer", () => ({ sendMail: async () => undefined }));
+vi.mock("../../providers/email/resend", () => ({ sendMail: async () => undefined }));
 
 import request from "supertest";
 import bcrypt from "bcryptjs";

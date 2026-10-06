@@ -1,8 +1,42 @@
+# Phase 12 (W10): rendered at container start by the nginx image's envsubst step
+# (/docker-entrypoint.d/20-envsubst-on-templates.sh) into /etc/nginx/conf.d/default.conf.
+# Only ${SERVER_NAME}, ${SERVER_ALIASES} and ${CERT_NAME} are substituted (NGINX_ENVSUBST_FILTER in
+# docker-compose.yml) — nginx's own $variables are left alone. Per-store values live in docker/.env.
 # Micro-cache for anonymous storefront HTML: every storefront page renders identical markup for
 # all visitors (cart/auth state is hydrated client-side from localStorage/cookies, never embedded
 # server-side — see apps/web/components/storefront/cart-icon.tsx). A short TTL here means most
 # traffic to a hot product/category page is served from nginx instead of hitting Next.js + the API
 # on every request, without risking stale or user-specific content.
+# Behind Cloudflare's proxy every request arrives from a Cloudflare edge IP, so without this the
+# per-IP limit_req zones below would lump unrelated shoppers together (and 429 them), and the api
+# would log/rate-limit/fraud-check by Cloudflare's address instead of the customer's. Only requests
+# that actually come from Cloudflare's published ranges (https://www.cloudflare.com/ips/) are
+# trusted to set CF-Connecting-IP; direct hits keep their real socket address. Harmless while the
+# DNS record is still "DNS only".
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+set_real_ip_from 2400:cb00::/32;
+set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;
+set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;
+set_real_ip_from 2a06:98c0::/29;
+set_real_ip_from 2c0f:f248::/32;
+real_ip_header CF-Connecting-IP;
+
 proxy_cache_path /var/cache/nginx/web levels=1:2 keys_zone=web_cache:10m max_size=200m inactive=60m use_temp_path=off;
 
 map $skip_cache $edge_cache_control {
@@ -32,14 +66,14 @@ limit_req_status 429;
 server {
     listen 80;
     listen [::]:80;
-    server_name asifzone.com www.asifzone.com;
+    server_name ${SERVER_NAME} ${SERVER_ALIASES};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
     location / {
-        return 301 https://asifzone.com$request_uri;
+        return 301 https://${SERVER_NAME}$request_uri;
     }
 }
 
@@ -47,23 +81,23 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name www.asifzone.com;
+    server_name ${SERVER_ALIASES};
 
-    ssl_certificate /etc/letsencrypt/live/asifzone.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/asifzone.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    return 301 https://asifzone.com$request_uri;
+    return 301 https://${SERVER_NAME}$request_uri;
 }
 
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name asifzone.com;
+    server_name ${SERVER_NAME};
     client_max_body_size 10m;
 
-    ssl_certificate /etc/letsencrypt/live/asifzone.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/asifzone.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${CERT_NAME}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CERT_NAME}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -85,6 +119,11 @@ server {
     # the now-dead old ones (502s) until something restarts it. Routing proxy_pass through a `set`
     # variable forces nginx to re-resolve via this resolver on every request instead.
     resolver 127.0.0.11 valid=10s;
+
+    # Unused uploads waiting out their restore window (apps/api/src/modules/storage) — never public.
+    location ^~ /uploads/.trash/ {
+        return 404;
+    }
 
     location /uploads/ {
         alias /uploads/;
