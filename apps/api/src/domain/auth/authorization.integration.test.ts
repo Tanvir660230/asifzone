@@ -107,6 +107,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/settings/upload-logo",
   "POST /api/settings/upload-favicon",
   "POST /api/settings/upload-payment-methods-image",
+  "POST /api/settings/upload-social-image",
   "GET /api/sms-settings/",
   "PATCH /api/sms-settings/",
   "POST /api/ai/generate",
@@ -215,8 +216,8 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 305 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    expect(routes).toHaveLength(305);
+  it("covers all 306 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    expect(routes).toHaveLength(306);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

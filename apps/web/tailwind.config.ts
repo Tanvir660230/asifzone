@@ -80,8 +80,13 @@ const config: Config = {
       // Brand themes override the same variables; `:root[data-brand]` outranks `:root`, whatever the order.
       for (const [id, theme] of Object.entries(tokens.themes)) {
         if (Object.keys(theme.cssVariables).length) addBase({ [`:root[data-brand="${id}"]`]: theme.cssVariables });
-        // Dark-palette sections a theme renders light (see `lightBand` in @clothing-brand/ui-tokens).
-        if (Object.keys(theme.bandVariables).length) addBase({ [`:root[data-brand="${id}"] .ui-band-inverse`]: theme.bandVariables });
+        // Dark-palette sections a theme renders light — all of them, or those named by `data-band` — and the ones that
+        // stay dark (see `lightBand` / `darkBand` in @clothing-brand/ui-tokens).
+        const roles = theme.lightBandRoles;
+        const named = roles?.length ? `:is(${roles.map((r) => `[data-band="${r}"]`).join(",")})` : "";
+        const band = `:root[data-brand="${id}"] .ui-band-inverse`;
+        if (Object.keys(theme.bandVariables).length) addBase({ [roles === null ? band : `${band}${named}`]: theme.bandVariables });
+        if (Object.keys(theme.darkBandVariables).length) addBase({ [roles?.length ? `${band}:not(${named})` : band]: theme.darkBandVariables });
       }
     }),
   ],

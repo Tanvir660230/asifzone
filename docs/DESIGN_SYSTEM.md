@@ -39,19 +39,26 @@ Presentation that differs between brands is a CSS variable in `componentTokens` 
 | `.font-display` | `--font-display-family`, `--font-display-weight`*, `--font-display-tracking`* | every title |
 | `.font-sans` | `--font-body-family` | body text |
 | `.ui-caps` | `--caps-transform`, `--caps-spread` | small labels (`SOLD OUT`, `QTY`, accordion/filter headings). Other spacings: `ui-caps tracking-[calc(0.2em*var(--caps-spread))]` |
-| `.ui-eyebrow` | same + `--eyebrow-weight`* | the kicker above a section title |
+| `.ui-eyebrow` | `--eyebrow-transform`, `--eyebrow-spread` (default: the caps values), `--eyebrow-weight`* | the kicker above a section title |
 | `.ui-section-title` / `.ui-section-heading` | `--section-title-*`, `--section-heading-*` | product rails / homepage section headings |
-| `.ui-product-title` | `--product-title-size/-leading/-weight/-tracking` | the product page `<h1>` |
+| `.ui-product-title` | `--product-title-family/-size/-leading/-weight/-tracking` | the product page `<h1>` (its face is the title face by default; a theme may set product data in the UI face) |
 | `.ui-card-frame`, `hover:translate-y-[var(--card-lift)]`, `scale-[var(--card-image-zoom)]` | `--card-*` | product card image frame, lift, zoom, tier line, title tracking |
 | `.ui-panel` | `--panel-border`, `--panel-shadow` | content tiles (values grid) |
 | `.ui-header-bar` | `--header-shadow` | the sticky header's edge |
 | `.glossy`, `.glass` | `--gloss` (0 = flat), `--glass-alpha` | filled controls, translucent chrome |
 | `PromoBadge tone="note"` | `--badge-note-bg/-fg` | non-promotional badges ("New Arrival"). `tone="sale"` is always the sale accent. |
 | category tiles, hero CTA, cart line items | `--tile-scrim/-label`, `--hero-cta-fill/-text`*, `--line-item-radius`, `--stepper-radius` | |
+| `.ui-tile-caption`, `rounded-[var(--tile-media-radius)]` | `--tile-caption-position` (`absolute` over the photo / `static` below it), `--tile-caption-padding`, `--tile-media-radius` | category tile caption and photo |
+| `.ui-hero`, `.ui-hero-layout`, `.ui-hero-copy`, `.ui-hero-media`, `.ui-hero-media-frame`, `.ui-hero-secondary` | `--hero-align`, `--hero-layout-lg` (`block` stacked / `grid` copy beside image), `--hero-media-aspect-lg`, `--hero-content-max-w-lg`, `--hero-copy-pad-lg`, `--hero-media-offset-lg`, `--hero-secondary-ring`, `--hero-primary-mr`, `--hero-secondary-ml` | the homepage hero composition |
+| `rounded-[var(--control-radius)]` | `--control-radius` | buttons (`buttonVariants`) and call-to-action links — a pill by default |
+| `hover:bg-[color:var(--accent-hover)]`, nav links | `--accent-hover`, `--nav-hover`, `--nav-underline` | primary-action hover fill; navigation hover color and underline |
+| `svg.lucide[stroke-width="2"]` (base layer) | `--icon-stroke` | icon line weight (icons given their own width keep it) |
+| brand story image | `--story-media-max-w`, `--story-media-h-sm` | a small vignette or a large editorial photograph |
+| `text-[color:var(--band-accent,…)]` | `--band-accent`* | eyebrows, rules and link hovers inside `.ui-band-inverse` sections (each call site keeps its own default) |
 
 \* Opt-in: undefined in the base design, so the property inherits as it did before the token existed. A theme may set it.
 
-**Inverse bands.** `.ui-band-inverse` marks a section designed on the dark palette: the footer, the hero band, brand story and flash sale. A theme with `band: "light"` renders those sections light by mirroring the palette inside them (ink-950 becomes the soft background, ink-300 becomes ink-700, cream becomes dark ink, and so on), so every pairing keeps its contrast. A token whose colour must resolve against the band's palette goes in the theme's `bandComponents`. Artwork made for one background (logos) uses `.ui-art-on-dark` / `.ui-art-on-light`, and the band shows the right one.
+**Inverse bands.** `.ui-band-inverse` marks a section designed on the dark palette, and `data-band` names it: `hero`, `story` (brand story), `flash`, `promo` (the text-only promo banner) and `footer`. A theme renders sections light by mirroring the palette inside them (ink-950 becomes the light surface, ink-300 becomes ink-700, cream becomes dark ink, and so on), so every pairing keeps its contrast: `band: "light"` mirrors every band, `lightBands: ["hero", "story"]` only the named ones (`bandSurface` picks the light surface). Tokens whose colour must resolve against a light band's palette go in `bandComponents`; palette steps re-valued inside the bands that stay dark go in `darkBandPalette`. Artwork made for one background (logos) uses `.ui-art-on-dark` / `.ui-art-on-light`, and the band shows the right one.
 
 **After editing `packages/ui-tokens`,** delete `apps/web/.next` and restart `next dev`. The dev cache does not notice changes to the workspace package that `tailwind.config.ts` imports.
 

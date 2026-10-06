@@ -15,8 +15,7 @@ interface FormProps {
   onValuesChange?: (values: Record<string, unknown>) => void;
 }
 
-/** Reused for any section whose only editable field is a heading override (currently just
- * CATEGORY_GRID) — its config shape (`{ heading? }`) matches `categoryGridConfigSchema`. */
+/** The category grid's form: a heading override and an optional supporting line (`categoryGridConfigSchema`). */
 export function HeadingOnlyForm({ initialConfig, onSubmit, onCancel, onValuesChange }: FormProps) {
   const {
     register,
@@ -35,6 +34,11 @@ export function HeadingOnlyForm({ initialConfig, onSubmit, onCancel, onValuesCha
         <Label htmlFor="heading">Heading (optional)</Label>
         <p className="mb-1 text-xs text-ink-400">Falls back to &quot;Shop by Category&quot; if left blank.</p>
         <Input id="heading" {...register("heading")} />
+      </div>
+      <div>
+        <Label htmlFor="subtitle">Supporting line (optional)</Label>
+        <p className="mb-1 text-xs text-ink-400">A short line under the heading, e.g. what the collections are.</p>
+        <Input id="subtitle" {...register("subtitle")} />
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel}>

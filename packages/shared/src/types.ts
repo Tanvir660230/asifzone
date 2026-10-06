@@ -758,6 +758,11 @@ export interface StoreSettings {
   logoUrl: string | null;
   logoOnDarkUrl: string | null;
   faviconUrl: string | null;
+  ogImageUrl: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  newsletterHeading: string | null;
+  newsletterText: string | null;
   currency: string;
   /** IANA timezone of the store's business day (Phase 5/7). */
   timezone: string;

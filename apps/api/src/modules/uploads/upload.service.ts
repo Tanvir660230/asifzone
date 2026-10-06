@@ -162,6 +162,19 @@ export async function processFaviconImage(buffer: Buffer): Promise<string> {
 
   return mediaReference(`branding/${id}-favicon.png`);
 }
+/** The default social-sharing (Open Graph) image: 1200×630, cropped to fill, as JPEG — the size and format every link
+ * preview (Facebook, WhatsApp, X, LinkedIn) accepts. */
+export async function processSocialImage(buffer: Buffer): Promise<string> {
+  await assertValidImage(buffer);
+  const id = randomUUID();
+  const dir = path.join(process.cwd(), env.uploadsDir, "branding");
+  await ensureDir(dir);
+
+  const filePath = path.join(dir, `${id}-social.jpg`);
+  await sharp(buffer).resize({ width: 1200, height: 630, fit: "cover" }).flatten({ background: "#ffffff" }).jpeg({ quality: 86, mozjpeg: true }).toFile(filePath);
+
+  return mediaReference(`branding/${id}-social.jpg`);
+}
 export const processBannerImage = (buffer: Buffer) => processSiteImage(buffer, "banners", 1920);
 /** PROMO_BANNER homepage-section images — same treatment as a banner, kept in its own folder since
  * it's managed through a separate admin surface (the homepage builder, not /admin/banners). */
