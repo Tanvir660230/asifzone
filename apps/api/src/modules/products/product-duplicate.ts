@@ -105,6 +105,7 @@ export async function duplicateProduct(sourceId: string, input: DuplicateProduct
       shortDescription: source.shortDescription,
       sortOrder: source.sortOrder,
       categoryId: source.categoryId,
+      additionalCategoryIds: source.additionalCategoryIds,
       typeId: type.id,
       attributes,
       brand: source.brand,

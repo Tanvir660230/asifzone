@@ -111,6 +111,9 @@ export const baseProductSchema = z.object({
   shortDescription: nullableString(300),
   sortOrder: z.number().int().default(0),
   categoryId: z.string().cuid(),
+  /** "Also show in": extra categories the product is listed in besides its home `categoryId` (a unisex item under both
+   * Men and Women). Omitted on a partial update = keep the current list; [] clears it. */
+  additionalCategoryIds: z.array(z.string().cuid()).max(20).optional(),
   /** The product's type row. Omitted on a partial update = keep the current type. */
   typeId: z.string().min(1).optional(),
   /** Deprecated: the legacy enum. Only read when `typeId` is absent (stale clients), to find the matching system type. */

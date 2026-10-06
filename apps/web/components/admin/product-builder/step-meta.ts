@@ -18,7 +18,7 @@ export const STEP_DESCRIPTION: Record<WizardStepId, string> = {
 
 /** Which form fields each step owns — so a validation error can be shown on the step that fixes it. */
 const STEP_FIELDS: Partial<Record<WizardStepId, (keyof CreateProductInput)[]>> = {
-  basics: ["name", "categoryId", "typeId", "attributes", "brand", "brandTier", "sortOrder", "isFeatured", "shortDescription", "description", "tags"],
+  basics: ["name", "categoryId", "additionalCategoryIds", "typeId", "attributes", "brand", "brandTier", "sortOrder", "isFeatured", "shortDescription", "description", "tags"],
   pricing: ["basePrice", "compareAtPrice", "costPrice", "taxRate", "freeDelivery", "trackInventory", "lowStockThreshold", "restockDate"],
   variants: ["variants"],
   care: ["carePresetId", "careOverride", "materials"],

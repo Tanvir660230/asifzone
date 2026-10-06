@@ -357,6 +357,8 @@ model Category {
   parent            Category?          @relation("CategoryToParent", fields: [parentId], references: [id], onDelete: SetNull)
   children          Category[]         @relation("CategoryToParent")
   products          Product[]
+  /// Products whose home category is elsewhere but that are also listed here (e.g. a unisex item under Men and Women).
+  listedProducts    ProductCategoryListing[]
   bundleAnchors     Bundle[]           @relation("BundleAnchor")
   bundleSuggestions BundleSuggestion[] @relation("BundleSuggestionCategory")
   couponCategories  CouponCategory[]
@@ -402,6 +404,9 @@ model Product {
   sortOrder         Int                     @default(0)
   categoryId        String
   category          Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  /// Extra categories the product is also listed in on the storefront. `categoryId` stays its one home category
+  /// (breadcrumb, coupons, bundles, reports); these only widen where it can be browsed.
+  alsoListedIn      ProductCategoryListing[]
   /// Deprecated mirror of typeId's legacy enum value — kept so a rollback and any stale client keep working.
   productType       ProductType             @default(CLOTHING)
   /// Real product type (admin-managed). Nullable so rows written by older code still load; the service
@@ -2259,6 +2264,20 @@ model Material {
 
 /// One line of a product's composition: a catalog material or a product-specific custom name, optionally
 /// with a percentage ("80% Cotton"). A CHECK constraint (see the migration) requires one of the two names.
+/// "Also show in" — a product listed in a category other than its home one (Product.categoryId). Storefront browsing,
+/// facets and category stock counts match either; everything that needs one answer (breadcrumb, coupon/bundle scope,
+/// order snapshots, reports) keeps using the home category.
+model ProductCategoryListing {
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@id([productId, categoryId])
+  @@index([categoryId])
+}
+
 model ProductMaterial {
   id         String    @id @default(cuid())
   productId  String

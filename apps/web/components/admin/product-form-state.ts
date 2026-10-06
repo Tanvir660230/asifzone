@@ -105,6 +105,7 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
       carePresetId: "",
       careOverride: [],
       tags: [],
+      additionalCategoryIds: [],
       materials: [],
       sections: [],
       faqs: [],
@@ -123,6 +124,7 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
     shortDescription: initial.shortDescription,
     sortOrder: initial.sortOrder,
     categoryId: initial.categoryId,
+    additionalCategoryIds: initial.additionalCategoryIds ?? [],
     // Without these the form would re-submit a default type and blank spec fields, so saving
     // any edit would reset the product's type and wipe its attributes.
     typeId: initial.typeId ?? initial.resolved?.type?.id ?? "",
