@@ -55,6 +55,12 @@ export function apiBaseUrl(): string {
   return isServer ? serverRuntimeConfig().apiInternalUrl : publicRuntimeConfig().apiUrl;
 }
 
+/** The API as the browser reaches it — for URLs the browser navigates to (file downloads in an `href`). Never the internal
+ * address: a link rendered on the server keeps its server-rendered `href` after hydration. */
+export function publicApiUrl(): string {
+  return publicRuntimeConfig().apiUrl;
+}
+
 export function siteUrl(): string {
   return publicRuntimeConfig().siteUrl;
 }
