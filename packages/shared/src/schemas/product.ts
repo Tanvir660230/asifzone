@@ -2,6 +2,7 @@ import { z } from "zod";
 import { blankToNull, nullableCuid, nullableDate, nullableNumber, nullableString, paginationQuerySchema, slugSchema } from "./common";
 import { PRODUCT_TYPE_KEYS } from "../config/product-types";
 import { productFaqsSchema, productRelationsSchema, sectionLayerSchema } from "../sections";
+import { normalizeSearchKeyword } from "../search-synonyms";
 
 export const brandTierEnum = z.enum(["PREMIUM", "PLATINUM", "LUXURY"]);
 
@@ -93,6 +94,16 @@ const variantUpdateWithRules = updateVariantSchema
   })
   .refine((v) => Boolean(v.id) || Boolean(v.sku), { message: "A new variant needs a SKU", path: ["sku"] });
 
+/** One search tag as stored — the same normalization storefront search applies to what a shopper types, so a tag
+ * matches exactly (see buildFieldSearchOr). */
+export const normalizeProductTag = normalizeSearchKeyword;
+
+/** Search tags: blanks and duplicates (after normalization) dropped. */
+const productTagsSchema = z
+  .array(z.string().max(60))
+  .max(40, "At most 40 tags")
+  .transform((tags) => [...new Set(tags.map(normalizeProductTag).filter(Boolean))]);
+
 export const baseProductSchema = z.object({
   name: z.string().min(1).max(200),
   slug: z.preprocess((v) => (v === "" ? undefined : v), slugSchema.optional()),
@@ -116,6 +127,9 @@ export const baseProductSchema = z.object({
   costPrice: nullableNumber(),
   taxRate: z.preprocess(blankToNull, z.number().min(0).max(100).nullable().optional()),
   trackInventory: z.boolean().default(true),
+  /** Ships free. Shipping is waived only when every line of a cart is a free-delivery product (shipping engine,
+   * docs/ORDER_ADJUSTMENTS.md §2) — a server-side pricing input, snapshotted per order line, never read back by old orders. */
+  freeDelivery: z.boolean().default(false),
   lowStockThreshold: z.number().int().min(0).default(5),
   restockDate: nullableDate(),
   /** Legacy switch, kept for older clients: true = PUBLISHED, false = UNPUBLISHED, unless `status` is sent. */
@@ -126,6 +140,8 @@ export const baseProductSchema = z.object({
   seoTitle: nullableString(200),
   seoDescription: nullableString(500),
   focusKeyword: nullableString(120),
+  /** Extra words this product should be found by in storefront search (e.g. "ator", "আতর"). Sent whole; omit to leave them alone. */
+  tags: productTagsSchema.optional(),
   ogTitle: nullableString(200),
   ogDescription: nullableString(500),
   ogImageUrl: httpUrl(),

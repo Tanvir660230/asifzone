@@ -9,6 +9,7 @@ import { deliverAdminOrderAlertSms, deliverCustomerOrderSms } from "../../lib/or
 import { deliverPaymentConfirmationEmail } from "../../lib/order-mailer";
 import { processMetaPurchase } from "../../lib/meta/purchase";
 import { getProviders } from "../../providers/registry";
+import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
 
@@ -67,6 +68,16 @@ export const OUTBOX_CONSUMERS = {
       return deliverPaymentConfirmationEmail(order, event.id);
     },
   } satisfies OutboxConsumer<{ orderId: string }>,
+
+  "customer-payment-link": {
+    eventTypes: ["payment_link.send_requested.v1"],
+    payload: z.object({ paymentLinkId: z.string().min(1), channel: z.enum(["SMS", "EMAIL"]) }),
+    idempotency:
+      "Outbox row claim (one row per link × channel × send request); EMAIL also passes the outbox event id as the Resend idempotencyKey. A link that is no longer ACTIVE when the row is processed is skipped, so a stale link is never sent.",
+    async handle({ paymentLinkId, channel }, event) {
+      return deliverPaymentLinkMessage(paymentLinkId, channel, event.id);
+    },
+  } satisfies OutboxConsumer<{ paymentLinkId: string; channel: "SMS" | "EMAIL" }>,
 
   "meta-capi-purchase": {
     eventTypes: ["order.placed.v1"],

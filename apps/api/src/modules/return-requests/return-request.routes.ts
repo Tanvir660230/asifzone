@@ -22,6 +22,8 @@ returnRequestRouter.get(
   validate(returnRequestListQuerySchema, "query"),
   returnRequestController.list,
 );
+// Read-only: what approving this exchange would do (same pricing as approval — docs/ORDER_ADJUSTMENTS.md §9).
+returnRequestRouter.get("/:id/exchange-preview", requireAdmin, requirePermission("returns.manage"), returnRequestController.exchangePreview);
 returnRequestRouter.patch(
   "/:id",
   requireAdmin,

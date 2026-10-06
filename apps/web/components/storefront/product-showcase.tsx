@@ -107,6 +107,16 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           </p>
         )}
 
+        {product.freeDelivery && (
+          // Informational only: the product ships free; the checkout's server quote decides the fee for the whole bag (one
+          // normal-delivery item means the usual fee applies — docs/ORDER_ADJUSTMENTS.md §2).
+          <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-success-200 bg-success-50 px-3 py-1 text-sm font-medium text-success-700" data-testid="product-free-delivery">
+            <Truck size={15} aria-hidden="true" />
+            Free delivery
+            <span className="font-normal text-success-700/80">· when everything in your bag ships free</span>
+          </p>
+        )}
+
         <UrgencySignals signals={urgencySignals} />
         <AdminSalesBadge productId={product.id} />
 

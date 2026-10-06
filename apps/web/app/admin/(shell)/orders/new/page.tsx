@@ -27,6 +27,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
+import { Alert } from "@/components/ui/alert";
+import { useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as productsApi from "@/lib/api/products";
@@ -55,6 +57,7 @@ interface CartLine {
 
 export default function NewOrderPage() {
   const router = useRouter();
+  const perms = useOrderPermissions();
 
   // --- link to an existing customer (optional) — clearing it falls back to the same phone/email
   // guest-matching the storefront checkout uses, so a repeat customer still gets recognized even
@@ -291,6 +294,12 @@ export default function NewOrderPage() {
         }
       />
 
+      {perms.ready && !perms.manage && (
+        <Alert variant="warning" title="You can't create orders" className="mb-5">
+          Creating orders needs the orders.manage permission — ask an owner to grant it.
+        </Alert>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] lg:gap-8">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 lg:order-1">
           {/* Customer */}
@@ -305,7 +314,12 @@ export default function NewOrderPage() {
                 <span className="flex items-center gap-1.5 text-success-700">
                   <CheckCircle2 size={14} /> Linked to existing customer — {linkedCustomerName}
                 </span>
-                <button type="button" onClick={unlinkCustomer} className="text-ink-400 hover:text-ink-700">
+                <button
+                  type="button"
+                  onClick={unlinkCustomer}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-400 hover:bg-ink-900/[0.05] hover:text-ink-700"
+                  aria-label="Unlink customer"
+                >
                   <X size={14} />
                 </button>
               </div>
@@ -431,6 +445,7 @@ export default function NewOrderPage() {
             <div className="relative mb-4">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
               <Input
+                aria-label="Search products to add"
                 placeholder="Search products by name or SKU…"
                 value={productQuery}
                 onChange={(e) => setProductQuery(e.target.value)}
@@ -503,6 +518,7 @@ export default function NewOrderPage() {
                     </div>
                     <Input
                       type="number"
+                      aria-label={`Quantity of ${item.productName}`}
                       min={1}
                       max={item.maxQuantity}
                       value={item.quantity}
@@ -515,7 +531,7 @@ export default function NewOrderPage() {
                     <button
                       type="button"
                       onClick={() => removeItem(item.variantId)}
-                      className="shrink-0 text-ink-400 hover:text-danger-600"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-400 hover:bg-danger-50 hover:text-danger-600"
                       aria-label={`Remove ${item.productName}`}
                     >
                       <X size={16} />
@@ -528,7 +544,7 @@ export default function NewOrderPage() {
 
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
-          <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting || (perms.ready && !perms.manage)}>
             {isSubmitting ? "Creating order…" : `Create Order — ${money(quote?.total)}`}
           </Button>
         </form>
@@ -553,6 +569,7 @@ export default function NewOrderPage() {
             <div>
               <div className="flex gap-2">
                 <Input
+                  aria-label="Coupon code"
                   placeholder="Coupon code"
                   value={couponInput}
                   onChange={(e) => setCouponInput(e.target.value)}

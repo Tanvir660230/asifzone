@@ -10,6 +10,7 @@ import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked
 import { SlowMovingTable } from "@/components/admin/slow-moving-table";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as inventoryApi from "@/lib/api/inventory";
+import * as categoriesApi from "@/lib/api/categories";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { productEditHref } from "@/lib/admin-routes";
@@ -31,6 +32,8 @@ export default function InventoryIntelligencePage() {
   const { data: slowMoving } = useQuery({ queryKey: ["bi-inventory-slow-moving", legacyDays], queryFn: () => analyticsApi.getSlowMovingProducts(legacyDays, 10) });
   const { data: deadStock } = useQuery({ queryKey: ["bi-inventory-dead-stock"], queryFn: () => analyticsApi.getDeadStock(90, 10) });
   const { data: movements } = useQuery({ queryKey: ["bi-inventory-movements", apiDays], queryFn: () => analyticsApi.getStockMovementSummary(apiDays) });
+  const { data: categoriesData } = useQuery({ queryKey: ["categories", "active"], queryFn: () => categoriesApi.listCategories() });
+  const { data: categoryStock } = useQuery({ queryKey: ["categories", "stock-map"], queryFn: categoriesApi.getCategoryStockMap });
   const { data: discrepancies } = useQuery({ queryKey: ["bi-inventory-discrepancies"], queryFn: inventoryApi.getStockReconciliation });
 
   return (
@@ -193,6 +196,33 @@ export default function InventoryIntelligencePage() {
           </CardContent>
         </Card>
       </section>
+
+      {/* Moved here from the dashboard's old "Catalog Performance" tab. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Stock by category</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {categoriesData && categoryStock && (
+            <RankedBarList
+              emptyLabel="No categories yet."
+              items={categoriesData.categories
+                .filter((c) => !c.parentId)
+                .map((c) => {
+                  const stat = categoryStock.stock[c.id];
+                  return {
+                    key: c.id,
+                    label: c.name,
+                    value: stat?.totalStock ?? 0,
+                    valueLabel: `${stat?.totalStock ?? 0} units`,
+                    subLabel: stat ? `${stat.inStockProducts} of ${stat.totalProducts} products in stock` : undefined,
+                  };
+                })
+                .sort((a, b) => b.value - a.value)}
+            />
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="flex items-start gap-3 border-info-100 bg-info-50/60 p-4">
         <Info size={18} className="mt-0.5 shrink-0 text-info-600" />

@@ -31,6 +31,7 @@ import type { Permission } from "@clothing-brand/shared";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useAttentionCounts } from "@/hooks/use-attention-counts";
 import { toast } from "@/components/ui/toast";
 
 /** Entries that need a permission (the API refuses them otherwise) — hidden rather than shown-then-403'd. "/admin/settings"
@@ -143,6 +144,12 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const { data: currentAdmin } = useCurrentAdmin();
+  const attention = useAttentionCounts();
+  // Work-queue counts beside the entries they belong to — the same numbers as the dashboard's Action Center.
+  const badges: Partial<Record<string, number>> = {
+    "/admin/orders": (attention.orderStats?.pending ?? 0) + (attention.orderStats?.returnRequestsPending ?? 0),
+    "/admin/feedback": (attention.pendingReviews ?? 0) + (attention.unreadFeedback ?? 0),
+  };
   const drawerRef = useFocusTrap<HTMLElement>({
     active: mobileOpen,
     onEscape: () => onCloseMobile?.(),
@@ -208,6 +215,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
               <div className="space-y-0.5">
                 {section.items.map(({ href, match, label, icon: Icon }) => {
                   const active = (match ?? [href]).some((prefix) => pathname.startsWith(prefix));
+                  const badge = badges[href] ?? 0;
                   return (
                     <Link
                       key={href}
@@ -224,8 +232,21 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                       {active && (
                         <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-cream-50" aria-hidden />
                       )}
-                      <Icon size={18} className="shrink-0" />
+                      <span className="relative shrink-0">
+                        <Icon size={18} />
+                        {collapse && badge > 0 && (
+                          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning-500 ring-2 ring-ink-950" aria-hidden />
+                        )}
+                      </span>
                       {!collapse && <span className="truncate">{label}</span>}
+                      {!collapse && badge > 0 && (
+                        <span
+                          className="ml-auto shrink-0 rounded-full bg-cream-50/10 px-1.5 py-px text-[11px] font-semibold tabular-nums text-cream-100"
+                          aria-label={`${badge} waiting`}
+                        >
+                          {badge > 99 ? "99+" : badge}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

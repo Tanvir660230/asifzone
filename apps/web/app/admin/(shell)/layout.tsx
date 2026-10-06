@@ -1,12 +1,16 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Menu } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ExternalLink, Menu, Plus, Search } from "lucide-react";
 import { Sidebar } from "@/components/admin/sidebar";
 import { NotificationBell } from "@/components/admin/notification-bell";
+import { CommandPalette, CREATE_ENTRIES, useCommandPaletteHotkey } from "@/components/admin/command-palette";
+import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { Toaster } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 
 /** "Store Owner" -> "SO" — fallback avatar monogram, same convention as the storefront header's logo fallback. */
 function getInitials(name: string): string {
@@ -20,6 +24,21 @@ function getInitials(name: string): string {
 export default function ShellLayout({ children }: { children: ReactNode }) {
   const { data, isLoading } = useCurrentAdmin();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useCommandPaletteHotkey();
+  const [createOpen, setCreateOpen] = useState(false);
+  const createRef = useRef<HTMLButtonElement>(null);
+  const router = useRouter();
+  const createItems = CREATE_ENTRIES.filter((e) => !e.permission || adminCan(data?.admin, e.permission)).map((e) => ({
+    label: e.label,
+    icon: e.icon,
+    onClick: () => router.push(e.href),
+  }));
+
+  // "⌘K" on Apple keyboards, "Ctrl K" elsewhere — read after mount, the server can't know.
+  const [modKey, setModKey] = useState("Ctrl");
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.platform)) setModKey("⌘");
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -40,7 +59,35 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
             <Menu size={22} />
           </button>
 
-          <div className="ml-auto flex items-center gap-4">
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="ml-3 flex h-9 min-w-0 items-center gap-2.5 rounded-full border border-ink-200 bg-cream-50/70 px-3 text-sm text-ink-400 transition-colors duration-150 ease-smooth hover:border-ink-300 hover:text-ink-600 sm:w-72 lg:ml-0"
+            aria-label="Search"
+          >
+            <Search size={15} className="shrink-0" />
+            <span className="hidden truncate sm:inline">Search orders, customers…</span>
+            <kbd className="ml-auto hidden shrink-0 rounded border border-ink-200 bg-cream-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-ink-400 sm:inline">
+              {modKey} K
+            </kbd>
+          </button>
+
+          <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            {createItems.length > 0 && (
+              <>
+                <button
+                  ref={createRef}
+                  onClick={() => setCreateOpen((o) => !o)}
+                  aria-label="Create"
+                  aria-haspopup="menu"
+                  aria-expanded={createOpen}
+                  className="flex h-8 items-center gap-1.5 rounded-full bg-ink-900 px-3 text-xs font-medium text-cream-50 transition-colors duration-150 ease-smooth hover:bg-ink-700"
+                >
+                  <Plus size={14} />
+                  <span className="hidden sm:inline">Create</span>
+                </button>
+                <DropdownMenu open={createOpen} onClose={() => setCreateOpen(false)} anchorRef={createRef} items={createItems} />
+              </>
+            )}
             <Link
               href="/"
               target="_blank"
@@ -64,6 +111,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
         </header>
         <main className="flex-1 p-4 sm:p-8 print:p-0">{children}</main>
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <Toaster />
     </div>
   );

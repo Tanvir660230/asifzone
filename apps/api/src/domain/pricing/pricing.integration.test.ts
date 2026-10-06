@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import type { Prisma } from "@prisma/client";
+import { PRICING_VERSION } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { cacheDel, redis } from "../../config/redis";
@@ -662,7 +663,7 @@ describe("every order path uses the same pricing", () => {
       [1, 900, true],
       [1, 1000, false],
     ]);
-    expect([Number(order.total), order.pricingVersion]).toEqual([1900 + 60, 2]);
+    expect([Number(order.total), order.pricingVersion]).toEqual([1900 + 60, PRICING_VERSION]);
   });
 
   it("exchange (D6): current effective price; a cheaper replacement owes a refund, a pricier one bills the gap", async () => {
@@ -686,7 +687,7 @@ describe("every order path uses the same pricing", () => {
         requestedVariantId: variants[1]!.id,
       },
     });
-    await reviewReturnRequest(req.id, { status: "APPROVED" }, admin);
+    await reviewReturnRequest(req.id, { status: "APPROVED", compensation: "REFUND" }, admin); // D6 refund path (D11 default is store credit)
     const exchangeOrderId = (await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } })).exchangeOrderId!;
     trackOrder(exchangeOrderId);
     const ex = await prisma.order.findUniqueOrThrow({

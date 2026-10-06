@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { env } from "../../config/env";
-import { isPaymentSessionSettled, markPaymentSessionCancelled, markPaymentSessionFailed, settlePaymentSession } from "./payment.service";
+import { gatewayReturnPath, isPaymentSessionSettled, markPaymentSessionCancelled, markPaymentSessionFailed, settlePaymentSession } from "./payment.service";
 import { getProviders } from "../../providers/registry";
 
 /** SSLCommerz posts these fields to success/fail/cancel/ipn; tran_id is the PaymentSession's
@@ -36,23 +36,23 @@ export const success = asyncHandler(async (req: Request, res: Response) => {
   const verified = validation && attemptRef && validation.tranId === attemptRef;
 
   if (!verified || !attemptRef) {
-    return res.redirect(`${env.webOrigin}/checkout?paymentError=1`);
+    return res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "failed")}`);
   }
 
   const { order } = await settlePaymentSession(attemptRef, body.bank_tran_id ?? body.val_id ?? "", validation.amount, validation);
-  res.redirect(`${env.webOrigin}/order-confirmation/${order.orderNumber}`);
+  res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "success", order.orderNumber)}`);
 });
 
 export const fail = asyncHandler(async (req: Request, res: Response) => {
   const attemptRef = (req.body as SslCallbackBody).tran_id;
   if (attemptRef) await markPaymentSessionFailed(attemptRef);
-  res.redirect(`${env.webOrigin}/checkout?paymentError=1`);
+  res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "failed")}`);
 });
 
 export const cancel = asyncHandler(async (req: Request, res: Response) => {
   const attemptRef = (req.body as SslCallbackBody).tran_id;
   if (attemptRef) await markPaymentSessionCancelled(attemptRef);
-  res.redirect(`${env.webOrigin}/checkout?paymentCancelled=1`);
+  res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "cancelled")}`);
 });
 
 /** Server-to-server notification — the authoritative confirmation, independent of whether the customer's browser made it back to success_url. */
@@ -76,28 +76,28 @@ export const epsSuccess = asyncHandler(async (req: Request, res: Response) => {
   // already confirmed.
   if (attemptRef) {
     const settledOrder = await isPaymentSessionSettled(attemptRef);
-    if (settledOrder) return res.redirect(`${env.webOrigin}/order-confirmation/${settledOrder.orderNumber}`);
+    if (settledOrder) return res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "success", settledOrder.orderNumber)}`);
   }
 
   const validation = attemptRef ? await getProviders().payments.adapter("EPS_PG").verify(attemptRef) : null;
   const verified = validation && validation.status.toLowerCase() === "success" && validation.merchantTransactionId === attemptRef;
 
   if (!verified || !attemptRef) {
-    return res.redirect(`${env.webOrigin}/checkout?paymentError=1`);
+    return res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "failed")}`);
   }
 
   const { order } = await settlePaymentSession(attemptRef, validation.epsTransactionId || attemptRef, validation.amount, validation);
-  res.redirect(`${env.webOrigin}/order-confirmation/${order.orderNumber}`);
+  res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "success", order.orderNumber)}`);
 });
 
 export const epsFail = asyncHandler(async (req: Request, res: Response) => {
   const attemptRef = getEpsQueryParam(req, "merchantTransactionId");
   if (attemptRef) await markPaymentSessionFailed(attemptRef);
-  res.redirect(`${env.webOrigin}/checkout?paymentError=1`);
+  res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "failed")}`);
 });
 
 export const epsCancel = asyncHandler(async (req: Request, res: Response) => {
   const attemptRef = getEpsQueryParam(req, "merchantTransactionId");
   if (attemptRef) await markPaymentSessionCancelled(attemptRef);
-  res.redirect(`${env.webOrigin}/checkout?paymentCancelled=1`);
+  res.redirect(`${env.webOrigin}${await gatewayReturnPath(attemptRef, "cancelled")}`);
 });

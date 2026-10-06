@@ -149,6 +149,47 @@ export async function releaseOrderLines(
   return { released, replenished };
 }
 
+/** Units an order modification removes before shipment (docs/ORDER_ADJUSTMENTS.md §14): the order's line rows shrink or
+ * go away (the modification record keeps what they were), so the units are put back as a CANCELLATION movement on the
+ * order — never through `restockedQuantity`, which tracks units released from lines that still exist. INV-3 holds per
+ * line: −quantity(after) = −quantity(before) + released. The caller writes the line change in the same transaction. */
+export async function releaseModifiedUnits(tx: Tx, orderId: string, units: Array<{ variantId: string; quantity: number }>, actor: Actor = {}): Promise<string[]> {
+  const replenished: string[] = [];
+  for (const u of units) {
+    if (u.quantity <= 0) continue;
+    const after = await applyDelta(tx, u.variantId, u.quantity, false);
+    if (after === null) continue; // the variant was hard-deleted since: nothing to put back
+    await tx.stockMovement.create({ data: movement(u.variantId, u.quantity, "CANCELLATION", actor, orderId) });
+    if (after - u.quantity <= 0 && after > 0) replenished.push(u.variantId);
+  }
+  return replenished;
+}
+
+/** Returned units that came back unsellable (damaged): after `releaseOrderLines(…, "return")` put them back, they are taken
+ * straight out again as DAMAGED — so the ledger shows both what came back and what could not be resold. The write-off is
+ * not attributed to the order (orderId null, the order number is in the note): INV-3 keeps an order's own movements equal
+ * to −(quantity − restocked) per variant. */
+export async function writeOffReturnedUnits(tx: Tx, orderNumber: string, units: Array<{ variantId: string; quantity: number }>, actor: Actor = {}) {
+  for (const u of units) {
+    if (u.quantity <= 0) continue;
+    const after = await applyDelta(tx, u.variantId, -u.quantity, false);
+    if (after === null) continue;
+    await tx.stockMovement.create({ data: movement(u.variantId, -u.quantity, "DAMAGED", { ...actor, note: `Returned damaged — order ${orderNumber}${actor.note ? `: ${actor.note}` : ""}` }) });
+  }
+}
+
+/** Locks the variants' rows and reports which can't supply `quantity` units right now (tracked products only — D5). Lets a
+ * paid settlement decide BEFORE writing anything whether a waiting modification can still be fulfilled (§14). */
+export async function stockShortfalls(tx: Tx, units: Array<{ variantId: string; quantity: number }>, untracked: Set<string>): Promise<string[]> {
+  const short: string[] = [];
+  for (const u of [...units].sort((a, b) => (a.variantId < b.variantId ? -1 : 1))) {
+    if (untracked.has(u.variantId)) continue;
+    const stock = await lockStock(tx, u.variantId);
+    if (stock === null || stock < u.quantity) short.push(u.variantId);
+  }
+  return short;
+}
+
 /** Restoring a pre-shipment order from Trash takes back the units released when it was trashed. All-or-nothing:
  * if any line's stock has since been sold, nothing changes and a 409 explains why. */
 export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor = {}): Promise<void> {

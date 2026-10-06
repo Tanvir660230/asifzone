@@ -56,15 +56,21 @@ export interface Category {
   children?: Category[];
 }
 
-export interface CategoryStockStat {
+/** Public per-category availability: product counts only, never unit quantities (P0-04). */
+export interface CategoryAvailabilityStat {
   totalProducts: number;
   inStockProducts: number;
+}
+
+/** Admin-only (`GET /api/categories/stock-map`, `inventory.read`): adds the unit total. */
+export interface CategoryStockStat extends CategoryAvailabilityStat {
   totalStock: number;
 }
 
+/** The public category-page summary (`GET /api/categories/slug/:slug/stock`). */
 export interface CategoryStockOverview {
-  total: CategoryStockStat;
-  subcategories: (CategoryStockStat & { id: string; name: string; slug: string })[];
+  total: CategoryAvailabilityStat;
+  subcategories: (CategoryAvailabilityStat & { id: string; name: string; slug: string })[];
 }
 
 export interface AttributeValue {
@@ -175,6 +181,8 @@ export interface Product {
   costPrice: string | null;
   taxRate: string | null;
   trackInventory: boolean;
+  /** Ships free (shipping waived when every line of a cart is free-delivery). */
+  freeDelivery?: boolean;
   lowStockThreshold: number;
   restockDate: string | null;
   isActive: boolean;
@@ -183,6 +191,8 @@ export interface Product {
   seoTitle: string | null;
   seoDescription: string | null;
   focusKeyword?: string | null;
+  /** Admin reads only: search tags, stored normalized. */
+  tags?: string[];
   ogTitle?: string | null;
   ogDescription?: string | null;
   ogImageUrl?: string | null;
@@ -317,6 +327,11 @@ export interface ReturnRequest {
   requestedSizeSnapshot: string | null;
   requestedColorSnapshot: string | null;
   exchangeOrderId: string | null;
+  /** Item-level return: what came back per line (admin-recorded). */
+  lines?: ItemReturnLine[] | null;
+  /** What the customer got back for this request, and how much. */
+  compensation?: "STORE_CREDIT" | "REFUND" | "NONE" | null;
+  compensationAmount?: string | number | null;
   status: "PENDING" | "APPROVED" | "REJECTED";
   adminNote: string | null;
   reviewedAt: string | null;
@@ -325,6 +340,68 @@ export interface ReturnRequest {
   order?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt">;
   customer?: { name: string; email: string | null };
   exchangeOrder?: Pick<Order, "id" | "orderNumber" | "status" | "total" | "createdAt"> | null;
+}
+
+export interface ItemReturnLine {
+  orderItemId: string;
+  productName: string;
+  size: string;
+  color: string;
+  quantity: number;
+  restocked: number;
+  writtenOff: number;
+  /** Allocated value of these units (what the customer paid for them). */
+  value: number;
+}
+
+/** POST /api/orders/:id/returns/preview — what recording the return would do. Every amount is server-derived. */
+export interface ItemReturnPreview {
+  currency: string;
+  value: number;
+  lines: ItemReturnLine[];
+  items: Array<{
+    orderItemId: string;
+    productName: string;
+    size: string;
+    color: string;
+    ordered: number;
+    alreadyReturned: number;
+    returnable: number;
+    returning: number;
+    keptAfter: number;
+  }>;
+  compensation: { storeCredit: number; refund: number };
+  returnsEverything: boolean;
+}
+
+/** GET /api/return-requests/:id/exchange-preview — what approving the exchange would do. */
+export interface ExchangePreview {
+  currency: string;
+  quantity: number;
+  original: { orderItemId: string; productName: string; size: string; color: string; paidValue: number };
+  replacement: { variantId: string; productName: string; size: string; color: string; value: number; inStock: boolean };
+  amountDue: number;
+  amountOwedBack: number;
+  canCredit: boolean;
+  canRefund: boolean;
+}
+
+/** One change to an order (GET …/modifications). */
+export interface OrderModificationRecord {
+  id: string;
+  sequence: number;
+  status: "APPLIED" | "AWAITING_PAYMENT" | "SUPERSEDED" | "CANCELLED" | "EXPIRED";
+  initiatedBy: "CUSTOMER" | "ADMIN";
+  by: string | null;
+  reason: string | null;
+  statusReason: string | null;
+  previousTotal: number;
+  newTotal: number;
+  amountDue: number;
+  amountCredited: number;
+  expiresAt: string | null;
+  appliedAt: string | null;
+  createdAt: string;
 }
 
 export interface OrderStatusHistoryEntry {
@@ -355,7 +432,7 @@ export interface Refund {
   createdAt: string;
 }
 
-export type OrderPaymentStatus = "UNPAID" | "PAID" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED";
+export type OrderPaymentStatus = "UNPAID" | "PARTIALLY_PAID" | "PAID" | "FAILED" | "REFUNDED" | "PARTIALLY_REFUNDED" | "CREDITED";
 
 /** The order's payment position from the payment ledger (docs/PAYMENT_LEDGER.md §7) — every number is server-derived
  * by `derivePaymentPosition`; the web renders these and computes none of them. Money in major units. */
@@ -366,6 +443,10 @@ export interface OrderPaymentSummary {
   paid: number;
   refunded: number;
   refundPending: number;
+  /** Money owed back that went to the customer's store balance instead of a refund. */
+  credited: number;
+  /** Of `paid`, the part paid from the customer's store balance (STORE_CREDIT settlements). */
+  paidFromStoreCredit: number;
   netPaid: number;
   amountDue: number;
   /** What the courier collects at the door (balance due of an open COD order). */
@@ -377,7 +458,7 @@ export interface OrderPaymentSummary {
   overpaid: number;
   payments: Array<{
     id: string;
-    provider: "SSLCOMMERZ" | "EPS_PG" | "COD" | "MANUAL";
+    provider: "SSLCOMMERZ" | "EPS_PG" | "COD" | "MANUAL" | "STORE_CREDIT";
     status: "SUCCEEDED" | "FAILED";
     amount: number;
     note: string | null;
@@ -396,6 +477,103 @@ export interface OrderPaymentSummary {
     completedAt: string | null;
     createdAt: string;
   }>;
+  /** Store-credit entries issued from this order's money (cancellation, modification, return, exchange, refund-to-credit). */
+  credits: Array<{ id: string; type: StoreCreditEntryType; amount: number; reason: string; createdAt: string; createdBy: string | null }>;
+}
+
+export type StoreCreditEntryType =
+  | "CANCELLATION"
+  | "ORDER_MODIFICATION"
+  | "RETURN"
+  | "EXCHANGE"
+  | "REFUND_TO_CREDIT"
+  | "ORDER_PAYMENT"
+  | "ORDER_PAYMENT_RELEASED";
+
+/** A customer's store balance (docs/ORDER_ADJUSTMENTS.md §4): derived from the ledger, never stored as a number. */
+export interface StoreCreditSummary {
+  currency: string;
+  balance: number;
+  entries: Array<{
+    id: string;
+    type: StoreCreditEntryType;
+    amount: number;
+    reason: string;
+    orderId: string | null;
+    orderNumber: string | null;
+    createdAt: string;
+  }>;
+}
+
+export interface OrderModificationLineChange {
+  variantId: string;
+  productName: string;
+  size: string;
+  color: string;
+  previousQuantity: number;
+  newQuantity: number;
+  /** The unit price the new units are charged at (kept units keep their original price). */
+  unitPrice: number | null;
+}
+
+/** What a modification would do — shown and confirmed before it is applied. Every number is server-derived. */
+export interface OrderModificationPreview {
+  orderId: string;
+  orderNumber: string;
+  currency: string;
+  added: OrderModificationLineChange[];
+  removed: OrderModificationLineChange[];
+  changed: OrderModificationLineChange[];
+  addressChanged: boolean;
+  previous: { subtotal: number; discount: number; shippingFee: number; shippingCharged: number; total: number };
+  next: { subtotal: number; discount: number; shippingFee: number; shippingCharged: number; total: number };
+  difference: { merchandise: number; discount: number; shipping: number; total: number };
+  coupon: { code: string | null; kept: boolean; note: string | null };
+  shippingWaivedReason: "COUPON" | "FREE_DELIVERY" | "FREE_OVER" | null;
+  /** What the customer has paid toward this order so far (net of refunds and credits). */
+  paid: number;
+  /** > 0: must be paid before an online-paid order's change takes effect (or is collected on delivery for COD). */
+  amountToPay: number;
+  /** > 0: goes to the customer's store balance when the change is applied. */
+  amountCredited: number;
+  /** AWAITING_PAYMENT when the change only takes effect once `amountToPay` is paid. */
+  outcome: "APPLY" | "AWAITING_PAYMENT";
+  warnings: string[];
+  previewToken: string;
+}
+
+export type PaymentLinkStatus = "ACTIVE" | "USED" | "EXPIRED" | "CANCELLED";
+
+export interface PaymentLinkDto {
+  id: string;
+  orderId: string;
+  purpose: "ORDER_BALANCE" | "MODIFICATION";
+  amount: number;
+  currency: string;
+  status: PaymentLinkStatus;
+  statusReason: string | null;
+  expiresAt: string;
+  createdAt: string;
+  usedAt: string | null;
+  cancelledAt: string | null;
+  createdBy: string | null;
+  /** The shareable URL — only while the link is ACTIVE. */
+  url: string | null;
+  attempts: Array<{ id: string; provider: string; status: string; amount: number | null; createdAt: string }>;
+}
+
+/** What the public payment page shows: enough to recognise the order, nothing more. */
+export interface PublicPaymentLinkView {
+  status: PaymentLinkStatus;
+  orderNumber: string;
+  customerFirstName: string;
+  currency: string;
+  amount: number;
+  orderTotal: number;
+  expiresAt: string;
+  purpose: "ORDER_BALANCE" | "MODIFICATION";
+  items: Array<{ name: string; size: string; color: string; quantity: number }>;
+  providers: Array<"SSLCOMMERZ" | "EPS_PG">;
 }
 
 export interface Order {
@@ -448,9 +626,22 @@ export interface Order {
   returnRequests?: ReturnRequest[];
   /** Admin order detail / bulk label fetch only — the payment ledger position (Phase 4). */
   payment?: OrderPaymentSummary;
+  /** Admin order detail only — courier-loss ledger rows (post-booking cancellation, partial return). */
+  courierLosses?: CourierLossEntry[];
+  /** Admin order detail only — set when this order is the free replacement created by an approved exchange. */
+  exchangeOf?: { returnRequestId: string; order: Pick<Order, "id" | "orderNumber"> } | null;
+  /** Admin order detail only — the customer's cached courier delivery score (null until checked). */
+  deliveryScore?: DeliveryScore | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CourierLossEntry {
+  id: string;
+  amount: string;
+  reason: "CANCELLED_POST_BOOKING" | "PARTIAL_RETURN";
+  createdAt: string;
 }
 
 /** What the admin orders list table shows in its Product column — the first line item plus how

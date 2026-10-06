@@ -17,8 +17,9 @@ export const orderStatusEnum = z.enum([
 ]);
 
 export const paymentMethodEnum = z.enum(["COD", "SSLCOMMERZ", "EPS_PG"]);
-// A projection of the payment ledger (docs/PAYMENT_LEDGER.md §4); PARTIALLY_REFUNDED since Phase 4.
-export const paymentStatusEnum = z.enum(["UNPAID", "PAID", "FAILED", "REFUNDED", "PARTIALLY_REFUNDED"]);
+// A projection of the payment ledger (docs/PAYMENT_LEDGER.md §4); PARTIALLY_REFUNDED since Phase 4; PARTIALLY_PAID and
+// CREDITED since the order-adjustments phase (docs/ORDER_ADJUSTMENTS.md §5).
+export const paymentStatusEnum = z.enum(["UNPAID", "PARTIALLY_PAID", "PAID", "FAILED", "REFUNDED", "PARTIALLY_REFUNDED", "CREDITED"]);
 
 /** Every raw `delivery_status` value Steadfast's API can return (courier.service.ts's
  * mapSteadfastStatusToOrderStatus only understands a subset of these) — shared so the admin
@@ -65,6 +66,9 @@ export const checkoutSchema = z.object({
   /** The token of the quote the customer was shown (POST /api/v1/checkout/quote). When present, the order is refused
    * with 409 QUOTE_CHANGED if the server's price no longer matches it — a stale price is never charged. Never a price. */
   quoteToken: z.string().max(128).optional(),
+  /** Pay as much as possible from the signed-in customer's store balance. A choice, never an amount: the server
+   * applies min(balance, total) under a lock. Ignored for guests (docs/ORDER_ADJUSTMENTS.md §6). */
+  useStoreCredit: z.boolean().optional(),
 });
 
 /** The canonical quote request (POST /api/v1/checkout/quote): what to price, never a price. Address fields are
@@ -99,6 +103,8 @@ export const adminCreateOrderSchema = z.object({
   shippingAddressLine: z.string().min(1).max(500),
   paymentMethod: z.literal("COD"),
   markPaid: z.boolean().optional(),
+  /** Pay from the selected customer's store balance first (requires `customerId`); the rest stays due. */
+  useStoreCredit: z.boolean().optional(),
   couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
   notes: nullableString(500),
   /** Same stale-quote guard as checkout (see checkoutSchema.quoteToken). */
@@ -134,6 +140,10 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   // "true" = only CANCELLED orders still holding money (paymentStatus PAID or PARTIALLY_REFUNDED) — the refund-risk
   // queue behind getOrderStats().cancelledButPaidCount. No "false" variant; omit for the normal listing.
   cancelledButPaid: z.enum(["true"]).optional(),
+  // "true" = only RETURNED orders still holding money — the "returned, refund may be owed" alert's queue.
+  refundDue: z.enum(["true"]).optional(),
+  // "true" = only booked orders the courier has put on hold or whose last status sync failed.
+  courierIssue: z.enum(["true"]).optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   // Powers the sortable column headers on the admin orders table — restricted to plain scalar

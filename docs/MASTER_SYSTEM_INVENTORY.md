@@ -72,7 +72,7 @@
 | Persistent client stores | `store/cart.ts` (persisted cart), `wishlist.ts` (guest wishlist), `compare.ts`, `express-checkout.ts` (Buy Now), `quick-view.ts`, `search-overlay.ts`, `cart-drawer.ts` |
 | Hooks (10) | `use-add-to-cart`, `use-bottom-dock`, `use-can-manage-catalog`, `use-current-admin`, `use-current-customer`, `use-debounced-value`, `use-feedback-form`, `use-focus-trap`, `use-form-preview-sync`, `use-quote` |
 | Admin "hint" | `WEB/lib/admin-hint.ts` marks a browser as an admin's once a session is verified, so the storefront can show admin-only overlays (`admin-sales-badge.tsx`, `category-stock-panel.tsx`) |
-| Ad pixels | `WEB/lib/pixels/*`: one layer for Meta + TikTok with dedupe guards, a consent gate (currently always grants), lazy script load, and path exclusions |
+| Ad pixels | `WEB/lib/pixels/*`: one layer for Meta + TikTok with dedupe guards, a consent gate (the shopper's choice from the consent banner; nothing tracked before it), lazy script load, and path exclusions |
 | Analytics beacons | `WEB/lib/analytics.ts`: session id, 1-year visitor id, first-touch UTM/referrer, pageview + `sendBeacon` exit, funnel events, search-session correlation |
 | SEO helpers | `WEB/lib/seo.ts`, `WEB/lib/structured-data.ts` (Product, ItemList, FAQ, Breadcrumb, Organization, WebSite JSON-LD) |
 
@@ -134,7 +134,7 @@ PostgreSQL via Prisma: **85 models, 31 enums, 84 migrations**. Raw-SQL partial u
 ### 4.1 Identity & access
 | Model | Purpose | Important fields | Relations | Used by | Concerns |
 |---|---|---|---|---|---|
-| `AdminUser` | Staff account | email (unique), passwordHash, googleId, `role` (OWNER/STAFF, **default OWNER**), isActive | RefreshToken, AuditLog, OrderStatusHistory, ReturnRequest, AdminInvite, StockMovement, Refund×2, Payment, Order (deletedBy) | auth, every admin action | The default role is the most privileged one. Any code path that creates an admin without an explicit role makes an OWNER. |
+| `AdminUser` | Staff account | email (unique), passwordHash, googleId, `role` (OWNER/STAFF, default STAFF since P0-02), isActive | RefreshToken, AuditLog, OrderStatusHistory, ReturnRequest, AdminInvite, StockMovement, Refund×2, Payment, Order (deletedBy) | auth, every admin action | An OWNER is only created by naming the role (seed, an OWNER's invite, an OWNER's promotion). |
 | `AdminInvite` | Invite-only onboarding | email, role, tokenHash, expiresAt, acceptedAt | invitedBy → AdminUser | Team page | — |
 | `RefreshToken` | Admin refresh sessions (rotation) | tokenHash, revokedAt, replacedById, userAgent | AdminUser (cascade) | auth | No retention job for admin tokens (customer tokens do have one) |
 | `AuditLog` | Append-only admin mutation log | action, entityType, entityId, metadata JSON, ipAddress | AdminUser (SetNull) | audit middleware, Audit Log page | Grows without bound; no retention policy |
@@ -341,7 +341,7 @@ Roles: **OWNER**, **STAFF** (plus the implicit **Customer** and **Guest**). Ther
 | PUB-32 | Sorting: newest, price ↑, price ↓, relevance (search only); price sorts use `ProductReadModel` | `sort-select.tsx`, `read-model.service.ts` |
 | PUB-33 | Crawlable link-based pagination | `storefront/pagination.tsx` |
 | PUB-34 | "Coming Soon" panel for live categories with no products | `coming-soon.tsx` |
-| PUB-35 | Category stock panel (admin-hint only; per-category stock overview) | `category-stock-panel.tsx`, `GET /api/categories/slug/:slug/stock` (**public endpoint**, see §29) |
+| PUB-35 | Category stock panel (admin-hint only; per-category stock overview) | `category-stock-panel.tsx`, `GET /api/categories/slug/:slug/stock` (public; product availability counts only since P0-04) |
 | PUB-36 | Product card: image, price/compare-at, promo badge (discount > new > low stock), rating, wishlist, quick view, compare, add to cart | `product-card.tsx`, `promo-badge.tsx`, `star-rating.tsx` |
 | PUB-37 | Quick-view modal | `quick-view-modal.tsx`, `store/quick-view.ts` |
 | PUB-38 | Product compare: floating bar + comparison modal (no dedicated page) | `compare-bar.tsx`, `store/compare.ts` |
@@ -886,7 +886,7 @@ There are **~400 HTTP endpoints**: 395 in module routers, 2 in `/api/v1/checkout
 | Integration | Purpose | Implementation | Config | State |
 |---|---|---|---|---|
 | **SSLCommerz** | Card/MFS hosted payment | `API/modules/payments/sslcommerz.service.ts`, callbacks in `payment.controller.ts` | `SSLCOMMERZ_*` + `onlinePaymentEnabled` | Code complete; account state Needs Verification |
-| **EPS-PG** (eps.com.bd) | Payment gateway (redirect only, no IPN) | `eps.service.ts` (HMAC hash) | `EPS_*` + `epsPaymentEnabled` (default off) | Code complete. Live credentials exist in the untracked `AsifZone Eps/` folder. |
+| **EPS-PG** (eps.com.bd) | Payment gateway (redirect only, no IPN) | `eps.service.ts` (HMAC hash) | `EPS_*` + `epsPaymentEnabled` (default off) | Code complete. Live credentials only in the production deploy secrets; outside production the API refuses a live gateway (P0-05). |
 | **Steadfast Courier** (packzy) | Booking, bulk booking, status, fraud check, balance, webhook | `API/lib/steadfast.ts`, `courier.service.ts` | `STEADFAST_*` | Complete |
 | **BulkSMSBD** | Transactional/marketing/OTP SMS | `API/lib/sms.ts` | `BULKSMSBD_*` | Complete (logs when unset) |
 | **Resend** | Email | `API/lib/mailer.ts` | `RESEND_*` | Complete (`.devmail` fallback). README still says email is "not configured", so the README is stale. |
@@ -1136,7 +1136,7 @@ Overall posture is **strong**: DB-backed role resolution per request, a permissi
 | Bangladesh market: BD geography dataset, `01XXXXXXXXX` phone format, `880` prefixes, BDT/৳, `Asia/Dhaka`, `en-BD` | `SHARED/schemas/order.ts`, `SHARED/schemas/common.ts`, `lib/sms.ts`, `meta/capi.ts`, `format.ts`, `money.ts`, defaults | Market-specific |
 | Bangladesh providers: SSLCommerz, EPS-PG, Steadfast, BulkSMSBD; bKash/Nagad references | payments, courier, SMS modules; payment badges | Market-specific |
 | Dhaka-centric copy: "Inside Dhaka 1–2 business days / Outside 3–5" | FAQ, shipping-returns pages | Hardcoded content |
-| Live EPS merchant credentials | `AsifZone Eps/Live_Credentials(AsifZone)` | Untracked local folder |
+| Live EPS merchant credentials | production deploy secrets only (onboarding documents moved out of the synced tree, P0-05) | — |
 | Package scope `@clothing-brand/*`, DB name `clothing_brand` | everywhere | Generic name, not Asif-specific |
 | Admin console label "Store Console" | sidebar/login | Generic (not branded) |
 
@@ -1152,6 +1152,13 @@ Overall posture is **strong**: DB-backed role resolution per request, a permissi
 3. Add a Content-Security-Policy for the web app, and a consent banner wired to `hasAdTrackingConsent()` (SEC-03, SEC-10).
 4. Make the category stock endpoint admin-only, or reduce it to in/out-of-stock flags (SEC-05).
 5. Move the live EPS credentials out of the OneDrive-synced tree (SEC-11).
+
+**P0 status (2026-10-06):** 1 — kept as recorded owner decision BD-11.3 (`isBlocked` is a CRM flag; the admin Block
+dialog says so); changing it needs a new owner decision. 2 — done (`@default(STAFF)`, migration
+`20261008200000_admin_role_default_staff`). 3 — done (nonce + `'strict-dynamic'` CSP in `WEB/lib/security/csp.ts` via
+`middleware.ts`; consent banner wired to `hasAdTrackingConsent()`, Clarity behind the same gate). 4 — done (public
+response = `totalProducts`/`inStockProducts` by the shared availability rule; unit totals only on the admin stock-map).
+5 — done (documents moved outside the synced tree; `assertPaymentGatewayMode` refuses live gateways outside production).
 
 **P1: operability & merchant self-service**
 6. Admin UI for shipping zones/rates/free-shipping threshold and tax mode (INC-02/03).

@@ -1,4 +1,4 @@
-import { canTransitionOrder, normalizeBdPhone, type OrderStatus } from "@clothing-brand/shared";
+import { canTransitionOrder, COURIER_UNBOOKABLE_STATUSES, normalizeBdPhone, type OrderStatus } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
@@ -37,7 +37,8 @@ const PRE_SHIP_ORDER_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESS
 // (billable) courier consignment for one would create a live shipment/COD collection for an order
 // the store no longer intends to send, and restockNeeded's CANCELLED/REFUNDED bookkeeping in
 // order.service.ts assumes those statuses are final, not "shipped after the fact".
-const NOT_BOOKABLE_STATUSES: OrderStatus[] = ["CANCELLED", "REFUNDED", "RETURNED", "DELIVERED", "PARTIALLY_DELIVERED"];
+// Shared with the admin UI (packages/shared order-operations.ts) so it only offers booking where this allows it.
+const NOT_BOOKABLE_STATUSES = COURIER_UNBOOKABLE_STATUSES;
 
 // "partial_delivered" used to be folded into DELIVERED here, which silently left whatever the
 // customer refused to accept stuck as "sold" forever — nothing else in the system ever restocked

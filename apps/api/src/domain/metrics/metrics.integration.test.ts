@@ -67,7 +67,7 @@ beforeAll(async () => {
   const req = await prisma.returnRequest.create({
     data: { orderId: original.id, customerId: original.customerId!, reason: "Size", type: "EXCHANGE", orderItemId: lineRow.id, requestedVariantId: variants[1]!.id },
   });
-  await reviewReturnRequest(req.id, { status: "APPROVED" }, admin);
+  await reviewReturnRequest(req.id, { status: "APPROVED", compensation: "REFUND" }, admin); // D6 refund path (D11 default is store credit)
   ids.exchangedOriginal = original.id;
   ids.replacement = (await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } })).exchangeOrderId!;
   trackOrder(ids.replacement);
@@ -325,7 +325,7 @@ describe("PD-5.1 realised net sales over real orders (order, ledger and exchange
     const req = await prisma.returnRequest.create({
       data: { orderId: original.id, customerId: original.customerId!, reason: "Size", type: "EXCHANGE", orderItemId: lineRow.id, requestedVariantId: variants[1]!.id },
     });
-    await reviewReturnRequest(req.id, { status: "APPROVED" }, admin);
+    await reviewReturnRequest(req.id, { status: "APPROVED", compensation: "REFUND" }, admin); // D6 refund path (D11 default is store credit)
     const replacementId = (await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } })).exchangeOrderId!;
     trackOrder(replacementId);
     const requested = await prisma.refund.findFirstOrThrow({ where: { orderId: original.id, status: "REQUESTED" } });

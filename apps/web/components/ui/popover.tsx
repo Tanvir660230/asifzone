@@ -33,7 +33,13 @@ export function Popover({ open, onClose, anchorRef, align = "start", className, 
     const panelWidth = panel?.offsetWidth ?? 280;
     const rawLeft = align === "end" ? rect.right - panelWidth : rect.left;
     const left = Math.min(Math.max(8, rawLeft), window.innerWidth - panelWidth - 8);
-    const top = Math.min(rect.bottom + 8, window.innerHeight - 8);
+    // Below the anchor when it fits; otherwise above it (a row menu near the bottom of the screen); otherwise as low as
+    // fits — never past the viewport edge, where its items couldn't be reached.
+    const panelHeight = panel?.offsetHeight ?? 0;
+    const below = rect.bottom + 8;
+    const above = rect.top - 8 - panelHeight;
+    const fitsBelow = below + panelHeight <= window.innerHeight - 8;
+    const top = fitsBelow || above < 8 ? Math.max(8, Math.min(below, window.innerHeight - panelHeight - 8)) : above;
     setStyle({ top, left });
     // panelRef is a stable ref object from useFocusTrap; not a reactive dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps

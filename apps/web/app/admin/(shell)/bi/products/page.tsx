@@ -4,7 +4,7 @@ import { DISPLAY_LOCALE, formatVariantLabel } from "@clothing-brand/shared";
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Info } from "lucide-react";
+import { Info, ShoppingCart, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import { DemandForecastTable } from "@/components/admin/demand-forecast-table";
@@ -34,6 +34,9 @@ export default function ProductIntelligencePage() {
   const { data: mostViewed } = useQuery({ queryKey: ["bi-products-most-viewed", legacyDays], queryFn: () => analyticsApi.getMostViewedProducts(legacyDays, 8) });
   const { data: mostWishlisted } = useQuery({ queryKey: ["bi-products-wishlisted"], queryFn: () => analyticsApi.getMostWishlisted(8) });
   const { data: mostAdded } = useQuery({ queryKey: ["bi-products-added", apiDays], queryFn: () => analyticsApi.getMostAddedToCart(apiDays, 8) });
+  const { data: topBrands } = useQuery({ queryKey: ["bi-products-top-brands", legacyDays], queryFn: () => analyticsApi.getTopBrands(legacyDays, 8) });
+  const { data: trending } = useQuery({ queryKey: ["analytics-trending-products"], queryFn: () => analyticsApi.getTrendingProducts(8) });
+  const { data: cartAbandonment } = useQuery({ queryKey: ["analytics-cart-abandonment"], queryFn: analyticsApi.getCartAbandonment });
   const { data: mostRemoved } = useQuery({ queryKey: ["bi-products-removed", apiDays], queryFn: () => analyticsApi.getMostRemovedFromCart(apiDays, 8) });
 
   const { data: conversion } = useQuery({ queryKey: ["bi-products-conversion", apiDays], queryFn: () => analyticsApi.getProductConversionRates(apiDays) });
@@ -414,6 +417,61 @@ export default function ProductIntelligencePage() {
             <CardTitle>{`Dead stock (${range === "all" ? "365d" : `${range}D`})`}</CardTitle>
           </CardHeader>
           <CardContent>{slowMoving && <SlowMovingTable products={slowMoving.products} />}</CardContent>
+        </Card>
+      </section>
+
+      {/* Moved here from the dashboard's old "Catalog Performance" tab. */}
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>{`Top brands (${range === "all" ? "365d" : `${range}D`})`}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {topBrands && (
+              <RankedBarList
+                emptyLabel="No sales in this period yet."
+                items={topBrands.brands.map((b) => ({
+                  key: b.name,
+                  label: b.name,
+                  value: b.revenue,
+                  valueLabel: formatPrice(b.revenue),
+                  subLabel: `${b.quantitySold} sold`,
+                }))}
+              />
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp size={16} className="text-brass-500" /> Trending (views, this week vs. last)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {trending && (
+              <RankedBarList
+                emptyLabel="No product views logged this week yet."
+                items={trending.products.map((p) => ({
+                  key: p.id,
+                  label: p.name,
+                  value: p.recentViews,
+                  valueLabel: `${p.recentViews} views (${p.growthPct >= 0 ? "+" : ""}${p.growthPct.toFixed(0)}%)`,
+                  subLabel: `prior week: ${p.priorViews} views`,
+                }))}
+              />
+            )}
+          </CardContent>
+        </Card>
+        <Card className="flex items-center gap-4 p-5 lg:col-span-2">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-warning-50 text-warning-600">
+            <ShoppingCart size={20} />
+          </span>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">Abandoned carts</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums text-ink-900">
+              {cartAbandonment ? `${cartAbandonment.cartCount} carts · ${formatPrice(cartAbandonment.potentialRevenue)} potential` : "—"}
+            </p>
+          </div>
         </Card>
       </section>
 

@@ -56,9 +56,10 @@ describe("reliability — architecture guards", () => {
   it("every web money-creating call sends an Idempotency-Key", () => {
     expect(read(WEB, "app/(storefront)/checkout/page.tsx")).toMatch(/createOrder\(payload, idempotencyKeyFor\("checkout", payload\)\)/);
     expect(read(WEB, "app/admin/(shell)/orders/new/page.tsx")).toMatch(/createManualOrder\(payload, idempotencyKeyFor\("manual-order", payload\)\)/);
-    const panel = read(WEB, "components/admin/order-detail-panel.tsx");
-    expect(panel).toMatch(/createRefund\(id, input, idempotencyKeyFor\(`refund:\$\{id\}`, input\)\)/);
-    expect(panel).toMatch(/recordPayment\(id, input, idempotencyKeyFor\(`payment:\$\{id\}`, input\)\)/);
+    // The order detail's refund / payment commands (one hook, used by the drawer and the full page).
+    const detail = read(WEB, "components/admin/orders/detail/use-order-detail-commands.ts");
+    expect(detail).toMatch(/createRefund\(orderId, input, idempotencyKeyFor\(`refund:\$\{orderId\}`, input\)\)/);
+    expect(detail).toMatch(/recordPayment\(orderId, input, idempotencyKeyFor\(`payment:\$\{orderId\}`, input\)\)/);
     expect(read(WEB, "lib/api-client.ts")).toMatch(/"Idempotency-Key": idempotencyKey/);
   });
 });

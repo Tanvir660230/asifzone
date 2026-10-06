@@ -27,9 +27,9 @@ describe("payment ledger engine — status (§4, PL-1)", () => {
   it("a later success wins over earlier failures → PAID", () => {
     expect(pos({ paid: [1000], failedAttempts: 1 }).status).toBe("PAID");
   });
-  it("partial receipt is not PAID (balance still due)", () => {
+  it("partial receipt is not PAID (balance still due) — PARTIALLY_PAID since the order-adjustments phase", () => {
     const p = pos({ paid: [400] });
-    expect(p.status).toBe("UNPAID");
+    expect(p.status).toBe("PARTIALLY_PAID");
     expect(major(p.amountDue)).toBe(600);
   });
   it("a zero-amount settlement settles a zero total (free exchange / total-0 COD at delivery)", () => {

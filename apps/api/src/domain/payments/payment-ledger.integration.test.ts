@@ -208,7 +208,7 @@ describe("payment ledger — exchange downgrade (D6) and requested refunds", () 
     const req = await prisma.returnRequest.create({
       data: { orderId: original.id, customerId: original.customerId!, reason: "Size", type: "EXCHANGE", orderItemId: line.id, requestedVariantId: variants[1]!.id },
     });
-    await reviewReturnRequest(req.id, { status: "APPROVED" }, admin);
+    await reviewReturnRequest(req.id, { status: "APPROVED", compensation: "REFUND" }, admin); // D6 refund path (D11 default is store credit)
     const exchangeOrderId = (await prisma.returnRequest.findUniqueOrThrow({ where: { id: req.id } })).exchangeOrderId!;
     trackOrder(exchangeOrderId);
     return { original, exchangeOrderId };

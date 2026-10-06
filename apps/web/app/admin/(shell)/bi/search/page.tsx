@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Search, XCircle, ShoppingBag, LogOut, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,13 +134,14 @@ export default function SearchAnalyticsPage() {
             {!noResults || noResults.queries.length === 0 ? (
               <p className="py-8 text-center text-sm text-ink-400">No zero-result searches for this range.</p>
             ) : (
-              <table className="w-full min-w-[560px] text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b border-ink-100 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-400">
                     <th className="pb-2 pr-4">Query</th>
                     <th className="pb-2 pr-4">Times searched</th>
                     <th className="pb-2 pr-4">Last searched</th>
-                    <th className="pb-2">Suggested instead</th>
+                    <th className="pb-2 pr-4">Suggested instead</th>
+                    <th className="pb-2 text-right">Fix</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -154,6 +156,14 @@ export default function SearchAnalyticsPage() {
                         ) : (
                           <span className="text-ink-400">—</span>
                         )}
+                      </td>
+                      <td className="py-2 text-right">
+                        <Link
+                          href={`/admin/catalog/search-synonyms?add=${encodeURIComponent(row.query)}`}
+                          className="whitespace-nowrap text-xs font-medium text-info-600 hover:underline"
+                        >
+                          Add synonym
+                        </Link>
                       </td>
                     </tr>
                   ))}

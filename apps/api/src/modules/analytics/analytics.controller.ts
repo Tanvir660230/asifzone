@@ -90,6 +90,15 @@ export const cartAbandonment = asyncHandler(async (_req: Request, res: Response)
   res.json(await analyticsService.getCartAbandonmentSummary());
 });
 
+export const abandonedCarts = asyncHandler(async (req: Request, res: Response) => {
+  const { limit = 50 } = query(req);
+  res.json({ carts: await analyticsService.listAbandonedCarts(limit) });
+});
+
+export const remindAbandonedCarts = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await analyticsService.remindAbandonedCarts(req.body.customerIds, req.body.body));
+});
+
 export const customerInsights = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await analyticsService.getCustomerInsights());
 });

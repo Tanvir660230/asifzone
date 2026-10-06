@@ -10,6 +10,22 @@ import { resolve } from "node:path";
 const testEnvPath = resolve(__dirname, ".env.test");
 const testEnv = existsSync(testEnvPath) ? (parseEnvFile({ path: testEnvPath, processEnv: {} }).parsed ?? {}) : {};
 
+// Tests get their own Redis logical database on whatever Redis server dev uses. Cache entries (keyed by report, not by
+// database), order/payment locks and the BullMQ queue all live in Redis, so sharing db 0 with a running `pnpm dev` let a
+// test read the dev/demo API's cached numbers — and let a dev worker pick up a test's jobs. A separate db index isolates
+// all three without a second Redis or any app-code change. `.env.test` may set REDIS_URL explicitly (it must then name a
+// non-zero db — test-setup.ts refuses db 0); otherwise the dev URL (shell, then .env, then the default) is reused with
+// only its db index replaced. In CI, REDIS_URL comes from the job and gets the same treatment.
+const TEST_REDIS_DB = 15;
+function testRedisUrl(): string {
+  if (testEnv.REDIS_URL) return testEnv.REDIS_URL;
+  const devEnvPath = resolve(__dirname, ".env");
+  const devEnv = existsSync(devEnvPath) ? (parseEnvFile({ path: devEnvPath, processEnv: {} }).parsed ?? {}) : {};
+  const url = new URL(process.env.REDIS_URL ?? devEnv.REDIS_URL ?? "redis://localhost:6379");
+  url.pathname = `/${TEST_REDIS_DB}`;
+  return url.toString();
+}
+
 export default defineConfig({
   test: {
     environment: "node",
@@ -36,6 +52,7 @@ export default defineConfig({
       // so this wins over a plain .env without needing any import-order trick. Empty object when there is no .env.test:
       // tests then fall back to the ambient DATABASE_URL, exactly as before this file existed.
       ...testEnv,
+      REDIS_URL: testRedisUrl(),
     },
   },
 });

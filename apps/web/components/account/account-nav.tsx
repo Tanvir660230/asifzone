@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, MapPin, Heart, Package, LayoutDashboard, RotateCcw, Gift, Tag, History } from "lucide-react";
+import { LogOut, MapPin, Heart, Package, LayoutDashboard, RotateCcw, Gift, Tag, History, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logoutCustomer } from "@/lib/customer-auth";
 
@@ -20,6 +20,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/account", label: "Dashboard", icon: LayoutDashboard },
       { href: "/account/addresses", label: "Addresses", icon: MapPin },
+      { href: "/account/store-balance", label: "Store Balance", icon: Wallet },
       { href: "/account/reward-points", label: "Reward Points", icon: Gift },
       { href: "/account/coupons", label: "Coupons", icon: Tag },
       { href: "/account/browsing-history", label: "Browsing History", icon: History },

@@ -30,7 +30,9 @@ const webSource = files(WEB, /\.(ts|tsx)$/);
  * tracking (order number + phone), beacons, provider callbacks. A new unauthenticated route is a deliberate decision. */
 const PUBLIC_ROUTES = [
   "GET /health",
-  "GET /health/ready", // Phase 11: readiness — booleans only (postgres / redis / outbox dispatcher)
+  "GET /health/ready",
+  "GET /api/pay/:token", // payment link (docs/ORDER_ADJUSTMENTS.md §11): the 256-bit token is the capability; rate-limited
+  "POST /api/pay/:token/start", // Phase 11: readiness — booleans only (postgres / redis / outbox dispatcher)
   "GET /api/v1/ops/attention", // Phase 11: counts only; gated by requireOpsReadOrMonitorToken (ops.read or the monitor token)
   "POST /api/auth/login",
   "POST /api/auth/google",

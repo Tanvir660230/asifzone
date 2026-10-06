@@ -5,6 +5,7 @@ import {
   trackFunnelEventSchema,
   attributeSearchSessionSchema,
   analyticsQuerySchema,
+  bulkSendSmsSchema,
 } from "@clothing-brand/shared";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
@@ -55,6 +56,14 @@ analyticsRouter.get("/visitors", requirePermission("analytics.read"), analyticsC
 analyticsRouter.get("/trending-products", requirePermission("analytics.read"), analyticsController.trendingProducts);
 analyticsRouter.get("/search", requirePermission("analytics.read"), analyticsController.searchAnalytics);
 analyticsRouter.get("/cart-abandonment", requirePermission("analytics.read"), analyticsController.cartAbandonment);
+// The carts themselves (names, phones) — customer data, so gated like the CRM rather than like aggregate analytics.
+analyticsRouter.get("/abandoned-carts", requirePermission("customers.read"), analyticsController.abandonedCarts);
+analyticsRouter.post(
+  "/abandoned-carts/remind",
+  requirePermission("customers.message"),
+  validate(bulkSendSmsSchema),
+  analyticsController.remindAbandonedCarts,
+);
 analyticsRouter.get("/customer-insights", requirePermission("analytics.read"), analyticsController.customerInsights);
 analyticsRouter.get("/cohort-retention", requirePermission("analytics.read"), analyticsController.cohortRetention);
 analyticsRouter.get("/top-categories", requirePermission("analytics.read"), analyticsController.topCategories);

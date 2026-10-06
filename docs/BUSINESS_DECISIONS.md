@@ -24,6 +24,12 @@ Related: [TARGET_ARCHITECTURE.md §16](TARGET_ARCHITECTURE.md) · [PRICING_PIPEL
 | D8 | Reward points on discounted merchandise, reversed on return/refund | APPROVED · IMPLEMENTED | Phase 2 |
 | D9 | Bundle first, then coupon | APPROVED · IMPLEMENTED | Phase 2 |
 | D10 | Shipping VAT-inclusive by default, configurable | APPROVED · IMPLEMENTED | Phase 2 |
+| D11 | Product free delivery: shipping waived only when every line is free-delivery | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED | Order adjustments ([ORDER_ADJUSTMENTS.md](ORDER_ADJUSTMENTS.md) §2) |
+| D12 | Paid-order changes: increase waits for verified payment; decrease → store credit | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED | Order adjustments §3.5 |
+| D13 | Store credit: ledger-derived, store-use only, no expiry/transfer/withdrawal | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED (policy details = safest defaults, see entry) | Order adjustments §4 |
+| D14 | Coupon on a modified order: cart conditions re-checked, capped at original discount, never restored once dropped | INTERPRETATION 2026-10-06 — owner may overrule | Order adjustments §3.3 |
+| D15 | Exchange downgrade difference → store credit by default (refund on request) | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED (amends D6 / P4-6 default) | Order adjustments §9 |
+| D16 | Payment links tied to amount + order revision; regenerate cancels the old one | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED | Order adjustments §11 |
 
 Phase 2 implemented D3–D10 in the canonical pricing pipeline ([PRICING_PIPELINE.md](PRICING_PIPELINE.md),
 [PRICING_INVARIANTS.md](PRICING_INVARIANTS.md)). The interpretations Phase 2 had to make where a decision's wording
@@ -344,3 +350,19 @@ these readings; the owner may overrule either with a new dated entry.
 |---|---|---|
 | P8-1 | D8 loyalty points are awarded and reversed **inside** the transaction of the delivery / return / refund that causes them. If the points write fails, that status change or refund fails too and can be retried. Before Phase 8, the change committed and the points were silently lost. | Points are business truth: they may not be lost after commit, and an outbox worker may not write truth. The award is row-locked, so concurrent deliveries can't double-award. |
 | P8-2 | Order SMS / receipt email respect the admin's toggles **at send time**, including after an outage. An intent disabled in the meantime is not sent. | Same behaviour as before, when the send happened immediately. It avoids messages the owner has switched off. |
+
+## Order adjustments decisions (recorded 2026-10-06)
+
+Requested by the owner in the order-adjustments brief; where the brief left a detail open, the interpretation below was
+implemented and may be overruled with a new dated entry. Full rules: [ORDER_ADJUSTMENTS.md](ORDER_ADJUSTMENTS.md).
+
+| ID | Decision / interpretation | Why |
+|---|---|---|
+| D11 | Free delivery is all-or-nothing over the cart's purchasable lines; precedence COUPON > FREE_DELIVERY > FREE_OVER; the free-over threshold counts every line. No pro-rata fee. | Deterministic, explainable at checkout, never frees a normal product's delivery. |
+| D12 | An online-paid order whose change raises the total stays unchanged until the difference is verified paid (the settlement applies the change); if it can no longer be applied, the payment goes to store credit. COD orders / orders with nothing paid apply at once and the difference is due. Staff may apply now and collect later. | "Do not treat an initiated payment as successful"; never oversell; money never lost. |
+| D13 | Store credit never expires, is never withdrawn as cash or transferred, is usable on any order of the account holder (storefront or staff-entered), for merchandise and shipping, with coupons, and as partial payment. Spending requires the signed-in account (never phone matching). | No existing policy; these are the safest defaults and match the brief's "store-use only". |
+| D14 | See summary row. The cap is the coupon discount from the order's first `before` snapshot. | Prevents gaining discount by editing repeatedly; keeps redemption accounting intact. |
+| D15 | Exchange downgrade defaults to store credit; staff may choose a REQUESTED refund instead; orders without a customer account can only be refunded. | Brief §9 ("customer receives ৳300 credit"). |
+| D16 | One ACTIVE link per order; amount = ledger balance due or a waiting change's difference; a link closes when the order changes, is cancelled or is paid. | A stale link must never collect the wrong amount. |
+| OA-1 | Item-level return value = the line's allocated value (price × qty − allocated bundle/coupon, + merchandise VAT share when tax-exclusive), prorated by units. Shipping is not refunded on an item return. A whole-order RETURNED still follows P4-4 (everything received is owed back). | Brief §8 ("never price × quantity when discounts were involved"). |
+| OA-2 | Customer self-service window: PENDING and CONFIRMED (not after courier booking). Staff: every pre-shipment status. | CONFIRMED means confirmed by call/payment; nothing picked yet. |

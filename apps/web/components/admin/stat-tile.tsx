@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { TrendingDown, TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpRight, TrendingDown, TrendingUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +12,10 @@ interface StatTileProps {
   tone?: "default" | "warning" | "accent";
   /** Percent change vs. the prior period, e.g. from computeTrend() — omit when no baseline exists (e.g. pending orders). */
   trendPct?: number | null;
+  /** Makes the whole tile a link to the list behind the number (e.g. "Pending" → the orders list filtered to pending). */
+  href?: string;
+  /** Alternative to `href` for a tile that opens something in place (e.g. a drawer). */
+  onClick?: () => void;
 }
 
 const TONE_CHIP: Record<NonNullable<StatTileProps["tone"]>, string> = {
@@ -19,14 +24,21 @@ const TONE_CHIP: Record<NonNullable<StatTileProps["tone"]>, string> = {
   accent: "bg-info-50 text-info-600",
 };
 
-export function StatTile({ label, value, icon, tone = "default", trendPct }: StatTileProps) {
+export function StatTile({ label, value, icon, tone = "default", trendPct, href, onClick }: StatTileProps) {
   const hasTrend = trendPct !== null && trendPct !== undefined && Number.isFinite(trendPct);
   const isUp = hasTrend && trendPct! >= 0;
 
-  return (
-    <Card className="group relative flex items-center gap-3 p-4 transition-all duration-300 ease-smooth hover:-translate-y-1 hover:shadow-floatLg sm:gap-3.5 sm:p-5">
+  const tile = (
+    <Card className="group relative flex h-full items-center gap-3 p-4 transition-all duration-300 ease-smooth hover:-translate-y-1 hover:shadow-floatLg sm:gap-3.5 sm:p-5">
       {/* A tile only ever gets tone="warning" when its underlying count is actually > 0 (callers
           gate it), so the pulse doubles as a real "needs a look" signal, not decoration. */}
+      {(href || onClick) && tone !== "warning" && (
+        <ArrowUpRight
+          size={14}
+          aria-hidden
+          className="absolute right-3.5 top-3.5 text-ink-300 opacity-0 transition-opacity duration-150 ease-smooth group-hover:opacity-100"
+        />
+      )}
       {tone === "warning" && (
         <span className="absolute right-4 top-4 flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning-500 opacity-75" />
@@ -66,6 +78,25 @@ export function StatTile({ label, value, icon, tone = "default", trendPct }: Sta
         </div>
       </div>
     </Card>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={`${label}: ${value}`}
+        className="block w-full rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900/20"
+      >
+        {tile}
+      </button>
+    );
+  }
+  if (!href) return tile;
+  return (
+    <Link href={href} aria-label={`${label}: ${value}`} className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900/20">
+      {tile}
+    </Link>
   );
 }
 

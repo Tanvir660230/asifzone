@@ -60,6 +60,9 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/auth/admin-invites",
   "POST /api/auth/admin-invites",
   "DELETE /api/auth/admin-invites/:id",
+  "POST /api/catalog/search-synonyms",
+  "PUT /api/catalog/search-synonyms/:id",
+  "DELETE /api/catalog/search-synonyms/:id",
   "POST /api/catalog/types",
   "PATCH /api/catalog/types/:id",
   "DELETE /api/catalog/types/:id",
@@ -91,6 +94,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/products/import/commit",
   "DELETE /api/products/:id/permanent",
   "POST /api/orders/bulk/delete",
+  "POST /api/orders/bulk/restore",
   "POST /api/orders/bulk/permanent",
   "DELETE /api/orders/:id",
   "POST /api/orders/:id/restore",
@@ -215,8 +219,9 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 305 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    expect(routes).toHaveLength(305);
+  it("covers all 326 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore
+    expect(routes).toHaveLength(326);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 
@@ -372,6 +377,25 @@ describe("sensitive data never reaches a customer", () => {
     expect(JSON.stringify(order), where).not.toContain("P10-INTERNAL");
   }
 
+  it("P0-04: the public category stock summary carries availability counts only; unit quantities stay admin-only", async () => {
+    const { categoryId } = await createStockedProduct({ stocks: [7, 0] });
+    const category = await prisma.category.findUniqueOrThrow({ where: { id: categoryId } });
+
+    const pub = await anon.get(`/api/categories/slug/${category.slug}/stock`);
+    expect(pub.status).toBe(200);
+    for (const stat of [pub.body.total, ...pub.body.subcategories]) {
+      expect(Object.keys(stat).filter((k) => !["id", "name", "slug"].includes(k)).sort()).toEqual(["inStockProducts", "totalProducts"]);
+    }
+    expect(pub.body.total.inStockProducts).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(pub.body)).not.toMatch(/stock"\s*:|totalStock/i);
+
+    expect((await anon.get("/api/categories/stock-map")).status).toBe(401);
+    expect((await customerAgent(customerA).get("/api/categories/stock-map")).status).toBe(401);
+    const admin = await adminAgent(staff, "STAFF").get("/api/categories/stock-map");
+    expect(admin.status).toBe(200);
+    expect(admin.body.stock[categoryId].totalStock).toBeGreaterThanOrEqual(7);
+  });
+
   it("order detail, list, guest tracking and the checkout response carry no staff-only fields, staff notes or cost", async () => {
     const phone = (await prisma.customer.findUniqueOrThrow({ where: { id: customerA } })).phone!;
     const { variants } = await createStockedProduct({ stocks: [5], basePrice: 1000 });
@@ -426,6 +450,19 @@ describe("privilege escalation", () => {
     expect((await prisma.adminUser.findUniqueOrThrow({ where: { id: staff } })).role).toBe("STAFF");
     expect((await prisma.adminUser.findUniqueOrThrow({ where: { id: owner } })).isActive).toBe(true);
     expect(await prisma.adminInvite.count({ where: { email: `p10-evil-${RUN}@example.com` } })).toBe(0);
+  });
+
+  it("P0-02: an omitted role never makes an OWNER — the column defaults to STAFF and an invite must name its role", async () => {
+    const implicit = await prisma.adminUser.create({
+      data: { name: "P0 implicit", email: `p0-implicit-${RUN}@example.com`, passwordHash: await bcrypt.hash("x", 4) },
+    });
+    createdAdmins.push(implicit.id);
+    expect(implicit.role).toBe("STAFF");
+    expect((await adminAgent(implicit.id, "STAFF").patch(`/api/auth/admins/${staff}`, { role: "OWNER" })).status).toBe(403);
+
+    const email = `p0-norole-${RUN}@example.com`;
+    expect((await adminAgent(owner, "OWNER").post("/api/auth/admin-invites", { email, name: "No role" })).status).toBe(400);
+    expect(await prisma.adminInvite.count({ where: { email } })).toBe(0);
   });
 
   it("role and active changes are audited with before/after", async () => {

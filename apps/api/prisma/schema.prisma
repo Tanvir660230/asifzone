@@ -114,23 +114,30 @@ enum PaymentMethod {
   EPS_PG
 }
 
-/// A projection of the order's payment ledger (Payment + Refund rows) — written only by
-/// domain/payments/payment-ledger.service.ts (docs/PAYMENT_LEDGER.md §4). PARTIALLY_REFUNDED: Phase 4.
+/// A projection of the order's payment ledger (Payment + Refund rows + store credit issued from the order) — written only
+/// by domain/payments/payment-ledger.service.ts (docs/PAYMENT_LEDGER.md §4). PARTIALLY_REFUNDED: Phase 4. PARTIALLY_PAID
+/// (some money received, some still due) and CREDITED (everything received moved to the customer's store balance):
+/// docs/ORDER_ADJUSTMENTS.md §5.
 enum PaymentStatus {
   UNPAID
   PAID
   FAILED
   REFUNDED
   PARTIALLY_REFUNDED
+  PARTIALLY_PAID
+  CREDITED
 }
 
 /// SSLCOMMERZ/EPS_PG: gateway settlements. COD: cash the courier collected on delivery (D1). MANUAL: an
-/// out-of-band payment staff recorded (bKash/bank/cash). COD and MANUAL never appear on a PaymentSession.
+/// out-of-band payment staff recorded (bKash/bank/cash). STORE_CREDIT: the customer's store balance spent on the order
+/// (its CustomerCreditEntry debit points back at the Payment) — a tender, not new cash. COD, MANUAL and STORE_CREDIT never
+/// appear on a PaymentSession.
 enum PaymentProvider {
   SSLCOMMERZ
   EPS_PG
   COD
   MANUAL
+  STORE_CREDIT
 }
 
 /// ACTIVE -> SUCCEEDED/FAILED (a definitive, re-verified gateway answer) or CANCELLED (customer
@@ -230,28 +237,34 @@ enum HomepageSectionType {
 }
 
 model AdminUser {
-  id                     String               @id @default(cuid())
+  id                     String                @id @default(cuid())
   name                   String
-  email                  String               @unique
+  email                  String                @unique
   passwordHash           String
   /// Google "sub" claim, set only when this admin has signed in with Google at least once. Google
   /// sign-in never creates an AdminUser on its own — it only links onto one that an OWNER already
   /// invited by matching email, so this stays null for accounts that have never used it.
-  googleId               String?              @unique
-  role                   AdminRole            @default(OWNER)
-  isActive               Boolean              @default(true)
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
+  googleId               String?               @unique
+  /// Least privilege by default (P0-02): an OWNER is only ever created by naming the role explicitly — the seed's first
+  /// owner, an invite an OWNER issued with role OWNER, or an OWNER promoting someone.
+  role                   AdminRole             @default(STAFF)
+  isActive               Boolean               @default(true)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
   refreshTokens          RefreshToken[]
   auditLogs              AuditLog[]
   statusChanges          OrderStatusHistory[]
   reviewedReturnRequests ReturnRequest[]
   sentInvites            AdminInvite[]
-  deletedOrders          Order[]              @relation("OrderDeletedBy")
+  deletedOrders          Order[]               @relation("OrderDeletedBy")
   stockMovements         StockMovement[]
-  refundsRequested       Refund[]             @relation("RefundRequestedBy")
-  refundsCompleted       Refund[]             @relation("RefundCompletedBy")
-  paymentsRecorded       Payment[]            @relation("PaymentRecordedBy")
+  refundsRequested       Refund[]              @relation("RefundRequestedBy")
+  refundsCompleted       Refund[]              @relation("RefundCompletedBy")
+  paymentsRecorded       Payment[]             @relation("PaymentRecordedBy")
+  creditEntries          CustomerCreditEntry[]
+  orderModifications     OrderModification[]
+  paymentLinksCreated    PaymentLink[]         @relation("PaymentLinkCreatedBy")
+  paymentLinksCancelled  PaymentLink[]         @relation("PaymentLinkCancelledBy")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -406,6 +419,10 @@ model Product {
   costPrice         Decimal?                @db.Decimal(10, 2)
   taxRate           Decimal?                @db.Decimal(5, 2)
   trackInventory    Boolean                 @default(true)
+  /// Ships free: the canonical quote waives shipping when EVERY line of the cart is a free-delivery product (one normal
+  /// product → the zone fee applies). Read only when pricing; each order line snapshots it (OrderItem.freeDeliverySnapshot)
+  /// so changing it never touches an existing order (docs/ORDER_ADJUSTMENTS.md §2).
+  freeDelivery      Boolean                 @default(false)
   lowStockThreshold Int                     @default(5)
   restockDate       DateTime?
   isActive          Boolean                 @default(true)
@@ -415,6 +432,10 @@ model Product {
   seoTitle          String?
   seoDescription    String?
   focusKeyword      String?
+  /// Admin-entered search tags (YouTube-style): extra words shoppers type that the name/description don't say —
+  /// e.g. "ator", "আতর" on a perfume. Stored normalized (lowercase, Bangla vowel variants unified) so storefront
+  /// search matches them exactly against its expanded terms. Never shown on the storefront.
+  tags              String[]                @default([])
   ogTitle           String?
   ogDescription     String?
   ogImageUrl        String?
@@ -455,6 +476,18 @@ model Product {
   @@index([typeId, status])
   @@index([status])
   @@index([carePresetId])
+  @@index([tags], type: Gin)
+}
+
+/// A store-wide synonym group the admin manages (Catalog → Search synonyms): any word in `terms` also searches for
+/// every other one, on top of the built-in dictionary in packages/shared/src/search-synonyms.ts. Terms are stored
+/// normalized (normalizeSearchKeyword). Inactive groups are kept but ignored by search.
+model SearchSynonym {
+  id        String   @id @default(cuid())
+  terms     String[]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// Anonymous, aggregate-only log of storefront product-page views — same spirit as SearchLog.
@@ -723,10 +756,60 @@ model Customer {
   reviews                  ProductReview[]
   campaignRecipients       CampaignRecipient[]
   pushSubscriptions        PushSubscription[]
+  /// Store balance ledger (docs/ORDER_ADJUSTMENTS.md §4). The balance is Σ amount — never a stored number.
+  creditEntries            CustomerCreditEntry[]
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
 
   @@index([phone])
+}
+
+/// The customer store-balance ledger (docs/ORDER_ADJUSTMENTS.md §4) — append-only, written only by
+/// domain/credit/customer-credit.service.ts (architecture guard). Positive = credit owed to the customer, held as store
+/// balance (store-use only: never withdrawn as cash, never transferred, never expires); negative = balance spent. The
+/// available balance is Σ amount, computed under the Customer row lock whenever it is spent, so it can never go negative or
+/// be spent twice. Every row carries a server-derived idempotency key: a retried command finds its row instead of adding
+/// another.
+model CustomerCreditEntry {
+  id               String             @id @default(cuid())
+  customerId       String
+  /// Restrict: a ledger outlives nothing it records — a customer with balance history can't be hard-deleted.
+  customer         Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  type             CustomerCreditType
+  /// Signed, major units of `currency`.
+  amount           Decimal            @db.Decimal(10, 2)
+  currency         String             @db.VarChar(3)
+  reason           String
+  /// The order whose money this credit came from (issuance) or that this balance paid for (ORDER_PAYMENT). Plain column
+  /// (no FK, like StockMovement.orderId): the ledger outlives a permanently deleted order.
+  orderId          String?
+  /// What caused it: ORDER, ORDER_MODIFICATION, RETURN_REQUEST, PAYMENT_SESSION, … and that row's id.
+  sourceType       String
+  sourceId         String
+  /// ORDER_PAYMENT: the STORE_CREDIT Payment this spend became (set once — when a gateway checkout's reserved balance is
+  /// consumed by the order it paid for).
+  paymentId        String?            @unique
+  idempotencyKey   String             @unique
+  createdByAdminId String?
+  createdByAdmin   AdminUser?         @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdAt        DateTime           @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([orderId])
+  @@index([sourceType, sourceId])
+}
+
+/// + CANCELLATION (a paid order cancelled), ORDER_MODIFICATION (a change lowered the total below what was paid), RETURN
+/// (approved return), EXCHANGE (exchange downgrade), REFUND_TO_CREDIT (staff moved a refund due to store balance),
+/// ORDER_PAYMENT_RELEASED (a gateway checkout's reserved balance given back); − ORDER_PAYMENT (balance spent on an order).
+enum CustomerCreditType {
+  CANCELLATION
+  ORDER_MODIFICATION
+  RETURN
+  EXCHANGE
+  REFUND_TO_CREDIT
+  ORDER_PAYMENT
+  ORDER_PAYMENT_RELEASED
 }
 
 /// Append-only ledger backing Customer.rewardPoints — every earn/redeem/manual adjustment is a row,
@@ -986,6 +1069,8 @@ model Order {
   /// Prisma requires a matching relation field on both sides.
   exchangeReturnRequests ReturnRequest[]      @relation("ReturnRequestExchangeOrder")
   courierLossEvents      CourierLossEvent[]
+  modifications          OrderModification[]
+  paymentLinks           PaymentLink[]
   notes                  String?
   adminNotes             String?
   trackingNumber         String?
@@ -1051,6 +1136,10 @@ model Order {
   couponReleasedAt  DateTime?
   /// Idempotency-Key the order was created with — a repeat request with the same key returns this order.
   idempotencyKey    String?   @unique
+  /// Bumped every time a modification changes the order's contents, address or total. A payment link or a modification
+  /// waiting for payment records the revision it was priced against and is refused once the order moved on — a stale
+  /// link can never collect the wrong amount (docs/ORDER_ADJUSTMENTS.md §11).
+  revision          Int       @default(0)
 
   /// Set once an admin has reconciled a PARTIALLY_DELIVERED order — picked which items actually
   /// came back (OrderItem.returnedQuantity) and had them restocked. Status stays
@@ -1139,6 +1228,15 @@ model ReturnRequest {
   // index (see migrations/..._return_request_one_pending_per_order) — Prisma's schema DSL can't
   // express a partial/conditional unique constraint, so it isn't declared here, but it exists.
   status                 ReturnRequestStatus @default(PENDING)
+  /// Item-level return recorded by staff (docs/ORDER_ADJUSTMENTS.md §8, §11): [{ orderItemId, quantity, restocked,
+  /// writtenOff, value }] — which lines came back, how many units, how many went back on the shelf, and each line's
+  /// allocated value. Null for whole-order returns and exchanges.
+  lines                  Json?
+  /// STORE_CREDIT | REFUND | NONE — what the customer got back for this request, and how much.
+  compensation           String?
+  compensationAmount     Decimal?            @db.Decimal(10, 2)
+  /// Idempotency-Key of the staff request that recorded an item-level return — a repeat returns this row.
+  idempotencyKey         String?             @unique
   adminNote              String?
   reviewedAt             DateTime?
   reviewedByAdminId      String?
@@ -1186,6 +1284,16 @@ model PaymentSession {
   checkoutPayload       Json?
   /// Idempotency-Key of the checkout that started this session — a repeat returns this session's gateway URL.
   idempotencyKey        String?              @unique
+  /// What the gateway was asked to collect for this attempt (the balance due, a modification's difference, a link's
+  /// amount — never the browser's number). Settlement verifies the gateway's amount against THIS, so a session started
+  /// before the order changed still settles exactly what it charged. Null = sessions from before this column: the order
+  /// total (or the checkout payload's) is the expected amount, as before.
+  amount                Decimal?             @db.Decimal(10, 2)
+  paymentLinkId         String?
+  paymentLink           PaymentLink?         @relation(fields: [paymentLinkId], references: [id], onDelete: SetNull)
+  /// A modification waiting for its price difference: a verified success applies it in the settlement's transaction.
+  orderModificationId   String?
+  orderModification     OrderModification?   @relation(fields: [orderModificationId], references: [id], onDelete: SetNull)
   /// 48h out from creation — the same lookback bound the EPS reconciliation sweep already used
   /// before this table existed. The sweep flips any still-ACTIVE session past this to EXPIRED so it
   /// stops being polled and stops blocking a retry.
@@ -1197,6 +1305,7 @@ model PaymentSession {
 
   @@index([orderId])
   @@index([status, provider, createdAt])
+  @@index([paymentLinkId])
 }
 
 /// The settlement record for one PaymentSession — created only once the gateway has given a
@@ -1283,6 +1392,105 @@ model Refund {
   @@index([orderId])
 }
 
+/// One change to an order's contents/address after it was placed (docs/ORDER_ADJUSTMENTS.md §3) — the audit record of
+/// what the order looked like before, what it became, and what that did to the money. APPLIED changes are history;
+/// AWAITING_PAYMENT holds a priced plan that takes effect only when its difference is paid (applied inside the payment's
+/// settlement transaction); SUPERSEDED/CANCELLED/EXPIRED plans never touched the order.
+model OrderModification {
+  id              String                  @id @default(cuid())
+  orderId         String
+  order           Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// 1, 2, 3 … per order.
+  sequence        Int
+  status          OrderModificationStatus
+  initiatedBy     OrderEditorType
+  customerId      String?
+  adminId         String?
+  admin           AdminUser?              @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  reason          String?
+  /// The order revision the plan was priced against; applying needs the order still at it.
+  baseRevision    Int
+  /// { items, totals, address } before the change.
+  before          Json
+  /// The priced plan: line snapshots, totals, coupon outcome, address.
+  plan            Json
+  previousTotal   Decimal                 @db.Decimal(10, 2)
+  newTotal        Decimal                 @db.Decimal(10, 2)
+  /// What had to be paid before an online-paid order's change could take effect.
+  amountDue       Decimal                 @default(0) @db.Decimal(10, 2)
+  /// What went to the customer's store balance when it was applied.
+  amountCredited  Decimal                 @default(0) @db.Decimal(10, 2)
+  idempotencyKey  String?                 @unique
+  expiresAt       DateTime?
+  appliedAt       DateTime?
+  statusReason    String?
+  paymentSessions PaymentSession[]
+  paymentLinks    PaymentLink[]
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@unique([orderId, sequence])
+  @@index([orderId, status])
+}
+
+enum OrderModificationStatus {
+  APPLIED
+  AWAITING_PAYMENT
+  SUPERSEDED
+  CANCELLED
+  EXPIRED
+}
+
+enum OrderEditorType {
+  CUSTOMER
+  ADMIN
+}
+
+/// A secure, shareable request for the customer to pay what is due on an order (docs/ORDER_ADJUSTMENTS.md §11). The link
+/// is a capability: a 256-bit random token, stored only as a SHA-256 hash (lookup) and AES-GCM ciphertext (so staff can
+/// copy or re-send it). It never creates a Payment — only a verified gateway settlement does, through the payment ledger.
+/// At most one ACTIVE link per order (raw partial unique index). The link is tied to the order revision and amount it was
+/// generated for; once the order changes it can no longer be paid.
+model PaymentLink {
+  id                  String             @id @default(cuid())
+  tokenHash           String             @unique
+  tokenCiphertext     String
+  orderId             String
+  order               Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  purpose             PaymentLinkPurpose
+  orderModificationId String?
+  orderModification   OrderModification? @relation(fields: [orderModificationId], references: [id], onDelete: SetNull)
+  amount              Decimal            @db.Decimal(10, 2)
+  currency            String             @db.VarChar(3)
+  orderRevision       Int
+  status              PaymentLinkStatus  @default(ACTIVE)
+  statusReason        String?
+  expiresAt           DateTime
+  usedAt              DateTime?
+  cancelledAt         DateTime?
+  createdByAdminId    String?
+  createdByAdmin      AdminUser?         @relation("PaymentLinkCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  cancelledByAdminId  String?
+  cancelledByAdmin    AdminUser?         @relation("PaymentLinkCancelledBy", fields: [cancelledByAdminId], references: [id], onDelete: SetNull)
+  paymentSessions     PaymentSession[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([orderId, status])
+}
+
+enum PaymentLinkStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentLinkPurpose {
+  ORDER_BALANCE
+  MODIFICATION
+}
+
 /// A customer-submitted star rating + write-up for a product. Starts PENDING and only counts
 /// toward Product.avgRating/reviewCount once an admin approves it — unmoderated reviews never
 /// reach the storefront. `customerName` is a display-name snapshot (survives a later name change);
@@ -1353,6 +1561,9 @@ model OrderItem {
   categoryNameSnapshot    String?
   /// Product.brand at order time (free text; no brand id exists). NULL with categoryIdSnapshot set = unbranded.
   brandSnapshot           String?
+  /// Product.freeDelivery when this line was priced. NULL = before the flag existed (treated as false). A modification
+  /// keeps a kept line's own value, so a product's later change never reaches this order.
+  freeDeliverySnapshot    Boolean?
 
   @@index([orderId])
   @@index([flashSaleItemId])

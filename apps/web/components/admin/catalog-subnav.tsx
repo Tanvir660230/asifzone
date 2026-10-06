@@ -12,6 +12,7 @@ const TABS = [
   { label: "SKUs", href: "/admin/catalog/sku" },
   { label: "Page sections", href: "/admin/catalog/sections" },
   { label: "Spec groups", href: "/admin/catalog/spec-groups" },
+  { label: "Search synonyms", href: "/admin/catalog/search-synonyms" },
 ];
 
 /** Tabs for the catalog setup area: what kinds of products the store sells and what each collects. */

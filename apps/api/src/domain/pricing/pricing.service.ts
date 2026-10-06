@@ -14,9 +14,11 @@ import {
   type CatalogVariant,
   type CouponRule,
   type FlashOffer,
+  type Money,
   type Quote,
   type QuoteDto,
   type ShippingAddress,
+  type TaxConfig,
 } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
 import { loadShippingZones, loadTaxConfig } from "./pricing-config";
@@ -169,7 +171,17 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       stock: true,
       isActive: true,
       product: {
-        select: { name: true, categoryId: true, basePrice: true, compareAtPrice: true, isActive: true, deletedAt: true, trackInventory: true, lowStockThreshold: true },
+        select: {
+          name: true,
+          categoryId: true,
+          basePrice: true,
+          compareAtPrice: true,
+          isActive: true,
+          deletedAt: true,
+          trackInventory: true,
+          lowStockThreshold: true,
+          freeDelivery: true,
+        },
       },
     },
   });
@@ -192,6 +204,7 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       trackInventory: r.product.trackInventory,
       stock: r.stock,
       offers: offers.get(r.productId) ?? [],
+      freeDelivery: r.product.freeDelivery,
     });
   }
   return { catalog, rows: new Map(rows.map((r) => [r.id, r as unknown as CatalogRow])) };
@@ -229,6 +242,98 @@ export async function quoteCart(req: QuoteRequest, db: Db = prisma): Promise<Pri
     shippingZones: zones,
     address: req.address ?? null,
     tax,
+  });
+  return { quote, token: quoteToken(quote), rows };
+}
+
+/** A unit block the order already holds, priced at its own snapshot (docs/ORDER_ADJUSTMENTS.md §3.3). */
+export interface KeptUnits {
+  /** OrderItem id — becomes the quote line's catalog key, so kept units never pick up today's price. */
+  orderItemId: string;
+  variantId: string;
+  productId: string;
+  categoryId: string;
+  productName: string;
+  sku: string;
+  size: string;
+  color: string;
+  quantity: number;
+  unitPrice: Money;
+  listUnitPrice: Money;
+  freeDelivery: boolean;
+}
+
+export interface ModificationQuoteRequest {
+  kept: KeptUnits[];
+  /** New units, priced like any cart line today (live flash sales and their remaining quota included). */
+  added: Array<{ variantId: string; quantity: number }>;
+  /** The order's coupon, re-checked against the new contents for its cart conditions only (minimum order, scope, minimum
+   * quantity). Time window, usage limits and per-customer limits were satisfied when the order was placed and the order
+   * already counts as one redemption, so they are not re-applied. Never worth more than `cap` (§13). */
+  coupon: { couponId: string; cap: Money } | null;
+  address: ShippingAddress;
+  /** The order's own tax snapshot; null (pre-Phase-2 orders) = the current tax configuration. */
+  tax: TaxConfig | null;
+  now?: Date;
+}
+
+export const keptLineKey = (orderItemId: string) => `kept:${orderItemId}`;
+
+/** THE price of an order after a modification — the same canonical pipeline (buildQuote) every checkout uses, fed with the
+ * order's kept units at their historical price. Writes nothing. */
+export async function quoteOrderModification(req: ModificationQuoteRequest, db: Db = prisma): Promise<PricedQuote> {
+  const now = req.now ?? new Date();
+  const currency = await currencyOf();
+  const { catalog, rows } = await loadCatalog([...new Set(req.added.map((i) => i.variantId))], now, currency, db);
+  for (const k of req.kept) {
+    catalog.set(keptLineKey(k.orderItemId), {
+      variantId: keptLineKey(k.orderItemId),
+      productId: k.productId,
+      categoryId: k.categoryId,
+      productName: k.productName,
+      sku: k.sku,
+      size: k.size,
+      color: k.color,
+      basePrice: k.unitPrice,
+      variantPrice: null,
+      productCompareAt: null,
+      variantCompareAt: null,
+      // Already reserved for this order: always buyable, never re-checked against stock or flash quota.
+      purchasable: true,
+      trackInventory: false,
+      stock: 0,
+      offers: [],
+      freeDelivery: k.freeDelivery,
+    });
+  }
+  const couponRow = req.coupon ? await db.coupon.findUnique({ where: { id: req.coupon.couponId }, include: { products: true, categories: true } }) : null;
+  const couponRule: CouponRule | null =
+    couponRow && req.coupon
+      ? {
+          ...toCouponRule(couponRow, currency),
+          isActive: true,
+          deleted: false,
+          startsAt: null,
+          expiresAt: null,
+          usageLimit: null,
+          maxDiscountAmount: couponRow.maxDiscountAmount
+            ? fromMajor(Math.min(Number(couponRow.maxDiscountAmount), toMajor(req.coupon.cap)), currency)
+            : req.coupon.cap,
+        }
+      : null;
+  const [bundles, zones, currentTax] = await Promise.all([loadBundles(db), loadShippingZones(currency, db), req.tax ? Promise.resolve(req.tax) : loadTaxConfig(db)]);
+  const quote = buildQuote({
+    currency,
+    now,
+    rounding: DEFAULT_ROUNDING_POLICY,
+    items: [...req.kept.map((k) => ({ variantId: keptLineKey(k.orderItemId), quantity: k.quantity })), ...req.added],
+    catalog,
+    bundles,
+    coupon: couponRule ? { code: couponRule.code, rule: couponRule } : null,
+    couponContext: { customerRedemptions: null, customerPriorOrders: null },
+    shippingZones: zones,
+    address: req.address,
+    tax: currentTax,
   });
   return { quote, token: quoteToken(quote), rows };
 }

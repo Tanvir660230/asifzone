@@ -17,7 +17,7 @@ import {
 } from "../courier/courier.service";
 
 /** The Idempotency-Key header (PRICING_INVARIANTS §11): printable, bounded, or absent. */
-function idempotencyKeyOf(req: Request): string | null {
+export function idempotencyKeyOf(req: Request): string | null {
   const raw = req.get("Idempotency-Key");
   if (!raw) return null;
   const key = raw.trim();
@@ -35,13 +35,21 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   // online payment's Order is only written later from a gateway callback/IPN/cron (lib/meta/).
   const metaContext = metaContextFromRequest(req);
 
+  // Store balance is only ever the signed-in account's own (never a guest matched by phone).
+  const creditCustomerId = req.body.useStoreCredit && req.customer ? req.customer.customerId : null;
   if (req.body.paymentMethod === "COD") {
-    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { idempotencyKey: idempotencyKeyOf(req), metaContext });
+    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, {
+      idempotencyKey: idempotencyKeyOf(req),
+      metaContext,
+      storeCreditCustomerId: creditCustomerId,
+    });
     return res.status(201).json({ order: toCustomerOrder(order) });
   }
 
-  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req), metaContext);
-  res.status(201).json({ gatewayUrl });
+  const started = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req), metaContext);
+  // Store balance covered the whole order: it is placed (and paid) without a gateway step.
+  if ("order" in started) return res.status(201).json({ order: toCustomerOrder(started.order as never) });
+  res.status(201).json({ gatewayUrl: started.gatewayUrl });
 });
 
 export const track = asyncHandler(async (req: Request, res: Response) => {
@@ -87,7 +95,8 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ order: await getOrderByIdWithAutoSync(req.params.id!) });
+  const order = await getOrderByIdWithAutoSync(req.params.id!);
+  res.json({ order: { ...order, ...(await orderService.getAdminOrderContext(order)) } });
 });
 
 export const bulkGet = asyncHandler(async (req: Request, res: Response) => {
@@ -147,13 +156,15 @@ export const bulkStatus = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const bulkDelete = asyncHandler(async (req: Request, res: Response) => {
-  await orderService.bulkDeleteOrders(req.body.ids, req.admin!.adminId);
-  res.status(204).send();
+  res.json(await orderService.bulkDeleteOrders(req.body.ids, req.admin!.adminId));
+});
+
+export const bulkRestore = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await orderService.bulkRestoreOrders(req.body.ids, req.admin!.adminId));
 });
 
 export const bulkPermanentDelete = asyncHandler(async (req: Request, res: Response) => {
-  await orderService.bulkPermanentlyDeleteOrders(req.body.ids);
-  res.status(204).send();
+  res.json(await orderService.bulkPermanentlyDeleteOrders(req.body.ids));
 });
 
 export const bookCourier = asyncHandler(async (req: Request, res: Response) => {

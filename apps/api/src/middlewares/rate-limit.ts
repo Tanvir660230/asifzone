@@ -51,6 +51,25 @@ export const retryPaymentRateLimit = rateLimit({
   message: { error: "Too many payment retries, please slow down and try again shortly" },
 });
 
+/** Public payment-link reads and starts (/api/pay/:token). The token is unguessable (256 bits), so this only stops a
+ * client from hammering the endpoint or the gateway init behind it. */
+export const paymentLinkRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests for this payment link, please try again shortly" },
+});
+
+/** Customer self-service order changes (modify / cancel) — writes, so a tighter budget than reads. */
+export const orderSelfServiceRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many order changes, please slow down and try again shortly" },
+});
+
 export const couponValidateRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 20,

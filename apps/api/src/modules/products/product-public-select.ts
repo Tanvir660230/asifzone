@@ -45,6 +45,7 @@ export const PUBLIC_PRODUCT_SCALARS = {
   basePrice: true,
   compareAtPrice: true,
   trackInventory: true,
+  freeDelivery: true,
   lowStockThreshold: true,
   restockDate: true,
   isActive: true,

@@ -85,6 +85,8 @@ const RETURN_REQUEST_FIELDS = [
   "requestedColorSnapshot",
   "exchangeOrderId",
   "exchangeOrder",
+  "compensation", // what the customer got back (STORE_CREDIT / REFUND / NONE) and how much — their own money
+  "compensationAmount",
   "order",
   "reviewedAt",
   "createdAt",

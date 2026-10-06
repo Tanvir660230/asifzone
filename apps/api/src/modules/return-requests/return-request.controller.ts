@@ -19,6 +19,10 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
   res.json(await returnRequestService.listReturnRequestsAdmin(req.query as never));
 });
 
+export const exchangePreview = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ preview: await returnRequestService.previewExchange(req.params.id!) });
+});
+
 export const review = asyncHandler(async (req: Request, res: Response) => {
   const request = await returnRequestService.reviewReturnRequest(req.params.id!, req.body, req.admin!.adminId);
   res.json({ request });

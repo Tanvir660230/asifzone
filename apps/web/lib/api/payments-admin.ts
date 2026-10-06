@@ -1,4 +1,4 @@
-import type { CompleteRefundInput, OrderPaymentSummary, RecordPaymentInput, Refund, RecordRefundInput } from "@clothing-brand/shared";
+import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, RecordPaymentInput, Refund, RecordRefundInput } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export interface PaymentsOverview {
@@ -54,4 +54,27 @@ export function completeRefund(orderId: string, refundId: string, input: Complet
 /** Records a payment received by hand (MANUAL) or the cash a courier collected on a partial delivery (COD_COLLECTED). */
 export function recordPayment(orderId: string, input: RecordPaymentInput, idempotencyKey?: string) {
   return apiFetch<{ summary: OrderPaymentSummary }>(`/api/orders/${orderId}/payments`, { method: "POST", body: input, idempotencyKey });
+}
+
+// ─── Order adjustments (docs/ORDER_ADJUSTMENTS.md) ───────────────────────────────────────────────────────────────────
+
+/** Moves money owed back on the order to the customer's store balance (default: all of it). */
+export function creditToStoreBalance(orderId: string, input: { amount?: number; reason: string }, idempotencyKey: string) {
+  return apiFetch<{ summary: OrderPaymentSummary }>(`/api/orders/${orderId}/store-credit`, { method: "POST", body: input, idempotencyKey });
+}
+
+export function listPaymentLinks(orderId: string) {
+  return apiFetch<{ links: PaymentLinkDto[] }>(`/api/orders/${orderId}/payment-links`);
+}
+
+export function createPaymentLink(orderId: string, input: { expiresInHours: number; send: PaymentLinkChannel[]; modificationId?: string }) {
+  return apiFetch<{ link: PaymentLinkDto }>(`/api/orders/${orderId}/payment-links`, { method: "POST", body: input });
+}
+
+export function cancelPaymentLink(orderId: string, linkId: string) {
+  return apiFetch<{ link: PaymentLinkDto }>(`/api/orders/${orderId}/payment-links/${linkId}/cancel`, { method: "POST" });
+}
+
+export function sendPaymentLink(orderId: string, linkId: string, channels: PaymentLinkChannel[]) {
+  return apiFetch<{ link: PaymentLinkDto }>(`/api/orders/${orderId}/payment-links/${linkId}/send`, { method: "POST", body: { channels } });
 }

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, User, MapPin, Banknote, Smartphone } from "lucide-react";
+import { ChevronDown, User, MapPin, Banknote, Smartphone, Wallet } from "lucide-react";
 import {
   checkoutSchema,
   BD_ALL_DISTRICTS,
@@ -33,7 +33,7 @@ import { getSessionId } from "@/lib/analytics";
 import { pixelAddPaymentInfo, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { getQuote, getBestCouponQuote } from "@/lib/api/quote";
 import { useQuote, quoteLineAmount } from "@/hooks/use-quote";
-import { listAddresses } from "@/lib/api/customers";
+import { getMyStoreCredit, listAddresses } from "@/lib/api/customers";
 import { getSettings } from "@/lib/api/settings";
 import { getActivePaymentMethods } from "@/lib/api/payment-methods";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
@@ -126,6 +126,11 @@ function CheckoutForm() {
     queryFn: listAddresses,
     enabled: Boolean(customer),
   });
+  // Store balance (docs/ORDER_ADJUSTMENTS.md §6, §18): shown to signed-in customers, used only when they choose to. The
+  // server decides the amount (min(balance, total) under a lock) — the figures here only preview it.
+  const { data: storeCreditData } = useQuery({ queryKey: ["my-store-credit"], queryFn: getMyStoreCredit, enabled: Boolean(customer) });
+  const storeBalance = storeCreditData?.storeCredit.balance ?? 0;
+  const [useStoreCredit, setUseStoreCredit] = useState(false);
 
   const {
     register,
@@ -305,6 +310,7 @@ function CheckoutForm() {
       sessionId: getSessionId() || undefined,
       // The quote the shopper is looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
       quoteToken: quote?.token,
+      useStoreCredit: useStoreCredit && storeBalance > 0 ? true : undefined,
     };
 
     try {
@@ -317,6 +323,7 @@ function CheckoutForm() {
       // gets here. Purchase is NOT fired here: it fires on the confirmation page once the backend
       // reports a real order (and server-side from the API), never from this optimistic step.
       pixelAddPaymentInfo(pixelItems(), values.paymentMethod);
+      if (useStoreCredit) void queryClient.invalidateQueries({ queryKey: ["my-store-credit"] });
       if (gatewayUrl) {
         // No Order exists yet for this attempt — it's only created once the gateway confirms
         // success (order.controller.ts / payment.service.ts's settlePaymentSession). Cart is left
@@ -467,7 +474,7 @@ function CheckoutForm() {
                   ) : shipping.waived ? (
                     <span>
                       <span className="mr-1.5 text-fg-muted line-through">{formatPrice(shipping.fee)}</span>
-                      <span className="font-medium text-success-600">Free</span>
+                      <span className="font-medium text-success-600">{shipping.waivedReason === "FREE_DELIVERY" ? "Free delivery" : "Free"}</span>
                     </span>
                   ) : (
                     <span>{formatPrice(shipping.charged)}</span>
@@ -488,6 +495,18 @@ function CheckoutForm() {
                 </div>
                 {quote && quote.tax.inclusive && quote.tax.taxAmount > 0 && (
                   <p className="text-xs text-ink-400">Includes VAT {formatPrice(quote.tax.taxAmount)}</p>
+                )}
+                {useStoreCredit && storeBalance > 0 && quote && (
+                  <div className="space-y-1.5" data-testid="checkout-store-balance-summary">
+                    <div className="flex justify-between text-success-600">
+                      <span>Store balance</span>
+                      <span>−{formatPrice(Math.min(storeBalance, quote.total))}</span>
+                    </div>
+                    <div className="flex justify-between font-medium text-ink-900">
+                      <span>To pay</span>
+                      <span>{formatPrice(Math.max(0, quote.total - storeBalance))}</span>
+                    </div>
+                  </div>
                 )}
                 {stockWarnings.map((w, i) => (
                   <p key={i} className="text-xs text-danger-600">
@@ -644,6 +663,26 @@ function CheckoutForm() {
               <h2 className="font-display text-lg text-ink-900">Payment method</h2>
             </div>
             <div className="space-y-2">
+              {/* Store balance (docs/ORDER_ADJUSTMENTS.md §6, §18): a payment choice, so it sits with the payment methods and is
+                  visible on every screen size. The server decides the amount; the summary only previews it. */}
+              {storeBalance > 0 && (
+                <label
+                  className="flex items-start gap-3 rounded-lg border border-success-200 bg-success-50 p-3 text-sm text-ink-700"
+                  data-testid="checkout-store-balance"
+                >
+                  <input type="checkbox" className="mt-0.5 accent-ink-900" checked={useStoreCredit} onChange={(e) => setUseStoreCredit(e.target.checked)} />
+                  <Wallet size={16} className="mt-0.5 shrink-0 text-success-600" />
+                  <span>
+                    Use my store balance
+                    <span className="block text-xs text-ink-500">Store Balance available: {formatPrice(storeBalance)}</span>
+                    {useStoreCredit && quote && (
+                      <span className="mt-1 block text-xs font-medium text-ink-900">
+                        −{formatPrice(Math.min(storeBalance, quote.total))} from your balance · To pay {formatPrice(Math.max(0, quote.total - storeBalance))}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              )}
               {codEnabled && (
                 <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
                   <input
@@ -741,7 +780,11 @@ function CheckoutForm() {
             className="w-full"
             disabled={isSubmitting || !anyPaymentMethodEnabled}
           >
-            {isSubmitting ? "Placing order…" : `Place Order — ${money(quote?.total)}`}
+            {isSubmitting
+              ? "Placing order…"
+              : useStoreCredit && storeBalance > 0 && quote
+                ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
+                : `Place Order — ${money(quote?.total)}`}
           </Button>
         </form>
       </div>

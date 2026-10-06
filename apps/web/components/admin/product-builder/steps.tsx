@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Controller } from "react-hook-form";
 import { AlertTriangle, Check, ExternalLink, ImageIcon, Layers, LayoutTemplate, MonitorSmartphone, Ruler, Search, Share2, Sparkles } from "lucide-react";
 import { isBlankAttributeValue, slugify, type Category, type SectionOverrideInput } from "@clothing-brand/shared";
+import { TagInput } from "@/components/admin/tag-input";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -122,6 +123,15 @@ export function BasicsStep({ state, categories }: StepProps & { categories: Cate
             </span>
           </label>
         </div>
+      </FormSection>
+
+      <FormSection
+        title="Search tags"
+        description="Other words customers might search for this product — spellings, Bangla, nicknames. They aren't shown on the store; they only help search find it."
+      >
+        <Field htmlFor="tags" label="Tags" hint="Press Enter or comma after each tag. e.g. attar, ator, আতর, fragrance" error={errors.tags?.message}>
+          <Controller control={control} name="tags" render={({ field }) => <TagInput id="tags" value={field.value ?? []} onChange={field.onChange} />} />
+        </Field>
       </FormSection>
 
       <FormSection title="Description" description="Short copy for listings; the full description for the product page.">
@@ -281,6 +291,19 @@ export function PricingStep({ state }: StepProps) {
             <Input id="taxRate" type="number" step="0.01" inputMode="decimal" min={0} trailing="%" placeholder="Store default" {...register("taxRate", { valueAsNumber: true })} />
           </Field>
         </div>
+      </FormSection>
+
+      <FormSection title="Shipping" description="How delivery is charged for this product.">
+        <label className="flex items-start gap-2.5 text-sm text-ink-700">
+          <Checkbox className="mt-0.5" {...register("freeDelivery")} />
+          <span>
+            Free delivery
+            <span className="block text-xs text-fg-muted">
+              Delivery is free when every item in the cart has free delivery. If the cart also has other products, the normal delivery fee applies.
+              Orders already placed keep the delivery fee they were charged.
+            </span>
+          </span>
+        </label>
       </FormSection>
 
       <FormSection title="Inventory" description="Stock tracking and the low-stock warning.">

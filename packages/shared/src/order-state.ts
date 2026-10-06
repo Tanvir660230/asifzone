@@ -115,6 +115,69 @@ export function allowedNextOrderStatuses(from: OrderStatus): OrderStatus[] {
   return ALL_STATUSES.filter((to) => to !== from && rule(from, to) !== null);
 }
 
+/** What the admin knows about the order when previewing a move — enough to say which of the rule's effects apply. */
+export interface OrderTransitionContext {
+  paymentMethod: string;
+  paymentStatus: string;
+  courierBooked: boolean;
+  hasCoupon: boolean;
+  hasFollowUp: boolean;
+}
+
+export interface OrderTransitionConsequence {
+  /** `blocked`: the server will refuse the move as things stand; `warning`: money/stock/courier risk; `info`: routine. */
+  tone: "info" | "warning" | "blocked";
+  text: string;
+}
+
+const MONEY_HELD = ["PAID", "PARTIALLY_REFUNDED"];
+const SMS_LABEL: Record<OrderStatusSmsTouchpoint, string> = {
+  CONFIRMED: "order confirmed",
+  SHIPPED: "order shipped",
+  DELIVERED: "order delivered",
+  CANCELLED: "order cancelled",
+};
+
+/** Plain-language effects of `from → to`, read off the same rule the API applies (never a second copy of the matrix) —
+ * the admin UI shows these before a status change is confirmed. Empty for a no-op; null for a refused move. */
+export function describeOrderTransitionConsequences(
+  from: OrderStatus,
+  to: OrderStatus,
+  ctx: OrderTransitionContext,
+): OrderTransitionConsequence[] | null {
+  const rule = getOrderTransition(from, to);
+  if (!rule) return null;
+  if (rule.id === "T0") return [];
+
+  const out: OrderTransitionConsequence[] = [];
+  const moneyHeld = MONEY_HELD.includes(ctx.paymentStatus);
+
+  if (rule.requiresRecordedRefund && ctx.paymentStatus !== "REFUNDED") {
+    out.push({ tone: "blocked", text: "Needs a recorded refund first — record it under Payments, then mark the order refunded." });
+  }
+  if (rule.stock === "release") out.push({ tone: "warning", text: "Reserved stock goes back to inventory." });
+  if (rule.stock === "return") out.push({ tone: "warning", text: "Every unit not already restocked goes back to inventory as a customer return." });
+  if (rule.codCollected && ctx.paymentMethod === "COD" && !moneyHeld) {
+    out.push({ tone: "info", text: "Cash on delivery is recorded as collected — the balance due is added to the payment ledger." });
+  }
+  if (rule.alertIfPaid && moneyHeld) {
+    out.push({ tone: "warning", text: "The customer has paid — a refund will be owed, and admins are alerted." });
+  }
+  if (rule.courierLoss && ctx.courierBooked) {
+    out.push({
+      tone: "warning",
+      text: "The courier booking is not cancelled automatically — cancel it in the courier panel. A courier-loss entry (return fee) is logged.",
+    });
+  }
+  if (rule.releasesCouponUsage && ctx.hasCoupon) out.push({ tone: "info", text: "The coupon use is given back." });
+  if (rule.awardPoints) out.push({ tone: "info", text: "Loyalty points are awarded if the order belongs to a customer account." });
+  if (rule.reversesPoints) out.push({ tone: "info", text: "Loyalty points earned on this order are reversed." });
+  if (rule.id === "T5") out.push({ tone: "info", text: "Afterwards, reconcile which units came back so they can be restocked." });
+  if (rule.customerSms) out.push({ tone: "info", text: `The customer gets the "${SMS_LABEL[rule.customerSms]}" SMS (if enabled in SMS settings).` });
+  if (ctx.hasFollowUp && from === "PENDING") out.push({ tone: "info", text: "The pending follow-up reminder is cleared." });
+  return out;
+}
+
 /** Human-readable reason for a refused transition — shown by the API and the admin UI. */
 export function describeRefusedTransition(from: OrderStatus, to: OrderStatus): string {
   const label = (s: OrderStatus) => s.toLowerCase().replace(/_/g, " ");

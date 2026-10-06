@@ -74,6 +74,8 @@ export interface OrderFact {
   lines: LineFact[];
   payments: Array<{ amount: number; status: "SUCCEEDED" | "FAILED"; provider: string; settledAt: Date }>;
   refunds: Array<{ amount: number; status: "REQUESTED" | "COMPLETED"; completedAt: Date | null }>;
+  /** Σ store credit issued from this order's money, minor units (CustomerCreditEntry; absent = 0). Not cash. */
+  credited?: number;
   /** Stock-ledger RETURN rows for this order: units back from the customer (return date = `at`). */
   returnMovements: Array<{ variantId: string; units: number; at: Date }>;
   /** Original lines of APPROVED EXCHANGE requests (their returned units are not returns — P5-3). */

@@ -9,8 +9,6 @@ import type {
 } from "@clothing-brand/shared";
 import {
   slugify,
-  expandSearchTerms,
-  findClosestVocabularyTerm,
   computeCompleteness,
   describeBlockers,
   findDuplicateSkus,
@@ -32,6 +30,7 @@ import {
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
+import { getSearchExpander } from "./search-synonyms.service";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { csvCell } from "../../lib/csv";
@@ -322,15 +321,20 @@ const TYPO_FALLBACK_THRESHOLD = 3;
 const TYPO_SIMILARITY_THRESHOLD = 0.3;
 
 /** Multi-field OR filter across every expanded search term (original query + any known
- * synonyms) — name, description, brand, and category name, unlike the old name-only match. */
+ * synonyms) — name, description, brand, and category name, unlike the old name-only match — plus the
+ * admin's search tags. Tags match whole (not as substrings): they're stored with the same normalization
+ * expandSearchTerms applies, so a tag "ator" is found by "ator", "Ator" or "ator perfume". */
 function buildFieldSearchOr(terms: string[]) {
   return {
-    OR: terms.flatMap((term) => [
-      { name: { contains: term, mode: "insensitive" as const } },
-      { description: { contains: term, mode: "insensitive" as const } },
-      { brand: { contains: term, mode: "insensitive" as const } },
-      { category: { name: { contains: term, mode: "insensitive" as const } } },
-    ]),
+    OR: [
+      ...terms.flatMap((term) => [
+        { name: { contains: term, mode: "insensitive" as const } },
+        { description: { contains: term, mode: "insensitive" as const } },
+        { brand: { contains: term, mode: "insensitive" as const } },
+        { category: { name: { contains: term, mode: "insensitive" as const } } },
+      ]),
+      { tags: { hasSome: terms } },
+    ],
   };
 }
 
@@ -349,6 +353,8 @@ type RelevanceCandidate = {
   brand: string | null;
   category: { name: string };
   createdAt: Date;
+  /** Only where the read selected them (relevance mode looks them up separately — they never reach the storefront). */
+  tags?: string[];
 };
 
 /** Textual relevance score for one candidate against the search — direct matches on the original
@@ -381,40 +387,37 @@ function computeRelevanceScore(candidate: RelevanceCandidate, rawQuery: string, 
     if (categoryName.includes(term)) score += 50 * weight;
     if (brand.includes(term)) score += 40 * weight;
     if (description.includes(term)) score += 15 * weight;
+    // The admin tagged the product with exactly this word — as deliberate a signal as its category.
+    if (candidate.tags?.includes(term)) score += 50 * weight;
   }
 
   return score;
 }
 
 /** "Did you mean" typo tolerance via pg_trgm's word_similarity, for when exact/synonym
- * matching comes up short — catches e.g. "panjabee" -> "panjabi". Scoped to active products
- * (and category, if given); intentionally doesn't also honor price/size/color facet
- * filters, since this is a fallback safety net, not a full facet-aware query path. */
+ * matching comes up short — catches e.g. "panjabee" -> "panjabi", and "atorr" against a product
+ * tagged "ator" (tags are compared as one space-joined string, so any single tag can match).
+ * Scoped to active products (and category, if given); intentionally doesn't also honor
+ * price/size/color facet filters, since this is a fallback safety net, not a full facet-aware query path. */
 async function findTypoTolerantProductIds(query: string, categoryIds: string[] | undefined, limit: number) {
-  const rows =
-    categoryIds && categoryIds.length > 0
-      ? await prisma.$queryRaw<Array<{ id: string }>>`
-          SELECT id FROM "Product"
-          WHERE "isActive" = true AND "deletedAt" IS NULL
-            AND "categoryId" IN (${Prisma.join(categoryIds)})
-            AND word_similarity(${query}, name) > ${TYPO_SIMILARITY_THRESHOLD}
-          ORDER BY word_similarity(${query}, name) DESC
-          LIMIT ${limit}
-        `
-      : await prisma.$queryRaw<Array<{ id: string }>>`
-          SELECT id FROM "Product"
-          WHERE "isActive" = true AND "deletedAt" IS NULL
-            AND word_similarity(${query}, name) > ${TYPO_SIMILARITY_THRESHOLD}
-          ORDER BY word_similarity(${query}, name) DESC
-          LIMIT ${limit}
-        `;
+  const categoryFilter = categoryIds && categoryIds.length > 0 ? Prisma.sql`AND "categoryId" IN (${Prisma.join(categoryIds)})` : Prisma.empty;
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM (
+      SELECT id, GREATEST(word_similarity(${query}, name), word_similarity(${query}, array_to_string(tags, ' '))) AS sim
+      FROM "Product"
+      WHERE "isActive" = true AND "deletedAt" IS NULL ${categoryFilter}
+    ) scored
+    WHERE sim > ${TYPO_SIMILARITY_THRESHOLD}
+    ORDER BY sim DESC
+    LIMIT ${limit}
+  `;
   return rows.map((r) => r.id);
 }
 
 const DID_YOU_MEAN_NAME_THRESHOLD = 0.25;
 
 /** Best single spelling-corrected guess drawn from real catalog data (product and category
- * names), for when the curated vocabulary (findClosestVocabularyTerm) doesn't recognize the query
+ * names), for when the synonym vocabulary (built-in + the store's groups) doesn't recognize the query
  * at all — catches a misspelled brand or product name that was never going to be in a generic
  * "cap/shirt/panjabi" style dictionary. Lower threshold than the typo-tolerant result fallback
  * above since this only ever surfaces as a suggestion the shopper opts into, never as silently
@@ -440,7 +443,7 @@ async function findBestNameSuggestion(query: string): Promise<string | null> {
  * the shopper can actually search again; a raw product/category name is the fallback for whatever
  * that dictionary doesn't cover. */
 async function findDidYouMean(query: string): Promise<string | undefined> {
-  return (findClosestVocabularyTerm(query) ?? (await findBestNameSuggestion(query))) ?? undefined;
+  return ((await getSearchExpander()).closest(query) ?? (await findBestNameSuggestion(query))) ?? undefined;
 }
 
 /** Fire-and-forget — a real search-page visit, not typeahead. Never allowed to break search.
@@ -509,6 +512,24 @@ export async function getProductBySlug(slug: string) {
   return presented;
 }
 
+/** Admin "test a search" (Catalog → Search synonyms): what a shopper's query expands to with the current synonym
+ * groups, and which live products that finds — the same matching listStorefrontProducts uses, minus facets. */
+export async function previewStorefrontSearch(query: string) {
+  const terms = (await getSearchExpander()).expand(query);
+  if (terms.length === 0) return { terms, total: 0, products: [] };
+  const where = { isActive: true, deletedAt: null, ...buildFieldSearchOr(terms) };
+  const [total, rows] = await Promise.all([
+    prisma.product.count({ where }),
+    prisma.product.findMany({ where, select: { ...SUGGEST_SELECT, tags: true }, orderBy: { createdAt: "desc" }, take: RELEVANCE_CANDIDATE_CAP }),
+  ]);
+  const products = rows
+    .map((p) => ({ p, score: computeRelevanceScore(p, query, terms) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map(({ p }) => ({ id: p.id, name: p.name, slug: p.slug, imageUrl: p.images[0]?.url ?? null }));
+  return { terms, total, products };
+}
+
 /** Storefront browsing: active products only, optionally scoped to a category (and its subcategories), searched, sorted. */
 export async function listStorefrontProducts(query: StorefrontProductQuery) {
   const now = new Date();
@@ -520,7 +541,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     categoryIds = await getCategoryDescendantIds(category.id);
   }
 
-  const searchTerms = query.search ? expandSearchTerms(query.search) : [];
+  const searchTerms = query.search ? (await getSearchExpander()).expand(query.search) : [];
   // "Relevance" only means something when there's actually a query to be relevant *to* — sort
   // falls back to the normal DB-ordered path otherwise (e.g. a bare category browse with no
   // search, which is the overwhelmingly common case and stays exactly as fast/cheap as before).
@@ -562,10 +583,13 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
 
   let pageRaw = rawItems;
   if (useRelevanceRanking) {
+    // Tags aren't in the public select (they're admin data), so fetch them just for scoring.
+    const tagRows = await prisma.product.findMany({ where: { id: { in: rawItems.map((p) => p.id) } }, select: { id: true, tags: true } });
+    const tagsById = new Map(tagRows.map((r) => [r.id, r.tags]));
     const scored = rawItems
       // Array.prototype.sort is stable, and rawItems already arrived newest-first, so equal
       // scores keep that relative order — a free, sensible tie-break with no extra comparator.
-      .map((item) => ({ item, score: query.search ? computeRelevanceScore(item, query.search, searchTerms) : 0 }))
+      .map((item) => ({ item, score: query.search ? computeRelevanceScore({ ...item, tags: tagsById.get(item.id) }, query.search, searchTerms) : 0 }))
       .sort((a, b) => b.score - a.score);
     const start = (query.page - 1) * query.pageSize;
     pageRaw = scored.slice(start, start + query.pageSize).map((s) => s.item);
@@ -611,7 +635,7 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
     categoryIds = await getCategoryDescendantIds(category.id);
   }
 
-  const facetSearchTerms = query.search ? expandSearchTerms(query.search) : [];
+  const facetSearchTerms = query.search ? (await getSearchExpander()).expand(query.search) : [];
 
   const where = {
     isActive: true,
@@ -659,6 +683,7 @@ const SUGGEST_SELECT = {
   brand: true,
   category: { select: { name: true } },
   createdAt: true,
+  tags: true,
   images: { orderBy: { sortOrder: "asc" as const }, take: 1, select: { url: true } },
 };
 
@@ -677,7 +702,7 @@ function toSuggestionProduct(
  * strings drawn from product names, category names, and past popular searches. Never logged —
  * only a real search-page navigation (via listStorefrontProducts) counts as a real search. */
 export async function suggestSearch(query: string, limit = 6) {
-  const searchTerms = expandSearchTerms(query);
+  const searchTerms = (await getSearchExpander()).expand(query);
   if (searchTerms.length === 0) return { products: [], predictions: [] };
 
   // Same relevance-ranking approach as listStorefrontProducts: pull a bounded candidate pool and

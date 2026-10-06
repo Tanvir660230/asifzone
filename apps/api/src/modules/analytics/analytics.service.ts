@@ -3,7 +3,8 @@ import { enumerateBuckets, previousRange, type TrackPageViewInput, type TrackPag
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { ABANDONMENT_THRESHOLD_MS } from "../cart/cart.service";
-import { loadCustomersWithComputedFields } from "../customers/customer.service";
+import { loadCustomersWithComputedFields, sendBulkSmsToCustomers } from "../customers/customer.service";
+import { AppError } from "../../lib/app-error";
 import { resolveLegacyWindow, resolveStoreRange, storeContext, utcInstant } from "../../domain/metrics/store-time";
 import { saleOrderSql } from "../../domain/metrics/sale-order";
 import { getCustomerInsights } from "./sales-analytics.service";
@@ -560,6 +561,92 @@ export async function getCartAbandonmentSummary() {
   };
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);
   return result;
+}
+
+export interface AbandonedCartRow {
+  cartId: string;
+  customerId: string;
+  name: string;
+  phone: string | null;
+  smsMarketingOptIn: boolean;
+  /** Has a phone and opted in to marketing SMS — the only carts a reminder may go to. */
+  reachable: boolean;
+  itemCount: number;
+  value: number;
+  firstItemName: string | null;
+  updatedAt: Date;
+  reminderSentAt: Date | null;
+}
+
+/** The carts behind getCartAbandonmentSummary's count — same threshold, same pricing (variant price, else base price) —
+ * newest first, with who they belong to and whether that customer may be sent a reminder. Not cached: it's a work list. */
+export async function listAbandonedCarts(limit = 50): Promise<AbandonedCartRow[]> {
+  const cutoff = new Date(Date.now() - ABANDONMENT_THRESHOLD_MS);
+  const carts = await prisma.cart.findMany({
+    where: { updatedAt: { lte: cutoff }, items: { some: {} } },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      updatedAt: true,
+      reminderSentAt: true,
+      customer: { select: { id: true, name: true, phone: true, smsMarketingOptIn: true } },
+      items: {
+        orderBy: { updatedAt: "desc" },
+        select: { quantity: true, variant: { select: { price: true, product: { select: { name: true, basePrice: true } } } } },
+      },
+    },
+  });
+
+  return carts.map((c) => ({
+    cartId: c.id,
+    customerId: c.customer.id,
+    name: c.customer.name,
+    phone: c.customer.phone,
+    smsMarketingOptIn: c.customer.smsMarketingOptIn,
+    reachable: Boolean(c.customer.phone) && c.customer.smsMarketingOptIn,
+    itemCount: c.items.reduce((n, i) => n + i.quantity, 0),
+    value: c.items.reduce((sum, i) => sum + i.quantity * Number(i.variant.price ?? i.variant.product.basePrice), 0),
+    firstItemName: c.items[0]?.variant.product.name ?? null,
+    updatedAt: c.updatedAt,
+    reminderSentAt: c.reminderSentAt,
+  }));
+}
+
+/**
+ * Sends a cart-recovery SMS to the chosen customers — but only those whose cart is still abandoned and who have a phone
+ * and SMS marketing opt-in (a reminder is marketing, unlike the CRM's ad-hoc bulk message). Stamps the carts'
+ * reminderSentAt so the list shows who was already nudged.
+ */
+export async function remindAbandonedCarts(customerIds: string[], body: string) {
+  const cutoff = new Date(Date.now() - ABANDONMENT_THRESHOLD_MS);
+  const carts = await prisma.cart.findMany({
+    where: {
+      customerId: { in: customerIds },
+      updatedAt: { lte: cutoff },
+      items: { some: {} },
+      customer: { smsMarketingOptIn: true, phone: { not: null } },
+    },
+    select: { id: true, customerId: true },
+  });
+  if (carts.length === 0) {
+    throw AppError.badRequest("None of the selected customers can be messaged — a reminder needs a phone number and SMS marketing opt-in");
+  }
+
+  const result = await sendBulkSmsToCustomers(
+    carts.map((c) => c.customerId),
+    body,
+  );
+  // Raw UPDATE on purpose: Prisma's @updatedAt would bump Cart.updatedAt, which is the abandonment clock itself — a
+  // reminded cart would vanish from the abandoned list (and the summary) as if the customer had come back.
+  // Only stamped when the provider accepted at least one message — a fully failed send (provider down, not configured)
+  // must leave the carts looking un-reminded so the admin can retry.
+  if (result.sent > 0) {
+    const cartIds = carts.map((c) => c.id);
+    await prisma.$executeRaw`UPDATE "Cart" SET "reminderSentAt" = ${utcInstant(new Date())} WHERE id = ANY(${cartIds}::text[])`;
+  }
+
+  return { ...result, skipped: result.skipped + (customerIds.length - carts.length) };
 }
 
 /** Conversion rate = sessions that placed an order ÷ total sessions; bounce rate = sessions with

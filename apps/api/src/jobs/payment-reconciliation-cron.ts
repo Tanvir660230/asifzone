@@ -2,6 +2,8 @@ import { createObservedWorker } from "../lib/observability/jobs";
 import { createQueue, queueConnection } from "../lib/queue";
 import { expireStalePaymentSessions, reconcileStuckEpsSessions } from "../modules/payments/payment.service";
 import { logger } from "../lib/observability/logger";
+import { expireStaleModifications } from "../modules/orders/order-modification.service";
+import { expireStalePaymentLinks } from "../modules/payments/payment-link.service";
 
 const QUEUE_NAME = "payment-reconciliation";
 
@@ -23,6 +25,11 @@ export async function startPaymentReconciliationCron() {
     async () => {
       const recovered = await reconcileStuckEpsSessions();
       const expired = await expireStalePaymentSessions();
+      // Order changes waiting for a difference nobody paid, and payment links past their expiry (docs/ORDER_ADJUSTMENTS.md).
+      const expiredChanges = await expireStaleModifications();
+      const expiredLinks = await expireStalePaymentLinks();
+      if (expiredChanges > 0) logger.info(`[payment-reconciliation-cron] expired ${expiredChanges} unpaid order change(s)`);
+      if (expiredLinks > 0) logger.info(`[payment-reconciliation-cron] expired ${expiredLinks} payment link(s)`);
       if (recovered > 0) logger.info(`[payment-reconciliation-cron] recovered ${recovered} stuck EPS session(s)`);
       if (expired > 0) logger.info(`[payment-reconciliation-cron] expired ${expired} stale session(s)`);
     },

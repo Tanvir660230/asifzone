@@ -4,6 +4,7 @@ import {
   PRODUCT_IMPORT_LIMITS,
   brandTierEnum,
   createProductSchema,
+  normalizeProductTag,
   slugify,
   updateProductSchema,
   validateProductAgainstConfig,
@@ -46,7 +47,7 @@ import { captureError } from "../../lib/observability/error-capture";
 export const PRODUCT_COLUMNS = [
   "slug", "name", "status", "category", "product_type", "brand", "brand_tier", "short_description", "description",
   "base_price", "compare_at_price", "cost_price", "tax_rate", "track_inventory", "low_stock_threshold", "is_featured",
-  "seo_title", "seo_description", "focus_keyword", "materials", "care_guide", "care_steps",
+  "seo_title", "seo_description", "focus_keyword", "materials", "care_guide", "care_steps", "tags",
 ] as const;
 export const VARIANT_COLUMNS = [
   "variant_sku", "variant_barcode", "variant_size", "variant_color", "variant_color_hex", "variant_price",
@@ -92,7 +93,7 @@ export async function exportProductsFullCsv(typeId?: string): Promise<string> {
       rows.push([
         p.slug, own(p.name), own(p.status), own(p.category.slug), own(p.type?.key ?? p.productType), own(p.brand), own(p.brandTier), own(p.shortDescription), own(p.description),
         own(num(p.basePrice)), own(num(p.compareAtPrice)), own(num(p.costPrice)), own(num(p.taxRate)), own(formatBoolean(p.trackInventory)), own(p.lowStockThreshold), own(formatBoolean(p.isFeatured)),
-        own(p.seoTitle), own(p.seoDescription), own(p.focusKeyword), own(materials), own(p.carePreset?.name), own(careSteps),
+        own(p.seoTitle), own(p.seoDescription), own(p.focusKeyword), own(materials), own(p.carePreset?.name), own(careSteps), own(p.tags.join("|")),
         v.sku, v.barcode, v.size === NO_SIZE_VALUE ? "" : v.size, v.color, v.colorHex, num(v.price), num(v.compareAtPrice), num(v.costPrice), v.stock, num(v.weight), formatBoolean(v.isActive),
         ...attributeKeys.map((k) => (first ? (attrs.get(k) ?? "") : "")),
       ]);
@@ -150,7 +151,7 @@ const COLUMN_OF_FIELD: Record<string, string> = {
   slug: "slug", name: "name", categoryId: "category", brand: "brand", brandTier: "brand_tier", shortDescription: "short_description", description: "description",
   basePrice: "base_price", compareAtPrice: "compare_at_price", costPrice: "cost_price", taxRate: "tax_rate", trackInventory: "track_inventory",
   lowStockThreshold: "low_stock_threshold", isFeatured: "is_featured", seoTitle: "seo_title", seoDescription: "seo_description", focusKeyword: "focus_keyword",
-  materials: "materials", carePresetId: "care_guide", careOverride: "care_steps",
+  materials: "materials", carePresetId: "care_guide", careOverride: "care_steps", tags: "tags",
   sku: "variant_sku", barcode: "variant_barcode", size: "variant_size", color: "variant_color", colorHex: "variant_color_hex", price: "variant_price",
   stock: "variant_stock", weight: "variant_weight", isActive: "variant_active",
 };
@@ -375,6 +376,8 @@ export async function planProductImport(csv: string): Promise<{ report: ProductI
       else patch.carePresetId = preset.id;
     }
     if (own("care_steps")) patch.careOverride = own("care_steps").split("|").map((s) => s.trim()).filter(Boolean);
+    // Search tags: "|" like care steps, though commas are accepted too. The product schema normalizes them.
+    if (own("tags")) patch.tags = own("tags").split(/[|,]/).map((s) => s.trim()).filter(Boolean);
     if (own("materials")) {
       const parsed = parseMaterialsCell(own("materials"), refs.materials);
       if (parsed.error) fail(ownLine("materials"), "materials", parsed.error);
@@ -550,6 +553,7 @@ export async function planProductImport(csv: string): Promise<{ report: ProductI
         if (now !== next) changes.push("materials changed");
       }
       if (patch.careOverride !== undefined && JSON.stringify(patch.careOverride) !== JSON.stringify(current!.careOverride ?? [])) changes.push("care steps changed");
+      if (patch.tags !== undefined && JSON.stringify((patch.tags as string[]).map(normalizeProductTag)) !== JSON.stringify(current!.tags ?? [])) changes.push("tags changed");
     }
 
     if (invalid.has(key) || !input) continue;

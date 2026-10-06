@@ -271,18 +271,22 @@ export function deliveryScoreBadgeClass(rate: number | null): string {
 // order read as unpaid.
 const PAYMENT_STATUS_LABELS: Record<string, string> = {
   UNPAID: "Unpaid",
+  PARTIALLY_PAID: "Part paid",
   PAID: "Paid",
   FAILED: "Failed",
   PARTIALLY_REFUNDED: "Part refunded",
   REFUNDED: "Refunded",
+  CREDITED: "Store credit",
 };
 
 const PAYMENT_STATUS_TEXT_CLASS: Record<string, string> = {
   UNPAID: "text-warning-600",
+  PARTIALLY_PAID: "text-warning-600",
   PAID: "text-success-600",
   FAILED: "text-danger-600",
   PARTIALLY_REFUNDED: "text-info-600",
   REFUNDED: "text-ink-500",
+  CREDITED: "text-info-600",
 };
 
 export function paymentStatusLabel(status: string): string {

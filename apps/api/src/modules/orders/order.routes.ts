@@ -17,12 +17,19 @@ import {
   bulkOrderStatusSchema,
   bulkCourierBookSchema,
   bulkDeliveryScoreCheckSchema,
+  orderModificationSchema,
+  recordItemReturnSchema,
+  itemReturnPreviewSchema,
+  issueStoreCreditSchema,
+  createPaymentLinkSchema,
+  sendPaymentLinkSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { attachCustomerIfPresent } from "../../middlewares/require-customer";
 import { orderCreateRateLimit, orderTrackRateLimit, retryPaymentRateLimit } from "../../middlewares/rate-limit";
 import * as orderController from "./order.controller";
+import * as adjustments from "./order-adjustments.controller";
 
 export const orderRouter = Router();
 
@@ -48,6 +55,7 @@ orderRouter.get("/stats", requireAdmin, requirePermission("orders.read"), orderC
 orderRouter.get("/export/csv", requireAdmin, requirePermission("orders.export"), validate(orderListQuerySchema, "query"), orderController.exportCsv);
 orderRouter.post("/bulk/status", requireAdmin, requirePermission("orders.manage"), validate(bulkOrderStatusSchema), orderController.bulkStatus);
 orderRouter.post("/bulk/delete", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkDelete);
+orderRouter.post("/bulk/restore", requireAdmin, requirePermission("orders.delete"), validate(bulkOrderIdsSchema), orderController.bulkRestore);
 orderRouter.post(
   "/bulk/permanent",
   requireAdmin,
@@ -96,6 +104,18 @@ orderRouter.post("/:id/refunds/:refundId/complete", requireAdmin, requirePermiss
 // Payment ledger (docs/PAYMENT_LEDGER.md §8): the order's payment position, and payments staff record by hand.
 orderRouter.get("/:id/payment", requireAdmin, requirePermission("orders.read"), orderController.getPayment);
 orderRouter.post("/:id/payments", requireAdmin, requirePermission("payments.record"), validate(recordPaymentSchema), orderController.recordPayment);
+// Order adjustments (docs/ORDER_ADJUSTMENTS.md): modifications, item returns, store credit, payment links.
+orderRouter.post("/:id/modifications/preview", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminPreviewModification);
+orderRouter.post("/:id/modifications", requireAdmin, requirePermission("orders.manage"), validate(orderModificationSchema), adjustments.adminApplyModification);
+orderRouter.get("/:id/modifications", requireAdmin, requirePermission("orders.read"), adjustments.adminListModifications);
+orderRouter.post("/:id/returns/preview", requireAdmin, requirePermission("returns.manage"), validate(itemReturnPreviewSchema), adjustments.adminPreviewReturn);
+orderRouter.post("/:id/returns", requireAdmin, requirePermission("returns.manage"), validate(recordItemReturnSchema), adjustments.adminRecordReturn);
+orderRouter.get("/:id/returns", requireAdmin, requirePermission("orders.read"), adjustments.adminListReturns);
+orderRouter.post("/:id/store-credit", requireAdmin, requirePermission("refunds.manage"), validate(issueStoreCreditSchema), adjustments.adminCreditToStore);
+orderRouter.get("/:id/payment-links", requireAdmin, requirePermission("orders.read"), adjustments.adminListPaymentLinks);
+orderRouter.post("/:id/payment-links", requireAdmin, requirePermission("payments.record"), validate(createPaymentLinkSchema), adjustments.adminCreatePaymentLink);
+orderRouter.post("/:id/payment-links/:linkId/cancel", requireAdmin, requirePermission("payments.record"), adjustments.adminCancelPaymentLink);
+orderRouter.post("/:id/payment-links/:linkId/send", requireAdmin, requirePermission("payments.record"), validate(sendPaymentLinkSchema), adjustments.adminSendPaymentLink);
 orderRouter.post("/:id/courier/book", requireAdmin, requirePermission("courier.manage"), orderController.bookCourier);
 orderRouter.post("/:id/courier/refresh", requireAdmin, requirePermission("courier.manage"), orderController.refreshCourier);
 orderRouter.post("/:id/courier/unlink", requireAdmin, requirePermission("courier.manage"), orderController.unlinkCourier);

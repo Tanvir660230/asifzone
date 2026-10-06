@@ -11,6 +11,7 @@ import type {
   AdminCreateOrderInput,
   AdjustOrderPriceInput,
   ReconcilePartialDeliveryInput,
+  OrderQueueId,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 import { apiBaseUrl } from "../runtime-config";
@@ -32,6 +33,10 @@ export interface AdminOrderListParams {
   followUpDue?: "true";
   // "true" = only CANCELLED orders where paymentStatus is still PAID — the refund-risk queue.
   cancelledButPaid?: "true";
+  // "true" = only RETURNED orders still holding money — the "returned, refund may be owed" queue.
+  refundDue?: "true";
+  // "true" = only booked orders on courier hold or with a failed status sync.
+  courierIssue?: "true";
   dateFrom?: string;
   dateTo?: string;
   sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt";
@@ -46,6 +51,16 @@ export interface OrderStats {
   followUpDue: number;
   cancelledButPaidCount: number;
   statusCounts: Record<OrderStatus, number>;
+  /** One count per quick filter, computed by the same where-builder the list uses (ORDER_QUEUE_FILTERS). */
+  queueCounts: Record<OrderQueueId, number>;
+  /** Return/exchange requests waiting for a decision. */
+  returnRequestsPending: number;
+}
+
+/** Per-order outcome of a bulk trash / restore / permanent delete — the server runs each order on its own. */
+export interface BulkOrderOutcome {
+  succeeded: string[];
+  failed: Array<{ id: string; orderNumber: string | null; reason: string }>;
 }
 
 function buildOrderListQuery(params: AdminOrderListParams) {
@@ -64,6 +79,8 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.shippingDistrict) query.set("shippingDistrict", params.shippingDistrict);
   if (params.followUpDue) query.set("followUpDue", params.followUpDue);
   if (params.cancelledButPaid) query.set("cancelledButPaid", params.cancelledButPaid);
+  if (params.refundDue) query.set("refundDue", params.refundDue);
+  if (params.courierIssue) query.set("courierIssue", params.courierIssue);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params.dateTo) query.set("dateTo", params.dateTo);
   if (params.sortBy) query.set("sortBy", params.sortBy);
@@ -155,11 +172,15 @@ export function bulkUpdateOrderStatus(ids: string[], status: OrderStatus) {
 }
 
 export function bulkDeleteOrders(ids: string[]) {
-  return apiFetch<void>("/api/orders/bulk/delete", { method: "POST", body: { ids } });
+  return apiFetch<BulkOrderOutcome>("/api/orders/bulk/delete", { method: "POST", body: { ids } });
+}
+
+export function bulkRestoreOrders(ids: string[]) {
+  return apiFetch<BulkOrderOutcome>("/api/orders/bulk/restore", { method: "POST", body: { ids } });
 }
 
 export function bulkPermanentlyDeleteOrders(ids: string[]) {
-  return apiFetch<void>("/api/orders/bulk/permanent", { method: "POST", body: { ids } });
+  return apiFetch<BulkOrderOutcome>("/api/orders/bulk/permanent", { method: "POST", body: { ids } });
 }
 
 export function bookCourier(id: string) {

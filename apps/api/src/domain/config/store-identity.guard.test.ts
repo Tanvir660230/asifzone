@@ -59,8 +59,9 @@ export function identityOwnerProblems(schema: string): string[] {
   const store = models.find((m) => m.name === "StoreSetting")!;
   for (const f of ["legalName", "addressLine", ...STORE_ONLY_FIELDS]) if (!new RegExp(`^\\s+${f}\\s+String\\?`, "m").test(store.body)) problems.push(`StoreSetting.${f} missing or not optional`);
   // Commerce Settings boundaries (Phase 7) stay where they are — identity must not grow its own currency/timezone/tax.
-  // ProductReadModel.currency is the Phase 3 read-model projection written from getCurrency(), not an owner.
-  const PROJECTIONS: Record<string, string[]> = { currency: ["ProductReadModel"], timezone: [] };
+  // ProductReadModel.currency is the Phase 3 read-model projection written from getCurrency(), not an owner; store-credit
+  // entries and payment links snapshot the currency their amount was issued in (order adjustments), like order snapshots.
+  const PROJECTIONS: Record<string, string[]> = { currency: ["ProductReadModel", "CustomerCreditEntry", "PaymentLink"], timezone: [] };
   for (const f of ["currency", "timezone"]) {
     const holders = models.filter((m) => new RegExp(`^\\s+${f}\\s+String`, "m").test(m.body)).map((m) => m.name);
     if (holders.some((n) => n !== "StoreSetting" && !PROJECTIONS[f]!.includes(n))) problems.push(`${f} has an owner other than StoreSetting`);

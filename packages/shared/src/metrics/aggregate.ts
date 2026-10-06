@@ -29,6 +29,11 @@ import {
 import { metricDefinition, type MetricGrouping } from "./registry";
 import { variantStockState } from "../engines/availability";
 
+/** A successful settlement that brought new money in — every provider except STORE_CREDIT (credit spent on an order). */
+function isCashSettlement(p: OrderFact["payments"][number]): boolean {
+  return p.status === "SUCCEEDED" && p.provider !== "STORE_CREDIT";
+}
+
 export interface Contribution {
   at: Date | null;
   amount: number;
@@ -104,9 +109,10 @@ const P = {
   returnsValue: (o: OrderFact) => realised(o, () => returnEvents(o).map((e) => one(e.at, e.value, o, e.line))),
   refunds: (o: OrderFact) => o.refunds.filter((r) => r.status === "COMPLETED" && r.completedAt).map((r) => one(r.completedAt, r.amount, o)),
   refundCount: (o: OrderFact) => o.refunds.filter((r) => r.status === "COMPLETED" && r.completedAt).map((r) => one(r.completedAt, 1, o)),
-  payments: (o: OrderFact) => o.payments.filter((p) => p.status === "SUCCEEDED").map((p) => one(p.settledAt, p.amount, o)),
-  paymentCount: (o: OrderFact) => o.payments.filter((p) => p.status === "SUCCEEDED").map((p) => one(p.settledAt, 1, o)),
-  exchangeDiff: (o: OrderFact) => (o.isExchangeReplacement ? o.payments.filter((p) => p.status === "SUCCEEDED").map((p) => one(p.settledAt, p.amount, o)) : []),
+  // Money received: store credit spent on an order is not new money (it was received once, on the order it came from).
+  payments: (o: OrderFact) => o.payments.filter(isCashSettlement).map((p) => one(p.settledAt, p.amount, o)),
+  paymentCount: (o: OrderFact) => o.payments.filter(isCashSettlement).map((p) => one(p.settledAt, 1, o)),
+  exchangeDiff: (o: OrderFact) => (o.isExchangeReplacement ? o.payments.filter(isCashSettlement).map((p) => one(p.settledAt, p.amount, o)) : []),
   codPlaced: (o: OrderFact) => (isSaleOrder(o) && o.paymentMethod === "COD" ? [one(o.placedAt, 1, o)] : []),
   unitsOrdered: (o: OrderFact) => (isSaleOrder(o) ? o.lines.map((l) => one(o.placedAt, l.quantity, o, l)) : []),
   unitsSold: (o: OrderFact) => realised(o, (at) => o.lines.map((l) => one(at, l.quantity, o, l))),
@@ -326,6 +332,7 @@ export function positionTotals(orders: OrderFact[], currency: string): PositionT
       failedAttempts: o.payments.filter((p) => p.status === "FAILED").length,
       refundsCompleted: o.refunds.filter((r) => r.status === "COMPLETED").map((r) => money(r.amount, currency)),
       refundsRequested: o.refunds.filter((r) => r.status === "REQUESTED").map((r) => money(r.amount, currency)),
+      credits: o.credited ? [money(o.credited, currency)] : [],
     });
     totals.outstandingCod += pos.codToCollect.amount;
     if (o.status !== "CANCELLED" && !["RETURNED", "REFUNDED"].includes(o.status) && pos.amountDue.amount > 0) {

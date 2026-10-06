@@ -1,13 +1,15 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Users, Repeat, Globe2, FileText, LogIn, Radio, Info } from "lucide-react";
+import { Users, Repeat, Globe2, FileText, LogIn, Radio, Info, Flame } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { ConversionMetricCard } from "@/components/admin/conversion-metric-card";
+import { TrafficHeatmap } from "@/components/admin/traffic-heatmap";
 import { RankedBarList, type RankedBarListItem } from "@/components/admin/ranked-bar-list";
 import * as biApi from "@/lib/api/bi";
 import * as analyticsApi from "@/lib/api/admin-analytics";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 import { formatDuration } from "@/lib/format";
 import { useBiDateRange } from "@/components/admin/bi-date-range-context";
 import { DISPLAY_LOCALE } from "@clothing-brand/shared";
@@ -38,6 +40,8 @@ export default function VisitorAnalyticsPage() {
   const rangeKey = `${range.from.toISOString()}:${range.to.toISOString()}`;
 
   const { data: overview } = useQuery({ queryKey: ["bi-overview-for-visitors"], queryFn: biApi.getExecutiveOverview });
+  const { data: heatmap } = useQuery({ queryKey: ["analytics-traffic-heatmap"], queryFn: () => analyticsApi.getTrafficHeatmap(30) });
+  const clarityEnabled = Boolean(publicRuntimeConfig().clarityId);
   const { data: funnel } = useQuery({
     queryKey: ["bi-visitors-funnel", rangeKey],
     queryFn: () => analyticsApi.getConversionFunnel(undefined, range.from, range.to),
@@ -317,6 +321,30 @@ export default function VisitorAnalyticsPage() {
           </CardContent>
         </Card>
       </section>
+
+      {/* Moved here from the dashboard's old "Marketing & Traffic" tab. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>When visitors show up (Bangladesh time, 30d)</CardTitle>
+        </CardHeader>
+        <CardContent>{heatmap && <TrafficHeatmap cells={heatmap.cells} />}</CardContent>
+      </Card>
+
+      <Card className="flex items-start gap-3 p-4 text-sm text-ink-600">
+        <Flame size={18} className="mt-0.5 shrink-0 text-brass-500" />
+        {clarityEnabled ? (
+          <span>Click/scroll heatmaps and session recordings are active via Microsoft Clarity.</span>
+        ) : (
+          <span>
+            Click/scroll heatmaps are wired up but off — set <code className="rounded bg-ink-100 px-1 py-0.5 text-xs">CLARITY_ID</code>{" "}
+            (a free{" "}
+            <a href="https://clarity.microsoft.com" target="_blank" rel="noreferrer" className="underline">
+              Microsoft Clarity
+            </a>{" "}
+            project id) at build time to turn on heatmaps and session recordings.
+          </span>
+        )}
+      </Card>
 
       <Card className="flex items-start gap-3 border-info-100 bg-info-50/60 p-4">
         <Info size={18} className="mt-0.5 shrink-0 text-info-600" />

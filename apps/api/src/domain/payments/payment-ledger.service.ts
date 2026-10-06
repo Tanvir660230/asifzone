@@ -2,9 +2,11 @@
  * The Payment Ledger (docs/PAYMENT_LEDGER.md) — the ONLY code that writes `Payment` rows, `Refund` rows or the
  * `Order.paymentStatus` projection (architecture guard: payment-ledger-writer.guard.test.ts).
  *
- *   facts       Payment (every settlement: gateway, COD collected on delivery, MANUAL) · Refund (REQUESTED → COMPLETED)
- *   engine      derivePaymentPosition (packages/shared/src/engines/payment-ledger.ts) — paid, refunded, balance due,
- *               cash to collect, refundable, refund due, status
+ *   facts       Payment (every settlement: gateway, COD collected on delivery, MANUAL, STORE_CREDIT spent) · Refund
+ *               (REQUESTED → COMPLETED) · store credit issued from the order's money (CustomerCreditEntry, written through
+ *               domain/credit/customer-credit.service.ts — this service decides when and how much, under the order lock)
+ *   engine      derivePaymentPosition (packages/shared/src/engines/payment-ledger.ts) — paid, refunded, credited, balance
+ *               due, cash to collect, refundable, refund due, status
  *   projection  Order.paymentStatus, refreshed in the same transaction as the fact that changed it
  *
  * Every command takes the order row lock (SELECT … FOR UPDATE) before reading the position it validates against, so
@@ -13,10 +15,13 @@
 import { Prisma, type PaymentProvider } from "@prisma/client";
 import {
   canCompleteRefund,
+  checkCreditIssue,
   checkManualPayment,
+  CLOSED_ORDER_STATUSES,
   checkRefund,
   derivePaymentPosition,
   fromMajor,
+  min,
   toMajor,
   type Money,
   type PaymentPosition,
@@ -29,12 +34,25 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { loyaltyBase, reverseDeliveryPoints } from "../../modules/customers/customer.service";
 import { getCurrency } from "../config/commerce-settings";
+import {
+  claimableReservation,
+  consumeSessionReservation,
+  creditedByOrder,
+  creditEntriesForOrders,
+  issueCredit,
+  lockCustomerBalance,
+  sessionReservation,
+  spendCredit,
+  type CreditIssueType,
+} from "../credit/customer-credit.service";
 
 type Db = Prisma.TransactionClient;
 
 /** The refund queue: cancelled orders still holding customer money (MONEY_HELD_PAYMENT_STATUSES). One predicate for the
  * order list filter, the order KPI strip and the payments overview. */
-export const REFUND_QUEUE_WHERE = { status: "CANCELLED", paymentStatus: { in: ["PAID", "PARTIALLY_REFUNDED"] } } satisfies Prisma.OrderWhereInput;
+export const REFUND_QUEUE_WHERE = { status: "CANCELLED", paymentStatus: { in: ["PAID", "PARTIALLY_PAID", "PARTIALLY_REFUNDED"] } } satisfies Prisma.OrderWhereInput;
+/** The other half of the money-risk alerts (`order.returned_refund_due`): returned orders still holding customer money. */
+export const RETURNED_REFUND_DUE_WHERE = { status: "RETURNED", paymentStatus: { in: ["PAID", "PARTIALLY_PAID", "PARTIALLY_REFUNDED"] } } satisfies Prisma.OrderWhereInput;
 
 async function storeCurrency(): Promise<string> {
   return getCurrency();
@@ -69,7 +87,24 @@ async function lockOrder(tx: Db, orderId: string): Promise<LockedOrder> {
 type LedgerRows = {
   payments: Array<{ status: string; amount: Prisma.Decimal | number | string }>;
   refunds: Array<{ status: string; amount: Prisma.Decimal | number | string }>;
+  /** Σ store credit issued from this order's money. */
+  credited?: Prisma.Decimal | number | string;
+  /** Σ allocated value of item-level returns (ReturnRequest.lines). */
+  returned?: Prisma.Decimal | number | string;
 };
+
+/** Σ allocated value of the item-level returns recorded on each order (recordItemReturn writes `lines[].value`). */
+export async function returnedValueByOrder(db: Db | typeof prisma, orderIds: string[]): Promise<Map<string, Prisma.Decimal>> {
+  const out = new Map<string, Prisma.Decimal>();
+  if (!orderIds.length) return out;
+  const rows = await db.returnRequest.findMany({ where: { orderId: { in: orderIds }, type: "RETURN", status: "APPROVED" }, select: { orderId: true, lines: true } });
+  for (const r of rows) {
+    if (!Array.isArray(r.lines)) continue;
+    const value = (r.lines as Array<{ value?: number }>).reduce((acc, l) => acc.add(new Prisma.Decimal(l.value ?? 0)), new Prisma.Decimal(0));
+    out.set(r.orderId, (out.get(r.orderId) ?? new Prisma.Decimal(0)).add(value));
+  }
+  return out;
+}
 
 /** The one place ledger rows become engine input. */
 export function positionFromRows(
@@ -87,15 +122,40 @@ export function positionFromRows(
     failedAttempts: rows.payments.filter((p) => p.status === "FAILED").length,
     refundsCompleted: rows.refunds.filter((r) => r.status === "COMPLETED").map((r) => m(r.amount)),
     refundsRequested: rows.refunds.filter((r) => r.status === "REQUESTED").map((r) => m(r.amount)),
+    credits: rows.credited ? [m(rows.credited)] : [],
+    returned: rows.returned ? [m(rows.returned)] : [],
   });
 }
 
 async function loadPosition(db: Db | typeof prisma, order: { id: string; total: Prisma.Decimal; paymentMethod: string; status: string }, currency: string) {
-  const [payments, refunds] = await Promise.all([
+  const [payments, refunds, credited, returned] = await Promise.all([
     db.payment.findMany({ where: { orderId: order.id }, select: { status: true, amount: true } }),
     db.refund.findMany({ where: { orderId: order.id }, select: { status: true, amount: true } }),
+    creditedByOrder(db, [order.id]),
+    returnedValueByOrder(db, [order.id]),
   ]);
-  return positionFromRows(order, { payments, refunds }, currency);
+  return positionFromRows(order, { payments, refunds, credited: credited.get(order.id), returned: returned.get(order.id) }, currency);
+}
+
+/** The position the order WOULD have with more merchandise returned — the engine's own answer for a preview (an item
+ * return shows what it would credit before it is recorded). Read-only. */
+export async function projectedPosition(db: Db | typeof prisma, orderId: string, change: { extraReturned: Money }) {
+  const currency = await storeCurrency();
+  const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { id: true, total: true, paymentMethod: true, status: true } });
+  const [payments, refunds, credited, returned] = await Promise.all([
+    db.payment.findMany({ where: { orderId }, select: { status: true, amount: true } }),
+    db.refund.findMany({ where: { orderId }, select: { status: true, amount: true } }),
+    creditedByOrder(db, [orderId]),
+    returnedValueByOrder(db, [orderId]),
+  ]);
+  const extra = new Prisma.Decimal(toMajor(change.extraReturned));
+  return positionFromRows(order, { payments, refunds, credited: credited.get(orderId), returned: (returned.get(orderId) ?? new Prisma.Decimal(0)).add(extra) }, currency);
+}
+
+/** The order's payment position read under the caller's order row lock (order modification, cancellation). */
+export async function lockedPosition(tx: Db, orderId: string) {
+  const order = await lockOrder(tx, orderId);
+  return { order, position: await loadPosition(tx, order, await storeCurrency()) };
 }
 
 /** Recomputes the order's payment status from its ledger and writes the projection if it changed (PL-1). The caller
@@ -199,7 +259,7 @@ export async function recordExchangeCovered(tx: Db, orderId: string, adminId: st
   return settleBalance(tx, order, "MANUAL", "Exchange — fully covered by the returned item", adminId);
 }
 
-const CLOSED = new Set(["CANCELLED", "RETURNED", "REFUNDED"]);
+const CLOSED = new Set<string>(CLOSED_ORDER_STATUSES);
 
 /** A payment staff record by hand (POST /orders/:id/payments). MANUAL: received out of band before dispatch; not on a
  * closed order, and not on a courier-booked COD order (its parcel's COD amount is fixed at booking). COD_COLLECTED: the
@@ -318,7 +378,7 @@ export async function recordRefund(orderId: string, input: RecordRefundInput, ad
 
 /** D6: money owed back on an exchange downgrade, inside the exchange approval's transaction. It reserves `refundable`
  * (a later refund can't take the same money) until an admin completes it. */
-export async function requestRefund(tx: Db, orderId: string, input: { amount: number; reason: string }, adminId: string) {
+export async function requestRefund(tx: Db, orderId: string, input: { amount: number; reason: string }, adminId: string | null) {
   const currency = await storeCurrency();
   const order = await lockOrder(tx, orderId);
   const amount = fromMajor(String(input.amount), currency);
@@ -375,6 +435,147 @@ async function reversePointsForRefund(tx: Db, orderId: string, refundAmount: num
   await reverseDeliveryPoints(tx, order.customerId, orderId, fraction);
 }
 
+// ─── Store credit (docs/ORDER_ADJUSTMENTS.md §4–§7) ─────────────────────────────────────────────────────────────────
+
+/** Pays the order's balance due — as much as the customer's store balance allows, at most `cap` — with ONE STORE_CREDIT
+ * Payment and its matching ledger spend, in the caller's transaction. Only the order's own customer's balance is ever used.
+ * Idempotent per `idempotencyKey` (a replay returns the spend already recorded). Returns null when nothing was paid. */
+export async function payWithStoreCredit(
+  tx: Db,
+  input: { orderId: string; customerId: string; idempotencyKey: string; cap?: Money; adminId?: string | null; note?: string },
+) {
+  const currency = await storeCurrency();
+  const order = await lockOrder(tx, input.orderId);
+  if (order.customerId !== input.customerId) throw AppError.forbidden("Store balance can only pay for the account holder's own order");
+  const replay = await tx.customerCreditEntry.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+  if (replay) return { payment: replay.paymentId ? await tx.payment.findUnique({ where: { id: replay.paymentId } }) : null, amount: fromMajor(replay.amount.abs().toString(), currency) };
+  const position = await loadPosition(tx, order, currency);
+  const balance = await lockCustomerBalance(tx, input.customerId, currency);
+  let amount = min(position.amountDue, balance);
+  if (input.cap) amount = min(amount, input.cap);
+  if (amount.amount <= 0) return null;
+  const payment = await tx.payment.create({
+    data: { orderId: order.id, provider: "STORE_CREDIT", status: "SUCCEEDED", amount: toMajor(amount), note: input.note ?? "Paid from store balance", recordedByAdminId: input.adminId ?? null },
+  });
+  await spendCredit(tx, {
+    customerId: input.customerId,
+    amount,
+    reason: `Paid toward order ${order.orderNumber}`,
+    orderId: order.id,
+    sourceType: "PAYMENT",
+    sourceId: payment.id,
+    paymentId: payment.id,
+    idempotencyKey: input.idempotencyKey,
+    adminId: input.adminId,
+  });
+  await timelineNote(tx, order.id, order.status, `Paid ${noteMoney(amount)} from store balance`, input.adminId);
+  await refreshPaymentStatus(tx, order.id, currency);
+  return { payment, amount };
+}
+
+/** A gateway checkout reserved store balance for its order (initiatePendingPayment); the order now exists, so the
+ * reservation becomes that order's STORE_CREDIT payment. If the reservation was already given back (the session expired
+ * before this late success), the same amount is spent afresh as far as the balance allows — whatever it can't cover
+ * stays due on the order (PARTIALLY_PAID) rather than being invented. */
+export async function settleReservedStoreCredit(tx: Db, input: { orderId: string; paymentSessionId: string; customerId: string }) {
+  const currency = await storeCurrency();
+  const reserve = await sessionReservation(tx, input.paymentSessionId);
+  if (!reserve) return null;
+  const order = await lockOrder(tx, input.orderId);
+  const amount = fromMajor(reserve.amount.abs().toString(), currency);
+  // Under the customer lock: still reserved (not given back by an expiry sweep, not consumed by a concurrent settle)?
+  if (!(await claimableReservation(tx, input.paymentSessionId))) {
+    // Never fail a paid gateway settlement: spend afresh what the balance allows; any shortfall stays due on the order.
+    return payWithStoreCredit(tx, { orderId: order.id, customerId: input.customerId, cap: amount, idempotencyKey: `credit:session:${input.paymentSessionId}:respend` });
+  }
+  const payment = await tx.payment.create({
+    data: { orderId: order.id, provider: "STORE_CREDIT", status: "SUCCEEDED", amount: toMajor(amount), note: "Paid from store balance (reserved at checkout)" },
+  });
+  await consumeSessionReservation(tx, input.paymentSessionId, { orderId: order.id, paymentId: payment.id });
+  await timelineNote(tx, order.id, order.status, `Paid ${noteMoney(amount)} from store balance`);
+  await refreshPaymentStatus(tx, order.id, currency);
+  return { payment, amount };
+}
+
+/** Moves money owed back on an order to the customer's store balance instead of refunding it. At most the order's refund
+ * due (CR-2) — so credited money is no longer refundable (CR-3) and nothing is compensated twice. Idempotent per key: a
+ * repeat returns the entry already written, before any cap is re-checked. The caller holds no lock; this takes the order
+ * row lock, then the customer row lock. Loyalty points follow D8 like a refund. */
+export async function issueStoreCreditFromOrder(
+  tx: Db,
+  input: {
+    orderId: string;
+    type: CreditIssueType;
+    /** Omitted = the whole refund due. */
+    amount?: Money;
+    /** REFUND_DUE (default): at most what is owed back. REFUNDABLE: at most what was received and not yet given back —
+     * the D6 exchange downgrade's cap, the same one its refund request has always used. */
+    cap?: "REFUND_DUE" | "REFUNDABLE";
+    reason: string;
+    sourceType: string;
+    sourceId: string;
+    idempotencyKey: string;
+    adminId?: string | null;
+  },
+) {
+  const currency = await storeCurrency();
+  const order = await lockOrder(tx, input.orderId);
+  const replay = await tx.customerCreditEntry.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+  if (replay) return replay;
+  if (!order.customerId) {
+    throw AppError.badRequest("This order isn't linked to a customer account, so it can't be credited — record a refund instead", { code: "NO_CUSTOMER_FOR_CREDIT" });
+  }
+  const position = await loadPosition(tx, order, currency);
+  const capped = input.cap === "REFUNDABLE" ? { ...position, refundDue: position.refundable } : position;
+  const amount = input.amount ?? capped.refundDue;
+  const check = checkCreditIssue(capped, amount);
+  if (!check.ok) {
+    throw AppError.badRequest(
+      check.code === "EXCEEDS_REFUND_DUE" ? `Only ${noteMoney(check.refundDue)} is owed back on this order` : "Nothing is owed back on this order",
+      { code: "CREDIT_EXCEEDS_REFUND_DUE", refundDue: toMajor(check.refundDue) },
+    );
+  }
+  const entry = await issueCredit(tx, {
+    customerId: order.customerId,
+    type: input.type,
+    amount,
+    reason: input.reason,
+    orderId: order.id,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    idempotencyKey: input.idempotencyKey,
+    adminId: input.adminId,
+  });
+  await timelineNote(tx, order.id, order.status, `Store credit: ${noteMoney(amount)} added to the customer's balance — ${input.reason}`, input.adminId);
+  await refreshPaymentStatus(tx, order.id, currency);
+  await reversePointsForRefund(tx, order.id, toMajor(amount), currency);
+  return entry;
+}
+
+/** Staff move an order's refund due to the customer's store balance (POST /orders/:id/store-credit). */
+export async function creditRefundDueToStore(orderId: string, input: { amount?: number; reason: string }, adminId: string, idempotencyKey?: string | null) {
+  const currency = await storeCurrency();
+  const key = idempotencyKey ? `credit:admin:${idempotencyKey}` : null;
+  const entry = await prisma.$transaction(async (tx) => {
+    const exists = key ? await tx.customerCreditEntry.findUnique({ where: { idempotencyKey: key } }) : null;
+    if (exists && exists.orderId !== orderId) throw AppError.conflict("This Idempotency-Key was already used for a different order");
+    const locked = await lockOrder(tx, orderId);
+    if (locked.deletedAt) throw AppError.badRequest("Restore this order before crediting it");
+    return issueStoreCreditFromOrder(tx, {
+      orderId,
+      type: "REFUND_TO_CREDIT",
+      amount: input.amount !== undefined ? fromMajor(String(input.amount), currency) : undefined,
+      reason: input.reason,
+      sourceType: "ORDER",
+      sourceId: orderId,
+      // Without a header, one refund-to-credit per (order, amount owed) — a double click finds nothing left owed anyway.
+      idempotencyKey: key ?? `credit:order:${orderId}:to-credit:${Date.now()}`,
+      adminId,
+    });
+  });
+  return { entry, summary: await getOrderPaymentSummary(orderId) };
+}
+
 // ─── Read model ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const PAYMENT_SELECT = {
@@ -407,15 +608,20 @@ export async function summarizeOrderPayments(orderIds: string[]): Promise<Map<st
   const out = new Map<string, OrderPaymentSummary>();
   if (!orderIds.length) return out;
   const currency = await storeCurrency();
-  const [orders, payments, refunds] = await Promise.all([
+  const [orders, payments, refunds, creditRows, returnedValues] = await Promise.all([
     prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, total: true, paymentMethod: true, status: true } }),
     prisma.payment.findMany({ where: { orderId: { in: orderIds } }, select: PAYMENT_SELECT, orderBy: { settledAt: "asc" } }),
     prisma.refund.findMany({ where: { orderId: { in: orderIds } }, select: REFUND_SELECT, orderBy: { createdAt: "asc" } }),
+    creditEntriesForOrders(prisma, orderIds),
+    returnedValueByOrder(prisma, orderIds),
   ]);
   for (const order of orders) {
     const ps = payments.filter((p) => p.orderId === order.id);
     const rs = refunds.filter((r) => r.orderId === order.id);
-    const pos = positionFromRows(order, { payments: ps, refunds: rs }, currency);
+    const cs = creditRows.filter((c) => c.orderId === order.id);
+    const credited = cs.reduce((acc, c) => acc.add(c.amount), new Prisma.Decimal(0));
+    const pos = positionFromRows(order, { payments: ps, refunds: rs, credited, returned: returnedValues.get(order.id) }, currency);
+    const fromCredit = ps.filter((p) => p.status === "SUCCEEDED" && p.provider === "STORE_CREDIT").reduce((acc, p) => acc.add(p.amount), new Prisma.Decimal(0));
     out.set(order.id, {
       status: pos.status,
       currency,
@@ -423,6 +629,8 @@ export async function summarizeOrderPayments(orderIds: string[]): Promise<Map<st
       paid: toMajor(pos.paid),
       refunded: toMajor(pos.refunded),
       refundPending: toMajor(pos.refundPending),
+      credited: toMajor(pos.credited),
+      paidFromStoreCredit: Number(fromCredit),
       netPaid: toMajor(pos.netPaid),
       amountDue: toMajor(pos.amountDue),
       codToCollect: toMajor(pos.codToCollect),
@@ -449,6 +657,14 @@ export async function summarizeOrderPayments(orderIds: string[]): Promise<Map<st
         completedBy: r.completedByAdmin?.name ?? null,
         completedAt: r.completedAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
+      })),
+      credits: cs.map((c) => ({
+        id: c.id,
+        type: c.type,
+        amount: Number(c.amount),
+        reason: c.reason,
+        createdAt: c.createdAt.toISOString(),
+        createdBy: c.createdByAdmin?.name ?? null,
       })),
     });
   }
@@ -517,12 +733,18 @@ export async function paymentLedgerDrift(opts: { batchSize?: number } = {}) {
       },
     });
     if (!orders.length) break;
+    const [credits, returnedValues] = await Promise.all([creditedByOrder(prisma, orders.map((o) => o.id)), returnedValueByOrder(prisma, orders.map((o) => o.id))]);
     for (const o of orders) {
       checked++;
-      const pos = positionFromRows(o, o, currency);
+      const pos = positionFromRows(o, { ...o, credited: credits.get(o.id), returned: returnedValues.get(o.id) }, currency);
       if (o.paymentStatus !== pos.status) drift.push({ orderId: o.id, orderNumber: o.orderNumber, stored: o.paymentStatus, derived: pos.status });
-      if (pos.refunded.amount > pos.paid.amount) {
-        violations.push({ orderId: o.id, orderNumber: o.orderNumber, rule: "PL-2 refunded exceeds paid", detail: `paid ${noteMoney(pos.paid)}, refunded ${noteMoney(pos.refunded)}` });
+      if (pos.refunded.amount + pos.credited.amount > pos.paid.amount) {
+        violations.push({
+          orderId: o.id,
+          orderNumber: o.orderNumber,
+          rule: "PL-2 refunded exceeds paid",
+          detail: `paid ${noteMoney(pos.paid)}, refunded ${noteMoney(pos.refunded)}, credited ${noteMoney(pos.credited)}`,
+        });
       }
       if (o.paymentMethod === "COD" && o.status === "DELIVERED" && !["PAID", "PARTIALLY_REFUNDED", "REFUNDED"].includes(pos.status)) {
         violations.push({ orderId: o.id, orderNumber: o.orderNumber, rule: "PL-5 delivered COD order not paid", detail: `derived ${pos.status}` });

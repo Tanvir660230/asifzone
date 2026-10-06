@@ -3,6 +3,7 @@ import {
   careGuidePresetSchema,
   createAttributeDefinitionSchema,
   materialSchema,
+  searchSynonymSchema,
   productTypeSchema,
   sectionLayerSchema,
   skuSettingsSchema,
@@ -19,6 +20,8 @@ import { asyncHandler } from "../../lib/async-handler";
 import * as catalog from "./catalog.service";
 import * as sku from "./sku.service";
 import * as sections from "./sections.service";
+import * as synonyms from "../products/search-synonyms.service";
+import { previewStorefrontSearch } from "../products/product.service";
 
 export const catalogRouter = Router();
 
@@ -149,6 +152,24 @@ catalogRouter.put("/materials/:id", requirePermission("catalog.configure"), vali
 }));
 catalogRouter.delete("/materials/:id", requirePermission("catalog.configure"), asyncHandler(async (req, res) => {
   await catalog.deleteMaterial(req.params.id!);
+  res.status(204).send();
+}));
+
+/* search synonyms — store-wide words that find the same products ("ator" = "attar" = "আতর") */
+catalogRouter.get("/search-synonyms", requirePermission("catalog.read"), asyncHandler(async (_req, res) => {
+  res.json(await synonyms.listSearchSynonyms());
+}));
+catalogRouter.get("/search-synonyms/preview", requirePermission("catalog.read"), validate(z.object({ q: z.string().trim().min(1).max(200) }), "query"), asyncHandler(async (req, res) => {
+  res.json(await previewStorefrontSearch(String(req.query.q)));
+}));
+catalogRouter.post("/search-synonyms", requirePermission("catalog.configure"), validate(searchSynonymSchema), asyncHandler(async (req, res) => {
+  res.status(201).json({ synonym: await synonyms.createSearchSynonym(req.body, req.admin!.adminId, req.ip) });
+}));
+catalogRouter.put("/search-synonyms/:id", requirePermission("catalog.configure"), validate(searchSynonymSchema), asyncHandler(async (req, res) => {
+  res.json({ synonym: await synonyms.updateSearchSynonym(req.params.id!, req.body, req.admin!.adminId, req.ip) });
+}));
+catalogRouter.delete("/search-synonyms/:id", requirePermission("catalog.configure"), asyncHandler(async (req, res) => {
+  await synonyms.deleteSearchSynonym(req.params.id!, req.admin!.adminId, req.ip);
   res.status(204).send();
 }));
 

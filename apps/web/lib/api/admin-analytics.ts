@@ -120,6 +120,33 @@ export function getCartAbandonment() {
   return apiFetch<CartAbandonmentSummary>("/api/analytics/cart-abandonment");
 }
 
+export interface AbandonedCart {
+  cartId: string;
+  customerId: string;
+  name: string;
+  phone: string | null;
+  smsMarketingOptIn: boolean;
+  /** Has a phone and opted in to marketing SMS — the only carts a reminder will go to. */
+  reachable: boolean;
+  itemCount: number;
+  value: number;
+  firstItemName: string | null;
+  updatedAt: string;
+  reminderSentAt: string | null;
+}
+
+export function listAbandonedCarts(limit = 50) {
+  return apiFetch<{ carts: AbandonedCart[] }>(`/api/analytics/abandoned-carts?limit=${limit}`);
+}
+
+/** Reminder SMS to the chosen carts' customers — the server sends only to opted-in ones still abandoned, and counts the rest as skipped. */
+export function remindAbandonedCarts(customerIds: string[], body: string) {
+  return apiFetch<{ sent: number; failed: number; skipped: number }>("/api/analytics/abandoned-carts/remind", {
+    method: "POST",
+    body: { customerIds, body },
+  });
+}
+
 export interface CustomerInsights {
   totalCustomers: number;
   returningCustomers: number;

@@ -6,6 +6,7 @@ import type {
   CareGuidePresetInput,
   CreateAttributeDefinitionInput,
   MaterialInput,
+  SearchSynonymInput,
   ProductTypeInput,
   ResolvedTypeConfig,
   SizeGuideMode,
@@ -143,6 +144,21 @@ export interface CareGuideRow {
   productCount: number;
 }
 
+export interface SearchSynonymRow {
+  id: string;
+  terms: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SearchPreview {
+  /** Every word the query searches for once synonyms are applied. */
+  terms: string[];
+  total: number;
+  products: { id: string; name: string; slug: string; imageUrl: string | null }[];
+}
+
 export interface MaterialRow {
   id: string;
   name: string;
@@ -166,6 +182,14 @@ export const createMaterial = (input: MaterialInput) => apiFetch<{ material: Mat
 export const updateMaterial = (id: string, input: MaterialInput & { isArchived?: boolean }) =>
   apiFetch<{ material: MaterialRow }>(`/api/catalog/materials/${id}`, json("PUT", input));
 export const deleteMaterial = (id: string) => apiFetch<void>(`/api/catalog/materials/${id}`, { method: "DELETE" });
+
+/* search synonyms */
+export const listSearchSynonyms = () => apiFetch<{ synonyms: SearchSynonymRow[]; builtIn: string[][] }>("/api/catalog/search-synonyms");
+export const previewSearch = (q: string) => apiFetch<SearchPreview>(`/api/catalog/search-synonyms/preview?q=${encodeURIComponent(q)}`);
+export const createSearchSynonym = (input: SearchSynonymInput) => apiFetch<{ synonym: SearchSynonymRow }>("/api/catalog/search-synonyms", json("POST", input));
+export const updateSearchSynonym = (id: string, input: SearchSynonymInput) =>
+  apiFetch<{ synonym: SearchSynonymRow }>(`/api/catalog/search-synonyms/${id}`, json("PUT", input));
+export const deleteSearchSynonym = (id: string) => apiFetch<void>(`/api/catalog/search-synonyms/${id}`, { method: "DELETE" });
 
 /* SKU generator */
 export interface SkuSettings {

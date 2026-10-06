@@ -12,7 +12,7 @@ import {
   toMajor,
   zero,
 } from "@clothing-brand/shared";
-import type { CreateReturnRequestInput, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
+import type { CreateReturnRequestInput, ReturnCompensation, ReviewReturnRequestInput, ReturnRequestListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
@@ -21,7 +21,7 @@ import { applyOrderTransition, runTransitionSideEffects } from "../orders/order.
 import { recordSale, releaseOrderLines } from "../inventory/inventory.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
 import { loadTaxConfig } from "../../domain/pricing/pricing-config";
-import { recordExchangeCovered, requestRefund } from "../../domain/payments/payment-ledger.service";
+import { issueStoreCreditFromOrder, recordExchangeCovered, requestRefund, summarizeOrderPayments } from "../../domain/payments/payment-ledger.service";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 
 const include = {
@@ -156,10 +156,29 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
 
     if (input.status !== "APPROVED") return null;
     if (request.type === "EXCHANGE") {
-      await createExchangeOrder(tx, request, adminId);
+      await createExchangeOrder(tx, request, adminId, input.compensation);
       return null;
     }
-    return applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId });
+    const outcome = await applyOrderTransition(tx, request.orderId, { status: "RETURNED", note: `Return approved: ${request.reason}` }, { adminId });
+    // Staff may settle the return as store credit right away (everything still owed back on the order); otherwise it
+    // stays in the refund-due queue for a refund, as before.
+    if (input.compensation === "STORE_CREDIT") {
+      const entry = await issueStoreCreditFromOrder(tx, {
+        orderId: request.orderId,
+        type: "RETURN",
+        reason: `Return approved — ${request.reason}`,
+        sourceType: "RETURN_REQUEST",
+        sourceId: request.id,
+        idempotencyKey: `credit:return:${request.id}`,
+        adminId,
+      }).catch((err: unknown) => {
+        // Nothing was received for this order (an unpaid COD return): there is nothing to credit — the return still stands.
+        if (err instanceof AppError && (err.details as { code?: string } | undefined)?.code === "CREDIT_EXCEEDS_REFUND_DUE") return null;
+        throw err;
+      });
+      await tx.returnRequest.update({ where: { id: request.id }, data: { compensation: entry ? "STORE_CREDIT" : "NONE", compensationAmount: entry ? entry.amount : 0 } });
+    }
+    return outcome;
   });
   if (outcome) await runTransitionSideEffects(outcome);
 
@@ -178,12 +197,12 @@ export async function reviewReturnRequest(id: string, input: ReviewReturnRequest
  * Then: takes the replacement out of stock (re-checked — it may have sold out since the request), puts the original
  * item back (a RETURN on the original order's line, so it can never be restocked twice), and opens the companion Order
  * at CONFIRMED with its own pricing/tax snapshot. */
-async function createExchangeOrder(
-  tx: Prisma.TransactionClient,
-  request: NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>,
-  adminId: string,
-) {
-  const originalOrder = await tx.order.findUnique({ where: { id: request.orderId }, include: { items: true } });
+/** THE price of an exchange (D6) — shared by the approval below and the read-only preview, so what staff see before
+ * approving is exactly what approval does. Refuses (like approval) when the item was already returned/exchanged or the
+ * requested variant can't be sold any more. `stockAvailable` says whether the replacement units are in stock right now
+ * (approval re-checks under the stock lock). */
+async function priceExchange(db: Prisma.TransactionClient | typeof prisma, request: NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>) {
+  const originalOrder = await db.order.findUnique({ where: { id: request.orderId }, include: { items: true } });
   if (!originalOrder) throw AppError.notFound("Original order not found");
 
   const originalItem = originalOrder.items.find((i) => i.id === request.orderItemId);
@@ -195,7 +214,7 @@ async function createExchangeOrder(
   }
   if (!request.requestedVariantId) throw AppError.badRequest("No replacement size/color was recorded for this exchange");
 
-  const requestedVariant = await tx.productVariant.findUnique({
+  const requestedVariant = await db.productVariant.findUnique({
     where: { id: request.requestedVariantId },
     include: { product: true },
   });
@@ -207,7 +226,7 @@ async function createExchangeOrder(
   // The exchange quote: the canonical pipeline, current prices, flash only.
   const { quote } = await quoteCart(
     { items: [{ variantId: requestedVariant.id, quantity: originalItem.quantity }], promotions: "FLASH_ONLY", customerId: originalOrder.customerId },
-    tx,
+    db as Prisma.TransactionClient,
   );
   const line = quote.lines[0];
   if (!line) throw AppError.badRequest("The requested size/color is no longer available");
@@ -224,14 +243,63 @@ async function createExchangeOrder(
   const amountDue = clampNonNegative(subtract(newValue, paidValue));
   const refundDue = clampNonNegative(subtract(paidValue, newValue));
   const credit = subtract(newValue, amountDue); // what the returned item's value covers (the new order's discount)
-  const tax = computeTax(await loadTaxConfig(tx), amountDue, zero(cur), DEFAULT_ROUNDING_POLICY);
+  const tax = computeTax(await loadTaxConfig(db as Prisma.TransactionClient), amountDue, zero(cur), DEFAULT_ROUNDING_POLICY);
+  const stockAvailable = !requestedVariant.product.trackInventory || requestedVariant.stock >= originalItem.quantity;
+  return { originalOrder, originalItem, requestedVariant, quote, line, cur, newValue, paidValue, amountDue, refundDue, credit, tax, stockAvailable };
+}
+
+/** What approving this exchange WOULD do — nothing is written: the original line and what was paid for it, the
+ * replacement at today's price, the difference and where it goes (due on the replacement / store balance / refund owed). */
+export async function previewExchange(id: string) {
+  const request = await getReturnRequestById(id);
+  if (request.type !== "EXCHANGE") throw AppError.badRequest("Only an exchange request has an exchange preview");
+  if (request.status !== "PENDING") throw AppError.conflict("This request has already been reviewed");
+  const p = await priceExchange(prisma, request);
+  const position = (await summarizeOrderPayments([p.originalOrder.id])).get(p.originalOrder.id)!;
+  return {
+    currency: p.cur,
+    quantity: p.originalItem.quantity,
+    original: {
+      orderItemId: p.originalItem.id,
+      productName: p.originalItem.productNameSnapshot,
+      size: p.originalItem.sizeSnapshot,
+      color: p.originalItem.colorSnapshot,
+      /** What the customer paid for these units (snapshot price net of allocated discounts). */
+      paidValue: toMajor(p.paidValue),
+    },
+    replacement: {
+      variantId: p.requestedVariant.id,
+      productName: p.requestedVariant.product.name,
+      size: p.requestedVariant.size,
+      color: p.requestedVariant.color,
+      /** Today's effective price for the same quantity. */
+      value: toMajor(p.newValue),
+      inStock: p.stockAvailable,
+    },
+    /** > 0: the replacement order collects this. */
+    amountDue: toMajor(p.amountDue),
+    /** > 0: owed back to the customer (store credit by default, D15). */
+    amountOwedBack: toMajor(p.refundDue),
+    /** Whether the owed-back amount can go to store balance (needs a customer account) / be refunded (capped by what was received). */
+    canCredit: p.originalOrder.customerId !== null && position.refundable >= toMajor(p.refundDue),
+    canRefund: position.refundable >= toMajor(p.refundDue),
+  };
+}
+
+async function createExchangeOrder(
+  tx: Prisma.TransactionClient,
+  request: NonNullable<Awaited<ReturnType<typeof getReturnRequestById>>>,
+  adminId: string,
+  compensation?: ReturnCompensation,
+) {
+  const { originalOrder, originalItem, requestedVariant, quote, line, cur, newValue, amountDue, refundDue, credit, tax } = await priceExchange(tx, request);
 
   const label = `${originalItem.productNameSnapshot}${formatVariantSuffix(originalItem.sizeSnapshot, originalItem.colorSnapshot)} → ${requestedVariant.product.name}${formatVariantSuffix(requestedVariant.size, requestedVariant.color)}`;
   const exchangeNote =
     amountDue.amount > 0
       ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(amountDue)} due COD on delivery for the price difference`
       : refundDue.amount > 0
-        ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(refundDue)} owed back to the customer (refund requested)`
+        ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(refundDue)} owed back to the customer (${compensation === "REFUND" || !originalOrder.customerId ? "refund requested" : "store credit"})`
         : `Free exchange for order ${originalOrder.orderNumber} (${label})`;
 
   const replacementSnapshots = await captureLineSnapshots(tx, [requestedVariant.id], cur);
@@ -325,13 +393,35 @@ async function createExchangeOrder(
   // Fully covered by the returned item: nothing to collect — settled at zero in the ledger (status PAID, as before).
   if (amountDue.amount === 0) await recordExchangeCovered(tx, exchangeOrder.id, adminId);
 
-  // D6: a cheaper replacement means money is owed back — a REQUESTED refund on the original order (no gateway refund
-  // API), completed by an admin once paid out. Capped by what was received for that order (PL-2).
+  // D6: a cheaper replacement means money is owed back on the original order, capped by what was received for it (PL-2).
+  // D11 (docs/ORDER_ADJUSTMENTS.md §9): by default it goes to the customer's store balance; staff may choose a refund
+  // (a REQUESTED refund, paid out by hand) instead — and an order with no customer account can only be refunded.
+  let settled: { kind: "STORE_CREDIT" | "REFUND" | "NONE"; amount: number } = { kind: "NONE", amount: 0 };
   if (refundDue.amount > 0) {
-    await requestRefund(tx, originalOrder.id, { amount: toMajor(refundDue), reason: `Exchange price difference — ${label}` }, adminId);
+    const asCredit = compensation !== "REFUND" && compensation !== "NONE" && originalOrder.customerId !== null;
+    if (asCredit) {
+      await issueStoreCreditFromOrder(tx, {
+        orderId: originalOrder.id,
+        type: "EXCHANGE",
+        amount: refundDue,
+        cap: "REFUNDABLE",
+        reason: `Exchange price difference — ${label}`,
+        sourceType: "RETURN_REQUEST",
+        sourceId: request.id,
+        idempotencyKey: `credit:exchange:${request.id}`,
+        adminId,
+      });
+      settled = { kind: "STORE_CREDIT", amount: toMajor(refundDue) };
+    } else if (compensation !== "NONE") {
+      await requestRefund(tx, originalOrder.id, { amount: toMajor(refundDue), reason: `Exchange price difference — ${label}` }, adminId);
+      settled = { kind: "REFUND", amount: toMajor(refundDue) };
+    }
   }
 
-  await tx.returnRequest.update({ where: { id: request.id }, data: { exchangeOrderId: exchangeOrder.id } });
+  await tx.returnRequest.update({
+    where: { id: request.id },
+    data: { exchangeOrderId: exchangeOrder.id, compensation: settled.kind, compensationAmount: settled.amount },
+  });
 
   return exchangeOrder;
 }

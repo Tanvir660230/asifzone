@@ -25,11 +25,15 @@ import {
   phoneVerificationConfirmSchema,
   changeCustomerPasswordSchema,
   confirmCustomerClaimSchema,
+  orderModificationSchema,
+  cancelOwnOrderSchema,
+  startPaymentLinkSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireCustomer } from "../../middlewares/require-customer";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
-import { emailSendRateLimit, loginRateLimit, otpRequestRateLimit, refreshRateLimit } from "../../middlewares/rate-limit";
+import { emailSendRateLimit, loginRateLimit, orderSelfServiceRateLimit, otpRequestRateLimit, refreshRateLimit } from "../../middlewares/rate-limit";
+import * as adjustments from "../orders/order-adjustments.controller";
 import * as customerController from "./customer.controller";
 
 export const customerRouter = Router();
@@ -97,6 +101,13 @@ customerRouter.get(
   customerController.listOrders,
 );
 customerRouter.get("/me/orders/:id", requireCustomer, customerController.getOrder);
+// Self-service order changes and store balance (docs/ORDER_ADJUSTMENTS.md §2, §5, §18) — own orders only.
+customerRouter.get("/me/store-credit", requireCustomer, adjustments.myStoreCredit);
+customerRouter.get("/me/orders/:id/modifications", requireCustomer, adjustments.myListModifications);
+customerRouter.post("/me/orders/:id/modifications/preview", requireCustomer, orderSelfServiceRateLimit, validate(orderModificationSchema), adjustments.myPreviewModification);
+customerRouter.post("/me/orders/:id/modifications", requireCustomer, orderSelfServiceRateLimit, validate(orderModificationSchema), adjustments.myApplyModification);
+customerRouter.post("/me/orders/:id/modifications/:modId/pay", requireCustomer, orderSelfServiceRateLimit, validate(startPaymentLinkSchema), adjustments.myPayModification);
+customerRouter.post("/me/orders/:id/cancel", requireCustomer, orderSelfServiceRateLimit, validate(cancelOwnOrderSchema), adjustments.myCancelOrder);
 
 customerRouter.get(
   "/me/points",
@@ -144,6 +155,7 @@ customerRouter.post(
   customerController.sendBulkSms,
 );
 customerRouter.get("/admin/:id", requireAdmin, requirePermission("customers.read"), customerController.getCustomerDetailAdmin);
+customerRouter.get("/admin/:id/store-credit", requireAdmin, requirePermission("customers.read"), adjustments.adminCustomerStoreCredit);
 customerRouter.post(
   "/admin/:id/points",
   requireAdmin,

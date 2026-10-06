@@ -2,16 +2,28 @@ import crypto from "crypto";
 import type { Order } from "@prisma/client";
 import type { OrderItemRow } from "../../config/prisma";
 import { Prisma } from "@prisma/client";
-import type { CheckoutInput } from "@clothing-brand/shared";
+import { fromMajor, toMajor, type CheckoutInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { redis } from "../../config/redis";
 import { namespace } from "../../config/installation";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
 import { recordOutboxEvents } from "../../domain/outbox/outbox";
-import { applyOrderTransition, deriveOrderPricing, insertOrderRecord, type OrderItemSnapshot, type OrderPricingSnapshot } from "../orders/order.service";
+import { applyOrderTransition, createOrder, deriveOrderPricing, insertOrderRecord, type OrderItemSnapshot, type OrderPricingSnapshot } from "../orders/order.service";
+import { applyPaidModification } from "../orders/order-modification.service";
 import { quoteCart } from "../../domain/pricing/pricing.service";
-import { listRefunds, recordFailedAttempt, recordGatewaySettlement, recordRefund } from "../../domain/payments/payment-ledger.service";
+import {
+  getOrderPaymentSummary,
+  issueStoreCreditFromOrder,
+  listRefunds,
+  lockedPosition,
+  recordFailedAttempt,
+  recordGatewaySettlement,
+  recordRefund,
+} from "../../domain/payments/payment-ledger.service";
+import { releaseSessionReservation, sessionReserveKey, spendCredit, storeCreditBalance } from "../../domain/credit/customer-credit.service";
+import { getCurrency } from "../../domain/config/commerce-settings";
+import { notifyReplenished } from "../inventory/inventory.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
@@ -32,6 +44,9 @@ export interface PendingCheckoutPayload {
    * settlement that finally writes the Order may be an IPN/cron with no browser behind it. Absent on
    * sessions started before this existed. */
   metaContext?: MetaRequestContext;
+  /** Store balance reserved for this checkout (a ledger spend keyed to the session) — becomes the order's STORE_CREDIT
+   * payment at settlement; the gateway only collects the rest (docs/ORDER_ADJUSTMENTS.md §7). */
+  storeCredit?: { customerId: string; amount: number };
 }
 
 // Same lookback bound the EPS reconciliation sweep already used before this table existed.
@@ -68,21 +83,51 @@ async function settleExistingOrder(
     providerTransactionId: string;
     rawResponse?: unknown;
   },
-): Promise<{ becamePaid: boolean; confirmed: boolean; overpaid: boolean }> {
-  return prisma.$transaction(async (tx) => {
-    const before = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { paymentStatus: true } });
+  links: { paymentLinkId: string | null; orderModificationId: string | null } = { paymentLinkId: null, orderModificationId: null },
+): Promise<{ becamePaid: boolean; confirmed: boolean; overpaid: boolean; modificationNotApplied?: string }> {
+  let replenished: string[] = [];
+  const result = await prisma.$transaction(async (tx) => {
+    const before = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { paymentStatus: true, orderNumber: true } });
+    // Case A (docs/ORDER_ADJUSTMENTS.md §3): the change this payment was for is applied first, in this same transaction,
+    // so the money and the new contents commit together. If it can't be applied any more, the payment still stands (the
+    // money was taken) and what it overpays goes to the customer's store balance below.
+    let modificationNotApplied: string | undefined;
+    // The link that carried this payment is used up first: applying a change closes the order's other ACTIVE links.
+    if (links.paymentLinkId) {
+      await tx.paymentLink.updateMany({ where: { id: links.paymentLinkId, status: "ACTIVE" }, data: { status: "USED", usedAt: new Date() } });
+    }
+    if (links.orderModificationId) {
+      const applied = await applyPaidModification(tx, links.orderModificationId, settlement.paymentSessionId);
+      replenished = applied.replenished;
+      if (!applied.applied) modificationNotApplied = applied.reason;
+    }
     const { position } = await recordGatewaySettlement(tx, { orderId, ...settlement });
+    if (modificationNotApplied && position.overpaid.amount > 0) {
+      const { order: locked } = await lockedPosition(tx, orderId);
+      if (locked.customerId) {
+        await issueStoreCreditFromOrder(tx, {
+          orderId,
+          type: "ORDER_MODIFICATION",
+          reason: `Payment for a change to order ${before.orderNumber} that couldn't be applied (${modificationNotApplied})`,
+          sourceType: "ORDER_MODIFICATION",
+          sourceId: links.orderModificationId!,
+          idempotencyKey: `credit:modification:${links.orderModificationId}:unapplied`,
+        });
+      }
+    }
     const becamePaid = before.paymentStatus !== "PAID" && position.status === "PAID";
     const current = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: { status: true } });
-    if (!becamePaid || current.status !== "PENDING") return { becamePaid, confirmed: false, overpaid: position.overpaid.amount > 0 };
+    if (!becamePaid || current.status !== "PENDING") return { becamePaid, confirmed: false, overpaid: position.overpaid.amount > 0, modificationNotApplied };
     // The CONFIRMED transition records the customer's "confirmed" SMS intent itself; the receipt email is recorded here —
     // both commit with the settlement (Phase 8).
     await applyOrderTransition(tx, orderId, { status: "CONFIRMED", note: "Payment received" });
     await recordOutboxEvents(tx, [
       { eventType: "payment.settled.v1", consumer: "payment-receipt-email", eventKey: `order:${orderId}:paid`, aggregateType: "Order", aggregateId: orderId, payload: { orderId } },
     ]);
-    return { becamePaid, confirmed: true, overpaid: false };
+    return { becamePaid, confirmed: true, overpaid: false, modificationNotApplied };
   });
+  notifyReplenished(replenished);
+  return result;
 }
 
 /** Creates a PaymentSession for this order and starts the gateway's hosted-checkout flow — the
@@ -91,10 +136,21 @@ async function settleExistingOrder(
 export async function startPaymentSession(
   order: Order & { items: OrderItemRow[] },
   ipAddress?: string,
+  opts: {
+    /** What to collect; default = the order's balance due from the payment ledger (never the order total blindly). */
+    amount?: number;
+    /** Gateway to use; default = the order's own online method. A payment link may pay a COD order online. */
+    provider?: "SSLCOMMERZ" | "EPS_PG";
+    paymentLinkId?: string;
+    orderModificationId?: string;
+  } = {},
 ): Promise<{ gatewayUrl: string; sessionId: string }> {
-  if (order.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
-  // Phase 12: the one gateway selection point (registry), before any session row exists.
-  const gateway = getProviders().payments.forNewSession(gatewayIdForPaymentMethod(order.paymentMethod));
+  if (order.paymentMethod === "COD" && !opts.provider) throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
+  // Phase 12: the one gateway selection point (registry), before any session row exists. A payment link may name
+  // its gateway (opts.provider); otherwise the order's payment method decides.
+  const gateway = getProviders().payments.forNewSession(opts.provider ?? gatewayIdForPaymentMethod(order.paymentMethod));
+  const amount = opts.amount ?? (await getOrderPaymentSummary(order.id)).amountDue;
+  if (!(amount > 0)) throw AppError.badRequest("Nothing is due on this order");
 
   const attemptRef = newAttemptRef();
   let session;
@@ -106,6 +162,9 @@ export async function startPaymentSession(
         status: "ACTIVE",
         gatewayTransactionRef: attemptRef,
         expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+        amount,
+        paymentLinkId: opts.paymentLinkId ?? null,
+        orderModificationId: opts.orderModificationId ?? null,
       },
     });
   } catch (err) {
@@ -117,7 +176,14 @@ export async function startPaymentSession(
     // customer's gateway tab out from under them mid-payment.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const active = await prisma.paymentSession.findFirst({ where: { orderId: order.id, status: "ACTIVE" } });
-      if (active?.gatewayUrl) return { gatewayUrl: active.gatewayUrl, sessionId: active.id };
+      // Only the same request (same amount and purpose) may reuse the live attempt — never a different amount.
+      const same =
+        active &&
+        (active.amount === null || Number(active.amount) === amount) &&
+        active.paymentLinkId === (opts.paymentLinkId ?? null) &&
+        active.orderModificationId === (opts.orderModificationId ?? null);
+      if (same && active.gatewayUrl) return { gatewayUrl: active.gatewayUrl, sessionId: active.id };
+      throw AppError.conflict("A payment attempt is already in progress for this order — please finish or wait a moment before retrying");
     }
     throw err;
   }
@@ -125,7 +191,7 @@ export async function startPaymentSession(
   const gatewayParams = {
     orderNumber: order.orderNumber,
     attemptRef,
-    amount: Number(order.total),
+    amount,
     customerName: order.customerName,
     customerEmail: order.customerEmail,
     customerPhone: order.customerPhone,
@@ -140,7 +206,7 @@ export async function startPaymentSession(
     const { gatewayUrl, providerTransactionId } = await gateway.createSession(gatewayParams);
 
     await prisma.paymentSession.update({ where: { id: session.id }, data: { gatewayUrl, providerTransactionId } });
-    recordEvent(session.id, "INITIATED");
+    recordEvent(session.id, "INITIATED", opts.paymentLinkId ? "Payment link" : opts.orderModificationId ? "Order change difference" : undefined);
     return { gatewayUrl, sessionId: session.id };
   } catch (err) {
     // Init failed at the gateway — this session never produced a usable gatewayUrl, so it's dead on
@@ -165,7 +231,7 @@ export async function initiatePendingPayment(
   ipAddress?: string,
   idempotencyKey?: string | null,
   metaContext?: MetaRequestContext,
-): Promise<{ gatewayUrl: string; sessionId: string }> {
+): Promise<{ gatewayUrl: string; sessionId: string } | { order: Order }> {
   if (input.paymentMethod === "COD") throw AppError.badRequest("Cash on Delivery orders don't need a payment session");
 
   // Idempotency-Key (the same mechanism as createOrder): a repeat of a started checkout returns its live session.
@@ -181,7 +247,28 @@ export async function initiatePendingPayment(
   const itemSnapshots = pricing.itemSnapshots;
   const { customerId: _c, quote: _q, quoteToken: _t, rows: _r, itemSnapshots: _i, ...snapshot } = pricing;
   void _c; void _q; void _t; void _r; void _i;
-  const checkoutPayload: PendingCheckoutPayload = { input, customerId: pricing.customerId, pricing: snapshot, itemSnapshots, metaContext };
+
+  // Store balance (signed-in account only — `customerId` here is the session's, never a guest match by phone): what it
+  // covers is reserved now and the gateway collects only the rest. Covering everything means no gateway at all — the
+  // order is placed right away, paid from the balance (and confirmed, like any fully paid order).
+  const currency = await getCurrency();
+  let creditAmount = 0;
+  if (input.useStoreCredit && customerId && customerId === pricing.customerId) {
+    const balance = toMajor(await storeCreditBalance(customerId, currency));
+    creditAmount = Math.min(balance, pricing.total);
+  }
+  if (creditAmount > 0 && creditAmount >= pricing.total) {
+    return { order: await createOrder(input, customerId, { idempotencyKey: idempotencyKey ?? null, metaContext, storeCreditCustomerId: customerId, initialStatus: "CONFIRMED" }) };
+  }
+  const gatewayAmount = Math.round((pricing.total - creditAmount) * 100) / 100;
+  const checkoutPayload: PendingCheckoutPayload = {
+    input,
+    customerId: pricing.customerId,
+    pricing: snapshot,
+    itemSnapshots,
+    metaContext,
+    ...(creditAmount > 0 ? { storeCredit: { customerId: customerId!, amount: creditAmount } } : {}),
+  };
 
   // Phase 12: the one gateway selection point (registry), before the double-submit lock or any session row.
   const gateway = getProviders().payments.forNewSession(gatewayIdForPaymentMethod(input.paymentMethod));
@@ -201,6 +288,7 @@ export async function initiatePendingPayment(
           { checkoutPayload: { path: ["input", "sessionId"], equals: input.sessionId! } },
           { checkoutPayload: { path: ["pricing", "total"], equals: pricing.total } },
         ],
+        amount: gatewayAmount,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -223,16 +311,33 @@ export async function initiatePendingPayment(
   }
 
   const attemptRef = newAttemptRef();
-  const session = await prisma.paymentSession.create({
-    data: {
-      orderId: null,
-      provider: gateway.id,
-      status: "ACTIVE",
-      gatewayTransactionRef: attemptRef,
-      idempotencyKey: idempotencyKey ?? null,
-      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-      checkoutPayload: checkoutPayload as unknown as Prisma.InputJsonValue,
-    },
+  // The session and its balance reservation commit together; a balance spent elsewhere meanwhile refuses the checkout
+  // (409 INSUFFICIENT_STORE_CREDIT) rather than letting two checkouts spend the same money.
+  const session = await prisma.$transaction(async (tx) => {
+    const created = await tx.paymentSession.create({
+      data: {
+        orderId: null,
+        provider: gateway.id,
+        status: "ACTIVE",
+        gatewayTransactionRef: attemptRef,
+        idempotencyKey: idempotencyKey ?? null,
+        expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+        checkoutPayload: checkoutPayload as unknown as Prisma.InputJsonValue,
+        amount: gatewayAmount,
+      },
+    });
+    if (creditAmount > 0) {
+      await spendCredit(tx, {
+        customerId: customerId!,
+        amount: fromMajor(String(creditAmount), currency),
+        reason: "Reserved for an online checkout",
+        orderId: null,
+        sourceType: "PAYMENT_SESSION",
+        sourceId: created.id,
+        idempotencyKey: sessionReserveKey(created.id),
+      });
+    }
+    return created;
   });
 
   // No Order (and so no orderNumber) exists yet — the attemptRef is what the gateway actually keys
@@ -240,7 +345,7 @@ export async function initiatePendingPayment(
   const gatewayParams = {
     orderNumber: attemptRef,
     attemptRef,
-    amount: pricing.total,
+    amount: gatewayAmount,
     customerName: input.customerName,
     customerEmail: input.customerEmail ?? null,
     customerPhone: input.customerPhone,
@@ -259,9 +364,11 @@ export async function initiatePendingPayment(
     if (sessionLockKey) await redis.del(sessionLockKey).catch(() => {});
     return { gatewayUrl, sessionId: session.id };
   } catch (err) {
-    // Init failed at the gateway — nothing was ever reserved (no Order, no stock touched), so
-    // there's nothing to compensate beyond marking the dead-on-arrival session FAILED.
+    // Init failed at the gateway — no Order, no stock touched; only a store-balance reservation (if any) to give back.
     await prisma.paymentSession.update({ where: { id: session.id }, data: { status: "FAILED" } }).catch(() => {});
+    await prisma.$transaction((tx) => releaseSessionReservation(tx, session.id, "Reserved balance returned — the payment could not be started")).catch((e) =>
+      captureError(e, { msg: `[payment.service] failed to release the reserved balance of session ${session.id}:` }),
+    );
     if (sessionLockKey) await redis.del(sessionLockKey).catch(() => {});
     throw err;
   }
@@ -304,7 +411,10 @@ export async function settlePaymentSession(
 
   const payload = session.orderId ? null : (session.checkoutPayload as unknown as PendingCheckoutPayload | null);
   if (!session.orderId && !payload) throw AppError.notFound("Payment session has no order and no checkout data to create one");
-  const expectedTotal = session.orderId ? Number(session.order!.total) : payload!.pricing.total;
+  // What THIS attempt asked the gateway for (balance due, a link's amount, a change's difference, a checkout's total minus
+  // reserved balance). Sessions from before the column existed fall back to the order / payload total, as before.
+  const expectedTotal =
+    session.amount !== null ? Number(session.amount) : session.orderId ? Number(session.order!.total) : payload!.pricing.total;
 
   // EXPIRED still accepts a settle — it only means the cron or a retry gave up waiting, not that the
   // gateway itself declined. A customer's original gateway tab can complete payment *after* retryPayment
@@ -362,6 +472,7 @@ export async function settlePaymentSession(
         providerTransactionId,
         rawResponse,
       },
+      reservedStoreCredit: payload!.storeCredit ? { paymentSessionId: session.id, customerId: payload!.storeCredit.customerId } : undefined,
     });
     orderId = created.id;
     await prisma.paymentSession.update({ where: { id: session.id }, data: { orderId } });
@@ -372,17 +483,28 @@ export async function settlePaymentSession(
   // An existing order: a second session on the same order also succeeding (a genuine double payment, not a race) still
   // gets its own Payment row for the refund trail — it surfaces as an overpayment — but must not re-send the "confirmed"
   // SMS the customer already received for the first one.
-  const result = await settleExistingOrder(orderId, {
-    paymentSessionId: session.id,
-    provider: session.provider as "SSLCOMMERZ" | "EPS_PG",
-    amount: expectedTotal,
-    verifiedAmount,
-    providerTransactionId,
-    rawResponse,
-  });
+  const result = await settleExistingOrder(
+    orderId,
+    {
+      paymentSessionId: session.id,
+      provider: session.provider as "SSLCOMMERZ" | "EPS_PG",
+      amount: expectedTotal,
+      verifiedAmount,
+      providerTransactionId,
+      rawResponse,
+    },
+    { paymentLinkId: session.paymentLinkId, orderModificationId: session.orderModificationId },
+  );
   recordEvent(session.id, "VERIFIED_SUCCESS", undefined, rawResponse);
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
-  if (result.becamePaid && order.status === "CANCELLED") {
+  if (result.modificationNotApplied) {
+    notify({
+      type: "order.overpaid",
+      title: `Change not applied: ${order.orderNumber}`,
+      body: `${order.customerName} paid for a change that couldn't be applied (${result.modificationNotApplied}) — the payment went to their store balance`,
+      link: `/admin/orders/${order.id}`,
+    });
+  } else if (result.becamePaid && order.status === "CANCELLED") {
     notify({
       type: "order.cancelled_but_paid",
       title: `Cancelled but paid: ${order.orderNumber}`,
@@ -423,10 +545,11 @@ export async function markPaymentSessionFailed(attemptRef: string, rawResponse?:
   const amount = session.order ? session.order.total : (payload?.pricing.total ?? 0);
 
   // The FAILED row is recorded and — for an existing order — the payment status re-derived (FAILED only while nothing
-  // was ever received: a paid or refunded order keeps its status).
-  await prisma.$transaction((tx) =>
-    recordFailedAttempt(tx, { orderId: session.orderId, paymentSessionId: session.id, provider: session.provider, amount, rawResponse }),
-  );
+  // was ever received: a paid or refunded order keeps its status). Store balance the checkout reserved goes back.
+  await prisma.$transaction(async (tx) => {
+    await recordFailedAttempt(tx, { orderId: session.orderId, paymentSessionId: session.id, provider: session.provider, amount: session.amount ?? amount, rawResponse });
+    await releaseSessionReservation(tx, session.id, "Reserved balance returned — the online payment failed");
+  });
   recordEvent(session.id, "VERIFIED_FAILED", undefined, rawResponse);
   return true;
 }
@@ -441,8 +564,25 @@ export async function markPaymentSessionCancelled(attemptRef: string): Promise<b
   if (claimed.count === 0) return false;
 
   const session = await prisma.paymentSession.findUnique({ where: { gatewayTransactionRef: attemptRef }, select: { id: true } });
-  if (session) recordEvent(session.id, "CANCELLED");
+  if (session) {
+    recordEvent(session.id, "CANCELLED");
+    await prisma.$transaction((tx) => releaseSessionReservation(tx, session.id, "Reserved balance returned — the online payment was cancelled"));
+  }
   return true;
+}
+
+/** Where the customer's browser goes after the gateway: a payment-link / order-change attempt returns to the payment
+ * result page; a checkout returns to checkout (failure) or its order confirmation (success). */
+export async function gatewayReturnPath(attemptRef: string | undefined, outcome: "success" | "failed" | "cancelled", orderNumber?: string): Promise<string> {
+  const session = attemptRef
+    ? await prisma.paymentSession.findUnique({ where: { gatewayTransactionRef: attemptRef }, select: { paymentLinkId: true, orderModificationId: true, order: { select: { orderNumber: true } } } })
+    : null;
+  if (session && (session.paymentLinkId || session.orderModificationId)) {
+    const number = orderNumber ?? session.order?.orderNumber ?? "";
+    return `/pay/complete?status=${outcome}&order=${encodeURIComponent(number)}`;
+  }
+  if (outcome === "success" && orderNumber) return `/order-confirmation/${orderNumber}`;
+  return outcome === "cancelled" ? "/checkout?paymentCancelled=1" : "/checkout?paymentError=1";
 }
 
 /** Replaces isOrderPaid's role in epsSuccess's pre-check — looked up by session ref now, since
@@ -523,7 +663,12 @@ export async function expireStalePaymentSessions(): Promise<number> {
     where: { id: { in: ids }, status: "ACTIVE" },
     data: { status: "EXPIRED" },
   });
-  for (const id of ids) recordEvent(id, "EXPIRED");
+  for (const id of ids) {
+    recordEvent(id, "EXPIRED");
+    await prisma
+      .$transaction((tx) => releaseSessionReservation(tx, id, "Reserved balance returned — the online payment was never completed"))
+      .catch((err) => captureError(err, { msg: `[payment-reconciliation-cron] failed to release the reserved balance of session ${id}:` }));
+  }
   return result.count;
 }
 
