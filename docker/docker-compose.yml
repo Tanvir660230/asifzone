@@ -99,8 +99,10 @@ services:
     volumes:
       - uploads_data:/repo/apps/api/uploads
     ports:
-      # Host ports are per installation, so a second installation on the same VPS can bind its own.
-      - "127.0.0.1:${API_HOST_PORT:-4000}:4000"
+      # Host ports are per installation, so a second installation on the same VPS can bind its own. HOST_BIND_IP stays
+      # loopback unless another installation's nginx fronts this one (docs/STORE_DEPLOYMENT.md): then it is that nginx's
+      # Docker network gateway, reachable from its container but not from outside the server.
+      - "${HOST_BIND_IP:-127.0.0.1}:${API_HOST_PORT:-4000}:4000"
 
   web:
     # Phase 1A: the image carries NO installation configuration — one build serves every store. Everything below is read
@@ -131,7 +133,7 @@ services:
       STORE_THEME: ${STORE_THEME:-default}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     ports:
-      - "127.0.0.1:${WEB_HOST_PORT:-3000}:3000"
+      - "${HOST_BIND_IP:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000"
 
   nginx:
     image: nginx:1.27-alpine

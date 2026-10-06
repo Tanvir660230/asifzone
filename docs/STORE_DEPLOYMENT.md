@@ -112,7 +112,9 @@ Each installation is its own compose project (`COMPOSE_PROJECT_NAME`) with its o
 volume, `docker/.env` and `INSTALL_ID`. Give each its own host ports (`API_HOST_PORT`, `WEB_HOST_PORT`, `HTTP_PORT`,
 `HTTPS_PORT`); only one process can own 80/443. The installation that owns them is the front proxy: its nginx includes
 `docker/nginx/sites.d/*.conf`, one server-local file per extra store, routing that store's host names to its api and web
-containers. The extra store runs with `docker/compose.shared-proxy.yml` (its api/web join the front network as
-`<INSTALL_ID>-api` / `<INSTALL_ID>-web`; its own nginx and certbot stay off) and its certificate is issued by the front
-installation's certbot, which also renews it. They may share one Redis server (`REDIS_URL`) — `INSTALL_ID` keeps their keys apart. Moving an
+host ports. The extra store sets `HOST_BIND_IP` to the front stack's Docker network gateway (e.g. 172.18.0.1), so the
+front nginx reaches those ports while they stay closed to the internet; its own nginx and certbot stay off, and its
+certificate is issued by the front installation's certbot, which also renews it. Never join an extra store's containers
+to the front stack's network: both stacks use the same service names (`postgres`, `api`, `web`), so names resolve
+across stores. They may share one Redis server (`REDIS_URL`) — `INSTALL_ID` keeps their keys apart. Moving an
 installation to its own VPS later is the same image with the same `docker/.env`, its database dump and its uploads volume.

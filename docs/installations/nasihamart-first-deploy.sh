@@ -16,7 +16,7 @@ AZ=/opt/asifzone
 HOST=nasihamart.com
 ID=nasihamart
 VPS_IP=187.77.137.12
-NM_COMPOSE="docker compose -f docker/docker-compose.yml -f docker/compose.shared-proxy.yml --env-file docker/.env"
+NM_COMPOSE="docker compose -f docker/docker-compose.yml --env-file docker/.env"
 AZ_COMPOSE="docker compose -f docker/docker-compose.yml --env-file docker/.env"
 
 rand() { openssl rand -hex 32; }
@@ -25,7 +25,10 @@ say() { printf '\n== %s\n' "$*"; }
 stack() {
   local email="${1:?usage: stack <owner-email>}"
   cd "$NM"
-  docker network inspect docker_default >/dev/null || { echo "Asif Zone's network docker_default is missing"; exit 1; }
+  # Nasihamart's api/web publish their host ports on Asif Zone's Docker network gateway: Asif Zone's nginx reaches them
+  # there, the internet does not. (Never join Nasihamart's containers to docker_default: same service names.)
+  local gw; gw="$(docker network inspect docker_default --format '{{(index .IPAM.Config 0).Gateway}}')"
+  [ -n "$gw" ] || { echo "Asif Zone's network docker_default is missing"; exit 1; }
 
   if [ ! -f docker/.env ]; then
     say "docker/.env (new secrets)"
@@ -42,7 +45,7 @@ COMPOSE_PROJECT_NAME=nasihamart
 POSTGRES_DB=nasihamart
 API_HOST_PORT=4100
 WEB_HOST_PORT=3100
-FRONT_PROXY_NETWORK=docker_default
+HOST_BIND_IP=$gw
 WEB_ORIGIN=https://$HOST
 SITE_URL=https://$HOST
 PUBLIC_API_URL=https://$HOST
@@ -56,6 +59,8 @@ REVALIDATE_SECRET=$(rand)
 EOF
     )
   fi
+  grep -q '^HOST_BIND_IP=' docker/.env || echo "HOST_BIND_IP=$gw" >> docker/.env
+  sed -i '/^FRONT_PROXY_NETWORK=/d' docker/.env
 
   say "database + redis"
   $NM_COMPOSE up -d postgres redis
@@ -88,8 +93,9 @@ EOF
 
   say "check"
   $NM_COMPOSE ps
-  docker run --rm --network docker_default curlimages/curl -fsS "http://$ID-api:4000/health" && echo
-  docker run --rm --network docker_default curlimages/curl -fsS -o /dev/null -w "web %{http_code}\n" "http://$ID-web:3000/"
+  # The same path Asif Zone's nginx will use.
+  docker run --rm --network docker_default curlimages/curl -fsS "http://$gw:4100/health" && echo
+  docker run --rm --network docker_default curlimages/curl -fsS -o /dev/null -w "web %{http_code}\n" "http://$gw:3100/"
 }
 
 front() {
@@ -129,7 +135,9 @@ live() {
   fi
 
   say "Nasihamart server blocks"
-  sed -e "s/__HOST__/$HOST/g" -e "s/__ID__/$ID/g" docker/nginx/sites.d/store.conf.sample > "docker/nginx/sites.d/$ID.conf"
+  local gw; gw="$(docker network inspect docker_default --format '{{(index .IPAM.Config 0).Gateway}}')"
+  sed -e "s/__HOST__/$HOST/g" -e "s/__API__/$gw:4100/g" -e "s/__WEB__/$gw:3100/g" \
+    docker/nginx/sites.d/store.conf.sample > "docker/nginx/sites.d/$ID.conf"
   if ! $AZ_COMPOSE exec -T nginx nginx -t; then
     rm -f "docker/nginx/sites.d/$ID.conf"
     echo "nginx config test failed — site file removed, nothing reloaded"
