@@ -1,12 +1,11 @@
 import { currentCorrelationId } from "../../lib/observability/context";
-import { Queue } from "bullmq";
 import type { Customer, Campaign } from "@prisma/client";
 import type { CampaignListQuery, CreateCampaignInput, SegmentType, UpdateCampaignInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
-import { queueConnection } from "../../lib/queue";
+import { createQueue } from "../../lib/queue";
 import { mapWithConcurrency } from "../../lib/concurrency";
 import { renderEmailLayout, emailLink } from "../../lib/email-template";
 import { generateEmailUnsubscribeToken } from "../customers/customer.service";
@@ -243,7 +242,7 @@ export async function queueCampaignSend(id: string) {
     }),
   ]);
 
-  const queue = new Queue(CAMPAIGN_SEND_QUEUE, { connection: queueConnection });
+  const queue = createQueue(CAMPAIGN_SEND_QUEUE);
   // Phase 11: the send job inherits the request's correlation ID (observability only).
   await queue.add("send", { campaignId: id, correlationId: currentCorrelationId() });
 }

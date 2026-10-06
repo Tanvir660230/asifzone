@@ -38,8 +38,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
+      # Phase 1: this installation's id — namespaces its Redis cache keys, locks and BullMQ queues (install:<id>:…), so
+      # installations can share one Redis server. Required (deploy.sh preflight checks it too).
+      INSTALL_ID: ${INSTALL_ID:?set INSTALL_ID in docker/.env}
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clothing_brand}?schema=public
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # This stack's own Redis by default; set REDIS_URL to share a Redis server between installations (INSTALL_ID keeps
+      # their keys apart).
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_CUSTOMER_ACCESS_SECRET: ${JWT_CUSTOMER_ACCESS_SECRET}
       JWT_CUSTOMER_REFRESH_SECRET: ${JWT_CUSTOMER_REFRESH_SECRET}
@@ -50,11 +55,8 @@ services:
       # cache revalidation call (see apps/api/src/modules/products/product.cache.ts).
       WEB_INTERNAL_URL: http://web:3000
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
-      # Baked directly into the URL for category/banner/logo/editor image uploads (see
-      # apps/api/src/modules/uploads/upload.service.ts's processSiteImage) — must be the public
-      # origin a browser can actually reach, not an internal Docker hostname. Behind the nginx
-      # config here everything lives under one public domain, so this is the same value as
-      # NEXT_PUBLIC_SITE_URL below.
+      # The API's public origin — payment-gateway callback URLs (providers/payment/*). Uploads no longer embed it: they are
+      # stored as domain-free /uploads/… references (Phase 1B).
       API_ORIGIN: ${API_ORIGIN:-http://localhost:4000}
       UPLOADS_DIR: uploads
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -80,11 +82,10 @@ services:
       STEADFAST_SECRET_KEY: ${STEADFAST_SECRET_KEY:-}
       STEADFAST_BASE_URL: ${STEADFAST_BASE_URL:-https://portal.packzy.com/api/v1}
       STEADFAST_WEBHOOK_TOKEN: ${STEADFAST_WEBHOOK_TOKEN:-}
-      # Meta Conversions API (server-side Purchase — apps/api/src/lib/meta/). The pixel id is the
-      # same value the web build bakes in as NEXT_PUBLIC_META_PIXEL_ID, reused rather than a second
-      # variable so the browser and server halves can never point at different pixels. Inert until
-      # META_ACCESS_TOKEN is set too.
-      META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
+      # Meta Conversions API (server-side Purchase — apps/api/src/lib/meta/). The SAME pixel id the web service reads at
+      # runtime below, so the browser and server halves can never point at different pixels. Inert until META_ACCESS_TOKEN
+      # is set too. (NEXT_PUBLIC_META_PIXEL_ID is the pre-Phase-1 name, still accepted.)
+      META_PIXEL_ID: ${META_PIXEL_ID:-${NEXT_PUBLIC_META_PIXEL_ID:-}}
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
       META_API_VERSION: ${META_API_VERSION:-}
       META_TEST_EVENT_CODE: ${META_TEST_EVENT_CODE:-}
@@ -98,40 +99,37 @@ services:
     volumes:
       - uploads_data:/repo/apps/api/uploads
     ports:
-      - "127.0.0.1:4000:4000"
+      # Host ports are per installation, so a second installation on the same VPS can bind its own.
+      - "127.0.0.1:${API_HOST_PORT:-4000}:4000"
 
   web:
+    # Phase 1A: the image carries NO installation configuration — one build serves every store. Everything below is read
+    # at runtime by apps/web/lib/runtime-config.ts (contract: packages/shared/src/runtime-config.ts). The pre-Phase-1
+    # NEXT_PUBLIC_* names in docker/.env are still accepted as fallbacks.
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
-        # NEXT_PUBLIC_* vars are inlined into the compiled output at `next build` time, not read
-        # from the container's runtime environment — without this here, the `environment:` entry
-        # below has zero effect and canonical URLs/og:url/sitemap.xml/robots.txt silently keep
-        # whatever this fell back to at image-build time (http://localhost:3000), no matter what's
-        # actually configured for the running container.
-        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-        NEXT_PUBLIC_CLARITY_ID: ${NEXT_PUBLIC_CLARITY_ID:-}
-        NEXT_PUBLIC_META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
-        NEXT_PUBLIC_TIKTOK_PIXEL_ID: ${NEXT_PUBLIC_TIKTOK_PIXEL_ID:-}
-        NEXT_PUBLIC_TAWKTO_PROPERTY_ID: ${NEXT_PUBLIC_TAWKTO_PROPERTY_ID:-}
-        NEXT_PUBLIC_TAWKTO_WIDGET_ID: ${NEXT_PUBLIC_TAWKTO_WIDGET_ID:-}
-        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
-        # Must be the public half of the same pair as the api service's WEB_PUSH_PUBLIC_KEY below
-        # (see apps/web/.env.example) — reusing that var here instead of a second secret keeps the
-        # two from ever drifting apart.
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
     restart: unless-stopped
     depends_on:
       - api
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      INSTALL_ID: ${INSTALL_ID:?set INSTALL_ID in docker/.env}
+      SITE_URL: ${SITE_URL:-${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-${NEXT_PUBLIC_API_URL:-http://localhost:4000}}
+      # Server-side rendering reaches the API over the compose network, never through the public domain and nginx.
+      API_INTERNAL_URL: http://api:4000
+      # Where media references resolve: same-origin /uploads (nginx serves this installation's uploads volume) by default.
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-/uploads}
+      META_PIXEL_ID: ${META_PIXEL_ID:-${NEXT_PUBLIC_META_PIXEL_ID:-}}
+      TIKTOK_PIXEL_ID: ${TIKTOK_PIXEL_ID:-${NEXT_PUBLIC_TIKTOK_PIXEL_ID:-}}
+      CLARITY_ID: ${CLARITY_ID:-${NEXT_PUBLIC_CLARITY_ID:-}}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}}
+      # The public half of the API's VAPID pair (the private half never leaves the api service).
+      WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${WEB_HOST_PORT:-3000}:3000"
 
   nginx:
     image: nginx:1.27-alpine
@@ -151,9 +149,11 @@ services:
       SERVER_ALIASES: ${SERVER_ALIASES:?set SERVER_ALIASES in docker/.env}
       CERT_NAME: ${CERT_NAME:?set CERT_NAME in docker/.env}
       NGINX_ENVSUBST_FILTER: "^(SERVER_NAME|SERVER_ALIASES|CERT_NAME)$$"
+    # 80/443 for an installation that owns its VPS. Installations sharing a VPS each publish other ports and sit behind
+    # one front proxy that routes by host name (docs/STORE_DEPLOYMENT.md "Several installations on one VPS").
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     # Picks up a cert the certbot service renewed underneath it — the ro bind mount doesn't
     # itself trigger nginx to reread the files, and nginx never reloads on its own otherwise.
     entrypoint: "/bin/sh -c"

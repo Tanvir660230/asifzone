@@ -1,8 +1,6 @@
-// Uploaded banner/category/logo/editor images are always served from the same origin the API
-// itself answers on (see apps/api/src/modules/uploads/upload.service.ts's processSiteImage), so
-// next/image just needs that origin whitelisted — derived from NEXT_PUBLIC_API_URL rather than a
-// separate env var, so it can never drift out of sync with wherever the API actually is.
-const apiHost = new URL(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000");
+// Phase 1B: uploaded media is referenced as same-origin `/uploads/…` (resolved at runtime by lib/runtime-config.ts and
+// served by nginx, or by app/uploads/[...path]/route.ts when nginx isn't in front), so next/image needs no remote host —
+// nothing installation-specific is baked into this build.
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -19,10 +17,7 @@ const nextConfig = {
   // experimental.serverComponentsExternalPackages (Next 14) to this stable top-level option in 15.
   serverExternalPackages: ["isomorphic-dompurify", "jsdom"],
   images: {
-    remotePatterns: [
-      { protocol: "http", hostname: "localhost" },
-      { protocol: apiHost.protocol.replace(":", ""), hostname: apiHost.hostname },
-    ],
+    remotePatterns: [{ protocol: "http", hostname: "localhost" }],
     // AVIF first — smaller than WebP for most product photography at equivalent quality; Next
     // falls back to WebP (then the original format) for browsers that don't support it.
     formats: ["image/avif", "image/webp"],

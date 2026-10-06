@@ -1,6 +1,5 @@
 import { createObservedWorker } from "../lib/observability/jobs";
-import { Queue } from "bullmq";
-import { queueConnection } from "../lib/queue";
+import { createQueue, queueConnection } from "../lib/queue";
 import { promoteDueCampaigns } from "../modules/campaigns/campaign.service";
 import { logger } from "../lib/observability/logger";
 
@@ -9,7 +8,7 @@ const QUEUE_NAME = "campaign-scheduler";
 /** Runs every minute via a BullMQ repeatable job, promoting any SCHEDULED campaign whose
  * scheduledAt has arrived into the send queue — same pattern as flash-sale-cron.ts. */
 export async function startCampaignSchedulerCron() {
-  const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
+  const queue = createQueue(QUEUE_NAME);
 
   createObservedWorker(
     QUEUE_NAME,

@@ -7,7 +7,8 @@ import { getSiteSettingsSafe } from "@/lib/api/storefront";
 import { StoreConfig } from "@/components/store-config";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-data";
-import { env } from "@/lib/env";
+import { RUNTIME_CONFIG_ELEMENT_ID, publicRuntimeConfig } from "@/lib/runtime-config";
+import { RuntimeConfig } from "@/components/runtime-config";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
 import { AdPixels } from "@/components/analytics/ad-pixels";
@@ -76,6 +77,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   await headers();
   const { settings } = await getSiteSettingsSafe();
   const siteUrl = getSiteUrl();
+  const runtime = publicRuntimeConfig();
   const organizationJsonLd = buildOrganizationJsonLd(settings, siteUrl);
   const websiteJsonLd = buildWebsiteJsonLd(settings, siteUrl);
 
@@ -85,7 +87,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       className={`${inter.variable} ${playfairDisplay.variable} ${notoSansBengali.variable}`}
     >
       <body>
-        <link rel="preconnect" href={env.apiUrl} />
+        {/* This installation's public runtime configuration (Phase 1A) — data, not script: CSP does not apply to it. */}
+        <script id={RUNTIME_CONFIG_ELEMENT_ID} type="application/json" dangerouslySetInnerHTML={{ __html: jsonLdString(runtime) }} />
+        <link rel="preconnect" href={runtime.apiUrl} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: jsonLdString(organizationJsonLd) }}
@@ -94,13 +98,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: jsonLdString(websiteJsonLd) }}
         />
-        <PageViewTracker />
-        <HeatmapScript />
-        <AdPixels />
-        <StoreConfig currency={settings.currency} timezone={settings.timezone}>
-          <Providers>{children}</Providers>
-        </StoreConfig>
-        <TrackingConsentBanner />
+        <RuntimeConfig value={runtime}>
+          <PageViewTracker />
+          <HeatmapScript />
+          <AdPixels />
+          <StoreConfig currency={settings.currency} timezone={settings.timezone}>
+            <Providers>{children}</Providers>
+          </StoreConfig>
+          <TrackingConsentBanner />
+        </RuntimeConfig>
       </body>
     </html>
   );

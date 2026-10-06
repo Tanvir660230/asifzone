@@ -13,7 +13,7 @@ import type {
   ReconcilePartialDeliveryInput,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
-import { env } from "../env";
+import { apiBaseUrl } from "../runtime-config";
 
 export interface AdminOrderListParams {
   page?: number;
@@ -82,7 +82,7 @@ export function getOrderStats() {
 /** CSV export needs the browser's cookie jar for admin auth but isn't JSON, so it bypasses apiFetch —
  * a plain same-tab navigation lets the browser handle the file download via Content-Disposition. */
 export function downloadOrdersCsvUrl(params: AdminOrderListParams = {}) {
-  return `${env.apiUrl}/api/orders/export/csv?${buildOrderListQuery(params).toString()}`;
+  return `${apiBaseUrl()}/api/orders/export/csv?${buildOrderListQuery(params).toString()}`;
 }
 
 export function bulkGetOrders(ids: string[]) {

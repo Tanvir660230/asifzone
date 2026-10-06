@@ -12,7 +12,7 @@ import { GoogleButton } from "@/components/account/google-button";
 import { OrDivider } from "@/components/account/or-divider";
 import { loginAdmin, loginAdminWithGoogle } from "@/lib/auth";
 import { ApiError } from "@/lib/api-client";
-import { env } from "@/lib/env";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 
 export default function LoginPage() {
   return (
@@ -57,7 +57,7 @@ function LoginForm() {
       <h1 className="mb-1 font-display text-2xl text-ink-900">Store Console</h1>
       <p className="mb-6 text-sm text-ink-500">Sign in to manage your store</p>
 
-      {env.googleClientId && (
+      {publicRuntimeConfig().googleClientId && (
         <>
           <GoogleButton onCredential={onGoogleCredential} onError={setServerError} />
           <OrDivider />

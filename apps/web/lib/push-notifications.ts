@@ -1,4 +1,4 @@
-import { env } from "./env";
+import { publicRuntimeConfig } from "./runtime-config";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -10,7 +10,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 export function isPushSupported(): boolean {
   return (
     typeof window !== "undefined" &&
-    Boolean(env.vapidPublicKey) &&
+    Boolean(publicRuntimeConfig().vapidPublicKey) &&
     "serviceWorker" in navigator &&
     "PushManager" in window
   );
@@ -33,7 +33,7 @@ export async function subscribeToPush(): Promise<PushSubscription> {
 
   return registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(env.vapidPublicKey) as BufferSource,
+    applicationServerKey: urlBase64ToUint8Array(publicRuntimeConfig().vapidPublicKey) as BufferSource,
   });
 }
 

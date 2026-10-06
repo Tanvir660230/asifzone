@@ -1,6 +1,5 @@
 import { createObservedWorker } from "../lib/observability/jobs";
-import { Queue } from "bullmq";
-import { queueConnection } from "../lib/queue";
+import { createQueue, queueConnection } from "../lib/queue";
 import { syncPendingCourierStatuses } from "../modules/courier/courier.service";
 import { logger } from "../lib/observability/logger";
 
@@ -12,7 +11,7 @@ const QUEUE_NAME = "courier-status-sync";
  * merchant never configured a Notify URL in the Steadfast panel, or a single webhook delivery got
  * dropped in transit. Same pattern as cart-recovery-cron.ts. */
 export async function startCourierStatusCron() {
-  const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
+  const queue = createQueue(QUEUE_NAME);
 
   createObservedWorker(
     QUEUE_NAME,

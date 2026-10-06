@@ -8,7 +8,7 @@ import {
   type Product,
   type StoreSettings,
 } from "@clothing-brand/shared";
-import { resolveImageUrl } from "./image-url";
+import { absoluteMediaUrl } from "./runtime-config";
 import { postalAddressJsonLd } from "./store-identity";
 import { stripHtml } from "./format";
 import { productDisplayPrice } from "./pricing-display";
@@ -66,7 +66,7 @@ export function buildProductJsonLd(product: Product, siteUrl: string, settings: 
     "@type": "Product",
     name: product.name,
     description: product.shortDescription || stripHtml(product.description) || undefined,
-    image: product.images.map((img) => resolveImageUrl(img.url)),
+    image: product.images.map((img) => absoluteMediaUrl(img.url)!),
     brand: { "@type": "Brand", name: settings.storeName },
     sku: product.variants[0]?.sku,
     offers: {
@@ -161,7 +161,7 @@ export function buildOrganizationJsonLd(settings: StoreSettings, siteUrl: string
     name: settings.storeName,
     ...(settings.legalName ? { legalName: settings.legalName } : {}),
     url: siteUrl,
-    logo: settings.logoUrl || undefined,
+    logo: absoluteMediaUrl(settings.logoUrl) || undefined,
     ...(postalAddressJsonLd(settings) ? { address: postalAddressJsonLd(settings) } : {}),
     ...(hasContact
       ? {

@@ -53,6 +53,9 @@ export * from "./engines";
 export * from "./metrics";
 export * from "./meta";
 export * from "./format";
+export * from "./installation";
+export * from "./media";
+export * from "./runtime-config";
 
 export * from "./types";
 export * from "./permissions";

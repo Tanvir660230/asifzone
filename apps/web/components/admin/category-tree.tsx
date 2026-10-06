@@ -26,6 +26,7 @@ import type { Category, CategoryStockStat } from "@clothing-brand/shared";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { resolveImageUrl } from "@/lib/image-url";
 
 type ByParent = Map<string | null, Category[]>;
 
@@ -260,7 +261,7 @@ function CategoryNode({
         >
           {category.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={category.imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={resolveImageUrl(category.imageUrl)} alt="" className="h-full w-full object-cover" />
           ) : (
             <ImageIcon size={isMain ? 18 : 14} className="text-ink-300" />
           )}

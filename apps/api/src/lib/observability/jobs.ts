@@ -7,6 +7,7 @@ import { Worker, type Job, type WorkerOptions } from "bullmq";
 import { acceptCorrelationId, runWithContext } from "./context";
 import { captureError } from "./error-capture";
 import { logger } from "./logger";
+import { namespace } from "../../config/installation";
 
 export function jobContextId(job: Pick<Job, "data">): string {
   return acceptCorrelationId((job.data as { correlationId?: unknown } | undefined)?.correlationId);
@@ -29,7 +30,8 @@ export function observeJob<T>(queueName: string, processor: (job: Job) => Promis
 }
 
 export function createObservedWorker<T = unknown>(queueName: string, processor: (job: Job) => Promise<T>, opts: WorkerOptions): Worker {
-  const worker = new Worker(queueName, observeJob(queueName, processor), opts);
+  // Same prefix as lib/queue.ts createQueue (taken from the installation directly so importing this file opens no connection).
+  const worker = new Worker(queueName, observeJob(queueName, processor), { ...opts, prefix: namespace.queuePrefix });
   worker.on("error", (err) => captureError(err, { queue: queueName, scope: "worker" }));
   return worker;
 }

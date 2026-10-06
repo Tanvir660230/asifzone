@@ -18,6 +18,7 @@ import { toast } from "@/components/ui/toast";
 import * as paymentMethodsApi from "@/lib/api/payment-methods";
 import * as settingsApi from "@/lib/api/settings";
 import { ApiError } from "@/lib/api-client";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const QUERY_KEY = ["admin-payment-methods"];
 const SETTINGS_QUERY_KEY = ["settings"];
@@ -168,7 +169,7 @@ export default function PaymentMethodsPage() {
           {combinedImageUrl ? (
             <div className="relative flex h-16 w-56 items-center justify-center rounded-lg border border-ink-200 bg-white p-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={combinedImageUrl} alt="" className="h-full w-full object-contain" />
+              <img src={resolveImageUrl(combinedImageUrl)} alt="" className="h-full w-full object-contain" />
               <button
                 type="button"
                 onClick={handleRemoveCombinedImage}
@@ -221,7 +222,7 @@ export default function PaymentMethodsPage() {
                 <span className="flex h-9 w-14 shrink-0 items-center justify-center rounded border border-ink-200 bg-white">
                   {method.logoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={method.logoUrl} alt="" className="h-full w-full object-contain p-1" />
+                    <img src={resolveImageUrl(method.logoUrl)} alt="" className="h-full w-full object-contain p-1" />
                   ) : (
                     <CreditCard size={16} className="text-ink-300" />
                   )}
@@ -285,7 +286,7 @@ export default function PaymentMethodsPage() {
             {logoUrl ? (
               <div className="relative mt-1 flex h-16 w-28 items-center justify-center rounded-lg border border-ink-100 bg-white p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+                <img src={resolveImageUrl(logoUrl)} alt="" className="h-full w-full object-contain" />
                 <button
                   type="button"
                   onClick={() => setValue("logoUrl", null, { shouldValidate: true })}

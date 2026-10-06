@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { StoreLogoImage } from "@/components/store-logo-image";
+import { resolveImageUrl } from "@/lib/image-url";
 
 // Session-aware pages, must always be live — never cached or statically served.
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function AccountAuthLayout({ children }: { children: ReactN
       >
         {settings.logoUrl ? (
           <StoreLogoImage
-            src={settings.logoUrl}
+            src={resolveImageUrl(settings.logoUrl)}
             alt={settings.storeName}
             className="h-10 w-36 object-contain"
             fallback={

@@ -1,7 +1,6 @@
 import { cleanupExpiredCustomerSessions } from "../modules/customers/customer-sessions";
 import { createObservedWorker } from "../lib/observability/jobs";
-import { Queue } from "bullmq";
-import { queueConnection } from "../lib/queue";
+import { createQueue, queueConnection } from "../lib/queue";
 import { cleanupOutbox, dispatchOutbox, markDispatcherHeartbeat, processOutboxEvent, reapStaleClaims } from "../domain/outbox/processor";
 import { logger } from "../lib/observability/logger";
 
@@ -15,7 +14,7 @@ import { logger } from "../lib/observability/logger";
 export const OUTBOX_QUEUE = "outbox";
 
 export async function startOutboxWorker() {
-  const queue = new Queue(OUTBOX_QUEUE, { connection: queueConnection });
+  const queue = createQueue(OUTBOX_QUEUE);
   const enqueue = async ({ eventId, jobId }: { eventId: string; jobId: string }) => {
     await queue.add("deliver", { eventId }, { jobId, attempts: 1, removeOnComplete: true, removeOnFail: { age: 7 * 24 * 60 * 60 } });
   };

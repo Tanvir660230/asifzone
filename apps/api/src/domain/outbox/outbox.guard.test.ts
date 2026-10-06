@@ -57,7 +57,7 @@ describe("outbox — architecture guards", () => {
   });
 
   it("no new direct queue publishing outside jobs/ (existing campaign enqueue is the one documented exception)", () => {
-    const offenders = ALL.filter((f) => !rel(f).startsWith("jobs/") && /\.add\(\s*["']\w+["']\s*,/.test(code(f)) && /new Queue\(/.test(code(f))).map(rel);
+    const offenders = ALL.filter((f) => !rel(f).startsWith("jobs/") && /\.add\(\s*["']\w+["']\s*,/.test(code(f)) && /new Queue\(|createQueue\(/.test(code(f))).map(rel);
     expect(offenders).toEqual(["modules/campaigns/campaign.service.ts"]);
   });
 

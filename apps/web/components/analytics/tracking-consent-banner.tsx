@@ -21,14 +21,14 @@ export function TrackingConsentBanner() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!trackingConfigured) return;
+    if (!trackingConfigured()) return;
     if (getAdTrackingConsent() === null) setOpen(true);
     const reopen = () => setOpen(true);
     window.addEventListener(OPEN_CONSENT_PREFERENCES_EVENT, reopen);
     return () => window.removeEventListener(OPEN_CONSENT_PREFERENCES_EVENT, reopen);
   }, []);
 
-  if (!open || !trackingConfigured || isPixelExcludedPath(pathname)) return null;
+  if (!open || !trackingConfigured() || isPixelExcludedPath(pathname)) return null;
 
   const choose = (decision: AdTrackingConsent) => {
     setOpen(false);

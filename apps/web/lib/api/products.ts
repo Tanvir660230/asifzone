@@ -10,7 +10,7 @@ import type {
   ProductImportResult,
 } from "@clothing-brand/shared";
 import { apiFetch, apiUploadWithProgress } from "../api-client";
-import { env } from "../env";
+import { apiBaseUrl } from "../runtime-config";
 
 export interface ProductListParams {
   page?: number;
@@ -93,16 +93,16 @@ export function bulkUpdateProductCategory(ids: string[], categoryId: string) {
 /** CSV export needs the browser's cookie jar for admin auth but isn't JSON, so it bypasses apiFetch —
  * a plain same-tab navigation lets the browser handle the file download via Content-Disposition. */
 export function downloadProductsCsvUrl() {
-  return `${env.apiUrl}/api/products/export/csv`;
+  return `${apiBaseUrl()}/api/products/export/csv`;
 }
 
 /** The importable format (one row per variant) — a plain navigation, like the summary export above. */
 export function exportFullCsvUrl(typeId?: string) {
-  return `${env.apiUrl}/api/products/export/full${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
+  return `${apiBaseUrl()}/api/products/export/full${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
 }
 
 export function importTemplateUrl(typeId?: string) {
-  return `${env.apiUrl}/api/products/import/template${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
+  return `${apiBaseUrl()}/api/products/import/template${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
 }
 
 /** A draft copy of a product; the input says what to bring along. */

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { StoreLogoImage } from "@/components/store-logo-image";
+import { resolveImageUrl } from "@/lib/image-url";
 
 // Session-aware pages, must always be live — never cached or statically served.
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export default async function AdminAuthLayout({ children }: { children: ReactNod
       <Link href="/" aria-label={`${settings.storeName} home`} className="mb-8 flex items-center">
         {logoUrl ? (
           <StoreLogoImage
-            src={logoUrl}
+            src={resolveImageUrl(logoUrl)}
             alt={settings.storeName}
             className="h-10 w-36 object-contain"
             fallback={

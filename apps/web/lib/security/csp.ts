@@ -21,7 +21,7 @@
  */
 export interface CspOptions {
   nonce: string;
-  /** NEXT_PUBLIC_API_URL's origin — the same origin in production (nginx), :4000 locally. */
+  /** The public API URL's origin (runtime configuration) — the same origin in production (nginx), :4000 locally. */
   apiOrigin: string;
   isDev: boolean;
 }

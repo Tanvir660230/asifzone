@@ -18,7 +18,8 @@ ENV_FILE="${ENV_FILE:-docker/.env}"
 # Phase 12 (W10): per-store values come from docker/.env (a shell env var wins). POSTGRES_DB defaults to the original name.
 env_value() { local v="${!1:-}"; [ -n "$v" ] || v="$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)"; printf '%s' "$v"; }
 POSTGRES_DB="$(env_value POSTGRES_DB)"; POSTGRES_DB="${POSTGRES_DB:-clothing_brand}"
-REQUIRED_STORE_VARS="${REQUIRED_STORE_VARS:-SERVER_NAME SERVER_ALIASES CERT_NAME GDRIVE_REMOTE}"
+# Phase 1: INSTALL_ID names this installation (Redis/queue namespace, cache tags) — required like the host names.
+REQUIRED_STORE_VARS="${REQUIRED_STORE_VARS:-INSTALL_ID SERVER_NAME SERVER_ALIASES CERT_NAME GDRIVE_REMOTE}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/backups/predeploy}"
 READY_TIMEOUT="${READY_TIMEOUT:-120}"
 READY_POLL="${READY_POLL:-3}"

@@ -40,6 +40,7 @@ import { Prisma } from "@prisma/client";
 import { prisma, type AppTransactionClient, type Db } from "../../config/prisma";
 import { captureLineSnapshots, lineSnapshotData } from "../../domain/orders/line-snapshots";
 import { redis } from "../../config/redis";
+import { namespace } from "../../config/installation";
 import { AppError } from "../../lib/app-error";
 import { generateOrderNumber } from "../../lib/order-number";
 import { paginate } from "../../lib/paginate";
@@ -483,7 +484,7 @@ export async function createOrder(
 
   const pricing = await deriveOrderPricing(input, customerId);
 
-  const lockKey = key ? `order-idem-lock:${key}` : input.sessionId ? `order-create-lock:${input.sessionId}` : null;
+  const lockKey = key ? namespace.lock(`order-idem:${key}`) : input.sessionId ? namespace.lock(`order-create:${input.sessionId}`) : null;
   const findDuplicate = () =>
     key
       ? prisma.order.findUnique({ where: { idempotencyKey: key }, include })
@@ -696,7 +697,7 @@ export async function retryPayment(orderNumber: string, phone: string, ipAddress
   // best-effort Redis lock pattern as createOrder's duplicate-submit guard, just order-scoped
   // instead of storefront-sessionId-scoped (retry has no client-generated sessionId to key off).
   // The DB-level one-ACTIVE-session-per-order partial unique index is the real backstop either way.
-  const lockKey = `payment-retry-lock:${order.id}`;
+  const lockKey = namespace.lock(`payment-retry:${order.id}`);
   const acquired = await redis.set(lockKey, "1", "PX", 10_000, "NX").catch(() => "OK");
   if (!acquired) throw AppError.conflict("A payment attempt is already in progress for this order");
 

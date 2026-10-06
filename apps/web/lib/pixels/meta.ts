@@ -1,4 +1,5 @@
 import type { PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
+import { publicRuntimeConfig } from "../runtime-config";
 
 /** The one module that talks to the Meta Pixel — it only translates the neutral events lib/pixels/index.ts dispatches
  * into `fbq` calls; when an event fires (and whether it's a repeat) is decided there, once, for every platform.
@@ -10,10 +11,11 @@ import type { PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from
  * is viewed before any variant is picked. A future Meta catalog feed should therefore use variant id as `id` and product
  * id as `item_group_id`.
  *
- * Inert (every call a no-op) until NEXT_PUBLIC_META_PIXEL_ID is set at build time — only the production build gets it,
+ * Inert (every call a no-op) until this installation's META_PIXEL_ID is set (runtime configuration) — only the production build gets it,
  * so dev/CI traffic never reaches the real pixel. */
 
-const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID ?? "";
+/** This installation's Meta Pixel id — runtime configuration (Phase 1A), read when used. */
+const pixelId = () => publicRuntimeConfig().metaPixelId;
 
 type Fbq = ((...args: unknown[]) => void) & {
   callMethod?: (...args: unknown[]) => void;
@@ -37,7 +39,7 @@ let initialized = false;
  * lost. The base code's own PageView is deliberately not fired here — every PageView comes from <AdPixels />, which is
  * what keeps the first load from counting twice. */
 function ensureInitialized(): boolean {
-  if (!PIXEL_ID || typeof window === "undefined") return false;
+  if (!pixelId() || typeof window === "undefined") return false;
   if (initialized) return true;
   initialized = true;
 
@@ -59,7 +61,7 @@ function ensureInitialized(): boolean {
     document.head.appendChild(script);
   }
 
-  window.fbq!("init", PIXEL_ID);
+  window.fbq!("init", pixelId());
   return true;
 }
 
@@ -108,7 +110,9 @@ function toMeta(event: PixelEvent, ctx: PixelEventContext): [string, Record<stri
 
 export const metaPixel: PixelProvider = {
   name: "meta",
-  enabled: Boolean(PIXEL_ID),
+  get enabled() {
+    return Boolean(pixelId());
+  },
   send(event, ctx) {
     if (!ensureInitialized()) return;
     const [name, params] = toMeta(event, ctx);

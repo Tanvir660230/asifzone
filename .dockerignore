@@ -1,0 +1,21 @@
+# Build context for apps/api/Dockerfile and apps/web/Dockerfile (both build from the repo root). The images install their
+# own dependencies and build their own output; installation config and secrets are runtime inputs, never image content.
+.git
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/test-results
+**/playwright-report
+**/e2e-artifacts
+**/*.tsbuildinfo
+# Secrets and per-installation config (docker/.env, apps/*/.env, .env.test …) — templates stay.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.test.example
+# Runtime data (the uploads volume, media-normalization backups, local dev mail) — exact paths: apps/api/src/modules/uploads
+# is code and must stay in the context.
+apps/api/uploads
+apps/api/backups
+apps/api/.devmail

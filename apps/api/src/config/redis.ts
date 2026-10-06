@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import { env } from "./env";
+import { namespace } from "./installation";
 import { logger } from "../lib/observability/logger";
 
 export const redis = new Redis(env.redisUrl, {
@@ -23,9 +24,12 @@ redis.on("connect", () => {
   loggedConnectionError = false;
 });
 
+// Phase 1C: every cache entry lives under this installation's namespace (`install:<id>:cache:<key>`), so installations
+// sharing one Redis server never read, overwrite or bust each other's entries. Callers keep passing their logical keys.
+
 export async function cacheGet<T>(key: string): Promise<T | null> {
   try {
-    const raw = await redis.get(key);
+    const raw = await redis.get(namespace.cache(key));
     return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
@@ -34,7 +38,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
 
 export async function cacheSet(key: string, value: unknown, ttlSeconds = 300): Promise<void> {
   try {
-    await redis.set(key, JSON.stringify(value), "EX", ttlSeconds);
+    await redis.set(namespace.cache(key), JSON.stringify(value), "EX", ttlSeconds);
   } catch {
     // cache is best-effort; failures should never break a request
   }
@@ -43,7 +47,7 @@ export async function cacheSet(key: string, value: unknown, ttlSeconds = 300): P
 export async function cacheDel(...keys: string[]): Promise<void> {
   if (!keys.length) return;
   try {
-    await redis.del(...keys);
+    await redis.del(...keys.map(namespace.cache));
   } catch {
     // best-effort
   }
@@ -57,7 +61,7 @@ export async function cacheDelByPrefix(prefix: string): Promise<void> {
   try {
     let cursor = "0";
     do {
-      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `${prefix}*`, "COUNT", 100);
+      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", `${namespace.cache(prefix)}*`, "COUNT", 100);
       cursor = nextCursor;
       if (keys.length) await redis.del(...keys);
     } while (cursor !== "0");

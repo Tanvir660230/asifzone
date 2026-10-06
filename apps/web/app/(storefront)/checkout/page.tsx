@@ -40,6 +40,7 @@ import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const checkoutFormSchema = checkoutSchema.omit({ items: true, couponCode: true });
 type CheckoutFormValues = ReturnType<typeof checkoutFormSchema.parse>;
@@ -703,7 +704,7 @@ function CheckoutForm() {
                 {settingsData?.settings.paymentMethodsImageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={settingsData.settings.paymentMethodsImageUrl}
+                    src={resolveImageUrl(settingsData.settings.paymentMethodsImageUrl)}
                     alt="Accepted payment methods"
                     className="h-auto w-full max-w-[220px] rounded-lg object-contain"
                   />
@@ -714,7 +715,7 @@ function CheckoutForm() {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           key={method.id}
-                          src={method.logoUrl}
+                          src={resolveImageUrl(method.logoUrl)}
                           alt={method.name}
                           title={method.name}
                           className="h-6 w-auto object-contain"

@@ -1,6 +1,5 @@
 import { createObservedWorker } from "../lib/observability/jobs";
-import { Queue } from "bullmq";
-import { queueConnection } from "../lib/queue";
+import { createQueue, queueConnection } from "../lib/queue";
 import { expireStalePaymentSessions, reconcileStuckEpsSessions } from "../modules/payments/payment.service";
 import { logger } from "../lib/observability/logger";
 
@@ -17,7 +16,7 @@ const QUEUE_NAME = "payment-reconciliation";
  *     the one-ACTIVE-session-per-order index would permanently block retry.
  * Same pattern as courier-status-cron.ts. */
 export async function startPaymentReconciliationCron() {
-  const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
+  const queue = createQueue(QUEUE_NAME);
 
   createObservedWorker(
     QUEUE_NAME,

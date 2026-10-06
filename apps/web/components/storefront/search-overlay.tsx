@@ -14,6 +14,7 @@ import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useSearchOverlayStore } from "@/store/search-overlay";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { resolveImageUrl } from "@/lib/image-url";
 
 interface SpeechRecognitionResultEvent {
   results: { [index: number]: { [index: number]: { transcript: string } } };
@@ -501,7 +502,7 @@ export function SearchSuggestionProductContent({ product, highlighted }: { produ
     <>
       {product.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- small suggestion thumbnail, not worth next/image here
-        <img src={product.imageUrl} alt={product.name} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+        <img src={resolveImageUrl(product.imageUrl)} alt={product.name} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
       ) : (
         <div className="h-12 w-12 shrink-0 rounded-lg bg-ink-100" />
       )}

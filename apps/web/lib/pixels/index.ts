@@ -23,7 +23,9 @@ const PROVIDERS: PixelProvider[] = [metaPixel, tiktokPixel];
 
 /** Whether this build has any third-party tracker at all (an ad pixel id or Clarity) — when none is configured there is
  * nothing to consent to, so the consent banner and its footer link stay hidden. */
-export const trackingConfigured = PROVIDERS.some((p) => p.enabled) || clarityConfigured;
+export function trackingConfigured(): boolean {
+  return PROVIDERS.some((p) => p.enabled) || clarityConfigured();
+}
 
 /** Admin screens, the admin's draft-product previews and the product wizard's embedded preview frame — never a shopper,
  * so nothing there is ever reported (same exclusions PageViewTracker uses for first-party analytics). */

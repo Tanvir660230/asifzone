@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uploadCategoryImage, uploadCategoryBannerImage } from "@/lib/api/categories";
 import { ApiError } from "@/lib/api-client";
+import { resolveImageUrl } from "@/lib/image-url";
 
 interface CategoryFormProps {
   categories: Category[];
@@ -140,7 +141,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
         {imageUrl ? (
           <div className="relative mt-1 h-28 w-full overflow-hidden rounded-lg border border-ink-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={resolveImageUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
             <button
               type="button"
               onClick={() => setValue("imageUrl", "", { shouldValidate: true })}
@@ -182,7 +183,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
         {bannerImageUrl ? (
           <div className="relative mt-1 h-20 w-full overflow-hidden rounded-lg border border-ink-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={bannerImageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={resolveImageUrl(bannerImageUrl)} alt="" className="h-full w-full object-cover" />
             <button
               type="button"
               onClick={() => setValue("bannerImageUrl", "", { shouldValidate: true })}

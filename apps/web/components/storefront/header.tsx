@@ -8,6 +8,7 @@ import { MobileNav } from "./mobile-nav";
 import { CartIcon } from "./cart-icon";
 import { SearchTriggerButton } from "./search-trigger-button";
 import { StickySearchBar } from "./sticky-search-bar";
+import { resolveImageUrl } from "@/lib/image-url";
 
 interface HeaderProps {
   categories: CategoryTreeNode[];
@@ -37,7 +38,7 @@ export function Header({ categories, settings }: HeaderProps) {
   );
   const logo = settings.logoUrl ? (
     <StoreLogoImage
-      src={settings.logoUrl}
+      src={resolveImageUrl(settings.logoUrl)}
       alt={settings.storeName}
       className="h-9 w-36 object-contain"
       fallback={monogram}

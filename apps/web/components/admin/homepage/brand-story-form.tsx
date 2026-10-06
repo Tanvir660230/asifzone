@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import * as homepageSectionsApi from "@/lib/api/admin-homepage-sections";
 import { ApiError } from "@/lib/api-client";
 import { useFormPreviewSync } from "@/hooks/use-form-preview-sync";
+import { resolveImageUrl } from "@/lib/image-url";
 
 interface FormProps {
   initialConfig: Record<string, unknown>;
@@ -70,7 +71,7 @@ export function BrandStoryForm({ initialConfig, onSubmit, onCancel, onValuesChan
         {imageUrl ? (
           <div className="relative mt-1 h-32 w-full overflow-hidden rounded-lg border border-ink-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={resolveImageUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
             <button
               type="button"
               onClick={() => setValue("imageUrl", "", { shouldValidate: true })}

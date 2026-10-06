@@ -12,6 +12,7 @@ import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { SOCIAL_PLATFORM_META, SocialIcon } from "@/components/social-icon";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { NewsletterForm } from "./newsletter-form";
+import { resolveImageUrl } from "@/lib/image-url";
 
 
 interface FooterProps {
@@ -82,7 +83,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         <div className="grid grid-cols-1 items-start gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             {darkBgLogoUrl ? (
-              <StoreLogoImage src={darkBgLogoUrl} alt={settings.storeName} className="h-8 w-32 object-contain object-left" fallback={wordmark} />
+              <StoreLogoImage src={resolveImageUrl(darkBgLogoUrl)} alt={settings.storeName} className="h-8 w-32 object-contain object-left" fallback={wordmark} />
             ) : (
               wordmark
             )}
@@ -223,7 +224,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         <div className="mt-14 flex flex-col items-center border-t border-cream-50/10 pt-12 text-center sm:pt-14">
           {darkBgLogoUrl ? (
             <StoreLogoImage
-              src={darkBgLogoUrl}
+              src={resolveImageUrl(darkBgLogoUrl)}
               alt={settings.storeName}
               className="h-16 w-64 object-contain sm:h-24 sm:w-96"
               fallback={<span className="font-display text-4xl tracking-wide text-cream-50 sm:text-5xl">{settings.storeName}</span>}
@@ -249,7 +250,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             // want to manage individual PaymentMethodOption entries.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={settings.paymentMethodsImageUrl}
+              src={resolveImageUrl(settings.paymentMethodsImageUrl)}
               alt="Accepted payment methods"
               className="h-auto w-full max-w-[260px] rounded-lg object-contain sm:max-w-[320px] md:max-w-[380px]"
             />
@@ -259,7 +260,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                 ? paymentMethods.map((method) =>
                     method.logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img key={method.id} src={method.logoUrl} alt={method.name} title={method.name} className="h-8 w-auto object-contain" />
+                      <img key={method.id} src={resolveImageUrl(method.logoUrl)} alt={method.name} title={method.name} className="h-8 w-auto object-contain" />
                     ) : (
                       <span key={method.id} className="text-[11px] uppercase tracking-wide text-ink-400">
                         {method.name}
@@ -290,7 +291,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             <Link href="/shipping-returns" className="hover:text-brass-400">
               Refund Policy
             </Link>
-            {trackingConfigured && (
+            {trackingConfigured() && (
               <>
                 <span className="text-ink-700">·</span>
                 <button type="button" onClick={openTrackingPreferences} className="hover:text-brass-400">

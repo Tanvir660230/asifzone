@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import * as bannersApi from "@/lib/api/admin-banners";
 import { ApiError } from "@/lib/api-client";
 import { toDatetimeLocalValue } from "@/lib/datetime-local";
+import { resolveImageUrl } from "@/lib/image-url";
 
 interface BannerFormProps {
   banner?: Banner | null;
@@ -100,7 +101,7 @@ export function BannerForm({ banner, submitLabel, onSubmit, onCancel }: BannerFo
         {imageUrl ? (
           <div className="relative mt-1 h-32 w-full overflow-hidden rounded-lg border border-ink-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={resolveImageUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
             <button
               type="button"
               onClick={() => setValue("imageUrl", "", { shouldValidate: true })}
@@ -141,7 +142,7 @@ export function BannerForm({ banner, submitLabel, onSubmit, onCancel }: BannerFo
         {mobileImageUrl ? (
           <div className="relative mt-1 h-32 w-24 overflow-hidden rounded-lg border border-ink-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={mobileImageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={resolveImageUrl(mobileImageUrl)} alt="" className="h-full w-full object-cover" />
             <button
               type="button"
               onClick={() => setValue("mobileImageUrl", "", { shouldValidate: true })}

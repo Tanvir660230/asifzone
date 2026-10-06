@@ -7,6 +7,7 @@ import { Pause, Play } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Banner } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const AUTO_ADVANCE_MS = 6000;
 
@@ -72,7 +73,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
             {banner.mobileImageUrl ? (
               <>
                 <Image
-                  src={banner.mobileImageUrl}
+                  src={resolveImageUrl(banner.mobileImageUrl)}
                   alt={altText}
                   fill
                   priority={index === 0}
@@ -80,7 +81,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
                   className="object-cover lg:hidden"
                 />
                 <Image
-                  src={banner.imageUrl}
+                  src={resolveImageUrl(banner.imageUrl)}
                   alt={altText}
                   fill
                   priority={index === 0}
@@ -90,7 +91,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
               </>
             ) : (
               <Image
-                src={banner.imageUrl}
+                src={resolveImageUrl(banner.imageUrl)}
                 alt={altText}
                 fill
                 priority={index === 0}

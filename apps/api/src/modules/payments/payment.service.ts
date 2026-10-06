@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import type { CheckoutInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { redis } from "../../config/redis";
+import { namespace } from "../../config/installation";
 import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
 import { recordOutboxEvents } from "../../domain/outbox/outbox";
@@ -189,7 +190,7 @@ export async function initiatePendingPayment(
   // "Place Order" before the first request's response comes back would otherwise open two live
   // gateway sessions for the same cart. Scoped to still-pre-order (orderId: null) ACTIVE sessions
   // since there's no Order to dedupe against yet.
-  const sessionLockKey = input.sessionId ? `payment-init-lock:${input.sessionId}` : null;
+  const sessionLockKey = input.sessionId ? namespace.lock(`payment-init:${input.sessionId}`) : null;
   const findDuplicateSession = () =>
     prisma.paymentSession.findFirst({
       where: {

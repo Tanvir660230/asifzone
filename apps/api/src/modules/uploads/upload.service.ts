@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs/promises";
 import sharp from "sharp";
+import { mediaReference } from "@clothing-brand/shared";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 
@@ -35,7 +36,9 @@ async function assertValidImage(buffer: Buffer): Promise<void> {
   }
 }
 
-/** Resizes an uploaded image buffer into thumb/card/full WebP variants and returns the public URL for the "full" size (others are used by the frontend's responsive srcset). Returned as an absolute same-origin URL, matching processSiteImage, so it stays eligible for next/image regardless of where it's rendered from. */
+/** Resizes an uploaded image buffer into thumb/card/full WebP variants and returns the stored media reference of the "full"
+ * size (`/uploads/products/<id>-full.webp`; others are used by the frontend's responsive srcset). Domain-free (Phase 1B):
+ * the same row renders on any domain or installation — @clothing-brand/shared resolveMediaUrl turns it into a URL. */
 export async function processProductImage(buffer: Buffer, originalName: string): Promise<ProcessedImage> {
   await assertValidImage(buffer);
   const id = randomUUID();
@@ -53,7 +56,7 @@ export async function processProductImage(buffer: Buffer, originalName: string):
   );
   const full = written.find(([label]) => label === "full")![1];
   return {
-    url: `${env.apiOrigin}/uploads/products/${id}-full.webp`,
+    url: mediaReference(`products/${id}-full.webp`),
     altText: originalName,
     width: full.width,
     height: full.height,
@@ -101,7 +104,7 @@ export async function copyProductImageFiles(fullUrl: string): Promise<ImageFileC
     await Promise.all(labels.map((label) => fs.unlink(path.join(dir, `${id}-${label}.webp`)).catch(() => undefined)));
     return { kind: "missing" };
   }
-  return { kind: "copied", url: `${env.apiOrigin}/uploads/products/${id}-full.webp` };
+  return { kind: "copied", url: mediaReference(`products/${id}-full.webp`) };
 }
 
 /** Deletes a single-file site image (logo/favicon/payment-methods/banner/category) previously
@@ -128,7 +131,8 @@ export async function deleteSiteImageFile(url: string): Promise<void> {
   });
 }
 
-/** Shared by banner/category uploads: a single resized WebP under `uploads/<folder>`, returned as an absolute same-origin URL so it stays eligible for next/image (unlike a free-typed external URL). */
+/** Shared by banner/category uploads: a single resized WebP under `uploads/<folder>`, returned as its domain-free media
+ * reference (`/uploads/<folder>/<id>.webp`, Phase 1B). */
 async function processSiteImage(buffer: Buffer, folder: string, width: number): Promise<string> {
   await assertValidImage(buffer);
   const id = randomUUID();
@@ -138,7 +142,7 @@ async function processSiteImage(buffer: Buffer, folder: string, width: number): 
   const filePath = path.join(dir, `${id}.webp`);
   await sharp(buffer).resize({ width, withoutEnlargement: true }).webp({ quality: 82 }).toFile(filePath);
 
-  return `${env.apiOrigin}/uploads/${folder}/${id}.webp`;
+  return mediaReference(`${folder}/${id}.webp`);
 }
 
 export const processLogoImage = (buffer: Buffer) => processSiteImage(buffer, "branding", 600);
@@ -156,7 +160,7 @@ export async function processFaviconImage(buffer: Buffer): Promise<string> {
     .png()
     .toFile(filePath);
 
-  return `${env.apiOrigin}/uploads/branding/${id}-favicon.png`;
+  return mediaReference(`branding/${id}-favicon.png`);
 }
 export const processBannerImage = (buffer: Buffer) => processSiteImage(buffer, "banners", 1920);
 /** PROMO_BANNER homepage-section images — same treatment as a banner, kept in its own folder since

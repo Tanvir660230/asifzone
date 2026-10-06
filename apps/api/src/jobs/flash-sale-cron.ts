@@ -1,6 +1,5 @@
 import { createObservedWorker } from "../lib/observability/jobs";
-import { Queue } from "bullmq";
-import { queueConnection } from "../lib/queue";
+import { createQueue, queueConnection } from "../lib/queue";
 import { syncFlashSaleActivation } from "../modules/flash-sales/flash-sale.service";
 import { rebuildAllReadModels } from "../domain/storefront/read-model.service";
 import { logger } from "../lib/observability/logger";
@@ -10,7 +9,7 @@ const QUEUE_NAME = "flash-sale-activation";
 /** Runs every minute via a BullMQ repeatable job so a scheduled flash sale goes live/ends on time
  * without a manual admin toggle or a redeploy. */
 export async function startFlashSaleCron() {
-  const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
+  const queue = createQueue(QUEUE_NAME);
 
   createObservedWorker(
     QUEUE_NAME,

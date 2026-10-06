@@ -14,27 +14,9 @@ FROM deps AS build
 COPY packages packages
 COPY apps/web apps/web
 RUN pnpm --filter @clothing-brand/shared build
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-# Baked in at build time — canonical URLs, og:url, sitemap.xml, and robots.txt all derive from
-# this (see lib/seo.ts's getSiteUrl()); it must be the real public domain, never left unset.
-ARG NEXT_PUBLIC_SITE_URL
-ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
-# All optional — each feature (heatmap, live chat) stays inert until its vars are set.
-ARG NEXT_PUBLIC_CLARITY_ID
-ENV NEXT_PUBLIC_CLARITY_ID=$NEXT_PUBLIC_CLARITY_ID
-ARG NEXT_PUBLIC_META_PIXEL_ID
-ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
-ARG NEXT_PUBLIC_TIKTOK_PIXEL_ID
-ENV NEXT_PUBLIC_TIKTOK_PIXEL_ID=$NEXT_PUBLIC_TIKTOK_PIXEL_ID
-ARG NEXT_PUBLIC_TAWKTO_PROPERTY_ID
-ENV NEXT_PUBLIC_TAWKTO_PROPERTY_ID=$NEXT_PUBLIC_TAWKTO_PROPERTY_ID
-ARG NEXT_PUBLIC_TAWKTO_WIDGET_ID
-ENV NEXT_PUBLIC_TAWKTO_WIDGET_ID=$NEXT_PUBLIC_TAWKTO_WIDGET_ID
-ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
-ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
-ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
-ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
+# Phase 1A: no build arguments — the image carries no installation configuration. Site URL, API URL, media base, pixel
+# ids, Google client id and the VAPID public key are read at runtime (apps/web/lib/runtime-config.ts), so one image is
+# deployed unchanged to every installation.
 RUN pnpm --filter web build
 
 FROM base AS runner

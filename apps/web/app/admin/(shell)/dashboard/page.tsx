@@ -52,6 +52,7 @@ import * as categoriesApi from "@/lib/api/categories";
 import { computeTrendPct, formatPrice, formatStoreDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 
 type AnalyticsTab = "sales" | "catalog" | "marketing" | "customers";
 
@@ -232,7 +233,7 @@ export default function DashboardPage() {
     enabled: tab === "customers",
   });
 
-  const heatmapEnabled = Boolean(process.env.NEXT_PUBLIC_CLARITY_ID);
+  const heatmapEnabled = Boolean(publicRuntimeConfig().clarityId);
 
   return (
     <div className="space-y-8">
@@ -776,7 +777,7 @@ export default function DashboardPage() {
           ) : (
             <span>
               Heatmap tracking is wired up but not turned on — set{" "}
-              <code className="rounded bg-ink-100 px-1 py-0.5 text-xs">NEXT_PUBLIC_CLARITY_ID</code> (a free{" "}
+              <code className="rounded bg-ink-100 px-1 py-0.5 text-xs">CLARITY_ID</code> (a free{" "}
               <a href="https://clarity.microsoft.com" target="_blank" rel="noreferrer" className="underline">
                 Microsoft Clarity
               </a>{" "}

@@ -1,6 +1,5 @@
 import { createObservedWorker } from "../lib/observability/jobs";
-import { Queue } from "bullmq";
-import { queueConnection } from "../lib/queue";
+import { createQueue, queueConnection } from "../lib/queue";
 import { logger } from "../lib/observability/logger";
 import { purgeExpiredTrash } from "../modules/storage/storage.service";
 
@@ -9,7 +8,7 @@ const QUEUE_NAME = "storage-trash-purge";
 /** Daily: permanently deletes upload trash batches past their retention (see storage.service.ts).
  * Same BullMQ repeatable-job pattern as courier-status-cron.ts. */
 export async function startStorageTrashCron() {
-  const queue = new Queue(QUEUE_NAME, { connection: queueConnection });
+  const queue = createQueue(QUEUE_NAME);
 
   createObservedWorker(
     QUEUE_NAME,

@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import type { Product } from "@clothing-brand/shared";
 import { stripHtml } from "./format";
 import { resolveImageUrl } from "./image-url";
+import { absoluteMediaUrl, siteUrl } from "./runtime-config";
 
+/** This installation's public origin — runtime configuration (Phase 1A), never a build-time value. */
 export function getSiteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  return siteUrl();
 }
 
 interface OpenGraphOptions {
@@ -18,6 +20,9 @@ interface OpenGraphOptions {
 /** Shared `openGraph`/`twitter` metadata block — every page assembles the same shape instead of
  * hand-rolling it, so link previews (Facebook/LinkedIn/Slack via OG, X via Twitter Card) stay consistent. */
 export function buildOpenGraph({ title, description, url, siteName, images }: OpenGraphOptions): Pick<Metadata, "openGraph" | "twitter"> {
+  // Link previews need absolute image URLs: stored media references resolve against this installation's media base and
+  // site URL (lib/runtime-config.ts), never the domain they were uploaded on.
+  images = images?.map((image) => absoluteMediaUrl(image) ?? image);
   const hasImage = Boolean(images && images.length > 0);
   return {
     openGraph: {

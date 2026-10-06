@@ -1,5 +1,5 @@
 import { apiFetch } from "../api-client";
-import { env } from "../env";
+import { apiBaseUrl } from "../runtime-config";
 
 export interface DashboardSummary {
   revenue30d: number;
@@ -822,13 +822,13 @@ export function getLifetimeYearlyTrend() {
 // pattern as downloadOrdersCsvUrl in admin-orders.ts)
 
 export function downloadCustomerRfmCsvUrl() {
-  return `${env.apiUrl}/api/analytics/export/customer-rfm.csv`;
+  return `${apiBaseUrl()}/api/analytics/export/customer-rfm.csv`;
 }
 
 export function downloadRevenueCsvUrl(days = 365) {
-  return `${env.apiUrl}/api/analytics/export/revenue.csv?days=${days}`;
+  return `${apiBaseUrl()}/api/analytics/export/revenue.csv?days=${days}`;
 }
 
 export function downloadInventoryTurnoverCsvUrl() {
-  return `${env.apiUrl}/api/analytics/export/inventory-turnover.csv`;
+  return `${apiBaseUrl()}/api/analytics/export/inventory-turnover.csv`;
 }

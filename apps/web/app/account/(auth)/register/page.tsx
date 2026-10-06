@@ -19,7 +19,7 @@ import { AuthModeToggle } from "@/components/account/auth-mode-toggle";
 import { registerCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
-import { env } from "@/lib/env";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 import { pixelCompleteRegistration } from "@/lib/pixels";
 
 type Mode = "email" | "phone";
@@ -89,7 +89,7 @@ export default function AccountRegisterPage() {
       <h1 className="mb-1 font-display text-2xl text-ink-900">Create an account</h1>
       <p className="mb-6 text-sm text-ink-500">Save addresses, track orders, and build a wishlist.</p>
 
-      {env.googleClientId && (
+      {publicRuntimeConfig().googleClientId && (
         <>
           <GoogleButton onCredential={onGoogleCredential} onError={setServerError} />
           <OrDivider />

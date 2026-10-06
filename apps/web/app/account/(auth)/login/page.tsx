@@ -19,7 +19,7 @@ import { AuthModeToggle } from "@/components/account/auth-mode-toggle";
 import { loginCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
-import { env } from "@/lib/env";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 
 export default function AccountLoginPage() {
   return (
@@ -86,7 +86,7 @@ function LoginForm() {
         {cameFromRedirect ? "Sign in to continue." : "Access your orders, addresses, and wishlist."}
       </p>
 
-      {env.googleClientId && (
+      {publicRuntimeConfig().googleClientId && (
         <>
           <GoogleButton onCredential={onGoogleCredential} onError={setServerError} />
           <OrDivider />

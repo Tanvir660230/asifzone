@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyDatabaseUrlPolicy, verifyDatabaseRole } from "./database-guard";
+import { DEMO_DATABASE, applyDatabaseUrlPolicy, isDemoDatabase, verifyDatabaseRole } from "./database-guard";
 
 const local = (db: string) => `postgresql://postgres@localhost:5432/${db}?schema=public`;
 
@@ -41,6 +41,21 @@ describe("applyDatabaseUrlPolicy", () => {
   });
 });
 
+describe("store-neutral demo naming (Phase 1)", () => {
+  it("recognises any installation's mirror by its suffix and names this one after INSTALL_ID", () => {
+    for (const db of ["asifzone_demo", "client_b_demo", "local_demo", "x_demo_staging"]) expect(isDemoDatabase(db)).toBe(true);
+    for (const db of ["clothing_brand", "clothing_brand_test", "demo", "demos"]) expect(isDemoDatabase(db)).toBe(false);
+    expect(DEMO_DATABASE).toBe("test_demo"); // INSTALL_ID defaults to "test" under NODE_ENV=test
+  });
+
+  it("forces live providers off for another installation's mirror too", () => {
+    const environment: Record<string, string | undefined> = {};
+    applyDatabaseUrlPolicy(local("client_b_demo"), "development", environment);
+    expect(environment.LIVE_PROVIDERS).toBe("off");
+    expect(() => applyDatabaseUrlPolicy(local("client_b_demo_staging"), "development", {})).toThrow(/half-built/);
+  });
+});
+
 describe("verifyDatabaseRole", () => {
   const client = (role: string | null, database: string) => ({
     $queryRawUnsafe: async <T>() => [{ role, database, imported_at: role === "demo" ? "2026-10-06T00:00:00Z" : null }] as T,
@@ -55,7 +70,7 @@ describe("verifyDatabaseRole", () => {
   it("refuses inconsistent or unfinished demo databases", async () => {
     await expect(verifyDatabaseRole(client("demo-staging", "asifzone_demo_staging"), "development")).rejects.toThrow(/half-built/);
     await expect(verifyDatabaseRole(client("demo", "asifzone_demo"), "production")).rejects.toThrow(/production/);
-    await expect(verifyDatabaseRole(client("demo", "renamed_copy"), "development")).rejects.toThrow(/not named asifzone_demo/);
+    await expect(verifyDatabaseRole(client("demo", "renamed_copy"), "development")).rejects.toThrow(/not named \*_demo/);
     await expect(verifyDatabaseRole(client(null, "asifzone_demo"), "development")).rejects.toThrow(/no demo marker/);
   });
 });

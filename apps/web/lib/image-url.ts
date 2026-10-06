@@ -1,10 +1,8 @@
-import { env } from "./env";
+import { mediaUrl } from "./runtime-config";
 
-/** Product image URLs used to be stored relative to the API origin; newer uploads store an
- * absolute URL directly (matching banner/category/logo images). Handles both so older rows
- * keep rendering correctly after the switch. */
+/** A stored image reference as the URL to render (Phase 1B): the domain-free `/uploads/…` reference, a bare storage key or
+ * a legacy absolute upload URL all resolve against this installation's runtime media base (@clothing-brand/shared
+ * resolveMediaUrl); `blob:`/`data:` previews (the admin wizard's staged photos) and external URLs pass through unchanged. */
 export function resolveImageUrl(url: string): string {
-  // blob:/data: are in-browser images not uploaded yet (the admin wizard's preview of staged photos) — already usable as-is.
-  if (url.startsWith("http") || url.startsWith("blob:") || url.startsWith("data:")) return url;
-  return `${env.apiUrl}${url}`;
+  return mediaUrl(url);
 }

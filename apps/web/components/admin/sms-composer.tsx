@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TemplateManagerModal } from "@/components/admin/template-manager-modal";
 import * as smsTemplatesApi from "@/lib/api/sms-templates";
 import { formatPrice, formatStoreDate } from "@/lib/format";
-import { env } from "@/lib/env";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 
 interface PreviewContext {
   name: string;
@@ -71,7 +71,7 @@ export function SmsComposer({
       lastOrder: previewContext.lastOrderAt
         ? formatStoreDate(previewContext.lastOrderAt, { year: "numeric", month: "long", day: "numeric" })
         : "no orders yet",
-      website: env.siteUrl,
+      website: publicRuntimeConfig().siteUrl,
     });
   }, [value, previewContext]);
 

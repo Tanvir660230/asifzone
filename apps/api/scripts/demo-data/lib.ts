@@ -10,13 +10,21 @@ import { existsSync, readdirSync, statSync, openSync, readSync, closeSync } from
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync, type SpawnSyncOptions } from "node:child_process";
-import { DEMO_DATABASE, DEMO_STAGING_DATABASE, isLoopbackHost, parseDatabaseTarget } from "../../src/config/database-guard";
+import {
+  DATABASE_ROLE_SETTING,
+  DEMO_DATABASE,
+  DEMO_IMPORTED_AT_SETTING,
+  DEMO_SNAPSHOT_SETTING,
+  DEMO_STAGING_DATABASE,
+  isLoopbackHost,
+  parseDatabaseTarget,
+} from "../../src/config/database-guard";
 
 export const API_DIR = resolve(__dirname, "..", "..");
 // Reads apps/api/.env without overriding anything already exported in the shell.
 config({ path: join(API_DIR, ".env") });
 
-export { DEMO_DATABASE, DEMO_STAGING_DATABASE };
+export { DATABASE_ROLE_SETTING, DEMO_DATABASE, DEMO_IMPORTED_AT_SETTING, DEMO_SNAPSHOT_SETTING, DEMO_STAGING_DATABASE };
 
 /** Raw snapshots hold unsanitized production data — kept OUTSIDE the repo (which lives in a cloud-synced folder). */
 export const SNAPSHOT_DIR = process.env.DEMO_SNAPSHOT_DIR || join(homedir(), ".asifzone-demo", "snapshots");

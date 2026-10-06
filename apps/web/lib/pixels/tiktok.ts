@@ -1,4 +1,5 @@
 import type { PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
+import { publicRuntimeConfig } from "../runtime-config";
 
 /** The one module that talks to the TikTok Pixel — it only translates the neutral events lib/pixels/index.ts dispatches
  * into `ttq` calls; when an event fires (and whether it's a repeat) is decided there, once, for every platform.
@@ -18,9 +19,10 @@ import type { PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from
  * and the browser would have to hash PII client-side. If it's added, it belongs server-side in the Events API sender,
  * SHA-256 of trimmed lowercase email / E.164 phone per TikTok's spec — never passwords or payment data.
  *
- * Inert (every call a no-op, nothing downloaded) until NEXT_PUBLIC_TIKTOK_PIXEL_ID is set at build time. */
+ * Inert (every call a no-op, nothing downloaded) until this installation's TIKTOK_PIXEL_ID is set (runtime configuration). */
 
-const PIXEL_ID = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID ?? "";
+/** This installation's TikTok Pixel id — runtime configuration (Phase 1A), read when used. */
+const pixelId = () => publicRuntimeConfig().tiktokPixelId;
 const SDK_URL = "https://analytics.tiktok.com/i18n/pixel/events.js";
 
 interface TikTokContent {
@@ -127,13 +129,13 @@ let loaded = false;
  * are buffered by the stub, not lost. Also refuses to load a second copy when one is already on the page (a hot reload
  * re-evaluating this module), since the stub records every pixel it has loaded. */
 function ensureLoaded(): boolean {
-  if (!PIXEL_ID || typeof window === "undefined") return false;
+  if (!pixelId() || typeof window === "undefined") return false;
   if (loaded) return true;
   loaded = true;
 
-  const alreadyLoaded = (window.ttq as unknown as { _i?: Record<string, unknown> } | undefined)?._i?.[PIXEL_ID];
+  const alreadyLoaded = (window.ttq as unknown as { _i?: Record<string, unknown> } | undefined)?._i?.[pixelId()];
   if (!window.ttq) installStub();
-  if (!alreadyLoaded) window.ttq!.load(PIXEL_ID);
+  if (!alreadyLoaded) window.ttq!.load(pixelId());
   return true;
 }
 
@@ -195,4 +197,10 @@ function send(event: PixelEvent, ctx: PixelEventContext): void {
   }
 }
 
-export const tiktokPixel: PixelProvider = { name: "tiktok", enabled: Boolean(PIXEL_ID), send };
+export const tiktokPixel: PixelProvider = {
+  name: "tiktok",
+  get enabled() {
+    return Boolean(pixelId());
+  },
+  send,
+};

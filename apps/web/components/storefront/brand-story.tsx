@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const FALLBACK_TAGLINE = "Considered clothing, made to last";
 
@@ -28,7 +29,7 @@ export function BrandStory({ storeName, tagline, heading, bodyText, ctaLabel, ct
       >
         {imageUrl && (
           <div className="relative mx-auto mb-8 h-56 w-full max-w-md overflow-hidden rounded-lg sm:h-72">
-            <Image src={imageUrl} alt={heading || storeName} fill sizes="(min-width: 640px) 448px, 100vw" className="object-cover" />
+            <Image src={resolveImageUrl(imageUrl)} alt={heading || storeName} fill sizes="(min-width: 640px) 448px, 100vw" className="object-cover" />
           </div>
         )}
         <p className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300">Our Philosophy</p>

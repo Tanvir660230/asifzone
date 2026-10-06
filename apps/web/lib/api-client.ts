@@ -1,4 +1,4 @@
-import { env } from "./env";
+import { apiBaseUrl } from "./runtime-config";
 
 export class ApiError extends Error {
   constructor(
@@ -83,7 +83,7 @@ function refreshSession(): Promise<boolean> {
   if (!refreshPromise) {
     const isAdminRealm = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
     const refreshPath = isAdminRealm ? "/api/auth/refresh" : "/api/customers/refresh";
-    refreshPromise = fetch(`${env.apiUrl}${refreshPath}`, { method: "POST", credentials: "include" })
+    refreshPromise = fetch(`${apiBaseUrl()}${refreshPath}`, { method: "POST", credentials: "include" })
       .then((res) => res.ok)
       .catch(() => false)
       .finally(() => {
@@ -101,7 +101,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
   const { method = "GET", body, isFormData = false, idempotencyKey } = options;
   const csrfToken = method === "GET" ? undefined : readCsrfCookie();
 
-  const res = await fetch(`${env.apiUrl}${path}`, {
+  const res = await fetch(`${apiBaseUrl()}${path}`, {
     method,
     credentials: "include",
     headers: {
@@ -133,7 +133,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
 export function apiUploadWithProgress<T>(path: string, body: FormData, onProgress?: (fraction: number) => void, _retried = false): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${env.apiUrl}${path}`);
+    xhr.open("POST", `${apiBaseUrl()}${path}`);
     xhr.withCredentials = true;
     const csrfToken = readCsrfCookie();
     if (csrfToken) xhr.setRequestHeader("X-CSRF-Token", csrfToken);

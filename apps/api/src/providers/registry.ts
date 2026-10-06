@@ -7,6 +7,7 @@
  * fallbacks, claim semantics).
  */
 import { env } from "../config/env";
+import { installId } from "../config/installation";
 import * as steadfast from "./courier/steadfast";
 import * as resend from "./email/resend";
 import * as metaCapi from "./events/meta-capi";
@@ -22,6 +23,7 @@ import {
   type CapabilityAvailability,
   type PaymentGatewayKey,
   type ProviderSelection,
+  type RawProviderSelection,
 } from "./selection";
 import type {
   CourierProvider,
@@ -142,14 +144,65 @@ export function buildProviders(selection: ProviderSelection): Providers {
   };
 }
 
+// ── Installation → provider configuration (Phase 1D) ───────────────────────────────────────────
+//
+// Each installation is its own process with its own environment (docs/STORE_DEPLOYMENT.md), so an installation's provider
+// configuration is: which provider it selected for each capability, and which credential variables its environment has.
+// The registry resolves that configuration — it never reads another installation's credentials, and no credential lives
+// in code. Themes and the browser never see any of it (only capability booleans, via the capabilities endpoint).
+
+export interface InstallationProviderConfig {
+  installId: string;
+  nodeEnv: string;
+  /** The PAYMENT_GATEWAYS / SMS_PROVIDER / EMAIL_PROVIDER / COURIER_PROVIDER / PUSH_PROVIDER values. */
+  raw: RawProviderSelection;
+  /** Whether this installation's environment has a value for a credential variable (presence only, never the value). */
+  hasCredential: (envVar: string) => boolean;
+}
+
+/** This process's installation: config/installation.ts + config/env.ts. */
+export function currentInstallationProviderConfig(): InstallationProviderConfig {
+  return { installId, nodeEnv: env.nodeEnv, raw: env.providers, hasCredential: hasValue };
+}
+
+/** Any installation's configuration from its environment map (e.g. another store's docker/.env) — the same variables, the
+ * same rules, so every installation goes through one registry. */
+export function installationProviderConfigFrom(environment: Record<string, string | undefined>, id: string): InstallationProviderConfig {
+  const value = (name: string) => environment[name]?.trim() ?? "";
+  return {
+    installId: id,
+    nodeEnv: value("NODE_ENV") || "development",
+    raw: {
+      paymentGateways: value("PAYMENT_GATEWAYS"),
+      sms: value("SMS_PROVIDER"),
+      email: value("EMAIL_PROVIDER"),
+      courier: value("COURIER_PROVIDER"),
+      push: value("PUSH_PROVIDER"),
+    },
+    hasCredential: (envVar) => Boolean(value(envVar)),
+  };
+}
+
+/** Validates an installation's configuration (throws ProviderConfigError naming variables only) and builds its providers. */
+export function resolveInstallationProviders(config: InstallationProviderConfig) {
+  const resolved = validateProviderSelection(config.raw, config.hasCredential, config.nodeEnv);
+  return {
+    installId: config.installId,
+    selection: resolved,
+    providers: buildProviders(resolved),
+    capabilities: capabilityAvailability(resolved, config.hasCredential),
+  };
+}
+
 let selection: ProviderSelection | null = null;
 let providers: Providers | null = null;
 
-/** Validates env.providers (throws ProviderConfigError naming variables only). Called once at API startup so a bad
- * configuration fails the deploy's readiness check instead of a customer's request. */
+/** Validates this installation's provider configuration (throws ProviderConfigError naming variables only). Called once at
+ * API startup so a bad configuration fails the deploy's readiness check instead of a customer's request. */
 export function validateProviderConfig(): ProviderSelection {
-  selection = validateProviderSelection(env.providers, hasValue, env.nodeEnv);
-  providers = buildProviders(selection);
+  const resolved = resolveInstallationProviders(currentInstallationProviderConfig());
+  selection = resolved.selection;
+  providers = resolved.providers;
   return selection;
 }
 

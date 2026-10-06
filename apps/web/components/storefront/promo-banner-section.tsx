@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { resolveImageUrl } from "@/lib/image-url";
 
 interface PromoBannerSectionProps {
   heading?: string | null;
@@ -25,11 +26,11 @@ export function PromoBannerSection({
     <div className="relative aspect-[16/9] overflow-hidden rounded-lg bg-ink-100 sm:aspect-[3/1]">
       {mobileImageUrl ? (
         <>
-          <Image src={mobileImageUrl} alt={heading || ""} fill sizes="100vw" className="object-cover sm:hidden" />
-          <Image src={imageUrl} alt={heading || ""} fill sizes="100vw" className="hidden object-cover sm:block" />
+          <Image src={resolveImageUrl(mobileImageUrl)} alt={heading || ""} fill sizes="100vw" className="object-cover sm:hidden" />
+          <Image src={resolveImageUrl(imageUrl)} alt={heading || ""} fill sizes="100vw" className="hidden object-cover sm:block" />
         </>
       ) : (
-        <Image src={imageUrl} alt={heading || ""} fill sizes="100vw" className="object-cover" />
+        <Image src={resolveImageUrl(imageUrl)} alt={heading || ""} fill sizes="100vw" className="object-cover" />
       )}
       {(heading || bodyText || ctaLabel) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-ink-950/35 px-4 text-center text-cream-50">

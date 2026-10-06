@@ -3,13 +3,13 @@
  * fetch-snapshot.ts. Idempotent — every run builds a fresh copy and swaps it in; the previous demo database (and any edits
  * made in it) is replaced.
  *
- *   1. restore the snapshot into asifzone_demo_staging (marked "demo-staging" — the API refuses to start on it);
+ *   1. restore the snapshot into <INSTALL_ID>_demo_staging (marked "demo-staging" — the API refuses to start on it);
  *   2. `prisma migrate deploy` — bring it to this checkout's schema (touches only the staging copy);
  *   3. sanitize.sql — anonymise people, drop credentials/tokens/queues (one transaction);
  *   4. rewrite-media.sql + extract the image archive into the local uploads dir;
  *   5. upsert the local demo OWNER (SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD);
  *   6. assert the sanitization held — any leftover aborts the import;
- *   7. mark it "demo" and swap: DROP asifzone_demo, RENAME staging -> asifzone_demo;
+ *   7. mark it "demo" and swap: DROP <INSTALL_ID>_demo, RENAME staging -> <INSTALL_ID>_demo;
  *   8. rebuild the storefront read model with this checkout's pricing engine.
  * On any failure the staging database is dropped, so unsanitized data never outlives a failed run.
  *
@@ -22,7 +22,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { resolveSeedAdminCredentials } from "../../src/lib/seed-credentials";
 import {
-  API_DIR, DEMO_API_ORIGIN, DEMO_DATABASE, DEMO_STAGING_DATABASE, MEDIA_SOURCE_HOSTS, REPORT_TABLES, SNAPSHOT_DIR, UPLOADS_DIR,
+  API_DIR, DATABASE_ROLE_SETTING, DEMO_API_ORIGIN, DEMO_DATABASE, DEMO_IMPORTED_AT_SETTING, DEMO_SNAPSHOT_SETTING, DEMO_STAGING_DATABASE, MEDIA_SOURCE_HOSTS, REPORT_TABLES, SNAPSHOT_DIR, UPLOADS_DIR,
   databaseExists, demoDatabaseUrl, fail, isPgDumpArchive, latestFile, pgBin, pgEnv, psql, quoteIdent, quoteLiteral, run, tableCounts,
 } from "./lib";
 
@@ -96,7 +96,7 @@ function report(before: Map<string, number | null> | null, source: Map<string, n
     step("1/8 restoring snapshot into staging...");
     dropStaging();
     psql(serverUrl, `CREATE DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} TEMPLATE template0 ENCODING 'UTF8'`);
-    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET asifzone.environment = 'demo-staging'`);
+    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET ${DATABASE_ROLE_SETTING} = 'demo-staging'`);
     run(pgBin("pg_restore"), ["--no-owner", "--no-privileges", "--exit-on-error", "--dbname", DEMO_STAGING_DATABASE, snapshot], { env: pgEnv(stagingUrl) });
     const source = tableCounts(stagingUrl);
 
@@ -161,12 +161,12 @@ function report(before: Map<string, number | null> | null, source: Map<string, n
 
     step("7/8 swapping staging in as the demo database...");
     const importedAt = new Date().toISOString();
-    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET asifzone.environment = 'demo'`);
-    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET asifzone.demo_imported_at = ${quoteLiteral(importedAt)}`);
-    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET asifzone.demo_snapshot = ${quoteLiteral(basename(snapshot))}`);
+    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET ${DATABASE_ROLE_SETTING} = 'demo'`);
+    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET ${DEMO_IMPORTED_AT_SETTING} = ${quoteLiteral(importedAt)}`);
+    psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} SET ${DEMO_SNAPSHOT_SETTING} = ${quoteLiteral(basename(snapshot))}`);
     psql(
       serverUrl,
-      `COMMENT ON DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} IS ${quoteLiteral(`Asif Zone DEMO mirror - sanitized copy of ${basename(snapshot)}, imported ${importedAt}. Independent of production.`)}`,
+      `COMMENT ON DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} IS ${quoteLiteral(`DEMO mirror - sanitized copy of ${basename(snapshot)}, imported ${importedAt}. Independent of production.`)}`,
     );
     psql(serverUrl, `DROP DATABASE IF EXISTS ${quoteIdent(DEMO_DATABASE)} WITH (FORCE)`);
     psql(serverUrl, `ALTER DATABASE ${quoteIdent(DEMO_STAGING_DATABASE)} RENAME TO ${quoteIdent(DEMO_DATABASE)}`);

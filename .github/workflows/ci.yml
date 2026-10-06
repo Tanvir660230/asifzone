@@ -191,6 +191,8 @@ jobs:
           echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> docker/.env
           # Phase 12 per-store deployment inputs (non-secret repository variables; docker/deploy.sh refuses to
           # start without SERVER_NAME / SERVER_ALIASES / CERT_NAME / GDRIVE_REMOTE).
+          # Phase 1: this installation's id (Redis/queue namespace, cache tags) — required; set it as a repository variable.
+          echo "INSTALL_ID=${{ vars.INSTALL_ID }}" >> docker/.env
           echo "SERVER_NAME=${{ vars.SERVER_NAME }}" >> docker/.env
           echo "SERVER_ALIASES=${{ vars.SERVER_ALIASES }}" >> docker/.env
           echo "CERT_NAME=${{ vars.CERT_NAME }}" >> docker/.env

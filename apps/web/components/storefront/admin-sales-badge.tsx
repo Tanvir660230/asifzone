@@ -4,16 +4,16 @@ import { useEffect, useState } from "react";
 import { BarChart3, Eye } from "lucide-react";
 import type { ProductSalesSummary } from "@clothing-brand/shared";
 import { clearAdminHint, hasAdminHint } from "@/lib/admin-hint";
-import { env } from "@/lib/env";
+import { apiBaseUrl } from "@/lib/runtime-config";
 
 /** GET the figures with the admin session cookie. The access token is short-lived, so a 401 gets one silent refresh through the
  * *admin* refresh endpoint (the shared apiFetch would refresh the customer session on a storefront page) and a retry. */
 async function fetchSummary(productId: string): Promise<{ status: "ok"; summary: ProductSalesSummary } | { status: "denied" } | { status: "error" }> {
-  const url = `${env.apiUrl}/api/products/${productId}/sales-summary`;
+  const url = `${apiBaseUrl()}/api/products/${productId}/sales-summary`;
   try {
     let res = await fetch(url, { credentials: "include" });
     if (res.status === 401) {
-      const refreshed = await fetch(`${env.apiUrl}/api/auth/refresh`, { method: "POST", credentials: "include" });
+      const refreshed = await fetch(`${apiBaseUrl()}/api/auth/refresh`, { method: "POST", credentials: "include" });
       if (refreshed.ok) res = await fetch(url, { credentials: "include" });
     }
     if (res.status === 401 || res.status === 403) return { status: "denied" };

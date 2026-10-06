@@ -12,7 +12,7 @@ const BASH = process.platform === "win32" && existsSync("C:\\Program Files\\Git\
 const posix = (p: string) => p.replace(/\\/g, "/");
 
 /** Phase 12 (W10): a real deploy has the store's own inputs in docker/.env; the harness passes them as environment. */
-const STORE_ENV = { SERVER_NAME: "store.example", SERVER_ALIASES: "www.store.example", CERT_NAME: "store.example", GDRIVE_REMOTE: "gdrive:store-backups" };
+const STORE_ENV = { INSTALL_ID: "store-a", SERVER_NAME: "store.example", SERVER_ALIASES: "www.store.example", CERT_NAME: "store.example", GDRIVE_REMOTE: "gdrive:store-backups" };
 
 function deploy(stubs: { backup?: "ok" | "fail" | "empty"; migrate?: "ok" | "fail"; ready?: "ok" | "never"; storeEnv?: Record<string, string> }) {
   const dir = mkdtempSync(join(tmpdir(), "p11-deploy-"));
@@ -44,6 +44,13 @@ describe("deploy script (brief downtime, no blue/green)", () => {
     expect(r.code).toBe(0);
     expect(r.calls).toEqual(["backup", "build", "migrate", "switch", "ready", "proxy"]);
     expect(r.out).toContain("DEPLOY OK");
+  });
+
+  it("Phase 1: a missing INSTALL_ID stops at the preflight too", () => {
+    const r = deploy({ storeEnv: { ...STORE_ENV, INSTALL_ID: "" } });
+    expect(r.code).not.toBe(0);
+    expect(r.calls).toEqual([]);
+    expect(r.out).toMatch(/DEPLOY FAILED: missing per-store configuration in .*: INSTALL_ID .*nothing was changed/);
   });
 
   it("Phase 12: missing per-store configuration stops at the preflight, before the backup or anything else", () => {
