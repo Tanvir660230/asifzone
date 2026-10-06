@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Inter, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -10,6 +11,7 @@ import { env } from "@/lib/env";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
 import { AdPixels } from "@/components/analytics/ad-pixels";
+import { TrackingConsentBanner } from "@/components/analytics/tracking-consent-banner";
 import { jsonLdString } from "@clothing-brand/shared";
 
 const inter = Inter({
@@ -68,6 +70,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Reading the request makes every page render per request, so each response gets the nonce middleware.ts minted for
+  // its Content-Security-Policy — a page prerendered at build time would carry no nonce and its scripts would be blocked.
+  // Data fetches keep their own revalidate caching; nginx's micro-cache still serves hot anonymous pages.
+  await headers();
   const { settings } = await getSiteSettingsSafe();
   const siteUrl = getSiteUrl();
   const organizationJsonLd = buildOrganizationJsonLd(settings, siteUrl);
@@ -94,6 +100,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <StoreConfig currency={settings.currency} timezone={settings.timezone}>
           <Providers>{children}</Providers>
         </StoreConfig>
+        <TrackingConsentBanner />
       </body>
     </html>
   );

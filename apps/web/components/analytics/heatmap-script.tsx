@@ -1,20 +1,19 @@
-import Script from "next/script";
+"use client";
 
-/** "Heatmap ready": wires up Microsoft Clarity (free, no separate backend to run) the moment an
- * admin sets NEXT_PUBLIC_CLARITY_ID at build time — same build-time-only constraint as
- * NEXT_PUBLIC_API_URL, since Next inlines NEXT_PUBLIC_* vars into the client bundle. Renders
- * nothing until that's set; swap the snippet below for a different provider if preferred. */
+import { useEffect } from "react";
+import { loadClarity } from "@/lib/pixels/clarity";
+import { onAdTrackingConsentChange } from "@/lib/pixels/consent";
+
+/** "Heatmap ready": Microsoft Clarity, wired up the moment NEXT_PUBLIC_CLARITY_ID is set at build time (Next inlines
+ * NEXT_PUBLIC_* vars into the client bundle). Loads only once the shopper has accepted tracking — on first render if they
+ * already had, or the moment they accept in the consent banner (lib/pixels/clarity.ts). Renders nothing. */
 export function HeatmapScript() {
-  const clarityId = process.env.NEXT_PUBLIC_CLARITY_ID;
-  if (!clarityId) return null;
+  useEffect(() => {
+    loadClarity();
+    return onAdTrackingConsentChange((decision) => {
+      if (decision === "granted") loadClarity();
+    });
+  }, []);
 
-  return (
-    <Script id="ms-clarity" strategy="afterInteractive">
-      {`(function(c,l,a,r,i,t,y){
-        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-      })(window, document, "clarity", "script", "${clarityId}");`}
-    </Script>
-  );
+  return null;
 }

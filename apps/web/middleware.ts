@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { buildContentSecurityPolicy, createNonce } from "@/lib/security/csp";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const REDIRECT_REVALIDATE_SECONDS = 300;
+const API_ORIGIN = new URL(API_URL).origin;
 
 interface ActiveRedirect {
   fromPath: string;
@@ -47,8 +49,21 @@ async function faviconRedirect(): Promise<NextResponse | null> {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Content-Security-Policy with a fresh nonce on every page response (lib/security/csp.ts). Next reads the nonce from the
+  // request's CSP header and stamps it on its own scripts. Redirects carry no page, so they skip it.
+  const nonce = createNonce();
+  const csp = buildContentSecurityPolicy({ nonce, apiOrigin: API_ORIGIN, isDev: process.env.NODE_ENV === "development" });
+  const pass = () => {
+    const headers = new Headers(req.headers);
+    headers.set("x-nonce", nonce);
+    headers.set("Content-Security-Policy", csp);
+    const res = NextResponse.next({ request: { headers } });
+    res.headers.set("Content-Security-Policy", csp);
+    return res;
+  };
+
   if (pathname === "/favicon.ico") {
-    return (await faviconRedirect()) ?? NextResponse.next();
+    return (await faviconRedirect()) ?? pass();
   }
 
   const redirect = await findActiveRedirect(pathname);
@@ -60,7 +75,7 @@ export async function middleware(req: NextRequest) {
     // Same reasoning as /account/verify-email below — an admin accepting an invite may or may not
     // already have a different session, and the page must work either way.
     if (pathname === "/admin/accept-invite") {
-      return NextResponse.next();
+      return pass();
     }
 
     const isLoginPage = pathname === "/admin/login";
@@ -79,7 +94,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/admin/dashboard", req.url));
     }
 
-    return NextResponse.next();
+    return pass();
   }
 
   if (pathname.startsWith("/account")) {
@@ -90,7 +105,7 @@ export async function middleware(req: NextRequest) {
     // logged out, and carries its own customerId/token query params that a login-redirect would drop.
     // /account/claim (Phase 11): the emailed link that proves an existing guest record's email — clicked while logged out.
     if (pathname === "/account/verify-email" || pathname === "/account/unsubscribe" || pathname === "/account/claim") {
-      return NextResponse.next();
+      return pass();
     }
 
     const isAuthPage =
@@ -111,10 +126,10 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/account", req.url));
     }
 
-    return NextResponse.next();
+    return pass();
   }
 
-  return NextResponse.next();
+  return pass();
 }
 
 export const config = {

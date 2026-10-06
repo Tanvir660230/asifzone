@@ -18,7 +18,7 @@ lib/pixels/tiktok.ts     → ttq   (typed TikTokEventProperties, official base c
 | `types.ts` | Platform-neutral `PixelEvent` union and the `PixelProvider` interface. |
 | `meta.ts`, `tiktok.ts` | Providers. They only translate. Each is inert until its pixel id is set at build time. |
 | `guards.ts` | Repeat suppression (burst window, once per tab/browser) and event-id minting. |
-| `consent.ts` | The single consent gate (always granted today; see below). |
+| `consent.ts` | The single consent gate: the shopper's stored choice from the consent banner (see below). |
 | `debug.ts` | Console trace of each decision (see Debugging). |
 | `components/analytics/ad-pixels.tsx` | Fires PageView on first load and on every client-side route change. |
 
@@ -71,10 +71,18 @@ For other events, pass the browser's id to the server (for example in the checko
 
 ## Consent
 
-There's no consent banner today; the privacy policy discloses both pixels. When one is added, make
-`hasAdTrackingConsent()` in `consent.ts` return the stored decision. Every event is gated there **before** any
-script is downloaded or any once-guard is used. TikTok also exposes `ttq.holdConsent()` / `grantConsent()` /
-`revokeConsent()` if a CMP needs them.
+Nothing is tracked until the shopper allows it. `components/analytics/tracking-consent-banner.tsx` asks once (only
+when a pixel id or `NEXT_PUBLIC_CLARITY_ID` is configured, never on admin/preview screens) and stores the answer in
+this browser (`localStorage` `az_tracking_consent_v1`); the footer's "Tracking preferences" link reopens it.
+`hasAdTrackingConsent()` in `consent.ts` returns true only for a stored "granted" — no decision, a decline or blocked
+storage all mean no tracking. Every event is gated there **before** any script is downloaded or any once-guard is
+used, and Clarity (`lib/pixels/clarity.ts`) uses the same gate. Allowing fires the PageView for the current page;
+withdrawing an earlier consent reloads the page so no loaded pixel keeps running. First-party analytics
+(`PageViewTracker`) and the live-chat widget are not gated. Bump the storage key's version to ask everyone again.
+
+The scripts load under the nonce-based Content-Security-Policy (`lib/security/csp.ts`): they are created from our
+bundle, so `'strict-dynamic'` trusts them, and their beacon hosts are in `connect-src`. A new provider needs its
+beacon/iframe hosts added there.
 
 ## Configuration
 

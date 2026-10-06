@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ChevronDown, Mail, MapPin, Phone } from "lucide-react";
 import type { PaymentMethodOption, SocialLink, StoreSettings } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
+import { trackingConfigured } from "@/lib/pixels";
+import { openTrackingPreferences } from "@/lib/pixels/consent";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { SOCIAL_PLATFORM_META, SocialIcon } from "@/components/social-icon";
 import { StoreLogoImage } from "@/components/store-logo-image";
@@ -300,6 +302,14 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             <Link href="/shipping-returns" className="hover:text-brass-400">
               Refund Policy
             </Link>
+            {trackingConfigured && (
+              <>
+                <span className="text-ink-700">·</span>
+                <button type="button" onClick={openTrackingPreferences} className="hover:text-brass-400">
+                  Tracking preferences
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

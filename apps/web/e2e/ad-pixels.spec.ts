@@ -89,6 +89,9 @@ test.setTimeout(180_000);
 test.use({ actionTimeout: 15_000 });
 
 test.beforeEach(async ({ page }) => {
+  // These flows are about what fires once the shopper HAS accepted tracking (lib/pixels/consent.ts); the consent gate
+  // itself is covered by its own test below, in a fresh context without this.
+  await page.addInitScript(() => localStorage.setItem("az_tracking_consent_v1", "granted"));
   // Fence first: no TikTok/Meta request may leave the machine, even from this setup visit.
   await page.route(/tiktok\.com/, (route) =>
     route.request().method() === "GET" && /\.js(\?|$)/.test(route.request().url())
@@ -216,6 +219,33 @@ test("Search fires once per query with search_string", async ({ page }) => {
   await expectExactlyOnce(page, beacons, "Search");
   // toMatchObject: on mobile the SDK appends its own device fields (android_version, device_model).
   expect(beacons.find((b) => b.event === "Search")!.properties).toMatchObject({ search_string: "shirt" });
+});
+
+test("consent: nothing loads or fires before the shopper allows it; Decline keeps it off; Allow starts it", async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const beacons = await interceptPixels(page);
+  const trackerLoaded = () => page.evaluate(() => Boolean((window as unknown as { ttq?: unknown; fbq?: unknown }).ttq || (window as unknown as { fbq?: unknown }).fbq));
+
+  await page.goto("/");
+  const banner = page.getByRole("dialog", { name: "Tracking preferences" });
+  await expect(banner).toBeVisible();
+  await settle(page);
+  expect(beacons, describe(beacons)).toHaveLength(0);
+  expect(await trackerLoaded()).toBe(false);
+
+  await banner.getByRole("button", { name: "Decline" }).click();
+  await page.reload();
+  await expect(banner).toBeHidden();
+  await settle(page);
+  expect(beacons, describe(beacons)).toHaveLength(0);
+  expect(await trackerLoaded()).toBe(false);
+
+  // The footer link reopens the choice; allowing counts the page the shopper is on.
+  await page.getByRole("button", { name: "Tracking preferences" }).click();
+  await banner.getByRole("button", { name: "Allow" }).click();
+  await expectExactlyOnce(page, beacons, "Pageview", "/");
+  await context.close();
 });
 
 test("admin pages never load or fire the pixels", async ({ page }) => {

@@ -1,5 +1,6 @@
 import { metaPurchaseEventId, type Order } from "@clothing-brand/shared";
 import { getStoreConfig } from "../store-config";
+import { clarityConfigured } from "./clarity";
 import { hasAdTrackingConsent } from "./consent";
 import { pixelDebug } from "./debug";
 import { cartSignature, firedJustNow, firstTime, newEventId } from "./guards";
@@ -9,7 +10,8 @@ import type { ContactChannel, PixelEvent, PixelEventContext, PixelLineItem, Pixe
 
 /** The storefront's one ad-tracking layer. Components call the typed pixel* functions below — never `fbq`/`ttq` — and
  * every business event fans out to each configured platform (Meta, TikTok) with ONE decision about whether it fires and
- * ONE shared event id. Adding a platform = a provider file + an entry in PROVIDERS; a consent banner = consent.ts; a
+ * ONE shared event id. Adding a platform = a provider file + an entry in PROVIDERS; consent = consent.ts (the shopper's
+ * stored choice from the consent banner); a
  * server-side sender = reuse the event id (Purchase: purchaseEventId).
  *
  * Tracking is strictly best-effort: every call is synchronous, never throws and never awaits, so a blocked script, an
@@ -18,6 +20,10 @@ import type { ContactChannel, PixelEvent, PixelEventContext, PixelLineItem, Pixe
 export type { PixelLineItem, ContactChannel } from "./types";
 
 const PROVIDERS: PixelProvider[] = [metaPixel, tiktokPixel];
+
+/** Whether this build has any third-party tracker at all (an ad pixel id or Clarity) — when none is configured there is
+ * nothing to consent to, so the consent banner and its footer link stay hidden. */
+export const trackingConfigured = PROVIDERS.some((p) => p.enabled) || clarityConfigured;
 
 /** Admin screens, the admin's draft-product previews and the product wizard's embedded preview frame — never a shopper,
  * so nothing there is ever reported (same exclusions PageViewTracker uses for first-party analytics). */
