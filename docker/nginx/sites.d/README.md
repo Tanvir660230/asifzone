@@ -24,7 +24,8 @@ stores.
 3. Render the site file and reload, checking the config first:
 
    ```bash
-   sed -e 's/__HOST__/<host>/g' -e 's/__API__/<gateway>:<api-port>/g' -e 's/__WEB__/<gateway>:<web-port>/g' \n     docker/nginx/sites.d/store.conf.sample > docker/nginx/sites.d/<id>.conf
+   sed -e 's/__HOST__/<host>/g' -e 's/__API__/<gateway>:<api-port>/g' -e 's/__WEB__/<gateway>:<web-port>/g' \
+     docker/nginx/sites.d/store.conf.sample > docker/nginx/sites.d/<id>.conf
    docker compose -f docker/docker-compose.yml --env-file docker/.env exec nginx nginx -t
    docker compose -f docker/docker-compose.yml --env-file docker/.env exec nginx nginx -s reload
    ```
