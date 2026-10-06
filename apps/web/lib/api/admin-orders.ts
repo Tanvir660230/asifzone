@@ -14,7 +14,7 @@ import type {
   OrderQueueId,
 } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
-import { apiBaseUrl } from "../runtime-config";
+import { publicApiUrl } from "../runtime-config";
 
 export interface AdminOrderListParams {
   page?: number;
@@ -99,7 +99,7 @@ export function getOrderStats() {
 /** CSV export needs the browser's cookie jar for admin auth but isn't JSON, so it bypasses apiFetch —
  * a plain same-tab navigation lets the browser handle the file download via Content-Disposition. */
 export function downloadOrdersCsvUrl(params: AdminOrderListParams = {}) {
-  return `${apiBaseUrl()}/api/orders/export/csv?${buildOrderListQuery(params).toString()}`;
+  return `${publicApiUrl()}/api/orders/export/csv?${buildOrderListQuery(params).toString()}`;
 }
 
 export function bulkGetOrders(ids: string[]) {

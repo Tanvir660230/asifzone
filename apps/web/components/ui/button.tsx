@@ -6,11 +6,11 @@ import { Spinner } from "./spinner";
 /** The single button recipe. Also applied to links via `buttonVariants(...)` (e.g. storefront
  * pagination), so a link-styled-as-button never drifts from a real button. */
 export const buttonVariants = cva(
-  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium tracking-wide transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-smooth active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 aria-busy:cursor-progress",
+  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-[var(--control-radius)] text-sm font-medium tracking-wide transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-smooth active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 aria-busy:cursor-progress",
   {
     variants: {
       variant: {
-        primary: "glossy bg-accent text-accent-fg shadow-sm hover:bg-ink-800 hover:shadow-float",
+        primary: "glossy bg-accent text-accent-fg shadow-sm hover:bg-[color:var(--accent-hover)] hover:shadow-float",
         secondary: "glossy bg-cream-200 text-fg hover:bg-cream-300",
         outline: "border border-line-strong bg-surface/60 text-fg hover:border-ink-400 hover:bg-surface",
         ghost: "text-ink-700 hover:bg-ink-900/[0.05] hover:text-fg",
@@ -22,7 +22,7 @@ export const buttonVariants = cva(
         // Inline text action.
         link: "h-auto rounded-md px-0 text-fg underline-offset-4 hover:underline active:scale-100",
         // Legacy name kept for existing call sites; identical to `primary` (the brand has no gold accent).
-        brass: "glossy bg-accent text-accent-fg shadow-sm hover:bg-ink-800 hover:shadow-float",
+        brass: "glossy bg-accent text-accent-fg shadow-sm hover:bg-[color:var(--accent-hover)] hover:shadow-float",
       },
       size: {
         sm: "h-8 px-3",

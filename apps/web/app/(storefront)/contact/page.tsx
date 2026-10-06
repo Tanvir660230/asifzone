@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Clock, Mail, MapPin, Package, Phone, HelpCircle, Truck } from "lucide-react";
 import { getSiteSettings, getActiveSocialLinksSafe } from "@/lib/api/storefront";
 import { fullAddressLines } from "@/lib/store-identity";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { ContactForm } from "@/components/storefront/contact-form";
@@ -28,7 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/contact`,
-      images: settings.logoUrl ? [settings.logoUrl] : undefined,
+      images: storeShareImages(settings),
     }),
   };
 }

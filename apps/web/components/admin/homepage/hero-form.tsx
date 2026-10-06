@@ -46,6 +46,10 @@ export function HeroForm({ initialConfig, onSubmit, onCancel, onValuesChange }: 
         <p className="mb-1 text-xs text-ink-400">A short line such as a collection or campaign name. Hidden when blank.</p>
         <Input id="subtext" {...register("subtext")} />
       </div>
+      <div>
+        <Label htmlFor="bodyText">Supporting line (optional)</Label>
+        <Input id="bodyText" {...register("bodyText")} />
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <Label htmlFor="ctaHref">Link URL (optional)</Label>
@@ -72,7 +76,7 @@ export function HeroForm({ initialConfig, onSubmit, onCancel, onValuesChange }: 
         label="Image (optional)"
         value={imageUrl}
         onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
-        hint="Shown large beneath the headline: 4:5 on mobile, 16:9 on tablets, 21:9 on desktop — keep the subject centred. 2400px wide or more."
+        hint="4:5 on mobile and 16:9 on tablets; on desktop either full width beneath the copy (21:9) or a tall image beside it (4:5), as the store's theme sets it — keep the subject centred. 2400px wide or more."
       />
       <div>
         <Label htmlFor="imageAltText">Image description (optional)</Label>

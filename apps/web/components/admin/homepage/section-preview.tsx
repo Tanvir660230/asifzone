@@ -73,6 +73,7 @@ function SectionPreviewBody({
             tagline={tagline}
             headline={config.headline}
             subtext={config.subtext}
+            bodyText={config.bodyText}
             ctaLabel={config.ctaLabel}
             ctaHref={config.ctaHref}
             secondaryCtaLabel={config.secondaryCtaLabel}
