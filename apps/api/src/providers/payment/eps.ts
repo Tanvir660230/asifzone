@@ -97,7 +97,9 @@ async function fetchEpsJson<T>(
       return await fetchEpsJsonOnce<T>(url, init);
     } catch (err) {
       lastErr = err;
-      logger.error(`[eps] request failed (attempt ${attempt + 1}/${delaysMs.length + 1}):`, { detail: err instanceof Error ? err.message : err });
+      // A retried attempt is the known-transient case above, not a failure yet — only the last one is an error.
+      const level = attempt < delaysMs.length ? "warn" : "error";
+      logger[level](`[eps] request failed (attempt ${attempt + 1}/${delaysMs.length + 1}):`, { detail: err instanceof Error ? err.message : err });
       if (attempt < delaysMs.length) {
         if (onRetry) await onRetry();
         await sleep(delaysMs[attempt]!);
