@@ -73,3 +73,20 @@ export function installNetworkGuard(allowHosts: string[] = []): void {
     }
   }
 }
+
+/**
+ * Live payment gateways are a production-only setting (P0-05). Outside NODE_ENV=production `EPS_SANDBOX=false` or
+ * `SSLCOMMERZ_IS_LIVE=true` refuses to start, so a dev, test or demo process can never charge through a live merchant
+ * account — even with live credentials copied into its .env. Production gets them from the deploy secrets
+ * (docs/DEPLOYMENT.md), never from a file in the working tree. Called by config/env.ts at startup.
+ */
+export function assertPaymentGatewayMode(nodeEnv: string, gateways: { epsLive: boolean; sslcommerzLive: boolean }): void {
+  if (nodeEnv === "production") return;
+  const live = [gateways.epsLive && "EPS_SANDBOX=false", gateways.sslcommerzLive && "SSLCOMMERZ_IS_LIVE=true"].filter(Boolean);
+  if (live.length) {
+    throw new Error(
+      `[provider-guard] refusing to start: ${live.join(" and ")} selects a live payment gateway, which only NODE_ENV=production ` +
+        `may use (NODE_ENV="${nodeEnv}"). Use the sandbox gateways and sandbox credentials outside production.`,
+    );
+  }
+}

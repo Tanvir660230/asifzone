@@ -14,4 +14,6 @@ playwright-report/
 blob-report/
 .DS_Store
 *.tsbuildinfo
+# Payment-provider onboarding documents (live merchant credentials) never live in this OneDrive-synced tree: they are
+# kept outside it (~/.asifzone-secrets/) and production reads them only from the deploy secrets. Kept ignored as a guard.
 /AsifZone Eps/

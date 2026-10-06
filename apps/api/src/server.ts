@@ -1,6 +1,7 @@
 import { app } from "./app";
 import { env } from "./config/env";
 import { prisma } from "./config/prisma";
+import { verifyDatabaseRole } from "./config/database-guard";
 import { redis } from "./config/redis";
 import { startFlashSaleCron } from "./jobs/flash-sale-cron";
 import { startCampaignSendWorker } from "./jobs/campaign-send-worker";
@@ -18,6 +19,11 @@ let shuttingDown = false;
 
 async function main() {
   await prisma.$connect();
+  // Demo mirror guard (docs/DEMO_DATA.md §5): refuses a half-built or mislabeled demo database.
+  const database = await verifyDatabaseRole(prisma, env.nodeEnv);
+  if (database.role === "demo") {
+    logger.info(`[database] DEMO database ${database.database} (independent copy imported ${database.importedAt ?? "?"}) — production is never touched`);
+  }
   await redis.connect().catch((err) => logger.warn("[redis] not connected yet:", { detail: err.message }));
 
   await syncFlashSaleActivation().catch((err) => captureError(err, { msg: "[flash-sale-cron] initial sync failed:" }));
@@ -37,8 +43,14 @@ async function main() {
   startFlashSaleCron().catch((err) => captureError(err, { msg: "[flash-sale-cron] failed to start:" }));
   startCampaignSendWorker().catch((err) => captureError(err, { msg: "[campaign-send-worker] failed to start:" }));
   startCampaignSchedulerCron().catch((err) => captureError(err, { msg: "[campaign-scheduler-cron] failed to start:" }));
-  startCourierStatusCron().catch((err) => captureError(err, { msg: "[courier-status-cron] failed to start:" }));
-  startPaymentReconciliationCron().catch((err) => captureError(err, { msg: "[payment-reconciliation-cron] failed to start:" }));
+  // On the demo mirror with providers off, these two only poll Steadfast/EPS for the copied production orders — every call
+  // is blocked by the network guard, so they would just log errors. Skipped there (docs/DEMO_DATA.md §5).
+  if (database.role === "demo" && !liveProvidersEnabled()) {
+    logger.info("[database] demo: courier-status and payment-reconciliation crons not started (providers off)");
+  } else {
+    startCourierStatusCron().catch((err) => captureError(err, { msg: "[courier-status-cron] failed to start:" }));
+    startPaymentReconciliationCron().catch((err) => captureError(err, { msg: "[payment-reconciliation-cron] failed to start:" }));
+  }
   startMetaCapiWorker().catch((err) => captureError(err, { msg: "[meta-capi] worker failed to start:" }));
   startOutboxWorker().catch((err) => captureError(err, { msg: "[outbox] worker failed to start:" }));
 

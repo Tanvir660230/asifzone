@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { applyDatabaseUrlPolicy } from "./database-guard";
+import { assertPaymentGatewayMode } from "../lib/provider-guard";
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
 // Allowlist, not a "not production" denylist: staging/QA/a typo'd NODE_ENV value must fail
@@ -15,10 +17,21 @@ function required(name: string, devFallback?: string): string {
   );
 }
 
+// Refuses a non-loopback database outside production and isolates the demo mirror (see database-guard.ts) — before
+// anything else reads process.env, since it may switch LIVE_PROVIDERS off.
+const databaseUrl = required("DATABASE_URL");
+applyDatabaseUrlPolicy(databaseUrl, nodeEnv);
+
+// Live gateway endpoints only in production (provider-guard.ts): dev/test/demo stay on the sandboxes whatever credentials
+// their .env holds.
+const epsSandbox = process.env.EPS_SANDBOX !== "false";
+const sslcommerzIsLive = process.env.SSLCOMMERZ_IS_LIVE === "true";
+assertPaymentGatewayMode(nodeEnv, { epsLive: !epsSandbox, sslcommerzLive: sslcommerzIsLive });
+
 export const env = {
   nodeEnv,
   port: Number(process.env.PORT ?? 4000),
-  databaseUrl: required("DATABASE_URL"),
+  databaseUrl,
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   jwtAccessSecret: required("JWT_ACCESS_SECRET", "dev-access-secret-change-me"),
   // Separate secrets for customer tokens so an admin and a customer token can never cross-verify.
@@ -45,7 +58,7 @@ export const env = {
   sslcommerz: {
     storeId: process.env.SSLCOMMERZ_STORE_ID ?? "",
     storePassword: process.env.SSLCOMMERZ_STORE_PASSWORD ?? "",
-    isLive: process.env.SSLCOMMERZ_IS_LIVE === "true",
+    isLive: sslcommerzIsLive,
   },
   // Optional — without these, EPS_PG checkout returns a clear "could not start payment session"
   // error (see eps.service.ts's getEpsToken). hashKey is the base64 HMAC signing key EPS issues
@@ -57,7 +70,7 @@ export const env = {
     hashKey: process.env.EPS_HASH_KEY ?? "",
     merchantId: process.env.EPS_MERCHANT_ID ?? "",
     storeId: process.env.EPS_STORE_ID ?? "",
-    sandbox: process.env.EPS_SANDBOX !== "false",
+    sandbox: epsSandbox,
   },
   // Optional — the AI Admin Assistant (product copy/SEO/marketing generation) stays fully inert,
   // returning a clear "not configured" error, until an admin sets this.
