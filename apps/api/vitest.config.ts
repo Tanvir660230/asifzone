@@ -48,6 +48,11 @@ export default defineConfig({
       // hit Resend over the network (which rejects example.com and is timing-dependent). An empty key — dotenv won't
       // override a defined variable — makes the mailer use its write-to-disk fallback, so the suite is hermetic.
       RESEND_API_KEY: "",
+      // Same for the installation a developer's .env describes (a second store's worktree sets INSTALL_ID and a
+      // REVALIDATE_SECRET): tests assert the test installation ("test") and a revalidation no-op, so they must not
+      // inherit another store's identity. `.env.test` may still set either explicitly — it is spread after these.
+      INSTALL_ID: "",
+      REVALIDATE_SECRET: "",
       // Vitest applies `test.env` before any test file (or its config/env.ts, which does `import "dotenv/config"`) runs,
       // so this wins over a plain .env without needing any import-order trick. Empty object when there is no .env.test:
       // tests then fall back to the ambient DATABASE_URL, exactly as before this file existed.
