@@ -78,7 +78,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
     <div className="space-y-8">
       {facets.sizes.length > 0 && (
         <div>
-          <h3 className="mb-3 text-xs uppercase tracking-wide text-ink-500">Size</h3>
+          <h3 className="mb-3 text-xs ui-caps text-ink-500">Size</h3>
           <div className="flex flex-wrap gap-2">
             {facets.sizes.map((size) => (
               <button
@@ -100,7 +100,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
 
       {facets.colors.length > 0 && (
         <div>
-          <h3 className="mb-3 text-xs uppercase tracking-wide text-ink-500">Color</h3>
+          <h3 className="mb-3 text-xs ui-caps text-ink-500">Color</h3>
           <div className="flex flex-wrap gap-3">
             {facets.colors.map(({ color, colorHex }) => (
               <button
@@ -126,7 +126,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
 
       {facets.maxPrice > 0 && facets.minPrice !== facets.maxPrice && (
         <div>
-          <h3 className="mb-3 text-xs uppercase tracking-wide text-ink-500">
+          <h3 className="mb-3 text-xs ui-caps text-ink-500">
             Price ({facets.minPrice}–{facets.maxPrice})
           </h3>
           <div className="flex items-center gap-2">
@@ -154,7 +154,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
       )}
 
       {activeCount > 0 && (
-        <button onClick={clearAll} className="text-xs uppercase tracking-wide text-ink-500 underline hover:text-brass-500">
+        <button onClick={clearAll} className="text-xs ui-caps text-ink-500 underline hover:text-brass-500">
           Clear all filters
         </button>
       )}

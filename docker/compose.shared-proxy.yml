@@ -1,0 +1,24 @@
+# An installation on a VPS whose ports 80/443 belong to another installation's nginx (the "front proxy").
+# Overlay on docker-compose.yml: api and web also join the front proxy's network under per-installation aliases
+# (<INSTALL_ID>-api, <INSTALL_ID>-web), and the front nginx routes this store's host names to them
+# (docker/nginx/sites.d/ on the front installation). This installation's own nginx and certbot are not started.
+#
+#   COMPOSE="docker compose -f docker/docker-compose.yml -f docker/compose.shared-proxy.yml --env-file docker/.env"
+#
+# FRONT_PROXY_NETWORK is the front installation's compose network (default: "docker_default", the original stack).
+services:
+  api:
+    networks:
+      default: {}
+      front:
+        aliases: ["${INSTALL_ID}-api"]
+  web:
+    networks:
+      default: {}
+      front:
+        aliases: ["${INSTALL_ID}-web"]
+
+networks:
+  front:
+    external: true
+    name: ${FRONT_PROXY_NETWORK:-docker_default}

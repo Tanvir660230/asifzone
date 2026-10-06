@@ -1,19 +1,15 @@
 "use client";
 
-import { useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { Trash2, Upload } from "lucide-react";
 import { createBannerSchema, type Banner, type CreateBannerInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import * as bannersApi from "@/lib/api/admin-banners";
-import { ApiError } from "@/lib/api-client";
+import { ImageUploadField } from "@/components/admin/image-upload-field";
 import { toDatetimeLocalValue } from "@/lib/datetime-local";
-import { resolveImageUrl } from "@/lib/image-url";
 
 interface BannerFormProps {
   banner?: Banner | null;
@@ -43,10 +39,6 @@ function toFormValues(banner?: Banner | null): CreateBannerInput {
 /** Shared by both the create and edit flows on the Banners page — extracted because edit needs the
  * exact same image-upload/field markup, not a parallel copy. */
 export function BannerForm({ banner, submitLabel, onSubmit, onCancel }: BannerFormProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const mobileFileInputRef = useRef<HTMLInputElement>(null);
-  const uploadMutation = useMutation({ mutationFn: bannersApi.uploadBannerImage });
-
   const {
     register,
     handleSubmit,
@@ -60,117 +52,31 @@ export function BannerForm({ banner, submitLabel, onSubmit, onCancel }: BannerFo
   const imageUrl = watch("imageUrl");
   const mobileImageUrl = watch("mobileImageUrl");
 
-  async function handleImageSelected(file: File | null) {
-    if (!file) return;
-    try {
-      const { url } = await uploadMutation.mutateAsync(file);
-      setValue("imageUrl", url, { shouldValidate: true });
-    } catch {
-      // surfaced via uploadMutation.isError below
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
 
-  async function handleMobileImageSelected(file: File | null) {
-    if (!file) return;
-    try {
-      const { url } = await uploadMutation.mutateAsync(file);
-      setValue("mobileImageUrl", url, { shouldValidate: true });
-    } catch {
-      // surfaced via uploadMutation.isError below
-    } finally {
-      if (mobileFileInputRef.current) mobileFileInputRef.current.value = "";
-    }
-  }
 
   return (
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="space-y-4">
-      {uploadMutation.isError && (
-        <p className="text-sm text-danger-600">
-          {uploadMutation.error instanceof ApiError ? uploadMutation.error.message : "Image upload failed"}
-        </p>
-      )}
+      <input type="hidden" {...register("imageUrl")} />
+      <input type="hidden" {...register("mobileImageUrl")} />
       <div>
-        <Label>Banner image</Label>
-        <p className="mb-1 text-xs text-ink-400">
-          Recommended size: 1920×640px (3:1). The homepage hero is locked to this ratio so the full image —
-          including any text baked into it — always shows edge-to-edge with no cropping, at any screen size.
-        </p>
-        <input type="hidden" {...register("imageUrl")} />
-        {imageUrl ? (
-          <div className="relative mt-1 h-32 w-full overflow-hidden rounded-lg border border-ink-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={resolveImageUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
-            <button
-              type="button"
-              onClick={() => setValue("imageUrl", "", { shouldValidate: true })}
-              className="absolute right-2 top-2 rounded-full bg-ink-900/70 p-1 text-cream-50"
-              aria-label="Remove image"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-            className="mt-1 flex h-32 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-          >
-            <Upload size={20} />
-            <span className="text-xs">{uploadMutation.isPending ? "Uploading…" : "Click to upload an image"}</span>
-          </button>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
+        <ImageUploadField
+          label="Banner image"
+          upload={bannersApi.uploadBannerImage}
+          value={imageUrl}
+          onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
+          hint="Recommended size: 1920×640px (3:1). The homepage hero is locked to this ratio so the full image — including any text baked into it — always shows edge-to-edge with no cropping, at any screen size."
         />
         {errors.imageUrl && <p className="ui-field-error">{errors.imageUrl.message}</p>}
       </div>
-      <div>
-        <Label>Mobile image (optional)</Label>
-        <p className="mb-1 text-xs text-ink-400">
-          Recommended size: 1254×1254px (square, 1:1) — the hero switches to a square frame below desktop width.
-          Without this, phones fall back to a center-crop of the wide image above, which can cut off text baked
-          into it. Upload a square crop of the same scene here to avoid that.
-        </p>
-        <input type="hidden" {...register("mobileImageUrl")} />
-        {mobileImageUrl ? (
-          <div className="relative mt-1 h-32 w-24 overflow-hidden rounded-lg border border-ink-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={resolveImageUrl(mobileImageUrl)} alt="" className="h-full w-full object-cover" />
-            <button
-              type="button"
-              onClick={() => setValue("mobileImageUrl", "", { shouldValidate: true })}
-              className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50"
-              aria-label="Remove mobile image"
-            >
-              <Trash2 size={12} />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => mobileFileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-            className="mt-1 flex h-32 w-24 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-          >
-            <Upload size={18} />
-            <span className="text-center text-[11px]">{uploadMutation.isPending ? "Uploading…" : "Upload"}</span>
-          </button>
-        )}
-        <input
-          ref={mobileFileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={(e) => handleMobileImageSelected(e.target.files?.[0] ?? null)}
-        />
-      </div>
+      <ImageUploadField
+        label="Mobile image (optional)"
+        upload={bannersApi.uploadBannerImage}
+        value={mobileImageUrl}
+        onChange={(url) => setValue("mobileImageUrl", url, { shouldValidate: true })}
+        frame="square"
+        uploadLabel="Upload"
+        hint="Recommended size: 1254×1254px (square, 1:1) — the hero switches to a square frame below desktop width. Without this, phones fall back to a center-crop of the wide image above, which can cut off text baked into it."
+      />
       <div>
         <Label htmlFor="placement">Placement</Label>
         <Select id="placement" {...register("placement")}>

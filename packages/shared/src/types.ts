@@ -793,6 +793,11 @@ export interface StoreSettings {
   addressCountry: string | null;
   legalJurisdiction: string | null;
   supportHours: string | null;
+  /** Phase 5 store policy (store-policy.ts) — each null until the store states it. */
+  returnWindowDays: number | null;
+  returnConditions: string | null;
+  handlingDaysMin: number | null;
+  handlingDaysMax: number | null;
   /** Phase 12 D-4 (derived, read-only): which online gateways this deployment can actually use. Checkout offers a gateway
    * only when the store's own toggle is on AND this is true. Absent on old API responses → treated as available. */
   onlineGateways?: { SSLCOMMERZ: boolean; EPS_PG: boolean };

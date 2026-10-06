@@ -77,6 +77,12 @@ const config: Config = {
     typography,
     plugin(({ addBase }) => {
       addBase({ ":root": tokens.cssVariables });
+      // Brand themes override the same variables; `:root[data-brand]` outranks `:root`, whatever the order.
+      for (const [id, theme] of Object.entries(tokens.themes)) {
+        if (Object.keys(theme.cssVariables).length) addBase({ [`:root[data-brand="${id}"]`]: theme.cssVariables });
+        // Dark-palette sections a theme renders light (see `lightBand` in @clothing-brand/ui-tokens).
+        if (Object.keys(theme.bandVariables).length) addBase({ [`:root[data-brand="${id}"] .ui-band-inverse`]: theme.bandVariables });
+      }
     }),
   ],
 };

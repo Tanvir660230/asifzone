@@ -111,11 +111,16 @@ export default async function HomePage() {
             return (
               <Hero
                 key={section.id}
+                storeName={settings.storeName}
                 tagline={settings.tagline}
                 headline={config.headline}
                 subtext={config.subtext}
                 ctaLabel={config.ctaLabel}
                 ctaHref={config.ctaHref}
+                secondaryCtaLabel={config.secondaryCtaLabel}
+                secondaryCtaHref={config.secondaryCtaHref}
+                imageUrl={config.imageUrl}
+                imageAltText={config.imageAltText}
               />
             );
           }
@@ -158,6 +163,7 @@ export default async function HomePage() {
                 key={section.id}
                 storeName={settings.storeName}
                 tagline={settings.tagline}
+                eyebrow={config.eyebrow}
                 heading={config.heading}
                 bodyText={config.bodyText}
                 ctaLabel={config.ctaLabel}
@@ -168,7 +174,7 @@ export default async function HomePage() {
           }
           case "VALUES_GRID": {
             const config = section.config as unknown as ValuesGridConfig;
-            return <ValuesGrid key={section.id} storeName={settings.storeName} items={config.items} />;
+            return <ValuesGrid key={section.id} storeName={settings.storeName} eyebrow={config.eyebrow} heading={config.heading} items={config.items} />;
           }
           case "SMART_RECOMMENDATIONS": {
             const config = section.config as unknown as SmartRecommendationsConfig;

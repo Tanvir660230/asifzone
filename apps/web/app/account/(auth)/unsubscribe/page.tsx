@@ -36,7 +36,7 @@ function UnsubscribeContent() {
   if (status === "working") {
     return (
       <div>
-        <h1 className="mb-1 font-display text-2xl text-ink-900">Unsubscribing…</h1>
+        <h1 className="mb-1 font-display ui-page-title text-ink-900">Unsubscribing…</h1>
       </div>
     );
   }
@@ -44,7 +44,7 @@ function UnsubscribeContent() {
   if (status === "success") {
     return (
       <div>
-        <h1 className="mb-1 font-display text-2xl text-ink-900">You&rsquo;re unsubscribed</h1>
+        <h1 className="mb-1 font-display ui-page-title text-ink-900">You&rsquo;re unsubscribed</h1>
         <p className="mb-6 text-sm text-ink-500">
           You won&rsquo;t receive marketing emails from us anymore. You&rsquo;ll still get order and account emails.
         </p>
@@ -57,7 +57,7 @@ function UnsubscribeContent() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Couldn&rsquo;t unsubscribe</h1>
+      <h1 className="mb-1 font-display ui-page-title text-ink-900">Couldn&rsquo;t unsubscribe</h1>
       <p className="mb-6 text-sm text-danger-600">{message ?? "This unsubscribe link is invalid."}</p>
       <Link href="/" className="text-ink-700 underline hover:text-ink-900">
         Back to the store

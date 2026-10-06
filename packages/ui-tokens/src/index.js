@@ -42,7 +42,8 @@ const palette = {
   },
   // The one and only accent color: promotional labels (Sale / % OFF / New / Limited) and
   // genuinely promotional CTAs. Never errors/destructive actions — that's `danger`.
-  sale: { 50: "#fdecea", 500: "#e53935", 600: "#c62828" },
+  // 500 clears WCAG AA (4.5:1) under white badge text — 4% deeper than the original #e53935, same hue.
+  sale: { 50: "#fdecea", 500: "#dc3733", 600: "#c62828" },
   // Semantic status colors. The 500/600 anchors were validated as a set (chroma floor, CVD
   // separation, contrast) — don't tweak one in isolation without re-validating the others.
   success: { 50: "#e9f9f4", 100: "#cdf0e4", 200: "#a8e4d0", 500: "#12b491", 600: "#0aa382", 700: "#087d64" },
@@ -109,9 +110,15 @@ for (const role of Object.keys(semantic)) colors[role] = ref(role);
 
 const fontFamily = {
   // --font-bn follows the Latin font so the browser falls back per glyph (৳, Bengali text).
-  sans: ["var(--font-sans)", "var(--font-bn)", "ui-sans-serif", "system-ui", "sans-serif"],
-  // "Ampersand Fix" (globals.css) swaps only U+0026 — Playfair's "&" swash reads as broken.
-  display: ["Ampersand Fix", "var(--font-display)", "var(--font-bn)", "ui-serif", "Georgia", "serif"],
+  sans: ["var(--font-body-family)", "var(--font-bn)", "ui-sans-serif", "system-ui", "sans-serif"],
+  // `--font-display-family` (set below) is the title face; a theme can swap it, e.g. to the sans face.
+  display: ["var(--font-display-family)", "var(--font-bn)", "ui-serif", "Georgia", "serif"],
+};
+
+/** Typography variables at :root. "Ampersand Fix" (globals.css) swaps only U+0026 — Playfair's "&" swash reads as broken. */
+const fontVariables = {
+  "--font-body-family": "var(--font-sans)",
+  "--font-display-family": '"Ampersand Fix", var(--font-display)',
 };
 
 /** Named type roles beyond Tailwind's size scale — titles use the display face with tight tracking. */
@@ -125,9 +132,8 @@ const fontSize = {
 
 /* ───────────────────────────── shape & depth ───────────────────────────── */
 
-// Soft-editorial radius scale.
-const borderRadius = {
-  none: "0px",
+// Soft-editorial radius scale. Each step is a CSS variable (`--radius-lg`), so a theme can reshape the UI.
+const radii = {
   sm: "4px",
   DEFAULT: "8px",
   md: "10px",
@@ -135,8 +141,14 @@ const borderRadius = {
   xl: "20px",
   "2xl": "24px",
   "3xl": "32px",
-  full: "9999px",
 };
+const radiusVariable = (step) => `--radius-${step === "DEFAULT" ? "default" : step}`;
+const borderRadius = { none: "0px", full: "9999px" };
+for (const [step, value] of Object.entries(radii)) {
+  borderRadius[step] = `var(${radiusVariable(step)})`;
+  cssVariables[radiusVariable(step)] = value;
+}
+Object.assign(cssVariables, fontVariables);
 
 // Neutral, two-layer elevation: a soft far shadow plus a crisp near one is what makes a surface
 // read as "lifted" rather than just blurrier.
@@ -190,7 +202,216 @@ const transitionTimingFunction = {
 
 const transitionDuration = Object.fromEntries(Object.entries(motion.duration).map(([k, v]) => [k, `${v}ms`]));
 
+/* ───────────────────────────── component tokens ───────────────────────────── */
+
+/**
+ * Presentation decisions that differ between brands, as CSS variables read by the recipes in
+ * apps/web/app/globals.css and by a few arbitrary utilities (`tracking-[var(--card-title-tracking)]`).
+ * These defaults reproduce the base design exactly; a theme overrides only what it changes.
+ *
+ * Deliberately NOT declared here (so they stay undefined and the property inherits, as it did before
+ * they existed): `--font-display-weight`, `--font-display-tracking`, `--eyebrow-weight`. A theme may set them.
+ */
+const componentTokens = {
+  // Small labels (`.ui-caps`) and eyebrows (`.ui-eyebrow`): case, and a multiplier on their letter-spacing.
+  "--caps-transform": "uppercase",
+  "--caps-spread": "1",
+  // Strength of the `.glossy` sheen on filled controls (0 = flat), and the fill of `.glass` chrome.
+  "--gloss": "1",
+  "--glass-alpha": "0.75",
+  "--header-shadow": "0 4px 20px -8px rgba(17,17,17,0.08)",
+  // Artwork made for a dark or a light background (logos inside `.ui-band-inverse`): which one shows. `contents` keeps
+  // the wrapper box-less, so the visible variant lays out exactly as if it were unwrapped. A light band swaps them.
+  "--band-dark-art": "contents",
+  "--band-light-art": "none",
+  // Non-promotional product badges ("New Arrival", "Limited Item").
+  "--badge-note-bg": "rgb(var(--color-sale-500))",
+  "--badge-note-fg": "#ffffff",
+  // The darkening behind light text set on a photograph (promo banners).
+  "--media-scrim": "rgb(var(--color-ink-950) / 0.35)",
+  // Category tiles: the scrim behind the name, and the name's color.
+  "--tile-scrim": "rgb(var(--color-ink-950) / 0.6)",
+  "--tile-label": "rgb(var(--color-cream-50))",
+  // Primary call to action on the hero band: its fill and text (transparent = the outline style).
+  "--hero-cta-fill": "transparent",
+  // Cart line items: the product thumbnail on the cart page and the quantity stepper (square in the base design).
+  "--line-item-radius": "0px",
+  "--stepper-radius": "0px",
+  // Product card.
+  "--card-lift": "-0.25rem",
+  "--card-frame-border": "rgb(var(--color-ink-100))",
+  "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
+  "--card-frame-shadow-hover": "0 2px 6px -1px rgba(20,20,20,0.07), 0 8px 20px -4px rgba(20,20,20,0.10)",
+  "--card-image-zoom": "1.05",
+  "--card-tier-display": "block",
+  "--product-tier-display": "inline",
+  "--card-title-tracking": "0.025em",
+  // Content tiles (values grid, info panels): their hairline frame.
+  "--panel-border": "rgb(var(--color-ink-100))",
+  "--panel-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
+  // Product page title.
+  "--product-title-size": "1.875rem",
+  "--product-title-leading": "2.25rem",
+  "--product-title-weight": "500",
+  "--product-title-tracking": "0.025em",
+  // Section titles (carousels and other homepage/product-page rails): mobile, then ≥640px.
+  "--section-title-size": "1.25rem",
+  "--section-title-leading": "1.75rem",
+  "--section-title-size-sm": "1.5rem",
+  "--section-title-leading-sm": "2rem",
+  // Vertical rhythm: a multiplier on the block padding of homepage and product-page sections.
+  "--section-rhythm": "1",
+  // Page titles (<h1> of cart, checkout, account, wishlist, order pages): mobile, then ≥640px.
+  "--page-title-size": "1.5rem",
+  "--page-title-leading": "2rem",
+  "--page-title-size-sm": "1.5rem",
+  "--page-title-leading-sm": "2rem",
+  // Homepage section headings ("Shop by Category", "What We Stand For", reviews): mobile, then ≥640px.
+  "--section-heading-size": "1.5rem",
+  "--section-heading-leading": "2rem",
+  "--section-heading-size-sm": "1.5rem",
+  "--section-heading-leading-sm": "2rem",
+};
+Object.assign(cssVariables, componentTokens);
+
+/* ───────────────────────────── brand themes ───────────────────────────── */
+
+/**
+ * Brand themes — the multi-brand layer. An installation picks one at runtime (STORE_THEME, see
+ * packages/shared/src/runtime-config.ts); the root layout puts it on <html data-brand="…">, and the
+ * Tailwind plugin emits each theme's overrides under `:root[data-brand="<id>"]`. A theme overrides
+ * only raw values — palette steps, radii, the title face — and every semantic role follows. `default`
+ * is the base tokens above, unchanged.
+ */
+const themeDefinitions = {
+  default: { label: "Default (neutral editorial)" },
+  // Nasihamart — calm, product-first, sans throughout. Warm off-white canvas, warm near-black text,
+  // softer and slightly larger radii. Still exactly one promotional accent (`sale`).
+  nasihamart: {
+    label: "Nasihamart (warm minimal)",
+    palette: {
+      ink: {
+        50: "#faf9f7",
+        100: "#f3f2ef",
+        200: "#e7e5e0",
+        300: "#d5d2cb",
+        400: "#736e66", // tertiary text (struck-through prices, hints) — 4.7:1 on the canvas, AA for small text
+        500: "#68645c", // secondary text — 5.4:1 on the canvas
+        600: "#4e4a44",
+        700: "#35322e",
+        800: "#24221f",
+        900: "#1b1a18",
+        950: "#0f0e0d",
+      },
+      cream: { 50: "#ffffff", 100: "#f7f6f3", 200: "#efede8", 300: "#e3e0d9" },
+      // The one promotional accent, a step deeper so white 10px badge text clears AA (5.0:1).
+      sale: { 50: "#fdecea", 500: "#d32f2f", 600: "#b71c1c" },
+    },
+    radii: { sm: "6px", DEFAULT: "10px", md: "12px", lg: "18px", xl: "24px", "2xl": "28px", "3xl": "36px" },
+    // Sans titles: semibold, tightly tracked, sentence-case labels.
+    fontVariables: {
+      "--font-display-family": "var(--font-sans)",
+      "--font-display-weight": "600",
+      "--font-display-tracking": "-0.022em",
+      "--eyebrow-weight": "500",
+    },
+    components: {
+      "--caps-transform": "none",
+      "--caps-spread": "0",
+      "--gloss": "0",
+      "--glass-alpha": "0.86",
+      "--header-shadow": "none",
+      // Image-first cards: no frame, no lift, the gentlest zoom.
+      "--badge-note-bg": "rgb(var(--color-surface) / 0.92)",
+      "--badge-note-fg": "rgb(var(--color-ink-900))",
+      "--tile-scrim": "rgb(var(--color-cream-50) / 0.6)",
+      "--media-scrim": "rgb(var(--color-ink-950) / 0.22)",
+      "--tile-label": "rgb(var(--color-ink-900))",
+      "--line-item-radius": "var(--radius-md)",
+      "--stepper-radius": "9999px",
+      "--card-lift": "0",
+      "--card-frame-border": "transparent",
+      "--card-frame-shadow": "none",
+      "--card-frame-shadow-hover": "none",
+      "--card-image-zoom": "1.03",
+      "--card-tier-display": "none",
+      "--product-tier-display": "none",
+      "--card-title-tracking": "-0.005em",
+      "--panel-border": "transparent",
+      "--panel-shadow": "none",
+      "--product-title-size": "clamp(1.875rem, 1.35rem + 1.4vw, 2.5rem)",
+      "--product-title-leading": "1.12",
+      "--product-title-weight": "600",
+      "--product-title-tracking": "-0.025em",
+      "--section-title-size": "1.5rem",
+      "--section-title-leading": "1.2",
+      "--section-title-size-sm": "1.75rem",
+      "--section-title-leading-sm": "1.15",
+      "--section-rhythm": "1.3",
+      "--page-title-size": "1.875rem",
+      "--page-title-leading": "1.15",
+      "--page-title-size-sm": "2.25rem",
+      "--page-title-leading-sm": "1.1",
+      "--section-heading-size": "1.75rem",
+      "--section-heading-leading": "1.2",
+      "--section-heading-size-sm": "2.25rem",
+      "--section-heading-leading-sm": "1.1",
+    },
+    // Sections designed on the dark palette (`.ui-band-inverse`: footer, brand story, hero band) render light.
+    band: "light",
+    // Component tokens whose colors must resolve against the band's palette, so they are declared inside it.
+    bandComponents: {
+      // A filled primary button on the hero (cream-50 / ink-950 are dark / light inside a light band).
+      "--hero-cta-fill": "rgb(var(--color-cream-50))",
+      "--hero-cta-text": "rgb(var(--color-ink-950))",
+    },
+  },
+};
+
+/**
+ * `.ui-band-inverse` marks a section designed on the dark palette (light text on ink-950). A theme
+ * with `band: "light"` renders those sections light by mirroring the palette inside them: each ink
+ * step takes its opposite (ink-950 ↔ the light canvas, ink-300 ↔ ink-700 …) and the cream (light)
+ * steps take dark inks, so every pairing keeps its contrast relationship. The variables that are
+ * references (brass alias, semantic roles) are re-declared in the scope so they follow.
+ */
+function lightBand(definition) {
+  const ink = { ...palette.ink, ...(definition.palette?.ink ?? {}) };
+  const cream = { ...palette.cream, ...(definition.palette?.cream ?? {}) };
+  const mirror = { 50: 950, 100: 900, 200: 800, 300: 700, 400: 600, 500: 500, 600: 400, 700: 300, 800: 200, 900: 100 };
+  const variables = {};
+  for (const [step, opposite] of Object.entries(mirror)) variables[`--color-ink-${step}`] = hexToRgbChannels(ink[opposite]);
+  // The band's own surface: the theme's soft secondary background rather than pure white.
+  variables["--color-ink-950"] = hexToRgbChannels(cream[200]);
+  Object.assign(variables, {
+    "--color-cream-50": hexToRgbChannels(ink[900]),
+    "--color-cream-100": hexToRgbChannels(ink[800]),
+    "--color-cream-200": hexToRgbChannels(ink[700]),
+    "--color-cream-300": hexToRgbChannels(ink[600]),
+  });
+  for (const [name, value] of Object.entries(cssVariables)) {
+    if (value.startsWith("var(--color-")) variables[name] = value;
+  }
+  variables["--band-dark-art"] = "none";
+  variables["--band-light-art"] = "contents";
+  return variables;
+}
+
+const themes = {};
+for (const [id, definition] of Object.entries(themeDefinitions)) {
+  const variables = {};
+  for (const [scale, steps] of Object.entries(definition.palette ?? {})) {
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  for (const [step, value] of Object.entries(definition.radii ?? {})) variables[radiusVariable(step)] = value;
+  Object.assign(variables, definition.fontVariables, definition.components);
+  themes[id] = { label: definition.label, cssVariables: variables, bandVariables: { ...(definition.band === "light" ? lightBand(definition) : {}), ...definition.bandComponents } };
+}
+const DEFAULT_THEME = "default";
+
 module.exports = {
+  themes,
+  DEFAULT_THEME,
   palette,
   semantic,
   cssVariables,

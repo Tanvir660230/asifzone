@@ -6,7 +6,7 @@ import { buildFaqJsonLd } from "@/lib/structured-data";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { FaqAccordion, type FaqGroup } from "@/components/storefront/faq-accordion";
-import { BD_DELIVERY_TIME_TEXT, jsonLdString, OUTSIDE_DHAKA_DELIVERY_DAYS } from "@clothing-brand/shared";
+import { BD_DELIVERY_TIME_TEXT, dayRange, jsonLdString, returnPolicySentence, storePolicy, type StorePolicy } from "@clothing-brand/shared";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
 // `next build` would try to statically prerender the page and fail (the api container isn't
@@ -25,6 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description: DESCRIPTION,
     alternates: { canonical: `${getSiteUrl()}/faq` },
     ...buildOpenGraph({
+      siteName: settings.storeName,
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/faq`,
@@ -33,7 +34,9 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-const FAQ_GROUPS: FaqGroup[] = [
+/** Questions about the store's own policy are answered from its settings (store-policy.ts), never from assumptions. */
+function faqGroups(policy: StorePolicy): FaqGroup[] {
+  return [
   {
     category: "Orders & Products",
     items: [
@@ -48,7 +51,7 @@ const FAQ_GROUPS: FaqGroup[] = [
       },
       {
         question: "Do you restock sold-out items?",
-        answer: "Popular sizes and styles are restocked when possible. Check back on the product page, or contact us to ask about a specific item.",
+        answer: "Popular items are restocked when possible. Check back on the product page, or contact us to ask about a specific item.",
       },
     ],
   },
@@ -59,13 +62,12 @@ const FAQ_GROUPS: FaqGroup[] = [
         question: "How long does delivery take?",
         answer: BD_DELIVERY_TIME_TEXT,
       },
-      {
-        question: "Do you offer Cash on Delivery?",
-        answer: "Yes — Cash on Delivery is available on every order, nationwide.",
-      },
+      ...(policy.cashOnDelivery
+        ? [{ question: "Do you offer Cash on Delivery?", answer: "Yes — Cash on Delivery is available on every order, nationwide." }]
+        : []),
       {
         question: "Do you deliver outside Dhaka?",
-        answer: `Yes, we deliver nationwide via courier partners, typically within ${OUTSIDE_DHAKA_DELIVERY_DAYS[0]}–${OUTSIDE_DHAKA_DELIVERY_DAYS[1]} business days.`,
+        answer: `Yes, we deliver nationwide via courier partners, typically within ${dayRange(policy.deliveryDays.outsideDhaka)} business days.`,
       },
     ],
   },
@@ -74,12 +76,11 @@ const FAQ_GROUPS: FaqGroup[] = [
     items: [
       {
         question: "Can I return or exchange an item?",
-        answer:
-          "Unworn items in original condition with tags attached can be returned or exchanged within 7 days of delivery. See our Shipping & Returns page for the full policy.",
+        answer: `${returnPolicySentence(policy) ?? "Get in touch and we'll help with a return or exchange."} See our Shipping & Returns page for the full policy.`,
       },
       {
         question: "How do I start a return?",
-        answer: "Contact us with your order number within 7 days of delivery, and we'll walk you through the next steps.",
+        answer: `Contact us with your order number${policy.returns ? ` within ${policy.returns.days} days of delivery` : ""}, and we'll walk you through the next steps.`,
       },
       {
         question: "Are all items eligible for return?",
@@ -92,7 +93,9 @@ const FAQ_GROUPS: FaqGroup[] = [
     items: [
       {
         question: "What payment methods do you accept?",
-        answer: "We accept Cash on Delivery along with the card and mobile-wallet options shown at checkout.",
+        answer: policy.cashOnDelivery
+          ? "We accept Cash on Delivery along with the card and mobile-wallet options shown at checkout."
+          : "We accept the card and mobile-wallet options shown at checkout.",
       },
       {
         question: "Do I need an account to order?",
@@ -105,13 +108,16 @@ const FAQ_GROUPS: FaqGroup[] = [
     ],
   },
 ];
+}
 
-export default function FaqPage() {
+export default async function FaqPage() {
+  const { settings } = await getSiteSettings();
+  const groups = faqGroups(storePolicy(settings));
   return (
     <div>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: jsonLdString(buildFaqJsonLd(FAQ_GROUPS)) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdString(buildFaqJsonLd(groups)) }}
       />
       <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
         <Breadcrumb trail={[{ name: "FAQ" }]} />
@@ -123,7 +129,7 @@ export default function FaqPage() {
       />
 
       <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 lg:px-8">
-        <FaqAccordion groups={FAQ_GROUPS} />
+        <FaqAccordion groups={groups} />
 
         <p className="mt-10 text-center text-sm text-ink-500">
           Still have a question?{" "}

@@ -191,7 +191,7 @@ export function VariantSelector({
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="flex items-center gap-3 overflow-hidden"
           >
-            <p className="shrink-0 text-xs uppercase tracking-wide text-ink-500">Qty</p>
+            <p className="shrink-0 text-xs ui-caps text-ink-500">Qty</p>
             <div className="flex items-center rounded-full border border-ink-200 shadow-sm">
               <button
                 onClick={() => setQuantity(Math.max(1, effectiveQty - 1))}

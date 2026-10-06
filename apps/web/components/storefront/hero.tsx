@@ -1,51 +1,117 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { resolveImageUrl } from "@/lib/image-url";
 
-const FALLBACK_TAGLINE = "Considered clothing, made to last";
+/** Shown only when the hero section has no button label of its own — store- and category-neutral on purpose. */
+const FALLBACK_CTA_LABEL = "Explore the collection";
 
 interface HeroProps {
+  /** The store's name: the headline of last resort, so the hero never invents a message for the store. */
+  storeName: string;
   tagline?: string | null;
   headline?: string | null;
   subtext?: string | null;
   ctaLabel?: string | null;
   ctaHref?: string | null;
+  secondaryCtaLabel?: string | null;
+  secondaryCtaHref?: string | null;
+  imageUrl?: string | null;
+  imageAltText?: string | null;
 }
 
-export function Hero({ tagline, headline, subtext, ctaLabel, ctaHref }: HeroProps) {
-  return (
-    <section className="relative flex h-[70vh] min-h-[420px] items-center justify-center overflow-hidden bg-ink-950 text-center text-cream-50">
-      <div className="relative z-10 px-4">
+/** The homepage hero when no hero banners are active. Its message is entirely the store's (Admin → Homepage → Hero, then
+ * the tagline, then the store name); the theme decides how it looks. Designed on the dark palette (`ui-band-inverse`). */
+export function Hero({
+  storeName,
+  tagline,
+  headline,
+  subtext,
+  ctaLabel,
+  ctaHref,
+  secondaryCtaLabel,
+  secondaryCtaHref,
+  imageUrl,
+  imageAltText,
+}: HeroProps) {
+  const copy = (
+    <div className="relative z-10 px-4">
+      {subtext && (
         <motion.p
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300"
+          className="mb-4 text-xs ui-eyebrow text-brass-300"
         >
-          {subtext || "New Season"}
+          {subtext}
         </motion.p>
-        <motion.h2
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.08, duration: 0.4 }}
-          className="font-display text-4xl sm:text-5xl lg:text-6xl"
+      )}
+      <motion.h2
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.08, duration: 0.4 }}
+        className="font-display text-4xl sm:text-5xl lg:text-6xl"
+      >
+        {headline || tagline || storeName}
+      </motion.h2>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.16, duration: 0.35 }}
+      >
+        <Link
+          href={ctaHref || "/search"}
+          className="mt-8 inline-block rounded-full border border-cream-50 bg-[color:var(--hero-cta-fill)] px-8 py-3 text-sm ui-caps text-[color:var(--hero-cta-text)] transition-all duration-300 ease-smooth hover:scale-105 hover:bg-cream-50 hover:text-ink-900"
         >
-          {headline || tagline || FALLBACK_TAGLINE}
-        </motion.h2>
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.16, duration: 0.35 }}
-        >
+          {ctaLabel || FALLBACK_CTA_LABEL}
+        </Link>
+        {secondaryCtaLabel && secondaryCtaHref && (
           <Link
-            href={ctaHref || "/search"}
-            className="mt-8 inline-block rounded-full border border-cream-50 px-8 py-3 text-sm uppercase tracking-wide transition-all duration-300 ease-smooth hover:scale-105 hover:bg-cream-50 hover:text-ink-900"
+            href={secondaryCtaHref}
+            className="group ml-2 mt-8 inline-flex items-center gap-1 px-4 py-3 text-sm ui-caps underline-offset-4 hover:underline"
           >
-            {ctaLabel || "Shop the collection"}
+            {secondaryCtaLabel}
+            <span aria-hidden="true" className="transition-transform duration-200 ease-smooth group-hover:translate-x-0.5">
+              →
+            </span>
           </Link>
-        </motion.div>
-      </div>
+        )}
+      </motion.div>
+    </div>
+  );
+
+  if (!imageUrl) {
+    return (
+      <section className="ui-band-inverse relative flex h-[70vh] min-h-[420px] items-center justify-center overflow-hidden bg-ink-950 text-center text-cream-50">
+        {copy}
+      </section>
+    );
+  }
+
+  // With an image the copy leads and the image follows at full width — an editorial composition rather than text laid
+  // over a photo, so the headline never depends on the picture's contrast.
+  return (
+    <section className="ui-band-inverse overflow-hidden bg-ink-950 pt-16 text-center text-cream-50 sm:pt-20 lg:pt-24">
+      {copy}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.6 }}
+        className="mx-auto mt-12 max-w-7xl px-4 pb-4 sm:mt-14 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8"
+      >
+        <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-ink-900 sm:aspect-[16/9] lg:aspect-[21/9]">
+          <Image
+            src={resolveImageUrl(imageUrl)}
+            alt={imageAltText || headline || storeName}
+            fill
+            priority
+            sizes="(min-width: 1280px) 1216px, 100vw"
+            className="object-cover"
+          />
+        </div>
+      </motion.div>
     </section>
   );
 }

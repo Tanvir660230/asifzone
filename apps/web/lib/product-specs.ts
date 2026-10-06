@@ -1,4 +1,4 @@
-import { toVideoEmbed, type Product, type ProductResolvedView, type SpecItemView } from "@clothing-brand/shared";
+import { getSectionDef, shippingAndReturnsText, toVideoEmbed, type Product, type ProductResolvedView, type SpecItemView, type StorePolicy } from "@clothing-brand/shared";
 
 type Attributes = Record<string, unknown> | null | undefined;
 
@@ -91,7 +91,9 @@ function videoHtml(url: string, title: string): string | null {
  * Sections with nothing to show (no materials, no FAQ, no text) simply don't appear. `sanitize` is DOMPurify, passed in so
  * the browser bundle never has to load it — this runs in the server-rendered page.
  */
-export function buildAccordionItems(product: Product, sanitize: (html: string) => string): SpecAccordionItem[] {
+/** `policy`: the store's policy — the "Shipping & Returns" row is written from it unless the store, a template or the
+ * product has its own wording (content that still equals the registry's built-in default counts as "none"). */
+export function buildAccordionItems(product: Product, sanitize: (html: string) => string, policy?: StorePolicy): SpecAccordionItem[] {
   const resolved = product.resolved;
   const items: SpecAccordionItem[] = [];
 
@@ -136,7 +138,12 @@ export function buildAccordionItems(product: Product, sanitize: (html: string) =
           if (resolved?.type?.key === "CLOTHING" && !hasCare) items.push({ title: "Care", content: CLOTHING_CARE_NOTE });
         }
         break;
-      case "shipping":
+      case "shipping": {
+        const ownWording = section.content?.trim() && section.content !== getSectionDef("shipping")?.defaultContent ? section.content : null;
+        const text = ownWording ?? (policy ? shippingAndReturnsText(policy) : section.content);
+        if (text?.trim()) items.push({ title: section.title, content: textToHtml(text, sanitize), html: true });
+        break;
+      }
       case "returns":
       case "warranty":
         if (section.content?.trim()) items.push({ title: section.title, content: textToHtml(section.content, sanitize), html: true });

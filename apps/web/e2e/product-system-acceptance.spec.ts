@@ -106,7 +106,7 @@ async function apiProduct(slug: string) {
   return res.status === 200 ? ((await res.json()) as { product: any }).product : null;
 }
 
-const accordionTitles = (page: Page) => page.locator("button[aria-expanded]").allTextContents().then((t) => t.map((s) => s.trim()));
+const accordionTitles = (page: Page) => page.getByTestId("product-accordion").locator("button[aria-expanded]").allTextContents().then((t) => t.map((s) => s.trim()));
 
 async function openSizeGuide(page: Page) {
   await page.getByRole("button", { name: /size guide/i }).first().click();

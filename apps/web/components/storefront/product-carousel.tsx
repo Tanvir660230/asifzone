@@ -24,9 +24,9 @@ export function ProductCarousel({ title, eyebrow, products }: ProductCarouselPro
   if (products.length === 0) return null;
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-      {eyebrow && <p className="mb-2 text-xs uppercase tracking-[0.3em] text-brass-300">{eyebrow}</p>}
-      <h2 className="mb-6 font-display text-xl text-ink-900 sm:text-2xl">{title}</h2>
+    <section className="mx-auto max-w-7xl px-4 py-[calc(3rem*var(--section-rhythm))] sm:px-6 lg:px-8">
+      {eyebrow && <p className="mb-2 text-xs ui-eyebrow text-brass-300">{eyebrow}</p>}
+      <h2 className="ui-section-title mb-6 font-display text-ink-900">{title}</h2>
       <motion.div
         variants={container}
         initial="hidden"

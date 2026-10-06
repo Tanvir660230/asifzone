@@ -9,10 +9,13 @@ share a database.
 | Kind | Where | Examples |
 |---|---|---|
 | Deployment inputs | `docker/.env` (template: `docker/.env.example`) | `INSTALL_ID`, `SERVER_NAME`, `SERVER_ALIASES`, `CERT_NAME`, `GDRIVE_REMOTE`, `COMPOSE_PROJECT_NAME`, `POSTGRES_DB`, public URLs |
-| Runtime public config (Phase 1A) | `docker/.env`, read by the web service at runtime | `SITE_URL`, `PUBLIC_API_URL`, `MEDIA_BASE_URL`, `META_PIXEL_ID`, `TIKTOK_PIXEL_ID`, `CLARITY_ID`, `GOOGLE_CLIENT_ID`, `WEB_PUSH_PUBLIC_KEY` |
+| Runtime public config (Phase 1A) | `docker/.env`, read by the web service at runtime | `SITE_URL`, `PUBLIC_API_URL`, `MEDIA_BASE_URL`, `META_PIXEL_ID`, `TIKTOK_PIXEL_ID`, `CLARITY_ID`, `GOOGLE_CLIENT_ID`, `WEB_PUSH_PUBLIC_KEY`, `STORE_THEME` |
 | Secrets | `docker/.env` (or per-store GitHub Environment secrets) | `JWT_*`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, provider credentials |
 | Provider selection | `docker/.env` | `PAYMENT_GATEWAYS`, `SMS_PROVIDER`, `EMAIL_PROVIDER`, `COURIER_PROVIDER`, `PUSH_PROVIDER` |
-| Store identity & business settings | the store's database, entered in **Admin → Settings** | name, logo, favicon, legal name, address, governing law, support hours, currency, timezone, tax, shipping, payment methods |
+| Store identity & business settings | the store's database, entered in **Admin → Settings** | name, logo, favicon, legal name, address, governing law, support hours, currency, timezone, tax, shipping, payment methods, store policy (return window and conditions, dispatch time) |
+| Look | `STORE_THEME` in `docker/.env` (themes: `packages/ui-tokens`, docs/DESIGN_SYSTEM.md) | `default`, `nasihamart` |
+
+Per-store runbooks: [docs/installations/](installations/) (e.g. `nasihamart.md`).
 
 Never copy one store's `JWT_*`, database or Redis passwords to another.
 
@@ -107,6 +110,9 @@ deploying, since jobs queued under the old unprefixed names are not picked up (t
 
 Each installation is its own compose project (`COMPOSE_PROJECT_NAME`) with its own database (`POSTGRES_DB`), uploads
 volume, `docker/.env` and `INSTALL_ID`. Give each its own host ports (`API_HOST_PORT`, `WEB_HOST_PORT`, `HTTP_PORT`,
-`HTTPS_PORT`); only one process can own 80/443, so a front proxy (not part of this release) routes each host name to its
-installation's nginx. They may share one Redis server (`REDIS_URL`) — `INSTALL_ID` keeps their keys apart. Moving an
+`HTTPS_PORT`); only one process can own 80/443. The installation that owns them is the front proxy: its nginx includes
+`docker/nginx/sites.d/*.conf`, one server-local file per extra store, routing that store's host names to its api and web
+containers. The extra store runs with `docker/compose.shared-proxy.yml` (its api/web join the front network as
+`<INSTALL_ID>-api` / `<INSTALL_ID>-web`; its own nginx and certbot stay off) and its certificate is issued by the front
+installation's certbot, which also renews it. They may share one Redis server (`REDIS_URL`) — `INSTALL_ID` keeps their keys apart. Moving an
 installation to its own VPS later is the same image with the same `docker/.env`, its database dump and its uploads volume.

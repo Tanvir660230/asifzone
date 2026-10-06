@@ -10,16 +10,17 @@ interface ProductPageBodyProps {
   /** Already sanitized by the caller (see buildAccordionItems). */
   accordionItems: SpecAccordionItem[];
   showSizeGuideLink: boolean;
+  policyLines?: ComponentProps<typeof ProductShowcase>["policyLines"];
 }
 
 /** The part of the product page that shows the product itself: breadcrumb, gallery, price, options, accordion.
  * No data fetching and no server-only code, so the live route (via ProductPageView, a server component) and the
  * admin wizard's live preview (a client page fed unsaved form state) render literally the same component tree. */
-export function ProductPageBody({ product, urgencySignals, accordionItems, showSizeGuideLink }: ProductPageBodyProps) {
+export function ProductPageBody({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines }: ProductPageBodyProps) {
   return (
     <>
       <Breadcrumb trail={[{ name: product.category.name, href: `/category/${product.category.slug}` }, { name: product.name }]} />
-      <ProductShowcase product={product} urgencySignals={urgencySignals} accordionItems={accordionItems} showSizeGuideLink={showSizeGuideLink} />
+      <ProductShowcase product={product} urgencySignals={urgencySignals} accordionItems={accordionItems} showSizeGuideLink={showSizeGuideLink} policyLines={policyLines} />
     </>
   );
 }

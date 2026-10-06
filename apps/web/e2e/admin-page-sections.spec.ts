@@ -26,7 +26,7 @@ async function login(page: Page) {
 }
 
 /** The accordion rows on a product page, in the order a customer sees them. */
-const accordionTitles = (page: Page) => page.locator("button[aria-expanded]").allTextContents().then((t) => t.map((s) => s.trim()));
+const accordionTitles = (page: Page) => page.getByTestId("product-accordion").locator("button[aria-expanded]").allTextContents().then((t) => t.map((s) => s.trim()));
 
 /** Fills a new product in the builder up to the point of creating it. */
 async function startDraft(page: Page, name: string, sku: string, opts: { type?: string } = {}) {

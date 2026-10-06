@@ -53,9 +53,10 @@ export const SECTION_REGISTRY = [
     content: "text",
     defaultEnabled: true,
     defaultTitle: "Shipping & Returns",
-    defaultContent:
-      `Dispatched within 1–2 business days. Inside Dhaka: ${DHAKA_DELIVERY_DAYS[0]}–${DHAKA_DELIVERY_DAYS[1]} days, outside Dhaka: ${OUTSIDE_DHAKA_DELIVERY_DAYS[0]}–${OUTSIDE_DHAKA_DELIVERY_DAYS[1]} days. Unworn items with tags can be returned or exchanged within 7 days of delivery.`,
-    help: "Delivery and return information. Set the store-wide wording once; a template or product can override it.",
+    // Shown only where the storefront can't read the store's policy; the product page writes this row from the store's
+    // own policy (store-policy.ts shippingAndReturnsText) unless the store, a template or the product words it itself.
+    defaultContent: `Inside Dhaka: ${DHAKA_DELIVERY_DAYS[0]}–${DHAKA_DELIVERY_DAYS[1]} days, outside Dhaka: ${OUTSIDE_DHAKA_DELIVERY_DAYS[0]}–${OUTSIDE_DHAKA_DELIVERY_DAYS[1]} days.`,
+    help: "Delivery and return information. Left blank, it is written from the store's policy in Settings; set store-wide wording here, or override it per template or product.",
   },
   { key: "returns", label: "Returns (separate)", area: "accordion", content: "text", defaultEnabled: false, defaultTitle: "Returns", help: "A separate returns row, if you'd rather not combine it with shipping." },
   { key: "warranty", label: "Warranty", area: "accordion", content: "text", defaultEnabled: false, defaultTitle: "Warranty", help: "Warranty terms (watches, electronics…)." },
@@ -67,7 +68,7 @@ export const SECTION_REGISTRY = [
   { key: "bundle", label: "Bundle offer", area: "block", content: "none", defaultEnabled: true, defaultTitle: "Complete the Bundle", help: "The bundle discount suggestions, when a bundle applies." },
   { key: "related", label: "Related products", area: "block", content: "none", defaultEnabled: true, defaultTitle: "Best Match", relationKind: "RELATED", help: "Hand-picked related products; automatic best matches when none are picked." },
   { key: "frequentlyBought", label: "Frequently bought together", area: "block", content: "none", defaultEnabled: true, defaultTitle: "Customers Also Bought", relationKind: "FREQUENTLY_BOUGHT", help: "Hand-picked companions; what customers really buy together when none are picked." },
-  { key: "crossSell", label: "Cross-sell", area: "block", content: "none", defaultEnabled: true, defaultTitle: "Complete The Look", relationKind: "CROSS_SELL", help: "Hand-picked complements; automatic outfit suggestions when none are picked." },
+  { key: "crossSell", label: "Cross-sell", area: "block", content: "none", defaultEnabled: true, defaultTitle: "Pairs Well With", relationKind: "CROSS_SELL", help: "Hand-picked complements; automatic suggestions when none are picked." },
   { key: "upsell", label: "Upsell", area: "block", content: "none", defaultEnabled: true, defaultTitle: "Upgrade Option", relationKind: "UPSELL", help: "Hand-picked step-ups; automatic pricier alternatives when none are picked." },
   { key: "budget", label: "Budget alternatives", area: "block", content: "none", defaultEnabled: true, defaultTitle: "Budget Alternative", help: "Cheaper alternatives (automatic)." },
   { key: "premium", label: "Premium alternatives", area: "block", content: "none", defaultEnabled: true, defaultTitle: "More Premium Options", help: "Premium alternatives (automatic)." },

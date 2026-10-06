@@ -13,7 +13,8 @@ interface OpenGraphOptions {
   title: string;
   description?: string;
   url: string;
-  siteName?: string;
+  /** The store's name (settings). Required: a page's `openGraph` replaces the layout's rather than merging with it. */
+  siteName: string;
   images?: string[];
 }
 

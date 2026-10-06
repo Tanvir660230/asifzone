@@ -345,7 +345,7 @@ function CheckoutForm() {
   if (items.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center">
-        <h1 className="font-display text-2xl text-ink-900">Your cart is empty</h1>
+        <h1 className="font-display ui-page-title text-ink-900">Your cart is empty</h1>
       </div>
     );
   }
@@ -362,7 +362,7 @@ function CheckoutForm() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className={cn("font-display text-2xl text-ink-900", isExpress ? "mb-1" : "mb-8")}>Checkout</h1>
+      <h1 className={cn("font-display ui-page-title text-ink-900", isExpress ? "mb-1" : "mb-8")}>Checkout</h1>
       {isExpress && <p className="mb-7 text-sm text-ink-500">Buying 1 item — your cart is untouched.</p>}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] lg:gap-10">
@@ -394,7 +394,7 @@ function CheckoutForm() {
                       <span>
                         {item.productName} × {item.quantity}
                         {isEligible && (
-                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success-700">
+                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium ui-caps text-success-700">
                             Coupon
                           </span>
                         )}
@@ -466,7 +466,7 @@ function CheckoutForm() {
                     <span className="text-ink-400">Select district</span>
                   ) : shipping.waived ? (
                     <span>
-                      <span className="mr-1.5 text-ink-400 line-through">{formatPrice(shipping.fee)}</span>
+                      <span className="mr-1.5 text-fg-muted line-through">{formatPrice(shipping.fee)}</span>
                       <span className="font-medium text-success-600">Free</span>
                     </span>
                   ) : (
@@ -700,7 +700,7 @@ function CheckoutForm() {
             </div>
             {(settingsData?.settings.paymentMethodsImageUrl ?? paymentMethods.length > 0) && (
               <div className="mt-4 border-t border-ink-100 pt-4">
-                <p className="mb-2 text-[11px] uppercase tracking-wide text-ink-400">Secure Payment Methods</p>
+                <p className="mb-2 text-[11px] ui-caps text-ink-400">Secure Payment Methods</p>
                 {settingsData?.settings.paymentMethodsImageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -721,7 +721,7 @@ function CheckoutForm() {
                           className="h-6 w-auto object-contain"
                         />
                       ) : (
-                        <span key={method.id} className="text-[11px] uppercase tracking-wide text-ink-400">
+                        <span key={method.id} className="text-[11px] ui-caps text-ink-400">
                           {method.name}
                         </span>
                       ),

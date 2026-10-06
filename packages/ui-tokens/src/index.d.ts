@@ -4,6 +4,9 @@ type Scale = Record<string, string>;
 type CubicBezier = [number, number, number, number];
 
 interface UiTokens {
+  /** Brand themes by id — each a set of `:root[data-brand="<id>"]` variable overrides (empty for `default`). */
+  themes: Record<string, { label: string; cssVariables: Record<string, string>; bandVariables: Record<string, string> }>;
+  DEFAULT_THEME: string;
   /** Raw hex values per scale — for places that genuinely need a literal color (e.g. canvas/SVG export). */
   palette: Record<string, Scale>;
   /** Semantic role -> palette reference ("canvas" -> "cream-100"). */

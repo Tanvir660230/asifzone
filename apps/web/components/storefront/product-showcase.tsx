@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Banknote, RotateCcw, Truck } from "lucide-react";
-import { pickGalleryImages, type Product, type ProductVariant } from "@clothing-brand/shared";
+import { pickGalleryImages, type PolicyHighlightKind, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
@@ -16,11 +16,7 @@ import { formatPrice } from "@/lib/format";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import type { SpecAccordionItem } from "@/lib/product-specs";
 
-const TRUST_ITEMS = [
-  { icon: Truck, label: "Nationwide delivery, 1–5 business days" },
-  { icon: RotateCcw, label: "7-day easy returns" },
-  { icon: Banknote, label: "Cash on Delivery available" },
-];
+const POLICY_ICON: Record<PolicyHighlightKind, typeof Truck> = { delivery: Truck, returns: RotateCcw, cashOnDelivery: Banknote };
 
 interface ProductShowcaseProps {
   product: Product;
@@ -30,12 +26,14 @@ interface ProductShowcaseProps {
   accordionItems: SpecAccordionItem[];
   /** Whether the size-guide link is switched on for this product's page sections. */
   showSizeGuideLink: boolean;
+  /** The store's own policy lines (@clothing-brand/shared policyHighlights) — none when it states none. */
+  policyLines?: { kind: PolicyHighlightKind; label: string }[];
 }
 
 /** Owns the one piece of state that needs to be shared between the gallery and the variant
  * selector — which image is currently "in focus" — since they live in separate, non-adjacent
  * parts of the two-column layout and neither can see the other's props directly. */
-export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink }: ProductShowcaseProps) {
+export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [] }: ProductShowcaseProps) {
   const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
@@ -78,11 +76,15 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
       <ProductGallery images={galleryImages} productName={product.name} />
 
       <div>
-        <p className="text-xs uppercase tracking-wide text-ink-400">
-          {product.brandTier}
-          {product.brand ? ` · ${product.brand}` : ""}
+        <p className="text-xs ui-caps text-ink-400">
+          {/* The price tier is presentation a theme may hide (--product-tier-display); the brand always shows. */}
+          <span className="[display:var(--product-tier-display)]">
+            {product.brandTier}
+            {product.brand ? " · " : ""}
+          </span>
+          {product.brand ?? ""}
         </p>
-        <h1 className="mt-1 font-display text-3xl font-medium tracking-wide text-ink-900">{product.name}</h1>
+        <h1 className="ui-product-title mt-1 font-display text-ink-900">{product.name}</h1>
         {product.reviewCount > 0 && (
           <a href="#reviews" className="mt-2 flex items-center gap-2 text-sm text-ink-500 hover:text-brass-600">
             <StarRating value={product.avgRating} />
@@ -96,11 +98,11 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             {formatPrice(shown.price)}
           </span>
           {shown.was !== null && Number(shown.was) > Number(shown.price) && (
-            <span className="text-sm text-ink-400 line-through" data-testid="product-compare-price">{formatPrice(shown.was)}</span>
+            <span className="text-sm text-fg-muted line-through" data-testid="product-compare-price">{formatPrice(shown.was)}</span>
           )}
         </div>
         {shown.flash && (
-          <p className="mt-1 text-xs uppercase tracking-wide text-sale-500">
+          <p className="mt-1 text-xs ui-caps text-sale-500">
             Flash sale ends in <CountdownTimer endsAt={shown.flash.endsAt} className="font-medium" />
           </p>
         )}
@@ -127,14 +129,19 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           />
         </div>
 
-        <div className="mt-8 space-y-3 border-t border-ink-100 pt-6">
-          {TRUST_ITEMS.map(({ icon: Icon, label }) => (
-            <div key={label} className="flex items-center gap-3 text-sm text-ink-600">
-              <Icon size={18} className="shrink-0 text-brass-500" />
-              {label}
-            </div>
-          ))}
-        </div>
+        {policyLines.length > 0 && (
+          <ul className="mt-8 space-y-3 border-t border-ink-100 pt-6">
+            {policyLines.map(({ kind, label }) => {
+              const Icon = POLICY_ICON[kind];
+              return (
+                <li key={kind} className="flex items-center gap-3 text-sm text-ink-600">
+                  <Icon size={18} className="shrink-0 text-brass-500" aria-hidden="true" />
+                  {label}
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
         <ProductAccordion items={accordionItems} />
       </div>

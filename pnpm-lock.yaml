@@ -84,6 +84,9 @@ importers:
       '@clothing-brand/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@clothing-brand/ui-tokens':
+        specifier: workspace:^
+        version: link:../../packages/ui-tokens
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.8.1(jiti@1.21.7))

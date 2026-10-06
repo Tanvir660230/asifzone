@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Truck, MapPin, Wallet, PackageCheck, Ban } from "lucide-react";
-import { BD_DELIVERY_TIME_TEXT } from "@clothing-brand/shared";
+import { BD_DELIVERY_TIME_TEXT, dayRange, storePolicy, type StorePolicy } from "@clothing-brand/shared";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
@@ -24,6 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description: DESCRIPTION,
     alternates: { canonical: `${getSiteUrl()}/shipping-returns` },
     ...buildOpenGraph({
+      siteName: settings.storeName,
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/shipping-returns`,
@@ -32,51 +33,60 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-const SHIPPING_FACTS = [
-  {
-    icon: Truck,
-    title: "Order processing",
-    body: "Every order is packed and dispatched within 1–2 business days of being placed.",
-  },
-  {
-    icon: MapPin,
-    title: "Delivery time",
-    body: `${BD_DELIVERY_TIME_TEXT.replace(/\.$/, "")} via courier.`,
-  },
-  {
-    icon: Wallet,
-    title: "Cash on Delivery",
-    body: "Available on every order, nationwide — pay when your parcel arrives at your door.",
-  },
-];
+/** The store's own facts (Admin → Settings → Store policy), never a policy the code assumes. */
+function shippingFacts(policy: StorePolicy) {
+  return [
+    policy.handlingDays && {
+      icon: Truck,
+      title: "Order processing",
+      body: `Every order is packed and dispatched within ${dayRange(policy.handlingDays)} business days of being placed.`,
+    },
+    {
+      icon: MapPin,
+      title: "Delivery time",
+      body: `${BD_DELIVERY_TIME_TEXT.replace(/\.$/, "")} via courier.`,
+    },
+    policy.cashOnDelivery && {
+      icon: Wallet,
+      title: "Cash on Delivery",
+      body: "Available on every order, nationwide — pay when your parcel arrives at your door.",
+    },
+  ].filter((fact): fact is { icon: typeof Truck; title: string; body: string } => Boolean(fact));
+}
 
-const RETURN_STEPS = [
-  {
-    step: "1",
-    title: "Get in touch",
-    body: (
-      <>
-        Reach us via the{" "}
-        <Link href="/contact" className="text-ink-900 underline underline-offset-2 hover:text-brass-500">
-          contact page
-        </Link>{" "}
-        within 7 days of delivery with your order number.
-      </>
-    ),
-  },
-  {
-    step: "2",
-    title: "Pack it up",
-    body: "Keep the item unworn, in its original condition, with all tags still attached.",
-  },
-  {
-    step: "3",
-    title: "We take it from there",
-    body: "Once received and inspected, we'll process your exchange or refund and confirm by phone or email.",
-  },
-];
+function returnSteps(policy: StorePolicy) {
+  return [
+    {
+      step: "1",
+      title: "Get in touch",
+      body: (
+        <>
+          Reach us via the{" "}
+          <Link href="/contact" className="text-ink-900 underline underline-offset-2 hover:text-brass-500">
+            contact page
+          </Link>{" "}
+          {policy.returns ? `within ${policy.returns.days} days of delivery ` : ""}with your order number.
+        </>
+      ),
+    },
+    {
+      step: "2",
+      title: "Pack it up",
+      body: policy.returns?.conditions
+        ? "Make sure it meets the conditions above, and pack it securely in its original packaging."
+        : "Pack it securely in its original packaging.",
+    },
+    {
+      step: "3",
+      title: "We take it from there",
+      body: "Once received and inspected, we'll process your exchange or refund and confirm by phone or email.",
+    },
+  ];
+}
 
-export default function ShippingReturnsPage() {
+export default async function ShippingReturnsPage() {
+  const { settings } = await getSiteSettings();
+  const policy = storePolicy(settings);
   return (
     <div>
       <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
@@ -90,9 +100,9 @@ export default function ShippingReturnsPage() {
 
       <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
         <section className="mb-16">
-          <h2 className="mb-6 text-xs uppercase tracking-[0.2em] text-ink-400">Shipping</h2>
+          <h2 className="mb-6 text-xs ui-caps tracking-[calc(0.2em*var(--caps-spread))] text-ink-400">Shipping</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-            {SHIPPING_FACTS.map((fact) => (
+            {shippingFacts(policy).map((fact) => (
               <div key={fact.title} className="rounded-2xl border border-ink-100 bg-cream-50 p-6">
                 <span
                   aria-hidden="true"
@@ -108,18 +118,24 @@ export default function ShippingReturnsPage() {
         </section>
 
         <section>
-          <h2 className="mb-6 text-xs uppercase tracking-[0.2em] text-ink-400">Returns &amp; Exchanges</h2>
+          <h2 className="mb-6 text-xs ui-caps tracking-[calc(0.2em*var(--caps-spread))] text-ink-400">Returns &amp; Exchanges</h2>
 
           <div className="mb-6 flex items-start gap-3 rounded-2xl border border-ink-100 bg-cream-50 p-6">
             <PackageCheck size={20} className="mt-0.5 shrink-0 text-ink-400" />
             <p className="text-sm leading-relaxed text-ink-700">
-              Unworn items in original condition with tags attached can be returned or exchanged within{" "}
-              <strong className="font-semibold text-ink-900">7 days</strong> of delivery.
+              {policy.returns ? (
+                <>
+                  {policy.returns.conditions ?? "Items"} can be returned or exchanged within{" "}
+                  <strong className="font-semibold text-ink-900">{policy.returns.days} days</strong> of delivery.
+                </>
+              ) : (
+                "Get in touch about a return or exchange and we'll help you with the next steps."
+              )}
             </p>
           </div>
 
           <ol className="mb-6 space-y-5">
-            {RETURN_STEPS.map((s) => (
+            {returnSteps(policy).map((s) => (
               <li key={s.step} className="flex gap-4">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-900 text-sm font-medium text-cream-50">
                   {s.step}

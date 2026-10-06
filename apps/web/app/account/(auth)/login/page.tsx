@@ -81,7 +81,7 @@ function LoginForm() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Sign in</h1>
+      <h1 className="mb-1 font-display ui-page-title text-ink-900">Sign in</h1>
       <p className="mb-6 text-sm text-ink-500">
         {cameFromRedirect ? "Sign in to continue." : "Access your orders, addresses, and wishlist."}
       </p>

@@ -65,7 +65,7 @@ export function CompareBar() {
           <table className="w-full min-w-[560px] table-fixed border-collapse text-left text-sm">
             <tbody>
               <tr>
-                <td className="w-28 py-2 text-xs uppercase tracking-wide text-ink-400">Product</td>
+                <td className="w-28 py-2 text-xs ui-caps text-ink-400">Product</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2">
                     <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-ink-100">
@@ -90,7 +90,7 @@ export function CompareBar() {
                 ))}
               </tr>
               <tr className="border-t border-ink-100">
-                <td className="py-2 text-xs uppercase tracking-wide text-ink-400">Price</td>
+                <td className="py-2 text-xs ui-caps text-ink-400">Price</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2 text-ink-900">
                     {formatPrice(productDisplayPrice(product).price)}
@@ -98,7 +98,7 @@ export function CompareBar() {
                 ))}
               </tr>
               <tr className="border-t border-ink-100">
-                <td className="py-2 text-xs uppercase tracking-wide text-ink-400">Brand tier</td>
+                <td className="py-2 text-xs ui-caps text-ink-400">Brand tier</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2 text-ink-700">
                     {product.brandTier}
@@ -106,7 +106,7 @@ export function CompareBar() {
                 ))}
               </tr>
               <tr className="border-t border-ink-100">
-                <td className="py-2 text-xs uppercase tracking-wide text-ink-400">Category</td>
+                <td className="py-2 text-xs ui-caps text-ink-400">Category</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2 text-ink-700">
                     {product.category.name}
@@ -114,7 +114,7 @@ export function CompareBar() {
                 ))}
               </tr>
               <tr className="border-t border-ink-100">
-                <td className="py-2 text-xs uppercase tracking-wide text-ink-400">Sizes</td>
+                <td className="py-2 text-xs ui-caps text-ink-400">Sizes</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2 text-ink-700">
                     {attributeList(product.variants.map((v) => v.size))}
@@ -122,7 +122,7 @@ export function CompareBar() {
                 ))}
               </tr>
               <tr className="border-t border-ink-100">
-                <td className="py-2 text-xs uppercase tracking-wide text-ink-400">Colors</td>
+                <td className="py-2 text-xs ui-caps text-ink-400">Colors</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2 text-ink-700">
                     {attributeList(product.variants.map((v) => v.color))}
@@ -130,7 +130,7 @@ export function CompareBar() {
                 ))}
               </tr>
               <tr className="border-t border-ink-100">
-                <td className="py-2 text-xs uppercase tracking-wide text-ink-400">In stock</td>
+                <td className="py-2 text-xs ui-caps text-ink-400">In stock</td>
                 {items.map((product) => {
                   // Server-derived availability (D5: an untracked product is always available). A state, never a quantity.
                   const availability = availabilityOf(product);

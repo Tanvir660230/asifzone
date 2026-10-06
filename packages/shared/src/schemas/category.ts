@@ -1,13 +1,13 @@
 import { z } from "zod";
-import { nullableCuid, nullableString, nullableUrl, slugSchema } from "./common";
+import { nullableCuid, nullableString, nullableMediaUrl, slugSchema } from "./common";
 
 export const createCategorySchema = z.object({
   name: z.string().min(1).max(120),
   slug: z.preprocess((v) => (v === "" ? undefined : v), slugSchema.optional()),
   parentId: nullableCuid(),
-  imageUrl: nullableUrl(),
+  imageUrl: nullableMediaUrl(),
   imageAltText: nullableString(200),
-  bannerImageUrl: nullableUrl(),
+  bannerImageUrl: nullableMediaUrl(),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
   isFeatured: z.boolean().default(false),

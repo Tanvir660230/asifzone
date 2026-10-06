@@ -29,7 +29,7 @@ export function SortSelect({ hasQuery = false }: { hasQuery?: boolean } = {}) {
   }
 
   return (
-    <Select value={current} onChange={(e) => handleChange(e.target.value)} className="w-48">
+    <Select aria-label="Sort products" value={current} onChange={(e) => handleChange(e.target.value)} className="w-48">
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>
           {opt.label}

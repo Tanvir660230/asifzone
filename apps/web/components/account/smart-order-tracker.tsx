@@ -60,7 +60,7 @@ export function SmartOrderTracker() {
       <CardContent className="py-6 sm:py-7">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-xs uppercase tracking-wide text-ink-400">Latest order</p>
+            <p className="text-xs ui-caps text-ink-400">Latest order</p>
             <Link href={`/account/orders/${order.id}`} className="font-display text-lg text-ink-900 hover:text-brass-600">
               {order.orderNumber}
             </Link>

@@ -89,7 +89,7 @@ export function AccountNav() {
         <div className="rounded-xl border border-ink-100 bg-cream-50 p-2 shadow-sm">
           {NAV_GROUPS.map((group) => (
             <div key={group.label} className="mb-1 last:mb-0">
-              <p className="px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-ink-400 first:pt-1.5">
+              <p className="px-3 pb-1 pt-3 text-[11px] font-medium ui-caps text-ink-400 first:pt-1.5">
                 {group.label}
               </p>
               {group.items.map(({ href, label, icon: Icon }) => {

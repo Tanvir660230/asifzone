@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, CreditCard, ImageIcon, Plus, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, CreditCard, Plus, Trash2 } from "lucide-react";
 import { createPaymentMethodSchema, type CreatePaymentMethodInput, type PaymentMethodOption } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/admin/page-header";
 import { SettingsSubNav } from "@/components/admin/settings-subnav";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ImageUploadField } from "@/components/admin/image-upload-field";
 import { toast } from "@/components/ui/toast";
 import * as paymentMethodsApi from "@/lib/api/payment-methods";
 import * as settingsApi from "@/lib/api/settings";
@@ -30,37 +31,24 @@ export default function PaymentMethodsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [combinedImageError, setCombinedImageError] = useState<string | null>(null);
-  const combinedImageInputRef = useRef<HTMLInputElement>(null);
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: QUERY_KEY });
 
   const combinedImageUrl = settingsData?.settings.paymentMethodsImageUrl ?? null;
-  const uploadCombinedImageMutation = useMutation({ mutationFn: settingsApi.uploadPaymentMethodsImage });
   const updateCombinedImageMutation = useMutation({
     mutationFn: settingsApi.updateSettings,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY }),
   });
 
-  async function handleCombinedImageSelected(file: File | null) {
-    if (!file) return;
+  /** The combined image is saved as soon as it's uploaded (or removed) — it has no form of its own. */
+  async function saveCombinedImage(url: string) {
     setCombinedImageError(null);
     try {
-      const { url } = await uploadCombinedImageMutation.mutateAsync(file);
-      await updateCombinedImageMutation.mutateAsync({ paymentMethodsImageUrl: url });
-      toast.success("Combined payment image saved");
+      await updateCombinedImageMutation.mutateAsync({ paymentMethodsImageUrl: url || null });
+      if (url) toast.success("Combined payment image saved");
     } catch (err) {
-      setCombinedImageError(err instanceof ApiError ? err.message : "Upload failed");
-    } finally {
-      if (combinedImageInputRef.current) combinedImageInputRef.current.value = "";
-    }
-  }
-
-  async function handleRemoveCombinedImage() {
-    try {
-      await updateCombinedImageMutation.mutateAsync({ paymentMethodsImageUrl: null });
-    } catch (err) {
-      setCombinedImageError(err instanceof ApiError ? err.message : "Failed to remove image");
+      setCombinedImageError(err instanceof ApiError ? err.message : "Failed to save the image");
     }
   }
 
@@ -77,7 +65,6 @@ export default function PaymentMethodsPage() {
       toast.success("Payment method deleted");
     },
   });
-  const uploadMutation = useMutation({ mutationFn: paymentMethodsApi.uploadPaymentMethodLogo });
   const reorderMutation = useMutation({
     mutationFn: paymentMethodsApi.reorderPaymentMethods,
     onSuccess: invalidate,
@@ -96,21 +83,9 @@ export default function PaymentMethodsPage() {
     defaultValues: { name: "", logoUrl: null, isActive: true, sortOrder: 0 },
   });
   const logoUrl = watch("logoUrl");
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const methods = data?.methods ?? [];
 
-  async function handleLogoSelected(file: File | null) {
-    if (!file) return;
-    try {
-      const { url } = await uploadMutation.mutateAsync(file);
-      setValue("logoUrl", url, { shouldValidate: true });
-    } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : "Logo upload failed");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
 
   async function onSubmit(values: CreatePaymentMethodInput) {
     setFormError(null);
@@ -165,42 +140,14 @@ export default function PaymentMethodsPage() {
           One image with all your payment logos already arranged — quicker than uploading each logo one by one. When
           set, this replaces the list below everywhere on the site.
         </p>
-        <div className="flex items-center gap-4">
-          {combinedImageUrl ? (
-            <div className="relative flex h-16 w-56 items-center justify-center rounded-lg border border-ink-200 bg-white p-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={resolveImageUrl(combinedImageUrl)} alt="" className="h-full w-full object-contain" />
-              <button
-                type="button"
-                onClick={handleRemoveCombinedImage}
-                disabled={updateCombinedImageMutation.isPending}
-                className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50"
-                aria-label="Remove combined image"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => combinedImageInputRef.current?.click()}
-              disabled={uploadCombinedImageMutation.isPending}
-              className="flex h-16 w-56 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-            >
-              <ImageIcon size={16} />
-              <span className="text-xs">
-                {uploadCombinedImageMutation.isPending ? "Uploading…" : "Upload combined image"}
-              </span>
-            </button>
-          )}
-          <input
-            ref={combinedImageInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={(e) => handleCombinedImageSelected(e.target.files?.[0] ?? null)}
-          />
-        </div>
+        <ImageUploadField
+          label="Image"
+          upload={settingsApi.uploadPaymentMethodsImage}
+          value={combinedImageUrl}
+          onChange={saveCombinedImage}
+          frame="logo"
+          uploadLabel="Upload combined image"
+        />
         {combinedImageError && <p className="mt-2 text-xs text-danger-600">{combinedImageError}</p>}
       </div>
 
@@ -280,41 +227,15 @@ export default function PaymentMethodsPage() {
             {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
           </div>
 
-          <div>
-            <input type="hidden" {...register("logoUrl")} />
-            <Label>Logo</Label>
-            {logoUrl ? (
-              <div className="relative mt-1 flex h-16 w-28 items-center justify-center rounded-lg border border-ink-100 bg-white p-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={resolveImageUrl(logoUrl)} alt="" className="h-full w-full object-contain" />
-                <button
-                  type="button"
-                  onClick={() => setValue("logoUrl", null, { shouldValidate: true })}
-                  className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50"
-                  aria-label="Remove logo"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadMutation.isPending}
-                className="mt-1 flex h-16 w-28 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-              >
-                <Upload size={16} />
-                <span className="text-xs">{uploadMutation.isPending ? "Uploading…" : "Upload logo"}</span>
-              </button>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={(e) => handleLogoSelected(e.target.files?.[0] ?? null)}
-            />
-          </div>
+          <input type="hidden" {...register("logoUrl")} />
+          <ImageUploadField
+            label="Logo"
+            upload={paymentMethodsApi.uploadPaymentMethodLogo}
+            value={logoUrl}
+            onChange={(url) => setValue("logoUrl", url || null, { shouldValidate: true })}
+            frame="logo"
+            uploadLabel="Upload logo"
+          />
 
           <label className="flex items-center gap-2 text-sm text-ink-700">
             <Checkbox {...register("isActive")} defaultChecked />

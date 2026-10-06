@@ -21,7 +21,7 @@ import { formatPrice } from "@/lib/format";
 import { buildAccordionItems, productPageLayout, sanitizeRichTextSpecs } from "@/lib/product-specs";
 import { buildProductJsonLd } from "@/lib/structured-data";
 import { getSiteUrl } from "@/lib/seo";
-import { jsonLdString } from "@clothing-brand/shared";
+import { jsonLdString, policyHighlights, storePolicy } from "@clothing-brand/shared";
 import { productEditHref } from "@/lib/admin-routes";
 import { productDisplayPrice } from "@/lib/pricing-display";
 
@@ -92,7 +92,8 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
   const live = mode === "live";
   const [urgencySignals, { settings }] = await Promise.all([live ? getUrgencySignals(product.id) : Promise.resolve(NO_SIGNALS), getSiteSettings()]);
 
-  const accordionItems = buildAccordionItems(product, sanitize);
+  const policy = storePolicy(settings);
+  const accordionItems = buildAccordionItems(product, sanitize, policy);
   const { showSizeGuideLink, blocks, faqEnabled } = productPageLayout(product);
   const faqs = product.resolved?.faqs ?? [];
   const siteUrl = getSiteUrl();
@@ -124,7 +125,13 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
             }}
           />
         )}
-        <ProductPageBody product={product} urgencySignals={urgencySignals} accordionItems={accordionItems} showSizeGuideLink={showSizeGuideLink} />
+        <ProductPageBody
+          product={product}
+          urgencySignals={urgencySignals}
+          accordionItems={accordionItems}
+          showSizeGuideLink={showSizeGuideLink}
+          policyLines={policyHighlights(policy)}
+        />
       </div>
 
       {blocks.map((section) => (

@@ -20,7 +20,8 @@
     "db:test:migrate": "tsx scripts/with-test-db.ts npx prisma migrate deploy",
     "db:test:seed": "tsx scripts/with-test-db.ts npx tsx prisma/seed.ts",
     "db:test:studio": "tsx scripts/with-test-db.ts npx prisma studio",
-    "demo:import": "tsx scripts/demo-data/import.ts"
+    "demo:import": "tsx scripts/demo-data/import.ts",
+    "sample-store:load": "tsx scripts/sample-store/load.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -47,6 +48,7 @@
   },
   "devDependencies": {
     "@clothing-brand/config": "workspace:*",
+    "@clothing-brand/ui-tokens": "workspace:^",
     "@eslint/js": "^10.0.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.7",

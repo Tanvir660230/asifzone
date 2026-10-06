@@ -75,7 +75,7 @@ export default function AccountRegisterPage() {
   if (claimMessage) {
     return (
       <div>
-        <h1 className="mb-1 font-display text-2xl text-ink-900">Check your email</h1>
+        <h1 className="mb-1 font-display ui-page-title text-ink-900">Check your email</h1>
         <p className="mb-6 text-sm text-ink-500">{claimMessage}</p>
         <Link href="/account/login" className="text-ink-700 underline hover:text-ink-900">
           Back to sign in
@@ -86,7 +86,7 @@ export default function AccountRegisterPage() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Create an account</h1>
+      <h1 className="mb-1 font-display ui-page-title text-ink-900">Create an account</h1>
       <p className="mb-6 text-sm text-ink-500">Save addresses, track orders, and build a wishlist.</p>
 
       {publicRuntimeConfig().googleClientId && (

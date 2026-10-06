@@ -51,7 +51,7 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <div>
-        <h1 className="mb-1 font-display text-2xl text-ink-900">Invalid link</h1>
+        <h1 className="mb-1 font-display ui-page-title text-ink-900">Invalid link</h1>
         <p className="text-sm text-ink-500">
           This reset link is missing its token. Please request a new one from the{" "}
           <Link href="/account/forgot-password" className="text-ink-700 underline hover:text-ink-900">
@@ -65,7 +65,7 @@ function ResetPasswordForm() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Reset password</h1>
+      <h1 className="mb-1 font-display ui-page-title text-ink-900">Reset password</h1>
       <p className="mb-6 text-sm text-ink-500">Choose a new password for your account.</p>
 
       <form onSubmit={handleSubmit(onSubmit)} method="post" className="space-y-4">

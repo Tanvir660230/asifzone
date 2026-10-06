@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { blankToNull, nullableUrl } from "./common";
+import { blankToNull, nullableMediaUrl } from "./common";
 
 export const discountTypeEnum = z.enum(["PERCENTAGE", "FIXED"]);
 
@@ -8,7 +8,7 @@ export const createFlashSaleSchema = z
     name: z.string().min(1).max(200),
     startsAt: z.coerce.date(),
     endsAt: z.coerce.date(),
-    bannerImageUrl: nullableUrl(),
+    bannerImageUrl: nullableMediaUrl(),
     /** The admin's switch (see TARGET_ARCHITECTURE §16a). A disabled sale is never live; the scheduler never re-enables it. */
     enabled: z.boolean().default(true),
   })
@@ -19,7 +19,7 @@ export const updateFlashSaleSchema = z
     name: z.string().min(1).max(200).optional(),
     startsAt: z.coerce.date().optional(),
     endsAt: z.coerce.date().optional(),
-    bannerImageUrl: nullableUrl(),
+    bannerImageUrl: nullableMediaUrl(),
     enabled: z.boolean().optional(),
     /** Deprecated alias for `enabled` (older admin clients). `isActive` itself is derived and never written from input. */
     isActive: z.boolean().optional(),

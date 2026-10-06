@@ -16,14 +16,14 @@ export function ProductAccordion({ items }: { items: AccordionItem[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <div className="mt-8 divide-y divide-ink-100 border-t border-ink-100">
+    <div className="mt-8 divide-y divide-ink-100 border-t border-ink-100" data-testid="product-accordion">
       {items.map((item, i) => {
         const isOpen = openIndex === i;
         return (
           <div key={item.title}>
             <button
               onClick={() => setOpenIndex(isOpen ? null : i)}
-              className="flex w-full items-center justify-between py-4 text-left text-sm uppercase tracking-wide text-ink-900"
+              className="flex w-full items-center justify-between py-4 text-left text-sm ui-caps text-ink-900"
               aria-expanded={isOpen}
             >
               {item.title}

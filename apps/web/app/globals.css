@@ -96,7 +96,8 @@
 
   /* Translucent fill only — for elements that bring their own border/shape (e.g. sticky headers). */
   .glass {
-    @apply bg-surface/75 backdrop-blur-xl backdrop-saturate-150;
+    @apply backdrop-blur-xl backdrop-saturate-150;
+    background-color: rgb(var(--color-surface) / var(--glass-alpha));
   }
   .glass-dark {
     @apply bg-ink-900/75 backdrop-blur-xl backdrop-saturate-150;
@@ -121,15 +122,111 @@
      solid fill reads as a lit capsule rather than a flat color. Layered as background-image so it
      sits on top of any bg-* color. */
   .glossy {
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0) 65%);
+    background-image: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, calc(0.3 * var(--gloss))) 0%,
+      rgba(255, 255, 255, calc(0.08 * var(--gloss))) 45%,
+      rgba(255, 255, 255, 0) 65%
+    );
     box-shadow:
-      inset 0 1px 1px rgba(255, 255, 255, 0.45),
-      inset 0 -2px 5px rgba(0, 0, 0, 0.12);
+      inset 0 1px 1px rgba(255, 255, 255, calc(0.45 * var(--gloss))),
+      inset 0 -2px 5px rgba(0, 0, 0, calc(0.12 * var(--gloss)));
   }
   .glossy:active {
     box-shadow:
-      inset 0 1px 2px rgba(0, 0, 0, 0.22),
-      inset 0 -1px 1px rgba(255, 255, 255, 0.15);
+      inset 0 1px 2px rgba(0, 0, 0, calc(0.22 * var(--gloss))),
+      inset 0 -1px 1px rgba(255, 255, 255, calc(0.15 * var(--gloss)));
+  }
+
+  /* ── Typography roles (component tokens in @clothing-brand/ui-tokens) ───────────────────── */
+
+  /* The title face's weight and tracking. Unset by default (the property inherits, as before); a theme may set them.
+     Utilities on the same element (font-medium, tracking-wide, text-display-*) still win. */
+  .font-display {
+    font-weight: var(--font-display-weight);
+    letter-spacing: var(--font-display-tracking);
+  }
+  /* Small label: "SOLD OUT", "QTY", accordion and filter headings. Size and color stay with the call site. */
+  .ui-caps {
+    text-transform: var(--caps-transform);
+    letter-spacing: calc(0.025em * var(--caps-spread));
+  }
+  /* Section eyebrow above a title: "OUR PHILOSOPHY", carousel kickers. */
+  .ui-eyebrow {
+    text-transform: var(--caps-transform);
+    letter-spacing: calc(0.3em * var(--caps-spread));
+    font-weight: var(--eyebrow-weight);
+  }
+  .ui-section-title {
+    font-size: var(--section-title-size);
+    line-height: var(--section-title-leading);
+  }
+  .ui-section-heading {
+    font-size: var(--section-heading-size);
+    line-height: var(--section-heading-leading);
+  }
+  .ui-page-title {
+    font-size: var(--page-title-size);
+    line-height: var(--page-title-leading);
+  }
+  @media (min-width: 640px) {
+    .ui-section-title {
+      font-size: var(--section-title-size-sm);
+      line-height: var(--section-title-leading-sm);
+    }
+    .ui-section-heading {
+      font-size: var(--section-heading-size-sm);
+      line-height: var(--section-heading-leading-sm);
+    }
+    .ui-page-title {
+      font-size: var(--page-title-size-sm);
+      line-height: var(--page-title-leading-sm);
+    }
+  }
+  .ui-product-title {
+    font-size: var(--product-title-size);
+    line-height: var(--product-title-leading);
+    font-weight: var(--product-title-weight);
+    letter-spacing: var(--product-title-tracking);
+  }
+
+  /* ── Product card frame ─────────────────────────────────────────────────────────────────── */
+
+  .ui-card-frame {
+    @apply border transition-shadow duration-300 ease-smooth;
+    border-color: var(--card-frame-border);
+    box-shadow: var(--card-frame-shadow);
+  }
+  .group:hover .ui-card-frame {
+    box-shadow: var(--card-frame-shadow-hover);
+  }
+  /* The sticky storefront header's bottom edge. */
+  .ui-header-bar {
+    box-shadow: var(--header-shadow);
+  }
+  /* Background-specific artwork (a logo for dark backgrounds and one for light): the theme's band decides which shows. */
+  .ui-art-on-dark {
+    display: var(--band-dark-art);
+  }
+  .ui-art-on-light {
+    display: var(--band-light-art);
+  }
+  /* Tile grid (category grid): up to 4 equal columns, fewer as the row narrows — each column at least
+     --tile-min wide — and a short catalog stays centred instead of leaving empty columns. The gap and the column
+     arithmetic read the same variable, so the count can never drift with the root font size. */
+  .ui-tile-grid {
+    --tile-gap: 1rem;
+    --tile-min: 9.5rem;
+    display: grid;
+    gap: var(--tile-gap);
+    grid-template-columns: repeat(auto-fit, minmax(0, max(var(--tile-min), (100% - 3 * var(--tile-gap)) / 4)));
+    justify-content: center;
+  }
+  /* Content tile (values grid): a hairline frame a theme may drop. */
+  .ui-panel {
+    @apply border;
+    border-color: var(--panel-border);
+    box-shadow: var(--panel-shadow);
   }
 
   /* Dimmed, lightly blurred backdrop behind modal layers (dialogs, drawers, mobile nav). */

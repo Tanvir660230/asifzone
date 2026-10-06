@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { nullableUrl } from "./common";
+import { nullableMediaUrl } from "./common";
 
 export const createPaymentMethodSchema = z.object({
   name: z.string().min(1).max(60),
-  logoUrl: nullableUrl(),
+  logoUrl: nullableMediaUrl(),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
 });

@@ -1,5 +1,5 @@
 import { z, type ZodTypeAny } from "zod";
-import { nullableDate, nullableString, nullableUrl } from "./common";
+import { mediaUrlSchema, nullableDate, nullableMediaUrl, nullableString } from "./common";
 
 export const homepageSectionTypeEnum = z.enum([
   "HERO",
@@ -36,15 +36,20 @@ const valuesGridItemSchema = z.object({
   description: z.string().min(1).max(300),
 });
 export const valuesGridConfigSchema = z.object({
+  /** Optional editorial copy; blank keeps the built-in "Why {store name}" / "What We Stand For". */
+  eyebrow: nullableString(60),
+  heading: nullableString(200),
   items: z.array(valuesGridItemSchema).min(1).max(8),
 });
 
 export const brandStoryConfigSchema = z.object({
+  /** Optional kicker above the heading; blank keeps "Our Philosophy". */
+  eyebrow: nullableString(60),
   heading: nullableString(200),
   bodyText: nullableString(1000),
   ctaLabel: nullableString(60),
   ctaHref: nullableString(300),
-  imageUrl: nullableUrl(),
+  imageUrl: nullableMediaUrl(),
 });
 
 export const heroConfigSchema = z.object({
@@ -52,6 +57,12 @@ export const heroConfigSchema = z.object({
   subtext: nullableString(300),
   ctaLabel: nullableString(60),
   ctaHref: nullableString(300),
+  /** Optional second, quieter action next to the primary one. */
+  secondaryCtaLabel: nullableString(60),
+  secondaryCtaHref: nullableString(300),
+  /** Optional large image shown with the copy (the hero is otherwise a typographic band). */
+  imageUrl: nullableMediaUrl(),
+  imageAltText: nullableString(200),
 });
 
 export const personalizedLeadConfigSchema = z.object({
@@ -89,8 +100,8 @@ export const productCarouselConfigSchema = z
 export const promoBannerConfigSchema = z.object({
   heading: nullableString(200),
   bodyText: nullableString(500),
-  imageUrl: z.string().url(),
-  mobileImageUrl: nullableUrl(),
+  imageUrl: mediaUrlSchema,
+  mobileImageUrl: nullableMediaUrl(),
   linkUrl: nullableString(500),
   ctaLabel: nullableString(60),
 });

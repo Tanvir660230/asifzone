@@ -8,7 +8,7 @@ import { Pagination } from "@/components/storefront/pagination";
 import { FacetFilters } from "@/components/storefront/facet-filters";
 import { ComingSoon } from "@/components/storefront/coming-soon";
 import { CategoryStockPanel } from "@/components/storefront/category-stock-panel";
-import { getCategoryBySlug, getCategoryStockOverview, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
+import { getCategoryBySlug, getCategoryStockOverview, getSiteSettings, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -33,7 +33,7 @@ async function loadCategory(slug: string) {
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const [{ slug }, resolvedSearchParams] = await Promise.all([params, searchParams]);
-  const data = await loadCategory(slug);
+  const [data, { settings }] = await Promise.all([loadCategory(slug), getSiteSettings()]);
   if (!data) return { title: "Category" };
 
   const { category } = data;
@@ -50,6 +50,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
       title,
       description,
       url,
+      siteName: settings.storeName,
       images: category.imageUrl ? [resolveImageUrl(category.imageUrl)] : undefined,
     }),
   };

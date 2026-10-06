@@ -48,7 +48,7 @@ export function AdminSalesBadge({ productId }: { productId: string }) {
     <div className="mt-3 rounded-lg border border-dashed border-brass-300 bg-brass-50 px-3 py-2 text-sm text-ink-800" data-testid="admin-sales-7d">
       <p className="flex items-center gap-1.5">
         <BarChart3 size={14} className="shrink-0 text-brass-700" />
-        <span className="text-[11px] font-medium uppercase tracking-wide text-brass-800">Admin only</span>
+        <span className="text-[11px] font-medium ui-caps text-brass-800">Admin only</span>
         <span>
           Ordered in the last {summary.days} days: <strong data-testid="admin-sales-7d-units">{summary.unitsSold}</strong> unit{summary.unitsSold === 1 ? "" : "s"}
           {summary.orders > 0 && (

@@ -1,7 +1,7 @@
 import { isValidTimeZone } from "../metrics/business-time";
 import { SUPPORTED_CURRENCIES, isSupportedCurrency } from "../engines/money";
 import { z } from "zod";
-import { nullableEmail, nullableString, nullableUrl } from "./common";
+import { nullableEmail, nullableString, nullableMediaUrl } from "./common";
 
 /** A number input left blank (or one this page disabled, like defaultTaxRate while tax is off) comes
  * through react-hook-form's `valueAsNumber` as NaN, not "" or undefined — treat it as "not provided"
@@ -19,12 +19,20 @@ function optionalNonNegativeNumber(max?: number) {
   return z.preprocess(undefinedIfBlank, base.optional());
 }
 
+/** A whole number of days that may be cleared: blank/NaN → null (clears the claim), absent → untouched. */
+function optionalNullableDays(max: number) {
+  return z.preprocess(
+    (v) => (v === "" || (typeof v === "number" && Number.isNaN(v)) ? null : v),
+    z.number().int().min(1).max(max).nullable().optional(),
+  );
+}
+
 export const updateSettingsSchema = z.object({
   storeName: z.string().min(1).max(120).optional(),
   tagline: nullableString(200),
-  logoUrl: nullableUrl(),
-  logoOnDarkUrl: nullableUrl(),
-  faviconUrl: nullableUrl(),
+  logoUrl: nullableMediaUrl(),
+  logoOnDarkUrl: nullableMediaUrl(),
+  faviconUrl: nullableMediaUrl(),
   // ISO 4217 code the money engine represents exactly (SUPPORTED_CURRENCIES). Locked once orders exist (Phase 6, P6-4);
   // validity is enforced here so an unsupported code can never become the implied currency of every amount (Phase 7 D-8).
   currency: z
@@ -60,7 +68,7 @@ export const updateSettingsSchema = z.object({
   liveChatLabel: z.string().min(1).max(40).optional(),
   tawkPropertyId: nullableString(60),
   tawkWidgetId: nullableString(60),
-  paymentMethodsImageUrl: nullableUrl(),
+  paymentMethodsImageUrl: nullableMediaUrl(),
   codEnabled: z.boolean().optional(),
   onlinePaymentEnabled: z.boolean().optional(),
   epsPaymentEnabled: z.boolean().optional(),
@@ -77,6 +85,14 @@ export const updateSettingsSchema = z.object({
   ),
   legalJurisdiction: nullableString(120),
   supportHours: nullableString(200),
+  // Phase 5 store policy (store-policy.ts). Blank clears = the store makes no such claim.
+  returnWindowDays: optionalNullableDays(365),
+  returnConditions: nullableString(200),
+  handlingDaysMin: optionalNullableDays(60),
+  handlingDaysMax: optionalNullableDays(60),
+}).refine((s) => s.handlingDaysMin == null || s.handlingDaysMax == null || s.handlingDaysMin <= s.handlingDaysMax, {
+  message: "The handling time's minimum can't be more than its maximum",
+  path: ["handlingDaysMax"],
 });
 
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;

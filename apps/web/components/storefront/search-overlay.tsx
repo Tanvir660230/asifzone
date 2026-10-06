@@ -90,7 +90,7 @@ function SuggestionChip({
 
 function SectionHeading({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
   return (
-    <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink-400">
+    <h3 className="flex items-center gap-1.5 text-xs font-medium ui-caps text-ink-400">
       <Icon size={13} />
       {children}
     </h3>
@@ -313,7 +313,7 @@ export function SearchOverlay() {
                   type="button"
                   onClick={() => setLangBn((v) => !v)}
                   aria-label="Toggle voice search language"
-                  className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-500 transition-colors duration-150 ease-smooth hover:bg-white hover:text-ink-900"
+                  className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ui-caps text-ink-500 transition-colors duration-150 ease-smooth hover:bg-white hover:text-ink-900"
                 >
                   {langBn ? "বাংলা" : "EN"}
                 </button>

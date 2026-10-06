@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { mediaReference, mediaStorageKey, normalizeMediaReferences, resolveMediaUrl } from "@clothing-brand/shared";
+import {
+  brandStoryConfigSchema,
+  createBannerSchema,
+  createCategorySchema,
+  mediaReference,
+  mediaStorageKey,
+  mediaUrlSchema,
+  normalizeMediaReferences,
+  resolveMediaUrl,
+  updateSettingsSchema,
+} from "@clothing-brand/shared";
 
 // Phase 1B: one stored reference, one resolver, any installation's media base.
 
@@ -44,5 +54,23 @@ describe("media references", () => {
     expect(normalizeMediaReferences("https://asifzone.com/category/shoes", hosts)).toBe("https://asifzone.com/category/shoes");
     // A host name that merely starts like ours is not ours.
     expect(normalizeMediaReferences("https://asifzone.com.evil.example/uploads/a.webp", hosts)).toBe("https://asifzone.com.evil.example/uploads/a.webp");
+  });
+});
+
+describe("media fields accept what an upload returns", () => {
+  const uploaded = mediaReference("products/abc-full.webp");
+
+  it("accepts the stored /uploads reference and absolute URLs on every image field", () => {
+    expect(updateSettingsSchema.safeParse({ logoUrl: uploaded, faviconUrl: uploaded }).success).toBe(true);
+    expect(createCategorySchema.safeParse({ name: "Attar", slug: "attar", imageUrl: uploaded }).success).toBe(true);
+    expect(brandStoryConfigSchema.safeParse({ imageUrl: uploaded }).success).toBe(true);
+    expect(createBannerSchema.safeParse({ imageUrl: "https://cdn.example.com/banner.webp" }).success).toBe(true);
+    expect(updateSettingsSchema.safeParse({ logoUrl: "" }).success).toBe(true);
+  });
+
+  it("rejects anything that is neither", () => {
+    for (const value of ["/uploads/", "/uploads/../secrets", "/uploads/a/./b", "products/x.webp", "/other/x.png", "javascript:alert(1)", "https://x.example/a b"]) {
+      expect(mediaUrlSchema.safeParse(value).success, value).toBe(false);
+    }
   });
 });

@@ -17,13 +17,14 @@ describe("resolveSections", () => {
     expect(keys(accordion)).toEqual(["description", "specifications", "material", "care", "shipping", "faq"]);
     expect(accordion.find((s) => s.key === "shipping")).toMatchObject({
       title: "Shipping & Returns",
-      content: "Dispatched within 1–2 business days. Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days. Unworn items with tags can be returned or exchanged within 7 days of delivery.",
+      // Store-neutral: the product page writes this row from the store's own policy (store-policy.test.ts).
+      content: "Inside Dhaka: 1–2 days, outside Dhaka: 3–5 days.",
     });
     // The page-level blocks keep their old order and titles too.
     const blocks = all.filter((s) => s.area === "block" && s.enabled);
     expect(blocks.map((b) => [b.key, b.title])).toEqual([
       ["reviews", "Reviews"], ["bundle", "Complete the Bundle"], ["related", "Best Match"], ["frequentlyBought", "Customers Also Bought"],
-      ["crossSell", "Complete The Look"], ["upsell", "Upgrade Option"], ["budget", "Budget Alternative"], ["premium", "More Premium Options"],
+      ["crossSell", "Pairs Well With"], ["upsell", "Upgrade Option"], ["budget", "Budget Alternative"], ["premium", "More Premium Options"],
       ["recommended", "Trending Now"], ["recentlyViewed", "Recently Viewed"],
     ]);
     expect(all.every((s) => s.source.enabled === "default" && s.source.order === "default")).toBe(true);

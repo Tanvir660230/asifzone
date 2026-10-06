@@ -46,7 +46,7 @@ export default function WishlistPage() {
 
   const content = (
     <>
-      {!isLoggedIn && <h1 className="mb-1 font-display text-2xl text-ink-900">Wishlist</h1>}
+      {!isLoggedIn && <h1 className="mb-1 font-display ui-page-title text-ink-900">Wishlist</h1>}
       {!isLoggedIn && mounted && localIds.length > 0 && (
         <p className="mb-6 text-sm text-ink-500">
           Saved on this device —{" "}

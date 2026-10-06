@@ -17,11 +17,45 @@ The shared visual foundation for the storefront, customer account, and admin. Fe
 **Colors are CSS variables.** Utilities such as `bg-ink-900` and `text-cream-50/75` resolve to `rgb(var(--color-ink-900) / <alpha>)`. A brand can re-theme at runtime by overriding variables, with no rebuild and no class changes:
 
 ```css
-[data-brand="northwind"] {
+:root[data-brand="northwind"] {
   --color-ink-900: 20 24 38;   /* RGB channels */
   --color-accent: var(--color-ink-900);
 }
 ```
+
+**Brand themes.** Themes are defined once, in `themeDefinitions` in `packages/ui-tokens/src/index.js`. A theme only re-values tokens: palette steps, radii (`--radius-*`), typography variables and component tokens (§2a). It never adds styling of its own. The Tailwind plugin emits a theme's overrides under `:root[data-brand="<id>"]`. An installation chooses its theme at runtime with `STORE_THEME` (`apps/web/lib/theme.ts`), and the root layout sets `<html data-brand>`. An unknown id falls back to `default`. Components never branch on the theme. If a brand needs a component to look different, add a token for that difference, with a default that reproduces the base design exactly, instead of adding a conditional. `apps/api/src/config/theme-tokens.test.ts` enforces this and checks each theme's text contrast.
+
+| Theme | Character |
+|---|---|
+| `default` | Neutral editorial. True-neutral grays, Playfair titles, the radius scale below. |
+| `nasihamart` | Warm minimal. Warm off-white canvas, warm near-black text, sans semibold titles with tight tracking, sentence-case labels, flat (gloss-free) controls, frameless image-first product cards, softer and larger radii, and light inverse bands. |
+
+### 2a. Component tokens and recipes
+
+Presentation that differs between brands is a CSS variable in `componentTokens` (ui-tokens), read by a recipe in `globals.css` or an arbitrary utility. Use the recipe; don't re-spell its utilities.
+
+| Recipe / utility | Tokens | Use |
+|---|---|---|
+| `.font-display` | `--font-display-family`, `--font-display-weight`*, `--font-display-tracking`* | every title |
+| `.font-sans` | `--font-body-family` | body text |
+| `.ui-caps` | `--caps-transform`, `--caps-spread` | small labels (`SOLD OUT`, `QTY`, accordion/filter headings). Other spacings: `ui-caps tracking-[calc(0.2em*var(--caps-spread))]` |
+| `.ui-eyebrow` | same + `--eyebrow-weight`* | the kicker above a section title |
+| `.ui-section-title` / `.ui-section-heading` | `--section-title-*`, `--section-heading-*` | product rails / homepage section headings |
+| `.ui-product-title` | `--product-title-size/-leading/-weight/-tracking` | the product page `<h1>` |
+| `.ui-card-frame`, `hover:translate-y-[var(--card-lift)]`, `scale-[var(--card-image-zoom)]` | `--card-*` | product card image frame, lift, zoom, tier line, title tracking |
+| `.ui-panel` | `--panel-border`, `--panel-shadow` | content tiles (values grid) |
+| `.ui-header-bar` | `--header-shadow` | the sticky header's edge |
+| `.glossy`, `.glass` | `--gloss` (0 = flat), `--glass-alpha` | filled controls, translucent chrome |
+| `PromoBadge tone="note"` | `--badge-note-bg/-fg` | non-promotional badges ("New Arrival"). `tone="sale"` is always the sale accent. |
+| category tiles, hero CTA, cart line items | `--tile-scrim/-label`, `--hero-cta-fill/-text`*, `--line-item-radius`, `--stepper-radius` | |
+
+\* Opt-in: undefined in the base design, so the property inherits as it did before the token existed. A theme may set it.
+
+**Inverse bands.** `.ui-band-inverse` marks a section designed on the dark palette: the footer, the hero band, brand story and flash sale. A theme with `band: "light"` renders those sections light by mirroring the palette inside them (ink-950 becomes the soft background, ink-300 becomes ink-700, cream becomes dark ink, and so on), so every pairing keeps its contrast. A token whose colour must resolve against the band's palette goes in the theme's `bandComponents`. Artwork made for one background (logos) uses `.ui-art-on-dark` / `.ui-art-on-light`, and the band shows the right one.
+
+**After editing `packages/ui-tokens`,** delete `apps/web/.next` and restart `next dev`. The dev cache does not notice changes to the workspace package that `tailwind.config.ts` imports.
+
+**Proving a refactor didn't change a store:** screenshot the storefront before and after with `STORE_THEME=default` against the same data, then pixel-diff. The base design is deterministic, so two runs with no change differ by 0 pixels.
 
 - **Palette scales:** `ink` (neutral 50–950), `cream` (surfaces), `sale` (promo labels only), and the semantic statuses `success`, `warning`, `danger`, `info`. `brass` is a legacy alias of `ink`; don't use it in new code.
 - **Semantic roles:** prefer these in new code, because they describe intent.
@@ -34,8 +68,8 @@ The shared visual foundation for the storefront, customer account, and admin. Fe
 | `surface-inverse` | dark chrome | `accent` / `accent-fg` | primary actions, active, focus |
 | `line-subtle` / `line` / `line-strong` | borders | | |
 
-- **Type:** `font-sans` (Inter), `font-display` (Playfair) for titles. Named sizes: `text-display-sm|md|lg|xl`, `text-caption`.
-- **Radii:** `sm 4` · `DEFAULT 8` · `md 10` · `lg 14` · `xl 20` · `2xl 24` · `3xl 32`.
+- **Type:** `font-sans` (Inter), `font-display` for titles (Playfair by default; a theme may swap it via `--font-display-family`). Named sizes: `text-display-sm|md|lg|xl`, `text-caption`.
+- **Radii** (CSS variables `--radius-*`, re-themable): `sm 4` · `DEFAULT 8` · `md 10` · `lg 14` · `xl 20` · `2xl 24` · `3xl 32`.
 - **Shadows:** `sm`, `DEFAULT`, `lg`, `float`, `floatLg`, `glass`, `glass-lg`, `inset`, `glow`.
 - **Layers:** `z-raised 10`, `z-sticky 20`, `z-dock 40` (fixed bottom bars), `z-overlay 50` (dialogs, drawers, popovers), `z-toast 200`.
 - **Motion:** `duration-instant|fast|base|slow|slower` (100/150/220/320/480ms) and `ease-smooth|standard|exit`.

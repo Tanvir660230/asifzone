@@ -27,6 +27,9 @@ export interface PublicRuntimeConfig {
   googleClientId: string;
   /** VAPID public key for web-push subscriptions (the private half stays in the API). */
   vapidPublicKey: string;
+  /** The brand theme id (`<html data-brand>`, themes in @clothing-brand/ui-tokens). The web app falls back to `default`
+   * for an id it does not know. */
+  theme: string;
 }
 
 export interface ServerRuntimeConfig {
@@ -51,6 +54,7 @@ export const PUBLIC_RUNTIME_ENV: Readonly<Record<keyof PublicRuntimeConfig, read
   clarityId: ["CLARITY_ID", "NEXT_PUBLIC_CLARITY_ID"],
   googleClientId: ["GOOGLE_CLIENT_ID", "NEXT_PUBLIC_GOOGLE_CLIENT_ID"],
   vapidPublicKey: ["WEB_PUSH_PUBLIC_KEY", "NEXT_PUBLIC_VAPID_PUBLIC_KEY"],
+  theme: ["STORE_THEME"],
 };
 
 const PUBLIC_DEFAULTS: PublicRuntimeConfig = {
@@ -62,6 +66,7 @@ const PUBLIC_DEFAULTS: PublicRuntimeConfig = {
   clarityId: "",
   googleClientId: "",
   vapidPublicKey: "",
+  theme: "default",
 };
 
 function first(environment: Environment, names: readonly string[]): string | undefined {
@@ -82,6 +87,7 @@ export function readPublicRuntimeConfig(environment: Environment): PublicRuntime
   config.siteUrl = withoutTrailingSlash(config.siteUrl);
   config.apiUrl = withoutTrailingSlash(config.apiUrl);
   config.mediaBaseUrl = withoutTrailingSlash(config.mediaBaseUrl) || "/uploads";
+  config.theme = config.theme.toLowerCase();
   return config;
 }
 

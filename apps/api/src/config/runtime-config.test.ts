@@ -23,6 +23,7 @@ const CLIENT_B = {
   PUBLIC_API_URL: "https://shop.client-b.example",
   MEDIA_BASE_URL: "https://cdn.client-b.example/uploads/",
   META_PIXEL_ID: "222",
+  STORE_THEME: "Nasihamart",
   REVALIDATE_SECRET: "secret-b",
 };
 
@@ -39,11 +40,13 @@ describe("runtime configuration", () => {
       clarityId: "c111",
       googleClientId: "g111.apps.googleusercontent.com",
       vapidPublicKey: "vapid-public-111",
+      theme: "default",
     });
     expect(b.siteUrl).toBe("https://shop.client-b.example");
     expect(b.mediaBaseUrl).toBe("https://cdn.client-b.example/uploads");
     expect(b.metaPixelId).toBe("222");
     expect(b.tiktokPixelId).toBe("");
+    expect(b.theme).toBe("nasihamart");
   });
 
   it("never puts a server-only value in the public half", () => {

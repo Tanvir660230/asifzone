@@ -127,6 +127,8 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}}
       # The public half of the API's VAPID pair (the private half never leaves the api service).
       WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
+      # Brand theme id (packages/ui-tokens themes): this installation's palette, radii and title face.
+      STORE_THEME: ${STORE_THEME:-default}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     ports:
       - "127.0.0.1:${WEB_HOST_PORT:-3000}:3000"

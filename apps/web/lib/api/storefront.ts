@@ -187,6 +187,10 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   addressCountry: null,
   legalJurisdiction: null,
   supportHours: null,
+  returnWindowDays: null,
+  returnConditions: null,
+  handlingDaysMin: null,
+  handlingDaysMax: null,
   updatedAt: new Date(0).toISOString(),
 };
 

@@ -45,14 +45,14 @@ function ClaimAccountContent() {
   if (status === "confirming") {
     return (
       <div>
-        <h1 className="mb-1 font-display text-2xl text-ink-900">Confirming your account…</h1>
+        <h1 className="mb-1 font-display ui-page-title text-ink-900">Confirming your account…</h1>
       </div>
     );
   }
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Couldn&rsquo;t confirm your account</h1>
+      <h1 className="mb-1 font-display ui-page-title text-ink-900">Couldn&rsquo;t confirm your account</h1>
       <p className="mb-6 text-sm text-danger-600">{message ?? "This link is invalid or has expired."}</p>
       <Link href="/account/login" className="text-ink-700 underline hover:text-ink-900">
         Back to sign in

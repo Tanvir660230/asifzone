@@ -1591,6 +1591,15 @@ model StoreSetting {
   /// Governing-law jurisdiction named on the Terms page (e.g. "Bangladesh").
   legalJurisdiction            String?
   supportHours                 String?
+  /// Store policy (Phase 5) — read through @clothing-brand/shared store-policy.ts by the product page, the Shipping &
+  /// Returns page, the FAQ and the Product structured data. Null = the store makes no such claim.
+  /// Days a customer has to return or exchange an item (null: no return window is stated).
+  returnWindowDays             Int?
+  /// What a returned item must be, as a sentence subject: "Unworn items in original condition with tags attached".
+  returnConditions             String?
+  /// Business days between an order and its dispatch.
+  handlingDaysMin              Int?
+  handlingDaysMax              Int?
   updatedAt                    DateTime @updatedAt
 }
 

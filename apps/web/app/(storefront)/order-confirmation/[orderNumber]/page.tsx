@@ -111,7 +111,7 @@ export default function OrderConfirmationPage() {
   if (!order) {
     return (
       <div className="mx-auto max-w-sm px-4 py-24 sm:px-6 lg:px-8">
-        <h1 className="mb-2 font-display text-2xl text-ink-900">Find your order</h1>
+        <h1 className="mb-2 font-display ui-page-title text-ink-900">Find your order</h1>
         <p className="mb-6 text-sm text-ink-500">
           Enter the phone number used for order <span className="text-ink-900">{orderNumber}</span>.
         </p>

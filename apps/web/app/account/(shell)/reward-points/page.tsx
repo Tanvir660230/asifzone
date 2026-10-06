@@ -17,7 +17,7 @@ export default function AccountRewardPointsPage() {
       <AccountPageHeader title="Reward Points" description="Earn points on every order and redeem them for discounts." />
 
       <div className="mb-6 rounded-lg border border-ink-100 bg-cream-50 p-6 shadow-sm">
-        <p className="text-xs uppercase tracking-wide text-ink-500">Current balance</p>
+        <p className="text-xs ui-caps text-ink-500">Current balance</p>
         <p className="mt-1 font-display text-3xl text-ink-900">{customerData?.customer?.rewardPoints ?? 0} pts</p>
       </div>
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BD_PHONE_INVALID_MESSAGE, normalizeBdPhone, PHONE_REGEX } from "../country/bd";
+import { MEDIA_MOUNT } from "../media";
 
 export const slugSchema = z
   .string()
@@ -30,6 +31,24 @@ export function nullableString(max = 500) {
 
 export function nullableUrl() {
   return z.preprocess(blankToNull, z.string().url().nullable().optional());
+}
+
+/** An image/media field: an absolute http(s) URL, or the domain-free stored reference an upload returns
+ * (`/uploads/<storage key>`, Phase 1B — see media.ts). */
+const ABSOLUTE_URL = /^https?:\/\/\S+$/i;
+
+function isStoredMediaReference(value: string): boolean {
+  const key = value.startsWith(`${MEDIA_MOUNT}/`) ? value.slice(MEDIA_MOUNT.length + 1) : "";
+  return key !== "" && !/\s|\\|(^|\/)\.\.?(\/|$)/.test(key);
+}
+
+export const mediaUrlSchema = z
+  .string()
+  .max(1000)
+  .refine((value) => ABSOLUTE_URL.test(value) || isStoredMediaReference(value), { message: "Invalid url" });
+
+export function nullableMediaUrl() {
+  return z.preprocess(blankToNull, mediaUrlSchema.nullable().optional());
 }
 
 export function nullableCuid() {

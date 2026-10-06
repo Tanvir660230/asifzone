@@ -14,7 +14,7 @@ export function CategoryStockPanel({ overview }: { overview: CategoryStockOvervi
 
       {subcategories.length > 0 && (
         <div>
-          <h3 className="mb-3 text-xs uppercase tracking-wide text-ink-500">Categories</h3>
+          <h3 className="mb-3 text-xs ui-caps text-ink-500">Categories</h3>
           <div className="flex flex-wrap gap-2">
             {subcategories.map((sub) => (
               <Link

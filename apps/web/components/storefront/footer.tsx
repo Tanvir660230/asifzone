@@ -39,7 +39,7 @@ function FooterLinkGroup({ title, children }: FooterLinkGroupProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-left text-xs uppercase tracking-[0.15em] text-ink-400 md:pointer-events-none md:mb-4"
+        className="flex w-full items-center justify-between text-left text-xs ui-caps tracking-[calc(0.15em*var(--caps-spread))] text-ink-400 md:pointer-events-none md:mb-4"
         aria-expanded={open}
       >
         {title}
@@ -66,16 +66,27 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
   // Men → Prayer Caps, rather than showing a single lonely link.
   const categoryLinks = categories.flatMap((c) => [c, ...c.children]).slice(0, 6);
   const whatsappLink = socialLinks.find((l) => l.platform === "WHATSAPP" && l.isActive);
-  // Prefer a logo made for dark backgrounds; fall back to the light-background one (better than
-  // nothing) and finally to a plain text wordmark if no logo has been uploaded at all.
+  // The footer is designed on the dark palette, but a theme may render it light (`ui-band-inverse`), so both logos are
+  // offered and the theme's band shows the one made for its background — each falling back to the other, then to a plain
+  // text wordmark if no logo has been uploaded at all.
   const darkBgLogoUrl = settings.logoOnDarkUrl ?? settings.logoUrl;
-  const wordmark = <span className="font-display text-sm text-cream-50">{settings.storeName.toUpperCase()}</span>;
+  const lightBgLogoUrl = settings.logoUrl ?? settings.logoOnDarkUrl;
+  const wordmark = <span className="font-display text-sm text-cream-50 [text-transform:var(--caps-transform)]">{settings.storeName}</span>;
+  const bandLogo = (render: (url: string) => React.ReactNode) =>
+    darkBgLogoUrl === lightBgLogoUrl ? (
+      render(darkBgLogoUrl!)
+    ) : (
+      <>
+        <span className="ui-art-on-dark">{render(darkBgLogoUrl!)}</span>
+        <span className="ui-art-on-light">{render(lightBgLogoUrl!)}</span>
+      </>
+    );
 
   return (
     // A hard cut into solid black, not a gradient melt — the page content ends and the footer
     // simply starts, like distinct sections stacked on a page rather than one blending into the
     // next. Visual interest inside the footer instead comes from the bounded link cards below.
-    <footer className="mt-24 bg-ink-950 text-cream-200">
+    <footer className="ui-band-inverse mt-24 bg-ink-950 text-cream-200">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         {/* Four content categories: who we are (+ how to reach us), what we sell, how to get
             help, and company/legal — each a clearly labeled, visually bounded group rather than
@@ -83,7 +94,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         <div className="grid grid-cols-1 items-start gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             {darkBgLogoUrl ? (
-              <StoreLogoImage src={resolveImageUrl(darkBgLogoUrl)} alt={settings.storeName} className="h-8 w-32 object-contain object-left" fallback={wordmark} />
+              bandLogo((url) => <StoreLogoImage src={resolveImageUrl(url)} alt={settings.storeName} className="h-8 w-32 object-contain object-left" fallback={wordmark} />)
             ) : (
               wordmark
             )}
@@ -210,10 +221,10 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             to breathe. Payment logos live in the bottom bar as a trust badge, not paired here —
             a newsletter signup and "we accept" iconography are different concerns. */}
         <div className="mt-14 border-t border-cream-50/10 pt-12 text-center sm:mt-16 sm:pt-14">
-          <p className="mb-2 text-xs uppercase tracking-[0.3em] text-brass-400">Newsletter</p>
+          <p className="mb-2 text-xs ui-eyebrow text-brass-400">Newsletter</p>
           <h3 className="font-display text-2xl text-cream-50 sm:text-3xl">Get in Touch</h3>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-ink-300">
-            New arrivals, flash sales, and considered style notes — no spam, unsubscribe any time.
+            New arrivals, offers and news — no spam, unsubscribe any time.
           </p>
           <div className="mt-6 flex justify-center">
             <NewsletterForm variant="dark" className="w-full max-w-sm" />
@@ -223,17 +234,19 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         {/* Closing brand moment — a large, centered logo mark before the copyright line. */}
         <div className="mt-14 flex flex-col items-center border-t border-cream-50/10 pt-12 text-center sm:pt-14">
           {darkBgLogoUrl ? (
-            <StoreLogoImage
-              src={resolveImageUrl(darkBgLogoUrl)}
-              alt={settings.storeName}
-              className="h-16 w-64 object-contain sm:h-24 sm:w-96"
-              fallback={<span className="font-display text-4xl tracking-wide text-cream-50 sm:text-5xl">{settings.storeName}</span>}
-            />
+            bandLogo((url) => (
+              <StoreLogoImage
+                src={resolveImageUrl(url)}
+                alt={settings.storeName}
+                className="h-16 w-64 object-contain sm:h-24 sm:w-96"
+                fallback={<span className="font-display text-4xl tracking-wide text-cream-50 sm:text-5xl">{settings.storeName}</span>}
+              />
+            ))
           ) : (
             <span className="font-display text-3xl tracking-wide text-cream-50 sm:text-4xl">{settings.storeName}</span>
           )}
           {settings.tagline && (
-            <p className="mt-3 text-[11px] uppercase tracking-[0.25em] text-ink-400 sm:text-xs">{settings.tagline}</p>
+            <p className="mt-3 text-[11px] ui-caps tracking-[calc(0.25em*var(--caps-spread))] text-ink-400 sm:text-xs">{settings.tagline}</p>
           )}
         </div>
 
@@ -243,7 +256,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             PaymentMethodOption entries) — never a hard-coded wallet list (Phase 12 D-7). */}
         {(settings.paymentMethodsImageUrl || paymentMethods.length > 0) && (
         <div className="mt-14 flex flex-col items-center border-t border-cream-50/10 pt-12 text-center sm:pt-14">
-          <p className="mb-5 text-xs uppercase tracking-[0.3em] text-ink-500">We Accept</p>
+          <p className="mb-5 text-xs ui-eyebrow text-ink-500">We Accept</p>
           {settings.paymentMethodsImageUrl ? (
             // A single admin-uploaded graphic with every logo already laid out — takes priority
             // over the per-method list below since it's the simpler path for admins who don't
@@ -262,7 +275,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                       // eslint-disable-next-line @next/next/no-img-element
                       <img key={method.id} src={resolveImageUrl(method.logoUrl)} alt={method.name} title={method.name} className="h-8 w-auto object-contain" />
                     ) : (
-                      <span key={method.id} className="text-[11px] uppercase tracking-wide text-ink-400">
+                      <span key={method.id} className="text-[11px] ui-caps text-ink-400">
                         {method.name}
                       </span>
                     ),

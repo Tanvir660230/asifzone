@@ -42,6 +42,8 @@ export * from "./sku";
 export * from "./gallery";
 export * from "./json-ld";
 export * from "./sections";
+export * from "./homepage-defaults";
+export * from "./store-policy";
 export * from "./spec-groups";
 export * from "./resolved-view";
 export * from "./wizard-steps";

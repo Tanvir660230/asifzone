@@ -95,7 +95,7 @@ export function CartDrawer() {
                       </p>
                     </div>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center border border-ink-200">
+                      <div className="flex items-center overflow-hidden rounded-[var(--stepper-radius)] border border-ink-200">
                         <button
                           onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
                           disabled={item.quantity <= 1}
@@ -123,7 +123,7 @@ export function CartDrawer() {
 
                   <button
                     onClick={() => removeItem(item.variantId)}
-                    className="self-start text-ink-300 hover:text-red-700"
+                    className="-m-2 self-start p-2 text-fg-muted hover:text-danger-600"
                     aria-label={`Remove ${item.productName} from cart`}
                   >
                     <Trash2 size={15} />
@@ -134,7 +134,7 @@ export function CartDrawer() {
 
             <div className="border-t border-ink-100 px-5 py-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm uppercase tracking-wide text-ink-500">Subtotal</span>
+                <span className="text-sm ui-caps text-ink-500">Subtotal</span>
                 <span className="text-lg text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
               </div>
               <p className="mt-1 text-xs text-ink-400">Shipping and any discount are calculated at checkout.</p>

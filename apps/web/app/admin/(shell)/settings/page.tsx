@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Upload } from "lucide-react";
 import { updateSettingsSchema, type UpdateSettingsInput, type UpdateSocialLinkInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
 import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ImageUploadField } from "@/components/admin/image-upload-field";
 import { toast } from "@/components/ui/toast";
 import * as settingsApi from "@/lib/api/settings";
 import * as socialLinksApi from "@/lib/api/admin-social-links";
@@ -125,91 +125,6 @@ const TABS = [
 ] as const;
 type SettingsTab = (typeof TABS)[number]["value"];
 
-interface LogoUploadFieldProps {
-  label: string;
-  helpText: string;
-  value: string | null | undefined;
-  onChange: (url: string) => void;
-  onRemove: () => void;
-  /** Preview swatch background — should match where this logo variant is actually shown, so the admin can judge contrast before saving. */
-  previewBackground: "light" | "dark";
-  /** Which endpoint to upload through — logo and favicon are processed differently server-side (favicon gets square-cropped to a small PNG). */
-  uploadFn: (file: File) => Promise<{ url: string }>;
-  uploadLabel?: string;
-}
-
-function LogoUploadField({
-  label,
-  helpText,
-  value,
-  onChange,
-  onRemove,
-  previewBackground,
-  uploadFn,
-  uploadLabel = "Upload logo",
-}: LogoUploadFieldProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const uploadMutation = useMutation({ mutationFn: uploadFn });
-
-  async function handleSelected(file: File | null) {
-    if (!file) return;
-    setError(null);
-    try {
-      const { url } = await uploadMutation.mutateAsync(file);
-      onChange(url);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Upload failed");
-    } finally {
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-
-  return (
-    <div>
-      <Label>{label}</Label>
-      {value ? (
-        <div
-          className={cn(
-            "relative mt-1 flex h-20 w-40 items-center justify-center overflow-hidden rounded-lg border p-3",
-            previewBackground === "dark" ? "border-ink-800 bg-ink-900" : "border-ink-100 bg-cream-50",
-          )}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={value} alt="" className="h-full w-full object-contain" />
-          <button
-            type="button"
-            onClick={onRemove}
-            className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50"
-            aria-label={`Remove ${label.toLowerCase()}`}
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploadMutation.isPending}
-          className="mt-1 flex h-20 w-40 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-        >
-          <Upload size={18} />
-          <span className="text-xs">{uploadMutation.isPending ? "Uploading…" : uploadLabel}</span>
-        </button>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        className="hidden"
-        onChange={(e) => handleSelected(e.target.files?.[0] ?? null)}
-      />
-      {error && <p className="ui-field-error">{error}</p>}
-      <p className="mt-1 text-xs text-ink-400">{helpText}</p>
-    </div>
-  );
-}
-
 export default function SettingsPage() {
   const [tab, setTab] = useState<SettingsTab>("branding");
   const queryClient = useQueryClient();
@@ -271,6 +186,10 @@ export default function SettingsPage() {
       addressCountry: s.addressCountry,
       legalJurisdiction: s.legalJurisdiction,
       supportHours: s.supportHours,
+      returnWindowDays: s.returnWindowDays,
+      returnConditions: s.returnConditions,
+      handlingDaysMin: s.handlingDaysMin,
+      handlingDaysMax: s.handlingDaysMax,
     });
   }, [data, reset]);
 
@@ -348,39 +267,38 @@ export default function SettingsPage() {
           <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
             <div>
               <input type="hidden" {...register("logoUrl")} />
-              <LogoUploadField
+              <ImageUploadField
                 label="Logo (light backgrounds)"
-                helpText="Shown in the header and anywhere else with a light background. A transparent PNG works best."
+                hint="Shown in the header and anywhere else with a light background. A transparent PNG works best."
                 value={logoUrl}
-                previewBackground="light"
-                uploadFn={settingsApi.uploadLogo}
+                upload={settingsApi.uploadLogo}
                 onChange={(url) => setValue("logoUrl", url, { shouldValidate: true })}
-                onRemove={() => setValue("logoUrl", "", { shouldValidate: true })}
+                frame="logo"
+                uploadLabel="Upload logo"
               />
             </div>
             <div>
               <input type="hidden" {...register("logoOnDarkUrl")} />
-              <LogoUploadField
+              <ImageUploadField
                 label="Logo (dark backgrounds)"
-                helpText="A bright/light-colored version, shown in the footer and other dark sections. Falls back to the light-background logo if left empty."
+                hint="A bright/light-colored version for dark sections (the footer, in themes that keep it dark). Falls back to the light-background logo if left empty."
                 value={logoOnDarkUrl}
-                previewBackground="dark"
-                uploadFn={settingsApi.uploadLogo}
+                upload={settingsApi.uploadLogo}
                 onChange={(url) => setValue("logoOnDarkUrl", url, { shouldValidate: true })}
-                onRemove={() => setValue("logoOnDarkUrl", "", { shouldValidate: true })}
+                frame="logo-dark"
+                uploadLabel="Upload logo"
               />
             </div>
             <div>
               <input type="hidden" {...register("faviconUrl")} />
-              <LogoUploadField
+              <ImageUploadField
                 label="Favicon"
-                helpText="The small icon shown in the browser tab. Square images work best — it's cropped to a square automatically."
+                hint="The small icon shown in the browser tab. Square images work best — it's cropped to a square automatically."
                 value={faviconUrl}
-                previewBackground="light"
-                uploadFn={settingsApi.uploadFavicon}
-                uploadLabel="Upload favicon"
+                upload={settingsApi.uploadFavicon}
                 onChange={(url) => setValue("faviconUrl", url, { shouldValidate: true })}
-                onRemove={() => setValue("faviconUrl", "", { shouldValidate: true })}
+                frame="logo"
+                uploadLabel="Upload favicon"
               />
             </div>
           </div>
@@ -529,6 +447,36 @@ export default function SettingsPage() {
 
         {tab === "shipping" && (
         <>
+        <FormSection
+          title="Store policy"
+          description="What your storefront promises customers — the product page's policy lines, the Shipping & Returns and FAQ pages, and search-engine data. Leave a field blank to make no such claim."
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="returnWindowDays">Return window (days)</Label>
+              <Input id="returnWindowDays" type="number" min={1} step={1} placeholder="e.g. 7" {...register("returnWindowDays", { valueAsNumber: true })} />
+              <p className="mt-1 text-xs text-ink-400">Blank: your store states no return window.</p>
+            </div>
+            <div>
+              <Label htmlFor="returnConditions">Return conditions</Label>
+              <Input id="returnConditions" placeholder="e.g. Unused items in their original packaging" {...register("returnConditions")} />
+              <p className="mt-1 text-xs text-ink-400">Read as “… can be returned or exchanged within N days of delivery.”</p>
+            </div>
+            <div>
+              <Label htmlFor="handlingDaysMin">Dispatch time — from (business days)</Label>
+              <Input id="handlingDaysMin" type="number" min={1} step={1} placeholder="e.g. 1" {...register("handlingDaysMin", { valueAsNumber: true })} />
+            </div>
+            <div>
+              <Label htmlFor="handlingDaysMax">Dispatch time — to (business days)</Label>
+              <Input id="handlingDaysMax" type="number" min={1} step={1} placeholder="e.g. 2" {...register("handlingDaysMax", { valueAsNumber: true })} />
+              {errors.handlingDaysMax && <p className="mt-1 text-xs text-danger-600">{errors.handlingDaysMax.message}</p>}
+            </div>
+          </div>
+          <p className="mt-4 text-xs text-ink-400">
+            “Cash on Delivery available” follows the Cash on Delivery switch under Payment methods; delivery times follow your delivery zones.
+          </p>
+        </FormSection>
+
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>

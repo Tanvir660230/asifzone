@@ -11,7 +11,7 @@ export function Breadcrumb({ trail }: { trail: Array<{ name: string; href?: stri
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(jsonLd) }} />
-      <nav className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-400">
+      <nav className="flex items-center gap-1.5 text-xs ui-caps text-ink-400">
         <Link href="/" className="hover:text-ink-900">Home</Link>
         {trail.map((item, i) => (
           <span key={i} className="flex items-center gap-1.5">

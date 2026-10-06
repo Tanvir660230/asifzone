@@ -9,6 +9,7 @@ import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-data";
 import { RUNTIME_CONFIG_ELEMENT_ID, publicRuntimeConfig } from "@/lib/runtime-config";
 import { RuntimeConfig } from "@/components/runtime-config";
+import { resolveThemeId } from "@/lib/theme";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
 import { AdPixels } from "@/components/analytics/ad-pixels";
@@ -84,6 +85,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html
       lang="en"
+      data-brand={resolveThemeId(runtime.theme)}
       className={`${inter.variable} ${playfairDisplay.variable} ${notoSansBengali.variable}`}
     >
       <body>

@@ -24,6 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description: DESCRIPTION,
     alternates: { canonical: `${getSiteUrl()}/terms` },
     ...buildOpenGraph({
+      siteName: settings.storeName,
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/terms`,

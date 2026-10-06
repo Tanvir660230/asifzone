@@ -1,3 +1,4 @@
+import { DEFAULT_TRUST_STRIP_ITEMS } from "@clothing-brand/shared";
 import { resolveHomepageIcon } from "@/lib/homepage-icons";
 
 export interface TrustStripItem {
@@ -5,12 +6,7 @@ export interface TrustStripItem {
   label: string;
 }
 
-const DEFAULT_ITEMS: TrustStripItem[] = [
-  { icon: "Truck", label: "Nationwide Delivery" },
-  { icon: "RotateCcw", label: "7-Day Easy Returns" },
-  { icon: "ShieldCheck", label: "Authentic Quality" },
-  { icon: "Banknote", label: "Cash on Delivery" },
-];
+const DEFAULT_ITEMS: TrustStripItem[] = [...DEFAULT_TRUST_STRIP_ITEMS];
 
 export function TrustStrip({ items = DEFAULT_ITEMS }: { items?: TrustStripItem[] }) {
   return (
@@ -21,7 +17,7 @@ export function TrustStrip({ items = DEFAULT_ITEMS }: { items?: TrustStripItem[]
           return (
             <div key={label} className="flex items-center justify-center gap-3 text-center sm:justify-start">
               <Icon size={20} className="shrink-0 text-brass-500" aria-hidden="true" />
-              <span className="text-xs uppercase tracking-wide text-ink-600">{label}</span>
+              <span className="text-xs ui-caps text-ink-600">{label}</span>
             </div>
           );
         })}

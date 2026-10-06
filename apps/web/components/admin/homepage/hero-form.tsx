@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFormPreviewSync } from "@/hooks/use-form-preview-sync";
+import { ImageUploadField } from "@/components/admin/image-upload-field";
+import { uploadHomepageSectionImage } from "@/lib/api/admin-homepage-sections";
 
 interface FormProps {
   initialConfig: Record<string, unknown>;
@@ -19,12 +21,14 @@ export function HeroForm({ initialConfig, onSubmit, onCancel, onValuesChange }: 
   const {
     register,
     handleSubmit,
+    setValue,
     watch,
     formState: { isSubmitting },
   } = useForm<HeroConfig>({
     resolver: zodResolver(heroConfigSchema),
     defaultValues: initialConfig as Partial<HeroConfig>,
   });
+  const imageUrl = watch("imageUrl");
   useFormPreviewSync(watch, onValuesChange);
 
   return (
@@ -34,12 +38,12 @@ export function HeroForm({ initialConfig, onSubmit, onCancel, onValuesChange }: 
       </p>
       <div>
         <Label htmlFor="headline">Headline (optional)</Label>
-        <p className="mb-1 text-xs text-ink-400">Falls back to the store tagline set in Settings if left blank.</p>
+        <p className="mb-1 text-xs text-ink-400">Falls back to the store tagline set in Settings, then the store name, if left blank.</p>
         <Input id="headline" {...register("headline")} />
       </div>
       <div>
         <Label htmlFor="subtext">Small text above the headline (optional)</Label>
-        <p className="mb-1 text-xs text-ink-400">e.g. &quot;New Season&quot;</p>
+        <p className="mb-1 text-xs text-ink-400">A short line such as a collection or campaign name. Hidden when blank.</p>
         <Input id="subtext" {...register("subtext")} />
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -49,8 +53,31 @@ export function HeroForm({ initialConfig, onSubmit, onCancel, onValuesChange }: 
         </div>
         <div>
           <Label htmlFor="ctaLabel">Button label (optional)</Label>
-          <Input id="ctaLabel" placeholder="Shop the collection" {...register("ctaLabel")} />
+          <Input id="ctaLabel" placeholder="Explore the collection" {...register("ctaLabel")} />
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="secondaryCtaHref">Second link URL (optional)</Label>
+          <Input id="secondaryCtaHref" placeholder="/category/gifts" {...register("secondaryCtaHref")} />
+        </div>
+        <div>
+          <Label htmlFor="secondaryCtaLabel">Second link label (optional)</Label>
+          <Input id="secondaryCtaLabel" {...register("secondaryCtaLabel")} />
+        </div>
+      </div>
+      <input type="hidden" {...register("imageUrl")} />
+      <ImageUploadField
+        upload={uploadHomepageSectionImage}
+        label="Image (optional)"
+        value={imageUrl}
+        onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
+        hint="Shown large beneath the headline: 4:5 on mobile, 16:9 on tablets, 21:9 on desktop — keep the subject centred. 2400px wide or more."
+      />
+      <div>
+        <Label htmlFor="imageAltText">Image description (optional)</Label>
+        <p className="mb-1 text-xs text-ink-400">What the image shows, for screen readers and search engines.</p>
+        <Input id="imageAltText" {...register("imageAltText")} />
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel}>

@@ -19,7 +19,7 @@ export function FaqAccordion({ groups }: { groups: FaqGroup[] }) {
     <div className="space-y-10">
       {groups.map((group) => (
         <div key={group.category}>
-          <h2 className="mb-3 text-xs uppercase tracking-[0.2em] text-ink-400">{group.category}</h2>
+          <h2 className="mb-3 text-xs ui-caps tracking-[calc(0.2em*var(--caps-spread))] text-ink-400">{group.category}</h2>
           <div className="divide-y divide-ink-100 rounded-2xl border border-ink-100 bg-cream-50 px-5">
             {group.items.map((item, i) => {
               const key = `${group.category}:${i}`;

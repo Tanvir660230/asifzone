@@ -49,7 +49,7 @@ export function Header({ categories, settings }: HeaderProps) {
 
   return (
     <header className="sticky top-0 z-30">
-      <div className="glass border-b border-ink-200 shadow-[0_4px_20px_-8px_rgba(17,17,17,0.08)]">
+      <div className="glass ui-header-bar border-b border-ink-200">
         {/* Mobile: menu — centered logo — search. Account/cart/track-order live in the bottom
             tab bar on mobile instead, so the header stays uncluttered. */}
         <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 lg:hidden">
@@ -80,7 +80,7 @@ export function Header({ categories, settings }: HeaderProps) {
             </Link>
           </div>
 
-          <div className="flex flex-1 justify-center">
+          <div className="flex min-w-0 flex-1 justify-center">
             <MegaMenu categories={categories} />
           </div>
 

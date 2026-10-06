@@ -5,11 +5,10 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { resolveImageUrl } from "@/lib/image-url";
 
-const FALLBACK_TAGLINE = "Considered clothing, made to last";
-
 interface BrandStoryProps {
   storeName: string;
   tagline?: string | null;
+  eyebrow?: string | null;
   heading?: string | null;
   bodyText?: string | null;
   ctaLabel?: string | null;
@@ -17,9 +16,9 @@ interface BrandStoryProps {
   imageUrl?: string | null;
 }
 
-export function BrandStory({ storeName, tagline, heading, bodyText, ctaLabel, ctaHref, imageUrl }: BrandStoryProps) {
+export function BrandStory({ storeName, tagline, eyebrow, heading, bodyText, ctaLabel, ctaHref, imageUrl }: BrandStoryProps) {
   return (
-    <section className="bg-ink-950 py-24 text-center text-cream-50">
+    <section className="ui-band-inverse bg-ink-950 py-[calc(6rem*var(--section-rhythm))] text-center text-cream-50">
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -32,15 +31,13 @@ export function BrandStory({ storeName, tagline, heading, bodyText, ctaLabel, ct
             <Image src={resolveImageUrl(imageUrl)} alt={heading || storeName} fill sizes="(min-width: 640px) 448px, 100vw" className="object-cover" />
           </div>
         )}
-        <p className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300">Our Philosophy</p>
-        <h2 className="font-display text-3xl leading-snug sm:text-4xl">{heading || tagline || FALLBACK_TAGLINE}</h2>
-        <p className="mt-6 text-sm leading-relaxed text-ink-300">
-          {bodyText ||
-            `Every ${storeName} piece is chosen for fabric, fit, and finish first — fewer, better garments built to outlast a season.`}
-        </p>
+        <p className="mb-4 text-xs ui-eyebrow text-brass-300">{eyebrow || "Our Philosophy"}</p>
+        <h2 className="font-display text-3xl leading-snug sm:text-4xl">{heading || tagline || storeName}</h2>
+        {/* No invented copy: the story is the store's own words, or nothing. */}
+        {bodyText && <p className="mt-6 text-sm leading-relaxed text-ink-300">{bodyText}</p>}
         <Link
           href={ctaHref || "/search"}
-          className="mt-8 inline-block border border-cream-50 px-8 py-3 text-sm uppercase tracking-wide transition-colors hover:bg-cream-50 hover:text-ink-900"
+          className="mt-8 inline-block border border-cream-50 px-8 py-3 text-sm ui-caps transition-colors hover:bg-cream-50 hover:text-ink-900"
         >
           {ctaLabel || "Explore the collection"}
         </Link>

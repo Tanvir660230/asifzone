@@ -68,7 +68,18 @@ function SectionPreviewBody({
       const config = values as HeroConfig;
       return (
         <div className="scale-[0.6] origin-top">
-          <Hero tagline={tagline} headline={config.headline} subtext={config.subtext} ctaLabel={config.ctaLabel} ctaHref={config.ctaHref} />
+          <Hero
+            storeName={storeName}
+            tagline={tagline}
+            headline={config.headline}
+            subtext={config.subtext}
+            ctaLabel={config.ctaLabel}
+            ctaHref={config.ctaHref}
+            secondaryCtaLabel={config.secondaryCtaLabel}
+            secondaryCtaHref={config.secondaryCtaHref}
+            imageUrl={config.imageUrl}
+            imageAltText={config.imageAltText}
+          />
           <p className={PREVIEW_NOTE}>Only rendered when no hero banners are active.</p>
         </div>
       );
@@ -79,7 +90,7 @@ function SectionPreviewBody({
     }
     case "PERSONALIZED_LEAD": {
       const config = values as PersonalizedLeadConfig;
-      const title = (config.titleTemplate || "More {category}, picked for you").replace("{category}", "Shirts");
+      const title = (config.titleTemplate || "More {category}, picked for you").replace("{category}", "Bestsellers");
       return (
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <p className="mb-1 text-xs uppercase tracking-[0.3em] text-brass-500">{config.eyebrow || "Welcome back"}</p>
@@ -98,6 +109,7 @@ function SectionPreviewBody({
         <BrandStory
           storeName={storeName}
           tagline={tagline}
+          eyebrow={config.eyebrow}
           heading={config.heading}
           bodyText={config.bodyText}
           ctaLabel={config.ctaLabel}
@@ -109,7 +121,7 @@ function SectionPreviewBody({
     case "VALUES_GRID": {
       const config = values as ValuesGridConfig;
       return config.items?.length ? (
-        <ValuesGrid storeName={storeName} items={config.items} />
+        <ValuesGrid storeName={storeName} eyebrow={config.eyebrow} heading={config.heading} items={config.items} />
       ) : (
         <p className={PREVIEW_NOTE}>Add at least one item.</p>
       );

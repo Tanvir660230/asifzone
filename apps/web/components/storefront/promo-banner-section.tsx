@@ -33,11 +33,11 @@ export function PromoBannerSection({
         <Image src={resolveImageUrl(imageUrl)} alt={heading || ""} fill sizes="100vw" className="object-cover" />
       )}
       {(heading || bodyText || ctaLabel) && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-ink-950/35 px-4 text-center text-cream-50">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[color:var(--media-scrim)] px-4 text-center text-cream-50">
           {heading && <h2 className="font-display text-2xl sm:text-3xl">{heading}</h2>}
           {bodyText && <p className="max-w-md text-sm text-cream-100">{bodyText}</p>}
           {ctaLabel && (
-            <span className="mt-2 inline-block border border-cream-50 px-6 py-2 text-xs uppercase tracking-wide">
+            <span className="mt-2 inline-block border border-cream-50 px-6 py-2 text-xs ui-caps">
               {ctaLabel}
             </span>
           )}
@@ -47,7 +47,7 @@ export function PromoBannerSection({
   );
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <section className="mx-auto max-w-7xl px-4 py-[calc(2rem*var(--section-rhythm))] sm:px-6 lg:px-8">
       {linkUrl ? <Link href={linkUrl}>{content}</Link> : content}
     </section>
   );

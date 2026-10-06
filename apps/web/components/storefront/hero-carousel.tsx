@@ -110,7 +110,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.05, duration: 0.35 }}
-                  className="mb-4 text-xs uppercase tracking-[0.3em] text-brass-300"
+                  className="mb-4 text-xs ui-eyebrow text-brass-300"
                 >
                   {banner.subtitle}
                 </motion.p>

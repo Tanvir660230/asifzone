@@ -144,7 +144,7 @@ export function VariantPickerDialog({
             <p className="truncate text-sm text-ink-600">{productName}</p>
             <p className="mt-0.5 text-sm font-semibold text-ink-900" data-testid="variant-picker-price">
               {formatPrice(price.price)}
-              {price.was !== null && <span className="ml-2 text-xs font-normal text-ink-400 line-through">{formatPrice(price.was)}</span>}
+              {price.was !== null && <span className="ml-2 text-xs font-normal text-fg-muted line-through">{formatPrice(price.was)}</span>}
             </p>
           </div>
           <button
@@ -175,7 +175,7 @@ export function VariantPickerDialog({
 
           {canConfirm && (
             <div className="flex items-center gap-3">
-              <p className="shrink-0 text-xs uppercase tracking-wide text-ink-500">Qty</p>
+              <p className="shrink-0 text-xs ui-caps text-ink-500">Qty</p>
               <div className="flex items-center rounded-full border border-ink-200 shadow-sm">
                 <button
                   type="button"

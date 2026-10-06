@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
-import type { Product } from "@clothing-brand/shared";
+import { policyHighlights, type Product, type StorePolicy } from "@clothing-brand/shared";
 import { ProductPageBody } from "@/components/storefront/product-page-body";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { SearchSuggestionProductContent } from "@/components/storefront/search-overlay";
@@ -45,7 +45,7 @@ function useInertStorefrontActions() {
   }, []);
 }
 
-function ProductPageMode({ product }: { product: Product }) {
+function ProductPageMode({ product, policy }: { product: Product; policy: StorePolicy }) {
   const clean = sanitizeRichTextSpecs(product, sanitize);
   const { showSizeGuideLink, blocks } = productPageLayout(clean);
   // The storefront's option pickers settle their initial selection once, on mount — right for a real page, whose
@@ -55,7 +55,7 @@ function ProductPageMode({ product }: { product: Product }) {
   return (
     <>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <ProductPageBody key={optionsKey} product={clean} urgencySignals={NO_SIGNALS} accordionItems={buildAccordionItems(clean, sanitize)} showSizeGuideLink={showSizeGuideLink} />
+        <ProductPageBody key={optionsKey} product={clean} urgencySignals={NO_SIGNALS} accordionItems={buildAccordionItems(clean, sanitize, policy)} showSizeGuideLink={showSizeGuideLink} policyLines={policyHighlights(policy)} />
       </div>
       {blocks.length > 0 && (
         <div className="mx-auto max-w-7xl space-y-3 px-4 pb-12 sm:px-6 lg:px-8" data-testid="preview-blocks">
@@ -138,7 +138,7 @@ function SerpMode({ product }: { product: Product }) {
 
 /** Runs inside the wizard's preview iframe. Renders nothing of its own — the wizard (same origin, same admin session)
  * posts the in-progress product, and this renders it with the real storefront components at the iframe's real width. */
-export function LivePreviewFrame() {
+export function LivePreviewFrame({ policy }: { policy: StorePolicy }) {
   const [message, setMessage] = useState<PreviewUpdateMessage | null>(null);
   useInertStorefrontActions();
 
@@ -158,7 +158,7 @@ export function LivePreviewFrame() {
   const { product, mode } = message;
   return (
     <div data-testid={`preview-mode-${mode}`}>
-      {mode === "product" && <ProductPageMode product={product} />}
+      {mode === "product" && <ProductPageMode product={product} policy={policy} />}
       {mode === "listing" && <ListingMode product={product} />}
       {mode === "search" && <SearchMode product={product} />}
       {mode === "social" && <SocialMode product={product} />}
