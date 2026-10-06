@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { BackLink } from "@/components/ui/back-link";
 import { PageHeader } from "@/components/admin/page-header";
-import { ProductsSubNav } from "@/components/admin/products-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FormSection } from "@/components/admin/form-section";
 import { toast } from "@/components/ui/toast";
 import * as productsApi from "@/lib/api/products";
@@ -104,7 +104,7 @@ export default function ProductImportPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <PageHeader title="Import & export products" action={<BackLink href="/admin/products" label="Back to Products" />} />
-      <ProductsSubNav />
+      <ModuleTabs />
 
       <FormSection title="Get a file" description="One row per variant. Export what you have to edit it in a spreadsheet, or start from an empty template for one product type.">
         <div className="flex flex-wrap items-end gap-3">

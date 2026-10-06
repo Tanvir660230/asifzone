@@ -30,6 +30,10 @@ export interface PublicRuntimeConfig {
   /** The brand theme id (`<html data-brand>`, themes in @clothing-brand/ui-tokens). The web app falls back to `default`
    * for an id it does not know. */
   theme: string;
+  /** Admin feature flags for this installation (`ADMIN_FEATURES`): a comma list of flag ids to switch on, `-id` to switch
+   * a default-on flag off. Parsed by the web app's lib/admin/features.ts against its typed flag catalog — an unknown id
+   * is ignored there, so this stays a plain string here. */
+  adminFeatures: string;
 }
 
 export interface ServerRuntimeConfig {
@@ -55,6 +59,7 @@ export const PUBLIC_RUNTIME_ENV: Readonly<Record<keyof PublicRuntimeConfig, read
   googleClientId: ["GOOGLE_CLIENT_ID", "NEXT_PUBLIC_GOOGLE_CLIENT_ID"],
   vapidPublicKey: ["WEB_PUSH_PUBLIC_KEY", "NEXT_PUBLIC_VAPID_PUBLIC_KEY"],
   theme: ["STORE_THEME"],
+  adminFeatures: ["ADMIN_FEATURES"],
 };
 
 const PUBLIC_DEFAULTS: PublicRuntimeConfig = {
@@ -67,6 +72,7 @@ const PUBLIC_DEFAULTS: PublicRuntimeConfig = {
   googleClientId: "",
   vapidPublicKey: "",
   theme: "default",
+  adminFeatures: "",
 };
 
 function first(environment: Environment, names: readonly string[]): string | undefined {

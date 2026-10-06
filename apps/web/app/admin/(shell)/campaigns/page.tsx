@@ -17,7 +17,7 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { PromotionsSubNav } from "@/components/admin/promotions-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
@@ -158,7 +158,7 @@ export default function CampaignsPage() {
         }
       />
 
-      <PromotionsSubNav />
+      <ModuleTabs />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">

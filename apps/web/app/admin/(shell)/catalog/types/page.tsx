@@ -13,7 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
@@ -114,7 +114,7 @@ export default function ProductTypesPage() {
           )
         }
       />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         A product type (Panjabi, Watch, Cap…) points at a <strong>template</strong> that decides its fields, size guide and

@@ -20,7 +20,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
@@ -135,7 +135,7 @@ export default function AttributesCatalogPage() {
           )
         }
       />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         Attributes are the fields a product collects — Material, Fit, Movement, Embroidery Type. Add them to a template to

@@ -69,6 +69,9 @@ export function IconPicker({ id, value, onChange }: IconPickerProps) {
       const name = filtered[highlighted];
       if (name) selectOption(name);
     } else if (e.key === "Escape") {
+      // An open list is the top layer: claim the Escape so a modal around this field stays open (lib/layer-stack.ts
+      // skips handled events). With the list closed, Escape falls through and closes the modal as before.
+      if (open) e.preventDefault();
       setOpen(false);
       setQuery("");
     }

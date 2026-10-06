@@ -176,6 +176,35 @@ const zIndex = {
   toast: "200",
 };
 
+/* ───────────────────────────── admin density ───────────────────────────── */
+
+/**
+ * The admin's ERP density baseline (P1.12): one set of sizes for the shell, tables, controls and drawers, so modules
+ * rebuilt in P2+ share a rhythm instead of each picking its own. Declared as `--density-*` variables at :root (a theme
+ * may retune them) and exposed to Tailwind as spacing keys: `w-sidebar`, `w-sidebar-collapsed`, `h-header`, `h-row`,
+ * `h-row-dense`, `h-control`, `px-page`, `max-w-drawer-md`, …
+ */
+const density = {
+  sidebar: "232px", // expanded admin sidebar
+  "sidebar-collapsed": "56px", // icon rail
+  header: "48px", // admin top bar
+  page: "24px", // page padding (desktop)
+  "page-compact": "20px", // page padding (dense / tablet)
+  row: "40px", // table row
+  "row-dense": "32px", // dense table row (long operational lists)
+  control: "32px", // inputs, buttons, selects in toolbars
+  "kpi-strip": "64px", // compact KPI strip
+  "filter-bar": "40px", // filter / view bar
+  "drawer-sm": "400px",
+  "drawer-md": "560px",
+  "drawer-lg": "720px",
+};
+const densitySpacing = {};
+for (const [name, value] of Object.entries(density)) {
+  cssVariables[`--density-${name}`] = value;
+  densitySpacing[name] = `var(--density-${name})`;
+}
+
 /* ───────────────────────────── motion ───────────────────────────── */
 
 /** One timing language for CSS (Tailwind utilities) and JS (Framer Motion via lib/motion.ts). */
@@ -421,6 +450,8 @@ module.exports = {
   borderRadius,
   boxShadow,
   zIndex,
+  density,
+  densitySpacing,
   motion,
   transitionTimingFunction,
   transitionDuration,

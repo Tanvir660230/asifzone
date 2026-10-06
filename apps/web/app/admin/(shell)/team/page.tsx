@@ -23,7 +23,7 @@ import { PasswordInput } from "@/components/account/password-input";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as authApi from "@/lib/auth";
@@ -244,7 +244,7 @@ export default function AdminTeamPage() {
           </Button>
         }
       />
-      <SettingsSubNav />
+      <ModuleTabs />
       <p className="mb-4 -mt-2 text-sm text-ink-500">
         Admin accounts only ever come from an invite sent here — there&rsquo;s no public sign-up for the console.
       </p>

@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SectionOverrideInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionSettingsEditor } from "@/components/admin/section-settings-editor";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
@@ -39,7 +39,7 @@ export default function PageSectionsPage() {
   return (
     <div>
       <PageHeader title="Catalog setup" description="Define what kinds of products the store sells, and what each kind collects and shows." />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 max-w-3xl text-sm text-ink-500">
         These are the store-wide defaults for every product page: which sections show, in what order, under what title, and the wording of the

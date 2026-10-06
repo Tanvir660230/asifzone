@@ -17,7 +17,7 @@ import { TableSkeleton } from "@/components/ui/table";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { OrdersSubNav } from "@/components/admin/orders-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { ExchangeReview } from "@/components/admin/orders/exchange-review";
 import { invalidateOrderQueries, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import * as returnRequestsApi from "@/lib/api/admin-return-requests";
@@ -144,7 +144,7 @@ export default function AdminReturnRequestsPage() {
   return (
     <div>
       <PageHeader title="Return Requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order." />
-      <OrdersSubNav />
+      <ModuleTabs />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <SegmentedControl

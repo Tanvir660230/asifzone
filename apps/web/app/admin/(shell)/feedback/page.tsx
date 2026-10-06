@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { SupportSubNav } from "@/components/admin/support-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
@@ -68,7 +68,7 @@ export default function AdminFeedbackPage() {
     <div>
       <PageHeader title="Feedback" description="Messages submitted from the storefront contact widget." />
 
-      <SupportSubNav />
+      <ModuleTabs />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">

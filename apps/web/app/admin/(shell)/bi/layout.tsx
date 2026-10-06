@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { BiSubNav } from "@/components/admin/bi-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { DateRangePicker } from "@/components/admin/date-range-picker";
 import { BiDateRangeProvider, useBiDateRange } from "@/components/admin/bi-date-range-context";
 
@@ -18,7 +18,7 @@ export default function BiLayout({ children }: { children: ReactNode }) {
   return (
     <BiDateRangeProvider>
       <div className="space-y-6">
-        <BiSubNav />
+        <ModuleTabs className="" aria-label="Business intelligence sections" />
         <BiDateRangeBar />
         {children}
       </div>

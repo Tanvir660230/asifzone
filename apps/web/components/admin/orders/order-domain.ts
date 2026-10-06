@@ -1,8 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { MONEY_HELD_PAYMENT_STATUSES, PRE_SHIPMENT_STATUSES, orderStatusEnum, type Order, type OrderStatus, type OrderTransitionContext } from "@clothing-brand/shared";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { adminCan } from "@/lib/auth";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
+import { useCapabilities } from "@/hooks/use-capability";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 /**
@@ -36,25 +35,25 @@ export function invalidateOrderQueries(queryClient: QueryClient, orderId?: strin
   if (orderId) queryClient.invalidateQueries({ queryKey: orderKeys.detail(orderId) });
 }
 
-/** What the current admin may do in the Orders workspace. UX only — the API checks every permission itself. */
+/** What the current admin may do in the Orders workspace — named views over the capability registry
+ * (lib/admin/capabilities.ts). UX only — the API checks every permission itself. */
 export function useOrderPermissions() {
-  const { data } = useCurrentAdmin();
-  const admin = data?.admin;
+  const { can, ready } = useCapabilities();
   // Phase 12 D-4: courier actions (booking, sync, delivery-score checks) only when the courier provider is configured on
-  // this deployment.
+  // this deployment — the `courier.manage` capability requires it.
   const { courier: courierConfigured } = useProviderCapabilities();
   return {
     /** False until the admin profile has loaded — don't show "not allowed" states before then. */
-    ready: Boolean(admin),
-    manage: adminCan(admin, "orders.manage"),
-    adjustPrice: adminCan(admin, "orders.adjust_price"),
-    exportCsv: adminCan(admin, "orders.export"),
-    trash: adminCan(admin, "orders.delete"),
-    recordPayment: adminCan(admin, "payments.record"),
-    refunds: adminCan(admin, "refunds.manage"),
-    courier: courierConfigured && adminCan(admin, "courier.manage"),
+    ready,
+    manage: can("orders.manage"),
+    adjustPrice: can("orders.adjustPrice"),
+    exportCsv: can("orders.export"),
+    trash: can("orders.trash"),
+    recordPayment: can("payments.record"),
+    refunds: can("refunds.manage"),
+    courier: can("courier.manage"),
     courierConfigured,
-    returns: adminCan(admin, "returns.manage"),
+    returns: can("returns.manage"),
   };
 }
 export type OrderPermissions = ReturnType<typeof useOrderPermissions>;

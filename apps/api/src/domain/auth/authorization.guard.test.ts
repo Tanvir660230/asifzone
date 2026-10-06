@@ -24,7 +24,9 @@ function files(dir: string, ext: RegExp, skip = /node_modules|\.next|dist|e2e/):
   });
 }
 const apiSource = files(API, /\.ts$/).filter((f) => !/\.test\.ts$|test-(fixtures|routes|guard|setup)\.ts$/.test(f));
-const webSource = files(WEB, /\.(ts|tsx)$/);
+// Same rule as apiSource: tests may read the shared role map to simulate a role (the web's architecture tests render the
+// OWNER and STAFF sidebars from it); production web code may not.
+const webSource = files(WEB, /\.(ts|tsx)$/).filter((f) => !/\.test\.tsx?$/.test(f));
 
 /** The audited public surface (docs/PHASE_10_AUDIT.md §B): storefront reads, auth bootstrap, checkout / quote, guest
  * tracking (order number + phone), beacons, provider callbacks. A new unauthenticated route is a deliberate decision. */

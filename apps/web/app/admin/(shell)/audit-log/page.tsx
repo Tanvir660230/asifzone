@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { EmptyState } from "@/components/admin/empty-state";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
@@ -43,7 +43,7 @@ export default function AuditLogPage() {
     return (
       <div>
         <PageHeader title="Audit Log" />
-        <SettingsSubNav />
+        <ModuleTabs />
         <p className="text-sm text-ink-500">Only store owners can review the audit log.</p>
       </div>
     );
@@ -52,7 +52,7 @@ export default function AuditLogPage() {
   return (
     <div>
       <PageHeader title="Audit Log" />
-      <SettingsSubNav />
+      <ModuleTabs />
       <p className="-mt-3 mb-4 text-sm text-ink-500">
         Every create, update, delete, restore, and bulk action taken in this admin panel, with who did it and when.
       </p>

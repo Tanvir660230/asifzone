@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { adminCan } from "@/lib/auth";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { useCapabilities } from "@/hooks/use-capability";
+import { orderKeys } from "@/components/admin/orders/order-domain";
+import { attentionKeys, paymentKeys } from "@/lib/query-keys";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as adminReviewsApi from "@/lib/api/admin-reviews";
 import * as adminFeedbackApi from "@/lib/api/admin-feedback";
@@ -17,32 +18,31 @@ const POLL_MS = 60_000;
  * dashboard and e.g. the Payments overview read one cached response, not three.
  */
 export function useAttentionCounts() {
-  const { data: me } = useCurrentAdmin();
-  const admin = me?.admin;
+  const { can, ready } = useCapabilities();
 
   const orderStats = useQuery({
-    queryKey: ["admin-order-stats"],
+    queryKey: orderKeys.stats,
     queryFn: adminOrdersApi.getOrderStats,
-    enabled: adminCan(admin, "orders.read"),
+    enabled: can("orders.view"),
     refetchInterval: POLL_MS,
   });
   const payments = useQuery({
-    queryKey: ["payments-overview"],
+    queryKey: paymentKeys.overview,
     queryFn: paymentsAdminApi.getPaymentsOverview,
-    enabled: adminCan(admin, "payments.read"),
+    enabled: can("payments.view"),
     refetchInterval: POLL_MS,
   });
   // pageSize 1: only the list's `total` is wanted here, not the rows.
   const pendingReviews = useQuery({
-    queryKey: ["attention", "pending-reviews"],
+    queryKey: attentionKeys.pendingReviews,
     queryFn: () => adminReviewsApi.listReviewsAdmin({ status: "PENDING", pageSize: 1 }),
-    enabled: adminCan(admin, "content.manage"),
+    enabled: can("content.manage"),
     refetchInterval: POLL_MS * 2,
   });
   const unreadFeedback = useQuery({
-    queryKey: ["attention", "unread-feedback"],
+    queryKey: attentionKeys.unreadFeedback,
     queryFn: () => adminFeedbackApi.listFeedback({ status: "unread", pageSize: 1 }),
-    enabled: adminCan(admin, "content.manage"),
+    enabled: can("content.manage"),
     refetchInterval: POLL_MS * 2,
   });
 
@@ -53,6 +53,6 @@ export function useAttentionCounts() {
     unreadFeedback: unreadFeedback.data?.total,
     /** True until every query this admin is allowed to run has answered once — lets callers show a skeleton instead
      * of a premature "all clear". (v5 `isLoading` is false for a disabled query, so a gated-off one never blocks.) */
-    loading: !admin || orderStats.isLoading || payments.isLoading || pendingReviews.isLoading || unreadFeedback.isLoading,
+    loading: !ready || orderStats.isLoading || payments.isLoading || pendingReviews.isLoading || unreadFeedback.isLoading,
   };
 }

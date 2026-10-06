@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
@@ -81,7 +81,7 @@ export default function SkuSettingsPage() {
   return (
     <div>
       <PageHeader title="Catalog setup" description="Define what kinds of products the store sells, and what each kind collects and shows." />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         SKUs are generated from a pattern when you click <strong>Generate</strong> next to a variant&rsquo;s SKU. Numbers are counted per product type and never

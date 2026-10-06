@@ -93,9 +93,12 @@ interface NavTabsProps {
   scrollable?: boolean;
   className?: string;
   "aria-label"?: string;
+  /** The active tab's href when the caller knows it (the navigation manifest resolves it exactly) — otherwise the tab
+   * whose href prefixes the current path is active. */
+  activeHref?: string;
 }
 
-export function NavTabs({ tabs, scrollable = false, className, "aria-label": ariaLabel = "Section navigation" }: NavTabsProps) {
+export function NavTabs({ tabs, scrollable = false, className, "aria-label": ariaLabel = "Section navigation", activeHref }: NavTabsProps) {
   const pathname = usePathname();
 
   return (
@@ -104,7 +107,7 @@ export function NavTabs({ tabs, scrollable = false, className, "aria-label": ari
       className={cn("flex gap-1 border-b border-line-subtle", scrollable ? "overflow-x-auto" : "flex-wrap", className)}
     >
       {tabs.map((t) => {
-        const active = pathname.startsWith(t.href);
+        const active = activeHref !== undefined ? t.href === activeHref : pathname.startsWith(t.href);
         return (
           <Link
             key={t.href}

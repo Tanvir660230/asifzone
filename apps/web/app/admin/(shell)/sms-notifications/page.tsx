@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { toast } from "@/components/ui/toast";
 import * as smsSettingsApi from "@/lib/api/sms-settings";
 import { ApiError } from "@/lib/api-client";
@@ -114,7 +114,7 @@ export default function SmsNotificationsPage() {
     return (
       <div>
         <PageHeader title="SMS Notifications" />
-        <SettingsSubNav />
+        <ModuleTabs />
         <p className="text-sm text-ink-500">Only store owners can view or change SMS notification settings.</p>
       </div>
     );
@@ -126,7 +126,7 @@ export default function SmsNotificationsPage() {
         title="SMS Notifications"
         description="Text messages sent automatically over the order lifecycle, via BulkSMSBD."
       />
-      <SettingsSubNav />
+      <ModuleTabs />
 
       <form onSubmit={handleSubmit((values) => updateMutation.mutate(values))} className="space-y-6">
         <FormSection

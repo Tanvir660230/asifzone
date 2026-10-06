@@ -41,6 +41,7 @@ describe("runtime configuration", () => {
       googleClientId: "g111.apps.googleusercontent.com",
       vapidPublicKey: "vapid-public-111",
       theme: "default",
+      adminFeatures: "",
     });
     expect(b.siteUrl).toBe("https://shop.client-b.example");
     expect(b.mediaBaseUrl).toBe("https://cdn.client-b.example/uploads");
@@ -73,6 +74,11 @@ describe("runtime configuration", () => {
     const legacy = readPublicRuntimeConfig({ NEXT_PUBLIC_SITE_URL: "https://old.example", NEXT_PUBLIC_META_PIXEL_ID: "999", NEXT_PUBLIC_VAPID_PUBLIC_KEY: "v" });
     expect(legacy).toMatchObject({ siteUrl: "https://old.example", metaPixelId: "999", vapidPublicKey: "v" });
     expect(readPublicRuntimeConfig({ SITE_URL: "https://new.example", NEXT_PUBLIC_SITE_URL: "https://old.example" }).siteUrl).toBe("https://new.example");
+  });
+
+  it("carries the installation's admin feature flags as the raw list the web app parses", () => {
+    expect(readPublicRuntimeConfig({ ADMIN_FEATURES: " messages-inbox,-ai-assistant " }).adminFeatures).toBe("messages-inbox,-ai-assistant");
+    expect(readPublicRuntimeConfig({}).adminFeatures).toBe("");
   });
 
   it("falls back to local-development defaults", () => {

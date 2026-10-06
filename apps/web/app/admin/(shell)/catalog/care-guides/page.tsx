@@ -11,7 +11,7 @@ import { Modal } from "@/components/ui/modal";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
@@ -93,7 +93,7 @@ export default function CareGuidesPage() {
           )
         }
       />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         Reusable care instructions (&ldquo;Cotton care&rdquo;, &ldquo;Leather care&rdquo;). Set a default on a template, choose another per

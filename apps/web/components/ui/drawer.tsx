@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { isTypingTarget } from "@/lib/keyboard";
+import { isTopLayer } from "@/lib/layer-stack";
 import { IconButton } from "./icon-button";
 
 interface DrawerProps {
@@ -26,11 +28,6 @@ interface DrawerProps {
   navItemLabel?: string;
 }
 
-function isTypingTarget(el: EventTarget | null): boolean {
-  const tag = (el as HTMLElement | null)?.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean((el as HTMLElement | null)?.isContentEditable);
-}
-
 /** Right-side slide-in panel (full width on mobile) — portal, backdrop-click and Escape to close,
  * focus trap, optional prev/next stepping (Arrow Up/Down) through the list it was opened from. */
 export function Drawer({
@@ -46,7 +43,8 @@ export function Drawer({
   navLabel,
   navItemLabel = "item",
 }: DrawerProps) {
-  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose });
+  const layerRef = useRef<number | null>(null);
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, layerRef });
 
   // Kept as its own effect, separate from the focus-trap hook above — onPrev/onNext are fresh
   // closures every render of the parent (e.g. the Orders list), and folding this into the trap's
@@ -60,8 +58,10 @@ export function Drawer({
   useEffect(() => {
     if (!open) return;
 
+    // The reserved drawer ↑/↓ shortcut (lib/admin/shortcuts.ts "drawer.prev" / "drawer.next") — only while this drawer
+    // is the top layer, so arrow keys in a popover or dialog opened over it stay theirs.
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !isTypingTarget(document.activeElement)) {
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !isTypingTarget(document.activeElement) && isTopLayer(layerRef.current)) {
         const nav = navRef.current;
         if (e.key === "ArrowUp" && nav.onPrev && !nav.prevDisabled) nav.onPrev();
         if (e.key === "ArrowDown" && nav.onNext && !nav.nextDisabled) nav.onNext();

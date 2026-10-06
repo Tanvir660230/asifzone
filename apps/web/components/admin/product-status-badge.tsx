@@ -1,25 +1,12 @@
 import type { ProductStatus } from "@clothing-brand/shared";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { STATUS_REGISTRY } from "@/lib/status";
 
-export const PRODUCT_STATUS_LABELS: Record<ProductStatus, string> = {
-  DRAFT: "Draft",
-  READY: "Ready",
-  PUBLISHED: "Published",
-  UNPUBLISHED: "Unpublished",
-};
-
-/** Lifecycle -> shared badge meaning (no per-component colors). */
-const VARIANT: Record<ProductStatus, NonNullable<BadgeProps["variant"]>> = {
-  DRAFT: "neutral",
-  READY: "info",
-  PUBLISHED: "success",
-  UNPUBLISHED: "danger",
-};
+/** Product lifecycle labels — from the status registry (lib/status.ts). */
+export const PRODUCT_STATUS_LABELS: Record<ProductStatus, string> = Object.fromEntries(
+  Object.entries(STATUS_REGISTRY.product).map(([status, entry]) => [status, entry.label]),
+) as Record<ProductStatus, string>;
 
 export function ProductStatusBadge({ status, className }: { status: ProductStatus; className?: string }) {
-  return (
-    <Badge variant={VARIANT[status]} dot className={className}>
-      {PRODUCT_STATUS_LABELS[status]}
-    </Badge>
-  );
+  return <StatusBadge domain="product" value={status} dot className={className} />;
 }

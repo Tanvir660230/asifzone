@@ -9,7 +9,7 @@ import { Drawer } from "@/components/ui/drawer";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { PageHeader } from "@/components/admin/page-header";
-import { OrdersSubNav } from "@/components/admin/orders-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrdersSummary } from "@/components/admin/orders/orders-summary";
 import { OrdersFilterBar } from "@/components/admin/orders/orders-filter-bar";
@@ -129,7 +129,7 @@ export default function OrdersPage() {
         }
       />
 
-      <OrdersSubNav />
+      <ModuleTabs />
 
       {state.view === "active" && <OrdersSummary stats={stats} activeQueue={state.queue} onSelectQueue={state.selectQueue} />}
 

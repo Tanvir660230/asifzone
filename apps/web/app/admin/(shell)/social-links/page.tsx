@@ -13,7 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { SOCIAL_PLATFORM_META, SocialIcon } from "@/components/social-icon";
@@ -106,7 +106,7 @@ export default function SocialLinksPage() {
           </Button>
         }
       />
-      <SettingsSubNav />
+      <ModuleTabs />
       <p className="mb-4 text-sm text-ink-500">
         Shown as icons in the storefront footer, in the order below. Only active links appear on the site.
       </p>

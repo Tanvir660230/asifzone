@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { ImageUploadField } from "@/components/admin/image-upload-field";
 import { toast } from "@/components/ui/toast";
 import * as settingsApi from "@/lib/api/settings";
@@ -217,7 +217,7 @@ export default function SettingsPage() {
     return (
       <div>
         <PageHeader title="Settings" />
-        <SettingsSubNav />
+        <ModuleTabs />
         <p className="text-sm text-ink-500">Only store owners can view or change store settings.</p>
       </div>
     );
@@ -226,7 +226,7 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Settings" />
-      <SettingsSubNav />
+      <ModuleTabs />
 
       <div className="mb-6 flex flex-wrap gap-1 border-b border-ink-100">
         {TABS.map((t) => (

@@ -3,95 +3,28 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import {
-  BarChart3,
-  Boxes,
-  ClipboardList,
-  CornerDownLeft,
-  CreditCard,
-  FolderTree,
-  Gauge,
-  Image as ImageIcon,
-  LayoutDashboard,
-  Layers,
-  Megaphone,
-  MessageSquare,
-  Plus,
-  RotateCcw,
-  Search,
-  Settings,
-  Shirt,
-  Star,
-  Tag,
-  User,
-  Users,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
-import type { Permission } from "@clothing-brand/shared";
-import { adminCan } from "@/lib/auth";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { BarChart3, ClipboardList, CornerDownLeft, FileText, Plus, Search, Settings, Shirt, User, type LucideIcon } from "lucide-react";
+import { useCapabilities } from "@/hooks/use-capability";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useNavAccess } from "@/hooks/use-nav-access";
+import { useShortcut } from "@/hooks/use-shortcut";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 import * as productsApi from "@/lib/api/products";
+import { productEditHref } from "@/lib/admin-routes";
+import { createCommands, moduleOf, searchableNodes, type NavCommand, type NavNode, type PaletteGroup } from "@/lib/admin/navigation";
+import { paletteKeys } from "@/lib/query-keys";
 import { formatPrice, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { NAV_ICONS } from "./nav-icons";
 
-interface PaletteEntry {
-  id: string;
-  label: string;
-  hint?: string;
-  href: string;
-  icon: LucideIcon;
-  permission?: Permission;
-  /** Extra words that should match, e.g. "stock" for Inventory. */
-  keywords?: string;
-}
-
-/** Things worth creating from anywhere — also the Quick-create menu's list. */
-export const CREATE_ENTRIES: PaletteEntry[] = [
-  { id: "new-order", label: "New order", hint: "Manual / phone order", href: "/admin/orders/new", icon: ClipboardList, permission: "orders.manage" },
-  { id: "new-product", label: "New product", hint: "Product Builder", href: "/admin/products/new", icon: Shirt, permission: "catalog.manage" },
-  { id: "new-customer", label: "New customer", hint: "Customers", href: "/admin/customers", icon: User, permission: "customers.manage" },
-  { id: "new-coupon", label: "New coupon", hint: "Promotions", href: "/admin/coupons", icon: Tag, permission: "promotions.manage" },
-  { id: "new-flash-sale", label: "New flash sale", hint: "Promotions", href: "/admin/flash-sales", icon: Zap, permission: "promotions.manage" },
-  { id: "new-banner", label: "New banner", hint: "Content", href: "/admin/banners", icon: ImageIcon, permission: "content.manage" },
-];
-
-const PAGE_ENTRIES: PaletteEntry[] = [
-  { id: "p-dashboard", label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard, keywords: "home overview" },
-  { id: "p-orders", label: "Orders", href: "/admin/orders", icon: ClipboardList, permission: "orders.read" },
-  { id: "p-returns", label: "Return requests", href: "/admin/return-requests", icon: RotateCcw, permission: "orders.read", keywords: "exchange refund" },
-  { id: "p-payments", label: "Payments", href: "/admin/payments/overview", icon: CreditCard, permission: "payments.read", keywords: "refund gateway" },
-  { id: "p-customers", label: "Customers", href: "/admin/customers", icon: Users, permission: "customers.read", keywords: "crm" },
-  { id: "p-products", label: "Products", href: "/admin/products", icon: Shirt, permission: "catalog.read", keywords: "catalog" },
-  { id: "p-categories", label: "Categories", href: "/admin/categories", icon: FolderTree, permission: "catalog.read" },
-  { id: "p-inventory", label: "Inventory", href: "/admin/inventory", icon: Boxes, permission: "inventory.read", keywords: "stock" },
-  { id: "p-catalog-setup", label: "Catalog setup", href: "/admin/catalog/types", icon: Layers, keywords: "types templates attributes size guide" },
-  { id: "p-promotions", label: "Promotions", href: "/admin/flash-sales", icon: Megaphone, keywords: "coupon flash sale bundle campaign discount" },
-  { id: "p-content", label: "Homepage & content", href: "/admin/homepage", icon: ImageIcon, keywords: "banner sections" },
-  { id: "p-reviews", label: "Reviews", href: "/admin/reviews", icon: Star, permission: "content.manage" },
-  { id: "p-feedback", label: "Feedback & messages", href: "/admin/feedback", icon: MessageSquare, permission: "content.manage", keywords: "support" },
-  { id: "p-bi", label: "Business Intelligence", href: "/admin/bi/overview", icon: Gauge, permission: "analytics.read", keywords: "analytics reports" },
-  { id: "p-bi-sales", label: "Sales analytics", href: "/admin/bi/sales", icon: BarChart3, permission: "analytics.read" },
-  { id: "p-bi-products", label: "Product analytics", href: "/admin/bi/products", icon: BarChart3, permission: "analytics.read" },
-  { id: "p-bi-customers", label: "Customer analytics", href: "/admin/bi/customers", icon: BarChart3, permission: "analytics.read", keywords: "cohort retention rfm" },
-  { id: "p-bi-marketing", label: "Marketing analytics", href: "/admin/bi/marketing", icon: BarChart3, permission: "analytics.read", keywords: "traffic campaign" },
-  { id: "p-bi-visitors", label: "Visitors", href: "/admin/bi/visitors", icon: BarChart3, permission: "analytics.read", keywords: "traffic devices" },
-  { id: "p-settings", label: "Settings", href: "/admin/settings", icon: Settings, keywords: "store sms payment methods social redirects" },
-  { id: "p-team", label: "Team", href: "/admin/team", icon: Users, permission: "users.manage", keywords: "staff admins" },
-];
-
-function matches(entry: PaletteEntry, q: string): boolean {
-  const hay = `${entry.label} ${entry.hint ?? ""} ${entry.keywords ?? ""}`.toLowerCase();
-  return q
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((word) => hay.includes(word));
-}
+/**
+ * Ctrl/⌘+K: jump to any admin page, create something, or find an order / customer / product by name, number or phone.
+ * Pages, reports, settings and create actions are DERIVED from the navigation manifest (lib/admin/navigation.ts) and the
+ * capability registry — this file holds no route list. Record search stays on the list endpoints until a dedicated
+ * search API exists.
+ */
 
 interface ResultRow {
   id: string;
@@ -102,13 +35,44 @@ interface ResultRow {
   icon: LucideIcon;
 }
 
-const SEARCH_LIMIT = 5;
+interface Entry {
+  id: string;
+  label: string;
+  hint?: string;
+  href: string;
+  icon: LucideIcon;
+  keywords: string;
+  group: PaletteGroup | "Create";
+}
 
-/** Ctrl/⌘+K: jump to any admin page, create something, or find an order / customer / product by name, number or phone. */
+const SEARCH_LIMIT = 5;
+const GROUP_ICON: Partial<Record<PaletteGroup, LucideIcon>> = { Reports: BarChart3, Settings };
+
+function iconFor(node: NavNode, group: PaletteGroup): LucideIcon {
+  const own = node.icon ?? moduleOf(node).icon;
+  if (group === "Pages" && own) return NAV_ICONS[own];
+  return GROUP_ICON[group] ?? (own ? NAV_ICONS[own] : FileText);
+}
+
+function matches(entry: Entry, q: string): boolean {
+  const hay = `${entry.label} ${entry.hint ?? ""} ${entry.keywords}`.toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => hay.includes(word));
+}
+
+/** The Create menu's and the palette's create actions for this admin — from the manifest's node commands. */
+export function useCreateCommands(): Array<NavCommand & { node: NavNode }> {
+  const access = useNavAccess();
+  return useMemo(() => createCommands(access), [access]);
+}
+
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
-  const { data: me } = useCurrentAdmin();
-  const admin = me?.admin;
+  const access = useNavAccess();
+  const { can } = useCapabilities();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose });
@@ -127,27 +91,48 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   }, [open]);
 
   const orders = useQuery({
-    queryKey: ["palette", "orders", debounced],
+    queryKey: paletteKeys.search("orders", debounced),
     queryFn: () => adminOrdersApi.listOrders({ search: debounced, pageSize: SEARCH_LIMIT }),
-    enabled: open && searching && adminCan(admin, "orders.read"),
+    enabled: open && searching && can("orders.view"),
     staleTime: 30_000,
   });
   const customers = useQuery({
-    queryKey: ["palette", "customers", debounced],
+    queryKey: paletteKeys.search("customers", debounced),
     queryFn: () => adminCustomersApi.listCustomers({ search: debounced, pageSize: SEARCH_LIMIT }),
-    enabled: open && searching && adminCan(admin, "customers.read"),
+    enabled: open && searching && can("customers.view"),
     staleTime: 30_000,
   });
   const products = useQuery({
-    queryKey: ["palette", "products", debounced],
+    queryKey: paletteKeys.search("products", debounced),
     queryFn: () => productsApi.listProducts({ search: debounced, pageSize: SEARCH_LIMIT }),
-    enabled: open && searching && adminCan(admin, "catalog.read"),
+    enabled: open && searching && can("catalog.view"),
     staleTime: 30_000,
   });
   const loading = searching && (orders.isFetching || customers.isFetching || products.isFetching);
 
+  const entries = useMemo<{ pages: Entry[]; create: Entry[] }>(() => {
+    const pages = searchableNodes(access).map(({ node, href, group }) => ({
+      id: node.id,
+      label: node.label,
+      hint: group === "Pages" && node.parent ? moduleOf(node).label : undefined,
+      href,
+      icon: iconFor(node, group),
+      keywords: (node.keywords ?? []).join(" "),
+      group,
+    }));
+    const create = createCommands(access).map((c) => ({
+      id: c.id,
+      label: c.label,
+      hint: c.hint,
+      href: c.route,
+      icon: Plus,
+      keywords: (c.keywords ?? []).join(" "),
+      group: "Create" as const,
+    }));
+    return { pages, create };
+  }, [access]);
+
   const rows = useMemo<ResultRow[]>(() => {
-    const allowed = (e: PaletteEntry) => !e.permission || adminCan(admin, e.permission);
     const q = query.trim();
     const out: ResultRow[] = [];
 
@@ -166,17 +151,24 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         out.push({ id: `c-${c.id}`, group: "Customers", label: c.name, meta: c.phone ?? c.email ?? undefined, href: `/admin/customers/${c.id}`, icon: User });
       }
       for (const p of products.data?.items ?? []) {
-        out.push({ id: `pr-${p.id}`, group: "Products", label: p.name, meta: p.status?.toLowerCase(), href: `/admin/products/${p.id}`, icon: Shirt });
+        out.push({ id: `pr-${p.id}`, group: "Products", label: p.name, meta: p.status?.toLowerCase(), href: productEditHref(p.id), icon: Shirt });
       }
     }
 
-    const create = CREATE_ENTRIES.filter(allowed).filter((e) => !q || matches(e, q));
-    const pages = PAGE_ENTRIES.filter(allowed).filter((e) => !q || matches(e, q));
-    // Empty query: lead with creating, then a short list of destinations. Typed query: records first, then pages.
-    for (const e of q ? pages : create) out.push({ id: e.id, group: q ? "Pages" : "Create", label: e.label, meta: e.hint, href: e.href, icon: q ? e.icon : Plus });
-    for (const e of q ? create : pages.slice(0, 8)) out.push({ id: e.id, group: q ? "Create" : "Jump to", label: e.label, meta: e.hint, href: e.href, icon: q ? Plus : e.icon });
+    const toRow = (e: Entry, group: string): ResultRow => ({ id: e.id, group, label: e.label, meta: e.hint, href: e.href, icon: e.icon });
+    if (!q) {
+      // Empty query: lead with creating, then a short list of destinations.
+      for (const e of entries.create) out.push(toRow(e, "Create"));
+      for (const e of entries.pages.filter((p) => p.group === "Pages").slice(0, 8)) out.push(toRow(e, "Jump to"));
+      return out;
+    }
+    // Typed query: records first, then pages, reports, settings, then create actions.
+    for (const group of ["Pages", "Reports", "Settings"] as const) {
+      for (const e of entries.pages.filter((p) => p.group === group && matches(p, q))) out.push(toRow(e, group));
+    }
+    for (const e of entries.create.filter((c) => matches(c, q))) out.push(toRow(e, "Create"));
     return out;
-  }, [admin, query, searching, orders.data, customers.data, products.data]);
+  }, [query, searching, orders.data, customers.data, products.data, entries]);
 
   useEffect(() => setActive(0), [query]);
   useEffect(() => {
@@ -236,19 +228,15 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
         <ul ref={listRef} id="command-palette-list" role="listbox" className="flex-1 overflow-y-auto py-2">
           {rows.length === 0 ? (
-            <li className="px-4 py-10 text-center text-sm text-ink-500">
-              {loading ? "Searching…" : `Nothing matches “${query.trim()}”.`}
-            </li>
+            <li className="px-4 py-10 text-center text-sm text-ink-500">{loading ? "Searching…" : `Nothing matches “${query.trim()}”.`}</li>
           ) : (
             rows.map((row, i) => {
               const showGroup = row.group !== lastGroup;
               lastGroup = row.group;
               const Icon = row.icon;
               return (
-                <li key={row.id} role="presentation">
-                  {showGroup && (
-                    <p className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-ink-400 first:pt-1">{row.group}</p>
-                  )}
+                <li key={`${row.group}-${row.id}`} role="presentation">
+                  {showGroup && <p className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-ink-400 first:pt-1">{row.group}</p>}
                   <button
                     id={`cp-${row.id}`}
                     data-index={i}
@@ -280,6 +268,9 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           <span>
             <kbd className="font-sans">↵</kbd> open
           </span>
+          <span>
+            <kbd className="font-sans">?</kbd> shortcuts
+          </span>
           <span className="ml-auto">Search by order #, name or phone</span>
         </div>
       </div>
@@ -287,18 +278,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   );
 }
 
-/** Global Ctrl/⌘+K binding. Returns the open state so the header can also open it from a button. */
+/** The global Ctrl/⌘+K binding (shortcut registry: "palette.toggle"). Returns the open state so the header can also open
+ * it from a button. */
 export function useCommandPaletteHotkey() {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setOpen((o) => !o);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  useShortcut("palette.toggle", () => setOpen((o) => !o));
   return [open, setOpen] as const;
 }

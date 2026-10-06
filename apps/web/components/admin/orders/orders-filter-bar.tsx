@@ -29,9 +29,8 @@ import type { OrderStats } from "@/lib/api/admin-orders";
 import { courierStatusLabel, orderStatusBadgeClass, orderStatusShortLabel, paymentStatusLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ORDER_STATUSES } from "./order-domain";
-import { ORDER_QUEUE_LABELS, type OrdersListState } from "./use-orders-list-state";
-
-const ALL_DISTRICTS = Array.from(new Set(Object.values(BD_DISTRICTS_BY_DIVISION).flat())).sort();
+import { type OrdersListState } from "./use-orders-list-state";
+import { ALL_BD_DISTRICTS, ORDER_QUEUE_LABELS, paymentMethodLabel } from "./order-filters";
 const FIRST_OUTCOME_STATUS: OrderStatus = "DELIVERED";
 
 function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
@@ -118,7 +117,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
                   <option value="">Any</option>
                   {paymentMethodEnum.options.map((m) => (
                     <option key={m} value={m}>
-                      {m === "COD" ? "Cash on delivery" : m === "SSLCOMMERZ" ? "SSLCommerz" : "EPS"}
+                      {paymentMethodLabel(m)}
                     </option>
                   ))}
                 </Select>
@@ -155,7 +154,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
                   id="f-district"
                   value={more.district}
                   onChange={more.setDistrict}
-                  options={more.division ? BD_DISTRICTS_BY_DIVISION[more.division] : ALL_DISTRICTS}
+                  options={more.division ? BD_DISTRICTS_BY_DIVISION[more.division] : ALL_BD_DISTRICTS}
                   placeholder="Any district"
                 />
               </Field>

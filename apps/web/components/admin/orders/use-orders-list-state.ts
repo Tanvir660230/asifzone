@@ -1,19 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ORDER_QUEUE_FILTERS, orderStatusEnum, type BdDivision, type OrderQueueId, type OrderStatus, type PaymentMethod, type PaymentStatus } from "@clothing-brand/shared";
+import { ORDER_QUEUE_FILTERS, type BdDivision, type OrderQueueId, type OrderStatus, type PaymentMethod, type PaymentStatus } from "@clothing-brand/shared";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { AdminOrderListParams } from "@/lib/api/admin-orders";
-import { courierStatusLabel, orderStatusShortLabel, paymentStatusLabel } from "@/lib/format";
+import { activeFilterChips, filterField, type FilterValues } from "@/lib/admin/filters";
+import { parseUrlState, type UrlField } from "@/lib/url-state";
+import { ORDER_FILTERS, ORDER_FILTER_URL_ALIASES } from "./order-filters";
 
-export const ORDER_QUEUE_LABELS: Record<OrderQueueId, string> = {
-  followUpDue: "Follow-up due",
-  unpaid: "Unpaid",
-  cod: "COD",
-  courierIssue: "Courier issues",
-  cancelledButPaid: "Cancelled but paid",
-  refundDue: "Returned · refund due",
-  cancelledReturned: "Cancelled / Returned",
+export { ORDER_QUEUE_LABELS } from "./order-filters";
+
+/** The two filters other screens deep-link into (the dashboard's Action Center, tiles) — read with the URL-state parser
+ * from the Orders filter definitions, so a bad value is ignored exactly like the controls would. */
+const DEEP_LINK_SCHEMA = {
+  "f.queue": filterField(ORDER_FILTERS.find((f) => f.key === "f.queue")!) as UrlField<string>,
+  "f.status": filterField(ORDER_FILTERS.find((f) => f.key === "f.status")!) as UrlField<string[]>,
 };
 
 export type SortColumn = NonNullable<AdminOrderListParams["sortBy"]>;
@@ -78,17 +79,16 @@ export function useOrdersListState() {
     setDateTo("");
     setPage(1);
   }
-  // Deep links from elsewhere (the dashboard's Action Center, tiles): ?queue=<OrderQueueId> or ?status=A,B. Read once on
-  // mount from window.location rather than useSearchParams, which would force a Suspense boundary around the page.
+  // Deep links from elsewhere (the dashboard's Action Center, tiles): ?queue=<OrderQueueId> or ?status=A,B (also their
+  // URL-state names ?f.queue= / ?f.status=). Read once on mount from window.location rather than useSearchParams, which
+  // would force a Suspense boundary around the page. A queue wins over statuses, as when picked by hand.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get("queue");
-    if (q && q in ORDER_QUEUE_FILTERS) {
-      setQueueRaw(q as OrderQueueId);
+    const links = parseUrlState(DEEP_LINK_SCHEMA, new URLSearchParams(window.location.search), ORDER_FILTER_URL_ALIASES);
+    if (links["f.queue"]) {
+      setQueueRaw(links["f.queue"] as OrderQueueId);
       return;
     }
-    const wanted = (params.get("status") ?? "").split(",").filter((v): v is OrderStatus => orderStatusEnum.safeParse(v).success);
-    if (wanted.length) setStatuses(wanted);
+    if (links["f.status"].length) setStatuses(links["f.status"] as OrderStatus[]);
   }, []);
 
   function clearAll() {
@@ -129,29 +129,40 @@ export function useOrdersListState() {
   const moreFiltersCount = [paymentStatus, paymentMethod, courierBooked, courierStatus, division, district, dateFrom, dateTo].filter(Boolean).length;
   const hasFilters = Boolean(debouncedSearch || statuses.length || queue || moreFiltersCount);
 
+  // Chip wording and order come from the Orders filter definitions (order-filters.ts); removing a chip uses the same
+  // setters as the controls, so paging and dependent filters (district under division) reset the same way.
   const chips = useMemo(() => {
+    const values: FilterValues = {
+      "f.queue": queue ?? "",
+      "f.status": statuses,
+      "f.payment": paymentStatus,
+      "f.method": paymentMethod,
+      "f.courier": courierBooked,
+      "f.delivery": courierStatus,
+      "f.division": division,
+      "f.district": district,
+      from: dateFrom,
+      to: dateTo,
+    };
+    const removers: Record<string, (value: string) => void> = {
+      "f.queue": () => selectQueue(null),
+      "f.status": (value) => toggleStatus(value as OrderStatus),
+      "f.payment": () => reset(setPaymentStatus)(""),
+      "f.method": () => reset(setPaymentMethod)(""),
+      "f.courier": () => reset(setCourierBooked)(""),
+      "f.delivery": () => reset(setCourierStatus)(""),
+      "f.division": () => {
+        setDivision("");
+        setDistrict("");
+        setPage(1);
+      },
+      "f.district": () => reset(setDistrict)(""),
+      from: () => reset(setDateFrom)(""),
+      to: () => reset(setDateTo)(""),
+    };
     const out: FilterChip[] = [];
     if (debouncedSearch) out.push({ key: "search", label: `“${debouncedSearch}”`, onRemove: () => reset(setSearchRaw)("") });
-    if (queue) out.push({ key: "queue", label: ORDER_QUEUE_LABELS[queue], onRemove: () => selectQueue(null) });
-    for (const s of statuses) out.push({ key: `status-${s}`, label: `Status: ${orderStatusShortLabel(s)}`, onRemove: () => toggleStatus(s) });
-    if (paymentStatus) out.push({ key: "paymentStatus", label: `Payment: ${paymentStatusLabel(paymentStatus)}`, onRemove: () => reset(setPaymentStatus)("") });
-    if (paymentMethod) out.push({ key: "paymentMethod", label: `Method: ${paymentMethod === "COD" ? "COD" : paymentMethod}`, onRemove: () => reset(setPaymentMethod)("") });
-    if (courierBooked) out.push({ key: "courierBooked", label: courierBooked === "true" ? "Courier: booked" : "Courier: not booked", onRemove: () => reset(setCourierBooked)("") });
-    if (courierStatus) out.push({ key: "courierStatus", label: `Delivery: ${courierStatusLabel(courierStatus)}`, onRemove: () => reset(setCourierStatus)("") });
-    if (division) {
-      out.push({
-        key: "division",
-        label: `Division: ${division}`,
-        onRemove: () => {
-          setDivision("");
-          setDistrict("");
-          setPage(1);
-        },
-      });
-    }
-    if (district) out.push({ key: "district", label: `District: ${district}`, onRemove: () => reset(setDistrict)("") });
-    if (dateFrom) out.push({ key: "dateFrom", label: `From ${dateFrom}`, onRemove: () => reset(setDateFrom)("") });
-    if (dateTo) out.push({ key: "dateTo", label: `To ${dateTo}`, onRemove: () => reset(setDateTo)("") });
+    for (const chip of activeFilterChips(ORDER_FILTERS, values)) out.push({ key: chip.id, label: chip.label, onRemove: () => removers[chip.filterKey]!(chip.value) });
     return out;
   }, [debouncedSearch, queue, statuses, paymentStatus, paymentMethod, courierBooked, courierStatus, division, district, dateFrom, dateTo]);
 

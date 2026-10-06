@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildContentSecurityPolicy, createNonce } from "@/lib/security/csp";
 import { mediaUrl, publicRuntimeConfig, serverRuntimeConfig } from "@/lib/runtime-config";
+import { deprecatedRedirect } from "@/lib/admin/navigation";
 
 const REDIRECT_REVALIDATE_SECONDS = 300;
 
@@ -81,6 +82,14 @@ export async function middleware(req: NextRequest) {
   }
 
   if (pathname.startsWith("/admin")) {
+    // Admin routes that moved: the navigation manifest's `deprecatedRoutes` (lib/admin/navigation.ts) — params and query
+    // (e.g. the Product Builder's ?step=) carried over. Before the session check, so a signed-out visitor's login
+    // round-trip returns to the current URL.
+    const moved = deprecatedRedirect(pathname, req.nextUrl.search);
+    if (moved) {
+      return NextResponse.redirect(new URL(moved, req.url), 308);
+    }
+
     // Same reasoning as /account/verify-email below — an admin accepting an invite may or may not
     // already have a different session, and the page must work either way.
     if (pathname === "/admin/accept-invite") {

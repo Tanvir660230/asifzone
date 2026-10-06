@@ -19,6 +19,10 @@ interface UiTokens {
   borderRadius: Scale;
   boxShadow: Scale;
   zIndex: Scale;
+  /** Admin density baseline (raw px values) — also declared as `--density-<name>` variables. */
+  density: Scale;
+  /** The same sizes as Tailwind spacing values (`var(--density-<name>)`). */
+  densitySpacing: Scale;
   motion: {
     duration: { instant: number; fast: number; base: number; slow: number; slower: number };
     easing: { smooth: CubicBezier; standard: CubicBezier; exit: CubicBezier };

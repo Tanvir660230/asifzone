@@ -98,16 +98,8 @@ export function Popover({ open, onClose, anchorRef, align = "start", className, 
         "ui-floating z-overlay max-h-[70vh] overflow-y-auto animate-pop-in",
         className,
       )}
-      // Popovers routinely open on top of a Drawer/Modal, which has its own useFocusTrap Escape
-      // listener on `document`. Without this, Escape bubbling from inside the popover reaches
-      // *both* document listeners (this popover's and the drawer's underneath), closing both at
-      // once. Stopping here, before the event reaches document, means only the topmost layer closes.
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          onClose();
-        }
-      }}
+      // Popovers routinely open on top of a Drawer/Modal: Escape closes only this one, the top layer of the overlay
+      // stack (useFocusTrap → lib/layer-stack.ts), so no per-component stopPropagation is needed.
     >
       {children}
     </div>,

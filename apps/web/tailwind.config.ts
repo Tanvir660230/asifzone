@@ -17,6 +17,9 @@ const config: Config = {
       borderRadius: tokens.borderRadius,
       boxShadow: tokens.boxShadow,
       zIndex: tokens.zIndex,
+      // Admin density baseline (P1.12): w-sidebar, h-header, h-row, h-control, px-page, max-w-drawer-md, …
+      spacing: tokens.densitySpacing,
+      maxWidth: tokens.densitySpacing,
       transitionTimingFunction: tokens.transitionTimingFunction,
       transitionDuration: tokens.transitionDuration,
       keyframes: {

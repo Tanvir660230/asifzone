@@ -15,7 +15,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
@@ -224,7 +224,7 @@ export default function TemplatesPage() {
           )
         }
       />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         A template bundles what a product type collects: which attributes, whether variants have a size and/or colour, and which size

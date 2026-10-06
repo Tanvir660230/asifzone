@@ -1,33 +1,9 @@
-import {
-  Clock,
-  CheckCircle2,
-  Loader2,
-  PackageCheck,
-  Truck,
-  Home,
-  PackageX,
-  Undo2,
-  Ban,
-  RotateCcw,
-  type LucideIcon,
-} from "lucide-react";
+import { Circle } from "lucide-react";
 import type { OrderStatus } from "@clothing-brand/shared";
+import { statusOf } from "@/lib/status";
 
-// One icon per order status — shared by the list's status pills, the detail panel's status
-// picker, and the timeline, so a given status always reads with the same glyph everywhere.
-const STATUS_ICON: Record<OrderStatus, LucideIcon> = {
-  PENDING: Clock,
-  CONFIRMED: CheckCircle2,
-  PROCESSING: Loader2,
-  PACKED: PackageCheck,
-  SHIPPED: Truck,
-  DELIVERED: Home,
-  PARTIALLY_DELIVERED: PackageX,
-  CANCELLED: Ban,
-  RETURNED: Undo2,
-  REFUNDED: RotateCcw,
-};
-
+// One icon per order status — from the status registry (lib/status.ts), shared by the list's status pills, the detail
+// panel's status picker, and the timeline, so a given status always reads with the same glyph everywhere.
 export function OrderStatusIcon({
   status,
   size = 14,
@@ -37,6 +13,6 @@ export function OrderStatusIcon({
   size?: number;
   className?: string;
 }) {
-  const Icon = STATUS_ICON[status];
+  const Icon = statusOf("order", status).icon ?? Circle;
   return <Icon size={size} className={className} />;
 }

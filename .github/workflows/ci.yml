@@ -93,6 +93,11 @@ jobs:
       - name: Run API tests
         run: pnpm --filter api test
 
+      # Unit + architecture guards for the admin foundations (navigation manifest coverage, shortcut registry, status
+      # registry, URL-state grammar) — tests/architecture/*.test.ts and lib/**/*.test.ts.
+      - name: Run web unit tests
+        run: pnpm --filter web test
+
       - name: Build web
         run: pnpm --filter web build
         env:

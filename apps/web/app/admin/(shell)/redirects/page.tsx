@@ -16,7 +16,7 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as redirectsApi from "@/lib/api/admin-redirects";
@@ -131,7 +131,7 @@ export default function AdminRedirectsPage() {
           </Button>
         }
       />
-      <SettingsSubNav />
+      <ModuleTabs />
       <p className="mb-4 -mt-2 text-sm text-ink-500">
         Old URLs (e.g. after a product or category slug change) that should send visitors and search engines to a new location.
       </p>

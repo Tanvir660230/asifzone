@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ImageUploadField } from "@/components/admin/image-upload-field";
 import { toast } from "@/components/ui/toast";
@@ -128,7 +128,7 @@ export default function PaymentMethodsPage() {
           </Button>
         }
       />
-      <SettingsSubNav />
+      <ModuleTabs />
       <p className="mb-6 text-sm text-ink-500">
         Show payment logos two ways: upload one combined image with everything already laid out, or add each logo
         separately below for individual control (reordering, toggling one on/off).
