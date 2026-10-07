@@ -33,7 +33,7 @@ import { type OrdersListState } from "./use-orders-list-state";
 import { ALL_BD_DISTRICTS, ORDER_QUEUE_LABELS, paymentMethodLabel } from "./order-filters";
 const FIRST_OUTCOME_STATUS: OrderStatus = "DELIVERED";
 /** Queues that mean "a person has to act" — the rest (COD, cancelled/returned) are only slices of the list. */
-const QUEUE_NEEDS_PERSON = new Set<string>(["followUpDue", "courierIssue", "cancelledButPaid", "refundDue", "unpaid"]);
+const QUEUE_NEEDS_PERSON = new Set<string>(["needsAction", "followUpDue", "courierIssue", "cancelledButPaid", "refundDue", "unpaid"]);
 
 function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
   if (value === undefined) return null;

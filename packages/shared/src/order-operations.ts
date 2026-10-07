@@ -140,15 +140,16 @@ export function paymentLinkBlocker(order: OrderGuardFacts, amountDue: number): s
  * GET /api/orders/stats counts each preset through the same `where` builder, so a queue's badge always equals what the
  * filter shows.
  */
-export const ORDER_QUEUE_IDS = ["followUpDue", "unpaid", "cod", "courierIssue", "cancelledButPaid", "refundDue", "cancelledReturned"] as const;
+export const ORDER_QUEUE_IDS = ["needsAction", "followUpDue", "unpaid", "cod", "courierIssue", "cancelledButPaid", "refundDue", "cancelledReturned"] as const;
 export type OrderQueueId = (typeof ORDER_QUEUE_IDS)[number];
 
 export type OrderQueueFilter = Pick<
   OrderListQuery,
-  "followUpDue" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
+  "needsAction" | "followUpDue" | "paymentStatus" | "paymentMethod" | "courierIssue" | "cancelledButPaid" | "refundDue" | "statusIn"
 >;
 
 export const ORDER_QUEUE_FILTERS: Readonly<Record<OrderQueueId, OrderQueueFilter>> = {
+  needsAction: { needsAction: "true" },
   followUpDue: { followUpDue: "true" },
   unpaid: { paymentStatus: "UNPAID" },
   cod: { paymentMethod: "COD" },

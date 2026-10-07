@@ -31,6 +31,8 @@ export interface AdminOrderListParams {
   shippingDistrict?: string;
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue.
   followUpDue?: "true";
+  // "true" = the "Needs action" queue (every order a person has to act on).
+  needsAction?: "true";
   // "true" = only CANCELLED orders where paymentStatus is still PAID — the refund-risk queue.
   cancelledButPaid?: "true";
   // "true" = only RETURNED orders still holding money — the "returned, refund may be owed" queue.
@@ -78,6 +80,7 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.shippingDivision) query.set("shippingDivision", params.shippingDivision);
   if (params.shippingDistrict) query.set("shippingDistrict", params.shippingDistrict);
   if (params.followUpDue) query.set("followUpDue", params.followUpDue);
+  if (params.needsAction) query.set("needsAction", params.needsAction);
   if (params.cancelledButPaid) query.set("cancelledButPaid", params.cancelledButPaid);
   if (params.refundDue) query.set("refundDue", params.refundDue);
   if (params.courierIssue) query.set("courierIssue", params.courierIssue);
@@ -167,8 +170,8 @@ export function permanentlyDeleteOrder(id: string) {
   return apiFetch<void>(`/api/orders/${id}/permanent`, { method: "DELETE" });
 }
 
-export function bulkUpdateOrderStatus(ids: string[], status: OrderStatus) {
-  return apiFetch<BulkOrderStatusResult>("/api/orders/bulk/status", { method: "POST", body: { ids, status } });
+export function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, note?: string) {
+  return apiFetch<BulkOrderStatusResult>("/api/orders/bulk/status", { method: "POST", body: { ids, status, note: note || null } });
 }
 
 export function bulkDeleteOrders(ids: string[]) {

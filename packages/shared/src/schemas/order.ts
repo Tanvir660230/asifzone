@@ -103,6 +103,9 @@ export const adminCreateOrderSchema = z.object({
   shippingAddressLine: z.string().min(1).max(500),
   paymentMethod: z.literal("COD"),
   markPaid: z.boolean().optional(),
+  /** Owner decision D24: a phone order is confirmed on the call that placed it — create it CONFIRMED (same transaction).
+   * Omitted / false keeps the old behaviour (PENDING). The admin form sends true by default. */
+  confirmNow: z.boolean().optional(),
   /** Pay from the selected customer's store balance first (requires `customerId`); the rest stays due. */
   useStoreCredit: z.boolean().optional(),
   couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
@@ -137,6 +140,8 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue
   // (followUpAt <= now) — the callback queue. No "false" variant; omit the param for the normal listing.
   followUpDue: z.enum(["true"]).optional(),
+  // "true" = every order a person has to act on (the "Needs action" queue) — one predicate shared with the stats count.
+  needsAction: z.enum(["true"]).optional(),
   // "true" = only CANCELLED orders still holding money (paymentStatus PAID or PARTIALLY_REFUNDED) — the refund-risk
   // queue behind getOrderStats().cancelledButPaidCount. No "false" variant; omit for the normal listing.
   cancelledButPaid: z.enum(["true"]).optional(),
@@ -153,14 +158,32 @@ export const orderListQuerySchema = paginationQuerySchema.extend({
 });
 
 export const bulkOrderIdsSchema = z.object({ ids: z.array(z.string().cuid()).min(1).max(500) });
-export const bulkOrderStatusSchema = bulkOrderIdsSchema.extend({ status: orderStatusEnum });
+
+/** Owner decision D22 (docs/BUSINESS_DECISIONS.md, 2026-10-08): an admin cancelling an order says why. The reason is the status
+ * note, so it lands on the order timeline and in the audit trail. Courier reports and customer self-cancel write their
+ * own note and don't come through these schemas. */
+export const CANCELLATION_REASON_MIN_LENGTH = 3;
+export function cancellationReasonMissing(status: string, note: string | null | undefined): boolean {
+  return status === "CANCELLED" && (note ?? "").trim().length < CANCELLATION_REASON_MIN_LENGTH;
+}
+const requireCancellationReason = <T extends { status: string; note?: string | null }>(value: T, ctx: z.RefinementCtx) => {
+  if (cancellationReasonMissing(value.status, value.note)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["note"], message: "Give a reason for cancelling this order" });
+  }
+};
+
+export const bulkOrderStatusSchema = bulkOrderIdsSchema
+  .extend({ status: orderStatusEnum, note: nullableString(500) })
+  .superRefine(requireCancellationReason);
 export const bulkCourierBookSchema = bulkOrderIdsSchema;
 export const bulkDeliveryScoreCheckSchema = bulkOrderIdsSchema;
 
-export const updateOrderStatusSchema = z.object({
-  status: orderStatusEnum,
-  note: nullableString(500),
-});
+export const updateOrderStatusSchema = z
+  .object({
+    status: orderStatusEnum,
+    note: nullableString(500),
+  })
+  .superRefine(requireCancellationReason);
 
 export const updateOrderDetailsSchema = z.object({
   trackingNumber: nullableString(120),

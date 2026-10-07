@@ -41,7 +41,7 @@ import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 
-const formSchema = adminCreateOrderSchema.omit({ items: true, couponCode: true, customerId: true, markPaid: true });
+const formSchema = adminCreateOrderSchema.omit({ items: true, couponCode: true, customerId: true, markPaid: true, confirmNow: true });
 type FormValues = ReturnType<typeof formSchema.parse>;
 
 /** What staff picked — ids and quantities only. Every amount comes from the server quote (PRICING_INVARIANTS §7). */
@@ -82,6 +82,8 @@ export default function NewOrderPage() {
   const [couponChecking, setCouponChecking] = useState(false);
 
   const [markPaid, setMarkPaid] = useState(false);
+  // D24: a phone order is confirmed on the call — on by default, untick to leave it Pending.
+  const [confirmNow, setConfirmNow] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const {
@@ -264,6 +266,7 @@ export default function NewOrderPage() {
       customerId: customerId ?? undefined,
       couponCode: quote?.coupon?.code,
       markPaid,
+      confirmNow,
       items: baseRequest.items,
       // The quote staff are looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
       quoteToken: quote?.token,
@@ -636,6 +639,10 @@ export default function NewOrderPage() {
             </div>
 
             <label className="flex items-center gap-2 border-t border-ink-100 pt-4 text-sm text-ink-700">
+              <Checkbox checked={confirmNow} onChange={(e) => setConfirmNow(e.target.checked)} />
+              Customer confirmed on the call — create it Confirmed
+            </label>
+            <label className="flex items-center gap-2 text-sm text-ink-700">
               <Checkbox checked={markPaid} onChange={(e) => setMarkPaid(e.target.checked)} />
               Already paid (cash in hand / bKash / Nagad)
             </label>

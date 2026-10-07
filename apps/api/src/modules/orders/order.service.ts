@@ -318,6 +318,8 @@ export async function insertOrderRecord(
     reservedStoreCredit?: { paymentSessionId: string; customerId: string };
     // Fully paid when written (store balance covered it): move it straight to CONFIRMED, like a settled gateway order.
     confirmWhenPaid?: boolean;
+    // D24: staff entered a phone order and confirmed it on that call — CONFIRMED in the insert's own transaction.
+    confirmByAdminId?: string;
   } = {},
 ) {
   const snapshots = opts.itemSnapshots ?? pricing.itemSnapshots ?? [];
@@ -436,6 +438,12 @@ export async function insertOrderRecord(
         await applyOrderTransition(tx, created.id, { status: "CONFIRMED", note: "Paid from store balance" });
       }
     }
+    if (opts.confirmByAdminId) {
+      const now = await tx.order.findUniqueOrThrow({ where: { id: created.id }, select: { status: true } });
+      if (now.status === "PENDING") {
+        await applyOrderTransition(tx, created.id, { status: "CONFIRMED", note: "Confirmed on the phone when the order was entered" }, { adminId: opts.confirmByAdminId });
+      }
+    }
 
     // Phase 8: the side-effect intents commit (or roll back) WITH the order — delivered afterwards by the outbox worker.
     const placed = { aggregateType: "Order", aggregateId: created.id, eventType: "order.placed.v1" } as const;
@@ -518,6 +526,8 @@ export async function createOrder(
     storeCreditCustomerId?: string | null;
     /** Store balance covered the whole order: confirm it like a settled online payment. */
     initialStatus?: "CONFIRMED";
+    /** D24: a staff-entered phone order confirmed on the call (insertOrderRecord confirms it in the same transaction). */
+    confirmByAdminId?: string;
   } = {},
 ) {
   // Idempotency: one lock-and-dedupe mechanism, keyed by the Idempotency-Key header when the client sends one (durable:
@@ -579,6 +589,7 @@ export async function createOrder(
       markPaidByAdminId: opts.markPaidByAdminId,
       storeCreditCustomerId: opts.storeCreditCustomerId ?? null,
       confirmWhenPaid: opts.initialStatus === "CONFIRMED",
+      confirmByAdminId: opts.confirmByAdminId,
     });
   } catch (err) {
     // Two requests with the same key raced past the lock (Redis down): the unique index let exactly one in.
@@ -607,6 +618,7 @@ export async function createManualOrder(input: AdminCreateOrderInput, adminId: s
     statusNote: "Order manually entered from the admin panel",
     idempotencyKey,
     markPaidByAdminId: input.markPaid ? adminId : undefined,
+    confirmByAdminId: input.confirmNow ? adminId : undefined,
     // Staff may apply the selected customer's store balance (§16: usable on manual orders); the rest stays due.
     storeCreditCustomerId: input.useStoreCredit && input.customerId ? input.customerId : null,
   });
@@ -837,8 +849,36 @@ function buildOrderWhere(query: OrderListQuery) {
           ],
         }
       : {}),
-    // Its own AND arm so this OR can't collide with the search OR above.
-    ...(query.courierIssue === "true" ? { AND: [COURIER_ISSUE_WHERE] } : {}),
+    // Their own AND arms so these ORs can't collide with the search OR above (or with each other).
+    ...(query.courierIssue === "true" || query.needsAction === "true"
+      ? {
+          AND: [
+            ...(query.courierIssue === "true" ? [COURIER_ISSUE_WHERE] : []),
+            ...(query.needsAction === "true" ? [needsActionWhere(new Date())] : []),
+          ],
+        }
+      : {}),
+  };
+}
+
+/**
+ * "Needs action" (Blueprint V2 §K2): every order a person has to look at — the list's default work queue and the stats'
+ * `needsAttention` count are this one predicate, so the badge always equals the list. A fresh PENDING order isn't stuck
+ * yet; one unconfirmed for a day, or whose callback is due, is. Also: a failed payment on an open order, a courier hold
+ * or failed sync, money still held on a cancelled or returned order, and a partial delivery not yet reconciled.
+ */
+function needsActionWhere(now: Date): Prisma.OrderWhereInput {
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return {
+    OR: [
+      { status: "PENDING", createdAt: { lt: dayAgo } },
+      { status: "PENDING", followUpAt: { lte: now } },
+      { paymentStatus: "FAILED", status: { notIn: ["CANCELLED", "RETURNED", "REFUNDED"] } },
+      COURIER_ISSUE_WHERE,
+      REFUND_QUEUE_WHERE,
+      RETURNED_REFUND_DUE_WHERE,
+      { status: "PARTIALLY_DELIVERED", partialDeliveryReconciledAt: null },
+    ],
   };
 }
 
@@ -1000,7 +1040,6 @@ async function buildItemsSummary(orderIds: string[]) {
  * joins) rather than pulling every order into Node to tally, so it stays cheap as order history grows. */
 export async function getOrderStats() {
   const now = new Date();
-  const attentionCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
   // "Today" = the store's business day; orders placed = sale orders placed today, revenue = today's realised net sales —
   // the registry's `orders_placed` / `realised_net_sales` (docs/METRICS_REGISTRY.md), the same numbers as the dashboard and BI.
@@ -1012,18 +1051,8 @@ export async function getOrderStats() {
     // recipient, address issue, etc.), one whose confirmation-call follow-up is due, or one that's
     // CANCELLED with the gateway payment still uncollected-back, is something an admin needs to go
     // look at.
-    prisma.order.count({
-      where: {
-        deletedAt: null,
-        OR: [
-          { status: "PENDING", createdAt: { lt: attentionCutoff } },
-          { paymentStatus: "FAILED" },
-          { courierStatus: "hold" },
-          { status: "PENDING", followUpAt: { lte: now } },
-          REFUND_QUEUE_WHERE,
-        ],
-      },
-    }),
+    // The "Needs action" queue's own predicate (needsActionWhere), so this number equals what that view lists.
+    prisma.order.count({ where: { deletedAt: null, ...needsActionWhere(now) } }),
     // Same predicate as the follow-up arm above, exposed as its own number so the KPI strip and the
     // "Follow-up due" quick-filter pill can both show the exact callback-queue count, not just "how
     // many of several different things need attention" folded into one bucket.
@@ -1616,11 +1645,11 @@ export async function permanentlyDeleteOrder(orderId: string) {
 /** Bulk status change: every order goes through the same state machine as a single change (its own transaction,
  * validation and side effects), one at a time so a batch touching the same variants doesn't contend. An order the
  * matrix refuses is reported, not fatal to the rest of the batch. */
-export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, adminId: string): Promise<BulkOrderStatusResult> {
+export async function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, adminId: string, note?: string | null): Promise<BulkOrderStatusResult> {
   const result: BulkOrderStatusResult = { updated: [], unchanged: [], failed: [] };
   for (const id of ids) {
     try {
-      const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, { status }, { adminId }));
+      const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, { status, note: note ?? undefined }, { adminId }));
       await runTransitionSideEffects(outcome);
       (outcome.changed ? result.updated : result.unchanged).push(id);
     } catch (err) {

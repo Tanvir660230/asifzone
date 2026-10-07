@@ -2,14 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Ban, Info, TriangleAlert } from "lucide-react";
-import {
-  canTransitionOrder,
-  describeOrderTransitionConsequences,
-  describeRefusedTransition,
-  type Order,
-  type OrderStatus,
-  type OrderTransitionConsequence,
-} from "@clothing-brand/shared";
+import { cancellationReasonMissing, canTransitionOrder, describeOrderTransitionConsequences, describeRefusedTransition, type Order, type OrderStatus, type OrderTransitionConsequence } from "@clothing-brand/shared";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -106,6 +99,9 @@ export function StatusChangeDialog({
   const { to } = request;
   const destructive = to === "CANCELLED" || to === "RETURNED";
   const singleBlocked = plan.single && plan.consequences.some((c) => c.tone === "blocked");
+  // D22: a cancellation needs a reason (single or bulk) — the server refuses one without it too.
+  const needsReason = to === "CANCELLED";
+  const reasonMissing = cancellationReasonMissing(to, note);
 
   return (
     <Modal
@@ -122,7 +118,7 @@ export function StatusChangeDialog({
             variant={destructive ? "destructive" : "primary"}
             size="sm"
             loading={pending}
-            disabled={plan.moving.length === 0 || Boolean(singleBlocked)}
+            disabled={plan.moving.length === 0 || Boolean(singleBlocked) || reasonMissing}
             onClick={() => onConfirm(note.trim())}
           >
             {plan.single ? `Move to ${orderStatusLabel(to)}` : `Move ${plan.moving.length} to ${orderStatusLabel(to)}`}
@@ -170,17 +166,20 @@ export function StatusChangeDialog({
           </div>
         )}
 
-        {plan.single && (
+        {(plan.single || needsReason) && (
           <div>
-            <Label htmlFor="status-change-note">Note for the timeline (optional)</Label>
+            <Label htmlFor="status-change-note" required={needsReason}>
+              {needsReason ? (plan.single ? "Reason for cancelling" : "Reason for cancelling these orders") : "Note for the timeline (optional)"}
+            </Label>
             <Textarea
               id="status-change-note"
               rows={2}
               maxLength={500}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. customer confirmed on the phone"
+              placeholder={needsReason ? "e.g. customer changed their mind on the confirmation call" : "e.g. customer confirmed on the phone"}
             />
+            {needsReason && <p className="ui-field-hint">Saved on each order&apos;s timeline and in the audit log.</p>}
           </div>
         )}
       </div>

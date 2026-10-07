@@ -59,7 +59,8 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
   });
 
   const bulkStatusMutation = useMutation({
-    mutationFn: ({ orders, to }: { orders: StatusChangeOrder[]; to: OrderStatus }) => adminOrdersApi.bulkUpdateOrderStatus(orders.map((o) => o.id), to),
+    mutationFn: ({ orders, to, note }: { orders: StatusChangeOrder[]; to: OrderStatus; note?: string }) =>
+      adminOrdersApi.bulkUpdateOrderStatus(orders.map((o) => o.id), to, note),
     // Each order is its own transaction server-side: some may commit before another is refused — refetch either way.
     onSettled: () => refresh(),
     onSuccess: (result, { orders, to }) => {
@@ -84,7 +85,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     if (!statusRequest) return;
     const { orders, to } = statusRequest;
     if (orders.length === 1) statusMutation.mutate({ order: orders[0]!, to, note });
-    else bulkStatusMutation.mutate({ orders, to });
+    else bulkStatusMutation.mutate({ orders, to, note });
   }
 
   // ── trash / restore / permanent delete ──────────────────────────────────────

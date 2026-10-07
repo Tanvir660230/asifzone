@@ -30,6 +30,10 @@ Related: [TARGET_ARCHITECTURE.md §16](TARGET_ARCHITECTURE.md) · [PRICING_PIPEL
 | D14 | Coupon on a modified order: cart conditions re-checked, capped at original discount, never restored once dropped | INTERPRETATION 2026-10-06 — owner may overrule | Order adjustments §3.3 |
 | D15 | Exchange downgrade difference → store credit by default (refund on request) | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED (amends D6 / P4-6 default) | Order adjustments §9 |
 | D16 | Payment links tied to amount + order revision; regenerate cancels the old one | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED | Order adjustments §11 |
+| D22 | Cancelling an order (Owner or Staff) requires a reason | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — `updateOrderStatusSchema` / `bulkOrderStatusSchema` |
+| D23 | Courier pickup moves the order to SHIPPED automatically | APPROVED (owner, 2026-10-08) · BLOCKED — Steadfast reports no pickup state (see entry) | — |
+| D24 | Phone orders entered by staff are created CONFIRMED by default | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — `createManualOrder` `confirmNow` |
+| D25 | Conversion rate = orders placed ÷ sessions | APPROVED (owner, 2026-10-08) | Admin V2 — metrics registry (behavioural family) |
 
 Phase 2 implemented D3–D10 in the canonical pricing pipeline ([PRICING_PIPELINE.md](PRICING_PIPELINE.md),
 [PRICING_INVARIANTS.md](PRICING_INVARIANTS.md)). The interpretations Phase 2 had to make where a decision's wording
@@ -366,3 +370,15 @@ implemented and may be overruled with a new dated entry. Full rules: [ORDER_ADJU
 | D16 | One ACTIVE link per order; amount = ledger balance due or a waiting change's difference; a link closes when the order changes, is cancelled or is paid. | A stale link must never collect the wrong amount. |
 | OA-1 | Item-level return value = the line's allocated value (price × qty − allocated bundle/coupon, + merchandise VAT share when tax-exclusive), prorated by units. Shipping is not refunded on an item return. A whole-order RETURNED still follows P4-4 (everything received is owed back). | Brief §8 ("never price × quantity when discounts were involved"). |
 | OA-2 | Customer self-service window: PENDING and CONFIRMED (not after courier booking). Staff: every pre-shipment status. | CONFIRMED means confirmed by call/payment; nothing picked yet. |
+
+## Admin V2 decisions (owner, 2026-10-08)
+
+Asked during the Store Console redesign (Blueprint V2 decision register DR-5, DR-8, DR-10, DR-11, DR-22). IDs D17–D21
+are the installation-isolation decisions on the portable-foundation line.
+
+| ID | Decision | Notes |
+|---|---|---|
+| D22 | An admin cancelling an order gives a reason. Owner and Staff both may cancel (no new permission). | Enforced at the API boundary for single and bulk status changes (`cancellationReasonMissing`, minimum 3 characters). The reason is the transition note, so it is on the order timeline and in the audit trail. Courier reports and customer self-cancel write their own note and are unaffected. |
+| D23 | When the courier picks a parcel up, the order moves to SHIPPED by itself. | **Not implementable with Steadfast today:** its status API never reports a picked-up / in-transit state (only `in_review` / `pending` / `hold` until `delivered` / `partial_delivered` / `cancelled`; see `courier.service.ts`). SHIPPED therefore stays a staff action. Revisit if Steadfast adds a pickup status or webhook, or with another courier that reports one. |
+| D24 | A phone order staff enter is confirmed on that call: created CONFIRMED by default, with a checkbox to leave it PENDING. | `createManualOrder({ confirmNow })` applies the PENDING → CONFIRMED transition inside the order's insert transaction, attributed to the admin; stock is reserved once, as for any order. The customer gets the "order placed" SMS (no separate "confirmed" SMS for an order they just confirmed). |
+| D25 | Conversion rate = orders placed ÷ storefront sessions in the same business-date range. | To be added to the metrics registry as a behavioural-family metric (orders with a `sessionId` ÷ distinct sessions), so Home, Analytics and AI read one definition. |

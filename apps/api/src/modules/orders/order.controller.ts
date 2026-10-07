@@ -152,7 +152,7 @@ export const exportCsv = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const bulkStatus = asyncHandler(async (req: Request, res: Response) => {
-  res.json(await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId));
+  res.json(await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId, req.body.note));
 });
 
 export const bulkDelete = asyncHandler(async (req: Request, res: Response) => {
