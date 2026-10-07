@@ -26,6 +26,10 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
   const [moreOpen, setMoreOpen] = useState(false);
   // Every item until measured: the server's markup is the full list, clipped (not wrapped) if it doesn't fit.
   const [visibleCount, setVisibleCount] = useState(categories.length);
+  // Until the first measurement the row may be wider than the nav, so it's clipped. Afterwards the visible items fit by
+  // construction, and clipping must stop: the dropdowns hang outside the nav's box (the first item's centred panel
+  // reaches left past the nav's edge), and any clip on an ancestor cuts them off.
+  const [measured, setMeasured] = useState(false);
   const containerRef = useRef<HTMLElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
@@ -35,6 +39,7 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
     const container = containerRef.current;
     const row = measureRef.current;
     if (!container || !row) return;
+    setMeasured(true);
     const [moreProbe, ...items] = Array.from(row.children) as HTMLElement[];
     const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
     const available = container.clientWidth;
@@ -82,8 +87,7 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
   };
 
   return (
-    // `overflow-x: clip` (not hidden) keeps the dropdowns, which hang below the row, visible.
-    <nav ref={containerRef} aria-label="Categories" className="relative flex min-w-0 flex-1 [overflow-x:clip]">
+    <nav ref={containerRef} aria-label="Categories" className={cn("relative flex min-w-0 flex-1", !measured && "[overflow-x:clip]")}>
       {/* Measuring row: the same typography, laid out but invisible and unreachable. First child is the "More" probe. */}
       <div ref={measureRef} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex gap-8">
         <span className={NAV_LINK_CLASS}>
