@@ -1,4 +1,4 @@
-import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, RecordPaymentInput, Refund, RecordRefundInput } from "@clothing-brand/shared";
+import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, RecordPaymentInput, Refund, RecordRefundInput, PaginatedResult, PaymentTransactionRow, RefundRow } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export interface PaymentsOverview {
@@ -26,6 +26,30 @@ export interface PaymentAttemptSearchResult {
   orderStatus: string | null;
   paymentTxnStatus: string | null;
   lastEventNote: string | null;
+}
+
+export interface LedgerListParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  from?: string;
+  to?: string;
+}
+
+function ledgerQuery(params: object) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== "") query.set(key, String(value));
+  return query.toString();
+}
+
+/** Finance › Transactions: every Payment ledger row, newest first. */
+export function listPaymentTransactions(params: LedgerListParams & { provider?: string; status?: "SUCCEEDED" | "FAILED" } = {}) {
+  return apiFetch<PaginatedResult<PaymentTransactionRow>>(`/api/payment-admin/transactions?${ledgerQuery(params)}`);
+}
+
+/** Finance › Refunds: every Refund ledger row, waiting ones first. */
+export function listAllRefunds(params: LedgerListParams & { status?: "REQUESTED" | "COMPLETED" } = {}) {
+  return apiFetch<PaginatedResult<RefundRow>>(`/api/payment-admin/refunds?${ledgerQuery(params)}`);
 }
 
 export function getPaymentsOverview() {

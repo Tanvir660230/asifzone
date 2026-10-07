@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paginationQuerySchema } from "./common";
 
 // orderId comes from the route param (/orders/:id/refunds), not the body. No gateway refund API
 // exists for either EPS or SSLCommerz (see Refund's schema comment) — this records what an admin
@@ -38,3 +39,54 @@ export const paymentLedgerRepairSchema = z.object({
 });
 
 export type PaymentLedgerRepairInput = z.infer<typeof paymentLedgerRepairSchema>;
+
+/** Finance › Transactions and Refunds (Blueprint V2 §M): read-only lists over the payment ledger. */
+export const paymentProviderEnum = z.enum(["SSLCOMMERZ", "EPS_PG", "COD", "MANUAL", "STORE_CREDIT"]);
+const ledgerListBase = paginationQuerySchema.extend({
+  /** Order number, customer name or phone. */
+  search: z.string().trim().max(120).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+export const paymentTransactionListQuerySchema = ledgerListBase.extend({
+  provider: paymentProviderEnum.optional(),
+  status: z.enum(["SUCCEEDED", "FAILED"]).optional(),
+});
+export const refundListQuerySchema = ledgerListBase.extend({
+  status: z.enum(["REQUESTED", "COMPLETED"]).optional(),
+});
+
+export interface LedgerOrderRef {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+}
+
+export interface PaymentTransactionRow {
+  id: string;
+  settledAt: string;
+  provider: z.infer<typeof paymentProviderEnum>;
+  status: "SUCCEEDED" | "FAILED";
+  amount: number;
+  providerTransactionId: string | null;
+  note: string | null;
+  recordedBy: string | null;
+  order: LedgerOrderRef | null;
+}
+
+export interface RefundRow {
+  id: string;
+  createdAt: string;
+  completedAt: string | null;
+  status: "REQUESTED" | "COMPLETED";
+  amount: number;
+  reason: string | null;
+  method: string | null;
+  requestedBy: string | null;
+  completedBy: string | null;
+  order: LedgerOrderRef;
+}
+
+export type PaymentTransactionListQuery = z.infer<typeof paymentTransactionListQuerySchema>;
+export type RefundListQuery = z.infer<typeof refundListQuerySchema>;

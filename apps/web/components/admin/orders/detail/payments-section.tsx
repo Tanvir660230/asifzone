@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { formatPrice, formatStoreDateTime } from "@/lib/format";
+import { formatPrice, formatStoreDateTime, PAYMENT_PROVIDER_LABEL } from "@/lib/format";
 import type { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { OrderPermissions } from "../order-domain";
 import { BlockedHint, DetailSection, Fact } from "./detail-section";
@@ -16,13 +16,7 @@ import type { OrderDetailCommands } from "./use-order-detail-commands";
 import { PaymentLinksPanel } from "./payment-links-panel";
 import { useOrderModifications } from "./changes-section";
 
-const PROVIDER_LABEL: Record<OrderPaymentSummary["payments"][number]["provider"], string> = {
-  SSLCOMMERZ: "SSLCommerz",
-  EPS_PG: "EPS",
-  COD: "Cash on delivery (courier)",
-  MANUAL: "Recorded by staff",
-  STORE_CREDIT: "Store balance",
-};
+const PROVIDER_LABEL: Record<OrderPaymentSummary["payments"][number]["provider"], string> = PAYMENT_PROVIDER_LABEL;
 
 type Confirm = ReturnType<typeof useConfirmDialog>["confirm"];
 

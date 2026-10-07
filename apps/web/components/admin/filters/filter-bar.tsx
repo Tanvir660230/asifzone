@@ -56,7 +56,7 @@ export function FilterBar({
           <>
             <Button ref={moreRef} variant="outline" size="sm" onClick={() => setMoreOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={moreOpen}>
               <SlidersHorizontal size={14} /> More filters
-              {moreCount > 0 && <span className="rounded-full bg-ink-900 px-1.5 text-[10px] font-semibold text-cream-50">{moreCount}</span>}
+              {moreCount > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{moreCount}</span>}
             </Button>
             <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} className="w-80 space-y-3 p-4">
               {more.map((def) => (
@@ -69,7 +69,7 @@ export function FilterBar({
       </div>
 
       {quick.map((def) => (
-        <div key={def.key} role="group" aria-label={def.label} className="flex flex-wrap items-center gap-1.5">
+        <div key={def.key} role="group" aria-label={def.label} className="flex flex-wrap items-center gap-1">
           {filterOptions(def, values).map((option) => {
             const current = values[def.key];
             const on = Array.isArray(current) ? current.includes(option.value) : current === option.value;
@@ -81,8 +81,8 @@ export function FilterBar({
                 aria-pressed={on}
                 onClick={() => onChange(setFilterPatch(defs, def.key, next))}
                 className={cn(
-                  "min-h-control rounded-full border px-3 text-xs font-medium transition-colors duration-fast",
-                  on ? "border-ink-900 bg-ink-900 text-cream-50" : "border-line bg-surface text-ink-700 hover:border-ink-400",
+                  "flex h-8 items-center rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                  on ? "bg-ink-900/[0.08] text-fg" : "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg",
                 )}
               >
                 {option.label}

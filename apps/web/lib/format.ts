@@ -4,6 +4,15 @@ import { statusOf, TONE_BADGE_VARIANT, TONE_PILL_CLASS, TONE_TEXT_CLASS } from "
 
 /** A store amount in the store currency ("৳1,500" for BDT, "$1,500.25" for USD). `currency` overrides it for an amount that
  * carries its own (e.g. a product's server-resolved `pricing.currency` in a server component). */
+/** How a payment provider reads to staff — the order's payments card and Finance › Transactions. */
+export const PAYMENT_PROVIDER_LABEL: Record<"SSLCOMMERZ" | "EPS_PG" | "COD" | "MANUAL" | "STORE_CREDIT", string> = {
+  SSLCOMMERZ: "SSLCommerz",
+  EPS_PG: "EPS",
+  COD: "Cash on delivery (courier)",
+  MANUAL: "Recorded by staff",
+  STORE_CREDIT: "Store balance",
+};
+
 export function formatPrice(value: string | number, currency?: string): string {
   const amount = typeof value === "string" ? Number(value) : value;
   return formatMoney(amount, currency ?? getStoreConfig().currency);

@@ -117,7 +117,8 @@ describe("navigation manifest — derivation", () => {
     expect(resolveNavNode("/admin/orders/abc")?.id).toBe("orders.detail");
     expect(resolveNavNode("/admin/catalog/size-guides")?.id).toBe("products.catalog-setup.size-guides");
     expect(resolveNavNode("/admin/products/p1/edit")?.id).toBe("products.edit");
-    expect(resolveNavNode("/admin/payments/overview")?.id).toBe("finance");
+    expect(resolveNavNode("/admin/payments/overview")?.id).toBe("finance.overview");
+    expect(resolveNavNode("/admin/payments/refunds")?.id).toBe("finance.refunds");
     expect(resolveNavNode("/admin/nowhere")).toBeUndefined();
   });
 
