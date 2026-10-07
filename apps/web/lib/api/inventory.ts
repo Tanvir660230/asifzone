@@ -1,4 +1,4 @@
-import type { AdjustStockInput, PaginatedResult, ProductVariant, StockDiscrepancy, StockMovement } from "@clothing-brand/shared";
+import type { AdjustStockInput, PaginatedResult, ProductVariant, StockDiscrepancy, StockLevelsResult, StockMovement } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export interface StockMovementListParams {
@@ -21,6 +21,21 @@ export function listStockMovements(params: StockMovementListParams = {}) {
   if (params.from) query.set("from", params.from);
   if (params.to) query.set("to", params.to);
   return apiFetch<PaginatedResult<StockMovement>>(`/api/inventory/movements?${query.toString()}`);
+}
+
+export interface StockLevelsParams {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  state?: "OUT_OF_STOCK" | "LOW_STOCK" | "IN_STOCK" | "UNLIMITED";
+  sort?: "attention" | "available" | "-available" | "name";
+}
+
+/** One row per variant: available, reserved by unshipped orders, on hand, state, days of cover. */
+export function listStockLevels(params: StockLevelsParams = {}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== "") query.set(key, String(value));
+  return apiFetch<StockLevelsResult>(`/api/inventory/levels?${query.toString()}`);
 }
 
 export function adjustStock(variantId: string, input: AdjustStockInput) {

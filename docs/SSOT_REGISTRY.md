@@ -162,6 +162,9 @@
 | Low stock | D | `InventoryRules.isLowStock` (threshold per product) | InventoryService | `stock.low` event | alerts, dashboard, reports | — | — | ❌ three definitions |
 | Back-in-stock subscriptions | M | `StockAlert` | stock-alert.service | `notifiedAt` | email sender | subscribe endpoint | — | ⚠️ triggered only from product form (target: `stock.replenished`) |
 | Stock value | D | metrics registry | MetricsService | — | BI | — | — | ⚠️ |
+| Reserved units (per variant) | D | Σ `OrderItem.quantity − restockedQuantity` over non-trashed PENDING/CONFIRMED/PROCESSING/PACKED orders | inventory-levels.service (read-only) | — | Inventory › Stock levels | — (follows the order state machine) | — | ✅ Admin V2 (never stored) |
+| On hand (per variant) | D | `ProductVariant.stock` + reserved units | inventory-levels.service (read-only) | — | Inventory › Stock levels | — | INV-1 on the stock term | ✅ Admin V2 (never stored) |
+| Days of cover | D | available ÷ (units ordered in the last 30 days ÷ 30), registry `units_ordered` population | inventory-levels.service (read-only) | — | Inventory › Stock levels | — | — | ✅ Admin V2 |
 
 ### B4. Orders & fulfilment
 
