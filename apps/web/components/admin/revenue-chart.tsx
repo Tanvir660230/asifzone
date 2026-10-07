@@ -88,8 +88,8 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
       >
         <defs>
           <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="currentColor" stopOpacity={0.14} className="text-ink-900" />
-            <stop offset="100%" stopColor="currentColor" stopOpacity={0} className="text-ink-900" />
+            <stop offset="0%" stopColor="currentColor" stopOpacity={0.14} className="text-accent" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity={0} className="text-accent" />
           </linearGradient>
         </defs>
 
@@ -114,7 +114,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
         })}
 
         <path d={areaPath} fill="url(#revenueFill)" stroke="none" />
-        <path d={linePath} fill="none" className="stroke-ink-900" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />
+        <path d={linePath} fill="none" className="stroke-accent" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />
 
         {points.map(
           (p, i) =>
@@ -136,7 +136,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
               strokeWidth={1}
               strokeDasharray="3 3"
             />
-            <circle cx={hovered.x} cy={hovered.y} r={5} className="fill-ink-900 stroke-cream-50" strokeWidth={2.5} />
+            <circle cx={hovered.x} cy={hovered.y} r={5} className="fill-accent stroke-cream-50" strokeWidth={2.5} />
           </g>
         )}
       </svg>
@@ -151,7 +151,7 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
           </p>
           <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-ink-900">{formatPrice(hovered.revenue)}</p>
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-500">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-ink-900" />
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" />
             {hovered.orders} order{hovered.orders === 1 ? "" : "s"}
           </p>
         </div>

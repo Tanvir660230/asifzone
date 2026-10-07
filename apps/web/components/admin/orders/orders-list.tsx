@@ -67,13 +67,13 @@ export interface OrdersListProps {
   empty: ReactNode;
 }
 
-function SortableHeader({ column, label, props, align }: { column: SortColumn; label: string; props: OrdersListProps; align?: "right" }) {
+function SortableHeader({ column, label, props, align, className }: { column: SortColumn; label: string; props: OrdersListProps; align?: "right"; className?: string }) {
   const active = props.sortBy === column;
   const Icon = active ? (props.sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
     <th
       scope="col"
-      className={cn("px-3 py-2.5", align === "right" && "text-right")}
+      className={cn("px-3 py-2.5", align === "right" && "text-right", className)}
       aria-sort={active ? (props.sortDir === "asc" ? "ascending" : "descending") : "none"}
     >
       <button
@@ -279,7 +279,7 @@ export function OrdersList(props: OrdersListProps) {
                 <th scope="col" className="px-3 py-2.5">
                   Courier
                 </th>
-                <SortableHeader column="createdAt" label="Placed" props={props} />
+                <SortableHeader column="createdAt" label="Placed" props={props} className="hidden 2xl:table-cell" />
                 <th scope="col" className="px-3 py-2.5 text-right">
                   <span className="sr-only">Actions</span>
                 </th>
@@ -306,11 +306,15 @@ export function OrdersList(props: OrdersListProps) {
                       <button
                         type="button"
                         onClick={() => onOpen(order.id)}
-                        className="font-medium text-ink-900 underline-offset-2 hover:text-info-700 hover:underline"
+                        className="font-medium text-ink-900 underline-offset-2 hover:text-accent hover:underline"
                       >
                         {order.orderNumber}
                       </button>
                       <AttentionMarker order={order} />
+                    </span>
+                    {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. */}
+                    <span className="mt-0.5 block text-xs text-fg-subtle 2xl:hidden">
+                      {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
                     </span>
                   </td>
                   <td className="px-3 py-2.5">
@@ -329,7 +333,7 @@ export function OrdersList(props: OrdersListProps) {
                   <td className="px-3 py-2.5">
                     <CourierCell order={order} />
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-ink-500">
+                  <td className="hidden whitespace-nowrap px-3 py-2.5 text-ink-500 2xl:table-cell">
                     <span className="block">{formatStoreDate(order.createdAt)}</span>
                     <span className="block text-xs text-ink-400">{formatStoreTime(order.createdAt)}</span>
                   </td>

@@ -11,7 +11,6 @@ import { Pagination } from "@/components/ui/pagination";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
-import { OrdersSummary } from "@/components/admin/orders/orders-summary";
 import { OrdersFilterBar } from "@/components/admin/orders/orders-filter-bar";
 import { OrdersList } from "@/components/admin/orders/orders-list";
 import { OrdersBulkBar } from "@/components/admin/orders/orders-bulk-bar";
@@ -19,8 +18,10 @@ import { orderKeys, useOrderPermissions } from "@/components/admin/orders/order-
 import { useOrderCommands } from "@/components/admin/orders/use-order-commands";
 import { useOrdersListState } from "@/components/admin/orders/use-orders-list-state";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
+import { formatCount } from "@/lib/format";
 
-/** The Orders workspace: operational summary, filterable list, bulk actions and the order drawer. Composition only —
+/** The Orders workspace: a live summary line, a filterable list (status tabs, work-queue views), bulk actions and the order
+ * drawer. Today's totals live on Home; each view is the same queue object the server counts. Composition only —
  * state lives in useOrdersListState, every command in useOrderCommands, every rule in @clothing-brand/shared / the API. */
 export default function OrdersPage() {
   const state = useOrdersListState();
@@ -112,7 +113,11 @@ export default function OrdersPage() {
     <div>
       <PageHeader
         title="Orders"
-        description="Confirm, fulfil, ship and settle every order from one place."
+        description={
+          stats
+            ? `${formatCount(stats.pending)} open · ${formatCount(stats.needsAttention)} need attention · ${formatCount(stats.todayOrders)} placed today`
+            : "Confirm, fulfil, ship and settle every order from one place."
+        }
         action={
           <div className="flex flex-wrap items-center gap-2">
             {perms.exportCsv && (
@@ -130,8 +135,6 @@ export default function OrdersPage() {
       />
 
       <ModuleTabs />
-
-      {state.view === "active" && <OrdersSummary stats={stats} activeQueue={state.queue} onSelectQueue={state.selectQueue} />}
 
       <OrdersFilterBar ref={searchRef} state={state} stats={stats} canSeeTrash={perms.trash} />
 

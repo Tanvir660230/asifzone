@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useRef, useState } from "react";
+import Link from "next/link";
 import { SlidersHorizontal, X } from "lucide-react";
 import {
   BD_DISTRICTS_BY_DIVISION,
@@ -24,31 +25,30 @@ import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
-import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import type { OrderStats } from "@/lib/api/admin-orders";
-import { courierStatusLabel, orderStatusBadgeClass, orderStatusShortLabel, paymentStatusLabel } from "@/lib/format";
+import { courierStatusLabel, formatCount, orderStatusShortLabel, paymentStatusLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ORDER_STATUSES } from "./order-domain";
 import { type OrdersListState } from "./use-orders-list-state";
 import { ALL_BD_DISTRICTS, ORDER_QUEUE_LABELS, paymentMethodLabel } from "./order-filters";
 const FIRST_OUTCOME_STATUS: OrderStatus = "DELIVERED";
+/** Queues that mean "a person has to act" — the rest (COD, cancelled/returned) are only slices of the list. */
+const QUEUE_NEEDS_PERSON = new Set<string>(["followUpDue", "courierIssue", "cancelledButPaid", "refundDue", "unpaid"]);
 
 function CountBadge({ value, inverted }: { value: number | undefined; inverted?: boolean }) {
   if (value === undefined) return null;
-  return (
-    <span
-      className={cn(
-        "flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
-        inverted ? "bg-cream-50/25 text-cream-50" : "bg-ink-900/10 text-ink-600",
-      )}
-    >
-      {value}
-    </span>
-  );
+  return <span className={cn("tabular-nums", inverted ? "text-accent-fg/80" : "text-fg-subtle")}>{formatCount(value)}</span>;
 }
 
-const pillBase =
-  "flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-[background-color,border-color,opacity,box-shadow] duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+/** Status tabs: plain text, the selected ones on a soft grey capsule — colour stays in the table's status column. */
+const tabBase =
+  "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+const tabOn = "bg-ink-900/[0.08] text-fg";
+const tabOff = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
+
+/** Views (work queues): white capsules; a queue that needs a person and has work in it shows an amber dot. */
+const viewBase =
+  "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 
 /** Sticky control zone of the Orders list. Stateless: everything lives in useOrdersListState. */
 export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListState; stats: OrderStats | undefined; canSeeTrash: boolean }>(
@@ -61,7 +61,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
 
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
-      <div className="sticky top-14 z-raised -mx-4 space-y-2.5 border-b border-line-subtle bg-canvas px-4 pb-3 pt-2.5 sm:-mx-8 sm:px-8">
+      <div className="sticky top-header z-raised -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
         <div className="flex flex-wrap items-center gap-2.5">
           {canSeeTrash && (
             <SegmentedControl
@@ -87,14 +87,14 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
           />
           <Button
             ref={moreRef}
-            variant={more.count > 0 || moreOpen ? "primary" : "outline"}
+            variant="outline"
             size="sm"
             onClick={() => setMoreOpen((v) => !v)}
             aria-expanded={moreOpen}
             aria-haspopup="dialog"
           >
             <SlidersHorizontal size={14} /> Filters
-            {more.count > 0 && <CountBadge value={more.count} inverted />}
+            {more.count > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{more.count}</span>}
           </Button>
           <div className="ml-auto">
             <PageSizeSelect value={state.pageSize} onChange={state.setPageSize} />
@@ -185,25 +185,21 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
                   type="button"
                   aria-pressed={state.statuses.length === 0 && !state.queue}
                   onClick={state.clearStatuses}
-                  className={cn(
-                    pillBase,
-                    state.statuses.length === 0 && !state.queue ? "border-ink-900 bg-ink-900 text-cream-50" : "border-line text-ink-600 hover:border-ink-400",
-                  )}
+                  className={cn(tabBase, state.statuses.length === 0 && !state.queue ? tabOn : tabOff)}
                 >
-                  All <CountBadge value={statusTotal} inverted={state.statuses.length === 0 && !state.queue} />
+                  All <CountBadge value={statusTotal} />
                 </button>
                 {ORDER_STATUSES.map((s) => {
                   const on = state.statuses.includes(s);
                   return (
                     <span key={s} className="flex shrink-0 items-center gap-1.5">
-                      {s === FIRST_OUTCOME_STATUS && <span className="mx-0.5 h-4 w-px bg-line" aria-hidden="true" />}
+                      {s === FIRST_OUTCOME_STATUS && <span className="mx-1 h-4 w-px bg-line" aria-hidden="true" />}
                       <button
                         type="button"
                         aria-pressed={on}
                         onClick={() => state.toggleStatus(s)}
-                        className={cn(pillBase, orderStatusBadgeClass(s), on ? "border-ink-900 ring-1 ring-ink-900" : "border-transparent opacity-70 hover:opacity-100")}
+                        className={cn(tabBase, on ? tabOn : tabOff)}
                       >
-                        <OrderStatusIcon status={s} size={12} />
                         {orderStatusShortLabel(s)}
                         <CountBadge value={stats?.statusCounts[s]} />
                       </button>
@@ -215,22 +211,31 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
 
             <HScrollShadow className="overflow-x-auto">
               <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 py-0.5">
-                <span className="mr-1 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Quick</span>
+                <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted">Views</span>
                 {ORDER_QUEUE_IDS.map((id) => {
                   const on = state.queue === id;
+                  const count = stats?.queueCounts?.[id];
                   return (
                     <button
                       key={id}
                       type="button"
                       aria-pressed={on}
                       onClick={() => state.selectQueue(id)}
-                      className={cn(pillBase, on ? "border-ink-900 bg-ink-900 text-cream-50" : "border-line text-ink-600 hover:border-ink-400 hover:bg-ink-900/[0.03]")}
+                      className={cn(viewBase, on ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong")}
                     >
+                      {!on && QUEUE_NEEDS_PERSON.has(id) && (count ?? 0) > 0 && <span className="h-1.5 w-1.5 rounded-full bg-warning-500" aria-hidden="true" />}
                       {ORDER_QUEUE_LABELS[id]}
-                      <CountBadge value={stats?.queueCounts?.[id]} inverted={on} />
+                      <CountBadge value={count} inverted={on} />
                     </button>
                   );
                 })}
+                {stats && (
+                  <Link href="/admin/return-requests" className={cn(viewBase, "border-line bg-surface text-fg hover:border-line-strong")}>
+                    {(stats.returnRequestsPending ?? 0) > 0 && <span className="h-1.5 w-1.5 rounded-full bg-warning-500" aria-hidden="true" />}
+                    Returns to review
+                    <CountBadge value={stats.returnRequestsPending} />
+                  </Link>
+                )}
               </div>
             </HScrollShadow>
           </>

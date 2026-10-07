@@ -13,6 +13,7 @@ import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-me
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatStoreDateTime, orderStatusLabel } from "@/lib/format";
 import { OrderStatusBadge, PaymentBadges } from "../order-badges";
+import { OrderProgress } from "./order-progress";
 import type { OrderPermissions } from "../order-domain";
 import type { OrderCommands } from "../use-order-commands";
 
@@ -61,7 +62,12 @@ export function DetailHeader({
 
   return (
     <header className="space-y-4">
-      {variant === "page" && <BackLink onClick={onClose} label="Back to Orders" />}
+      {/* On desktop the toolbar's breadcrumb (Orders › Order) is the way back. */}
+      {variant === "page" && (
+        <div className="md:hidden">
+          <BackLink onClick={onClose} label="Back to Orders" />
+        </div>
+      )}
 
       {deleted && (
         <Alert
@@ -82,7 +88,7 @@ export function DetailHeader({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2.5">
-            <Heading className="font-display text-2xl tracking-tight text-ink-900">{order.orderNumber}</Heading>
+            <Heading className="text-[26px] font-semibold tracking-tight text-fg">{order.orderNumber}</Heading>
             <OrderStatusBadge status={order.status} />
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-500">
@@ -106,6 +112,8 @@ export function DetailHeader({
           </span>
         )}
       </div>
+
+      {!deleted && <OrderProgress order={order} />}
 
       <div className="flex flex-wrap items-center gap-2" data-testid="order-actions">
         {next && (

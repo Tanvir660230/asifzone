@@ -41,8 +41,8 @@ test.describe("orders workspace", () => {
   test("list: summary, queues, multi-status, search and empty state", async ({ page }) => {
     await page.goto("/admin/orders");
     await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Operational summary" })).toBeVisible();
-    await expect(page.getByRole("group", { name: "Work queues" }).getByRole("button", { name: /Unpaid/ })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Quick filters" }).getByRole("button", { name: /Unpaid/ })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Quick filters" }).getByRole("link", { name: /Returns to review/ })).toBeVisible();
 
     // A quick filter becomes a removable chip and is reflected as pressed.
     const quick = page.getByRole("group", { name: "Quick filters" });

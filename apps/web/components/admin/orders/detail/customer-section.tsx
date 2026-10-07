@@ -190,7 +190,9 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
             </div>
           </div>
           {perms.manage && blocker && !order.deletedAt && (
-            <div className="sm:col-span-2">
+            // Span both tracks only in the two-column layout: in the stacked one a span conjures an implicit second column
+            // and squeezes the customer and address blocks side by side.
+            <div className={stacked ? undefined : "sm:col-span-2"}>
               <BlockedHint>Name and address are locked: {blocker.charAt(0).toLowerCase() + blocker.slice(1)}.</BlockedHint>
             </div>
           )}

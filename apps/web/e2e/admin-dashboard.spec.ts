@@ -25,7 +25,7 @@ test.describe("admin dashboard", () => {
     await expect(page.getByRole("heading", { name: "Needs your attention" })).toBeVisible();
     await expect(page.getByText("Today", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Recent orders" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Explore deeper" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Analytics" })).toBeVisible();
     // The old analytics tabs are gone — their content lives in BI.
     await expect(page.getByRole("button", { name: "Catalog Performance" })).toHaveCount(0);
   });
