@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bell, PackageX, ShoppingBag } from "lucide-react";
 import * as notificationsApi from "@/lib/api/notifications";
+import { useAttentionCounts } from "@/hooks/use-attention-counts";
+import { attentionKeys } from "@/lib/query-keys";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -24,19 +26,24 @@ export function NotificationBell() {
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: () => setOpen(false), lockScroll: false });
   const queryClient = useQueryClient();
 
+  const attention = useAttentionCounts();
   const { data } = useQuery({
     queryKey: ["notifications"],
     queryFn: notificationsApi.listNotifications,
-    refetchInterval: 30_000,
+    enabled: open,
   });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    queryClient.invalidateQueries({ queryKey: attentionKeys.all });
+  };
 
   const markReadMutation = useMutation({
     mutationFn: notificationsApi.markNotificationRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onSuccess: invalidate,
   });
   const markAllMutation = useMutation({
     mutationFn: notificationsApi.markAllNotificationsRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onSuccess: invalidate,
   });
 
   useEffect(() => {
@@ -48,7 +55,7 @@ export function NotificationBell() {
   }, []);
 
   const items = data?.items ?? [];
-  const unreadCount = data?.unreadCount ?? 0;
+  const unreadCount = data?.unreadCount ?? attention.unreadNotifications;
 
   return (
     <div ref={wrapperRef} className="relative">

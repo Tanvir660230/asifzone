@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { attentionKeys } from "@/lib/query-keys";
 import { MONEY_HELD_PAYMENT_STATUSES, PRE_SHIPMENT_STATUSES, orderStatusEnum, type Order, type OrderStatus, type OrderTransitionContext } from "@clothing-brand/shared";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -32,6 +33,7 @@ export const orderKeys = {
 export function invalidateOrderQueries(queryClient: QueryClient, orderId?: string) {
   queryClient.invalidateQueries({ queryKey: orderKeys.list });
   queryClient.invalidateQueries({ queryKey: orderKeys.stats });
+  queryClient.invalidateQueries({ queryKey: attentionKeys.all });
   if (orderId) queryClient.invalidateQueries({ queryKey: orderKeys.detail(orderId) });
 }
 

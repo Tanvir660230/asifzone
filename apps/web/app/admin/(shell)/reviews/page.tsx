@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { attentionKeys } from "@/lib/query-keys";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Trash2, X } from "lucide-react";
 import type { ReviewStatus } from "@clothing-brand/shared";
@@ -46,6 +47,7 @@ export default function AdminReviewsPage() {
       adminReviewsApi.moderateReview(id, status),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-reviews"] });
+      queryClient.invalidateQueries({ queryKey: attentionKeys.all });
       toast.success("Review updated");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to update review"),
@@ -55,6 +57,7 @@ export default function AdminReviewsPage() {
     mutationFn: (id: string) => adminReviewsApi.deleteReview(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-reviews"] });
+      queryClient.invalidateQueries({ queryKey: attentionKeys.all });
       toast.success("Review deleted");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to delete review"),

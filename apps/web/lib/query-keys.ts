@@ -20,10 +20,10 @@ export const paymentKeys = {
   overview: ["payments-overview"] as const,
 };
 
-/** The dashboard / sidebar work-queue counts (hooks/use-attention-counts.ts). */
+/** The shell's composite attention poll (hooks/use-attention-counts.ts) — invalidate it after anything that changes
+ * a badge: an order command, a review moderated, feedback read, a notification read. */
 export const attentionKeys = {
-  pendingReviews: ["attention", "pending-reviews"] as const,
-  unreadFeedback: ["attention", "unread-feedback"] as const,
+  all: ["attention"] as const,
 };
 
 /** The command palette's record search (components/admin/command-palette.tsx). */

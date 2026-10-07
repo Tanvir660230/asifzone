@@ -1,58 +1,45 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCapabilities } from "@/hooks/use-capability";
 import { orderKeys } from "@/components/admin/orders/order-domain";
 import { attentionKeys, paymentKeys } from "@/lib/query-keys";
-import * as adminOrdersApi from "@/lib/api/admin-orders";
-import * as adminReviewsApi from "@/lib/api/admin-reviews";
-import * as adminFeedbackApi from "@/lib/api/admin-feedback";
-import * as paymentsAdminApi from "@/lib/api/payments-admin";
+import * as adminHomeApi from "@/lib/api/admin-home";
 
 const POLL_MS = 60_000;
 
 /**
- * The "something is waiting on an admin" counts, shared by the dashboard's Action Center and the sidebar's badges.
- * Each query is gated on the permission its endpoint enforces (so a role without it never fires a request that would
- * 403) and uses the same queryKey as the page that owns that data, so React Query de-duplicates them — the sidebar,
- * dashboard and e.g. the Payments overview read one cached response, not three.
+ * The "something is waiting on an admin" counts, shared by the sidebar badges, the notification bell and Home's
+ * Action Center — one composite poll (GET /api/v1/admin/attention, Blueprint V2 PERF-03) instead of five. The server
+ * returns `null` for every section this admin may not read. React Query pauses the poll while the tab is hidden.
+ *
+ * The order stats and payments overview it carries are also written into those endpoints' own cache keys, so the
+ * Orders and Payments pages open on fresh numbers instead of firing a duplicate request.
  */
 export function useAttentionCounts() {
-  const { can, ready } = useCapabilities();
+  const { ready } = useCapabilities();
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: attentionKeys.all,
+    queryFn: adminHomeApi.getAttention,
+    enabled: ready,
+    refetchInterval: POLL_MS,
+  });
+  const data = query.data;
 
-  const orderStats = useQuery({
-    queryKey: orderKeys.stats,
-    queryFn: adminOrdersApi.getOrderStats,
-    enabled: can("orders.view"),
-    refetchInterval: POLL_MS,
-  });
-  const payments = useQuery({
-    queryKey: paymentKeys.overview,
-    queryFn: paymentsAdminApi.getPaymentsOverview,
-    enabled: can("payments.view"),
-    refetchInterval: POLL_MS,
-  });
-  // pageSize 1: only the list's `total` is wanted here, not the rows.
-  const pendingReviews = useQuery({
-    queryKey: attentionKeys.pendingReviews,
-    queryFn: () => adminReviewsApi.listReviewsAdmin({ status: "PENDING", pageSize: 1 }),
-    enabled: can("content.manage"),
-    refetchInterval: POLL_MS * 2,
-  });
-  const unreadFeedback = useQuery({
-    queryKey: attentionKeys.unreadFeedback,
-    queryFn: () => adminFeedbackApi.listFeedback({ status: "unread", pageSize: 1 }),
-    enabled: can("content.manage"),
-    refetchInterval: POLL_MS * 2,
-  });
+  useEffect(() => {
+    if (data?.orders) queryClient.setQueryData(orderKeys.stats, data.orders);
+    if (data?.payments) queryClient.setQueryData(paymentKeys.overview, data.payments);
+  }, [data, queryClient]);
 
   return {
-    orderStats: orderStats.data,
-    payments: payments.data,
-    pendingReviews: pendingReviews.data?.total,
-    unreadFeedback: unreadFeedback.data?.total,
-    /** True until every query this admin is allowed to run has answered once — lets callers show a skeleton instead
-     * of a premature "all clear". (v5 `isLoading` is false for a disabled query, so a gated-off one never blocks.) */
-    loading: !ready || orderStats.isLoading || payments.isLoading || pendingReviews.isLoading || unreadFeedback.isLoading,
+    orderStats: data?.orders ?? undefined,
+    payments: data?.payments ?? undefined,
+    pendingReviews: data?.pendingReviews ?? undefined,
+    unreadFeedback: data?.unreadFeedback ?? undefined,
+    unreadNotifications: data?.unreadNotifications ?? 0,
+    /** True until the first answer — lets callers show a skeleton instead of a premature "all clear". */
+    loading: !ready || query.isLoading,
   };
 }

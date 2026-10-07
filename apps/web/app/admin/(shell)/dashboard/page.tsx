@@ -78,17 +78,21 @@ export default function DashboardPage() {
   const { orderStats, payments } = attention;
 
   const { data: summary } = useQuery({ queryKey: ["analytics-summary"], queryFn: analyticsApi.getSummary, enabled: canAnalytics });
+  // One key per range, so the sparkline's 30 days and the chart's default 30D are a single request.
   const { data: revenue } = useQuery({
-    queryKey: ["analytics-revenue"],
+    queryKey: ["analytics-revenue", 30],
     queryFn: () => analyticsApi.getRevenueSeries(30),
     enabled: canAnalytics,
   });
+  // Below the fold (Blueprint V2 §performance): charts and tables start once the attention row has answered, so the
+  // first requests on Home are the ones the owner reads first.
+  const belowFold = canAnalytics && !attention.loading;
   // Independent of the 30-day `revenue` above (the today card's sparkline) — drives only the chart's 7D/30D/90D filter.
   const [chartRange, setChartRange] = useState<RevenueRangeDays>(30);
   const { data: chartRevenue, isFetching: chartRevenueFetching } = useQuery({
-    queryKey: ["analytics-revenue-chart", chartRange],
+    queryKey: ["analytics-revenue", chartRange],
     queryFn: () => analyticsApi.getRevenueSeries(chartRange),
-    enabled: canAnalytics,
+    enabled: belowFold,
   });
   // Polled every 30s so "on the site right now" stays current — the endpoint itself is cached only 15s server-side.
   const { data: activeVisitors } = useQuery({
@@ -100,23 +104,23 @@ export default function DashboardPage() {
   const { data: profit } = useQuery({
     queryKey: ["analytics-profit-trend", 30],
     queryFn: () => analyticsApi.getProfitTrend(30),
-    enabled: canAnalytics,
+    enabled: belowFold,
   });
   const { data: funnel } = useQuery({
     queryKey: ["analytics-funnel"],
     queryFn: () => analyticsApi.getConversionFunnel(30),
-    enabled: canAnalytics,
+    enabled: belowFold,
   });
   const { data: cartAbandonment } = useQuery({
     queryKey: ["analytics-cart-abandonment"],
     queryFn: analyticsApi.getCartAbandonment,
-    enabled: canAnalytics,
+    enabled: belowFold,
   });
-  const { data: lowStock } = useQuery({ queryKey: ["analytics-low-stock"], queryFn: analyticsApi.getLowStock, enabled: canAnalytics });
+  const { data: lowStock } = useQuery({ queryKey: ["analytics-low-stock"], queryFn: analyticsApi.getLowStock, enabled: belowFold });
   const { data: demandForecast } = useQuery({
     queryKey: ["analytics-demand-forecast"],
     queryFn: () => analyticsApi.getDemandForecast(14, 6),
-    enabled: canAnalytics,
+    enabled: belowFold,
   });
 
   const profitTotals = useMemo(() => {

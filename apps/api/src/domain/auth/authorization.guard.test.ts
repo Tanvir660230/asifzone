@@ -110,7 +110,7 @@ const PUBLIC_ROUTES = [
 ];
 
 /** Self-service admin routes: own session and own notifications — no permission, by design. */
-const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "POST /api/auth/logout-all", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all"];
+const SELF_SERVICE = ["GET /api/auth/me", "GET /api/auth/sessions", "POST /api/auth/logout-all", "GET /api/notifications/", "POST /api/notifications/:id/read", "POST /api/notifications/read-all", "GET /api/v1/admin/attention"]; // attention: each section re-checks the caller's permissions
 
 describe("requirePermission on its own (defence in depth, independent of route order)", () => {
   const run = (admin: unknown) => {

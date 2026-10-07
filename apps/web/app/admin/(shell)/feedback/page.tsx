@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { attentionKeys } from "@/lib/query-keys";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Search, Trash2 } from "lucide-react";
 import type { FeedbackStatusFilter } from "@clothing-brand/shared";
@@ -44,7 +45,10 @@ export default function AdminFeedbackPage() {
 
   const markReadMutation = useMutation({
     mutationFn: adminFeedbackApi.markFeedbackRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-feedback"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-feedback"] });
+      queryClient.invalidateQueries({ queryKey: attentionKeys.all });
+    },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to update feedback"),
   });
 
@@ -52,6 +56,7 @@ export default function AdminFeedbackPage() {
     mutationFn: adminFeedbackApi.deleteFeedback,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-feedback"] });
+      queryClient.invalidateQueries({ queryKey: attentionKeys.all });
       toast.success("Feedback deleted");
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to delete feedback"),
