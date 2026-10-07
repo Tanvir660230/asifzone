@@ -189,6 +189,13 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 | `repeat_customer_rate` | customers with ≥ 2 sale orders ÷ `customers_with_orders` |
 | `customer_lifetime_value` | average `realised_net_sales` per customer over customers with ≥ 1 realised order |
 
+### 4.3a Behaviour and rates (Admin V2, 2026-10-08)
+| Key | Definition |
+|---|---|
+| `sessions` | distinct `PageView.sessionId` with a pageview in the range. Admin (`/admin…`) and draft-preview (`/preview…`) pages are never recorded (`isStorefrontPath`); rows recorded before 2026-10-08 may include admin visits |
+| `conversion_rate` | **D25:** `orders_placed` whose order carries a storefront `sessionId` ÷ `sessions`, same range (0–1). Phone / admin-entered orders have no session and are excluded from the numerator |
+| `return_rate` | `units_returned` ÷ `units_sold`, both in the range (0–1); exchanges excluded as in both inputs |
+
 ### 4.4 Inventory (read-only over InventoryService truth, point in time)
 | Key | Definition |
 |---|---|

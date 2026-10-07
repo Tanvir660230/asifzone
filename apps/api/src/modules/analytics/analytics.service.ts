@@ -7,6 +7,7 @@ import { loadCustomersWithComputedFields, sendBulkSmsToCustomers } from "../cust
 import { AppError } from "../../lib/app-error";
 import { resolveLegacyWindow, resolveStoreRange, storeContext, utcInstant } from "../../domain/metrics/store-time";
 import { saleOrderSql } from "../../domain/metrics/sale-order";
+import { computeMetrics } from "../../domain/metrics/metrics.service";
 import { getCustomerInsights } from "./sales-analytics.service";
 
 const CACHE_TTL_SECONDS = 300;
@@ -649,8 +650,9 @@ export async function remindAbandonedCarts(customerIds: string[], body: string) 
   return { ...result, skipped: result.skipped + (customerIds.length - carts.length) };
 }
 
-/** Conversion rate = sessions that placed an order ÷ total sessions; bounce rate = sessions with
- * exactly one pageview ÷ total sessions. Both require the PageView beacon to actually be firing —
+/** Conversion rate is the registry's `conversion_rate` (D25: orders placed from a storefront session ÷ sessions), so
+ * Home, Analytics and AI read one definition; `convertedSessions` (distinct sessions with an order) stays as a funnel
+ * step. Bounce rate = sessions with exactly one pageview ÷ total sessions. Both require the PageView beacon to actually be firing —
  * return zeros (not an error) when there's no pageview data yet for the window. */
 export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: Date) {
   const range = await resolveDateRange(days, dateFrom, dateTo);
@@ -661,6 +663,7 @@ export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: D
   if (cached) return cached;
 
   const { since, until } = range;
+  const conversion = await computeMetrics({ metrics: ["conversion_rate"], range: await resolveLegacyWindow(days, dateFrom, dateTo) });
   const rows = await prisma.$queryRaw<Array<{ totalSessions: bigint; bouncedSessions: bigint; convertedSessions: bigint }>>`
     WITH sessions AS (
       SELECT "sessionId", COUNT(*) AS views
@@ -687,7 +690,7 @@ export async function getConversionFunnel(days = 30, dateFrom?: Date, dateTo?: D
     totalSessions,
     bouncedSessions,
     convertedSessions,
-    conversionRate: totalSessions > 0 ? (convertedSessions / totalSessions) * 100 : 0,
+    conversionRate: conversion.metrics.conversion_rate!.value * 100,
     bounceRate: totalSessions > 0 ? (bouncedSessions / totalSessions) * 100 : 0,
   };
   await cacheSet(cacheKey, result, CACHE_TTL_SECONDS);

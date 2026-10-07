@@ -382,3 +382,11 @@ are the installation-isolation decisions on the portable-foundation line.
 | D23 | When the courier picks a parcel up, the order moves to SHIPPED by itself. | **Not implementable with Steadfast today:** its status API never reports a picked-up / in-transit state (only `in_review` / `pending` / `hold` until `delivered` / `partial_delivered` / `cancelled`; see `courier.service.ts`). SHIPPED therefore stays a staff action. Revisit if Steadfast adds a pickup status or webhook, or with another courier that reports one. |
 | D24 | A phone order staff enter is confirmed on that call: created CONFIRMED by default, with a checkbox to leave it PENDING. | `createManualOrder({ confirmNow })` applies the PENDING → CONFIRMED transition inside the order's insert transaction, attributed to the admin; stock is reserved once, as for any order. The customer gets the "order placed" SMS (no separate "confirmed" SMS for an order they just confirmed). |
 | D25 | Conversion rate = orders placed ÷ storefront sessions in the same business-date range. | To be added to the metrics registry as a behavioural-family metric (orders with a `sessionId` ÷ distinct sessions), so Home, Analytics and AI read one definition. |
+
+**Engineering note — Customers list (Blueprint V2 PERF-01), 2026-10-08.** Not moved to SQL yet. Measured on the
+Asif Zone demo mirror (467 customers): list 16–45 ms, stats 13 ms. The list's spend and order count are the registry
+metrics (`customerMetricsIndex` → `realised_net_sales`, `orders_placed`); filtering and sorting them in SQL would mean
+a second implementation of those metrics. The planned path is the per-customer daily facts of PERF-02, maintained by
+the metrics engine, which the list then joins and pages in SQL. Revisit when a list request exceeds ~300 ms.
+Also fixed: admin and draft-preview pages were being recorded as storefront pageviews (inflating sessions — the D25
+denominator); the tracker and the beacon now refuse them (`isStorefrontPath`). Rows recorded before the fix remain.

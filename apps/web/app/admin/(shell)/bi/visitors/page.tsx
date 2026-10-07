@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Users, Repeat, Globe2, FileText, LogIn, Radio, Info, Flame } from "lucide-react";
+import { Users, Repeat, Globe2, FileText, LogIn, Radio, Info, Flame, ShoppingBag } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { ConversionMetricCard } from "@/components/admin/conversion-metric-card";
@@ -110,7 +110,7 @@ export default function VisitorAnalyticsPage() {
         <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">Visitors &amp; Sessions</h2>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
           {!overview || !funnel || !loggedInVsGuest ? (
-            Array.from({ length: 6 }).map((_, i) => <StatTileSkeleton key={i} />)
+            Array.from({ length: 10 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
               <StatTile label="Total Visitors" value={overview.totalVisitors.toLocaleString(DISPLAY_LOCALE)} icon={<Users size={18} />} tone="accent" />
@@ -127,6 +127,13 @@ export default function VisitorAnalyticsPage() {
               <StatTile label="Guest" value={loggedInVsGuest.guest.toLocaleString(DISPLAY_LOCALE)} icon={<Users size={18} />} />
               <StatTile label="Live Right Now" value={(activeVisitors?.count ?? 0).toLocaleString(DISPLAY_LOCALE)} icon={<Radio size={18} />} tone="warning" />
               <ConversionMetricCard label="Bounce Rate" value={`${funnel.bounceRate.toFixed(1)}%`} icon={<Globe2 size={18} />} pct={funnel.bounceRate} />
+              <ConversionMetricCard
+                label="Conversion Rate"
+                value={`${funnel.conversionRate.toFixed(1)}%`}
+                caption="orders ÷ sessions"
+                icon={<ShoppingBag size={18} />}
+                pct={funnel.conversionRate}
+              />
             </>
           )}
         </div>

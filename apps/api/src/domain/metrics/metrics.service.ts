@@ -33,13 +33,24 @@ import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { candidateOrderIds, loadCourierLoss, loadInventoryFacts, loadOrderFacts, loadPositionFacts } from "./facts.repository";
-import { storeContext } from "./store-time";
+import { storeContext, utcInstant } from "./store-time";
 
 const CACHE_TTL_SECONDS = 60;
 const TIME_GROUPINGS = new Set<MetricGrouping>(["day", "month", "year"]);
 const POSITION_KEYS = new Set(["outstanding_cod", "amount_due", "refund_due"]);
 const INVENTORY_KEYS = new Set(["stock_on_hand", "low_stock_variants", "out_of_stock_variants", "inventory_value"]);
 const CUSTOMER_KEYS = new Set(["customers_with_orders", "repeat_customer_rate", "customer_lifetime_value"]);
+/** Ratios of order facts (computed from additive metrics, so they share their definitions). */
+const ORDER_RATIO_KEYS = new Set(["return_rate", "conversion_rate"]);
+
+/** Distinct storefront sessions with a pageview in [startUtc, endUtc) — the D25 denominator. */
+async function countSessions(range: Pick<BusinessRange, "startUtc" | "endUtc">): Promise<number> {
+  const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+    SELECT COUNT(DISTINCT "sessionId")::bigint AS n FROM "PageView" WHERE "createdAt" >= ${utcInstant(range.startUtc)} AND "createdAt" < ${utcInstant(range.endUtc)}`;
+  return Number(rows[0]?.n ?? 0);
+}
+
+const ratio = (num: number, den: number) => (den > 0 ? num / den : 0);
 
 export interface MetricsRequest {
   metrics: string[];
@@ -121,7 +132,8 @@ export async function computeMetrics(req: MetricsRequest, now: Date = new Date()
 
 async function computeUncached(req: MetricsRequest, range: BusinessRange, currency: string): Promise<MetricsResult> {
   const keys = req.metrics;
-  const needsOrders = keys.some((k) => ADDITIVE_METRICS.has(k) || CUSTOMER_KEYS.has(k) || k === "aov");
+  const needsOrders = keys.some((k) => ADDITIVE_METRICS.has(k) || CUSTOMER_KEYS.has(k) || ORDER_RATIO_KEYS.has(k) || k === "aov");
+  const sessions = keys.includes("sessions") || keys.includes("conversion_rate") ? await countSessions(range) : 0;
   const orders: OrderFact[] = needsOrders ? await loadOrderFacts(await candidateOrderIds(range), currency) : [];
   const courierLoss = keys.includes("courier_loss") ? await loadCourierLoss(range, currency) : [];
 
@@ -150,6 +162,13 @@ async function computeUncached(req: MetricsRequest, range: BusinessRange, curren
     } else if (CUSTOMER_KEYS.has(key)) {
       const stats = customerStats(orders, range);
       value = key === "customers_with_orders" ? stats.customersWithOrders : key === "repeat_customer_rate" ? stats.repeatCustomerRate : stats.customerLifetimeValue;
+    } else if (key === "sessions") {
+      value = sessions;
+    } else if (key === "conversion_rate") {
+      // D25: orders placed (the registry's orders_placed population) that carry a storefront session ÷ sessions.
+      value = ratio(sumOf(contributions("orders_placed", orders, range).filter((c) => c.order.sessionId)), sessions);
+    } else if (key === "return_rate") {
+      value = ratio(sumOf(contributions("units_returned", orders, range)), sumOf(contributions("units_sold", orders, range)));
     } else if (POSITION_KEYS.has(key)) {
       const totals = positionTotals(await loadPositionFacts(currency), currency);
       value = key === "outstanding_cod" ? totals.outstandingCod : key === "amount_due" ? totals.amountDue : totals.refundDue;

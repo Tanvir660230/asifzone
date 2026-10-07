@@ -70,10 +70,14 @@ export const METRIC_DEFINITIONS: readonly MetricDefinition[] = [
   def("units_sold", "Units sold", "count", "realised", LINE_LEVEL, "Units on realised sale orders."),
   def("units_returned", "Units returned", "count", "returned", LINE_LEVEL, "Units returned by customers (exchanges excluded)."),
   def("net_units_sold", "Net units sold", "count", "mixed", LINE_LEVEL, "Units sold − units returned."),
+  def("return_rate", "Return rate", "ratio", "mixed", NONE, "Units returned ÷ units sold, both in the range (exchanges excluded). A return can fall in a later range than its sale."),
   // Customer (groupings of the facts above)
   def("customers_with_orders", "Customers with orders", "count", "placed", TIME, "Distinct customers with at least one sale order placed in the range."),
   def("repeat_customer_rate", "Repeat customer rate", "ratio", "placed", NONE, "Customers with ≥ 2 sale orders ÷ customers with ≥ 1, in the range."),
   def("customer_lifetime_value", "Customer lifetime value", "money", "lifetime", NONE, "Average realised net sales per customer with at least one realised order, in the range."),
+  // Behaviour (storefront sessions; admin and preview pages are never recorded)
+  def("sessions", "Storefront sessions", "count", "event", NONE, "Distinct storefront sessions with at least one pageview in the range."),
+  def("conversion_rate", "Conversion rate", "ratio", "mixed", NONE, "D25: sale orders placed from a storefront session ÷ storefront sessions, same range. Phone and admin-entered orders (no session) are not counted."),
   // Inventory (point in time; read-only)
   def("stock_on_hand", "Stock on hand", "count", "now", NONE, "Σ stock of tracked, active variants of products not in trash."),
   def("low_stock_variants", "Low-stock variants", "count", "now", NONE, "Sellable tracked variants at or below their product's low-stock threshold (per variant)."),

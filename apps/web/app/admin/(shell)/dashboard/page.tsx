@@ -332,7 +332,7 @@ export default function DashboardPage() {
             <MetricCard
               label="Visitors"
               value={summary ? String(summary.uniqueVisitors30d) : "—"}
-              detail={funnel ? `${funnel.conversionRate.toFixed(1)}% placed an order` : undefined}
+              detail={funnel ? `${funnel.conversionRate.toFixed(1)}% conversion (orders ÷ sessions)` : undefined}
               trendPct={summary ? computeTrendPct(summary.uniqueVisitors30d, summary.uniqueVisitorsPrev30d) : undefined}
               href="/admin/bi/visitors"
             />
