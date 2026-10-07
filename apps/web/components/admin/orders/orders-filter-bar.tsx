@@ -2,7 +2,8 @@
 
 import { forwardRef, useRef, useState } from "react";
 import Link from "next/link";
-import { SlidersHorizontal, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { SlidersHorizontal, Users, X } from "lucide-react";
 import {
   BD_DISTRICTS_BY_DIVISION,
   BD_DIVISIONS,
@@ -25,6 +26,7 @@ import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
+import { SaveViewButton, applyQuery, currentViewQuery, useSavedViews } from "@/components/admin/filters";
 import type { OrderStats } from "@/lib/api/admin-orders";
 import { courierStatusLabel, formatCount, orderStatusShortLabel, paymentStatusLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -54,6 +56,11 @@ const viewBase =
 export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListState; stats: OrderStats | undefined; canSeeTrash: boolean }>(
   function OrdersFilterBar({ state, stats, canSeeTrash }, searchRef) {
     const [moreOpen, setMoreOpen] = useState(false);
+    // Saved views (DR-18): a named Orders URL. `view` (active/trash) is part of what a view saves here.
+    const searchParams = useSearchParams();
+    const saved = useSavedViews("orders");
+    const currentQuery = currentViewQuery(searchParams.toString(), { keepView: true });
+    const matchingSaved = saved.views.find((v) => currentViewQuery(v.query, { keepView: true }) === currentQuery);
     const moreRef = useRef<HTMLButtonElement>(null);
     const { more } = state;
     const statusTotal = stats ? Object.values(stats.statusCounts).reduce((sum, n) => sum + n, 0) : undefined;
@@ -235,6 +242,36 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
                     Returns to review
                     <CountBadge value={stats.returnRequestsPending} />
                   </Link>
+                )}
+                {saved.views.map((v) => {
+                  const on = matchingSaved?.id === v.id;
+                  return (
+                    <span key={v.id} className="flex shrink-0 items-center">
+                      <button
+                        type="button"
+                        aria-pressed={on}
+                        title={v.shared && !v.mine && v.createdBy ? `Shared by ${v.createdBy}` : undefined}
+                        onClick={() => applyQuery(on ? "" : v.query)}
+                        className={cn(viewBase, on ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong")}
+                      >
+                        {v.shared && <Users size={12} aria-label="Shared" />}
+                        {v.label}
+                      </button>
+                      {v.mine && (
+                        <button
+                          type="button"
+                          onClick={() => saved.remove(v.id)}
+                          aria-label={`Delete view ${v.label}`}
+                          className="ml-0.5 rounded-full p-1 text-fg-subtle transition-colors duration-fast hover:bg-ink-900/[0.06] hover:text-fg"
+                        >
+                          <X size={12} aria-hidden="true" />
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+                {currentQuery && !matchingSaved && (
+                  <SaveViewButton saving={saved.saving} onSave={(label, shared) => saved.save(label, currentQuery, shared)} />
                 )}
               </div>
             </HScrollShadow>

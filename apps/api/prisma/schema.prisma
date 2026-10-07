@@ -265,6 +265,8 @@ model AdminUser {
   orderModifications     OrderModification[]
   paymentLinksCreated    PaymentLink[]         @relation("PaymentLinkCreatedBy")
   paymentLinksCancelled  PaymentLink[]         @relation("PaymentLinkCancelledBy")
+  notificationReads      NotificationRead[]
+  savedViews             SavedView[]
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -1719,15 +1721,47 @@ model WishlistItem {
 /// System-generated admin alerts (new order, low stock, ...) shown via the bell icon in the admin
 /// topbar — distinct from the per-action toasts, which are immediate feedback on the action you just took.
 model Notification {
-  id        String    @id @default(cuid())
+  id        String             @id @default(cuid())
   type      String
   title     String
   body      String?
   link      String?
+  /// Legacy store-wide read flag (before DR-15). Read state is per admin now (NotificationRead); kept so old rows and
+  /// rollbacks stay meaningful, never written by the app.
   readAt    DateTime?
-  createdAt DateTime  @default(now())
+  createdAt DateTime           @default(now())
+  reads     NotificationRead[]
 
   @@index([readAt, createdAt])
+  @@index([createdAt])
+}
+
+/// Admin V2 DR-18: a named filter set for one admin list (its URL query), kept per admin across devices; `shared`
+/// shows it to the whole team.
+model SavedView {
+  id        String    @id @default(cuid())
+  adminId   String
+  listKey   String
+  label     String
+  query     String
+  shared    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  admin     AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([listKey, adminId])
+  @@index([listKey, shared])
+}
+
+/// Admin V2 DR-15: who has read which notification — one admin reading it no longer clears it for the whole team.
+model NotificationRead {
+  notificationId String
+  adminId        String
+  readAt         DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  admin          AdminUser    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, adminId])
+  @@index([adminId])
 }
 
 /// Single-row store configuration — always read/written via id "singleton". Fields not yet wired

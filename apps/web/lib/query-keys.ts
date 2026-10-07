@@ -26,6 +26,11 @@ export const attentionKeys = {
   all: ["attention"] as const,
 };
 
+/** Saved list views (DR-18), per list. */
+export const savedViewKeys = {
+  list: (listKey: string) => ["saved-views", listKey] as const,
+};
+
 /** The command palette's record search (components/admin/command-palette.tsx). */
 export const paletteKeys = {
   all: ["palette"] as const,

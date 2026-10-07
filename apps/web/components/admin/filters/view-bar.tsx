@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BookmarkPlus, X } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { notifyUrlStateChange } from "@/hooks/use-url-state";
+import * as adminHomeApi from "@/lib/api/admin-home";
+import { savedViewKeys } from "@/lib/query-keys";
+import { SaveViewButton } from "./save-view-button";
 
 /**
  * Views (P1.8 saved-view foundation): a named query string for a list screen. System views are declared by the screen
  * ("Unpaid", "Needs courier"); an admin can save the current filters as a personal view. A view is applied by replacing
  * the list's URL state with its query plus `view=<id>` — the URL stays the single source of truth.
  *
- * Personal views live in this browser for now (useSavedViews); the shape is what a server-side store will hold later.
+ * Saved views are stored server-side per admin (useSavedViews, DR-18); a shared one is visible to the whole team.
  */
 export interface ListView {
   id: string;
@@ -18,16 +21,29 @@ export interface ListView {
   /** The URL-state query this view applies (no leading "?"), e.g. "f.queue=unpaid&sort=-createdAt". */
   query: string;
   system?: boolean;
+  /** Saved by this admin (only they can delete it). */
+  mine?: boolean;
+  /** Shared with the team. */
+  shared?: boolean;
+  createdBy?: string | null;
 }
 
 /** Keys a view doesn't carry (paging is per visit). */
 const NOT_SAVED = new Set(["page", "view", "open"]);
 
-export function currentViewQuery(search: string): string {
+/** The part of a list URL a view saves. `keepView` for lists whose `view` key is list state (Orders: active/trash). */
+export function currentViewQuery(search: string, { keepView = false }: { keepView?: boolean } = {}): string {
   const params = new URLSearchParams(search);
-  for (const key of [...params.keys()]) if (NOT_SAVED.has(key)) params.delete(key);
+  for (const key of [...params.keys()]) if (NOT_SAVED.has(key) && !(keepView && key === "view")) params.delete(key);
   params.sort();
   return params.toString();
+}
+
+/** Applies a saved query as the list's URL state (a history entry, so Back returns to the previous filters). */
+export function applyQuery(query: string) {
+  const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+  window.history.pushState(window.history.state, "", url);
+  notifyUrlStateChange();
 }
 
 export function applyView(view: ListView) {
@@ -38,35 +54,31 @@ export function applyView(view: ListView) {
   notifyUrlStateChange();
 }
 
-/** This admin's saved views for one list (per browser — a convenience; the list works without it). */
+/** This admin's saved views for one list plus the team's shared ones (DR-18 — server-side, so they follow the admin
+ * across devices). A failed load leaves the list working with system views only. */
 export function useSavedViews(listKey: string) {
-  const storageKey = `views:${listKey}`;
-  const [views, setViews] = useState<ListView[]>([]);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) setViews((JSON.parse(raw) as ListView[]).filter((v) => v && typeof v.id === "string" && typeof v.query === "string"));
-    } catch {
-      setViews([]);
-    }
-  }, [storageKey]);
-  function persist(next: ListView[]) {
-    setViews(next);
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-    } catch {
-      // Kept for this visit only.
-    }
-  }
+  const queryClient = useQueryClient();
+  const key = savedViewKeys.list(listKey);
+  const { data } = useQuery({ queryKey: key, queryFn: () => adminHomeApi.listSavedViews(listKey), staleTime: 5 * 60_000 });
+  const views: ListView[] = (data?.items ?? []).map((v) => ({ id: v.id, label: v.label, query: v.query, mine: v.mine, shared: v.shared, createdBy: v.createdBy }));
+  const create = useMutation({
+    mutationFn: (input: { label: string; query: string; shared?: boolean }) => adminHomeApi.createSavedView({ listKey, ...input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+  const del = useMutation({
+    mutationFn: adminHomeApi.deleteSavedView,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
   return {
     views,
-    save: (label: string, query: string) => persist([...views, { id: `saved-${Date.now().toString(36)}`, label, query }]),
-    remove: (id: string) => persist(views.filter((v) => v.id !== id)),
+    save: (label: string, query: string, shared = false) => create.mutateAsync({ label, query, shared }),
+    remove: (id: string) => del.mutateAsync(id),
+    saving: create.isPending,
   };
 }
 
 export function ViewBar({ listKey, systemViews, activeViewId, search }: { listKey: string; systemViews: ListView[]; activeViewId: string; search: string }) {
-  const { views, save, remove } = useSavedViews(listKey);
+  const { views, save, remove, saving } = useSavedViews(listKey);
   const all = [...systemViews.map((v) => ({ ...v, system: true })), ...views];
   const currentQuery = currentViewQuery(search);
   const matching = all.find((v) => v.id === activeViewId) ?? all.find((v) => currentViewQuery(v.query) === currentQuery);
@@ -86,7 +98,7 @@ export function ViewBar({ listKey, systemViews, activeViewId, search }: { listKe
             >
               {view.label}
             </button>
-            {!view.system && (
+            {view.mine && (
               <button type="button" onClick={() => remove(view.id)} aria-label={`Delete view ${view.label}`} className="text-ink-300 hover:text-ink-600">
                 <X size={12} />
               </button>
@@ -94,18 +106,7 @@ export function ViewBar({ listKey, systemViews, activeViewId, search }: { listKe
           </span>
         );
       })}
-      {currentQuery && !matching && (
-        <button
-          type="button"
-          onClick={() => {
-            const label = window.prompt("Name this view");
-            if (label?.trim()) save(label.trim(), currentQuery);
-          }}
-          className="ml-auto flex items-center gap-1 px-2 py-2 text-xs font-medium text-ink-500 hover:text-ink-800"
-        >
-          <BookmarkPlus size={14} /> Save view
-        </button>
-      )}
+      {currentQuery && !matching && <SaveViewButton className="ml-auto" saving={saving} onSave={(label, shared) => save(label, currentQuery, shared)} />}
     </div>
   );
 }
