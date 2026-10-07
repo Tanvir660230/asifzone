@@ -5,8 +5,7 @@ import { cacheGet, cacheSet } from "../../config/redis";
 import { getCustomerInsights, getLowStockVariants, getDeadStockReport, getBestSellingPrediction } from "../analytics/analytics.service";
 import { loadCustomersWithComputedFields } from "../customers/customer.service";
 import { computeMetrics, loadFactsForRange } from "../../domain/metrics/metrics.service";
-import { resolveStoreRange, storeContext, utcInstant } from "../../domain/metrics/store-time";
-import { saleOrderSql } from "../../domain/metrics/sale-order";
+import { resolveStoreRange, storeContext } from "../../domain/metrics/store-time";
 
 const CACHE_TTL_SECONDS = 60;
 const CACHE_KEY = "bi:executive-overview:v5";
@@ -84,7 +83,7 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
   ]);
   const { timezone, currency } = await storeContext();
 
-  const [t, y, w, m, lm, life, monthFinance, positions, lifetimeFacts, visitorRows, sessionRows, pendingRows] = await Promise.all([
+  const [t, y, w, m, lm, life, monthFinance, positions, lifetimeFacts, visitorRows, lifetimeConversion, pendingRows] = await Promise.all([
     computeMetrics({ metrics: ["realised_net_sales"], range: today }),
     computeMetrics({ metrics: ["realised_net_sales"], range: yesterday }),
     computeMetrics({ metrics: ["realised_net_sales"], range: week }),
@@ -109,12 +108,8 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
         (SELECT COUNT(DISTINCT COALESCE("visitorId", 'sess:' || "sessionId")) FROM "PageView")::bigint AS "totalVisitors",
         (SELECT COUNT(*) FROM per_visitor_days WHERE active_days > 1)::bigint AS "returningVisitors"
     `,
-    // Lifetime conversion = sessions that placed a sale order ÷ sessions.
-    prisma.$queryRaw<Array<{ totalSessions: bigint; convertedSessions: bigint }>>`
-      SELECT
-        (SELECT COUNT(DISTINCT "sessionId") FROM "PageView")::bigint AS "totalSessions",
-        (SELECT COUNT(DISTINCT o."sessionId") FROM "Order" o WHERE o."sessionId" IS NOT NULL AND ${saleOrderSql("o")} AND o."createdAt" < ${utcInstant(lifetime.endUtc)})::bigint AS "convertedSessions"
-    `,
+    // Lifetime conversion — the registry's conversion_rate (D25: orders placed from a session ÷ sessions).
+    computeMetrics({ metrics: ["conversion_rate"], range: lifetime }),
     // Orders with a balance still due — counted by the same ledger engine that sums `amount_due`.
     loadPositionFacts(currency).then((f) => positionTotals(f, currency).amountDueOrders),
   ]);
@@ -135,11 +130,8 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
   const cancelled = life.metrics.orders_cancelled!.value;
 
   const visitors = visitorRows[0]!;
-  const sessions = sessionRows[0]!;
   const totalVisitors = Number(visitors.totalVisitors);
   const returningVisitors = Number(visitors.returningVisitors);
-  const totalSessions = Number(sessions.totalSessions);
-  const convertedSessions = Number(sessions.convertedSessions);
   const insights = await getCustomerInsights();
 
   const result: ExecutiveOverview = {
@@ -162,7 +154,7 @@ export async function getExecutiveOverview(): Promise<ExecutiveOverview> {
     returningVisitors,
     returningVisitorRatePct: totalVisitors > 0 ? (returningVisitors / totalVisitors) * 100 : 0,
 
-    conversionRatePct: totalSessions > 0 ? (convertedSessions / totalSessions) * 100 : 0,
+    conversionRatePct: lifetimeConversion.metrics.conversion_rate!.value * 100,
     customerLifetimeValue: insights.avgClv,
     repeatPurchaseRatePct: cs.repeatCustomerRate * 100,
 

@@ -96,22 +96,15 @@ export const NAV_DOMAINS: ReadonlyArray<{ id: NavDomain; label: string | null }>
 export const MAX_PRIMARY_MODULES = 12;
 export const MAX_NAV_DEPTH = 3;
 
-const BI_REPORTS: Array<[slug: string, label: string, keywords?: string[]]> = [
-  ["overview", "Overview", ["analytics", "reports"]],
-  ["visitors", "Visitors", ["traffic", "devices"]],
-  ["journey", "Journey", ["funnel"]],
-  ["search", "Search", ["queries", "zero results"]],
-  ["products", "Product Intel", ["product analytics"]],
-  ["customers", "Customer Intel", ["cohort", "retention", "rfm", "customer analytics"]],
-  ["marketing", "Marketing", ["campaign", "traffic", "marketing analytics"]],
-  ["sales", "Sales", ["revenue", "sales analytics"]],
-  ["financial", "Financial", ["profit", "margin", "cogs"]],
-  ["inventory", "Inventory Intel", ["stock turnover"]],
-  ["operations", "Operations", ["fulfilment"]],
-  ["behavior", "Behavior", ["heatmap"]],
-  ["ai-insights", "AI Insights"],
-  ["lifetime", "Lifetime", ["ltv"]],
-  ["reports", "Reports", ["export"]],
+/** Analytics (Blueprint V2 DR-26): six tabs; each folds in the BI pages it replaced, whose old paths redirect to the
+ * tab's view (`?view=`). */
+const ANALYTICS_TABS: Array<[slug: string, label: string, keywords: string[], deprecated: string[]]> = [
+  ["overview", "Overview", ["analytics", "reports", "export", "ai insights", "lifetime", "ltv"], ["/admin/bi/overview", "/admin/bi/ai-insights?view=insights", "/admin/bi/lifetime?view=lifetime", "/admin/bi/reports?view=reports"]],
+  ["sales", "Sales", ["revenue", "sales analytics", "profit", "margin", "cogs", "financial"], ["/admin/bi/sales", "/admin/bi/financial?view=financial"]],
+  ["products", "Products", ["product analytics", "stock turnover", "inventory intel", "search", "queries", "zero results"], ["/admin/bi/products", "/admin/bi/inventory?view=inventory", "/admin/bi/search?view=search"]],
+  ["customers", "Customers", ["cohort", "retention", "rfm", "customer analytics", "behavior", "heatmap"], ["/admin/bi/customers", "/admin/bi/behavior?view=behavior"]],
+  ["marketing", "Marketing", ["campaign", "traffic", "marketing analytics", "visitors", "devices", "journey", "funnel", "conversion"], ["/admin/bi/marketing", "/admin/bi/visitors?view=visitors", "/admin/bi/journey?view=journey"]],
+  ["operations", "Operations", ["fulfilment", "courier performance"], ["/admin/bi/operations"]],
 ];
 
 const CATALOG_SETUP: Array<[slug: string, label: string, keywords?: string[]]> = [
@@ -364,25 +357,26 @@ export const NAV_NODES: readonly NavNode[] = [
     label: term("analytics"),
     kind: "module",
     domain: "manage",
-    index: "/admin/bi/overview",
-    activeFor: ["/admin/bi", "/admin/ai-assistant"],
+    index: "/admin/analytics/overview",
+    activeFor: ["/admin/analytics", "/admin/bi", "/admin/ai-assistant"],
     icon: "analytics",
     capability: "analytics.view",
     order: 90,
     goKey: "a",
     keywords: ["business intelligence", "bi", "reports"],
   },
-  ...BI_REPORTS.map(
-    ([slug, label, keywords], i): NavNode => ({
+  ...ANALYTICS_TABS.map(
+    ([slug, label, keywords, deprecatedRoutes], i): NavNode => ({
       id: `analytics.${slug}`,
       label,
       kind: "report",
       parent: "analytics",
       domain: "manage",
-      route: `/admin/bi/${slug}`,
+      route: `/admin/analytics/${slug}`,
       capability: "analytics.view",
       order: i,
       keywords,
+      deprecatedRoutes,
     }),
   ),
   {
@@ -393,7 +387,7 @@ export const NAV_NODES: readonly NavNode[] = [
     domain: "manage",
     route: "/admin/ai-assistant",
     featureFlag: "ai-assistant",
-    order: BI_REPORTS.length,
+    order: ANALYTICS_TABS.length,
     keywords: ["ai", "chat"],
   },
 
@@ -637,7 +631,9 @@ export function goTargets(access: NavAccess): Array<{ key: string; node: NavNode
 /** The current location of a deprecated route (query string kept), or null when the pathname isn't deprecated. */
 export function deprecatedRedirect(pathname: string, search = ""): string | null {
   for (const node of NAV_NODES) {
-    for (const old of node.deprecatedRoutes ?? []) {
+    for (const entry of node.deprecatedRoutes ?? []) {
+      // An entry may name the view it now lives in ("/admin/bi/financial?view=financial"); the visitor's own query wins.
+      const [old = entry, extra] = entry.split("?");
       const match = routePattern(old).exec(pathname);
       if (!match || !node.route) continue;
       const oldSegments = old.split("/");
@@ -650,7 +646,10 @@ export function deprecatedRedirect(pathname: string, search = ""): string | null
         .split("/")
         .map((segment) => values.get(segment) ?? segment)
         .join("/");
-      return `${target}${search}`;
+      if (!extra) return `${target}${search}`;
+      const query = new URLSearchParams(search);
+      for (const [key, value] of new URLSearchParams(extra)) if (!query.has(key)) query.set(key, value);
+      return `${target}?${query.toString()}`;
     }
   }
   return null;

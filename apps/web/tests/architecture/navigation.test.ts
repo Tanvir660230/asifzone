@@ -107,7 +107,11 @@ describe("navigation manifest — coverage of the app", () => {
     expect(deprecatedRedirect("/admin/products/wizard/new", "?step=media")).toBe("/admin/products/new?step=media");
     expect(deprecatedRedirect("/admin/products/wizard/abc123/edit", "?step=2")).toBe("/admin/products/abc123/edit?step=2");
     expect(deprecatedRedirect("/admin/products")).toBeNull();
-    for (const old of deprecated) expect(resolveNavNode(old.replace(/\[[^\]]+\]/g, "x")), old).toBeDefined();
+    for (const old of deprecated) expect(resolveNavNode(old.split("?")[0]!.replace(/\[[^\]]+\]/g, "x")), old).toBeDefined();
+    // Analytics (DR-26): a merged BI page lands on its tab's view; the visitor's own query is kept.
+    expect(deprecatedRedirect("/admin/bi/financial")).toBe("/admin/analytics/sales?view=financial");
+    expect(deprecatedRedirect("/admin/bi/visitors", "?from=2026-10-01")).toBe("/admin/analytics/marketing?from=2026-10-01&view=visitors");
+    expect(deprecatedRedirect("/admin/bi/overview")).toBe("/admin/analytics/overview");
   });
 });
 

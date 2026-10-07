@@ -34,7 +34,7 @@ export function InsightsStrip({ enabled = true }: { enabled?: boolean }) {
           Insights
         </h2>
         <Link
-          href="/admin/bi/ai-insights"
+          href="/admin/analytics/overview?view=insights"
           className="flex shrink-0 items-center gap-1 text-sm font-medium text-ink-500 transition-colors duration-150 ease-smooth hover:text-ink-900"
         >
           {insights.length > SHOWN ? `All ${insights.length}` : "Business Intelligence"} <ArrowUpRight size={14} />

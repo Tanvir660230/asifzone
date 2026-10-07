@@ -143,7 +143,7 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2.5">
           {activeVisitors && (
             <Link
-              href={canAnalytics ? "/admin/bi/visitors" : "#"}
+              href={canAnalytics ? "/admin/analytics/marketing?view=visitors" : "#"}
               className="inline-flex h-9 items-center gap-2 rounded-full bg-surface px-3.5 text-[13px] font-medium text-fg-muted shadow ring-1 ring-line transition-colors hover:text-fg"
             >
               <span className="relative flex h-2 w-2 shrink-0">
@@ -185,7 +185,7 @@ export default function DashboardPage() {
               trendPct={summary ? computeTrendPct(summary.revenue30d, summary.revenuePrev30d) : undefined}
               trendLabel="30-day trend"
               sparkline={revenue?.series.slice(-14).map((p) => p.revenue)}
-              href={canAnalytics ? "/admin/bi/sales" : undefined}
+              href={canAnalytics ? "/admin/analytics/sales" : undefined}
             />
           ) : (
             <MetricCardSkeleton />
@@ -219,7 +219,7 @@ export default function DashboardPage() {
         <MetricStrip
           className="mt-4"
           items={[
-            { label: "On the store now", value: activeVisitors ? String(activeVisitors.count) : "—", href: canAnalytics ? "/admin/bi/visitors" : undefined },
+            { label: "On the store now", value: activeVisitors ? String(activeVisitors.count) : "—", href: canAnalytics ? "/admin/analytics/marketing?view=visitors" : undefined },
             {
               label: "Payment success today",
               value: payments ? (payments.attemptsToday > 0 ? `${Math.round(payments.successRateTodayPct)}%` : "No attempts") : "—",
@@ -229,7 +229,7 @@ export default function DashboardPage() {
               label: "Abandoned carts",
               value: cartAbandonment ? `${cartAbandonment.cartCount} · ${formatPrice(cartAbandonment.potentialRevenue)}` : "—",
               onClick: canCustomers ? () => setCartsOpen(true) : undefined,
-              href: !canCustomers && canAnalytics ? "/admin/bi/products" : undefined,
+              href: !canCustomers && canAnalytics ? "/admin/analytics/products" : undefined,
             },
           ]}
         />
@@ -270,7 +270,7 @@ export default function DashboardPage() {
                   <LowStockTable variants={lowStock.variants.slice(0, LOW_STOCK_SHOWN)} />
                   {lowStock.variants.length > LOW_STOCK_SHOWN && (
                     <Link
-                      href={canInventory ? "/admin/inventory" : "/admin/bi/inventory"}
+                      href={canInventory ? "/admin/inventory" : "/admin/analytics/products?view=inventory"}
                       className="mt-3 flex items-center justify-center gap-1 rounded-lg py-2 text-[13px] font-medium text-accent hover:bg-accent/[0.06]"
                     >
                       Show {lowStock.variants.length - LOW_STOCK_SHOWN} more
@@ -285,7 +285,7 @@ export default function DashboardPage() {
           <Card className="min-w-0">
             <CardHeader className="flex items-center justify-between gap-3">
               <CardTitle>Likely to sell out in 14 days</CardTitle>
-              <SectionLink href="/admin/bi/inventory">Forecast</SectionLink>
+              <SectionLink href="/admin/analytics/products?view=inventory">Forecast</SectionLink>
             </CardHeader>
             <CardContent>
               {demandForecast ? <DemandForecastTable variants={demandForecast.variants} /> : <div className="h-40 rounded-xl ui-skeleton" />}
@@ -297,14 +297,14 @@ export default function DashboardPage() {
       {/* 6 — 30-day pulse */}
       {canAnalytics && (
         <section aria-label="Last 30 days">
-          <SectionHeader title="Last 30 days" action={<SectionLink href="/admin/bi/overview">Open Analytics</SectionLink>} />
+          <SectionHeader title="Last 30 days" action={<SectionLink href="/admin/analytics/overview">Open Analytics</SectionLink>} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             <MetricCard
               label="Net sales"
               value={summary ? formatPrice(summary.revenue30d) : "—"}
               trendPct={summary ? computeTrendPct(summary.revenue30d, summary.revenuePrev30d) : undefined}
               trendLabel="vs previous 30 days"
-              href="/admin/bi/sales"
+              href="/admin/analytics/sales"
             />
             <MetricCard
               label="Gross profit"
@@ -313,28 +313,28 @@ export default function DashboardPage() {
                 profitTotals && profit && profit.costCoverage.recorded > 0 ? formatPrice(Math.round(profitTotals.profit)) : profit ? "No cost data" : "—"
               }
               detail={profitTotals && profit && profit.costCoverage.recorded > 0 && profitTotals.marginPct !== null ? `${profitTotals.marginPct.toFixed(0)}% margin` : undefined}
-              href="/admin/bi/financial"
+              href="/admin/analytics/sales?view=financial"
             />
             <MetricCard
               label="Orders"
               value={summary ? String(summary.orders30d) : "—"}
               trendPct={summary ? computeTrendPct(summary.orders30d, summary.ordersPrev30d) : undefined}
               trendLabel="vs previous 30 days"
-              href="/admin/bi/sales"
+              href="/admin/analytics/sales"
             />
             <MetricCard
               label="Average order value"
               value={summary ? formatPrice(Math.round(summary.aov30d)) : "—"}
               trendPct={summary ? computeTrendPct(summary.aov30d, summary.aovPrev30d) : undefined}
               trendLabel="vs previous 30 days"
-              href="/admin/bi/sales"
+              href="/admin/analytics/sales"
             />
             <MetricCard
               label="Visitors"
               value={summary ? String(summary.uniqueVisitors30d) : "—"}
               detail={funnel ? `${funnel.conversionRate.toFixed(1)}% conversion (orders ÷ sessions)` : undefined}
               trendPct={summary ? computeTrendPct(summary.uniqueVisitors30d, summary.uniqueVisitorsPrev30d) : undefined}
-              href="/admin/bi/visitors"
+              href="/admin/analytics/marketing?view=visitors"
             />
           </div>
           {profit && profit.costCoverage.missing > 0 && (
