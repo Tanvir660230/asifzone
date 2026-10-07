@@ -56,6 +56,8 @@ export const CAPABILITIES = {
   "settings.manage": { permission: "settings.manage" },
   "team.manage": { permission: "users.manage" },
   "audit.view": { permission: "audit.read" },
+  "ops.view": { permission: "ops.read" },
+  "ops.repair": { permission: "ops.repair" },
 } as const satisfies Record<string, CapabilityDefinition>;
 
 export type Capability = keyof typeof CAPABILITIES;

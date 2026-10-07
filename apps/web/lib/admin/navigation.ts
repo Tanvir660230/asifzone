@@ -424,7 +424,7 @@ export const NAV_NODES: readonly NavNode[] = [
     kind: "module",
     domain: "system",
     index: "/admin/team",
-    activeFor: ["/admin/team", "/admin/audit-log", "/admin/storage"],
+    activeFor: ["/admin/team", "/admin/audit-log", "/admin/storage", "/admin/system-health"],
     icon: "administration",
     order: 110,
     keywords: ["admin"],
@@ -432,6 +432,17 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "administration.team", label: term("teamMember"), kind: "settings", parent: "administration", domain: "system", route: "/admin/team", capability: "team.manage", order: 0, keywords: ["staff", "admins"] },
   { id: "administration.audit-log", label: "Audit log", kind: "settings", parent: "administration", domain: "system", route: "/admin/audit-log", capability: "audit.view", order: 1, keywords: ["history"] },
   { id: "administration.storage", label: "Storage", kind: "settings", parent: "administration", domain: "system", route: "/admin/storage", capability: "settings.manage", order: 2, keywords: ["uploads", "media", "trash"] },
+  {
+    id: "administration.system-health",
+    label: "System health",
+    kind: "settings",
+    parent: "administration",
+    domain: "system",
+    route: "/admin/system-health",
+    capability: "ops.view",
+    order: 3,
+    keywords: ["health", "status", "reliability", "background jobs", "drift", "outbox"],
+  },
 ];
 
 // ── Derivation ──────────────────────────────────────────────────────────────────────────────────────────────────────────

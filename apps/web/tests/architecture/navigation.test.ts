@@ -138,7 +138,10 @@ describe("navigation manifest — derivation", () => {
     const owner = navTree(access("OWNER")).flatMap((g) => g.modules.map((m) => m.node.id));
     const staff = navTree(access("STAFF")).flatMap((g) => g.modules.map((m) => m.node.id));
     expect(owner).toEqual(["home", "orders", "products", "inventory", "customers", "messages", "marketing", "storefront", "finance", "analytics", "settings", "administration"]);
-    expect(staff).not.toContain("administration"); // team, audit log and storage are all owner-only
+    // Team, audit log and storage are owner-only; staff see Administration only for System health (ops.read).
+    expect(staff).toContain("administration");
+    const staffAdmin = navTree(access("STAFF")).flatMap((g) => g.modules).find((m) => m.node.id === "administration");
+    expect(staffAdmin?.children.map((c) => c.node.id) ?? []).toEqual(["administration.system-health"]);
     const staffSettings = navTree(access("STAFF")).flatMap((g) => g.modules).find((m) => m.node.id === "settings")!;
     expect(staffSettings.children.map((c) => c.node.id)).toEqual(["settings.store", "settings.payment-methods"]);
   });
