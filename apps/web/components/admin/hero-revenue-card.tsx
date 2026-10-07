@@ -1,4 +1,4 @@
-import { ShoppingBag, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { ShoppingBag, TrendingDown, TrendingUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Sparkline } from "@/components/admin/sparkline";
 import { cn } from "@/lib/utils";
@@ -33,47 +33,29 @@ export function HeroRevenueCard({
   const isUp = hasTrend && trendPct! >= 0;
 
   return (
-    <Card
-      className={cn(
-        "group relative flex flex-col justify-between overflow-hidden border-ink-900 bg-ink-900 p-6 text-cream-50 transition-all duration-300 ease-smooth hover:-translate-y-1 hover:shadow-floatLg sm:p-7",
-        className,
-      )}
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-success-500/10 blur-3xl transition-transform duration-300 ease-smooth group-hover:scale-110"
-      />
-
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10">
-          <Wallet size={20} />
-        </div>
+    <Card className={cn("flex flex-col justify-between p-6 sm:p-7", className)}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[13px] font-medium text-fg-muted">{label}</p>
         {hasTrend && (
-          <span
-            className={cn(
-              "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold",
-              isUp ? "bg-success-500/15 text-success-400" : "bg-danger-500/15 text-danger-400",
-            )}
-          >
-            {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-            {Math.abs(trendPct!).toFixed(0)}% {trendLabel}
+          <span className={cn("flex shrink-0 items-center gap-1 whitespace-nowrap text-[12.5px] font-semibold", isUp ? "text-success-700" : "text-danger-600")}>
+            {isUp ? <TrendingUp size={13} aria-hidden /> : <TrendingDown size={13} aria-hidden />}
+            {Math.abs(trendPct!).toFixed(0)}% <span className="font-medium text-fg-muted">{trendLabel}</span>
           </span>
         )}
       </div>
 
-      <div className="relative mt-6 space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-cream-50/50">{label}</p>
-        <p className="text-4xl font-semibold tabular-nums leading-tight tracking-tight sm:text-[2.75rem]">{value}</p>
-        <p className="flex items-center gap-1.5 text-sm text-cream-50/60">
-          <ShoppingBag size={14} /> {todayOrders} order{todayOrders === 1 ? "" : "s"} {ordersSuffix}
+      <div className="mt-3 space-y-1">
+        <p className="text-[40px] font-semibold tabular-nums leading-tight tracking-tight text-fg">{value}</p>
+        <p className="flex items-center gap-1.5 text-[13px] text-fg-muted">
+          <ShoppingBag size={14} aria-hidden /> {todayOrders} order{todayOrders === 1 ? "" : "s"} {ordersSuffix}
         </p>
       </div>
 
-      <div className="relative mt-6">
-        <div className="h-14 text-cream-50/70">
+      <div className="mt-5">
+        <div className="h-14 text-accent">
           <Sparkline data={series} className="h-full w-full" />
         </div>
-        {series.length > 1 && <p className="mt-1.5 text-[11px] text-cream-50/40">Realised net sales — last {series.length} days</p>}
+        {series.length > 1 && <p className="mt-1.5 text-xs text-fg-subtle">Realised net sales — last {series.length} days</p>}
       </div>
     </Card>
   );

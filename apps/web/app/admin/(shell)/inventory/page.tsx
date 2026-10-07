@@ -18,6 +18,7 @@ import { Pagination } from "@/components/admin/pagination";
 import { AdjustStockModal, type AdjustStockPrefill } from "@/components/admin/adjust-stock-modal";
 import * as inventoryApi from "@/lib/api/inventory";
 import { cn } from "@/lib/utils";
+import { formatStoreDateTime } from "@/lib/format";
 
 const REASONS = ["ORDER", "CANCELLATION", "RETURN", "RESTOCK", "ADJUSTMENT", "IMPORT", "DAMAGED", "LOST"] as const;
 
@@ -158,7 +159,7 @@ export default function InventoryPage() {
               )}
               {data?.items.map((m) => (
                 <tr key={m.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                  <td className="px-4 py-3 text-ink-500">{new Date(m.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-ink-500">{formatStoreDateTime(m.createdAt)}</td>
                   <td className="px-4 py-3">
                     {m.variant ? (
                       <>
@@ -228,7 +229,7 @@ export default function InventoryPage() {
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className={REASON_BADGE[m.reason]}>{m.reason}</Badge>
-                <span>{new Date(m.createdAt).toLocaleString()}</span>
+                <span>{formatStoreDateTime(m.createdAt)}</span>
               </div>
               {m.orderId && (
                 <Link href={`/admin/orders/${m.orderId}`} className="text-brass-600 hover:underline">
