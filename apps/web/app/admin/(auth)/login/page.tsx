@@ -54,8 +54,8 @@ function LoginForm() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Store Console</h1>
-      <p className="mb-6 text-sm text-ink-500">Sign in to manage your store</p>
+      <h1 className="text-2xl font-semibold tracking-tight text-fg">Sign in</h1>
+      <p className="mb-7 mt-1 text-sm text-fg-muted">to manage your store</p>
 
       {publicRuntimeConfig().googleClientId && (
         <>
@@ -79,7 +79,7 @@ function LoginForm() {
 
         {serverError && <p className="text-sm text-danger-600">{serverError}</p>}
 
-        <Button type="submit" variant="brass" className="w-full" disabled={isSubmitting}>
+        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting}>
           {isSubmitting ? "Signing in…" : "Sign in"}
         </Button>
       </form>
