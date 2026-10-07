@@ -52,6 +52,14 @@ export const PERMISSIONS = [
   "inventory.adjust",
   "ops.read", // outbox status, reliability report, drift reports
   "ops.repair", // outbox retry, payment-ledger repair, read-model rebuild
+  // financial core (docs/FINANCE_PHASE_1.md §7) — OWNER-only until the owner decides on a finance role (F0-5)
+  "finance.read", // ledger, journals, trial balance, financial accounts, finance audit trail
+  "finance.transact", // draft journals, opening-balance drafts
+  "finance.post", // post journals and opening balances
+  "finance.reverse", // reverse / correct posted journals
+  "finance.configure", // business settings & opening date, chart of accounts, mappings, financial accounts
+  "finance.period_close", // soft-close / close / reopen periods; post into soft-closed periods
+  "finance.reconcile", // run reconciliation checks, retry financial events
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -68,6 +76,13 @@ export const OWNER_ONLY_PERMISSIONS = [
   "storefront.configure",
   "settings.manage",
   "ops.repair",
+  "finance.read",
+  "finance.transact",
+  "finance.post",
+  "finance.reverse",
+  "finance.configure",
+  "finance.period_close",
+  "finance.reconcile",
 ] as const satisfies readonly Permission[];
 
 const ownerOnly = new Set<Permission>(OWNER_ONLY_PERMISSIONS);

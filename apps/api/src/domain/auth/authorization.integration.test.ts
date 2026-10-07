@@ -123,7 +123,42 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/storage/trash",
   "POST /api/storage/trash/:batch/restore",
   // Phase 12 D-4: provider status (settings.manage, OWNER-only).
-  "GET /api/v1/ops/providers",
+  "GET /api/v1/ops/providers",  // Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §7): every finance.* permission is OWNER-only until a finance role is decided.
+  "GET /api/v1/finance/business",
+  "PATCH /api/v1/finance/business",
+  "GET /api/v1/finance/accounts",
+  "POST /api/v1/finance/accounts",
+  "PATCH /api/v1/finance/accounts/:id",
+  "GET /api/v1/finance/accounts/:id/ledger",
+  "GET /api/v1/finance/mappings",
+  "PUT /api/v1/finance/mappings/:key",
+  "GET /api/v1/finance/financial-accounts",
+  "POST /api/v1/finance/financial-accounts",
+  "PATCH /api/v1/finance/financial-accounts/:id",
+  "GET /api/v1/finance/periods",
+  "POST /api/v1/finance/periods/:id/soft-close",
+  "POST /api/v1/finance/periods/:id/close",
+  "POST /api/v1/finance/periods/:id/reopen",
+  "GET /api/v1/finance/journals",
+  "GET /api/v1/finance/journals/:id",
+  "POST /api/v1/finance/journals",
+  "PUT /api/v1/finance/journals/:id",
+  "DELETE /api/v1/finance/journals/:id",
+  "POST /api/v1/finance/journals/:id/post",
+  "POST /api/v1/finance/journals/:id/reverse",
+  "POST /api/v1/finance/journals/:id/correct",
+  "GET /api/v1/finance/trial-balance",
+  "GET /api/v1/finance/events",
+  "POST /api/v1/finance/events/:id/retry",
+  "GET /api/v1/finance/opening-balances",
+  "PUT /api/v1/finance/opening-balances/lines",
+  "PUT /api/v1/finance/opening-balances/inventory",
+  "POST /api/v1/finance/opening-balances/inventory/prefill",
+  "POST /api/v1/finance/opening-balances/post",
+  "GET /api/v1/finance/reconciliation/checks",
+  "GET /api/v1/finance/reconciliation/runs",
+  "POST /api/v1/finance/reconciliation/run",
+  "GET /api/v1/finance/audit",
 ];
 // Phase 12 D-4: GET /api/v1/ops/capabilities is ops.read (OWNER and STAFF), so it is not in the OWNER-only list.
 
@@ -219,9 +254,10 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 326 admin routes, each with exactly one permission (or explicit self-service)", () => {
+  it("covers all 361 admin routes, each with exactly one permission (or explicit self-service)", () => {
     // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore
-    expect(routes).toHaveLength(326);
+    // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6)
+    expect(routes).toHaveLength(361);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

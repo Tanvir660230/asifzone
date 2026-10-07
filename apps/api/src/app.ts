@@ -46,6 +46,7 @@ import { campaignRouter } from "./modules/campaigns/campaign.routes";
 import { courierRouter } from "./modules/courier/courier.routes";
 import { checkoutV1Router } from "./modules/checkout/checkout.routes";
 import { storefrontReadModelRouter } from "./modules/storefront/read-model.routes";
+import { financeRouter } from "./modules/finance/finance.routes";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
@@ -129,6 +130,8 @@ app.use("/api/v1/checkout", checkoutV1Router);
 app.use("/api/v1/storefront/read-model", storefrontReadModelRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/outbox", outboxRouter);
+// Financial Core (docs/FINANCE_PHASE_1.md §6): the books of the business — OWNER-only finance.* permissions.
+app.use("/api/v1/finance", financeRouter);
 // Phase 11: counts-only attention signals — an admin with ops.read, or an external monitor with OPS_MONITOR_TOKEN.
 // Mounted before the ops router (whose router-level requireAdmin would otherwise run first).
 app.get(

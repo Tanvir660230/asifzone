@@ -2443,3 +2443,470 @@ model OutboxEvent {
   @@index([status, availableAt])
   @@index([aggregateType, aggregateId])
 }
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// FINANCIAL CORE — Phase 1 (docs/FINANCE_PHASE_1.md). The ledger of the BUSINESS (one business, several brands). Every
+// journal is written by apps/api/src/domain/finance/journal.service.ts only (architecture guard). Database triggers
+// (migration 20261011100000_finance_phase1_foundation) enforce: posted journals are immutable and balanced, lines post only
+// to active postable accounts of the same business, nothing posts into a CLOSED period or before the opening date, and
+// every change to a finance record commits together with its FinanceAuditEntry. Actor columns are plain ids (history
+// outlives an admin account). Money: Decimal(18,2) major units of the business currency.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  COGS
+  EXPENSE
+  OTHER_INCOME
+  OTHER_EXPENSE
+}
+
+enum LedgerNormalBalance {
+  DEBIT
+  CREDIT
+}
+
+/// How an amount that depends on product cost was valued. KNOWN = a recorded cost (order-line snapshot, supplier invoice);
+/// ESTIMATED = an owner estimate or the current catalog cost; MISSING = no cost exists (valued at 0, flagged); OPENING_BALANCE =
+/// carried in from the opening inventory count.
+enum FinanceValuationStatus {
+  KNOWN
+  ESTIMATED
+  MISSING
+  OPENING_BALANCE
+}
+
+enum FinancialAccountKind {
+  CASH
+  BANK
+  MOBILE_WALLET
+  PAYMENT_GATEWAY
+  COURIER
+  OTHER
+}
+
+enum FinancialPeriodStatus {
+  OPEN
+  SOFT_CLOSED
+  CLOSED
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+}
+
+enum JournalEntryKind {
+  MANUAL
+  OPENING_BALANCE
+  EVENT
+  REVERSAL
+  CORRECTION
+}
+
+enum FinancialEventStatus {
+  RECEIVED
+  POSTED
+  FAILED
+  IGNORED
+}
+
+enum FinanceActorType {
+  ADMIN
+  SYSTEM
+}
+
+enum OpeningBalanceStatus {
+  DRAFT
+  POSTED
+}
+
+enum OpeningBalanceCategory {
+  CASH
+  BANK
+  MOBILE_WALLET
+  PAYMENT_ACCOUNT
+  INVENTORY
+  RECEIVABLE
+  PAYABLE
+  LOAN
+  FIXED_ASSET
+  CAPITAL
+  OTHER_ASSET
+  OTHER_LIABILITY
+  OTHER_EQUITY
+}
+
+enum OpeningInventoryConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ReconciliationStatus {
+  MATCHED
+  DIFFERENCE
+  NOT_APPLICABLE
+  ERROR
+}
+
+/// The business whose books these are. Brands (and, later, other installations) report INTO a business.
+model FinanceBusiness {
+  id                   String               @id @default(cuid())
+  key                  String               @unique
+  name                 String
+  /// ISO 4217 functional currency; every journal is in it (multi-currency is not supported in Phase 1).
+  baseCurrency         String               @db.VarChar(3)
+  /// IANA timezone of the business day that journal dates and periods use.
+  timezone             String
+  /// 1–12. Bangladesh's fiscal year starts in July.
+  fiscalYearStartMonth Int                  @default(7)
+  /// The Financial Opening Date: the books start here. Nothing posts before it; opening balances are dated on it. Locked
+  /// once the opening balances are posted.
+  openingDate          DateTime?            @db.Date
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  brands               FinanceBrand[]
+  accounts             LedgerAccount[]
+  mappings             AccountMapping[]
+  financialAccounts    FinancialAccount[]
+  periods              FinancialPeriod[]
+  journalEntries       JournalEntry[]
+  events               FinancialEvent[]
+  openingBatch         OpeningBalanceBatch?
+  reconciliationRuns   ReconciliationRun[]
+}
+
+/// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
+/// that runs as its own installation records that installation's INSTALL_ID; its events identify themselves by it.
+model FinanceBrand {
+  id         String          @id @default(cuid())
+  businessId String
+  business   FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  key        String
+  name       String
+  installId  String?
+  isActive   Boolean         @default(true)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([businessId, key])
+  @@unique([businessId, installId])
+}
+
+/// Chart of accounts. Group accounts (isPostable = false) only sum their children. Type and normal balance never change
+/// once the account carries a posted line (trigger).
+model LedgerAccount {
+  id               String               @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  code             String
+  name             String
+  description      String?
+  type             LedgerAccountType
+  normalBalance    LedgerNormalBalance
+  parentId         String?
+  parent           LedgerAccount?       @relation("LedgerAccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children         LedgerAccount[]      @relation("LedgerAccountTree")
+  isPostable       Boolean              @default(true)
+  /// Created from the template or by the system (financial-account children); can be renamed, not deleted.
+  isSystem         Boolean              @default(false)
+  isActive         Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  lines            JournalLine[]
+  mappings         AccountMapping[]
+  financialAccount FinancialAccount?
+  openingLines     OpeningBalanceLine[]
+
+  @@unique([businessId, code])
+  @@index([businessId, type])
+  @@index([parentId])
+}
+
+/// The ONLY way code finds the account to post to: a stable key (packages/shared finance/accounts.ts) → an account.
+model AccountMapping {
+  id         String          @id @default(cuid())
+  businessId String
+  business   FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  key        String
+  accountId  String
+  account    LedgerAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([businessId, key])
+}
+
+/// A place money is held (cash box, bank account, bKash/Nagad wallet, gateway or courier clearing). Each has its own ledger
+/// account; its balance IS that account's ledger balance — never a stored number.
+model FinancialAccount {
+  id                 String               @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId            String?
+  kind               FinancialAccountKind
+  name               String
+  /// "bKash", "Nagad", "Dutch-Bangla Bank", "SSLCommerz", "Steadfast", …
+  provider           String?
+  accountNumberLast4 String?              @db.VarChar(4)
+  currency           String               @db.VarChar(3)
+  ledgerAccountId    String               @unique
+  ledgerAccount      LedgerAccount        @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  isActive           Boolean              @default(true)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  openingLines       OpeningBalanceLine[]
+
+  @@unique([businessId, name])
+}
+
+/// One calendar month of business dates. OPEN: anyone allowed posts. SOFT_CLOSED: only finance.period_close holders post.
+/// CLOSED: nothing posts (trigger); a late event is dated into the next open period.
+model FinancialPeriod {
+  id              String                @id @default(cuid())
+  businessId      String
+  business        FinanceBusiness       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  startDate       DateTime              @db.Date
+  endDate         DateTime              @db.Date
+  fiscalYear      Int
+  status          FinancialPeriodStatus @default(OPEN)
+  closedAt        DateTime?
+  closedByAdminId String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  journalEntries  JournalEntry[]
+
+  @@unique([businessId, startDate])
+}
+
+/// Gapless counters (journal numbers), incremented under a row lock.
+model FinanceSequence {
+  businessId String
+  name       String
+  next       Int    @default(1)
+
+  @@id([businessId, name])
+}
+
+model JournalEntry {
+  id               String               @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId          String?
+  /// Gapless per business, assigned when posted. Null while DRAFT.
+  number           Int?
+  /// Accounting date (business date).
+  entryDate        DateTime             @db.Date
+  periodId         String
+  period           FinancialPeriod      @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  status           JournalEntryStatus   @default(DRAFT)
+  kind             JournalEntryKind
+  description      String
+  reference        String?
+  currency         String               @db.VarChar(3)
+  totalDebit       Decimal              @default(0) @db.Decimal(18, 2)
+  totalCredit      Decimal              @default(0) @db.Decimal(18, 2)
+  /// What produced it: "MANUAL", "OPENING_BALANCE", or the source entity of an event ("Order", …).
+  sourceType       String?
+  sourceId         String?
+  financialEventId String?              @unique
+  financialEvent   FinancialEvent?      @relation(fields: [financialEventId], references: [id], onDelete: Restrict)
+  /// Unique per business: a repeated request / event / reversal returns the entry it already made.
+  idempotencyKey   String?
+  /// Content fingerprint stored with the key, to refuse a DIFFERENT request reusing the same key.
+  fingerprint      String?
+  /// The entry this one reverses (at most one reversal per entry).
+  reversesEntryId  String?              @unique
+  reversesEntry    JournalEntry?        @relation("JournalReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedBy       JournalEntry?        @relation("JournalReversal")
+  /// The entry this one corrects (posted together with that entry's reversal; at most one correction per entry).
+  correctsEntryId  String?              @unique
+  correctsEntry    JournalEntry?        @relation("JournalCorrection", fields: [correctsEntryId], references: [id], onDelete: Restrict)
+  correctedBy      JournalEntry?        @relation("JournalCorrection")
+  reason           String?
+  createdByAdminId String?
+  postedByAdminId  String?
+  postedAt         DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  lines            JournalLine[]
+  openingBatch     OpeningBalanceBatch?
+
+  @@unique([businessId, idempotencyKey])
+  @@unique([businessId, number])
+  @@index([businessId, entryDate])
+  @@index([businessId, status])
+  @@index([sourceType, sourceId])
+  @@index([periodId])
+}
+
+model JournalLine {
+  id              String                  @id @default(cuid())
+  entryId         String
+  entry           JournalEntry            @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  lineNo          Int
+  accountId       String
+  account         LedgerAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  /// Exactly one of debit / credit is positive (CHECK constraint).
+  debit           Decimal                 @default(0) @db.Decimal(18, 2)
+  credit          Decimal                 @default(0) @db.Decimal(18, 2)
+  brandId         String?
+  memo            String?
+  /// Sub-ledger party (supplier, customer, employee, equity holder, lender) — typed in later phases.
+  partyType       String?
+  partyId         String?
+  /// Set on lines whose amount depends on product cost (inventory, COGS).
+  valuationStatus FinanceValuationStatus?
+  createdAt       DateTime                @default(now())
+
+  @@unique([entryId, lineNo])
+  @@index([accountId])
+  @@index([brandId])
+}
+
+/// The accounting inbox: one row per financial event (packages/shared finance/events.ts envelope). (sourceInstallId,
+/// eventKey) is the event's accounting identity — a repeat delivery finds the row instead of adding one.
+model FinancialEvent {
+  id               String               @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId          String
+  sourceInstallId  String
+  sourceSystem     String
+  sourceEntityType String
+  sourceEntityId   String
+  eventType        String
+  eventVersion     Int
+  eventKey         String
+  occurredAt       DateTime
+  financialDate    DateTime             @db.Date
+  currency         String               @db.VarChar(3)
+  payload          Json
+  status           FinancialEventStatus @default(RECEIVED)
+  attempts         Int                  @default(0)
+  lastError        String?
+  receivedAt       DateTime             @default(now())
+  processedAt      DateTime?
+  updatedAt        DateTime             @updatedAt
+  journalEntry     JournalEntry?
+
+  @@unique([sourceInstallId, eventKey])
+  @@index([status, receivedAt])
+  @@index([sourceEntityType, sourceEntityId])
+  @@index([businessId, eventType])
+}
+
+/// Financial audit trail — append-only (trigger), written INSIDE the transaction of the change it records. A deferred
+/// trigger refuses to commit a change to a finance record without a row here from the same transaction (txId).
+model FinanceAuditEntry {
+  id            String           @id @default(cuid())
+  businessId    String?
+  actorType     FinanceActorType
+  actorAdminId  String?
+  /// Who/what, readable without joins (admin email, "system:bootstrap", "event:<installId>").
+  actorLabel    String
+  action        String
+  entityType    String
+  entityId      String
+  before        Json?
+  after         Json?
+  reason        String?
+  sourceType    String?
+  sourceRef     String?
+  correlationId String?
+  txId          BigInt           @default(dbgenerated("txid_current()"))
+  createdAt     DateTime         @default(now())
+
+  @@index([entityType, entityId])
+  @@index([businessId, createdAt])
+  @@index([txId])
+}
+
+/// The opening balances of the business at its Financial Opening Date. One batch per business: editable while DRAFT,
+/// posted once as a single OPENING_BALANCE journal (the difference goes to Opening balance equity), then immutable.
+model OpeningBalanceBatch {
+  id               String                 @id @default(cuid())
+  businessId       String                 @unique
+  business         FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  openingDate      DateTime               @db.Date
+  status           OpeningBalanceStatus   @default(DRAFT)
+  notes            String?
+  journalEntryId   String?                @unique
+  journalEntry     JournalEntry?          @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  createdByAdminId String?
+  postedByAdminId  String?
+  postedAt         DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  lines            OpeningBalanceLine[]
+  inventoryItems   OpeningInventoryItem[]
+}
+
+model OpeningBalanceLine {
+  id                 String                 @id @default(cuid())
+  batchId            String
+  batch              OpeningBalanceBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  lineNo             Int
+  category           OpeningBalanceCategory
+  accountId          String
+  account            LedgerAccount          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  financialAccountId String?
+  financialAccount   FinancialAccount?      @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  side               LedgerNormalBalance
+  amount             Decimal                @db.Decimal(18, 2)
+  brandId            String?
+  partyType          String?
+  partyId            String?
+  description        String?
+
+  @@unique([batchId, lineNo])
+}
+
+/// The opening inventory count, one row per SKU. Its valued total becomes the inventory line of the opening journal.
+/// MISSING rows (no trustworthy cost) are valued at 0 and stay visible as unvalued inventory — never given an invented cost.
+model OpeningInventoryItem {
+  id              String                      @id @default(cuid())
+  batchId         String
+  batch           OpeningBalanceBatch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  /// Plain id (no FK): the count is history, it outlives the catalog.
+  variantId       String?
+  sku             String
+  name            String
+  quantity        Int
+  unitCost        Decimal?                    @db.Decimal(18, 2)
+  valuationAmount Decimal                     @default(0) @db.Decimal(18, 2)
+  valuationStatus FinanceValuationStatus
+  /// How the value was obtained: VARIANT_COST_PRICE, SUPPLIER_INVOICE, OWNER_ESTIMATE, NONE, …
+  valuationMethod String
+  valuationSource String?
+  valuationDate   DateTime                    @db.Date
+  confidence      OpeningInventoryConfidence?
+  notes           String?
+  brandId         String?
+
+  @@unique([batchId, sku])
+}
+
+/// One run of one reconciliation check (diagnostic history — the checks themselves read the live data).
+model ReconciliationRun {
+  id           String               @id @default(cuid())
+  businessId   String
+  business     FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  checkKey     String
+  fromDate     DateTime?            @db.Date
+  toDate       DateTime?            @db.Date
+  brandId      String?
+  status       ReconciliationStatus
+  expected     Decimal?             @db.Decimal(18, 2)
+  actual       Decimal?             @db.Decimal(18, 2)
+  difference   Decimal?             @db.Decimal(18, 2)
+  details      Json
+  ranByAdminId String?
+  createdAt    DateTime             @default(now())
+
+  @@index([businessId, checkKey, createdAt])
+}

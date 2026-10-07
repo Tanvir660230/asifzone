@@ -1,0 +1,188 @@
+/**
+ * Chart of accounts vocabulary and the default template (Financial Core Phase 1, docs/FINANCE_PHASE_1.md §3).
+ *
+ * Code never names an account id or code to post to: it names a MAPPING KEY (below), and the business's AccountMapping row
+ * says which account that key posts to. The template is only the starting point a business is bootstrapped with; every
+ * account and mapping is editable afterwards.
+ */
+
+export const LEDGER_ACCOUNT_TYPES = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "COGS", "EXPENSE", "OTHER_INCOME", "OTHER_EXPENSE"] as const;
+export type LedgerAccountType = (typeof LEDGER_ACCOUNT_TYPES)[number];
+
+export type NormalBalance = "DEBIT" | "CREDIT";
+
+/** The side that increases an account of this type. Contra accounts (accumulated depreciation, drawings, sales returns)
+ * override it explicitly on the account. */
+export function defaultNormalBalance(type: LedgerAccountType): NormalBalance {
+  return type === "ASSET" || type === "COGS" || type === "EXPENSE" || type === "OTHER_EXPENSE" ? "DEBIT" : "CREDIT";
+}
+
+/** Balance-sheet accounts carry their balance forward; income-statement accounts reset each fiscal year (via retained
+ * earnings at year end — Phase 14). */
+export function isBalanceSheetType(type: LedgerAccountType): boolean {
+  return type === "ASSET" || type === "LIABILITY" || type === "EQUITY";
+}
+
+/**
+ * Every place the system posts to automatically. Adding a key here is the only way code gains a new posting target.
+ * `group.*` keys are PARENT (non-postable) accounts under which the system creates one child per financial account.
+ */
+export const ACCOUNT_MAPPING_KEYS = [
+  "group.cash",
+  "group.bank",
+  "group.mobile_wallet",
+  "group.payment_gateway",
+  "group.courier",
+  "group.other_money",
+  "equity.opening_balance",
+  "equity.owner_capital",
+  "equity.retained_earnings",
+  "asset.inventory",
+  "asset.receivable_trade",
+  "asset.fixed_assets",
+  "liability.payable_trade",
+  "liability.customer_deposits",
+  "liability.store_credit",
+  "liability.vat_output",
+  "liability.loans",
+  "revenue.merchandise",
+  "revenue.shipping",
+  "revenue.returns_refunds",
+  "cogs.goods",
+  "cogs.inventory_shrinkage",
+] as const;
+export type AccountMappingKey = (typeof ACCOUNT_MAPPING_KEYS)[number];
+
+export function isAccountMappingKey(value: string): value is AccountMappingKey {
+  return (ACCOUNT_MAPPING_KEYS as readonly string[]).includes(value);
+}
+
+/**
+ * Mapping keys whose ledger figure is reconciled against an existing authoritative business figure (the metrics registry,
+ * docs/METRICS_REGISTRY.md). Revenue: the dashboard's realised net sales = merchandise sales − merchandise refunds, both
+ * VAT-exclusive, so the ledger side is revenue.merchandise − revenue.returns_refunds. Cost: the dashboard's recorded COGS.
+ */
+export const RECONCILED_REVENUE_KEYS = { revenue: "revenue.merchandise", contra: "revenue.returns_refunds" } as const satisfies Record<string, AccountMappingKey>;
+export const RECONCILED_COGS_KEY: AccountMappingKey = "cogs.goods";
+
+export interface ChartTemplateAccount {
+  code: string;
+  name: string;
+  type: LedgerAccountType;
+  /** Parent code; absent = top level. */
+  parent?: string;
+  /** Group (summing) accounts can't take postings. */
+  group?: boolean;
+  /** Overrides the type's normal balance (contra accounts). */
+  normalBalance?: NormalBalance;
+  mapping?: AccountMappingKey;
+}
+
+/** A Bangladesh-ready starting chart (VAT, bKash/Nagad, courier COD clearing). Codes are 4 digits; groups end in 00. */
+export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
+  { code: "1000", name: "Assets", type: "ASSET", group: true },
+  { code: "1100", name: "Cash in hand", type: "ASSET", parent: "1000", group: true, mapping: "group.cash" },
+  { code: "1200", name: "Bank accounts", type: "ASSET", parent: "1000", group: true, mapping: "group.bank" },
+  { code: "1300", name: "Mobile wallets (bKash, Nagad)", type: "ASSET", parent: "1000", group: true, mapping: "group.mobile_wallet" },
+  { code: "1400", name: "Payment gateway clearing", type: "ASSET", parent: "1000", group: true, mapping: "group.payment_gateway" },
+  { code: "1450", name: "Courier COD clearing", type: "ASSET", parent: "1000", group: true, mapping: "group.courier" },
+  { code: "1480", name: "Other money accounts", type: "ASSET", parent: "1000", group: true, mapping: "group.other_money" },
+  { code: "1500", name: "Receivables", type: "ASSET", parent: "1000", group: true },
+  { code: "1510", name: "Trade receivables", type: "ASSET", parent: "1500", mapping: "asset.receivable_trade" },
+  { code: "1520", name: "Employee advances", type: "ASSET", parent: "1500" },
+  { code: "1600", name: "Inventory", type: "ASSET", parent: "1000", group: true },
+  { code: "1610", name: "Merchandise inventory", type: "ASSET", parent: "1600", mapping: "asset.inventory" },
+  { code: "1700", name: "Other current assets", type: "ASSET", parent: "1000", group: true },
+  { code: "1710", name: "VAT input recoverable", type: "ASSET", parent: "1700" },
+  { code: "1720", name: "Prepaid expenses", type: "ASSET", parent: "1700" },
+  { code: "1800", name: "Fixed assets", type: "ASSET", parent: "1000", group: true },
+  { code: "1810", name: "Equipment & machinery", type: "ASSET", parent: "1800", mapping: "asset.fixed_assets" },
+  { code: "1820", name: "Furniture & fixtures", type: "ASSET", parent: "1800" },
+  { code: "1830", name: "Computers", type: "ASSET", parent: "1800" },
+  { code: "1840", name: "Vehicles", type: "ASSET", parent: "1800" },
+  { code: "1890", name: "Accumulated depreciation", type: "ASSET", parent: "1800", normalBalance: "CREDIT" },
+
+  { code: "2000", name: "Liabilities", type: "LIABILITY", group: true },
+  { code: "2100", name: "Payables", type: "LIABILITY", parent: "2000", group: true },
+  { code: "2110", name: "Trade payables (suppliers)", type: "LIABILITY", parent: "2100", mapping: "liability.payable_trade" },
+  { code: "2120", name: "Owner paid on behalf of business", type: "LIABILITY", parent: "2100" },
+  { code: "2200", name: "Customer liabilities", type: "LIABILITY", parent: "2000", group: true },
+  { code: "2210", name: "Customer deposits", type: "LIABILITY", parent: "2200", mapping: "liability.customer_deposits" },
+  { code: "2220", name: "Store credit liability", type: "LIABILITY", parent: "2200", mapping: "liability.store_credit" },
+  { code: "2230", name: "Refunds payable", type: "LIABILITY", parent: "2200" },
+  { code: "2300", name: "Taxes", type: "LIABILITY", parent: "2000", group: true },
+  { code: "2310", name: "VAT output payable", type: "LIABILITY", parent: "2300", mapping: "liability.vat_output" },
+  { code: "2320", name: "Withholding tax payable (TDS/VDS)", type: "LIABILITY", parent: "2300" },
+  { code: "2400", name: "Payroll liabilities", type: "LIABILITY", parent: "2000", group: true },
+  { code: "2410", name: "Salaries payable", type: "LIABILITY", parent: "2400" },
+  { code: "2500", name: "Loans", type: "LIABILITY", parent: "2000", group: true },
+  { code: "2510", name: "Bank loans", type: "LIABILITY", parent: "2500", mapping: "liability.loans" },
+  { code: "2520", name: "Partner loans", type: "LIABILITY", parent: "2500" },
+  { code: "2900", name: "Other liabilities", type: "LIABILITY", parent: "2000" },
+
+  { code: "3000", name: "Equity", type: "EQUITY", group: true },
+  { code: "3100", name: "Owner capital", type: "EQUITY", parent: "3000", mapping: "equity.owner_capital" },
+  { code: "3200", name: "Partner current accounts", type: "EQUITY", parent: "3000" },
+  { code: "3300", name: "Drawings", type: "EQUITY", parent: "3000", normalBalance: "DEBIT" },
+  { code: "3400", name: "Retained earnings", type: "EQUITY", parent: "3000", mapping: "equity.retained_earnings" },
+  { code: "3900", name: "Opening balance equity", type: "EQUITY", parent: "3000", mapping: "equity.opening_balance" },
+
+  { code: "4000", name: "Revenue", type: "REVENUE", group: true },
+  { code: "4100", name: "Merchandise sales", type: "REVENUE", parent: "4000", mapping: "revenue.merchandise" },
+  { code: "4200", name: "Shipping income", type: "REVENUE", parent: "4000", mapping: "revenue.shipping" },
+  { code: "4300", name: "Sales returns & refunds", type: "REVENUE", parent: "4000", normalBalance: "DEBIT", mapping: "revenue.returns_refunds" },
+
+  { code: "5000", name: "Cost of goods sold", type: "COGS", group: true },
+  { code: "5100", name: "Cost of goods sold", type: "COGS", parent: "5000", mapping: "cogs.goods" },
+  { code: "5200", name: "Inventory shrinkage & write-offs", type: "COGS", parent: "5000", mapping: "cogs.inventory_shrinkage" },
+
+  { code: "6000", name: "Operating expenses", type: "EXPENSE", group: true },
+  { code: "6100", name: "Rent", type: "EXPENSE", parent: "6000" },
+  { code: "6200", name: "Salaries & wages", type: "EXPENSE", parent: "6000" },
+  { code: "6300", name: "Utilities", type: "EXPENSE", parent: "6000" },
+  { code: "6400", name: "Internet, software & hosting", type: "EXPENSE", parent: "6000" },
+  { code: "6500", name: "Marketing & advertising", type: "EXPENSE", parent: "6000" },
+  { code: "6600", name: "Delivery & courier", type: "EXPENSE", parent: "6000" },
+  { code: "6700", name: "Payment gateway fees", type: "EXPENSE", parent: "6000" },
+  { code: "6800", name: "Packaging", type: "EXPENSE", parent: "6000" },
+  { code: "6850", name: "Depreciation", type: "EXPENSE", parent: "6000" },
+  { code: "6900", name: "Other operating expenses", type: "EXPENSE", parent: "6000" },
+
+  { code: "7000", name: "Other income", type: "OTHER_INCOME", group: true },
+  { code: "7100", name: "Interest income", type: "OTHER_INCOME", parent: "7000" },
+  { code: "7900", name: "Miscellaneous income", type: "OTHER_INCOME", parent: "7000" },
+
+  { code: "8000", name: "Other expenses & finance costs", type: "OTHER_EXPENSE", group: true },
+  { code: "8100", name: "Interest expense", type: "OTHER_EXPENSE", parent: "8000" },
+  { code: "8200", name: "Bank & financing charges", type: "OTHER_EXPENSE", parent: "8000" },
+  { code: "8900", name: "Miscellaneous expenses", type: "OTHER_EXPENSE", parent: "8000" },
+];
+
+/** Structural check of a chart template (also run on the default in tests): unique codes, parents exist and share the
+ * type, mappings unique and complete. Returns problems; empty = valid. */
+export function validateChartTemplate(accounts: readonly ChartTemplateAccount[]): string[] {
+  const problems: string[] = [];
+  const byCode = new Map<string, ChartTemplateAccount>();
+  for (const a of accounts) {
+    if (byCode.has(a.code)) problems.push(`duplicate code ${a.code}`);
+    byCode.set(a.code, a);
+  }
+  const mapped = new Map<string, string>();
+  for (const a of accounts) {
+    if (a.parent) {
+      const parent = byCode.get(a.parent);
+      if (!parent) problems.push(`${a.code}: parent ${a.parent} missing`);
+      else {
+        if (!parent.group) problems.push(`${a.code}: parent ${a.parent} is not a group`);
+        if (parent.type !== a.type) problems.push(`${a.code}: type ${a.type} differs from parent ${parent.type}`);
+      }
+    }
+    if (a.mapping) {
+      if (mapped.has(a.mapping)) problems.push(`mapping ${a.mapping} on ${mapped.get(a.mapping)} and ${a.code}`);
+      mapped.set(a.mapping, a.code);
+      if (a.mapping.startsWith("group.") !== Boolean(a.group)) problems.push(`${a.code}: mapping ${a.mapping} must ${a.group ? "not " : ""}be a group mapping`);
+    }
+  }
+  for (const key of ACCOUNT_MAPPING_KEYS) if (!mapped.has(key)) problems.push(`mapping ${key} not assigned`);
+  return problems;
+}
