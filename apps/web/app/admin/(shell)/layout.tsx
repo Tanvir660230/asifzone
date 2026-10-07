@@ -10,24 +10,14 @@ import { NotificationBell } from "@/components/admin/notification-bell";
 import { CommandPalette, useCommandPaletteHotkey, useCreateCommands } from "@/components/admin/command-palette";
 import { NAV_ICONS } from "@/components/admin/nav-icons";
 import { ShortcutHelp } from "@/components/admin/shortcut-help";
+import { AccountMenu } from "@/components/admin/account-menu";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { Toaster } from "@/components/ui/toast";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useNavAccess } from "@/hooks/use-nav-access";
 import { useShortcut } from "@/hooks/use-shortcut";
 import { documentTitleFor, goTargets } from "@/lib/admin/navigation";
 
-/** "Store Owner" -> "SO" — fallback avatar monogram, same convention as the storefront header's logo fallback. */
-function getInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return words
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-}
-
 export default function ShellLayout({ children }: { children: ReactNode }) {
-  const { data, isLoading } = useCurrentAdmin();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useCommandPaletteHotkey();
   const [createOpen, setCreateOpen] = useState(false);
@@ -69,7 +59,9 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    // data-surface="admin": the Store Console's own tokens (Apple-style, light only), whatever the store's brand theme.
+    // Overlays render inside this element, so modals, drawers and toasts carry the same surface.
+    <div data-surface="admin" className="flex h-screen overflow-hidden bg-canvas font-sans text-fg">
       <div className="print:hidden">
         <Sidebar mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       </div>
@@ -86,24 +78,24 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
           scroll viewport ends above the bar and no content (or a page's own sticky toolbar) can be hidden behind it. */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-          <header className="glass sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-ink-100/70 px-4 print:hidden sm:px-6">
-            <button onClick={() => setMobileNavOpen(true)} className="text-ink-600 lg:hidden" aria-label="Open menu">
-              <Menu size={22} />
+          <header className="glass sticky top-0 z-20 flex h-header shrink-0 items-center gap-3 border-b border-ink-900/[0.08] px-4 print:hidden sm:px-6">
+            <button onClick={() => setMobileNavOpen(true)} className="-ml-1 rounded-md p-1 text-ink-600 hover:bg-ink-900/[0.05] lg:hidden" aria-label="Open menu">
+              <Menu size={20} />
             </button>
+
+            <Breadcrumbs className="hidden min-w-0 md:flex" />
 
             <button
               onClick={() => setPaletteOpen(true)}
-              className="ml-3 flex h-9 min-w-0 items-center gap-2.5 rounded-full border border-ink-200 bg-cream-50/70 px-3 text-sm text-ink-400 transition-colors duration-150 ease-smooth hover:border-ink-300 hover:text-ink-600 sm:w-72 lg:ml-0"
+              className="ml-auto flex h-8 min-w-0 items-center gap-2 rounded-lg bg-ink-900/[0.05] px-2.5 text-[13px] text-fg-subtle transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.08] hover:text-fg-muted sm:w-64"
               aria-label="Search"
             >
-              <Search size={15} className="shrink-0" />
-              <span className="hidden truncate sm:inline">Search orders, customers…</span>
-              <kbd className="ml-auto hidden shrink-0 rounded border border-ink-200 bg-cream-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-ink-400 sm:inline">
-                {modKey} K
-              </kbd>
+              <Search size={14} className="shrink-0" />
+              <span className="hidden truncate sm:inline">Search</span>
+              <kbd className="ml-auto hidden shrink-0 font-sans text-[11px] font-medium text-fg-subtle sm:inline">{modKey} K</kbd>
             </button>
 
-            <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-1.5">
               {createItems.length > 0 && (
                 <>
                   <button
@@ -112,10 +104,10 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                     aria-label="Create"
                     aria-haspopup="menu"
                     aria-expanded={createOpen}
-                    className="flex h-8 items-center gap-1.5 rounded-full bg-ink-900 px-3 text-xs font-medium text-cream-50 transition-colors duration-150 ease-smooth hover:bg-ink-700"
+                    title="Create"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
                   >
-                    <Plus size={14} />
-                    <span className="hidden sm:inline">Create</span>
+                    <Plus size={18} />
                   </button>
                   <DropdownMenu open={createOpen} onClose={() => setCreateOpen(false)} anchorRef={createRef} items={createItems} />
                 </>
@@ -124,26 +116,22 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                 href="/"
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1.5 rounded-full border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400 hover:text-ink-900"
+                aria-label="View store (opens in a new tab)"
+                title="View store"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
               >
-                <ExternalLink size={13} />
-                <span className="hidden sm:inline">View store</span>
+                <ExternalLink size={16} />
               </Link>
               <NotificationBell />
-              <div className="flex items-center gap-2.5 border-l border-ink-200 pl-4">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-semibold text-cream-50">
-                  {isLoading || !data ? "…" : getInitials(data.admin.name)}
-                </span>
-                <div className="hidden leading-tight sm:block">
-                  <p className="text-sm font-medium text-ink-900">{isLoading ? "Loading…" : data?.admin.name}</p>
-                  <p className="text-xs text-ink-400">{data?.admin.role === "OWNER" ? "Owner" : "Staff"}</p>
-                </div>
-              </div>
+              <span className="mx-1.5 h-5 w-px bg-ink-900/[0.1]" aria-hidden />
+              <AccountMenu onShowShortcuts={() => setHelpOpen(true)} />
             </div>
           </header>
-          <main className="flex-1 p-4 sm:p-8 print:p-0">
-            <Breadcrumbs className="mb-3 print:hidden" />
-            {children}
+          <main className="flex-1 px-4 py-6 sm:px-page sm:py-8 print:p-0">
+            <div className="mx-auto w-full max-w-[1320px]">
+              <Breadcrumbs className="mb-3 print:hidden md:hidden" />
+              {children}
+            </div>
           </main>
         </div>
         <MobileBottomNav onOpenMore={() => setMobileNavOpen(true)} />

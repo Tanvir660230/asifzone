@@ -301,6 +301,61 @@
     @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] focus-visible:bg-ink-900/[0.05] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40;
   }
 
+  /* ── Store Console surface ──────────────────────────────────────────────────────────────────
+     The admin's Apple-style refinements of the shared recipes. Colors, radii, shadows and density already come from the
+     `admin` surface tokens; these only change shape where the store's recipe and the console's differ. Nothing here
+     reaches the storefront. */
+  [data-surface="admin"] .ui-control {
+    @apply h-control border-line bg-surface;
+  }
+  [data-surface="admin"] .ui-control:focus,
+  [data-surface="admin"] .ui-control:focus-visible {
+    @apply border-accent ring-4 ring-accent/15;
+  }
+  [data-surface="admin"] textarea.ui-control {
+    @apply h-auto;
+  }
+  /* Sentence-case column titles on a white head, like a Mac list view. */
+  [data-surface="admin"] .ui-table-container {
+    @apply border-line bg-surface shadow;
+  }
+  /* Mac list views set rows at 13px — denser than body text, so wide operational tables fit without scrolling. */
+  [data-surface="admin"] .ui-table {
+    @apply text-[13px];
+  }
+  [data-surface="admin"] .ui-table-head {
+    @apply border-b border-line bg-surface text-xs font-medium normal-case tracking-normal text-fg-muted;
+  }
+  /* Column titles stay sentence case even where a header control (a sort button) carries the caps-label style. */
+  [data-surface="admin"] thead th,
+  [data-surface="admin"] thead .uppercase {
+    @apply font-medium normal-case tracking-normal;
+  }
+  [data-surface="admin"] .ui-table-row {
+    @apply border-line-subtle;
+  }
+  [data-surface="admin"] .ui-table-row-interactive {
+    @apply hover:bg-ink-900/[0.025];
+  }
+  /* Small caps-labels ("TODAY'S ORDERS") read as sentence-case footnotes in the console, as Apple sets them. The labels
+     are authored in sentence case; only the transform and tracking come off. */
+  [data-surface="admin"] .uppercase:is(.tracking-wide, .tracking-wider, .tracking-widest) {
+    @apply normal-case tracking-normal;
+  }
+  [data-surface="admin"] .uppercase.text-\[11px\]:is(.tracking-wide, .tracking-wider) {
+    @apply text-xs;
+  }
+  /* Menus highlight like macOS: the pointed-at item fills with the accent. */
+  [data-surface="admin"] .ui-floating {
+    @apply rounded-xl border-ink-900/10 bg-surface/90;
+  }
+  [data-surface="admin"] .ui-menu-item {
+    @apply rounded-md px-2.5 py-1.5 text-[13px] text-fg hover:bg-accent hover:text-accent-fg focus-visible:bg-accent focus-visible:text-accent-fg;
+  }
+  [data-surface="admin"] .ui-overlay {
+    @apply bg-ink-950/20 backdrop-blur-[3px];
+  }
+
   /* ── Loading ────────────────────────────────────────────────────────────────────────────── */
 
   /* Shimmering placeholder block. Size it with utilities (h-4 w-1/2 …). */

@@ -45,7 +45,8 @@ export function SectionPreview({ type, values }: SectionPreviewProps) {
       <p className="border-b border-ink-100 bg-cream-50 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-ink-400">
         Live preview
       </p>
-      <div className="max-h-[65vh] overflow-y-auto">
+      {/* The real storefront components, in the store's own look rather than the admin surface around them. */}
+      <div data-surface="storefront" className="max-h-[65vh] overflow-y-auto bg-canvas font-sans text-fg">
         <SectionPreviewBody type={type} values={values} storeName={storeName} tagline={tagline} />
       </div>
     </div>

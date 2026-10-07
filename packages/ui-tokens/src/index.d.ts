@@ -7,6 +7,9 @@ interface UiTokens {
   /** Brand themes by id — each a set of `:root[data-brand="<id>"]` variable overrides (empty for `default`). */
   themes: Record<string, { label: string; cssVariables: Record<string, string>; bandVariables: Record<string, string> }>;
   DEFAULT_THEME: string;
+  /** Regions with their own identity, each the complete variable set for `[data-surface="<id>"]`: `admin` (the Store
+   * Console, independent of the brand theme) and `storefront` (a store-look region inside the admin). */
+  surfaces: Record<"admin" | "storefront", { cssVariables: Record<string, string> }>;
   /** Raw hex values per scale — for places that genuinely need a literal color (e.g. canvas/SVG export). */
   palette: Record<string, Scale>;
   /** Semantic role -> palette reference ("canvas" -> "cream-100"). */
@@ -17,6 +20,7 @@ interface UiTokens {
   fontFamily: { sans: string[]; display: string[] };
   fontSize: Record<string, [string, { lineHeight: string; letterSpacing?: string }]>;
   borderRadius: Scale;
+  /** Elevation scale as `var(--shadow-<key>)` references (values declared at :root; a surface may retune them). */
   boxShadow: Scale;
   zIndex: Scale;
   /** Admin density baseline (raw px values) — also declared as `--density-<name>` variables. */

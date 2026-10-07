@@ -73,6 +73,7 @@ const semantic = {
   "fg-subtle": "ink-400", // tertiary text / placeholders
   accent: "ink-900", // primary actions, active states, focus ring
   "accent-fg": "cream-50", // text on accent
+  "accent-hover": "ink-800", // a filled primary action under the pointer
 };
 
 /* ───────────────────────────── derived color tokens ───────────────────────────── */
@@ -165,6 +166,13 @@ const boxShadow = {
   inset: "inset 0 1px 2px 0 rgba(20,20,20,0.05)",
   glow: "0 0 0 4px rgba(17,17,17,0.10)",
 };
+// Each elevation is a CSS variable (`--shadow-lg`), like radii, so a surface can retune depth without new classes.
+const shadowVariable = (key) => `--shadow-${key === "DEFAULT" ? "default" : key}`;
+const boxShadowRefs = {};
+for (const [key, value] of Object.entries(boxShadow)) {
+  cssVariables[shadowVariable(key)] = value;
+  boxShadowRefs[key] = `var(${shadowVariable(key)})`;
+}
 
 /** Layering scale — named so overlapping fixed elements never fight with ad-hoc numbers. */
 const zIndex = {
@@ -438,8 +446,88 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
 }
 const DEFAULT_THEME = "default";
 
+/* ───────────────────────────── surfaces ───────────────────────────── */
+
+/**
+ * Surfaces — a region of the app with its own visual identity, independent of the store's brand theme. The Tailwind
+ * plugin emits each one under `[data-surface="<id>"]` with the COMPLETE variable set (base tokens, then the surface's
+ * overrides), so nothing a brand theme set on :root leaks in: the admin looks the same in every installation. Semantic
+ * roles are re-declared inside the scope, so they resolve against the surface's palette.
+ *
+ * `admin` — the Store Console (Blueprint V2 §H): Apple-style, light only, system type, one blue primary action.
+ * `storefront` — resets a region inside the admin to the store's own look (the homepage builder's inline preview); the
+ *  plugin layers the active brand theme on top of it.
+ */
+const surfaceDefinitions = {
+  admin: {
+    palette: {
+      ink: {
+        50: "#fbfbfd",
+        100: "#f5f5f7",
+        200: "#e8e8ed",
+        300: "#d2d2d7",
+        400: "#86868b", // tertiary text — 3.6:1 on white (placeholders, hints)
+        500: "#6e6e73", // secondary text — 5.0:1 on white, 4.6:1 on the canvas
+        600: "#515154",
+        700: "#3a3a3c",
+        800: "#2c2c2e",
+        900: "#1d1d1f",
+        950: "#111113",
+      },
+      cream: { 50: "#ffffff", 100: "#f5f5f7", 200: "#ececf0", 300: "#dedee3" },
+    },
+    // Roles given a color of their own instead of a palette step. Blueprint V2 DR-3: Apple blue (4.6:1 under white text).
+    roles: { accent: "#0071e3", "accent-hover": "#0077ed", "accent-fg": "#ffffff" },
+    fontVariables: {
+      // San Francisco on Apple devices, the app's sans face everywhere else. No serif titles in the admin.
+      "--font-body-family": "-apple-system, BlinkMacSystemFont, var(--font-sans)",
+      "--font-display-family": "-apple-system, BlinkMacSystemFont, var(--font-sans)",
+      "--font-display-weight": "600",
+      "--font-display-tracking": "-0.022em",
+    },
+    components: {
+      "--gloss": "0", // flat fills: depth comes from shadow and translucency, not a sheen
+      "--glass-alpha": "0.72",
+      "--caps-transform": "none",
+      "--caps-spread": "0",
+    },
+    // Calmer corners: cards 16px, controls 10px.
+    radii: { sm: "6px", DEFAULT: "8px", md: "10px", lg: "12px", xl: "16px", "2xl": "20px", "3xl": "28px" },
+    // Near-flat content (a hairline border does the separating); real depth only on floating layers.
+    shadows: {
+      sm: "0 1px 1px 0 rgba(0,0,0,0.03)",
+      DEFAULT: "0 1px 2px 0 rgba(0,0,0,0.04), 0 0 1px 0 rgba(0,0,0,0.03)",
+      lg: "0 12px 32px -12px rgba(0,0,0,0.16), 0 2px 6px -2px rgba(0,0,0,0.05)",
+      float: "0 4px 14px -4px rgba(0,0,0,0.10), 0 1px 3px 0 rgba(0,0,0,0.04)",
+      floatLg: "0 24px 56px -16px rgba(0,0,0,0.24), 0 4px 12px -4px rgba(0,0,0,0.08)",
+      glass: "0 0 0 0.5px rgba(0,0,0,0.08), 0 12px 32px -12px rgba(0,0,0,0.18)",
+      "glass-lg": "0 0 0 0.5px rgba(0,0,0,0.10), 0 28px 64px -18px rgba(0,0,0,0.30)",
+      inset: "0 0 #0000", // flat fields (a literal "none" would break Tailwind's composed box-shadow list)
+      glow: "0 0 0 4px rgba(0,113,227,0.18)",
+    },
+    // Room to breathe: the airier Apple rhythm over the dense ERP baseline.
+    density: { sidebar: "248px", "sidebar-collapsed": "60px", header: "52px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
+  },
+  storefront: {},
+};
+
+const surfaces = {};
+for (const [id, definition] of Object.entries(surfaceDefinitions)) {
+  const variables = { ...cssVariables };
+  for (const [scale, steps] of Object.entries(definition.palette ?? {})) {
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  for (const [role, hex] of Object.entries(definition.roles ?? {})) variables[`--color-${role}`] = hexToRgbChannels(hex);
+  for (const [step, value] of Object.entries(definition.radii ?? {})) variables[radiusVariable(step)] = value;
+  for (const [key, value] of Object.entries(definition.shadows ?? {})) variables[shadowVariable(key)] = value;
+  for (const [name, value] of Object.entries(definition.density ?? {})) variables[`--density-${name}`] = value;
+  Object.assign(variables, definition.fontVariables, definition.components);
+  surfaces[id] = { cssVariables: variables };
+}
+
 module.exports = {
   themes,
+  surfaces,
   DEFAULT_THEME,
   palette,
   semantic,
@@ -448,7 +536,7 @@ module.exports = {
   fontFamily,
   fontSize,
   borderRadius,
-  boxShadow,
+  boxShadow: boxShadowRefs,
   zIndex,
   density,
   densitySpacing,

@@ -86,6 +86,14 @@ const config: Config = {
         // Dark-palette sections a theme renders light (see `lightBand` in @clothing-brand/ui-tokens).
         if (Object.keys(theme.bandVariables).length) addBase({ [`:root[data-brand="${id}"] .ui-band-inverse`]: theme.bandVariables });
       }
+      // Surfaces re-declare the whole variable set on their own element, so the admin never inherits a brand theme.
+      addBase({ '[data-surface="admin"]': tokens.surfaces.admin.cssVariables });
+      // A store-look region inside the admin: base tokens, then the active brand theme on the same element (higher
+      // specificity), then that theme's light bands.
+      addBase({ '[data-surface="storefront"]': tokens.surfaces.storefront.cssVariables });
+      for (const [id, theme] of Object.entries(tokens.themes)) {
+        if (Object.keys(theme.cssVariables).length) addBase({ [`:root[data-brand="${id}"] [data-surface="storefront"]`]: theme.cssVariables });
+      }
     }),
   ],
 };
