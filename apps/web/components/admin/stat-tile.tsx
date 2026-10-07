@@ -44,7 +44,7 @@ export function StatTile({ label, value, icon, tone = "default", trendPct, href,
       {/* flex-wrap, not truncate, on this row — the value is the whole point of the tile, so if the trend doesn't fit
           beside it the trend wraps instead of the number being cut. The value keeps `truncate` only as a floor for
           pathological widths (it has no spaces to wrap on); its full text is in the title. */}
-      <div className="mt-auto flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-2">
         <p title={value} className="max-w-full truncate text-[26px] font-semibold leading-tight tracking-tight tabular-nums text-fg">
           {value}
         </p>

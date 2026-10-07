@@ -270,7 +270,7 @@ export default function AdminTeamPage() {
                   <td className="px-4 py-3 text-ink-500">{admin.email}</td>
                   <td className="px-4 py-3">
                     <Badge className={admin.role === "OWNER" ? "bg-brass-100 text-brass-700" : ""}>
-                      {admin.role === "OWNER" ? "Super admin" : "Staff"}
+                      {admin.role === "OWNER" ? "Owner" : "Staff"}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
@@ -337,7 +337,7 @@ export default function AdminTeamPage() {
                     <tr key={invite.id} className="border-t border-ink-100">
                       <td className="px-4 py-3">{invite.name}</td>
                       <td className="px-4 py-3 text-ink-500">{invite.email}</td>
-                      <td className="px-4 py-3">{invite.role === "OWNER" ? "Super admin" : "Staff"}</td>
+                      <td className="px-4 py-3">{invite.role === "OWNER" ? "Owner" : "Staff"}</td>
                       <td className="px-4 py-3 text-ink-500">{formatDateShort(new Date(invite.expiresAt))}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end">
