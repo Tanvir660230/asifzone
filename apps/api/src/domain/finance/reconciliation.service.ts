@@ -125,6 +125,37 @@ export const RECONCILIATION_CHECKS = {
     },
   },
 
+  "treasury.integrity": {
+    label: "Money movements and statement matching",
+    description: "Every posted money movement has a posted journal of its amount on its accounts, every reversed one its reversal, and each statement line's matched amount equals the sum of its active matches — nothing derived has drifted from the ledger.",
+    async run(ctx) {
+      const movements = await prisma.$queryRaw<Array<{ id: string; problem: string }>>`
+        SELECT m.id, CASE
+            WHEN e.id IS NULL OR e.status <> 'POSTED' THEN 'posted movement without a posted journal'
+            WHEN e."totalDebit" <> m.amount THEN 'journal amount differs from the movement'
+            WHEN m.status = 'REVERSED' AND (r.id IS NULL OR r.status <> 'POSTED' OR r."reversesEntryId" <> e.id) THEN 'reversed movement without its reversal'
+          END AS problem
+        FROM "TreasuryMovement" m
+        LEFT JOIN "JournalEntry" e ON e.id = m."journalEntryId"
+        LEFT JOIN "JournalEntry" r ON r.id = m."reversalJournalEntryId"
+        WHERE m."businessId" = ${ctx.business.id} AND m.status IN ('POSTED', 'REVERSED')
+          AND (e.id IS NULL OR e.status <> 'POSTED' OR e."totalDebit" <> m.amount
+               OR (m.status = 'REVERSED' AND (r.id IS NULL OR r.status <> 'POSTED' OR r."reversesEntryId" <> e.id)))
+        LIMIT 50`;
+      const drift = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT b.id FROM "BankTransaction" b
+        WHERE b."businessId" = ${ctx.business.id}
+          AND b."matchedAmount" <> COALESCE((SELECT SUM(m.amount) FROM "BankTransactionMatch" m WHERE m."bankTransactionId" = b.id AND m.status = 'ACTIVE'), 0)
+        LIMIT 50`;
+      return {
+        status: movements.length === 0 && drift.length === 0 ? "MATCHED" : "DIFFERENCE",
+        expected: null,
+        actual: null,
+        details: { movementProblems: movements, statementLinesWithMatchDrift: drift.map((d) => d.id) },
+      };
+    },
+  },
+
   "revenue.dashboard_vs_ledger": {
     label: "Revenue: dashboard vs ledger",
     description: "The dashboard's realised net sales (metrics registry: merchandise sales − merchandise refunds, VAT-exclusive, at the dashboard's realisation moment) against the ledger's merchandise sales − sales returns for this brand.",

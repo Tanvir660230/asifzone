@@ -33,6 +33,13 @@ export const CAPABILITIES = {
   "refunds.manage": { permission: "refunds.manage" },
   "returns.manage": { permission: "returns.manage" },
   "courier.manage": { permission: "courier.manage", provider: "courier" },
+  // financial core (docs/FINANCE_PHASE_2.md §7) — OWNER-only permissions until a finance role is decided
+  "finance.view": { permission: "finance.read" },
+  "finance.transact": { permission: "finance.transact" },
+  "finance.post": { permission: "finance.post" },
+  "finance.reverse": { permission: "finance.reverse" },
+  "finance.configure": { permission: "finance.configure" },
+  "finance.reconcile": { permission: "finance.reconcile" },
   // catalog & stock
   "catalog.view": { permission: "catalog.read" },
   "catalog.manage": { permission: "catalog.manage" },

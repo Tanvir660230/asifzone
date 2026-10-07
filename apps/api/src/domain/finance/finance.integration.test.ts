@@ -6,7 +6,7 @@ import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { installId } from "../../config/installation";
 import { signAccessToken } from "../../lib/jwt";
-import { ownerId, RUN } from "../../test-fixtures";
+import { ownerId, purgeFinanceTables, RUN } from "../../test-fixtures";
 import { OUTBOX_CONSUMERS } from "../outbox/consumers";
 import { getFinanceContext } from "./finance-context";
 import { processFinancialEvent, recordFinancialEvent, registerPostingRule, unregisterPostingRuleForTests } from "./events.service";
@@ -29,15 +29,7 @@ function agent(adminId: string | null, role: "OWNER" | "STAFF" = "OWNER") {
   };
 }
 
-async function purgeFinance() {
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`SET LOCAL finance.maintenance_purge = 'on'`);
-    await tx.$executeRawUnsafe(
-      `TRUNCATE "ReconciliationRun", "OpeningInventoryItem", "OpeningBalanceLine", "OpeningBalanceBatch", "JournalLine", "JournalEntry", "FinancialEvent", "FinanceAuditEntry", "FinanceSequence", "FinancialPeriod", "FinancialAccount", "AccountMapping", "LedgerAccount", "FinanceBrand", "FinanceBusiness"`,
-    );
-    await tx.$executeRawUnsafe(`DELETE FROM "OutboxEvent" WHERE consumer = 'finance-event-post'`);
-  });
-}
+const purgeFinance = purgeFinanceTables;
 
 const OPENING = "2026-07-01";
 let owner: ReturnType<typeof agent>;
@@ -441,9 +433,9 @@ describe("financial core — reconciliation", () => {
     expect(byKey["cost.completeness"]!).toMatchObject({ status: "DIFFERENCE", details: { missingRecords: 1, estimatedRecords: 1 } });
     expect(res.body.ok).toBe(false);
 
-    expect(await prisma.reconciliationRun.count()).toBe(6);
-    expect(await prisma.financeAuditEntry.count({ where: { action: "reconciliation.run" } })).toBe(6);
-    expect((await owner.get("/reconciliation/runs")).body.total).toBe(6);
+    expect(await prisma.reconciliationRun.count()).toBe(7);
+    expect(await prisma.financeAuditEntry.count({ where: { action: "reconciliation.run" } })).toBe(7);
+    expect((await owner.get("/reconciliation/runs")).body.total).toBe(7);
     expect((await owner.post("/reconciliation/run", { checks: ["nope"] })).body.details.code).toBe("RECONCILIATION_CHECK_UNKNOWN");
   });
 });

@@ -5,17 +5,14 @@
 import { z } from "zod";
 import { LEDGER_ACCOUNT_TYPES } from "../finance/accounts";
 import { isBusinessDate } from "../finance/periods";
+import { financeAmountSchema } from "./finance-money";
+import { treasuryAccountDetailsSchema } from "./finance-treasury";
 
 const businessDate = z.string().refine(isBusinessDate, "Use a valid date (YYYY-MM-DD)");
 const id = z.string().trim().min(1).max(64);
 const optionalText = (max: number) => z.string().trim().max(max).optional().nullable().transform((v) => (v ? v : null));
 
-/** A non-negative amount in major units, at most 2 decimals, below ৳10¹³ (Decimal(18,2)). */
-export const financeAmountSchema = z
-  .union([z.number(), z.string().trim().regex(/^\d+(\.\d+)?$/).transform(Number)])
-  .refine((v) => Number.isFinite(v) && v >= 0, "Amount must be zero or more")
-  .refine((v) => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, "At most 2 decimals")
-  .refine((v) => v < 1e13, "Amount is too large");
+export { financeAmountSchema };
 
 export const financeBusinessUpdateSchema = z
   .object({
@@ -57,6 +54,9 @@ export const financialAccountCreateSchema = z.object({
   provider: optionalText(80),
   accountNumberLast4: z.string().trim().regex(/^\d{4}$/, "Last 4 digits only").optional().nullable(),
   brandId: id.optional().nullable(),
+  ...treasuryAccountDetailsSchema,
+  /** Phase 2: an account opened after the books started is funded by an OPENING_FUNDING movement (opening balance equity). */
+  openingBalance: z.object({ amount: financeAmountSchema.refine((v) => v > 0, "Amount must be more than zero"), date: businessDate }).optional().nullable(),
 });
 
 export const financialAccountUpdateSchema = z
@@ -65,6 +65,7 @@ export const financialAccountUpdateSchema = z
     provider: optionalText(80),
     accountNumberLast4: z.string().trim().regex(/^\d{4}$/).optional().nullable(),
     isActive: z.boolean().optional(),
+    ...treasuryAccountDetailsSchema,
     reason: optionalText(500),
   })
   .refine((v) => Object.keys(v).some((k) => k !== "reason"), "Nothing to change");
@@ -106,7 +107,7 @@ export const journalCorrectSchema = z.object({
 
 export const journalListQuerySchema = z.object({
   status: z.enum(["DRAFT", "POSTED"]).optional(),
-  kind: z.enum(["MANUAL", "OPENING_BALANCE", "EVENT", "REVERSAL", "CORRECTION"]).optional(),
+  kind: z.enum(["MANUAL", "OPENING_BALANCE", "EVENT", "REVERSAL", "CORRECTION", "TREASURY"]).optional(),
   from: businessDate.optional(),
   to: businessDate.optional(),
   accountId: id.optional(),

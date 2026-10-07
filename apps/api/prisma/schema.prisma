@@ -2505,6 +2505,7 @@ enum JournalEntryKind {
   EVENT
   REVERSAL
   CORRECTION
+  TREASURY
 }
 
 enum FinancialEventStatus {
@@ -2555,20 +2556,20 @@ enum ReconciliationStatus {
 
 /// The business whose books these are. Brands (and, later, other installations) report INTO a business.
 model FinanceBusiness {
-  id                   String               @id @default(cuid())
-  key                  String               @unique
+  id                   String                 @id @default(cuid())
+  key                  String                 @unique
   name                 String
   /// ISO 4217 functional currency; every journal is in it (multi-currency is not supported in Phase 1).
-  baseCurrency         String               @db.VarChar(3)
+  baseCurrency         String                 @db.VarChar(3)
   /// IANA timezone of the business day that journal dates and periods use.
   timezone             String
   /// 1–12. Bangladesh's fiscal year starts in July.
-  fiscalYearStartMonth Int                  @default(7)
+  fiscalYearStartMonth Int                    @default(7)
   /// The Financial Opening Date: the books start here. Nothing posts before it; opening balances are dated on it. Locked
   /// once the opening balances are posted.
-  openingDate          DateTime?            @db.Date
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  openingDate          DateTime?              @db.Date
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
   brands               FinanceBrand[]
   accounts             LedgerAccount[]
   mappings             AccountMapping[]
@@ -2578,6 +2579,11 @@ model FinanceBusiness {
   events               FinancialEvent[]
   openingBatch         OpeningBalanceBatch?
   reconciliationRuns   ReconciliationRun[]
+  treasuryMovements    TreasuryMovement[]
+  bankTransactions     BankTransaction[]
+  bankMatches          BankTransactionMatch[]
+  statementImports     StatementImport[]
+  bankReconciliations  BankReconciliation[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2600,27 +2606,28 @@ model FinanceBrand {
 /// Chart of accounts. Group accounts (isPostable = false) only sum their children. Type and normal balance never change
 /// once the account carries a posted line (trigger).
 model LedgerAccount {
-  id               String               @id @default(cuid())
-  businessId       String
-  business         FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  code             String
-  name             String
-  description      String?
-  type             LedgerAccountType
-  normalBalance    LedgerNormalBalance
-  parentId         String?
-  parent           LedgerAccount?       @relation("LedgerAccountTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children         LedgerAccount[]      @relation("LedgerAccountTree")
-  isPostable       Boolean              @default(true)
+  id                       String               @id @default(cuid())
+  businessId               String
+  business                 FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  code                     String
+  name                     String
+  description              String?
+  type                     LedgerAccountType
+  normalBalance            LedgerNormalBalance
+  parentId                 String?
+  parent                   LedgerAccount?       @relation("LedgerAccountTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children                 LedgerAccount[]      @relation("LedgerAccountTree")
+  isPostable               Boolean              @default(true)
   /// Created from the template or by the system (financial-account children); can be renamed, not deleted.
-  isSystem         Boolean              @default(false)
-  isActive         Boolean              @default(true)
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  lines            JournalLine[]
-  mappings         AccountMapping[]
-  financialAccount FinancialAccount?
-  openingLines     OpeningBalanceLine[]
+  isSystem                 Boolean              @default(false)
+  isActive                 Boolean              @default(true)
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  lines                    JournalLine[]
+  mappings                 AccountMapping[]
+  financialAccount         FinancialAccount?
+  openingLines             OpeningBalanceLine[]
+  treasuryCounterMovements TreasuryMovement[]   @relation("TreasuryCounterAccount")
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -2644,22 +2651,40 @@ model AccountMapping {
 /// A place money is held (cash box, bank account, bKash/Nagad wallet, gateway or courier clearing). Each has its own ledger
 /// account; its balance IS that account's ledger balance — never a stored number.
 model FinancialAccount {
-  id                 String               @id @default(cuid())
-  businessId         String
-  business           FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  brandId            String?
-  kind               FinancialAccountKind
-  name               String
+  id                      String               @id @default(cuid())
+  businessId              String
+  business                FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId                 String?
+  kind                    FinancialAccountKind
+  name                    String
   /// "bKash", "Nagad", "Dutch-Bangla Bank", "SSLCommerz", "Steadfast", …
-  provider           String?
-  accountNumberLast4 String?              @db.VarChar(4)
-  currency           String               @db.VarChar(3)
-  ledgerAccountId    String               @unique
-  ledgerAccount      LedgerAccount        @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
-  isActive           Boolean              @default(true)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  openingLines       OpeningBalanceLine[]
+  provider                String?
+  accountNumberLast4      String?              @db.VarChar(4)
+  /// Phase 2: the account's title as the bank shows it (no credentials, ever).
+  accountTitle            String?
+  /// Bank branch, where it matters.
+  branch                  String?
+  /// A non-secret reference: masked account number, merchant / wallet id. Never a password, PIN or API key.
+  accountReference        String?              @db.VarChar(64)
+  /// Free-form, non-secret facts (keys that look like credentials are refused by the service).
+  metadata                Json?
+  /// Movements of at least this amount wait for a second person's approval (null = no approval step).
+  approvalThreshold       Decimal?             @db.Decimal(18, 2)
+  /// The first day covered by a completed bank reconciliation — ledger lines before it are covered by that run's opening
+  /// statement balance.
+  reconciliationStartDate DateTime?            @db.Date
+  currency                String               @db.VarChar(3)
+  ledgerAccountId         String               @unique
+  ledgerAccount           LedgerAccount        @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  isActive                Boolean              @default(true)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  openingLines            OpeningBalanceLine[]
+  movementsOut            TreasuryMovement[]   @relation("TreasuryFrom")
+  movementsIn             TreasuryMovement[]   @relation("TreasuryTo")
+  bankTransactions        BankTransaction[]
+  statementImports        StatementImport[]
+  bankReconciliations     BankReconciliation[]
 
   @@unique([businessId, name])
 }
@@ -2735,6 +2760,8 @@ model JournalEntry {
   updatedAt        DateTime             @updatedAt
   lines            JournalLine[]
   openingBatch     OpeningBalanceBatch?
+  treasuryMovement TreasuryMovement?    @relation("TreasuryJournal")
+  treasuryReversal TreasuryMovement?    @relation("TreasuryReversalJournal")
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, number])
@@ -2762,6 +2789,7 @@ model JournalLine {
   /// Set on lines whose amount depends on product cost (inventory, COGS).
   valuationStatus FinanceValuationStatus?
   createdAt       DateTime                @default(now())
+  bankMatches     BankTransactionMatch[]
 
   @@unique([entryId, lineNo])
   @@index([accountId])
@@ -2909,4 +2937,253 @@ model ReconciliationRun {
   createdAt    DateTime             @default(now())
 
   @@index([businessId, checkKey, createdAt])
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// FINANCIAL CORE — Phase 2: cash, bank, wallets & bank reconciliation (docs/FINANCE_PHASE_2.md). Money movements post
+// through the Phase 1 journal service; statement lines are evidence matched to ledger lines, never postings themselves.
+// Balances are the ledger's — there is no balance column. Triggers (migration 20261012100000_finance_phase2_treasury)
+// keep matched amounts and statuses derived, make history immutable, and require the financial audit entry.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+enum TreasuryMovementKind {
+  DEPOSIT
+  WITHDRAWAL
+  TRANSFER
+  ADJUSTMENT
+  OPENING_FUNDING
+}
+
+enum TreasuryMovementStatus {
+  PENDING_APPROVAL
+  POSTED
+  REJECTED
+  REVERSED
+}
+
+enum TreasuryDirection {
+  IN
+  OUT
+}
+
+enum BankTransactionSource {
+  MANUAL
+  CSV_IMPORT
+}
+
+enum BankTransactionStatus {
+  UNMATCHED
+  PARTIALLY_MATCHED
+  MATCHED
+  ADJUSTMENT_REQUIRED
+  RECONCILED
+}
+
+enum BankMatchStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum BankReconciliationStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+/// A money movement of the business: deposit into / withdrawal from a financial account against a counter account,
+/// a transfer between two financial accounts, an explicit adjustment, or an account's opening funding. Its ledger effect
+/// is its journal (kind TREASURY), posted by journal.service; a reversal is a second journal. Immutable except its status.
+model TreasuryMovement {
+  id                     String                 @id @default(cuid())
+  businessId             String
+  business               FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// The brand of the account(s) moved (transfers never cross brands).
+  brandId                String?
+  kind                   TreasuryMovementKind
+  status                 TreasuryMovementStatus
+  /// ADJUSTMENT only: money IN to or OUT of the account.
+  direction              TreasuryDirection?
+  movementDate           DateTime               @db.Date
+  amount                 Decimal                @db.Decimal(18, 2)
+  currency               String                 @db.VarChar(3)
+  fromFinancialAccountId String?
+  fromAccount            FinancialAccount?      @relation("TreasuryFrom", fields: [fromFinancialAccountId], references: [id], onDelete: Restrict)
+  toFinancialAccountId   String?
+  toAccount              FinancialAccount?      @relation("TreasuryTo", fields: [toFinancialAccountId], references: [id], onDelete: Restrict)
+  /// Deposits, withdrawals, adjustments, opening funding: the other side of the journal (capital, drawings, a loan, …).
+  counterAccountId       String?
+  counterAccount         LedgerAccount?         @relation("TreasuryCounterAccount", fields: [counterAccountId], references: [id], onDelete: Restrict)
+  reference              String?
+  description            String
+  reason                 String?
+  idempotencyKey         String
+  fingerprint            String
+  journalEntryId         String?                @unique
+  journalEntry           JournalEntry?          @relation("TreasuryJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  reversalJournalEntryId String?                @unique
+  reversalJournalEntry   JournalEntry?          @relation("TreasuryReversalJournal", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
+  /// An adjustment that resolves a statement line (reconciliation), and the run it was made in.
+  bankTransactionId      String?
+  bankTransaction        BankTransaction?       @relation(fields: [bankTransactionId], references: [id], onDelete: Restrict)
+  reconciliationId       String?
+  reconciliation         BankReconciliation?    @relation(fields: [reconciliationId], references: [id], onDelete: Restrict)
+  requestedByAdminId     String?
+  approvedByAdminId      String?
+  approvedAt             DateTime?
+  rejectedByAdminId      String?
+  rejectedAt             DateTime?
+  rejectionReason        String?
+  reversedByAdminId      String?
+  reversedAt             DateTime?
+  reversalReason         String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  matches                BankTransactionMatch[]
+
+  @@unique([businessId, idempotencyKey])
+  @@index([fromFinancialAccountId, movementDate])
+  @@index([toFinancialAccountId, movementDate])
+  @@index([businessId, status])
+  @@index([bankTransactionId])
+}
+
+/// One line of a bank / wallet / gateway statement (entered by hand or imported). Evidence of what the institution
+/// recorded — it never posts to the ledger; it is MATCHED to ledger lines. Bank convention: debit = money out, credit =
+/// money in; amount = credit − debit. Financial fields are immutable; status and matchedAmount are derived (triggers).
+model BankTransaction {
+  id                 String                 @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  financialAccountId String
+  financialAccount   FinancialAccount       @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  transactionDate    DateTime               @db.Date
+  valueDate          DateTime?              @db.Date
+  reference          String?
+  description        String
+  debit              Decimal                @default(0) @db.Decimal(18, 2)
+  credit             Decimal                @default(0) @db.Decimal(18, 2)
+  amount             Decimal                @db.Decimal(18, 2)
+  currency           String                 @db.VarChar(3)
+  externalId         String?
+  /// The running balance the statement printed on this line, when it has one.
+  statementBalance   Decimal?               @db.Decimal(18, 2)
+  source             BankTransactionSource
+  importId           String?
+  import             StatementImport?       @relation(fields: [importId], references: [id], onDelete: Restrict)
+  importLine         Int?
+  /// Unique per account: the external id, else a hash of the row's content and its occurrence in the file — a repeated
+  /// import finds the row instead of adding it.
+  dedupeKey          String
+  status             BankTransactionStatus  @default(UNMATCHED)
+  /// Σ of ACTIVE matches (maintained by the match trigger).
+  matchedAmount      Decimal                @default(0) @db.Decimal(18, 2)
+  adjustmentRequired Boolean                @default(false)
+  note               String?
+  /// Set when a completed reconciliation covered this line: RECONCILED, final.
+  reconciliationId   String?
+  reconciliation     BankReconciliation?    @relation(fields: [reconciliationId], references: [id], onDelete: Restrict)
+  createdByAdminId   String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  matches            BankTransactionMatch[]
+  adjustments        TreasuryMovement[]
+
+  @@unique([financialAccountId, dedupeKey])
+  @@index([financialAccountId, transactionDate])
+  @@index([businessId, status])
+}
+
+/// External statement line ↔ internal ledger line, for an amount (partial matching: one statement line can match several
+/// ledger lines and vice versa). Never deleted: unmatching marks it REMOVED.
+model BankTransactionMatch {
+  id                   String              @id @default(cuid())
+  businessId           String
+  business             FinanceBusiness     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  bankTransactionId    String
+  bankTransaction      BankTransaction     @relation(fields: [bankTransactionId], references: [id], onDelete: Restrict)
+  journalLineId        String
+  journalLine          JournalLine         @relation(fields: [journalLineId], references: [id], onDelete: Restrict)
+  amount               Decimal             @db.Decimal(18, 2)
+  status               BankMatchStatus     @default(ACTIVE)
+  matchedAt            DateTime            @default(now())
+  matchedByAdminId     String?
+  reconciliationId     String?
+  reconciliation       BankReconciliation? @relation(fields: [reconciliationId], references: [id], onDelete: Restrict)
+  reference            String?
+  note                 String?
+  /// The adjustment movement this match was created for (an explicit resolution of a difference).
+  adjustmentMovementId String?
+  adjustmentMovement   TreasuryMovement?   @relation(fields: [adjustmentMovementId], references: [id], onDelete: Restrict)
+  removedAt            DateTime?
+  removedByAdminId     String?
+  removalReason        String?
+
+  @@index([bankTransactionId])
+  @@index([journalLineId])
+}
+
+/// One CSV statement import: the mapping used and what happened to each row. Append-only.
+model StatementImport {
+  id                 String            @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  financialAccountId String
+  financialAccount   FinancialAccount  @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  fileName           String?
+  /// sha256 of the file text: the same file imported again returns this import.
+  fileHash           String
+  columnMapping      Json
+  options            Json
+  rowCount           Int
+  importedCount      Int
+  duplicateCount     Int
+  errorCount         Int
+  errors             Json
+  importedByAdminId  String?
+  createdAt          DateTime          @default(now())
+  transactions       BankTransaction[]
+
+  @@unique([financialAccountId, fileHash])
+}
+
+/// A bank reconciliation of one account over one statement period. History: once COMPLETED or ABANDONED it never
+/// changes; completed periods of an account never overlap and chain (each opens with the previous closing balance).
+model BankReconciliation {
+  id                      String                   @id @default(cuid())
+  businessId              String
+  business                FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  financialAccountId      String
+  financialAccount        FinancialAccount         @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  periodStart             DateTime                 @db.Date
+  periodEnd               DateTime                 @db.Date
+  openingStatementBalance Decimal                  @db.Decimal(18, 2)
+  closingStatementBalance Decimal                  @db.Decimal(18, 2)
+  /// Snapshot at completion (refreshed while IN_PROGRESS).
+  ledgerOpeningBalance    Decimal?                 @db.Decimal(18, 2)
+  ledgerBalance           Decimal?                 @db.Decimal(18, 2)
+  statementMovement       Decimal?                 @db.Decimal(18, 2)
+  /// closing statement − ledger balance at periodEnd.
+  difference              Decimal?                 @db.Decimal(18, 2)
+  /// The part of the difference no outstanding item explains (must be 0 to complete).
+  unexplainedDifference   Decimal?                 @db.Decimal(18, 2)
+  /// opening + statement lines − closing (must be 0: the statement is complete).
+  statementGap            Decimal?                 @db.Decimal(18, 2)
+  matchedCount            Int                      @default(0)
+  unmatchedCount          Int                      @default(0)
+  outstandingLedgerCount  Int                      @default(0)
+  adjustmentCount         Int                      @default(0)
+  status                  BankReconciliationStatus @default(IN_PROGRESS)
+  notes                   String?
+  startedByAdminId        String?
+  completedByAdminId      String?
+  completedAt             DateTime?
+  abandonedAt             DateTime?
+  abandonReason           String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  bankTransactions        BankTransaction[]
+  matches                 BankTransactionMatch[]
+  adjustments             TreasuryMovement[]
+
+  @@index([financialAccountId, periodStart])
 }

@@ -41,6 +41,9 @@ describe("financial core — architecture guards", () => {
       ["financeBusiness", "FinanceBusiness"], ["financeBrand", "FinanceBrand"], ["ledgerAccount", "LedgerAccount"], ["accountMapping", "AccountMapping"],
       ["financialAccount", "FinancialAccount"], ["financialPeriod", "FinancialPeriod"], ["financeSequence", "FinanceSequence"], ["financialEvent", "FinancialEvent"],
       ["openingBalanceBatch", "OpeningBalanceBatch"], ["openingBalanceLine", "OpeningBalanceLine"], ["openingInventoryItem", "OpeningInventoryItem"], ["reconciliationRun", "ReconciliationRun"],
+      // Phase 2 (docs/FINANCE_PHASE_2.md)
+      ["treasuryMovement", "TreasuryMovement"], ["bankTransaction", "BankTransaction"], ["bankTransactionMatch", "BankTransactionMatch"],
+      ["statementImport", "StatementImport"], ["bankReconciliation", "BankReconciliation"],
     ];
     const offenders = MODELS.flatMap(([m, t]) => writers(m, t).filter((f) => !f.startsWith("domain/finance/")).map((f) => `${f}: ${t}`));
     expect(offenders).toEqual([]);
@@ -60,6 +63,21 @@ describe("financial core — architecture guards", () => {
   it("finance services never turn the database's immutability off (maintenance purge is test-only)", () => {
     const offenders = ALL.filter((f) => /finance\.maintenance_purge/.test(code(f))).map(rel);
     expect(offenders).toEqual([]);
+  });
+
+  it("Phase 2: a money account's balance is never stored — there is no balance column to drift from the ledger", () => {
+    const schema = readFileSync(join(SRC, "..", "prisma", "schema.prisma"), "utf8");
+    for (const model of ["FinancialAccount", "LedgerAccount", "FinanceBrand", "FinanceBusiness"]) {
+      const body = new RegExp(`^model ${model} \\{([\\s\\S]*?)^\\}`, "m").exec(schema)?.[1] ?? "";
+      expect(body.length, model).toBeGreaterThan(0);
+      expect(body.split("\n").filter((l) => /^\s+\w*[bB]alance\w*\s+(Decimal|Int|Float|BigInt)/.test(l)), model).toEqual([]);
+    }
+  });
+
+  it("Phase 2: money moves only as treasury movements posted by journal.service — no money code writes journals itself", () => {
+    const treasury = code(join(SRC, "domain", "finance", "treasury.service.ts"));
+    expect(treasury).toMatch(/postJournalInTx\(/);
+    expect(treasury).not.toMatch(/journal(Entry|Line)\s*\.\s*(create|update|delete)/);
   });
 
   it("the guards detect what they forbid (self-test)", () => {

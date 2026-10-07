@@ -159,6 +159,37 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/v1/finance/reconciliation/runs",
   "POST /api/v1/finance/reconciliation/run",
   "GET /api/v1/finance/audit",
+  // Financial Core Phase 2 (docs/FINANCE_PHASE_2.md §7): cash, bank, wallets, statements and bank reconciliation — OWNER-only.
+  "GET /api/v1/finance/financial-accounts/:id",
+  "GET /api/v1/finance/financial-accounts/:id/ledger",
+  "POST /api/v1/finance/movements/deposit",
+  "POST /api/v1/finance/movements/withdrawal",
+  "POST /api/v1/finance/movements/transfer",
+  "POST /api/v1/finance/movements/adjustment",
+  "POST /api/v1/finance/movements/opening-funding",
+  "GET /api/v1/finance/movements",
+  "GET /api/v1/finance/movements/:id",
+  "POST /api/v1/finance/movements/:id/approve",
+  "POST /api/v1/finance/movements/:id/reject",
+  "POST /api/v1/finance/movements/:id/reverse",
+  "GET /api/v1/finance/bank-transactions",
+  "GET /api/v1/finance/bank-transactions/:id",
+  "GET /api/v1/finance/bank-transactions/:id/candidates",
+  "POST /api/v1/finance/bank-transactions",
+  "DELETE /api/v1/finance/bank-transactions/:id",
+  "POST /api/v1/finance/bank-transactions/:id/match",
+  "POST /api/v1/finance/bank-transactions/:id/flag",
+  "POST /api/v1/finance/bank-transactions/:id/adjust",
+  "POST /api/v1/finance/bank-matches/:id/unmatch",
+  "POST /api/v1/finance/statement-imports/preview",
+  "POST /api/v1/finance/statement-imports",
+  "GET /api/v1/finance/statement-imports",
+  "GET /api/v1/finance/bank-reconciliations",
+  "GET /api/v1/finance/bank-reconciliations/:id",
+  "POST /api/v1/finance/bank-reconciliations",
+  "POST /api/v1/finance/bank-reconciliations/:id/auto-match",
+  "POST /api/v1/finance/bank-reconciliations/:id/complete",
+  "POST /api/v1/finance/bank-reconciliations/:id/abandon",
 ];
 // Phase 12 D-4: GET /api/v1/ops/capabilities is ops.read (OWNER and STAFF), so it is not in the OWNER-only list.
 
@@ -254,10 +285,10 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 361 admin routes, each with exactly one permission (or explicit self-service)", () => {
+  it("covers all 391 admin routes, each with exactly one permission (or explicit self-service)", () => {
     // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore
-    // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6)
-    expect(routes).toHaveLength(361);
+    // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7)
+    expect(routes).toHaveLength(391);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

@@ -392,8 +392,12 @@ async function reversalSpec(tx: AppTransactionClient, business: FinanceBusinessI
   };
 }
 
-async function postReversal(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, reason: string, reversalDate: string | undefined, actor: FinanceActor) {
+async function postReversal(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, reason: string, reversalDate: string | undefined, actor: FinanceActor, owner: "treasury" | null = null) {
   const original = await lockEntry(tx, business.id, id);
+  // A journal that belongs to a treasury movement is reversed through the movement, so the two never disagree.
+  if (original.kind === "TREASURY" && owner !== "treasury") {
+    throw financeError(409, "JOURNAL_OWNED_BY_MOVEMENT", "This journal belongs to a money movement — reverse the movement instead", { sourceId: original.sourceId });
+  }
   const date = reversalDate ?? (compareBusinessDates(businessToday(business), businessDateOf(original.entryDate)) < 0 ? businessDateOf(original.entryDate) : businessToday(business));
   const spec = await reversalSpec(tx, business, original, reason, date);
   if (original.reversedBy) {
@@ -405,6 +409,13 @@ async function postReversal(tx: AppTransactionClient, business: FinanceBusinessI
   const { entry, replayed } = await postJournalInTx(tx, business, spec, actor);
   await recordFinanceAudit(tx, { businessId: business.id, actor, action: "journal.reversed", entityType: "JournalEntry", entityId: original.id, reason, sourceRef: entry.id });
   return { original, reversal: entry, replayed };
+}
+
+/** In-transaction reversal for finance services that own a posted journal (treasury movements). Same rules as
+ * reverseJournal: mirror image, idempotent per original, never a reversal of a reversal. */
+export async function reverseJournalInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, reason: string, reversalDate: string | undefined, actor: FinanceActor) {
+  const { reversal, replayed } = await postReversal(tx, business, id, reason, reversalDate, actor, "treasury");
+  return { reversal, replayed };
 }
 
 /** Reverses a posted journal with a new, mirror-image journal. Idempotent per original entry. */

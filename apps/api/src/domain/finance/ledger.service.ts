@@ -5,7 +5,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { signedBalance, trialBalance as engineTrialBalance } from "@clothing-brand/shared";
-import { prisma } from "../../config/prisma";
+import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { getFinanceContext } from "./finance-context";
 import { businessDateOf, dateColumn, financeError, toMajorNumber, toMinor } from "./finance-values";
 
@@ -126,4 +126,14 @@ export async function balanceOfAccounts(businessId: string, accountIds: string[]
   const out = new Map<string, { debit: number; credit: number }>();
   for (const s of sums) if (accountIds.includes(s.accountId)) out.set(s.accountId, { debit: toMinor(s.periodDebit, cur), credit: toMinor(s.periodCredit, cur) });
   return out;
+}
+
+/** Balance (debit − credit, minor units) of a ledger account over POSTED lines dated on or before `date` (null = all). */
+export async function moneyBalanceAt(db: AppTransactionClient | typeof prisma, businessId: string, ledgerAccountId: string, currency: string, date: string | null): Promise<number> {
+  const [row] = await db.$queryRaw<Array<{ d: Prisma.Decimal; c: Prisma.Decimal }>>`
+    SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c
+    FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+    WHERE e."businessId" = ${businessId} AND e.status = 'POSTED' AND l."accountId" = ${ledgerAccountId}
+      AND (${date ? dateColumn(date) : null}::date IS NULL OR e."entryDate" <= ${date ? dateColumn(date) : null}::date)`;
+  return toMinor(row?.d ?? 0, currency) - toMinor(row?.c ?? 0, currency);
 }
