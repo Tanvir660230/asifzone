@@ -5,13 +5,21 @@ import { nullableString } from "./common";
  * is a random id generated client-side and held for the browser session — never tied to a
  * customer account. `referrer`/`utm*` carry first-touch attribution captured once at session
  * start and re-sent unchanged on every later pageview in the same session. */
+/** Whether a path is shopper traffic. Admin pages (incl. the product wizard's preview frame) and draft previews are
+ * staff looking at the store, never a visit — counting them inflated sessions and visitors and so pulled the
+ * orders ÷ sessions conversion rate (D25) down. The tracker skips them and the beacon refuses them. */
+export function isStorefrontPath(path: string): boolean {
+  const pathname = path.split(/[?#]/)[0]!;
+  return !/^\/(admin|preview)(\/|$)/.test(pathname);
+}
+
 export const trackPageViewSchema = z.object({
   sessionId: z.string().min(1).max(64),
   /** Persistent (1yr cookie) visitor id, distinct from `sessionId` — lets "returning visitor"
    * metrics recognize the same person across browser sessions. Optional so older clients that
    * haven't picked up the cookie yet don't fail validation. */
   visitorId: z.string().min(1).max(64).optional(),
-  path: z.string().min(1).max(500),
+  path: z.string().min(1).max(500).refine(isStorefrontPath, "Not a storefront page"),
   referrer: nullableString(500),
   utmSource: nullableString(120),
   utmMedium: nullableString(120),
