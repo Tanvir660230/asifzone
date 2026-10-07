@@ -49,6 +49,12 @@ import { TAG_META, primaryTag } from "@/lib/customer-tags";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 const PAGE_SIZE = 20;
+/** Segment tabs: plain text, the selected one on a soft grey capsule (same as the Orders status tabs). */
+const SEGMENT_BASE =
+  "flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+const SEGMENT_ON = "bg-ink-900/[0.08] text-fg";
+const SEGMENT_OFF = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
+
 const TAG_OPTIONS: CustomerTag[] = [
   "NEW",
   "REPEAT",
@@ -378,100 +384,81 @@ export default function CustomersPage() {
       {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx and the Orders page's
           equivalent bar: this floats over the scrolling customer rows, and translucency there let
           row text visibly bleed/cut through the bar's bottom edge as it scrolled underneath. */}
-      <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50 px-4 pb-4 pt-3 sm:-mx-8 sm:px-8">
-        <div className="space-y-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Tag</span>
-            <button
-              onClick={() => {
-                setTag("");
-                setPage(1);
-              }}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                !tag
-                  ? "border-ink-900 bg-ink-900 text-cream-50"
-                  : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
-              )}
-            >
-              All
-            </button>
-            {TAG_OPTIONS.map((t) => {
-              const meta = TAG_META[t];
-              const Icon = meta.icon;
-              return (
-                <button
-                  key={t}
-                  onClick={() => {
-                    setTag((prev) => (prev === t ? "" : t));
-                    setPage(1);
-                  }}
-                  className={cn(
-                    "flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth",
-                    meta.className,
-                    tag === t ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-55 hover:opacity-100",
-                  )}
-                >
-                  <Icon size={11} /> {meta.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
-            <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Quick</span>
-            {QUICK_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => selectQuickFilter(f.id)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                  quickFilter === f.id
-                    ? "border-ink-900 bg-ink-900 text-cream-50"
-                    : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <SearchInput
-              wrapperClassName="w-full sm:w-72"
-              placeholder="Search name, phone, email, order #…"
-              value={search}
-              onChange={(value) => {
-                setSearch(value);
-                setPage(1);
-              }}
-            />
-            <button
-              onClick={() => setShowMoreFilters((v) => !v)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-                showMoreFilters || activeMoreFiltersCount > 0
-                  ? "border-ink-900 bg-ink-900 text-cream-50"
-                  : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
-              )}
-            >
-              <SlidersHorizontal size={14} />
-              More filters
-              {activeMoreFiltersCount > 0 && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-[10px] font-semibold text-ink-900">
-                  {activeMoreFiltersCount}
-                </span>
-              )}
-            </button>
-          </div>
-          <PageSizeSelect
-            value={pageSize}
-            onChange={(size) => {
-              setPageSize(size);
+      <div className="sticky top-header z-10 -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
+        {/* Search, more filters, page size — the same toolbar row as the Orders list. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <SearchInput
+            wrapperClassName="w-full sm:w-72"
+            placeholder="Search name, phone, email, order #…"
+            value={search}
+            onChange={(value) => {
+              setSearch(value);
               setPage(1);
             }}
           />
+          <Button variant="outline" size="sm" onClick={() => setShowMoreFilters((v) => !v)} aria-expanded={showMoreFilters}>
+            <SlidersHorizontal size={14} /> More filters
+            {activeMoreFiltersCount > 0 && (
+              <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{activeMoreFiltersCount}</span>
+            )}
+          </Button>
+          <div className="ml-auto">
+            <PageSizeSelect
+              value={pageSize}
+              onChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Segments: the customer tags as quiet tabs (the colour stays on each row's tag). */}
+        <div role="group" aria-label="Filter by tag" className="flex flex-nowrap items-center gap-1 overflow-x-auto py-0.5">
+          <button
+            type="button"
+            aria-pressed={!tag}
+            onClick={() => {
+              setTag("");
+              setPage(1);
+            }}
+            className={cn(SEGMENT_BASE, !tag ? SEGMENT_ON : SEGMENT_OFF)}
+          >
+            All
+          </button>
+          {TAG_OPTIONS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={tag === t}
+              onClick={() => {
+                setTag((prev) => (prev === t ? "" : t));
+                setPage(1);
+              }}
+              className={cn(SEGMENT_BASE, tag === t ? SEGMENT_ON : SEGMENT_OFF)}
+            >
+              {TAG_META[t].label}
+            </button>
+          ))}
+        </div>
+
+        {/* Views: one-click slices of the list. */}
+        <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 overflow-x-auto py-0.5">
+          <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted">Views</span>
+          {QUICK_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              aria-pressed={quickFilter === f.id}
+              onClick={() => selectQuickFilter(f.id)}
+              className={cn(
+                "flex h-8 shrink-0 items-center rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth",
+                quickFilter === f.id ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
 
         {showMoreFilters && (

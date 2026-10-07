@@ -35,7 +35,7 @@ export function RankedBarList({ items, emptyLabel }: { items: RankedBarListItem[
               <span className="shrink-0 pl-2 text-ink-500">{item.valueLabel}</span>
             </div>
             <div className="h-2 w-full rounded-full bg-ink-100">
-              <div className="h-2 rounded-full bg-brass-400" style={{ width: `${max > 0 ? (item.value / max) * 100 : 0}%` }} />
+              <div className="h-2 rounded-full bg-accent" style={{ width: `${max > 0 ? (item.value / max) * 100 : 0}%` }} />
             </div>
             {item.subLabel && <p className="mt-0.5 text-xs text-ink-400">{item.subLabel}</p>}
           </>
