@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { captureError } from "./observability/error-capture";
+import { currentCorrelationId } from "./observability/context";
 
 interface RecordAuditInput {
   adminId: string | null;
@@ -11,8 +12,14 @@ interface RecordAuditInput {
   ipAddress?: string | null;
 }
 
-/** Fire-and-forget audit trail write — never blocks or fails the request it's logging. */
+/**
+ * Fire-and-forget audit trail write — never blocks or fails the request it's logging.
+ * Envelope (Blueprint V2): every row also records the request's correlation id (`metadata.requestId`), so an entry
+ * leads straight to that request's logs and to the other audit rows the same action wrote.
+ */
 export function recordAudit(input: RecordAuditInput): void {
+  const requestId = currentCorrelationId();
+  const metadata = requestId ? { ...(input.metadata ?? {}), requestId } : input.metadata;
   prisma.auditLog
     .create({
       data: {
@@ -20,7 +27,7 @@ export function recordAudit(input: RecordAuditInput): void {
         action: input.action,
         entityType: input.entityType,
         entityId: input.entityId ?? null,
-        metadata: input.metadata as Prisma.InputJsonValue | undefined,
+        metadata: metadata as Prisma.InputJsonValue | undefined,
         ipAddress: input.ipAddress ?? null,
       },
     })

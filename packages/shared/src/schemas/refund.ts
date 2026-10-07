@@ -52,6 +52,21 @@ export const paymentTransactionListQuerySchema = ledgerListBase.extend({
   provider: paymentProviderEnum.optional(),
   status: z.enum(["SUCCEEDED", "FAILED"]).optional(),
 });
+/** Administration › Audit log filters (Admin V2). */
+export const auditLogListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(30),
+  adminId: z.string().max(64).optional(),
+  entityType: z.string().max(64).optional(),
+  /** Matches the action's verb or full name ("delete", "orders.update"). */
+  action: z.string().max(64).optional(),
+  entityId: z.string().max(64).optional(),
+  requestId: z.string().max(64).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+export type AuditLogListQuery = z.infer<typeof auditLogListQuerySchema>;
+
 export const refundListQuerySchema = ledgerListBase.extend({
   status: z.enum(["REQUESTED", "COMPLETED"]).optional(),
 });

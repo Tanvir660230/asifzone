@@ -107,6 +107,7 @@ const OWNER_ONLY_ROUTES = [
   "PATCH /api/social-links/:id",
   "DELETE /api/social-links/:id",
   "GET /api/audit-logs/",
+  "GET /api/audit-logs/facets",
   "PATCH /api/settings/",
   "POST /api/settings/upload-logo",
   "POST /api/settings/upload-favicon",
@@ -219,9 +220,9 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 333 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views (Admin V2)
-    expect(routes).toHaveLength(333);
+  it("covers all 334 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets (Admin V2)
+    expect(routes).toHaveLength(334);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

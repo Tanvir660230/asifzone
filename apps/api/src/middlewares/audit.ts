@@ -8,6 +8,16 @@ const ACTION_BY_METHOD: Record<string, string> = { POST: "create", PATCH: "updat
 /** Bulk data leaving the system (orders / products / analytics CSV) — a read, but audited like a write (Phase 10, G-7). */
 const EXPORT_PATH = /\/export\//;
 
+/** The area a write touched: the first path segment after /api (and after /v1 and its /admin group) — "/api/orders/x"
+ * → "orders", "/api/v1/outbox/x/retry" → "outbox", "/api/v1/admin/views" → "views". */
+export function auditEntityType(baseUrl: string, path: string): string {
+  const parts = `${baseUrl}${path}`.split("/").filter(Boolean);
+  let i = parts[0] === "api" ? 1 : 0;
+  if (parts[i] === "v1") i += 1;
+  if (parts[i] === "admin" && parts[i + 1]) i += 1;
+  return parts[i] ?? "unknown";
+}
+
 export function auditMiddleware(req: Request, res: Response, next: NextFunction) {
   const isExport = req.method === "GET" && EXPORT_PATH.test(req.path);
   const actionVerb = isExport ? "export" : ACTION_BY_METHOD[req.method];
@@ -24,12 +34,14 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
     // A handler that records its own, more specific audit events (see product.service) opts out of the generic row.
     if (!req.admin || res.statusCode >= 400 || res.locals.auditHandled) return;
 
-    const entityType = req.baseUrl.split("/").filter(Boolean)[1] ?? "unknown";
+    const entityType = auditEntityType(req.baseUrl, req.path);
     let entityId = (req.params.id as string | undefined) ?? null;
     if (!entityId && responseBody && typeof responseBody === "object") {
       const singularKey = entityType.replace(/s$/, "");
       const nested = (responseBody as Record<string, unknown>)[singularKey] as { id?: string } | undefined;
-      entityId = nested?.id ?? null;
+      // `{ product: {...} }` envelopes, or the created resource itself at the top level (`{ id, ... }`).
+      const top = (responseBody as { id?: unknown }).id;
+      entityId = nested?.id ?? (typeof top === "string" ? top : null);
     }
 
     const pathTail = req.path.split("/").filter(Boolean);
