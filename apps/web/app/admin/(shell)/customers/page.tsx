@@ -566,7 +566,7 @@ export default function CustomersPage() {
                     the app shell header (z-20) in the same stacking context, so as this non-sticky
                     header row scrolled past them, it painted in FRONT of both instead of being
                     covered by them, showing up as a floating box overlapping the tabs/header. */}
-                <th className="sticky left-0 z-[1] bg-ink-50 px-4 py-3">
+                <th className="sticky left-0 z-[1] bg-surface px-4 py-3">
                   <SortableHeader column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Customer
                   </SortableHeader>

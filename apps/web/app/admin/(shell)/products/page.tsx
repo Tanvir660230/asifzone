@@ -407,7 +407,7 @@ export default function ProductsPage() {
               <th className="w-10 px-4 py-3">
                 <Checkbox checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th className="sticky left-0 z-[1] bg-ink-50 px-4 py-3">Product</th>
+              <th className="sticky left-0 z-[1] bg-surface px-4 py-3">Product</th>
               <th className="hidden px-4 py-3 sm:table-cell">Category</th>
               <th className="px-4 py-3">Price</th>
               <th className="px-4 py-3">Stock</th>
