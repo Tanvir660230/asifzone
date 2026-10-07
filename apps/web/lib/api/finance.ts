@@ -293,3 +293,86 @@ export const ACCOUNT_KIND_LABEL: Record<FinancialAccountKind, string> = {
   COURIER: "Courier COD",
   OTHER: "Other",
 };
+
+// ── Phase 3: commerce accounting, exceptions, settlements, checks (docs/FINANCE_PHASE_3.md §7) ──────────────────────
+
+export interface CommerceStatus {
+  openingDate: string | null;
+  cursor: string | null;
+  lastRunAt: string | null;
+  lastRunStats: Record<string, unknown> | null;
+  readiness: { ready: boolean; missing: string[] };
+  events: Record<string, number>;
+  eventsByType: Array<{ type: string; status: string; count: number }>;
+}
+export interface FinanceException {
+  id: string;
+  kind: string;
+  status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+  title: string;
+  sourceType: string;
+  sourceId: string;
+  orderId: string | null;
+  orderNumber: string | null;
+  amount: number | null;
+  details: Record<string, unknown>;
+  resolution: string | null;
+  resolutionNote: string | null;
+  estimatedUnitCost: number | null;
+  createdAt: string;
+}
+export interface Settlement {
+  id: string;
+  status: "DRAFT" | "POSTED" | "REVERSED";
+  source: "MANUAL" | "CSV_IMPORT";
+  reference: string;
+  evidence: string | null;
+  settlementDate: string;
+  clearingAccount: { id: string; name: string; kind: string };
+  destinationAccount: { id: string; name: string; kind: string };
+  grossAmount: number;
+  netAmount: number;
+  feeAmount: number;
+  adjustmentAmount: number;
+  adjustmentReason: string | null;
+  unmatchedLines: number;
+  lines: Array<{ id: string; lineNo: number; orderId: string | null; orderNumber: string | null; externalRef: string | null; amount: number; fee: number; adjustment: number; matchStatus: "MATCHED" | "UNMATCHED" }>;
+}
+export interface CheckResult {
+  id: string;
+  checkKey: string;
+  status: "MATCHED" | "DIFFERENCE" | "NOT_APPLICABLE" | "ERROR";
+  expected: number | null;
+  actual: number | null;
+  difference: number | null;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export const commerceStatus = () => apiFetch<CommerceStatus>(`${BASE}/commerce/status`);
+export interface SyncStats { skipped?: string; missingMappings?: string[]; orders: number; customerCredits: number; stockExceptions: number; recorded: number; posted: number; failed: number }
+export const syncCommerce = (full = false) => apiFetch<SyncStats>(`${BASE}/commerce/sync`, { method: "POST", body: { full } });
+export const orderAccounting = (orderId: string) =>
+  apiFetch<{ orderId: string; events: Array<{ id: string; eventType: string; eventKey: string; status: string; financialDate: string; lastError: string | null; journalEntry: { id: string; number: number | null; reversedBy: { number: number | null } | null } | null }>; exceptions: FinanceException[] }>(`${BASE}/commerce/orders/${orderId}`);
+
+export const listExceptions = (q: { status?: string; kind?: string; page?: number; pageSize?: number } = {}) =>
+  apiFetch<{ total: number; openByKind: Record<string, number>; exceptions: FinanceException[] }>(`${BASE}/exceptions${qs(q)}`);
+export const acknowledgeException = (id: string, note: string) => apiFetch<FinanceException>(`${BASE}/exceptions/${id}/acknowledge`, { method: "POST", body: { note } });
+export const approveEstimate = (id: string, unitCost: number, note: string) => apiFetch<{ outcomes: Record<string, string> }>(`${BASE}/exceptions/${id}/approve-estimate`, { method: "POST", body: { unitCost, note } });
+export const getBusiness = () => apiFetch<{ costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES"; business: { openingDate: string | null } }>(`${BASE}/business`);
+export const setCostPolicy = (costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES", reason: string) => apiFetch(`${BASE}/business/cost-policy`, { method: "PUT", body: { costPolicy, reason } });
+
+export const listSettlements = (q: { status?: string; page?: number; pageSize?: number } = {}) => apiFetch<{ total: number; settlements: Settlement[] }>(`${BASE}/settlements${qs(q)}`);
+export const createSettlement = (body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ settlement: Settlement; replayed: boolean }>(`${BASE}/settlements`, { method: "POST", body, idempotencyKey });
+export const importSettlement = (body: Record<string, unknown>) => apiFetch<{ settlement: Settlement; replayed: boolean }>(`${BASE}/settlements/import`, { method: "POST", body });
+export const postSettlement = (id: string) => apiFetch<{ settlement: Settlement }>(`${BASE}/settlements/${id}/post`, { method: "POST", body: {} });
+export const reverseSettlement = (id: string, reason: string) => apiFetch<{ settlement: Settlement }>(`${BASE}/settlements/${id}/reverse`, { method: "POST", body: { reason } });
+export const deleteSettlement = (id: string) => apiFetch<void>(`${BASE}/settlements/${id}`, { method: "DELETE" });
+export const clearingPosition = (financialAccountId: string) =>
+  apiFetch<{ account: { id: string; name: string; kind: string }; balance: number; openOrders: Array<{ orderId: string; orderNumber: string | null; orderStatus: string | null; received: number; settled: number; open: number }>; oversettled: unknown[]; unattributed: unknown[] }>(`${BASE}/clearing/${financialAccountId}`);
+
+export const reconciliationChecks = () => apiFetch<{ checks: Array<{ key: string; label: string; description: string }> }>(`${BASE}/reconciliation/checks`);
+export const runChecks = (checks?: string[]) => apiFetch<{ ok: boolean; results: CheckResult[] }>(`${BASE}/reconciliation/run`, { method: "POST", body: checks ? { checks } : {} });
+
+export const CLEARING_KINDS = new Set<FinancialAccountKind>(["COURIER", "PAYMENT_GATEWAY", "OTHER"]);
+export const listCheckRuns = (q: { checkKey?: string; page?: number; pageSize?: number } = {}) => apiFetch<{ total: number; runs: CheckResult[] }>(`${BASE}/reconciliation/runs${qs(q)}`);

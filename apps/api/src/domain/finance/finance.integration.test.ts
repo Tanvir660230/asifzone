@@ -433,9 +433,9 @@ describe("financial core — reconciliation", () => {
     expect(byKey["cost.completeness"]!).toMatchObject({ status: "DIFFERENCE", details: { missingRecords: 1, estimatedRecords: 1 } });
     expect(res.body.ok).toBe(false);
 
-    expect(await prisma.reconciliationRun.count()).toBe(7);
-    expect(await prisma.financeAuditEntry.count({ where: { action: "reconciliation.run" } })).toBe(7);
-    expect((await owner.get("/reconciliation/runs")).body.total).toBe(7);
+    expect(await prisma.reconciliationRun.count()).toBe(12);
+    expect(await prisma.financeAuditEntry.count({ where: { action: "reconciliation.run" } })).toBe(12);
+    expect((await owner.get("/reconciliation/runs")).body.total).toBe(12);
     expect((await owner.post("/reconciliation/run", { checks: ["nope"] })).body.details.code).toBe("RECONCILIATION_CHECK_UNKNOWN");
   });
 });

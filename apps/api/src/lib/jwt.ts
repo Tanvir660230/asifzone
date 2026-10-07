@@ -1,11 +1,12 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
+import type { AdminRoleName } from "@clothing-brand/shared";
 import { env } from "../config/env";
 
 /** `role` is informational only (Phase 10): requireAdmin re-reads the admin's current role and active flag from the
  * database on every request, so a stale claim never grants anything. */
 export interface AdminTokenPayload {
   adminId: string;
-  role: "OWNER" | "STAFF";
+  role: AdminRoleName;
 }
 
 const ADMIN_TOKEN_TYPE = "admin";

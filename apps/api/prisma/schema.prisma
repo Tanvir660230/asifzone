@@ -75,6 +75,10 @@ enum BrandTier {
 enum AdminRole {
   OWNER
   STAFF
+  /// Financial Core Phase 3 (docs/FINANCE_PHASE_3.md §11): finance-only roles — no commerce access.
+  FINANCE_ADMIN
+  ACCOUNTANT
+  FINANCE_VIEWER
 }
 
 enum OrderStatus {
@@ -2568,6 +2572,8 @@ model FinanceBusiness {
   /// The Financial Opening Date: the books start here. Nothing posts before it; opening balances are dated on it. Locked
   /// once the opening balances are posted.
   openingDate          DateTime?              @db.Date
+  /// Phase 3: may an approved ESTIMATED cost be posted for a sale line with no recorded cost? Default: never (KNOWN only).
+  costPolicy           FinanceCostPolicy      @default(KNOWN_ONLY)
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
   brands               FinanceBrand[]
@@ -2584,6 +2590,9 @@ model FinanceBusiness {
   bankMatches          BankTransactionMatch[]
   statementImports     StatementImport[]
   bankReconciliations  BankReconciliation[]
+  exceptions           FinanceException[]
+  clearingSettlements  ClearingSettlement[]
+  syncState            FinanceSyncState?
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2621,6 +2630,8 @@ model LedgerAccount {
   /// Created from the template or by the system (financial-account children); can be renamed, not deleted.
   isSystem                 Boolean              @default(false)
   isActive                 Boolean              @default(true)
+  /// Phase 3: ownership, partner and payroll accounts — balances visible only with finance.sensitive.
+  isSensitive              Boolean              @default(false)
   createdAt                DateTime             @default(now())
   updatedAt                DateTime             @updatedAt
   lines                    JournalLine[]
@@ -2685,6 +2696,8 @@ model FinancialAccount {
   bankTransactions        BankTransaction[]
   statementImports        StatementImport[]
   bankReconciliations     BankReconciliation[]
+  settlementsCleared      ClearingSettlement[] @relation("SettlementClearing")
+  settlementsReceived     ClearingSettlement[] @relation("SettlementDestination")
 
   @@unique([businessId, name])
 }
@@ -2718,50 +2731,52 @@ model FinanceSequence {
 }
 
 model JournalEntry {
-  id               String               @id @default(cuid())
-  businessId       String
-  business         FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  brandId          String?
+  id                 String               @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId            String?
   /// Gapless per business, assigned when posted. Null while DRAFT.
-  number           Int?
+  number             Int?
   /// Accounting date (business date).
-  entryDate        DateTime             @db.Date
-  periodId         String
-  period           FinancialPeriod      @relation(fields: [periodId], references: [id], onDelete: Restrict)
-  status           JournalEntryStatus   @default(DRAFT)
-  kind             JournalEntryKind
-  description      String
-  reference        String?
-  currency         String               @db.VarChar(3)
-  totalDebit       Decimal              @default(0) @db.Decimal(18, 2)
-  totalCredit      Decimal              @default(0) @db.Decimal(18, 2)
+  entryDate          DateTime             @db.Date
+  periodId           String
+  period             FinancialPeriod      @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  status             JournalEntryStatus   @default(DRAFT)
+  kind               JournalEntryKind
+  description        String
+  reference          String?
+  currency           String               @db.VarChar(3)
+  totalDebit         Decimal              @default(0) @db.Decimal(18, 2)
+  totalCredit        Decimal              @default(0) @db.Decimal(18, 2)
   /// What produced it: "MANUAL", "OPENING_BALANCE", or the source entity of an event ("Order", …).
-  sourceType       String?
-  sourceId         String?
-  financialEventId String?              @unique
-  financialEvent   FinancialEvent?      @relation(fields: [financialEventId], references: [id], onDelete: Restrict)
+  sourceType         String?
+  sourceId           String?
+  financialEventId   String?              @unique
+  financialEvent     FinancialEvent?      @relation(fields: [financialEventId], references: [id], onDelete: Restrict)
   /// Unique per business: a repeated request / event / reversal returns the entry it already made.
-  idempotencyKey   String?
+  idempotencyKey     String?
   /// Content fingerprint stored with the key, to refuse a DIFFERENT request reusing the same key.
-  fingerprint      String?
+  fingerprint        String?
   /// The entry this one reverses (at most one reversal per entry).
-  reversesEntryId  String?              @unique
-  reversesEntry    JournalEntry?        @relation("JournalReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
-  reversedBy       JournalEntry?        @relation("JournalReversal")
+  reversesEntryId    String?              @unique
+  reversesEntry      JournalEntry?        @relation("JournalReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedBy         JournalEntry?        @relation("JournalReversal")
   /// The entry this one corrects (posted together with that entry's reversal; at most one correction per entry).
-  correctsEntryId  String?              @unique
-  correctsEntry    JournalEntry?        @relation("JournalCorrection", fields: [correctsEntryId], references: [id], onDelete: Restrict)
-  correctedBy      JournalEntry?        @relation("JournalCorrection")
-  reason           String?
-  createdByAdminId String?
-  postedByAdminId  String?
-  postedAt         DateTime?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  lines            JournalLine[]
-  openingBatch     OpeningBalanceBatch?
-  treasuryMovement TreasuryMovement?    @relation("TreasuryJournal")
-  treasuryReversal TreasuryMovement?    @relation("TreasuryReversalJournal")
+  correctsEntryId    String?              @unique
+  correctsEntry      JournalEntry?        @relation("JournalCorrection", fields: [correctsEntryId], references: [id], onDelete: Restrict)
+  correctedBy        JournalEntry?        @relation("JournalCorrection")
+  reason             String?
+  createdByAdminId   String?
+  postedByAdminId    String?
+  postedAt           DateTime?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  lines              JournalLine[]
+  openingBatch       OpeningBalanceBatch?
+  treasuryMovement   TreasuryMovement?    @relation("TreasuryJournal")
+  treasuryReversal   TreasuryMovement?    @relation("TreasuryReversalJournal")
+  settlement         ClearingSettlement?  @relation("SettlementJournal")
+  settlementReversal ClearingSettlement?  @relation("SettlementReversalJournal")
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, number])
@@ -3186,4 +3201,162 @@ model BankReconciliation {
   adjustments             TreasuryMovement[]
 
   @@index([financialAccountId, periodStart])
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// FINANCIAL CORE — Phase 3: commerce accounting (docs/FINANCE_PHASE_3.md). Sales, payments, refunds, returns, store
+// credit and COGS reach the ledger as financial events projected from the commerce facts the dashboard uses; clearing
+// accounts are settled by recorded settlements. Unresolved problems are FinanceExceptions, never guesses.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+enum FinanceCostPolicy {
+  KNOWN_ONLY
+  APPROVED_ESTIMATES
+}
+
+enum FinanceExceptionKind {
+  MISSING_COST
+  ORDER_TOTAL_MISMATCH
+  UNVALUED_STOCK_RECEIPT
+  UNVALUED_STOCK_WRITE_OFF
+  UNSUPPORTED_CREDIT_ENTRY
+  UNMATCHED_SETTLEMENT_LINE
+  ENGINE_MISMATCH
+}
+
+enum FinanceExceptionStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum ClearingSettlementStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum ClearingSettlementSource {
+  MANUAL
+  CSV_IMPORT
+}
+
+enum SettlementLineMatch {
+  MATCHED
+  UNMATCHED
+}
+
+/// An accounting problem the Finance Core will not guess about: a sale line with no recorded cost, stock that moved
+/// without a value, a store-credit entry with no accounting meaning, a settlement line with no order. It names its source
+/// record. Never deleted; OPEN → ACKNOWLEDGED (accepted as is) or RESOLVED (an approved resolution was posted).
+model FinanceException {
+  id                String                 @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId           String?
+  kind              FinanceExceptionKind
+  status            FinanceExceptionStatus @default(OPEN)
+  /// Deterministic identity: a re-run of the projector finds the exception instead of adding one.
+  key               String
+  sourceType        String
+  sourceId          String
+  orderId           String?
+  orderNumber       String?
+  title             String
+  details           Json
+  /// Minor-unit relevance in major units (units × suggested cost, the unmatched amount, …) — informational.
+  amount            Decimal?               @db.Decimal(18, 2)
+  resolution        String?
+  resolutionNote    String?
+  /// An approved estimate (ESTIMATED cost per unit, major units) — only under the APPROVED_ESTIMATES policy.
+  estimatedUnitCost Decimal?               @db.Decimal(18, 2)
+  resolvedByAdminId String?
+  resolvedAt        DateTime?
+  /// The financial event the resolution recorded (an approved estimate).
+  financialEventId  String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@unique([businessId, key])
+  @@index([businessId, status, kind])
+  @@index([orderId])
+}
+
+/// A recorded payout from a clearing account (courier COD, payment gateway, manual receipts) into a money account: what
+/// left clearing (gross), what arrived (net), and the ACTUAL fee and adjustment the statement shows — never an assumed
+/// fee. Posted as one journal through journal.service; reversed, never edited.
+model ClearingSettlement {
+  id                            String                   @id @default(cuid())
+  businessId                    String
+  business                      FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId                       String?
+  clearingFinancialAccountId    String
+  clearingAccount               FinancialAccount         @relation("SettlementClearing", fields: [clearingFinancialAccountId], references: [id], onDelete: Restrict)
+  destinationFinancialAccountId String
+  destinationAccount            FinancialAccount         @relation("SettlementDestination", fields: [destinationFinancialAccountId], references: [id], onDelete: Restrict)
+  settlementDate                DateTime                 @db.Date
+  /// The courier / gateway payout reference — unique per clearing account.
+  reference                     String
+  grossAmount                   Decimal                  @db.Decimal(18, 2)
+  netAmount                     Decimal                  @db.Decimal(18, 2)
+  feeAmount                     Decimal                  @default(0) @db.Decimal(18, 2)
+  /// Signed: positive = a further deduction by the courier / gateway, negative = more paid than the orders cleared.
+  adjustmentAmount              Decimal                  @default(0) @db.Decimal(18, 2)
+  adjustmentReason              String?
+  /// Statement file name, payout id, a note — where the figures come from.
+  evidence                      String?
+  source                        ClearingSettlementSource
+  fileHash                      String?
+  status                        ClearingSettlementStatus @default(DRAFT)
+  journalEntryId                String?                  @unique
+  journalEntry                  JournalEntry?            @relation("SettlementJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  reversalJournalEntryId        String?                  @unique
+  reversalJournalEntry          JournalEntry?            @relation("SettlementReversalJournal", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
+  idempotencyKey                String
+  createdByAdminId              String?
+  postedByAdminId               String?
+  postedAt                      DateTime?
+  reversedByAdminId             String?
+  reversedAt                    DateTime?
+  reversalReason                String?
+  createdAt                     DateTime                 @default(now())
+  updatedAt                     DateTime                 @updatedAt
+  lines                         ClearingSettlementLine[]
+
+  @@unique([businessId, idempotencyKey])
+  @@unique([clearingFinancialAccountId, reference])
+  @@index([businessId, status])
+}
+
+/// One order (consignment / gateway transaction) in a settlement: what was cleared for it, and its own fee / adjustment.
+model ClearingSettlementLine {
+  id           String              @id @default(cuid())
+  settlementId String
+  settlement   ClearingSettlement  @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  lineNo       Int
+  orderId      String?
+  orderNumber  String?
+  /// Consignment id / tracking code / gateway transaction id as the statement shows it.
+  externalRef  String?
+  amount       Decimal             @db.Decimal(18, 2)
+  fee          Decimal             @default(0) @db.Decimal(18, 2)
+  adjustment   Decimal             @default(0) @db.Decimal(18, 2)
+  matchStatus  SettlementLineMatch
+  note         String?
+
+  @@unique([settlementId, lineNo])
+  @@index([orderId])
+}
+
+/// Where the commerce projector got to (operational state, not a financial record): the sweep cursor and last run.
+model FinanceSyncState {
+  businessId   String          @id
+  business     FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  cursor       DateTime?
+  lastRunAt    DateTime?
+  lastRunStats Json?
+  /// The running sweep's lease (Phase 3 §2): who holds it and until when; null when no sweep runs.
+  leaseToken   String?
+  leaseUntil   DateTime?
+  updatedAt    DateTime        @updatedAt
 }

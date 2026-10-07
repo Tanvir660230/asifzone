@@ -12,18 +12,16 @@
  * derived from the event identity (a second journal for the same event is impossible: unique (businessId, key) and
  * unique financialEventId).
  *
- * No posting rules for commerce exist yet (Phase 3 registers them). An event without a rule is kept as FAILED with
+ * Commerce posting rules register from commerce-posting-rules.ts (Phase 3). An event without a rule is kept as FAILED with
  * NO_POSTING_RULE and can be retried once a rule ships — it is never dropped.
  */
 import type { FinancialEvent, Prisma } from "@prisma/client";
-import type { ZodType } from "zod";
 import {
   eventJournalKey,
   financialEventEnvelopeSchema,
   financialEventHandlerKey,
   monthPeriod,
   addDays,
-  type AccountMappingKey,
   type FinancialEventEnvelope,
 } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
@@ -32,49 +30,18 @@ import { captureError } from "../../lib/observability/error-capture";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { resolveMappedAccount } from "./chart.service";
-import { postJournalInTx, type JournalLineSpec } from "./journal.service";
+import { postJournalInTx, reverseJournalInTx, type JournalLineSpec } from "./journal.service";
 import { businessDateOf, dateColumn, financeError, mapFinanceDbError } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
 
 // ── posting rules ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-export interface PostingRuleLine {
-  /** A mapping key (preferred — never an account id in code) or, for rules that carry it in the payload, an account id. */
-  account: AccountMappingKey | { accountId: string };
-  /** Minor units. */
-  debit: number;
-  credit: number;
-  memo?: string | null;
-  partyType?: string | null;
-  partyId?: string | null;
-  valuationStatus?: JournalLineSpec["valuationStatus"];
-}
-
-export type PostingRuleResult = { ignore: string } | { description: string; reference?: string | null; lines: PostingRuleLine[] };
-
-export interface PostingRule<P = Record<string, unknown>> {
-  payload: ZodType<P>;
-  build(payload: P, ctx: { event: FinancialEvent; business: FinanceBusinessInfo }): PostingRuleResult;
-}
-
-const RULES = new Map<string, PostingRule<never>>();
-
-/** Registers the posting rule for one event type at one version. A version is never re-registered with other behaviour. */
-export function registerPostingRule<P>(type: string, version: number, rule: PostingRule<P>): void {
-  const key = financialEventHandlerKey(type, version);
-  if (RULES.has(key)) throw new Error(`[finance] posting rule ${key} is already registered`);
-  RULES.set(key, rule as unknown as PostingRule<never>);
-}
-
-export function postingRuleKeys(): string[] {
-  return [...RULES.keys()].sort();
-}
-
-/** Test support only: forget a rule registered by a test. */
-export function unregisterPostingRuleForTests(type: string, version: number): void {
-  if (process.env.NODE_ENV !== "test") throw new Error("unregisterPostingRuleForTests is test-only");
-  RULES.delete(financialEventHandlerKey(type, version));
-}
+// The rule registry lives in posting-rules.ts (so rule modules can register without importing this file); re-exported
+// here for the callers that always found it here.
+export { registerPostingRule, postingRuleKeys, unregisterPostingRuleForTests, type PostingRule, type PostingRuleLine, type PostingRuleResult } from "./posting-rules";
+import { RULES } from "./posting-rules";
+// Phase 3: the commerce posting rules register on load.
+import "./commerce-posting-rules";
 
 // ── recording ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -169,6 +136,32 @@ async function postingDateFor(tx: AppTransactionClient, business: FinanceBusines
   throw financeError(409, "NO_OPEN_PERIOD", "No open period found for this event");
 }
 
+/** Undoes the events `ids` replace: a POSTED one's journal is reversed (Phase 1 reversal, dated no earlier than the
+ * original), one still RECEIVED / FAILED is retired as IGNORED. Each is locked first; all belong to the same business. */
+async function supersede(tx: AppTransactionClient, business: FinanceBusinessInfo, by: FinancialEvent, ids: string[], entryDate: string, actor: FinanceActor) {
+  const done: Array<{ eventId: string; action: "reversed" | "retired" | "already_ignored"; journalId?: string }> = [];
+  for (const id of ids) {
+    const rows = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "FinancialEvent" WHERE id = ${id} AND "businessId" = ${business.id} FOR UPDATE`;
+    if (!rows.length) throw financeError(409, "SUPERSEDED_EVENT_NOT_FOUND", `Event ${id} to supersede doesn't exist`);
+    const prev = await tx.financialEvent.findUniqueOrThrow({ where: { id }, include: { journalEntry: { include: { reversedBy: true } } } });
+    if (prev.status === "POSTED") {
+      const j = prev.journalEntry;
+      if (j && !j.reversedBy) {
+        const date = entryDate < businessDateOf(j.entryDate) ? businessDateOf(j.entryDate) : entryDate;
+        const { reversal } = await reverseJournalInTx(tx, business, j.id, `Superseded by ${by.eventKey}`, date, actor);
+        done.push({ eventId: id, action: "reversed", journalId: reversal.id });
+      } else done.push({ eventId: id, action: "reversed" });
+    } else if (prev.status === "IGNORED") {
+      done.push({ eventId: id, action: "already_ignored" });
+    } else {
+      await tx.financialEvent.update({ where: { id }, data: { status: "IGNORED", processedAt: new Date(), lastError: `Superseded by ${by.eventKey}` } });
+      await recordFinanceAudit(tx, { businessId: business.id, actor, action: "event.retire_superseded", entityType: "FinancialEvent", entityId: id, reason: `Superseded by ${by.eventKey}`, sourceRef: by.id });
+      done.push({ eventId: id, action: "retired" });
+    }
+  }
+  return done;
+}
+
 export async function processFinancialEvent(eventId: string): Promise<ProcessOutcome> {
   try {
     return await financeTransaction(async (tx) => {
@@ -196,11 +189,26 @@ export async function processFinancialEvent(eventId: string): Promise<ProcessOut
       }
       const lines: JournalLineSpec[] = [];
       for (const l of result.lines) {
+        if (l.debit === 0 && l.credit === 0) continue; // a component that is zero for this fact (no VAT, no shipping, …)
         const accountId = typeof l.account === "string" ? (await resolveMappedAccount(tx, business.id, l.account)).id : l.account.accountId;
         lines.push({ accountId, debit: l.debit, credit: l.credit, memo: l.memo, partyType: l.partyType, partyId: l.partyId, valuationStatus: l.valuationStatus, brandId: event.brandId });
       }
       const financialDate = businessDateOf(event.financialDate);
       const entryDate = await postingDateFor(tx, business, financialDate);
+      // Supersession (Phase 3): an event that replaces earlier ones first undoes them — a posted one by the Phase 1
+      // reversal of its journal, one not yet posted by retiring it (IGNORED) — so a corrected fact never posts twice.
+      const superseded = await supersede(tx, business, event, result.reverses ?? [], entryDate, actor);
+      if (!lines.length) {
+        if (!superseded.length) {
+          await tx.financialEvent.update({ where: { id: event.id }, data: { status: "IGNORED", processedAt: new Date(), attempts: { increment: 1 }, lastError: null } });
+          await recordFinanceAudit(tx, { businessId: business.id, actor, action: "event.ignore", entityType: "FinancialEvent", entityId: event.id, reason: "No financial effect" });
+          return "ignored" as const;
+        }
+        // A void: the fact no longer exists; its only effect is the reversal above.
+        await tx.financialEvent.update({ where: { id: event.id }, data: { status: "POSTED", processedAt: new Date(), attempts: { increment: 1 }, lastError: null } });
+        await recordFinanceAudit(tx, { businessId: business.id, actor, action: "event.post_void", entityType: "FinancialEvent", entityId: event.id, after: { superseded } });
+        return "posted" as const;
+      }
       const { entry } = await postJournalInTx(tx, business, {
         entryDate,
         description: result.description,

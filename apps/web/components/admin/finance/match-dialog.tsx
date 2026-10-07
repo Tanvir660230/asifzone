@@ -31,7 +31,9 @@ export function MatchDialog({ line: given, accounts, reconciliationId, onClose }
   const line = fresh ?? given;
   const refresh = () => void queryClient.invalidateQueries({ queryKey: financeApi.financeKeys.all });
   const final = line.status === "RECONCILED";
-  const candidates = useQuery({ queryKey: [...financeApi.financeKeys.all, "candidates", line.id, line.matchedAmount], queryFn: () => financeApi.matchCandidates(line.id), enabled: !final && line.unmatchedAmount > 0 });
+  // Candidates depend on every match in the books, not only this line's, so a list is never kept for later: one cached
+  // under an earlier remainder (before an unmatch) would offer ledger lines as they were then.
+  const candidates = useQuery({ queryKey: [...financeApi.financeKeys.all, "candidates", line.id, line.matchedAmount], queryFn: () => financeApi.matchCandidates(line.id), enabled: !final && line.unmatchedAmount > 0, gcTime: 0 });
   const ledger = useQuery({ queryKey: financeApi.financeKeys.ledgerAccounts(), queryFn: financeApi.listLedgerAccounts, enabled: !final });
   const counters = useMemo(() => counterAccountsFor(ledger.data?.accounts ?? [], accounts), [ledger.data, accounts]);
   const [partial, setPartial] = useState<Record<string, string>>({});

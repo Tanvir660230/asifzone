@@ -11,9 +11,10 @@
  */
 import type { Prisma, ReconciliationRun, ReconciliationStatus } from "@prisma/client";
 import { Prisma as P } from "@prisma/client";
-import { RECONCILED_COGS_KEY, RECONCILED_REVENUE_KEYS, compareBusinessDates, fromMajor, type AccountMappingKey } from "@clothing-brand/shared";
+import { CLEARING_ACCOUNTS, RECONCILED_COGS_KEY, RECONCILED_REVENUE_KEYS, businessDate, compareBusinessDates, contributions, fromMajor, type AccountMappingKey } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
-import { computeMetrics } from "../metrics/metrics.service";
+import { computeMetrics, loadFactsForRange } from "../metrics/metrics.service";
+import { resolveStoreRange } from "../metrics/store-time";
 import { getCommerceSettings } from "../config/commerce-settings";
 import { logger } from "../../lib/observability/logger";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
@@ -21,6 +22,7 @@ import { FINANCE_BUSINESS_KEY, businessToday, getFinanceContext, type FinanceCon
 import { postingRuleKeys } from "./events.service";
 import { dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
+import { clearingBreakdown } from "./settlements.service";
 
 export interface ReconciliationRange {
   from?: string;
@@ -82,7 +84,61 @@ async function dashboardMetric(key: "realised_net_sales" | "cogs", range: { from
   return { minor: fromMajor(String(metric.value), currency).amount, coverage: metric.coverage ?? null, estimated: metric.estimated ?? false };
 }
 
-const commercePostingRules = () => postingRuleKeys().filter((k) => k.startsWith("order.") || k.startsWith("return.") || k.startsWith("refund."));
+/** Σ (credit − debit) × sign per order of POSTED lines on the mapped accounts, entry date in range, this brand. */
+async function orderLedger(ctx: FinanceContext, keys: Array<{ key: AccountMappingKey; sign: 1 | -1 }>, range: { from: string; to: string }, valuation?: "KNOWN") {
+  const cur = ctx.business.baseCurrency;
+  const out = new Map<string, number>();
+  for (const { key, sign } of keys) {
+    const mapping = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key } } });
+    if (!mapping) continue;
+    const rows = await prisma.$queryRaw<Array<{ partyId: string | null; d: Prisma.Decimal; c: Prisma.Decimal }>>`
+      SELECT l."partyId", COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c
+      FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+      WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${mapping.accountId}
+        AND e."entryDate" BETWEEN ${dateColumn(range.from)}::date AND ${dateColumn(range.to)}::date
+        AND COALESCE(l."brandId", e."brandId") = ${ctx.brand.id}
+        ${valuation ? P.sql`AND (l."valuationStatus" IS NULL OR l."valuationStatus" = ${valuation}::"FinanceValuationStatus")` : P.empty}
+      GROUP BY l."partyId"`;
+    for (const r of rows) {
+      const k = r.partyId ?? "(no order)";
+      out.set(k, (out.get(k) ?? 0) + sign * (toMinor(r.c, cur) - toMinor(r.d, cur)));
+    }
+  }
+  return out;
+}
+
+/** Order by order: the dashboard engine's contribution to `metric` in range vs the ledger's — the orders that differ. */
+async function orderDifferences(ctx: FinanceContext, range: { from: string; to: string }, metric: "realised_net_sales" | "cogs", keys: Array<{ key: AccountMappingKey; sign: 1 | -1 }>, valuation?: "KNOWN") {
+  const cur = ctx.business.baseCurrency;
+  const businessRange = await resolveStoreRange({ from: range.from, to: range.to });
+  const { orders } = await loadFactsForRange(businessRange);
+  const engine = new Map<string, number>();
+  for (const c of contributions(metric, orders, businessRange)) engine.set(c.order.id, (engine.get(c.order.id) ?? 0) + c.amount);
+  const ledger = await orderLedger(ctx, keys, range, valuation);
+  const numbers = new Map(orders.map((o) => [o.id, o.orderNumber]));
+  const ids = new Set([...engine.keys(), ...ledger.keys()]);
+  return [...ids]
+    .map((id) => ({ orderId: id, orderNumber: numbers.get(id) ?? null, dashboard: engine.get(id) ?? 0, ledger: ledger.get(id) ?? 0 }))
+    .filter((x) => x.dashboard !== x.ledger)
+    .slice(0, 100)
+    .map((x) => ({ ...x, dashboard: toMajorNumber(x.dashboard, cur), ledger: toMajorNumber(x.ledger, cur), difference: toMajorNumber(x.ledger - x.dashboard, cur) }));
+}
+
+/** The latest revision's status per commerce fact (entityType:entityId), POSTED meaning its effect is in the books. */
+async function liveFacts(ctx: FinanceContext): Promise<Map<string, string>> {
+  const rows = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, sourceSystem: "commerce" }, select: { eventKey: true, sourceEntityType: true, sourceEntityId: true, status: true, payload: true } });
+  const latest = new Map<string, { rev: number; status: string }>();
+  for (const r of rows) {
+    const rev = Number(/#r(\d+)$/.exec(r.eventKey)?.[1] ?? 0);
+    const k = `${r.sourceEntityType}:${r.sourceEntityId}`;
+    const status = (r.payload as { void?: boolean }).void ? "VOID" : r.status;
+    const cur = latest.get(k);
+    if (!cur || rev > cur.rev) latest.set(k, { rev, status });
+  }
+  return new Map([...latest].map(([k, v]) => [k, v.status]));
+}
+
+const commercePostingRules = () => postingRuleKeys().filter((k) => k.startsWith("commerce."));
 
 const compare = (expected: number, actual: number): ReconciliationStatus => (expected === actual ? "MATCHED" : "DIFFERENCE");
 
@@ -158,7 +214,7 @@ export const RECONCILIATION_CHECKS = {
 
   "revenue.dashboard_vs_ledger": {
     label: "Revenue: dashboard vs ledger",
-    description: "The dashboard's realised net sales (metrics registry: merchandise sales − merchandise refunds, VAT-exclusive, at the dashboard's realisation moment) against the ledger's merchandise sales − sales returns for this brand.",
+    description: "The dashboard's realised net sales (merchandise sales − merchandise refunds, VAT-exclusive, at the dashboard's realisation moment) against the ledger's merchandise sales − sales returns for this brand — total, and order by order.",
     async run(ctx, range) {
       const r = booksRange(ctx, range);
       if (!r) return { status: "NOT_APPLICABLE", details: { reason: ctx.business.openingDate ? "The range lies outside the books" : "The Financial Opening Date is not set" }, range: null };
@@ -167,9 +223,9 @@ export const RECONCILIATION_CHECKS = {
       const rev = sums.get(RECONCILED_REVENUE_KEYS.revenue)!;
       const contra = sums.get(RECONCILED_REVENUE_KEYS.contra)!;
       const ledger = rev.credit - rev.debit - (contra.debit - contra.credit);
-      const rules = commercePostingRules();
+      const status = compare(dash.minor, ledger);
       return {
-        status: compare(dash.minor, ledger),
+        status,
         expected: dash.minor,
         actual: ledger,
         range: r,
@@ -177,8 +233,10 @@ export const RECONCILIATION_CHECKS = {
           dashboardMetric: "realised_net_sales",
           dashboardCoverage: dash.coverage,
           ledger: { merchandiseSales: toMajorNumber(rev.credit - rev.debit, cur), returnsAndRefunds: toMajorNumber(contra.debit - contra.credit, cur) },
-          commercePostingRules: rules,
-          ...(rules.length === 0 ? { note: "No commerce posting rules are registered yet (Phase 3): sales do not reach the ledger, so any dashboard revenue shows as a difference." } : {}),
+          commercePostingRules: commercePostingRules(),
+          ...(status === "DIFFERENCE"
+            ? { orders: await orderDifferences(ctx, r, "realised_net_sales", [{ key: RECONCILED_REVENUE_KEYS.revenue, sign: 1 }, { key: RECONCILED_REVENUE_KEYS.contra, sign: 1 }]) }
+            : {}),
         },
       };
     },
@@ -186,29 +244,148 @@ export const RECONCILIATION_CHECKS = {
 
   "cogs.dashboard_vs_ledger": {
     label: "Cost of goods sold: dashboard vs ledger",
-    description: "The dashboard's recorded COGS (order-line cost snapshots; lines without a snapshot are excluded and counted) against the ledger's cost of goods sold for this brand.",
+    description: "The dashboard's recorded COGS (order-line cost snapshots; lines without one are excluded) against the ledger's cost of goods sold at KNOWN cost for this brand — total and order by order. Approved estimates and missing costs are reported, never mixed in.",
     async run(ctx, range) {
       const r = booksRange(ctx, range);
       if (!r) return { status: "NOT_APPLICABLE", details: { reason: ctx.business.openingDate ? "The range lies outside the books" : "The Financial Opening Date is not set" }, range: null };
       const cur = ctx.business.baseCurrency;
-      const [dash, sums] = await Promise.all([dashboardMetric("cogs", r, cur), mappedSums(ctx, [RECONCILED_COGS_KEY], r)]);
+      const [dash, sums, known, missing] = await Promise.all([
+        dashboardMetric("cogs", r, cur),
+        mappedSums(ctx, [RECONCILED_COGS_KEY], r),
+        orderLedger(ctx, [{ key: RECONCILED_COGS_KEY, sign: -1 }], r, "KNOWN"),
+        prisma.financeException.findMany({ where: { businessId: ctx.business.id, kind: "MISSING_COST", status: { not: "RESOLVED" } }, select: { orderNumber: true, title: true, amount: true }, take: 50 }),
+      ]);
       const cogs = sums.get(RECONCILED_COGS_KEY)!;
-      const ledger = cogs.debit - cogs.credit;
-      const rules = commercePostingRules();
+      const ledgerKnown = [...known.values()].reduce((s, v) => s + v, 0);
+      const status = compare(dash.minor, ledgerKnown);
       return {
-        status: compare(dash.minor, ledger),
+        status,
         expected: dash.minor,
-        actual: ledger,
+        actual: ledgerKnown,
         range: r,
         details: {
           dashboardMetric: "cogs",
           /** Order lines in range with / without a recorded cost — the dashboard figure is incomplete by the missing ones. */
           dashboardCostCoverage: dash.coverage,
+          ledgerTotalAllValuations: toMajorNumber(cogs.debit - cogs.credit, cur),
           ledgerLinesByValuation: { valued: cogs.valued, estimated: cogs.estimated, missing: cogs.missing },
-          commercePostingRules: rules,
-          ...(rules.length === 0 ? { note: "No commerce posting rules are registered yet (Phase 3): COGS does not reach the ledger, so any dashboard COGS shows as a difference." } : {}),
+          openMissingCosts: missing.map((m) => ({ orderNumber: m.orderNumber, title: m.title })),
+          ...(status === "DIFFERENCE" ? { orders: await orderDifferences(ctx, r, "cogs", [{ key: RECONCILED_COGS_KEY, sign: -1 }], "KNOWN") } : {}),
         },
       };
+    },
+  },
+
+  "commerce.facts_posted": {
+    label: "Commerce facts in the books",
+    description: "Every successful payment, completed refund and store-credit entry dated in the books has its accounting event posted — anything missing or failing is listed by record.",
+    async run(ctx, range) {
+      const r = booksRange(ctx, range);
+      if (!r) return { status: "NOT_APPLICABLE", details: { reason: "The Financial Opening Date is not set" }, range: null };
+      const tz = ctx.business.timezone;
+      const inBooks = (d: Date) => businessDate(d, tz) >= r.from && businessDate(d, tz) <= r.to;
+      const window = { gte: new Date(new Date(`${r.from}T00:00:00Z`).getTime() - 86_400_000), lte: new Date(new Date(`${r.to}T00:00:00Z`).getTime() + 2 * 86_400_000) };
+      const [payments, refunds, credits] = await Promise.all([
+        prisma.payment.findMany({ where: { status: "SUCCEEDED", amount: { gt: 0 }, orderId: { not: null }, settledAt: window }, select: { id: true, orderId: true, settledAt: true, amount: true, provider: true } }),
+        prisma.refund.findMany({ where: { status: "COMPLETED", completedAt: window }, select: { id: true, orderId: true, completedAt: true, amount: true } }),
+        prisma.customerCreditEntry.findMany({ where: { createdAt: window }, select: { id: true, orderId: true, createdAt: true, amount: true, type: true } }),
+      ]);
+      const live = await liveFacts(ctx);
+      const missing = [
+        ...payments.filter((p) => inBooks(p.settledAt) && live.get(`Payment:${p.id}`) !== "POSTED").map((p) => ({ record: "Payment", id: p.id, orderId: p.orderId, amount: p.amount.toString(), state: live.get(`Payment:${p.id}`) ?? "NOT_RECORDED" })),
+        ...refunds.filter((x) => x.completedAt && inBooks(x.completedAt) && live.get(`Refund:${x.id}`) !== "POSTED").map((x) => ({ record: "Refund", id: x.id, orderId: x.orderId, amount: x.amount.toString(), state: live.get(`Refund:${x.id}`) ?? "NOT_RECORDED" })),
+        ...credits.filter((c) => inBooks(c.createdAt) && live.get(`CustomerCreditEntry:${c.id}`) !== "POSTED").map((c) => ({ record: "CustomerCreditEntry", id: c.id, orderId: c.orderId, amount: c.amount.toString(), state: live.get(`CustomerCreditEntry:${c.id}`) ?? "NOT_RECORDED" })),
+      ];
+      // A store-credit entry with no accounting meaning is an exception, not a missing posting.
+      const excepted = new Set((await prisma.financeException.findMany({ where: { businessId: ctx.business.id, kind: "UNSUPPORTED_CREDIT_ENTRY" }, select: { sourceId: true } })).map((e) => e.sourceId));
+      const unexplained = missing.filter((m) => !(m.record === "CustomerCreditEntry" && excepted.has(m.id)));
+      return {
+        status: unexplained.length ? "DIFFERENCE" : "MATCHED", expected: null, actual: null, range: r,
+        details: { payments: payments.filter((p) => inBooks(p.settledAt)).length, refunds: refunds.filter((x) => x.completedAt && inBooks(x.completedAt)).length, storeCreditEntries: credits.filter((c) => inBooks(c.createdAt)).length, notPosted: unexplained.slice(0, 100) },
+      };
+    },
+  },
+
+  "commerce.duplicates": {
+    label: "No fact posted twice",
+    description: "No commerce fact has more than one posted, unreversed journal — retries, repeated syncs and concurrent runs never doubled money.",
+    async run(ctx) {
+      const rows = await prisma.$queryRaw<Array<{ semantic: string; n: bigint }>>`
+        SELECT split_part(ev."eventKey", '#', 1) AS semantic, COUNT(*) AS n
+        FROM "FinancialEvent" ev JOIN "JournalEntry" j ON j."financialEventId" = ev.id
+        WHERE ev."businessId" = ${ctx.business.id} AND ev."sourceSystem" = 'commerce' AND j.status = 'POSTED'
+          AND NOT EXISTS (SELECT 1 FROM "JournalEntry" r WHERE r."reversesEntryId" = j.id AND r.status = 'POSTED')
+        GROUP BY 1 HAVING COUNT(*) > 1 LIMIT 50`;
+      return { status: rows.length ? "DIFFERENCE" : "MATCHED", expected: null, actual: null, details: { duplicated: rows.map((r) => ({ fact: r.semantic, liveJournals: Number(r.n) })) } };
+    },
+  },
+
+  "clearing.positions": {
+    label: "Clearing accounts (COD, gateways, manual receipts)",
+    description: "Per clearing account and order: what customers paid in versus what recorded settlements took out. Money still in clearing is listed (in transit); a settlement for more than an order paid, or a settlement line with no order, is a difference.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const mapped = await prisma.accountMapping.findMany({ where: { businessId: ctx.business.id, key: { in: CLEARING_ACCOUNTS.map((c) => c.key) } }, include: { account: { include: { financialAccount: true } } } });
+      const accounts = [];
+      let problems = 0;
+      for (const m of mapped) {
+        // Per order: paid in (debits), taken out by settlements, taken out by gateway refunds — kept apart, so a refund made
+        // after the order was settled (the gateway deducts it from a later payout) is not mistaken for an over-settlement.
+        // Reversals count against the entry they reverse (clearingBreakdown).
+        const open = (await clearingBreakdown(ctx.business.id, m.accountId, cur))
+          .map((x) => ({ orderId: x.orderId, paidIn: x.paid, settled: x.settled, refunded: x.other, balance: x.balance }))
+          .filter((x) => x.balance !== 0 || x.settled > x.paidIn);
+        const oversettled = open.filter((x) => x.orderId && x.settled > x.paidIn);
+        const unattributed = open.filter((x) => !x.orderId);
+        problems += oversettled.length + unattributed.filter((x) => x.balance < 0).length;
+        accounts.push({
+          key: m.key, account: m.account.financialAccount?.name ?? m.account.name,
+          balance: toMajorNumber(open.reduce((s, x) => s + x.balance, 0), cur),
+          inTransitOrders: open.filter((x) => x.orderId && x.balance > 0).length,
+          inTransitAmount: toMajorNumber(open.filter((x) => x.orderId && x.balance > 0).reduce((s, x) => s + x.balance, 0), cur),
+          oversettled: oversettled.slice(0, 50).map((x) => ({ orderId: x.orderId, paidIn: toMajorNumber(x.paidIn, cur), settled: toMajorNumber(x.settled, cur) })),
+          refundsAwaitingDeduction: open.filter((x) => x.orderId && x.balance < 0 && x.settled <= x.paidIn).length,
+          settledWithoutOrder: toMajorNumber(-unattributed.reduce((s, x) => s + x.balance, 0), cur),
+        });
+      }
+      const unmatchedLines = await prisma.clearingSettlementLine.count({ where: { matchStatus: "UNMATCHED", settlement: { businessId: ctx.business.id, status: "POSTED" } } });
+      return { status: problems || unmatchedLines ? "DIFFERENCE" : "MATCHED", expected: null, actual: null, details: { accounts, unmatchedSettlementLines: unmatchedLines } };
+    },
+  },
+
+  "commerce.receivables": {
+    label: "Order receivables",
+    description: "An order's receivable (what it charged − what was paid + what was refunded …) should be zero once commerce says it is settled. Orders where the books still show money owed either way are listed.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const mapping = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "asset.receivable_trade" } } });
+      if (!mapping) return { status: "ERROR", details: { error: "asset.receivable_trade is not mapped" } };
+      const rows = await prisma.$queryRaw<Array<{ partyId: string; d: Prisma.Decimal; c: Prisma.Decimal }>>`
+        SELECT l."partyId", COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c
+        FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+        WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${mapping.accountId} AND l."partyType" = 'Order'
+        GROUP BY l."partyId"`;
+      const nonzero = rows.map((x) => ({ orderId: x.partyId, balance: toMinor(x.d, cur) - toMinor(x.c, cur) })).filter((x) => x.balance !== 0);
+      const orders = new Map((await prisma.order.findMany({ where: { id: { in: nonzero.map((x) => x.orderId) } }, select: { id: true, orderNumber: true, status: true, paymentStatus: true } })).map((o) => [o.id, o]));
+      const SETTLED = new Set(["PAID", "REFUNDED", "CREDITED"]);
+      const unexpected = nonzero.filter((x) => SETTLED.has(orders.get(x.orderId)?.paymentStatus ?? ""));
+      return {
+        status: unexpected.length ? "DIFFERENCE" : "MATCHED", expected: null, actual: null,
+        details: {
+          openReceivables: nonzero.length,
+          settledButOpen: unexpected.slice(0, 100).map((x) => ({ orderId: x.orderId, orderNumber: orders.get(x.orderId)?.orderNumber ?? null, status: orders.get(x.orderId)?.status ?? null, paymentStatus: orders.get(x.orderId)?.paymentStatus ?? null, balance: toMajorNumber(x.balance, cur) })),
+        },
+      };
+    },
+  },
+
+  "finance.exceptions": {
+    label: "Open finance exceptions",
+    description: "Accounting problems waiting for a decision: missing costs, stock moved without a value, unmatched settlement lines, orders whose totals don't add up.",
+    async run(ctx) {
+      const open = await prisma.financeException.groupBy({ by: ["kind"], where: { businessId: ctx.business.id, status: "OPEN" }, _count: { _all: true } });
+      const n = open.reduce((s, g) => s + g._count._all, 0);
+      return { status: n ? "DIFFERENCE" : "MATCHED", expected: null, actual: null, details: { open: Object.fromEntries(open.map((g) => [g.kind, g._count._all])) } };
     },
   },
 

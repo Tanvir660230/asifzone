@@ -44,6 +44,9 @@ describe("financial core — architecture guards", () => {
       // Phase 2 (docs/FINANCE_PHASE_2.md)
       ["treasuryMovement", "TreasuryMovement"], ["bankTransaction", "BankTransaction"], ["bankTransactionMatch", "BankTransactionMatch"],
       ["statementImport", "StatementImport"], ["bankReconciliation", "BankReconciliation"],
+      // Phase 3 (docs/FINANCE_PHASE_3.md)
+      ["financeException", "FinanceException"], ["clearingSettlement", "ClearingSettlement"], ["clearingSettlementLine", "ClearingSettlementLine"],
+      ["financeSyncState", "FinanceSyncState"],
     ];
     const offenders = MODELS.flatMap(([m, t]) => writers(m, t).filter((f) => !f.startsWith("domain/finance/")).map((f) => `${f}: ${t}`));
     expect(offenders).toEqual([]);
@@ -78,6 +81,18 @@ describe("financial core — architecture guards", () => {
     const treasury = code(join(SRC, "domain", "finance", "treasury.service.ts"));
     expect(treasury).toMatch(/postJournalInTx\(/);
     expect(treasury).not.toMatch(/journal(Entry|Line)\s*\.\s*(create|update|delete)/);
+  });
+
+  it("Phase 3: the commerce projector and settlements only read commerce — they never write a commerce table", () => {
+    const COMMERCE = /\b(order|orderItem|orderStatusHistory|payment|paymentSession|refund|returnRequest|customerCreditEntry|stockMovement|productVariant|product|customer)\s*\.\s*(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/;
+    const offenders = ["commerce-accounting.service.ts", "settlements.service.ts", "commerce-setup.service.ts", "commerce-posting-rules.ts", "finance-exceptions.service.ts"]
+      .filter((f) => COMMERCE.test(code(join(SRC, "domain", "finance", f))));
+    expect(offenders).toEqual([]);
+  });
+
+  it("Phase 3: commerce posting rules name mapping keys, never an account id", () => {
+    const rules = code(join(SRC, "domain", "finance", "commerce-posting-rules.ts"));
+    expect(rules).not.toMatch(/accountId\s*:/);
   });
 
   it("the guards detect what they forbid (self-test)", () => {

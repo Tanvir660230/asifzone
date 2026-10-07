@@ -7,7 +7,9 @@
  * PD-10.2 kept refunds, manual payments, price and loyalty adjustments, SMS, exports and financial analytics with STAFF.
  * Any further change is an owner decision and a change to this map only.
  */
-export const ADMIN_ROLES = ["OWNER", "STAFF"] as const;
+/** OWNER and STAFF run the store; FINANCE_ADMIN, ACCOUNTANT and FINANCE_VIEWER (Financial Core Phase 3,
+ * docs/FINANCE_PHASE_3.md §11) work in the books only — they hold no commerce permission. */
+export const ADMIN_ROLES = ["OWNER", "STAFF", "FINANCE_ADMIN", "ACCOUNTANT", "FINANCE_VIEWER"] as const;
 export type AdminRoleName = (typeof ADMIN_ROLES)[number];
 
 export const PERMISSIONS = [
@@ -60,6 +62,8 @@ export const PERMISSIONS = [
   "finance.configure", // business settings & opening date, chart of accounts, mappings, financial accounts
   "finance.period_close", // soft-close / close / reopen periods; post into soft-closed periods
   "finance.reconcile", // run reconciliation checks, retry financial events
+  "finance.approve_high_value", // approve a money movement at or above an account's approval threshold (Phase 3)
+  "finance.sensitive", // ownership, partner and payroll balances (Phase 3) — OWNER only
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -83,13 +87,24 @@ export const OWNER_ONLY_PERMISSIONS = [
   "finance.configure",
   "finance.period_close",
   "finance.reconcile",
+  "finance.approve_high_value",
+  "finance.sensitive",
 ] as const satisfies readonly Permission[];
 
 const ownerOnly = new Set<Permission>(OWNER_ONLY_PERMISSIONS);
 
+/** Finance roles: the books only. Configuration, period closing, high-value approvals and sensitive (ownership, partner,
+ * payroll) data stay with OWNER. ACCOUNTANT records and reconciles but can't post — what they record waits for approval. */
+const FINANCE_ADMIN_PERMISSIONS = ["finance.read", "finance.transact", "finance.post", "finance.reverse", "finance.reconcile"] as const satisfies readonly Permission[];
+const ACCOUNTANT_PERMISSIONS = ["finance.read", "finance.transact", "finance.reconcile"] as const satisfies readonly Permission[];
+const FINANCE_VIEWER_PERMISSIONS = ["finance.read"] as const satisfies readonly Permission[];
+
 export const ROLE_PERMISSIONS: Readonly<Record<AdminRoleName, readonly Permission[]>> = Object.freeze({
   OWNER: Object.freeze([...PERMISSIONS]),
   STAFF: Object.freeze(PERMISSIONS.filter((p) => !ownerOnly.has(p))),
+  FINANCE_ADMIN: Object.freeze([...FINANCE_ADMIN_PERMISSIONS]),
+  ACCOUNTANT: Object.freeze([...ACCOUNTANT_PERMISSIONS]),
+  FINANCE_VIEWER: Object.freeze([...FINANCE_VIEWER_PERMISSIONS]),
 });
 
 export function permissionsForRole(role: AdminRoleName): readonly Permission[] {

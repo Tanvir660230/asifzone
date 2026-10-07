@@ -5,6 +5,7 @@ import type {
   UpdateAdminInput,
   GoogleLoginInput,
   Permission,
+  AdminRoleName,
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 import { clearAdminHint } from "./admin-hint";
@@ -13,7 +14,7 @@ export interface AdminUser {
   id: string;
   name: string;
   email: string;
-  role: "OWNER" | "STAFF";
+  role: AdminRoleName;
   /** Resolved by the API from the admin's current role (Phase 10). */
   permissions: Permission[];
 }
@@ -28,7 +29,7 @@ export interface AdminAccount {
   id: string;
   name: string;
   email: string;
-  role: "OWNER" | "STAFF";
+  role: AdminRoleName;
   isActive: boolean;
   createdAt: string;
 }
@@ -37,7 +38,7 @@ export interface AdminInvite {
   id: string;
   name: string;
   email: string;
-  role: "OWNER" | "STAFF";
+  role: AdminRoleName;
   expiresAt: string;
   createdAt: string;
 }

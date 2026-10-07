@@ -7,7 +7,7 @@ import { Prisma } from "@prisma/client";
 import { signedBalance, trialBalance as engineTrialBalance } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { getFinanceContext } from "./finance-context";
-import { businessDateOf, dateColumn, financeError, toMajorNumber, toMinor } from "./finance-values";
+import { businessDateOf, dateColumn, financeError, toMajorNumber, toMinor, FULL_VIEW, type FinanceViewer } from "./finance-values";
 
 export interface LedgerRange {
   from?: string;
@@ -43,7 +43,7 @@ export async function accountSums(businessId: string, range: LedgerRange): Promi
     GROUP BY l."accountId"`;
 }
 
-export async function getTrialBalance(range: LedgerRange) {
+export async function getTrialBalance(range: LedgerRange, viewer: FinanceViewer = FULL_VIEW) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const [sums, accounts] = await Promise.all([accountSums(business.id, range), prisma.ledgerAccount.findMany({ where: { businessId: business.id } })]);
@@ -66,6 +66,21 @@ export async function getTrialBalance(range: LedgerRange) {
     })
     .sort((x, y) => x.code.localeCompare(y.code));
   const tb = engineTrialBalance(rows.map((r) => ({ accountId: r.accountId, debit: r._minor.debit, credit: r._minor.credit })));
+  if (!viewer.sensitive) {
+    // Ownership, partner and payroll accounts are folded into one row: the totals still balance, nothing is attributed.
+    const hidden = rows.filter((r) => byId.get(r.accountId)!.isSensitive);
+    if (hidden.length) {
+      const d = hidden.reduce((s, r) => s + r._minor.debit, 0);
+      const c = hidden.reduce((s, r) => s + r._minor.credit, 0);
+      const net = d - c;
+      const restricted = {
+        accountId: "restricted", code: "—", name: "Restricted accounts (ownership, partners, payroll)", type: "RESTRICTED" as never, normalBalance: "DEBIT" as const,
+        opening: null as never, periodDebit: null as never, periodCredit: null as never,
+        closingDebit: toMajorNumber(net > 0 ? net : 0, cur), closingCredit: toMajorNumber(net < 0 ? -net : 0, cur), balance: null as never, _minor: { debit: d, credit: c },
+      };
+      rows.splice(0, rows.length, ...rows.filter((r) => !byId.get(r.accountId)!.isSensitive), restricted);
+    }
+  }
   return {
     currency: cur,
     range: { from: range.from ?? null, to: range.to ?? null, brandId: range.brandId ?? null },
@@ -78,11 +93,12 @@ export async function getTrialBalance(range: LedgerRange) {
 
 const LEDGER_LIMIT = 5000;
 
-export async function getAccountLedger(accountId: string, range: LedgerRange) {
+export async function getAccountLedger(accountId: string, range: LedgerRange, viewer: FinanceViewer = FULL_VIEW) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const account = await prisma.ledgerAccount.findFirst({ where: { id: accountId, businessId: business.id } });
   if (!account) throw financeError(404, "ACCOUNT_NOT_FOUND", "Account not found");
+  if (account.isSensitive && !viewer.sensitive) throw financeError(403, "SENSITIVE_ACCOUNT", "This account's ledger is restricted to the owner");
   const from = range.from ? dateColumn(range.from) : null;
   const [opening = { d: new Prisma.Decimal(0), c: new Prisma.Decimal(0) }] = from
     ? await prisma.$queryRaw<Array<{ d: Prisma.Decimal; c: Prisma.Decimal }>>`

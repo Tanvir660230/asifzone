@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
-import { permissionsForRole, type AdminLoginInput, type CreateAdminInviteInput, type UpdateAdminInput } from "@clothing-brand/shared";
+import { permissionsForRole, type AdminLoginInput, type AdminRoleName, type CreateAdminInviteInput, type UpdateAdminInput } from "@clothing-brand/shared";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -24,7 +24,7 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync("no-account-has-this-password", 10);
 
 /** What the admin console learns about the signed-in admin: its role and the permissions that role resolves to (Phase
  * 10) — the web decides visibility from `permissions`, never by comparing role strings. */
-function sessionAdmin(admin: { id: string; name: string; email: string; role: "OWNER" | "STAFF" }) {
+function sessionAdmin(admin: { id: string; name: string; email: string; role: AdminRoleName }) {
   return { id: admin.id, name: admin.name, email: admin.email, role: admin.role, permissions: permissionsForRole(admin.role) };
 }
 

@@ -87,8 +87,9 @@ const ORDER_SELECT = {
     },
     orderBy: { id: "asc" as const },
   },
-  payments: { select: { amount: true, status: true, provider: true, settledAt: true } },
-  refunds: { select: { amount: true, status: true, completedAt: true } },
+  // Deterministic order (ties in time by id), so refund allocation never depends on how the rows happened to come back.
+  payments: { select: { id: true, amount: true, status: true, provider: true, settledAt: true }, orderBy: [{ settledAt: "asc" as const }, { id: "asc" as const }] },
+  refunds: { select: { id: true, amount: true, status: true, completedAt: true }, orderBy: [{ completedAt: "asc" as const }, { id: "asc" as const }] },
   statusHistory: { where: { status: { in: [...DELIVERED_STATUSES, "CANCELLED" as const] } }, select: { status: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
 };
 
@@ -107,7 +108,7 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
 
   const [returnMovements, exchangeRequests, replacementRefs, variants] = await Promise.all([
     batched(orderIds, (chunk) =>
-      prisma.stockMovement.findMany({ where: { reason: "RETURN", orderId: { in: chunk } }, select: { orderId: true, variantId: true, change: true, createdAt: true } }),
+      prisma.stockMovement.findMany({ where: { reason: "RETURN", orderId: { in: chunk } }, select: { id: true, orderId: true, variantId: true, change: true, createdAt: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
     ),
     batched(orderIds, (chunk) =>
       prisma.returnRequest.findMany({
@@ -173,9 +174,9 @@ export async function loadOrderFacts(ids: string[] | null, currency: string): Pr
         unitCostSnapshot: i.unitCostSnapshot,
       }),
     ),
-    payments: o.payments.map((p) => ({ amount: minor(p.amount, currency), status: p.status, provider: p.provider, settledAt: p.settledAt })),
-    refunds: o.refunds.map((r) => ({ amount: minor(r.amount, currency), status: r.status, completedAt: r.completedAt })),
-    returnMovements: (movementsBy.get(o.id) ?? []).map((m) => ({ variantId: m.variantId, units: m.change, at: m.createdAt })),
+    payments: o.payments.map((p) => ({ id: p.id, amount: minor(p.amount, currency), status: p.status, provider: p.provider, settledAt: p.settledAt })),
+    refunds: o.refunds.map((r) => ({ id: r.id, amount: minor(r.amount, currency), status: r.status, completedAt: r.completedAt })),
+    returnMovements: (movementsBy.get(o.id) ?? []).map((m) => ({ id: m.id, variantId: m.variantId, units: m.change, at: m.createdAt })),
     exchangedLines: (exchangesBy.get(o.id) ?? []).map((e) => ({ orderItemId: e.orderItemId!, approvedAt: e.reviewedAt ?? e.updatedAt })),
   }));
 }

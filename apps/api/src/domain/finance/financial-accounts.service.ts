@@ -9,7 +9,7 @@ import { CREDENTIAL_LIKE_KEY, type AccountMappingKey } from "@clothing-brand/sha
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { financeTransaction } from "./finance-tx";
-import { getFinanceContext } from "./finance-context";
+import { getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { resolveMappedAccount } from "./chart.service";
 import { accountSums, moneyBalanceAt } from "./ledger.service";
 import { businessDateOf, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
@@ -124,33 +124,45 @@ function detailsData(input: FinancialAccountDetails, currency: string) {
   };
 }
 
+/** Creates a financial account and its own ledger account under its kind's group, in the caller's transaction, audited.
+ * Used by the API and by commerce provisioning (Phase 3 clearing accounts) — one way to make a money account. */
+export async function createFinancialAccountInTx(
+  tx: AppTransactionClient,
+  business: Pick<FinanceBusinessInfo, "id" | "baseCurrency">,
+  input: { kind: FinancialAccountKind; name: string; provider?: string | null; accountNumberLast4?: string | null; brandId?: string | null } & FinancialAccountDetails,
+  actor: FinanceActor,
+) {
+  if (await tx.financialAccount.findUnique({ where: { businessId_name: { businessId: business.id, name: input.name } } })) {
+    throw financeError(409, "FINANCIAL_ACCOUNT_NAME_TAKEN", `A financial account named "${input.name}" already exists`);
+  }
+  if (input.brandId && !(await tx.financeBrand.findFirst({ where: { id: input.brandId, businessId: business.id } }))) {
+    throw financeError(400, "BRAND_NOT_FOUND", "Brand not found in this business");
+  }
+  const group = await resolveMappedAccount(tx, business.id, GROUP_FOR_KIND[input.kind]);
+  const ledgerAccount = await tx.ledgerAccount.create({
+    data: { businessId: business.id, code: await nextChildCode(tx, business.id, group), name: input.name, type: group.type, normalBalance: "DEBIT", parentId: group.id, isPostable: true, isSystem: true },
+  });
+  const account = await tx.financialAccount.create({
+    data: {
+      businessId: business.id, brandId: input.brandId ?? null, kind: input.kind, name: input.name, provider: input.provider ?? null, accountNumberLast4: input.accountNumberLast4 ?? null,
+      currency: business.baseCurrency, ledgerAccountId: ledgerAccount.id, ...detailsData(input, business.baseCurrency),
+    },
+    include: { ledgerAccount: true },
+  });
+  await recordFinanceAudit(tx, [
+    { businessId: business.id, actor, action: "account.create", entityType: "LedgerAccount", entityId: ledgerAccount.id, after: ledgerAccount, sourceType: "FinancialAccount", sourceRef: account.id },
+    { businessId: business.id, actor, action: "financial_account.create", entityType: "FinancialAccount", entityId: account.id, after: account },
+  ]);
+  return account;
+}
+
 export async function createFinancialAccount(
   input: { kind: FinancialAccountKind; name: string; provider?: string | null; accountNumberLast4?: string | null; brandId?: string | null; openingBalance?: { amount: number; date: string } | null } & FinancialAccountDetails,
   actor: FinanceActor,
 ) {
   const { business } = await getFinanceContext();
   const created = await inTransaction(async (tx) => {
-    if (await tx.financialAccount.findUnique({ where: { businessId_name: { businessId: business.id, name: input.name } } })) {
-      throw financeError(409, "FINANCIAL_ACCOUNT_NAME_TAKEN", `A financial account named "${input.name}" already exists`);
-    }
-    if (input.brandId && !(await tx.financeBrand.findFirst({ where: { id: input.brandId, businessId: business.id } }))) {
-      throw financeError(400, "BRAND_NOT_FOUND", "Brand not found in this business");
-    }
-    const group = await resolveMappedAccount(tx, business.id, GROUP_FOR_KIND[input.kind]);
-    const ledgerAccount = await tx.ledgerAccount.create({
-      data: { businessId: business.id, code: await nextChildCode(tx, business.id, group), name: input.name, type: group.type, normalBalance: "DEBIT", parentId: group.id, isPostable: true, isSystem: true },
-    });
-    const account = await tx.financialAccount.create({
-      data: {
-        businessId: business.id, brandId: input.brandId ?? null, kind: input.kind, name: input.name, provider: input.provider ?? null, accountNumberLast4: input.accountNumberLast4 ?? null,
-        currency: business.baseCurrency, ledgerAccountId: ledgerAccount.id, ...detailsData(input, business.baseCurrency),
-      },
-      include: { ledgerAccount: true },
-    });
-    await recordFinanceAudit(tx, [
-      { businessId: business.id, actor, action: "account.create", entityType: "LedgerAccount", entityId: ledgerAccount.id, after: ledgerAccount, sourceType: "FinancialAccount", sourceRef: account.id },
-      { businessId: business.id, actor, action: "financial_account.create", entityType: "FinancialAccount", entityId: account.id, after: account },
-    ]);
+    const account = await createFinancialAccountInTx(tx, business, input, actor);
     let openingMovement = null;
     if (input.openingBalance) {
       const { movement } = await requestMovementInTx(tx, business, {

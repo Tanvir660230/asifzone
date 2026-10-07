@@ -322,7 +322,12 @@ export async function approveMovement(id: string, actor: FinanceActor) {
     if (!actorCan(actor, "finance.post")) throw financeError(409, "APPROVER_LACKS_PERMISSION", "Approving a movement needs finance.post");
     const x = await resolvedOf(tx, m);
     const thresholds = [x.from, x.to].map((a) => (a?.approvalThreshold != null ? toMinor(a.approvalThreshold, business.baseCurrency) : null)).filter((t): t is number => t !== null);
-    if (thresholds.some((t) => toMinor(m.amount, business.baseCurrency) >= t) && m.requestedByAdminId && m.requestedByAdminId === adminId(actor)) {
+    const highValue = thresholds.some((t) => toMinor(m.amount, business.baseCurrency) >= t);
+    // Phase 3 §11: a movement at or above an account's threshold is a high-value approval — an owner decision.
+    if (highValue && !actorCan(actor, "finance.approve_high_value")) {
+      throw financeError(403, "HIGH_VALUE_APPROVAL_REQUIRED", "Approving a movement at or above the account's approval amount is reserved for the owner");
+    }
+    if (highValue && m.requestedByAdminId && m.requestedByAdminId === adminId(actor)) {
       throw financeError(409, "SAME_PERSON_APPROVAL", "A movement above the approval threshold must be approved by someone other than the person who requested it");
     }
     return { movement: movementDto(await postMovement(tx, business, m, x, actor, true)), alreadyPosted: false };

@@ -1,6 +1,15 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import {
   accountMappingUpdateSchema,
+  commerceSyncSchema,
+  exceptionAcknowledgeSchema,
+  exceptionEstimateSchema,
+  financeCostPolicySchema,
+  financeExceptionQuerySchema,
+  settlementCreateSchema,
+  settlementImportSchema,
+  settlementListQuerySchema,
+  settlementReverseSchema,
   adjustmentSchema,
   bankAdjustSchema,
   bankFlagSchema,
@@ -59,6 +68,14 @@ import * as reconciliation from "../../domain/finance/reconciliation.service";
 import * as treasury from "../../domain/finance/treasury.service";
 import * as bank from "../../domain/finance/bank.service";
 import * as bankRecon from "../../domain/finance/bank-reconciliation.service";
+import * as commerce from "../../domain/finance/commerce-accounting.service";
+import * as settlements from "../../domain/finance/settlements.service";
+import * as exceptions from "../../domain/finance/finance-exceptions.service";
+import { ensureCommerceAccounting } from "../../domain/finance/commerce-setup.service";
+import type { FinanceViewer } from "../../domain/finance/finance-values";
+
+/** Phase 3 §11: what this admin may see of ownership / partner / payroll accounts. */
+const viewerOf = (req: Request): FinanceViewer => ({ sensitive: req.admin!.permissions.includes("finance.sensitive") });
 
 /**
  * Financial Core admin API (docs/FINANCE_PHASE_1.md §6) — /api/v1/finance. Every route states a finance.* permission
@@ -88,10 +105,10 @@ financeRouter.get("/business", requirePermission("finance.read"), asyncHandler(a
 financeRouter.patch("/business", requirePermission("finance.configure"), validate(financeBusinessUpdateSchema), asyncHandler(async (req, res) => res.json(await chart.updateBusinessSettings(req.body, await actorOf(req)))));
 
 // ── chart of accounts & mappings ────────────────────────────────────────────────────────────────────────────────────
-financeRouter.get("/accounts", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json({ accounts: await chart.listAccounts() })));
+financeRouter.get("/accounts", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json({ accounts: await chart.listAccounts(viewerOf(req)) })));
 financeRouter.post("/accounts", requirePermission("finance.configure"), validate(ledgerAccountCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await chart.createAccount(req.body, await actorOf(req)))));
 financeRouter.patch("/accounts/:id", requirePermission("finance.configure"), validate(ledgerAccountUpdateSchema), asyncHandler(async (req, res) => res.json(await chart.updateAccount(id(req), req.body, await actorOf(req)))));
-financeRouter.get("/accounts/:id/ledger", requirePermission("finance.read"), validate(ledgerRangeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ledger.getAccountLedger(id(req), req.query as never))));
+financeRouter.get("/accounts/:id/ledger", requirePermission("finance.read"), validate(ledgerRangeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ledger.getAccountLedger(id(req), req.query as never, viewerOf(req)))));
 financeRouter.get("/mappings", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json({ mappings: await chart.listMappings() })));
 financeRouter.put("/mappings/:key", requirePermission("finance.configure"), validate(accountMappingUpdateSchema), asyncHandler(async (req, res) => res.json(await chart.setMapping(req.params.key!, req.body, await actorOf(req)))));
 
@@ -113,8 +130,8 @@ for (const transition of ["soft-close", "close", "reopen"] as const) {
 }
 
 // ── journals ────────────────────────────────────────────────────────────────────────────────────────────────────────
-financeRouter.get("/journals", requirePermission("finance.read"), validate(journalListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await journals.listJournals(req.query as never))));
-financeRouter.get("/journals/:id", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json(await journals.getJournal(id(req)))));
+financeRouter.get("/journals", requirePermission("finance.read"), validate(journalListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await journals.listJournals(req.query as never, viewerOf(req)))));
+financeRouter.get("/journals/:id", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json(await journals.getJournal(id(req), viewerOf(req)))));
 financeRouter.post("/journals", requirePermission("finance.transact"), validate(journalDraftSchema), asyncHandler(async (req, res) => {
   const result = await journals.createDraftJournal(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(result.replayed ? 200 : 201).json(result);
@@ -135,7 +152,7 @@ financeRouter.post("/journals/:id/correct", requirePermission("finance.reverse")
 }));
 
 // ── general ledger ──────────────────────────────────────────────────────────────────────────────────────────────────
-financeRouter.get("/trial-balance", requirePermission("finance.read"), validate(ledgerRangeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ledger.getTrialBalance(req.query as never))));
+financeRouter.get("/trial-balance", requirePermission("finance.read"), validate(ledgerRangeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ledger.getTrialBalance(req.query as never, viewerOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));
@@ -223,3 +240,33 @@ financeRouter.post("/bank-reconciliations", requirePermission("finance.reconcile
 financeRouter.post("/bank-reconciliations/:id/auto-match", requirePermission("finance.reconcile"), asyncHandler(async (req, res) => res.json(await bankRecon.autoMatch(id(req), await actorOf(req)))));
 financeRouter.post("/bank-reconciliations/:id/complete", requirePermission("finance.reconcile"), validate(bankReconciliationCompleteSchema), asyncHandler(async (req, res) => res.json(await bankRecon.completeReconciliation(id(req), req.body, await actorOf(req)))));
 financeRouter.post("/bank-reconciliations/:id/abandon", requirePermission("finance.reconcile"), validate(bankReconciliationAbandonSchema), asyncHandler(async (req, res) => res.json(await bankRecon.abandonReconciliation(id(req), req.body.reason, await actorOf(req)))));
+
+// ── Phase 3: commerce accounting (docs/FINANCE_PHASE_3.md §7) ──────────────────────────────────────────────────────
+financeRouter.get("/commerce/status", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await commerce.syncStatus())));
+financeRouter.post("/commerce/setup", requirePermission("finance.configure"), asyncHandler(async (req, res) => res.json(await ensureCommerceAccounting(await actorOf(req)))));
+financeRouter.post("/commerce/sync", requirePermission("finance.reconcile"), validate(commerceSyncSchema), asyncHandler(async (req, res) => res.json(await commerce.syncCommerce({ full: req.body.full, actor: await actorOf(req) }))));
+financeRouter.get("/commerce/orders/:id", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json(await commerce.orderAccounting(id(req)))));
+financeRouter.post("/commerce/orders/:id/sync", requirePermission("finance.reconcile"), asyncHandler(async (req, res) => res.json(await commerce.projectOrder(id(req)))));
+financeRouter.put("/business/cost-policy", requirePermission("finance.configure"), validate(financeCostPolicySchema), asyncHandler(async (req, res) => res.json(await chart.setCostPolicy(req.body, await actorOf(req)))));
+
+financeRouter.get("/exceptions", requirePermission("finance.read"), validate(financeExceptionQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await exceptions.listExceptions(req.query as never))));
+financeRouter.post("/exceptions/:id/acknowledge", requirePermission("finance.reconcile"), validate(exceptionAcknowledgeSchema), asyncHandler(async (req, res) => res.json(await exceptions.acknowledgeException(id(req), req.body.note, await actorOf(req)))));
+financeRouter.post("/exceptions/:id/approve-estimate", requirePermission("finance.post"), validate(exceptionEstimateSchema), asyncHandler(async (req, res) => res.json(await commerce.approveCostEstimate(id(req), req.body.unitCost, req.body.note, await actorOf(req)))));
+
+financeRouter.get("/settlements", requirePermission("finance.read"), validate(settlementListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await settlements.listSettlements(req.query as never))));
+financeRouter.get("/settlements/:id", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json(await settlements.getSettlement(id(req)))));
+financeRouter.post("/settlements", requirePermission("finance.transact"), validate(settlementCreateSchema), asyncHandler(async (req, res) => {
+  const result = await settlements.createSettlement(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(result.replayed ? 200 : 201).json(result);
+}));
+financeRouter.post("/settlements/import", requirePermission("finance.transact"), validate(settlementImportSchema), asyncHandler(async (req, res) => {
+  const result = await settlements.importSettlementCsv(req.body, await actorOf(req));
+  res.status(result.replayed ? 200 : 201).json(result);
+}));
+financeRouter.post("/settlements/:id/post", requirePermission("finance.post"), asyncHandler(async (req, res) => res.json(await settlements.postSettlement(id(req), await actorOf(req)))));
+financeRouter.post("/settlements/:id/reverse", requirePermission("finance.reverse"), validate(settlementReverseSchema), asyncHandler(async (req, res) => res.json(await settlements.reverseSettlement(id(req), req.body.reason, await actorOf(req)))));
+financeRouter.delete("/settlements/:id", requirePermission("finance.transact"), asyncHandler(async (req, res) => {
+  await settlements.deleteDraftSettlement(id(req), await actorOf(req));
+  res.status(204).end();
+}));
+financeRouter.get("/clearing/:id", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json(await settlements.clearingPosition(id(req)))));

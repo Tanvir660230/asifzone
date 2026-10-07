@@ -33,6 +33,7 @@ export * from "./schemas/analytics";
 export * from "./schemas/ai";
 export * from "./schemas/finance";
 export * from "./schemas/finance-treasury";
+export * from "./schemas/finance-commerce";
 export * from "./schemas/campaign";
 export * from "./schemas/push";
 export * from "./search-synonyms";

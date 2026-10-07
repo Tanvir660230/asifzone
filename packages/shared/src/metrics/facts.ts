@@ -72,12 +72,13 @@ export interface OrderFact {
   couponId: string | null;
   bundleId: string | null;
   lines: LineFact[];
-  payments: Array<{ amount: number; status: "SUCCEEDED" | "FAILED"; provider: string; settledAt: Date }>;
-  refunds: Array<{ amount: number; status: "REQUESTED" | "COMPLETED"; completedAt: Date | null }>;
+  /** `id` is the source row (Payment / Refund / StockMovement) when the loader has it — identity only, never used in a sum. */
+  payments: Array<{ id?: string; amount: number; status: "SUCCEEDED" | "FAILED"; provider: string; settledAt: Date }>;
+  refunds: Array<{ id?: string; amount: number; status: "REQUESTED" | "COMPLETED"; completedAt: Date | null }>;
   /** Σ store credit issued from this order's money, minor units (CustomerCreditEntry; absent = 0). Not cash. */
   credited?: number;
   /** Stock-ledger RETURN rows for this order: units back from the customer (return date = `at`). */
-  returnMovements: Array<{ variantId: string; units: number; at: Date }>;
+  returnMovements: Array<{ id?: string; variantId: string; units: number; at: Date }>;
   /** Original lines of APPROVED EXCHANGE requests (their returned units are not returns — P5-3). */
   exchangedLines: Array<{ orderItemId: string; approvedAt: Date }>;
 }
@@ -165,6 +166,8 @@ export function lineMerchandiseVat(o: OrderFact): number[] {
 }
 
 export interface RefundAllocation {
+  /** The Refund row — present only when the facts carry ids. */
+  refundId?: string;
   at: Date;
   amount: number;
   /** Step 1 — covers payment overage; never a sales reduction (C4). */
@@ -203,7 +206,7 @@ export function refundAllocations(o: OrderFact): RefundAllocation[] {
       remCharged -= merchandise;
       remExVat -= merchandiseExVat;
     }
-    return { at: r.completedAt, amount: r.amount, overpayment, merchandise, merchandiseExVat, other: rest - merchandise };
+    return { ...(r.id ? { refundId: r.id } : {}), at: r.completedAt, amount: r.amount, overpayment, merchandise, merchandiseExVat, other: rest - merchandise };
   });
 }
 
@@ -220,6 +223,8 @@ export function couponDiscountOf(o: OrderFact): number {
 }
 
 export interface ReturnEvent {
+  /** The StockMovement (RETURN) row — present only when the facts carry ids. */
+  movementId?: string;
   variantId: string;
   units: number;
   at: Date;
@@ -275,6 +280,7 @@ export function returnEvents(o: OrderFact): ReturnEvent[] {
     }
     if (units <= 0) continue;
     events.push({
+      ...(mv.id ? { movementId: mv.id } : {}),
       variantId: mv.variantId,
       units,
       at: mv.at,

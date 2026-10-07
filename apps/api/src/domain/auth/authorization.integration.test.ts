@@ -190,6 +190,24 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/finance/bank-reconciliations/:id/auto-match",
   "POST /api/v1/finance/bank-reconciliations/:id/complete",
   "POST /api/v1/finance/bank-reconciliations/:id/abandon",
+  // Financial Core Phase 3 (docs/FINANCE_PHASE_3.md §7): commerce accounting, exceptions, settlements — no STAFF access.
+  "GET /api/v1/finance/commerce/status",
+  "POST /api/v1/finance/commerce/setup",
+  "POST /api/v1/finance/commerce/sync",
+  "GET /api/v1/finance/commerce/orders/:id",
+  "POST /api/v1/finance/commerce/orders/:id/sync",
+  "PUT /api/v1/finance/business/cost-policy",
+  "GET /api/v1/finance/exceptions",
+  "POST /api/v1/finance/exceptions/:id/acknowledge",
+  "POST /api/v1/finance/exceptions/:id/approve-estimate",
+  "GET /api/v1/finance/settlements",
+  "GET /api/v1/finance/settlements/:id",
+  "POST /api/v1/finance/settlements",
+  "POST /api/v1/finance/settlements/import",
+  "POST /api/v1/finance/settlements/:id/post",
+  "POST /api/v1/finance/settlements/:id/reverse",
+  "DELETE /api/v1/finance/settlements/:id",
+  "GET /api/v1/finance/clearing/:id",
 ];
 // Phase 12 D-4: GET /api/v1/ops/capabilities is ops.read (OWNER and STAFF), so it is not in the OWNER-only list.
 
@@ -285,10 +303,10 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 391 admin routes, each with exactly one permission (or explicit self-service)", () => {
+  it("covers all 408 admin routes, each with exactly one permission (or explicit self-service)", () => {
     // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore
-    // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7)
-    expect(routes).toHaveLength(391);
+    // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7); +17: Phase 3 (docs/FINANCE_PHASE_3.md §7)
+    expect(routes).toHaveLength(408);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

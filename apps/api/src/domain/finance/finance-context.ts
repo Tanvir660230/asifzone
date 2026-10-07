@@ -79,6 +79,7 @@ export async function getFinanceContext(businessKey: string = FINANCE_BUSINESS_K
             parentId: t.parent ? idByCode.get(t.parent) : null,
             isPostable: !t.group,
             isSystem: true,
+            isSensitive: t.sensitive ?? false,
           },
         });
         idByCode.set(t.code, account.id);

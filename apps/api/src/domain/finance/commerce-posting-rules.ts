@@ -1,0 +1,235 @@
+/**
+ * Posting rules of the commerce accounting events (Financial Core Phase 3, docs/FINANCE_PHASE_3.md §4). The projector
+ * (commerce-accounting.service.ts) records one event per commerce fact, with amounts taken from the dashboard's own
+ * engine; these rules turn each into journal lines that name MAPPING KEYS only. Every line carries the order as its
+ * party, so the ledger can be reconciled order by order.
+ *
+ * The receivable is the hub of an order: recognition debits it with what the order charges; payments credit it from the
+ * clearing account of their provider; refunds debit it back and credit where the money went. For an exchange replacement
+ * (never a sale of its own) the hub is "exchange price differences" instead.
+ *
+ * Every event may supersede an earlier revision of the same fact (`supersedes`): the processor reverses that one first.
+ * A `void` revision only reverses (the fact no longer exists).
+ */
+import { z } from "zod";
+import type { AccountMappingKey } from "@clothing-brand/shared";
+import { registerPostingRule, type PostingRuleLine, type PostingRuleResult } from "./posting-rules";
+
+export const COMMERCE_EVENT_TYPES = {
+  recognised: "commerce.order.recognised",
+  reversed: "commerce.order.recognition_reversed",
+  payment: "commerce.payment.received",
+  refund: "commerce.refund.completed",
+  returned: "commerce.return.restocked",
+  writtenOff: "commerce.return.written_off",
+  credit: "commerce.store_credit.entry",
+  stockWriteOff: "finance.stock.write_off_estimated",
+} as const;
+
+const minor = z.number().int();
+const base = {
+  semanticKey: z.string(),
+  fp: z.string(),
+  supersedes: z.string().nullable(),
+  void: z.boolean(),
+  orderId: z.string().nullable(),
+  orderNumber: z.string().nullable(),
+};
+
+/** The clearing account a payment of each provider lands in (store credit spent on an order leaves the reserved balance). */
+export const PROVIDER_CLEARING: Record<string, AccountMappingKey> = {
+  COD: "clearing.cod",
+  SSLCOMMERZ: "clearing.gateway.sslcommerz",
+  EPS_PG: "clearing.gateway.eps",
+  MANUAL: "clearing.manual_receipts",
+  STORE_CREDIT: "liability.store_credit_reserved",
+};
+
+const party = (orderId: string | null) => (orderId ? { partyType: "Order", partyId: orderId } : {});
+/** A line on the credit side for a positive amount, on the debit side for a negative one (a negative adjustment). */
+function credit(account: AccountMappingKey, amount: number, extra: Partial<PostingRuleLine> = {}): PostingRuleLine {
+  return amount >= 0 ? { account, debit: 0, credit: amount, ...extra } : { account, debit: -amount, credit: 0, ...extra };
+}
+function debit(account: AccountMappingKey, amount: number, extra: Partial<PostingRuleLine> = {}): PostingRuleLine {
+  return amount >= 0 ? { account, debit: amount, credit: 0, ...extra } : { account, debit: 0, credit: -amount, ...extra };
+}
+const mirror = (lines: PostingRuleLine[]): PostingRuleLine[] => lines.map((l) => ({ ...l, debit: l.credit, credit: l.debit }));
+const hub = (exchange: boolean): AccountMappingKey => (exchange ? "revenue.exchange_differences" : "asset.receivable_trade");
+
+function voidOr(p: { void: boolean; supersedes: string | null }, description: string, build: () => PostingRuleLine[], reference?: string | null): PostingRuleResult {
+  const reverses = p.supersedes ? [p.supersedes] : [];
+  if (p.void) return { description: `Withdrawn: ${description}`, lines: [], reverses, reference };
+  return { description, lines: build(), reverses, reference };
+}
+
+// ── order recognition (the dashboard's realisation moment) ─────────────────────────────────────────────────────────
+
+const costLine = z.object({ orderItemId: z.string(), sku: z.string(), quantity: z.number().int(), unitCost: minor, amount: minor, status: z.enum(["KNOWN", "ESTIMATED"]) });
+export const recognitionComponents = z.object({
+  /** Realised merchandise excluding VAT — exactly the positive part of realised_net_sales. */
+  merchandise: minor,
+  vat: minor,
+  /** Shipping and any other charge: what the order total holds beyond merchandise, VAT and price adjustment. */
+  shipping: minor,
+  adjustment: minor,
+  /** What the order charges (its total). */
+  receivable: minor,
+  cogs: z.array(costLine),
+});
+export type RecognitionComponents = z.infer<typeof recognitionComponents>;
+
+export function recognitionLines(c: RecognitionComponents, orderId: string | null): PostingRuleLine[] {
+  const pty = party(orderId);
+  const lines: PostingRuleLine[] = [
+    debit("asset.receivable_trade", c.receivable, pty),
+    credit("revenue.merchandise", c.merchandise, pty),
+    credit("liability.vat_output", c.vat, pty),
+    credit("revenue.shipping", c.shipping, pty),
+    credit("revenue.price_adjustments", c.adjustment, pty),
+  ];
+  for (const status of ["KNOWN", "ESTIMATED"] as const) {
+    const amount = c.cogs.filter((l) => l.status === status).reduce((s, l) => s + l.amount, 0);
+    if (!amount) continue;
+    lines.push({ account: "cogs.goods", debit: amount, credit: 0, valuationStatus: status, ...pty, memo: `${status === "KNOWN" ? "Recorded" : "Approved estimated"} cost of units sold` });
+    lines.push({ account: "asset.inventory", debit: 0, credit: amount, valuationStatus: status, ...pty });
+  }
+  return lines;
+}
+
+const recognisedPayload = z.object({ ...base, paymentMethod: z.string(), components: recognitionComponents, missingCost: z.array(z.object({ orderItemId: z.string(), sku: z.string(), quantity: z.number().int() })) });
+registerPostingRule(COMMERCE_EVENT_TYPES.recognised, 1, {
+  payload: recognisedPayload,
+  build: (p) => voidOr(p, `Sale recognised — order ${p.orderNumber}`, () => recognitionLines(p.components, p.orderId), p.orderNumber),
+});
+
+// ── refunds (cash part always; revenue part when the dashboard counts it) ──────────────────────────────────────────
+
+const refundRevenue = z.object({ merchandiseExVat: minor, merchandiseVat: minor, other: minor });
+export function refundRevenueLines(r: z.infer<typeof refundRevenue>, orderId: string | null, exchange: boolean): PostingRuleLine[] {
+  const pty = party(orderId);
+  return [
+    debit("revenue.returns_refunds", r.merchandiseExVat, pty),
+    debit("liability.vat_output", r.merchandiseVat, pty),
+    debit("revenue.other_refunds", r.other, pty),
+    credit(hub(exchange), r.merchandiseExVat + r.merchandiseVat + r.other, pty),
+  ];
+}
+
+const refundPayload = z.object({
+  ...base,
+  refundId: z.string(),
+  amount: minor,
+  moneySide: z.string(),
+  exchange: z.boolean(),
+  /** null when the dashboard does not count a revenue part (before realisation, after a cancellation, overpayment only). */
+  revenue: refundRevenue.nullable(),
+  allocation: z.object({ overpayment: minor, merchandise: minor, merchandiseExVat: minor, other: minor }),
+});
+registerPostingRule(COMMERCE_EVENT_TYPES.refund, 1, {
+  payload: refundPayload,
+  build: (p) =>
+    voidOr(p, `Refund — order ${p.orderNumber}`, () => [
+      debit(hub(p.exchange), p.amount, party(p.orderId)),
+      credit(p.moneySide as AccountMappingKey, p.amount, party(p.orderId)),
+      ...(p.revenue ? refundRevenueLines(p.revenue, p.orderId, p.exchange) : []),
+    ], p.orderNumber),
+});
+
+// ── returns into stock (COGS reversed at the recorded cost) and damaged units written off ─────────────────────────
+
+const valuation = z.enum(["KNOWN", "ESTIMATED"]);
+const returnPayload = z.object({ ...base, movementId: z.string(), variantId: z.string(), units: z.number().int(), cost: minor, status: valuation });
+registerPostingRule(COMMERCE_EVENT_TYPES.returned, 1, {
+  payload: returnPayload,
+  build: (p) =>
+    voidOr(p, `Returned to stock — order ${p.orderNumber} (${p.units} unit(s))`, () => [
+      { account: "asset.inventory", debit: p.cost, credit: 0, valuationStatus: p.status, ...party(p.orderId) },
+      { account: "cogs.goods", debit: 0, credit: p.cost, valuationStatus: p.status, ...party(p.orderId), memo: p.status === "KNOWN" ? "Recorded cost of returned units" : "Approved estimated cost of returned units" },
+    ], p.orderNumber),
+});
+
+const writeOffPayload = z.object({ ...base, returnRequestId: z.string(), orderItemId: z.string(), units: z.number().int(), cost: minor, status: valuation });
+registerPostingRule(COMMERCE_EVENT_TYPES.writtenOff, 1, {
+  payload: writeOffPayload,
+  build: (p) =>
+    voidOr(p, `Returned damaged, written off — order ${p.orderNumber} (${p.units} unit(s))`, () => [
+      { account: "cogs.inventory_shrinkage", debit: p.cost, credit: 0, valuationStatus: p.status, ...party(p.orderId), memo: "Damaged return at its recorded cost" },
+      { account: "asset.inventory", debit: 0, credit: p.cost, valuationStatus: p.status, ...party(p.orderId) },
+    ], p.orderNumber),
+});
+
+// ── order realisation reversed by a later cancellation (the dashboard's P5-2 reversal) ────────────────────────────
+
+const reversalPayload = z.object({
+  ...base,
+  recognition: recognitionComponents,
+  exchange: z.boolean(),
+  refunds: z.array(z.object({ refundId: z.string(), revenue: refundRevenue })),
+  returns: z.array(z.object({ movementId: z.string(), cost: minor, status: valuation })),
+});
+registerPostingRule(COMMERCE_EVENT_TYPES.reversed, 1, {
+  payload: reversalPayload,
+  build: (p) =>
+    voidOr(p, `Sale reversed by cancellation — order ${p.orderNumber}`, () => [
+      ...mirror(recognitionLines(p.recognition, p.orderId)),
+      ...p.refunds.flatMap((r) => mirror(refundRevenueLines(r.revenue, p.orderId, p.exchange))),
+      ...p.returns.flatMap((r) => [
+        { account: "cogs.goods" as AccountMappingKey, debit: r.cost, credit: 0, valuationStatus: r.status, ...party(p.orderId) },
+        { account: "asset.inventory" as AccountMappingKey, debit: 0, credit: r.cost, valuationStatus: r.status, ...party(p.orderId) },
+      ]),
+    ], p.orderNumber),
+});
+
+// ── customer payments into clearing ────────────────────────────────────────────────────────────────────────────────
+
+const paymentPayload = z.object({ ...base, paymentId: z.string(), provider: z.string(), amount: minor, exchange: z.boolean() });
+registerPostingRule(COMMERCE_EVENT_TYPES.payment, 1, {
+  payload: paymentPayload,
+  build: (p) =>
+    voidOr(p, `Payment received (${p.provider}) — order ${p.orderNumber}`, () => {
+      const into = PROVIDER_CLEARING[p.provider];
+      if (!into) throw new Error(`No clearing account for payment provider ${p.provider}`);
+      return [debit(into, p.amount, party(p.orderId)), credit(hub(p.exchange), p.amount, party(p.orderId))];
+    }, p.orderNumber),
+});
+
+// ── store credit (a liability to the customer) ─────────────────────────────────────────────────────────────────────
+
+const creditPayload = z.object({
+  ...base,
+  entryId: z.string(),
+  creditType: z.string(),
+  customerId: z.string(),
+  /** Signed, as the credit ledger records it. */
+  amount: minor,
+  exchange: z.boolean(),
+  /** Issuance only: the part that settles money the order already owes the customer, and the part that is a return. */
+  receivablePart: minor,
+  returnPart: minor,
+});
+registerPostingRule(COMMERCE_EVENT_TYPES.credit, 1, {
+  payload: creditPayload,
+  build: (p) =>
+    voidOr(p, `Store credit ${p.creditType.toLowerCase().replace(/_/g, " ")}${p.orderNumber ? ` — order ${p.orderNumber}` : ""}`, () => {
+      const pty = p.orderId ? party(p.orderId) : { partyType: "Customer", partyId: p.customerId };
+      if (p.creditType === "ORDER_PAYMENT") return [debit("liability.store_credit", -p.amount, pty), credit("liability.store_credit_reserved", -p.amount, pty)];
+      if (p.creditType === "ORDER_PAYMENT_RELEASED") return [debit("liability.store_credit_reserved", p.amount, pty), credit("liability.store_credit", p.amount, pty)];
+      return [
+        debit(hub(p.exchange), p.receivablePart, pty),
+        debit("revenue.store_credit_returns", p.returnPart, pty),
+        credit("liability.store_credit", p.amount, pty),
+      ];
+    }),
+});
+
+// ── an approved estimate for a stock write-off with no recorded cost (finance exception resolution) ───────────────
+
+const stockWriteOffPayload = z.object({ ...base, exceptionId: z.string(), movementId: z.string(), variantId: z.string(), units: z.number().int(), cost: minor, reason: z.string() });
+registerPostingRule(COMMERCE_EVENT_TYPES.stockWriteOff, 1, {
+  payload: stockWriteOffPayload,
+  build: (p) =>
+    voidOr(p, `Stock written off at an approved estimate (${p.units} unit(s))`, () => [
+      { account: "cogs.inventory_shrinkage", debit: p.cost, credit: 0, valuationStatus: "ESTIMATED", memo: p.reason },
+      { account: "asset.inventory", debit: 0, credit: p.cost, valuationStatus: "ESTIMATED" },
+    ]),
+});

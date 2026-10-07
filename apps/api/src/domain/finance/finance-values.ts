@@ -36,7 +36,14 @@ export function businessDateOf(column: Date): string {
 }
 
 /** Finance error with a stable `details.code` (the API error envelope used elsewhere, e.g. QUOTE_CHANGED). */
-export function financeError(status: 400 | 404 | 409, code: string, message: string, extra: Record<string, unknown> = {}): AppError {
+/** Who is reading (Phase 3 §11): without `sensitive`, ownership / partner / payroll balances are withheld. Internal
+ * callers read everything (the default). */
+export interface FinanceViewer {
+  sensitive: boolean;
+}
+export const FULL_VIEW: FinanceViewer = { sensitive: true };
+
+export function financeError(status: 400 | 403 | 404 | 409, code: string, message: string, extra: Record<string, unknown> = {}): AppError {
   return new AppError(status, message, { code, ...extra });
 }
 

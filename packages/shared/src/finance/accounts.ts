@@ -50,12 +50,50 @@ export const ACCOUNT_MAPPING_KEYS = [
   "revenue.returns_refunds",
   "cogs.goods",
   "cogs.inventory_shrinkage",
+  // Phase 3 (docs/FINANCE_PHASE_3.md §3) — commerce accounting
+  "liability.store_credit_reserved",
+  "liability.refunds_payable",
+  "revenue.price_adjustments",
+  "revenue.other_refunds",
+  "revenue.store_credit_returns",
+  "revenue.exchange_differences",
+  "expense.courier_fees",
+  "expense.gateway_fees",
+  "expense.settlement_adjustments",
 ] as const;
-export type AccountMappingKey = (typeof ACCOUNT_MAPPING_KEYS)[number];
+/**
+ * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
+ * the courier collected, gateway payments, manual receipts. Each is a FINANCIAL ACCOUNT (so it can be settled, carry a
+ * statement and be reconciled like any money account); these keys map to its ledger account. They are provisioned, not
+ * part of the chart template.
+ */
+export const CLEARING_ACCOUNTS = [
+  { key: "clearing.cod", kind: "COURIER", name: "COD collections (courier clearing)", provider: null },
+  { key: "clearing.gateway.sslcommerz", kind: "PAYMENT_GATEWAY", name: "SSLCommerz clearing", provider: "SSLCommerz" },
+  { key: "clearing.gateway.eps", kind: "PAYMENT_GATEWAY", name: "EPS clearing", provider: "EPS" },
+  { key: "clearing.manual_receipts", kind: "OTHER", name: "Manual receipts clearing", provider: null },
+] as const;
+export type ClearingMappingKey = (typeof CLEARING_ACCOUNTS)[number]["key"];
+export const CLEARING_MAPPING_KEYS = CLEARING_ACCOUNTS.map((c) => c.key) as ClearingMappingKey[];
+
+export type AccountMappingKey = (typeof ACCOUNT_MAPPING_KEYS)[number] | ClearingMappingKey;
 
 export function isAccountMappingKey(value: string): value is AccountMappingKey {
-  return (ACCOUNT_MAPPING_KEYS as readonly string[]).includes(value);
+  return (ACCOUNT_MAPPING_KEYS as readonly string[]).includes(value) || (CLEARING_MAPPING_KEYS as readonly string[]).includes(value);
 }
+
+export function isClearingMappingKey(value: string): value is ClearingMappingKey {
+  return (CLEARING_MAPPING_KEYS as readonly string[]).includes(value);
+}
+
+/** Every key the commerce accounting (Phase 3) posts to — all must be mapped before a commerce event can post. */
+export const COMMERCE_MAPPING_KEYS: readonly AccountMappingKey[] = [
+  "asset.receivable_trade", "asset.inventory", "revenue.merchandise", "revenue.shipping", "revenue.returns_refunds",
+  "revenue.price_adjustments", "revenue.other_refunds", "revenue.store_credit_returns", "revenue.exchange_differences",
+  "liability.vat_output", "liability.store_credit", "liability.store_credit_reserved", "liability.refunds_payable",
+  "cogs.goods", "cogs.inventory_shrinkage", "expense.courier_fees", "expense.gateway_fees", "expense.settlement_adjustments",
+  ...CLEARING_MAPPING_KEYS,
+];
 
 /**
  * Mapping keys whose ledger figure is reconciled against an existing authoritative business figure (the metrics registry,
@@ -76,6 +114,8 @@ export interface ChartTemplateAccount {
   /** Overrides the type's normal balance (contra accounts). */
   normalBalance?: NormalBalance;
   mapping?: AccountMappingKey;
+  /** Ownership, partner and payroll accounts: balances visible only with finance.sensitive (Phase 3 §11). */
+  sensitive?: boolean;
 }
 
 /** A Bangladesh-ready starting chart (VAT, bKash/Nagad, courier COD clearing). Codes are 4 digits; groups end in 00. */
@@ -109,28 +149,33 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "2200", name: "Customer liabilities", type: "LIABILITY", parent: "2000", group: true },
   { code: "2210", name: "Customer deposits", type: "LIABILITY", parent: "2200", mapping: "liability.customer_deposits" },
   { code: "2220", name: "Store credit liability", type: "LIABILITY", parent: "2200", mapping: "liability.store_credit" },
-  { code: "2230", name: "Refunds payable", type: "LIABILITY", parent: "2200" },
+  { code: "2225", name: "Store credit reserved at checkout", type: "LIABILITY", parent: "2200", mapping: "liability.store_credit_reserved" },
+  { code: "2230", name: "Refunds payable", type: "LIABILITY", parent: "2200", mapping: "liability.refunds_payable" },
   { code: "2300", name: "Taxes", type: "LIABILITY", parent: "2000", group: true },
   { code: "2310", name: "VAT output payable", type: "LIABILITY", parent: "2300", mapping: "liability.vat_output" },
   { code: "2320", name: "Withholding tax payable (TDS/VDS)", type: "LIABILITY", parent: "2300" },
   { code: "2400", name: "Payroll liabilities", type: "LIABILITY", parent: "2000", group: true },
-  { code: "2410", name: "Salaries payable", type: "LIABILITY", parent: "2400" },
+  { code: "2410", name: "Salaries payable", type: "LIABILITY", parent: "2400", sensitive: true },
   { code: "2500", name: "Loans", type: "LIABILITY", parent: "2000", group: true },
   { code: "2510", name: "Bank loans", type: "LIABILITY", parent: "2500", mapping: "liability.loans" },
-  { code: "2520", name: "Partner loans", type: "LIABILITY", parent: "2500" },
+  { code: "2520", name: "Partner loans", type: "LIABILITY", parent: "2500", sensitive: true },
   { code: "2900", name: "Other liabilities", type: "LIABILITY", parent: "2000" },
 
   { code: "3000", name: "Equity", type: "EQUITY", group: true },
-  { code: "3100", name: "Owner capital", type: "EQUITY", parent: "3000", mapping: "equity.owner_capital" },
-  { code: "3200", name: "Partner current accounts", type: "EQUITY", parent: "3000" },
-  { code: "3300", name: "Drawings", type: "EQUITY", parent: "3000", normalBalance: "DEBIT" },
+  { code: "3100", name: "Owner capital", type: "EQUITY", parent: "3000", mapping: "equity.owner_capital", sensitive: true },
+  { code: "3200", name: "Partner current accounts", type: "EQUITY", parent: "3000", sensitive: true },
+  { code: "3300", name: "Drawings", type: "EQUITY", parent: "3000", normalBalance: "DEBIT", sensitive: true },
   { code: "3400", name: "Retained earnings", type: "EQUITY", parent: "3000", mapping: "equity.retained_earnings" },
   { code: "3900", name: "Opening balance equity", type: "EQUITY", parent: "3000", mapping: "equity.opening_balance" },
 
   { code: "4000", name: "Revenue", type: "REVENUE", group: true },
   { code: "4100", name: "Merchandise sales", type: "REVENUE", parent: "4000", mapping: "revenue.merchandise" },
   { code: "4200", name: "Shipping income", type: "REVENUE", parent: "4000", mapping: "revenue.shipping" },
+  { code: "4250", name: "Price adjustments", type: "REVENUE", parent: "4000", mapping: "revenue.price_adjustments" },
   { code: "4300", name: "Sales returns & refunds", type: "REVENUE", parent: "4000", normalBalance: "DEBIT", mapping: "revenue.returns_refunds" },
+  { code: "4310", name: "Shipping & other refunds", type: "REVENUE", parent: "4000", normalBalance: "DEBIT", mapping: "revenue.other_refunds" },
+  { code: "4320", name: "Returns settled in store credit", type: "REVENUE", parent: "4000", normalBalance: "DEBIT", mapping: "revenue.store_credit_returns" },
+  { code: "4330", name: "Exchange price differences", type: "REVENUE", parent: "4000", mapping: "revenue.exchange_differences" },
 
   { code: "5000", name: "Cost of goods sold", type: "COGS", group: true },
   { code: "5100", name: "Cost of goods sold", type: "COGS", parent: "5000", mapping: "cogs.goods" },
@@ -138,15 +183,16 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
 
   { code: "6000", name: "Operating expenses", type: "EXPENSE", group: true },
   { code: "6100", name: "Rent", type: "EXPENSE", parent: "6000" },
-  { code: "6200", name: "Salaries & wages", type: "EXPENSE", parent: "6000" },
+  { code: "6200", name: "Salaries & wages", type: "EXPENSE", parent: "6000", sensitive: true },
   { code: "6300", name: "Utilities", type: "EXPENSE", parent: "6000" },
   { code: "6400", name: "Internet, software & hosting", type: "EXPENSE", parent: "6000" },
   { code: "6500", name: "Marketing & advertising", type: "EXPENSE", parent: "6000" },
-  { code: "6600", name: "Delivery & courier", type: "EXPENSE", parent: "6000" },
-  { code: "6700", name: "Payment gateway fees", type: "EXPENSE", parent: "6000" },
+  { code: "6600", name: "Delivery & courier", type: "EXPENSE", parent: "6000", mapping: "expense.courier_fees" },
+  { code: "6700", name: "Payment gateway fees", type: "EXPENSE", parent: "6000", mapping: "expense.gateway_fees" },
   { code: "6800", name: "Packaging", type: "EXPENSE", parent: "6000" },
   { code: "6850", name: "Depreciation", type: "EXPENSE", parent: "6000" },
   { code: "6900", name: "Other operating expenses", type: "EXPENSE", parent: "6000" },
+  { code: "6950", name: "Settlement adjustments", type: "EXPENSE", parent: "6000", mapping: "expense.settlement_adjustments" },
 
   { code: "7000", name: "Other income", type: "OTHER_INCOME", group: true },
   { code: "7100", name: "Interest income", type: "OTHER_INCOME", parent: "7000" },

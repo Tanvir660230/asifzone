@@ -371,6 +371,11 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   { id: "finance.account-detail", label: "Money account", kind: "detail", parent: "finance", domain: "manage", route: "/admin/finance/accounts/[id]", capability: "finance.view", order: 3, visibility: "hidden" },
   { id: "finance.reconciliation-detail", label: "Reconciliation", kind: "detail", parent: "finance", domain: "manage", route: "/admin/finance/reconciliation/[id]", capability: "finance.view", order: 4, visibility: "hidden" },
+  // Financial Core Phase 3 (docs/FINANCE_PHASE_3.md §10): commerce accounting, settlements, exceptions and checks.
+  { id: "finance.sales", label: "Sales accounting", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/sales", capability: "finance.view", order: 5, keywords: ["revenue", "cogs", "journal", "accounting events", "sync"] },
+  { id: "finance.settlements", label: "Settlements", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/settlements", capability: "finance.view", order: 6, keywords: ["cod", "courier", "gateway", "clearing", "payout", "fees"] },
+  { id: "finance.exceptions", label: "Finance exceptions", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/exceptions", capability: "finance.view", order: 7, keywords: ["missing cost", "estimate", "unmatched"] },
+  { id: "finance.checks", label: "Finance checks", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/checks", capability: "finance.view", order: 8, keywords: ["reconciliation", "revenue check", "cogs check"] },
 
   {
     id: "analytics",

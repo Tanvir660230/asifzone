@@ -19,7 +19,7 @@ import { actorCan, recordFinanceAudit, type FinanceActor } from "./finance-audit
 import { financeTransaction } from "./finance-tx";
 import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { ensurePeriod } from "./periods.service";
-import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
+import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor, FULL_VIEW, type FinanceViewer } from "./finance-values";
 
 export interface JournalLineSpec {
   accountId: string;
@@ -451,14 +451,23 @@ export async function correctJournal(id: string, input: { reason: string; entryD
   });
 }
 
-export async function getJournal(id: string) {
+/** Lines on ownership / partner / payroll accounts keep their account but not their amount for a viewer without
+ * finance.sensitive (Phase 3 §11). */
+async function redact<T extends JournalDto>(businessId: string, journals: T[], viewer: FinanceViewer): Promise<T[]> {
+  if (viewer.sensitive) return journals;
+  const sensitive = new Set((await prisma.ledgerAccount.findMany({ where: { businessId, isSensitive: true }, select: { id: true } })).map((a) => a.id));
+  if (!sensitive.size) return journals;
+  return journals.map((j) => ({ ...j, lines: j.lines.map((l) => (sensitive.has(l.accountId) ? { ...l, debit: null as never, credit: null as never, restricted: true } : l)) }));
+}
+
+export async function getJournal(id: string, viewer: FinanceViewer = FULL_VIEW) {
   const { business } = await getFinanceContext();
   const entry = await prisma.journalEntry.findFirst({ where: { id, businessId: business.id }, include: ENTRY_INCLUDE });
   if (!entry) throw financeError(404, "JOURNAL_NOT_FOUND", "Journal entry not found");
-  return journalDto(entry);
+  return (await redact(business.id, [journalDto(entry)], viewer))[0]!;
 }
 
-export async function listJournals(q: { status?: "DRAFT" | "POSTED"; kind?: JournalEntryKind; from?: string; to?: string; accountId?: string; brandId?: string; page: number; pageSize: number }) {
+export async function listJournals(q: { status?: "DRAFT" | "POSTED"; kind?: JournalEntryKind; from?: string; to?: string; accountId?: string; brandId?: string; page: number; pageSize: number }, viewer: FinanceViewer = FULL_VIEW) {
   const { business } = await getFinanceContext();
   const where: Prisma.JournalEntryWhereInput = {
     businessId: business.id,
@@ -472,5 +481,5 @@ export async function listJournals(q: { status?: "DRAFT" | "POSTED"; kind?: Jour
     prisma.journalEntry.count({ where }),
     prisma.journalEntry.findMany({ where, include: ENTRY_INCLUDE, orderBy: [{ entryDate: "desc" }, { number: "desc" }, { createdAt: "desc" }], skip: (q.page - 1) * q.pageSize, take: q.pageSize }),
   ]);
-  return { total, page: q.page, pageSize: q.pageSize, journals: rows.map(journalDto) };
+  return { total, page: q.page, pageSize: q.pageSize, journals: await redact(business.id, rows.map(journalDto), viewer) };
 }
