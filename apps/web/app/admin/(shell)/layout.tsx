@@ -38,6 +38,15 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
     document.title = documentTitleFor(pathname);
   }, [pathname]);
 
+  // Drawers, popovers and menus portal into <body>, outside the shell's element below — the body carries the admin
+  // surface too while the console is mounted, so they get the same tokens (and lose them again on the storefront).
+  useEffect(() => {
+    document.body.dataset.surface = "admin";
+    return () => {
+      delete document.body.dataset.surface;
+    };
+  }, []);
+
   // Global shortcuts (lib/admin/shortcuts.ts). They stand down while typing or while any overlay is open.
   useShortcut("create.open", () => setCreateOpen(true), { enabled: createItems.length > 0 });
   useShortcut("help.open", () => setHelpOpen(true));
@@ -60,7 +69,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
 
   return (
     // data-surface="admin": the Store Console's own tokens (Apple-style, light only), whatever the store's brand theme.
-    // Overlays render inside this element, so modals, drawers and toasts carry the same surface.
+    // On this element for the server render; portalled overlays get it from <body> (effect above).
     <div data-surface="admin" className="flex h-screen overflow-hidden bg-canvas font-sans text-fg">
       <div className="print:hidden">
         <Sidebar mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
