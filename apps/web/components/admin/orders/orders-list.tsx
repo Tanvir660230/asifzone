@@ -26,8 +26,7 @@ import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover } from "@/components/ui/popover";
 import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
-import { TableSkeleton } from "@/components/ui/table";
+import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -38,19 +37,6 @@ import type { OrderCommands } from "./use-order-commands";
 import type { SortColumn } from "./use-orders-list-state";
 
 // Left accent by status group: amber = waiting on someone, blue = in flight, green = done, red = cancelled.
-const STATUS_ACCENT: Record<AdminOrderListItem["status"], string> = {
-  PENDING: "border-l-warning-400",
-  CONFIRMED: "border-l-info-400",
-  PROCESSING: "border-l-info-400",
-  PACKED: "border-l-info-400",
-  SHIPPED: "border-l-info-400",
-  DELIVERED: "border-l-success-400",
-  PARTIALLY_DELIVERED: "border-l-warning-400",
-  CANCELLED: "border-l-danger-400",
-  RETURNED: "border-l-warning-400",
-  REFUNDED: "border-l-ink-400",
-};
-
 export interface OrdersListProps {
   items: AdminOrderListItem[];
   total: number | undefined;
@@ -71,9 +57,9 @@ function SortableHeader({ column, label, props, align, className }: { column: So
   const active = props.sortBy === column;
   const Icon = active ? (props.sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
-    <th
-      scope="col"
-      className={cn("px-3 py-2.5", align === "right" && "text-right", className)}
+    <TableHeaderCell
+      align={align}
+      className={cn("px-3 py-2.5", className)}
       aria-sort={active ? (props.sortDir === "asc" ? "ascending" : "descending") : "none"}
     >
       <button
@@ -87,7 +73,7 @@ function SortableHeader({ column, label, props, align, className }: { column: So
         {label}
         <Icon size={12} className={active ? "text-ink-900" : "text-ink-300"} aria-hidden="true" />
       </button>
-    </th>
+    </TableHeaderCell>
   );
 }
 
@@ -260,92 +246,76 @@ export function OrdersList(props: OrdersListProps) {
 
   return (
     <>
-      <div className="mt-4 hidden overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-sm xl:block">
-        <HScrollShadow className="overflow-x-auto" edgeFrom="from-surface">
-          <table className="ui-table">
-            <thead className="ui-table-head">
-              <tr>
-                <th scope="col" className="w-10 px-3 py-2.5">
-                  <Checkbox checked={allSelected} onChange={onToggleAll} aria-label="Select all orders on this page" />
-                </th>
-                <SortableHeader column="orderNumber" label="Order" props={props} />
-                <th scope="col" className="px-3 py-2.5">
-                  Product
-                </th>
-                <SortableHeader column="customerName" label="Customer" props={props} />
-                <SortableHeader column="paymentStatus" label="Payment" props={props} />
-                <SortableHeader column="total" label="Total" props={props} align="right" />
-                <SortableHeader column="status" label="Status" props={props} />
-                <th scope="col" className="px-3 py-2.5">
-                  Courier
-                </th>
-                <SortableHeader column="createdAt" label="Placed" props={props} className="hidden 2xl:table-cell" />
-                <th scope="col" className="px-3 py-2.5 text-right">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && <TableSkeleton rows={6} cols={10} />}
-              {!isLoading && items.length === 0 && (
-                <tr>
-                  <td colSpan={10}>{empty}</td>
-                </tr>
-              )}
-              {items.map((order) => (
-                <tr
-                  key={order.id}
-                  className={cn("ui-table-row border-l-4", STATUS_ACCENT[order.status], selected.has(order.id) && "bg-info-50/40")}
-                  data-testid="order-row"
-                >
-                  <td className="px-3 py-2.5">
-                    <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5">
-                    <span className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onOpen(order.id)}
-                        className="font-medium text-ink-900 underline-offset-2 hover:text-accent hover:underline"
-                      >
-                        {order.orderNumber}
-                      </button>
-                      <AttentionMarker order={order} />
-                    </span>
-                    {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. */}
-                    <span className="mt-0.5 block text-xs text-fg-subtle 2xl:hidden">
-                      {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <ProductCell summary={order.itemsSummary} />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <CustomerCell order={order} commands={commands} perms={perms} />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(order.total)}</td>
-                  <td className="px-3 py-2.5">
-                    <StatusPicker order={order} commands={commands} canManage={perms.manage} />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <CourierCell order={order} />
-                  </td>
-                  <td className="hidden whitespace-nowrap px-3 py-2.5 text-ink-500 2xl:table-cell">
-                    <span className="block">{formatStoreDate(order.createdAt)}</span>
-                    <span className="block text-xs text-ink-400">{formatStoreTime(order.createdAt)}</span>
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
+      <TableContainer className="mt-4 hidden xl:block">
+        <Table aria-label="Orders">
+          <TableHead>
+            <tr>
+              <TableHeaderCell className="w-10 px-3 py-2.5">
+                <Checkbox checked={allSelected} onChange={onToggleAll} aria-label="Select all orders on this page" />
+              </TableHeaderCell>
+              <SortableHeader column="orderNumber" label="Order" props={props} />
+              <TableHeaderCell className="px-3 py-2.5">Product</TableHeaderCell>
+              <SortableHeader column="customerName" label="Customer" props={props} />
+              <SortableHeader column="paymentStatus" label="Payment" props={props} />
+              <SortableHeader column="total" label="Total" props={props} align="right" />
+              <SortableHeader column="status" label="Status" props={props} />
+              <TableHeaderCell className="px-3 py-2.5">Courier</TableHeaderCell>
+              <SortableHeader column="createdAt" label="Placed" props={props} className="hidden 2xl:table-cell" />
+              <TableHeaderCell align="right" className="px-3 py-2.5">
+                <span className="sr-only">Actions</span>
+              </TableHeaderCell>
+            </tr>
+          </TableHead>
+          <tbody>
+            {isLoading && <TableSkeleton rows={6} cols={10} />}
+            {!isLoading && items.length === 0 && <TableMessageRow colSpan={10}>{empty}</TableMessageRow>}
+            {items.map((order) => (
+              <TableRow key={order.id} className={cn(selected.has(order.id) && "bg-accent/[0.05]")} data-testid="order-row">
+                <TableCell className="px-3 py-2.5">
+                  <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
+                </TableCell>
+                <TableCell className="whitespace-nowrap px-3 py-2.5">
+                  <span className="flex items-center gap-1.5">
+                    <button type="button" onClick={() => onOpen(order.id)} className="font-medium text-ink-900 underline-offset-2 hover:text-accent hover:underline">
+                      {order.orderNumber}
+                    </button>
+                    <AttentionMarker order={order} />
+                  </span>
+                  {/* Below 2xl the Placed column folds in here, so the table fits without sideways scrolling. */}
+                  <span className="mt-0.5 block text-xs text-fg-subtle 2xl:hidden">
+                    {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
+                  </span>
+                </TableCell>
+                <TableCell className="px-3 py-2.5">
+                  <ProductCell summary={order.itemsSummary} />
+                </TableCell>
+                <TableCell className="px-3 py-2.5">
+                  <CustomerCell order={order} commands={commands} perms={perms} />
+                </TableCell>
+                <TableCell className="px-3 py-2.5">
+                  <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} />
+                </TableCell>
+                <TableCell align="right" className="px-3 py-2.5 font-medium text-ink-900">
+                  {formatPrice(order.total)}
+                </TableCell>
+                <TableCell className="px-3 py-2.5">
+                  <StatusPicker order={order} commands={commands} canManage={perms.manage} />
+                </TableCell>
+                <TableCell className="px-3 py-2.5">
+                  <CourierCell order={order} />
+                </TableCell>
+                <TableCell className="hidden whitespace-nowrap px-3 py-2.5 text-ink-500 2xl:table-cell">
+                  <span className="block">{formatStoreDate(order.createdAt)}</span>
+                  <span className="block text-xs text-ink-400">{formatStoreTime(order.createdAt)}</span>
+                </TableCell>
+                <TableCell align="right" className="px-3 py-2.5">
+                  <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </tbody>
+        </Table>
+      </TableContainer>
 
       <div className="mt-4 xl:hidden">
         {!isLoading && items.length > 0 && (
@@ -369,9 +339,8 @@ export function OrdersList(props: OrdersListProps) {
                 aria-label={`Order ${order.orderNumber}`}
                 data-testid="order-card"
                 className={cn(
-                  "flex flex-col rounded-xl border border-l-4 border-line-subtle bg-surface p-3.5 shadow-sm",
-                  STATUS_ACCENT[order.status],
-                  selected.has(order.id) && "ring-1 ring-info-300",
+                  "flex flex-col rounded-xl border border-line bg-surface p-3.5 shadow",
+                  selected.has(order.id) && "ring-2 ring-accent/40",
                 )}
               >
                 <div className="flex items-start gap-2.5">
