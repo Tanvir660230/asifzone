@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, RotateCcw, Trash2, ArchiveX } from "lucide-react";
+import { Plus, RotateCcw, Trash2, ArchiveX, X } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { Category, CreateCategoryInput, ReorderCategoriesInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow } from "@/components/ui/table";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -13,14 +16,13 @@ import { CategoryTree } from "@/components/admin/category-tree";
 import { PageHeader } from "@/components/admin/page-header";
 import * as categoriesApi from "@/lib/api/categories";
 import { ApiError } from "@/lib/api-client";
-import { adminCan } from "@/lib/auth";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { useCapability } from "@/hooks/use-capability";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 
 export default function CategoriesPage() {
   const queryClient = useQueryClient();
-  const { data: currentAdmin } = useCurrentAdmin();
-  const canPurge = adminCan(currentAdmin?.admin, "catalog.purge"); // PD-10.1: permanent delete is OWNER-only
+  const canPurge = useCapability("catalog.purge"); // PD-10.1: permanent delete is OWNER-only
   const [tab, setTab] = useState<"active" | "trash">("active");
   const CATEGORIES_KEY = ["categories", tab] as const;
   const { data, isLoading } = useQuery({
@@ -32,11 +34,30 @@ export default function CategoriesPage() {
     queryFn: categoriesApi.getCategoryStockMap,
     enabled: tab === "active",
   });
-  const [editing, setEditing] = useState<Category | "new" | null>(null);
+  // Wide screens: tree + inspector, the selection in the URL (?category=<id> | new). Phones: the same form in a modal.
+  const wide = useMediaQuery("(min-width: 1024px)");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [editingState, setEditingState] = useState<Category | "new" | null>(null);
   const [newParentId, setNewParentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const categories = data?.categories ?? [];
+  const selectedParam = searchParams.get("category");
+  const editing: Category | "new" | null = wide
+    ? selectedParam === "new"
+      ? "new"
+      : (categories.find((c) => c.id === selectedParam) ?? null)
+    : editingState;
+  function setEditing(next: Category | "new" | null) {
+    if (!wide) return setEditingState(next);
+    const q = new URLSearchParams(searchParams.toString());
+    if (next === null) q.delete("category");
+    else q.set("category", next === "new" ? "new" : next.id);
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
 
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: ["categories"] });
@@ -177,7 +198,25 @@ export default function CategoriesPage() {
   function closeModal() {
     setEditing(null);
     setNewParentId(null);
+    setError(null);
   }
+
+  const editingCategory = editing && editing !== "new" ? editing : null;
+  const childCount = editingCategory ? categories.filter((c) => c.parentId === editingCategory.id).length : 0;
+  const form =
+    editing !== null ? (
+      <>
+        {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
+        <CategoryForm
+          key={editing === "new" ? `new-${newParentId ?? "root"}` : editing.id}
+          categories={categories}
+          initial={editing === "new" ? undefined : editing}
+          defaultParentId={editing === "new" ? newParentId : undefined}
+          onSubmit={handleSubmit}
+          onCancel={closeModal}
+        />
+      </>
+    ) : null;
 
   return (
     <div>
@@ -214,31 +253,26 @@ export default function CategoriesPage() {
           ))}
         </div>
       ) : tab === "trash" ? (
-        <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-          <table className="ui-table">
-            <thead className="ui-table-head">
+        <TableContainer>
+          <Table aria-label="Categories in trash">
+            <TableHead>
               <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Slug</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <TableHeaderCell>Name</TableHeaderCell>
+                <TableHeaderCell>Slug</TableHeaderCell>
+                <TableHeaderCell align="right">Actions</TableHeaderCell>
               </tr>
-            </thead>
+            </TableHead>
             <tbody>
               {categories.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-10 text-center text-ink-400">
-                    <span className="flex flex-col items-center gap-2">
-                      <ArchiveX size={24} className="text-ink-300" />
-                      Trash is empty.
-                    </span>
-                  </td>
-                </tr>
+                <TableMessageRow colSpan={3}>
+                  <EmptyState icon={ArchiveX} title="Trash is empty" />
+                </TableMessageRow>
               )}
               {categories.map((c) => (
-                <tr key={c.id} className="border-t border-ink-100">
-                  <td className="px-4 py-3">{c.name}</td>
-                  <td className="px-4 py-3 text-ink-500">{c.slug}</td>
-                  <td className="px-4 py-3">
+                <TableRow key={c.id}>
+                  <TableCell>{c.name}</TableCell>
+                  <TableCell className="text-fg-muted">{c.slug}</TableCell>
+                  <TableCell>
                     <div className="flex justify-end gap-3">
                       <button
                         onClick={() => restoreMutation.mutate(c.id)}
@@ -259,13 +293,14 @@ export default function CategoriesPage() {
                         </button>
                       )}
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        </TableContainer>
       ) : (
+        <div className={cn(wide && "grid grid-cols-[minmax(420px,1fr)_minmax(400px,520px)] items-start gap-6")}>
         <CategoryTree
           categories={categories}
           stock={stockData?.stock}
@@ -277,24 +312,52 @@ export default function CategoriesPage() {
             reorderMutation.mutate({ items: orderedIds.map((id, index) => ({ id, sortOrder: index })) })
           }
           onMove={(id, newParentId, sortOrder) => moveMutation.mutate({ id, newParentId, sortOrder })}
+          selectedId={wide && editing && editing !== "new" ? editing.id : null}
         />
+        {wide && (
+          <aside aria-label="Category details" className="sticky top-chrome rounded-2xl border border-line bg-surface p-5 shadow-xs">
+            {editing === null ? (
+              <div className="py-12 text-center">
+                <p className="text-[15px] font-medium text-fg">Select a category</p>
+                <p className="mt-1 text-[13px] text-fg-muted">Its details open here. Drag in the list to reorder or move it under another.</p>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => openNew(null)}>
+                  <Plus size={14} aria-hidden="true" /> Add category
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="mb-4 flex items-start justify-between gap-3 border-b border-line-subtle pb-4">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-semibold tracking-tight text-fg">
+                      {editing === "new" ? "New category" : editing.name}
+                    </h2>
+                    {editingCategory && (
+                      <p className="mt-0.5 text-[13px] text-fg-muted">
+                        /{editingCategory.slug} · {childCount} subcategor{childCount === 1 ? "y" : "ies"}
+                        {stockData?.stock?.[editingCategory.id] && (
+                          <> · {stockData.stock[editingCategory.id]!.inStockProducts} of {stockData.stock[editingCategory.id]!.totalProducts} products in stock</>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <button type="button" onClick={closeModal} className="rounded-full p-1.5 text-fg-subtle hover:bg-ink-900/[0.05] hover:text-fg" aria-label="Close details">
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                </div>
+                {form}
+              </>
+            )}
+          </aside>
+        )}
+        </div>
       )}
 
       <Modal
-        open={editing !== null}
+        open={!wide && editing !== null}
         onClose={closeModal}
         title={editing === "new" ? "Add category" : `Edit ${editing ? editing.name : ""}`}
       >
-        {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
-        {editing !== null && (
-          <CategoryForm
-            categories={categories}
-            initial={editing === "new" ? undefined : editing}
-            defaultParentId={editing === "new" ? newParentId : undefined}
-            onSubmit={handleSubmit}
-            onCancel={closeModal}
-          />
-        )}
+        {!wide && form}
       </Modal>
       {confirmDialog}
     </div>
