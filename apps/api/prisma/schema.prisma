@@ -771,8 +771,54 @@ model Customer {
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
   conversations            Conversation[]
+  fact                     CustomerFact?
 
   @@index([phone])
+  @@index([updatedAt])
+}
+
+/// Blueprint V2 PERF-01/02: the customer list's read model — one row per customer with the figures the list filters and
+/// sorts on. Never a second formula: spend and order counts come from the metrics engine (customerMetricsFor), tags and
+/// risk from the same functions the detail page uses. Kept current by syncCustomerFacts (customer-facts.service.ts),
+/// which recomputes the customers whose rows, orders, payments, refunds, returns or exchange requests changed since the
+/// last sync, plus any whose date-based tags (New, Inactive) are due to flip (tagsExpireAt). Safe to delete: it rebuilds.
+model CustomerFact {
+  customerId      String    @id
+  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  /// `customer_net_spend` — lifetime realised net sales (major units).
+  netSpend        Decimal   @db.Decimal(14, 2)
+  /// `customer_orders` — sale orders placed (lifetime).
+  ordersPlaced    Int
+  ordersRealised  Int
+  /// Risk signals count every non-trashed order (a cancellation rate needs the cancelled ones).
+  ordersAll       Int
+  cancelledOrders Int
+  holdOrders      Int
+  lastOrderAt     DateTime?
+  district        String?
+  tags            String[]
+  /// When a date-based tag next changes (New ends, Inactive begins); null when none will.
+  tagsExpireAt    DateTime?
+  refreshedAt     DateTime  @default(now())
+
+  @@index([netSpend])
+  @@index([ordersPlaced])
+  @@index([lastOrderAt])
+  @@index([district])
+  @@index([tagsExpireAt])
+}
+
+/// Customers whose figures changed in a way timestamps can't show — an order purged or moved to another customer. Filled
+/// by a trigger on "Order" (migration 20261011150000_customer_facts); the next sync recomputes and clears them.
+model CustomerFactDirty {
+  customerId String   @id
+  markedAt   DateTime @default(now())
+}
+
+/// The customer-facts sync watermark (one row, id 1): changes after `syncedAt` minus a safety overlap are picked up next.
+model CustomerFactSync {
+  id       Int      @id @default(1)
+  syncedAt DateTime
 }
 
 /// The customer store-balance ledger (docs/ORDER_ADJUSTMENTS.md §4) — append-only, written only by
@@ -1189,6 +1235,7 @@ model Order {
   @@index([deletedAt])
   @@index([courierConsignmentId])
   @@index([followUpAt])
+  @@index([updatedAt])
 }
 
 /// Append-only timeline of status transitions for an order — powers the admin timeline view.
@@ -1258,6 +1305,7 @@ model ReturnRequest {
   @@index([orderId])
   @@index([customerId])
   @@index([status])
+  @@index([updatedAt])
 }
 
 /// One row per payment attempt. An order can have several over time (a failed/cancelled/expired
@@ -1355,6 +1403,7 @@ model Payment {
   createdAt             DateTime         @default(now())
 
   @@index([orderId])
+  @@index([createdAt])
 }
 
 /// Append-only timeline of one payment attempt (INITIATED, VERIFIED_SUCCESS, VERIFIED_FAILED,
@@ -1401,6 +1450,7 @@ model Refund {
   createdAt          DateTime     @default(now())
 
   @@index([orderId])
+  @@index([createdAt])
 }
 
 /// One change to an order's contents/address after it was placed (docs/ORDER_ADJUSTMENTS.md §3) — the audit record of
@@ -1594,6 +1644,7 @@ model StockMovement {
 
   @@index([variantId])
   @@index([reason])
+  @@index([createdAt])
 }
 
 /// A ledger entry for money the store loses to courier round-trips it can't recover — logged

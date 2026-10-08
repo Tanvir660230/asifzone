@@ -11,6 +11,7 @@ import { startPaymentReconciliationCron } from "./jobs/payment-reconciliation-cr
 import { startStorageTrashCron } from "./jobs/storage-trash-cron";
 import { startMetaCapiWorker } from "./jobs/meta-capi-worker";
 import { startOutboxWorker } from "./jobs/outbox-worker";
+import { warmCustomerFacts } from "./modules/customers/customer-facts.service";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
 import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard";
 import { logger } from "./lib/observability/logger";
@@ -68,6 +69,9 @@ async function main() {
   startStorageTrashCron().catch((err) => captureError(err, { msg: "[storage-trash-cron] failed to start:" }));
   startMetaCapiWorker().catch((err) => captureError(err, { msg: "[meta-capi] worker failed to start:" }));
   startOutboxWorker().catch((err) => captureError(err, { msg: "[outbox] worker failed to start:" }));
+  // The customer list's read model (Blueprint V2 PERF-01): built here in the background, so the first list read after a
+  // deploy doesn't pay for the whole store. Reads keep it current from then on.
+  warmCustomerFacts();
 
   // Stop accepting new connections and let in-flight requests finish before tearing down Prisma —
   // without this, a deploy's SIGTERM could cut a request off mid-response instead of draining it.

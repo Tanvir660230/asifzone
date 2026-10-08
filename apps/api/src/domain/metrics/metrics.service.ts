@@ -271,13 +271,40 @@ export interface CustomerMetricEntry {
 
 /** Lifetime customer metrics for every customer, as a grouping of the canonical facts (never a separate spend
  * calculation). Cached by computeMetrics. */
-export async function customerMetricsIndex(): Promise<Map<string, CustomerMetricEntry>> {
-  const m = await computeMetrics({ metrics: ["realised_net_sales", "orders_placed", "orders_realised"], range: { preset: "lifetime" }, groupBy: "customer" });
+export async function customerMetricsIndex(opts: { fresh?: boolean } = {}): Promise<Map<string, CustomerMetricEntry>> {
+  const m = await computeMetrics({ metrics: ["realised_net_sales", "orders_placed", "orders_realised"], range: { preset: "lifetime" }, groupBy: "customer", fresh: opts.fresh });
   const out = new Map<string, CustomerMetricEntry>();
   for (const g of m.groups ?? []) {
     if (g.key === "guest") continue;
     out.set(g.key, { netSpend: g.metrics.realised_net_sales!, orders: g.metrics.orders_placed!, realisedOrders: g.metrics.orders_realised! });
   }
+  return out;
+}
+
+/** customerMetricsIndex for some customers only — the same lifetime grouping of the same contributions, computed from
+ * just their orders (Blueprint V2 PERF-02: the customer list's read model refreshes changed customers, not everyone).
+ * Customers without a sale order are absent, as in the index. Uncached: the read model is the cache. */
+export async function customerMetricsFor(customerIds: string[], now: Date = new Date()): Promise<Map<string, CustomerMetricEntry>> {
+  const out = new Map<string, CustomerMetricEntry>();
+  if (!customerIds.length) return out;
+  const { timezone, currency } = await storeContext();
+  const range = resolveBusinessRange({ preset: "lifetime" }, timezone, now);
+  const orderIds = (await prisma.order.findMany({ where: { customerId: { in: customerIds } }, select: { id: true } })).map((o) => o.id);
+  const orders = await loadOrderFacts(orderIds, currency);
+  const sums = new Map<string, { net: number; placed: number; realised: number }>();
+  const add = (key: string, field: "net" | "placed" | "realised") => {
+    for (const c of contributions(key, orders, range)) {
+      const id = groupKeyOf(c, "customer", timezone).key;
+      if (id === "guest") continue;
+      const s = sums.get(id) ?? { net: 0, placed: 0, realised: 0 };
+      s[field] += c.amount;
+      sums.set(id, s);
+    }
+  };
+  add("realised_net_sales", "net");
+  add("orders_placed", "placed");
+  add("orders_realised", "realised");
+  for (const [id, s] of sums) out.set(id, { netSpend: toMajor(money(s.net, currency)), orders: s.placed, realisedOrders: s.realised });
   return out;
 }
 

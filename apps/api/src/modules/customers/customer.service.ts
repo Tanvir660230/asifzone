@@ -9,7 +9,6 @@ import {
   subtract,
   toMajor,
   renderCustomerSmsTemplate,
-  looksLikeFakePhone,
   normalizeBdPhone,
   type CustomerRegisterInput,
   type CustomerLoginInput,
@@ -48,7 +47,9 @@ import { hashToken, signPayload, constantTimeEqual } from "../../lib/token-hash"
 import { env } from "../../config/env";
 import { getSettings } from "../settings/settings.service";
 import { customerMetricsIndex } from "../../domain/metrics/metrics.service";
-import { resolveStoreRange } from "../../domain/metrics/store-time";
+import { computeCustomerTags, computeRiskSignals } from "./customer-tags";
+import { syncCustomerFacts } from "./customer-facts.service";
+import { resolveStoreRange, utcInstant } from "../../domain/metrics/store-time";
 import { getCommerceSettings, type CommerceSettings } from "../../domain/config/commerce-settings";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
@@ -634,68 +635,6 @@ export async function verifyOtp(input: VerifyOtpInput, opts: SessionOptions = {}
 
 // --- admin ---
 
-/** Lifetime-spend cutoffs (BDT) shared by the VIP/High Spender tags and (later) the loyalty-tier
- * display — Bronze is implicitly "below Silver". Suggested defaults; not yet exposed as an editable
- * setting (Phase 3 of the CRM build), so change here if the store wants different thresholds. */
-const LOYALTY_THRESHOLDS = { silver: 10_000, gold: 30_000, platinum: 75_000 };
-const NEW_CUSTOMER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-const INACTIVE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
-
-// A customer this cancel-prone is either a serial fake-orderer or has a real recurring problem
-// either way, worth a human look. Only counted once there's enough history to mean something —
-// one cancelled order out of one is normal buyer's remorse, not a pattern.
-const CANCEL_RATE_REVIEW_THRESHOLD = 0.5;
-const CANCEL_RATE_MIN_ORDERS = 3;
-const HOLD_COUNT_REVIEW_THRESHOLD = 2;
-
-/** Signals a human should look at, not proof of anything — a real customer can have a fake-looking
- * number (rare vanity/sequential numbers exist) or a bad delivery run for reasons that aren't their
- * fault. Returned as explainable strings (shown in the drawer) rather than a bare score, so an admin
- * can judge "why" instead of trusting an opaque flag. */
-function computeRiskSignals(input: {
-  phone: string | null;
-  totalOrders: number;
-  cancelledOrders: number;
-  holdOrders: number;
-}): string[] {
-  const signals: string[] = [];
-  if (input.phone && looksLikeFakePhone(input.phone)) {
-    signals.push("Phone number matches a common fake/dummy pattern");
-  }
-  if (input.totalOrders >= CANCEL_RATE_MIN_ORDERS && input.cancelledOrders / input.totalOrders >= CANCEL_RATE_REVIEW_THRESHOLD) {
-    signals.push(`${input.cancelledOrders} of ${input.totalOrders} orders were cancelled`);
-  }
-  if (input.holdOrders >= HOLD_COUNT_REVIEW_THRESHOLD) {
-    signals.push(`Courier marked ${input.holdOrders} order(s) as hold/undeliverable`);
-  }
-  return signals;
-}
-
-function computeCustomerTags(input: {
-  createdAt: Date;
-  totalOrders: number;
-  totalSpent: number;
-  lastOrderAt: Date | null;
-  isBlocked: boolean;
-  codRisk: boolean;
-  riskSignals: string[];
-}): CustomerTag[] {
-  const tags: CustomerTag[] = [];
-  const now = Date.now();
-
-  if (input.isBlocked) tags.push("BLOCKED");
-  if (input.riskSignals.length > 0) tags.push("SUSPICIOUS");
-  if (input.codRisk) tags.push("COD_RISK");
-  if (input.totalSpent >= LOYALTY_THRESHOLDS.platinum) tags.push("VIP");
-  else if (input.totalSpent >= LOYALTY_THRESHOLDS.gold) tags.push("HIGH_SPENDER");
-  if (input.totalOrders >= 2) tags.push("REPEAT");
-  if (now - input.createdAt.getTime() < NEW_CUSTOMER_WINDOW_MS) tags.push("NEW");
-
-  const staleSince = input.lastOrderAt ? now - input.lastOrderAt.getTime() : now - input.createdAt.getTime();
-  if (staleSince >= INACTIVE_WINDOW_MS) tags.push("INACTIVE");
-
-  return tags;
-}
 
 const adminSelect = {
   ...publicSelect,
@@ -704,30 +643,36 @@ const adminSelect = {
   codRisk: true,
 } as const;
 
-/** One shared query + tag/stat computation behind listCustomersAdmin, getCustomerStatsAdmin, and
- * (Section 6 BI) analytics.service.ts's RFM table / purchase-frequency distribution — fetches
- * every customer matching `where` with just enough order/address data to derive
- * totalOrders/totalSpent/lastOrderAt/district/tags in JS. Fine at this store's customer volumes
- * (computed once per request, not per row); a raw aggregate query would be the next step if the
- * customer base grows into the tens of thousands. Exported (not just used internally) so BI reads
- * derive from the exact same tag logic the customers list already shows, rather than a
- * re-derived approximation that could quietly drift out of sync with it. */
-export async function loadCustomersWithComputedFields(where: Prisma.CustomerWhereInput) {
-  const [customers, metrics] = await Promise.all([
-    prisma.customer.findMany({
-      where,
-      select: {
-        ...adminSelect,
-        addresses: { where: { isDefault: true }, take: 1, select: { district: true } },
-        orders: {
-          where: { deletedAt: null },
-          select: { status: true, createdAt: true, shippingDistrict: true, courierStatus: true },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    }),
-    customerMetricsIndex(),
-  ]);
+const CUSTOMER_LOAD_BATCH = 2000;
+
+/** Customers matching `where` with just enough order/address data to derive totalOrders/totalSpent/lastOrderAt/district/
+ * tags in JS — the computation behind (Section 6 BI) analytics.service.ts's RFM table / purchase-frequency distribution
+ * and bulk SMS. The customer list and its stats read the CustomerFact read model instead (Blueprint V2 PERF-01), whose
+ * equivalence tests use this as the reference. Loaded in batches: one findMany with nested relations binds every
+ * customer id, and PostgreSQL refuses more than 32,767 bind variables (it failed past ~32k customers). */
+export async function loadCustomersWithComputedFields(where: Prisma.CustomerWhereInput, opts: { fresh?: boolean } = {}) {
+  const loadCustomers = async () => {
+    const ids = (await prisma.customer.findMany({ where, select: { id: true } })).map((c) => c.id);
+    const out = [];
+    for (let i = 0; i < ids.length; i += CUSTOMER_LOAD_BATCH) {
+      out.push(
+        ...(await prisma.customer.findMany({
+          where: { id: { in: ids.slice(i, i + CUSTOMER_LOAD_BATCH) } },
+          select: {
+            ...adminSelect,
+            addresses: { where: { isDefault: true }, take: 1, select: { district: true } },
+            orders: {
+              where: { deletedAt: null },
+              select: { status: true, createdAt: true, shippingDistrict: true, courierStatus: true },
+              orderBy: { createdAt: "desc" },
+            },
+          },
+        })),
+      );
+    }
+    return out;
+  };
+  const [customers, metrics] = await Promise.all([loadCustomers(), customerMetricsIndex(opts)]);
 
   return customers.map(({ addresses, orders, ...customer }) => {
     // Spend and order count are the canonical customer metrics (docs/METRICS_REGISTRY.md §4.3, P5-4): realised net sales
@@ -754,70 +699,76 @@ export async function loadCustomersWithComputedFields(where: Prisma.CustomerWher
   });
 }
 
+
 type ComputedCustomer = Awaited<ReturnType<typeof loadCustomersWithComputedFields>>[number];
 
-function compareComputed(a: ComputedCustomer, b: ComputedCustomer, sortBy: NonNullable<CustomerListQuery["sortBy"]>) {
-  switch (sortBy) {
-    case "name":
-      return a.name.localeCompare(b.name);
-    case "totalSpent":
-      return a.totalSpent - b.totalSpent;
-    case "totalOrders":
-      return a.totalOrders - b.totalOrders;
-    case "lastOrderAt":
-      return (a.lastOrderAt?.getTime() ?? 0) - (b.lastOrderAt?.getTime() ?? 0);
-    case "createdAt":
-    default:
-      return a.createdAt.getTime() - b.createdAt.getTime();
-  }
-}
+const SORT_SQL: Record<NonNullable<CustomerListQuery["sortBy"]>, Prisma.Sql> = {
+  // Lower-cased, byte order: predictable for any script (Bangla included), unaffected by the server's locale.
+  name: Prisma.sql`lower(c."name") COLLATE "C"`,
+  createdAt: Prisma.sql`c."createdAt"`,
+  totalSpent: Prisma.sql`COALESCE(f."netSpend", 0)`,
+  totalOrders: Prisma.sql`COALESCE(f."ordersPlaced", 0)`,
+  lastOrderAt: Prisma.sql`COALESCE(f."lastOrderAt", 'epoch'::timestamp)`,
+};
 
+const likePattern = (text: string) => `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+
+/** Blueprint V2 PERF-01: filtered, sorted and paged in SQL over the CustomerFact read model (customer-facts.service.ts),
+ * synced first so the figures are as current as the read. Same filters, figures and tags as before; ties sort newest
+ * first. */
 export async function listCustomersAdmin(query: CustomerListQuery) {
-  const where: Prisma.CustomerWhereInput = query.search
-    ? {
-        OR: [
-          { name: { contains: query.search, mode: "insensitive" as const } },
-          { email: { contains: query.search, mode: "insensitive" as const } },
-          { phone: { contains: query.search } },
-          // Lets an admin land on a customer straight from an order number (e.g. from a support chat)
-          // without a separate trip through the Orders page.
-          { orders: { some: { orderNumber: { contains: query.search, mode: "insensitive" as const } } } },
-        ],
-      }
-    : {};
-
-  let computed = await loadCustomersWithComputedFields(where);
-
-  if (query.tag) computed = computed.filter((c) => c.tags.includes(query.tag!));
-  if (query.district) computed = computed.filter((c) => c.district === query.district);
-  if (query.noOrders === "true") computed = computed.filter((c) => c.totalOrders === 0);
-  if (query.lastOrderDays) {
-    const cutoff = Date.now() - query.lastOrderDays * 24 * 60 * 60 * 1000;
-    computed = computed.filter((c) => (c.lastOrderAt?.getTime() ?? 0) >= cutoff);
+  await syncCustomerFacts();
+  const conditions: Prisma.Sql[] = [];
+  if (query.search) {
+    const like = likePattern(query.search);
+    // Also an order number — an admin searching an order ID from a support chat should land on the customer.
+    conditions.push(Prisma.sql`(c."name" ILIKE ${like} OR c."email" ILIKE ${like} OR c."phone" LIKE ${like}
+      OR EXISTS (SELECT 1 FROM "Order" o WHERE o."customerId" = c."id" AND o."orderNumber" ILIKE ${like}))`);
   }
-  if (query.minSpend !== undefined) computed = computed.filter((c) => c.totalSpent >= query.minSpend!);
-  if (query.minOrders !== undefined) computed = computed.filter((c) => c.totalOrders >= query.minOrders!);
+  if (query.tag) conditions.push(Prisma.sql`${query.tag} = ANY(f."tags")`);
+  if (query.district) conditions.push(Prisma.sql`f."district" = ${query.district}`);
+  if (query.noOrders === "true") conditions.push(Prisma.sql`COALESCE(f."ordersPlaced", 0) = 0`);
+  if (query.lastOrderDays) conditions.push(Prisma.sql`f."lastOrderAt" >= ${utcInstant(new Date(Date.now() - query.lastOrderDays * 24 * 60 * 60 * 1000))}`);
+  if (query.minSpend !== undefined) conditions.push(Prisma.sql`COALESCE(f."netSpend", 0) >= ${query.minSpend}`);
+  if (query.minOrders !== undefined) conditions.push(Prisma.sql`COALESCE(f."ordersPlaced", 0) >= ${query.minOrders}`);
+  const where = conditions.length ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.empty;
+  const from = Prisma.sql`FROM "Customer" c LEFT JOIN "CustomerFact" f ON f."customerId" = c."id" ${where}`;
+  const dir = Prisma.raw(query.sortDir === "asc" ? "ASC" : "DESC");
+  const orderBy = Prisma.sql`ORDER BY ${SORT_SQL[query.sortBy ?? "createdAt"]} ${dir}, c."createdAt" DESC, c."id" DESC`;
 
-  const sortBy = query.sortBy ?? "createdAt";
-  const sortDir = query.sortDir ?? "desc";
-  computed.sort((a, b) => (sortDir === "asc" ? 1 : -1) * compareComputed(a, b, sortBy));
-
-  const total = computed.length;
-  const start = (query.page - 1) * query.pageSize;
-  const page = computed.slice(start, start + query.pageSize);
-
-  // "Last SMS sent" per row — cheap to look up in one grouped query against just this page's ids
-  // rather than folding it into loadCustomersWithComputedFields for every customer up front.
-  const lastSmsByCustomer = await prisma.campaignRecipient.groupBy({
-    by: ["customerId"],
-    where: { customerId: { in: page.map((c) => c.id) }, sentAt: { not: null } },
-    _max: { sentAt: true },
-  });
+  const [countRows, pageRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ n: bigint }>>`SELECT COUNT(*)::bigint AS n ${from}`,
+    prisma.$queryRaw<
+      Array<{ id: string; netSpend: Prisma.Decimal | null; ordersPlaced: number | null; lastOrderAt: Date | null; district: string | null; tags: string[] | null }>
+    >`SELECT c."id", f."netSpend", f."ordersPlaced", f."lastOrderAt", f."district", f."tags" ${from} ${orderBy}
+      LIMIT ${query.pageSize} OFFSET ${(query.page - 1) * query.pageSize}`,
+  ]);
+  const ids = pageRows.map((r) => r.id);
+  const [customers, lastSmsByCustomer] = await Promise.all([
+    prisma.customer.findMany({ where: { id: { in: ids } }, select: adminSelect }),
+    // "Last SMS sent" per row — one grouped query for just this page.
+    prisma.campaignRecipient.groupBy({ by: ["customerId"], where: { customerId: { in: ids }, sentAt: { not: null } }, _max: { sentAt: true } }),
+  ]);
+  const byId = new Map(customers.map((c) => [c.id, c]));
   const lastSmsMap = new Map(lastSmsByCustomer.map((r) => [r.customerId, r._max.sentAt]));
 
   return {
-    items: page.map((c) => ({ ...c, lastSmsSentAt: lastSmsMap.get(c.id) ?? null })),
-    total,
+    items: pageRows.flatMap((r) => {
+      const customer = byId.get(r.id);
+      if (!customer) return [];
+      return [
+        {
+          ...customer,
+          totalOrders: r.ordersPlaced ?? 0,
+          totalSpent: r.netSpend === null ? 0 : Number(r.netSpend),
+          lastOrderAt: r.lastOrderAt,
+          district: r.district,
+          tags: (r.tags ?? []) as CustomerTag[],
+          lastSmsSentAt: lastSmsMap.get(r.id) ?? null,
+        },
+      ];
+    }),
+    total: Number(countRows[0]?.n ?? 0),
     page: query.page,
     pageSize: query.pageSize,
   };
@@ -826,36 +777,41 @@ export async function listCustomersAdmin(query: CustomerListQuery) {
 export async function getCustomerStatsAdmin() {
   const now = new Date();
   // Business-day boundaries in the store timezone (docs/METRICS_REGISTRY.md §1), not the server's local midnight.
-  const [computed, today, month] = await Promise.all([
-    loadCustomersWithComputedFields({}),
-    resolveStoreRange({ preset: "today" }, now),
-    resolveStoreRange({ preset: "this_month" }, now),
-  ]);
-  const startOfToday = today.startUtc;
-  const startOfMonth = month.startUtc;
-
-  function inactiveSince(days: number) {
-    const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000;
-    return computed.filter((c) => (c.lastOrderAt ? c.lastOrderAt.getTime() < cutoff : c.createdAt.getTime() < cutoff))
-      .length;
-  }
+  const [today, month] = await Promise.all([resolveStoreRange({ preset: "today" }, now), resolveStoreRange({ preset: "this_month" }, now), syncCustomerFacts()]);
+  const inactiveCutoff = (days: number) => utcInstant(new Date(now.getTime() - days * 24 * 60 * 60 * 1000));
+  // Counted over the CustomerFact read model (Blueprint V2 PERF-01) — the same figures and tags the list shows.
+  const [row] = await prisma.$queryRaw<
+    Array<Record<"total" | "newToday" | "newThisMonth" | "repeat" | "vip" | "suspicious" | "codRisk" | "blocked" | "oneTime" | "inactive30" | "inactive60" | "inactive90", bigint> & { revenue: Prisma.Decimal | null }>
+  >`SELECT
+      COUNT(*)::bigint AS "total",
+      COUNT(*) FILTER (WHERE c."createdAt" >= ${utcInstant(today.startUtc)})::bigint AS "newToday",
+      COUNT(*) FILTER (WHERE c."createdAt" >= ${utcInstant(month.startUtc)})::bigint AS "newThisMonth",
+      COUNT(*) FILTER (WHERE COALESCE(f."ordersPlaced", 0) >= 2)::bigint AS "repeat",
+      COUNT(*) FILTER (WHERE COALESCE(f."ordersPlaced", 0) = 1)::bigint AS "oneTime",
+      COALESCE(SUM(f."netSpend"), 0) AS "revenue",
+      COUNT(*) FILTER (WHERE 'VIP' = ANY(f."tags"))::bigint AS "vip",
+      COUNT(*) FILTER (WHERE 'SUSPICIOUS' = ANY(f."tags"))::bigint AS "suspicious",
+      COUNT(*) FILTER (WHERE 'COD_RISK' = ANY(f."tags"))::bigint AS "codRisk",
+      COUNT(*) FILTER (WHERE 'BLOCKED' = ANY(f."tags"))::bigint AS "blocked",
+      COUNT(*) FILTER (WHERE COALESCE(f."lastOrderAt", c."createdAt") < ${inactiveCutoff(30)})::bigint AS "inactive30",
+      COUNT(*) FILTER (WHERE COALESCE(f."lastOrderAt", c."createdAt") < ${inactiveCutoff(60)})::bigint AS "inactive60",
+      COUNT(*) FILTER (WHERE COALESCE(f."lastOrderAt", c."createdAt") < ${inactiveCutoff(90)})::bigint AS "inactive90"
+    FROM "Customer" c LEFT JOIN "CustomerFact" f ON f."customerId" = c."id"`;
 
   return {
-    totalCustomers: computed.length,
-    newToday: computed.filter((c) => c.createdAt >= startOfToday).length,
-    newThisMonth: computed.filter((c) => c.createdAt >= startOfMonth).length,
-    repeatCustomers: computed.filter((c) => c.totalOrders >= 2).length,
-    lifetimeRevenue: computed.reduce((sum, c) => sum + c.totalSpent, 0),
-    vipCustomers: computed.filter((c) => c.tags.includes("VIP")).length,
-    // Added for Section 6 BI ("High-Risk Customers" / "One-Time Buyers") — cheap to add here since
-    // `computed` already holds everything needed; avoids a second full-customer-table scan.
-    suspiciousCount: computed.filter((c) => c.tags.includes("SUSPICIOUS")).length,
-    codRiskCount: computed.filter((c) => c.tags.includes("COD_RISK")).length,
-    blockedCount: computed.filter((c) => c.tags.includes("BLOCKED")).length,
-    oneTimeBuyers: computed.filter((c) => c.totalOrders === 1).length,
-    inactive30: inactiveSince(30),
-    inactive60: inactiveSince(60),
-    inactive90: inactiveSince(90),
+    totalCustomers: Number(row!.total),
+    newToday: Number(row!.newToday),
+    newThisMonth: Number(row!.newThisMonth),
+    repeatCustomers: Number(row!.repeat),
+    lifetimeRevenue: Number(row!.revenue ?? 0),
+    vipCustomers: Number(row!.vip),
+    suspiciousCount: Number(row!.suspicious),
+    codRiskCount: Number(row!.codRisk),
+    blockedCount: Number(row!.blocked),
+    oneTimeBuyers: Number(row!.oneTime),
+    inactive30: Number(row!.inactive30),
+    inactive60: Number(row!.inactive60),
+    inactive90: Number(row!.inactive90),
   };
 }
 

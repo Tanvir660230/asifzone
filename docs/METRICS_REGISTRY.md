@@ -189,6 +189,18 @@ Time basis: **placed** = `Order.createdAt` · **realised** = §2 · **returned**
 | `repeat_customer_rate` | customers with ≥ 2 sale orders ÷ `customers_with_orders` |
 | `customer_lifetime_value` | average `realised_net_sales` per customer over customers with ≥ 1 realised order |
 
+**Customer list read model (Blueprint V2 PERF-01/02, 2026-10-09).** The Customers list and its stats read `CustomerFact`
+(one row per customer: `customer_orders`, `customer_net_spend`, realised orders, last order, district, tags, risk counts),
+not a recomputation per request. It is a cache of the definitions above, never another formula: spend and orders come from
+`customerMetricsFor(ids)` — the same lifetime `groupBy: "customer"` of the same contributions as `customerMetricsIndex`,
+computed from just those customers' orders (a test holds the two equal for every customer) — and tags from
+`customer-tags.ts`. Before each read, `syncCustomerFacts` recomputes the customers whose row, orders, payments, refunds,
+returned units or return requests changed since the last sync (a bounded window with a 2-minute overlap), whose order was
+purged or moved (a trigger marks them), or whose date-based tag is due (`tagsExpireAt`). Measured on 50,475 customers /
+50,412 orders: list p95 86 ms, stats p95 47 ms; the in-memory list it replaced failed at that size.
+Also: the fact loader now loads "every order" (lifetime ranges) in batches of 500 — a single query binding every order id
+exceeded PostgreSQL's 32,767 bind-variable limit past ~32k orders.
+
 ### 4.3a Behaviour and rates (Admin V2, 2026-10-08)
 | Key | Definition |
 |---|---|

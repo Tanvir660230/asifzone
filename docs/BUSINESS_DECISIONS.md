@@ -391,7 +391,12 @@ are the installation-isolation decisions on the portable-foundation line.
 | DR-8 | Required reasons (Blueprint recommendation, applied under "do all Blueprint work"): besides cancelling (D22), the correction SHIPPED → PACKED (T3) and rejecting a return or exchange request need a written reason. | T3 is checked in `applyOrderTransition` against the locked status (`transitionNeedsReason`); the rejection reason is the request's `adminNote`, which the customer sees on their order. Stock adjustments already required a reason. Routine forward moves need none. |
 | DR-23 | AI action policy (Blueprint recommendation): the assistant reads freely within the admin's permissions, but every change is a proposal an admin confirms; one entity per action (bulk tools capped at 50). | New permission `ai.execute` (OWNER-only). Tools run the same domain commands people use (`updateOrderStatus`, `adjustVariantStock`); a proposal expires after 10 minutes and is refused if what it was previewed against changed. Phones are masked in what the model sees. Every proposal, confirm, refusal and cancel is audited with `source: "ai"`. First tools: metrics, find/get order, stock levels (read); cancel order, adjust stock (propose). |
 
-**Engineering note — Customers list (Blueprint V2 PERF-01), 2026-10-08.** Not moved to SQL yet. Measured on the
+**Engineering note — Customers list (Blueprint V2 PERF-01), 2026-10-09: done.** The list and its stats now filter, sort
+and page in SQL over the `CustomerFact` read model, kept current by an incremental sync before each read (see
+METRICS_REGISTRY §4.3 "Customer list read model"). Same figures, tags and filters as before (equivalence tests); name
+sorting is case-insensitive in code-point order, ties sort newest first. Measured p95 86 ms on 50,475 customers.
+
+**Engineering note — Customers list (Blueprint V2 PERF-01), 2026-10-08 (superseded above).** Not moved to SQL yet. Measured on the
 Asif Zone demo mirror (467 customers): list 16–45 ms, stats 13 ms. The list's spend and order count are the registry
 metrics (`customerMetricsIndex` → `realised_net_sales`, `orders_placed`); filtering and sorting them in SQL would mean
 a second implementation of those metrics. The planned path is the per-customer daily facts of PERF-02, maintained by

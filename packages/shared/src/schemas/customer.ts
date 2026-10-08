@@ -118,9 +118,8 @@ export const customerListQuerySchema = paginationQuerySchema.extend({
   lastOrderDays: z.coerce.number().int().positive().optional(),
   minSpend: z.coerce.number().nonnegative().optional(),
   minOrders: z.coerce.number().int().nonnegative().optional(),
-  // Computed columns (totalSpent/totalOrders/lastOrderAt), not plain Customer columns — sorted
-  // in-memory by listCustomersAdmin rather than via Prisma orderBy. Fine at this store's customer
-  // volumes; revisit with a raw aggregate query if that stops being true.
+  // totalSpent/totalOrders/lastOrderAt are the CustomerFact read model's columns (Blueprint V2 PERF-01) — sorted in SQL by
+  // listCustomersAdmin; ties sort newest first.
   sortBy: z.enum(["name", "createdAt", "totalSpent", "totalOrders", "lastOrderAt"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
 });

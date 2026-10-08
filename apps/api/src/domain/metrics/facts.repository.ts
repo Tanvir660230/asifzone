@@ -95,12 +95,11 @@ const ORDER_SELECT = {
 /** Loads OrderFacts for the given ids (or every order when `ids` is null). */
 export async function loadOrderFacts(ids: string[] | null, currency: string): Promise<OrderFact[]> {
   const rows = [];
-  if (ids === null) {
-    rows.push(...(await prisma.order.findMany({ select: ORDER_SELECT })));
-  } else {
-    for (let i = 0; i < ids.length; i += BATCH) {
-      rows.push(...(await prisma.order.findMany({ where: { id: { in: ids.slice(i, i + BATCH) } }, select: ORDER_SELECT })));
-    }
+  // Every order (lifetime) is loaded in batches too: one findMany with nested relations binds every order id, and
+  // PostgreSQL refuses a statement with more than 32,767 bind variables — lifetime metrics failed past ~32k orders.
+  const all = ids ?? (await prisma.order.findMany({ select: { id: true } })).map((o) => o.id);
+  for (let i = 0; i < all.length; i += BATCH) {
+    rows.push(...(await prisma.order.findMany({ where: { id: { in: all.slice(i, i + BATCH) } }, select: ORDER_SELECT })));
   }
   if (!rows.length) return [];
   const orderIds = rows.map((r) => r.id);
