@@ -109,7 +109,7 @@ export default function SearchSynonymsPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Search synonyms"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (

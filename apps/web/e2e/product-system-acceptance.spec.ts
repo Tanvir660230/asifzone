@@ -136,7 +136,7 @@ test.describe("product management system — the brief's acceptance tests", () =
   test("4a. create a custom attribute and assign it to the Panjabi type", async ({ page }) => {
     await login(page);
     await page.goto("/admin/catalog/attributes");
-    await page.getByRole("button", { name: /add attribute/i }).click();
+    await page.getByRole("button", { name: /add field/i }).click();
     await page.getByLabel("Label").fill(EMBROIDERY);
     await page.getByLabel("Field type").selectOption("SELECT");
     await page.getByLabel(/Options \(one per line\)/).fill("Hand embroidery\nMachine embroidery\nNone");
@@ -145,7 +145,7 @@ test.describe("product management system — the brief's acceptance tests", () =
 
     await page.goto("/admin/catalog/templates");
     await page.getByRole("button", { name: "Edit Panjabi template", exact: true }).click();
-    await page.getByLabel("Attribute to add").selectOption({ label: `${EMBROIDERY} (Select (one option))` });
+    await page.getByLabel("Field to add").selectOption({ label: `${EMBROIDERY} (Select (one option))` });
     await page.getByRole("button", { name: /^Add$/ }).click();
     await page.getByRole("button", { name: "Save template" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);

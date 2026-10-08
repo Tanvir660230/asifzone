@@ -104,7 +104,7 @@ export default function ProductTypesPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Product types"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (

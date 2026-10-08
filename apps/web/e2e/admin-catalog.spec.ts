@@ -35,7 +35,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
   test("1. define a select attribute", async ({ page, isMobile }) => {
     await login(page);
     await page.goto("/admin/catalog/attributes");
-    await page.getByRole("button", { name: /add attribute/i }).click();
+    await page.getByRole("button", { name: /add field/i }).click();
     await page.getByLabel("Label").fill(ATTR_LABEL);
     await page.getByLabel("Field type").selectOption("SELECT");
     await page.getByLabel(/Options \(one per line\)/).fill("Hand Embroidery\nMachine Embroidery\nNone");
@@ -71,7 +71,7 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await page.getByLabel("Has a size (or size-like) choice values", { exact: true }).fill("S, M, L");
     await page.getByLabel("Behaviour").selectOption("ON_BY_DEFAULT");
     await page.getByLabel("Size guide", { exact: true }).selectOption({ label: GUIDE_NAME });
-    await page.getByLabel("Attribute to add").selectOption({ label: `${ATTR_LABEL} (Select (one option))` });
+    await page.getByLabel("Field to add").selectOption({ label: `${ATTR_LABEL} (Select (one option))` });
     await page.getByRole("button", { name: /^Add$/ }).click();
     await page.getByLabel("Required", { exact: true }).check();
     await page.getByRole("button", { name: "Save template" }).click();

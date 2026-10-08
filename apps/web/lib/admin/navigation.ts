@@ -84,6 +84,9 @@ export interface NavNode {
   goKey?: string;
   /** Old routes that now live here — the middleware redirects them (query string kept). Same `[param]` names as `route`. */
   deprecatedRoutes?: string[];
+  /** A grouping page whose pages show as a vertical inner list beside the page on wide screens (macOS Settings-style)
+   * instead of a tab row — for long sets like Catalog setup's ten. Its layout renders <InnerNav>. */
+  innerList?: boolean;
 }
 
 export const NAV_DOMAINS: ReadonlyArray<{ id: NavDomain; label: string | null }> = [
@@ -112,7 +115,7 @@ const ANALYTICS_TABS: Array<[slug: string, label: string, keywords: string[], de
 const CATALOG_SETUP: Array<[slug: string, label: string, keywords?: string[]]> = [
   ["types", "Product types"],
   ["templates", "Templates"],
-  ["attributes", "Attributes"],
+  ["attributes", "Product fields", ["attributes", "fields", "specifications"]],
   ["size-guides", "Size guides", ["size chart"]],
   ["care-guides", "Care guides"],
   ["materials", "Materials", ["fabric"]],
@@ -210,6 +213,7 @@ export const NAV_NODES: readonly NavNode[] = [
     index: "/admin/catalog/types",
     capability: "catalog.view",
     order: 4,
+    innerList: true,
     keywords: ["types", "templates", "attributes", "size guide"],
   },
   ...CATALOG_SETUP.map(

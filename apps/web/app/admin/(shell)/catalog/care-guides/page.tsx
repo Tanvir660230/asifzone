@@ -83,7 +83,7 @@ export default function CareGuidesPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Care guides"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (

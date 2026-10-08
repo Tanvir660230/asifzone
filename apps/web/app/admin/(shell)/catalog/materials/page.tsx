@@ -72,7 +72,7 @@ export default function MaterialsPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Materials"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (

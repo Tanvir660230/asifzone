@@ -65,7 +65,7 @@ export default function SpecGroupsPage() {
 
   return (
     <div>
-      <PageHeader title="Catalog setup" description="Define what kinds of products the store sells, and what each kind collects and shows." />
+      <PageHeader title="Spec groups" description="Define what kinds of products the store sells, and what each kind collects and shows." />
       <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">

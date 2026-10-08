@@ -86,7 +86,7 @@ export default function AttributesCatalogPage() {
       toast.success(editing === "new" ? "Attribute created" : "Attribute saved");
       setEditing(null);
     },
-    onError: (err) => setError(describeApiError(err, "Failed to save attribute")),
+    onError: (err) => setError(describeApiError(err, "Couldn't save the field")),
   });
 
   function openEditor(target: catalogApi.AttributeDefinitionRow | "new") {
@@ -110,13 +110,13 @@ export default function AttributesCatalogPage() {
   }
 
   async function handleDelete(attr: catalogApi.AttributeDefinitionRow) {
-    if (!(await confirm(`Delete the "${attr.label}" attribute? This cannot be undone.`))) return;
+    if (!(await confirm(`Delete the "${attr.label}" field? This cannot be undone.`))) return;
     try {
       await catalogApi.deleteAttributeDefinition(attr.id);
       refresh();
       toast.success("Attribute deleted");
     } catch (err) {
-      toast.error(describeApiError(err, "Failed to delete attribute"));
+      toast.error(describeApiError(err, "Couldn't delete the field"));
     }
   }
 
@@ -125,12 +125,12 @@ export default function AttributesCatalogPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Product fields"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
             <Button variant="brass" onClick={() => openEditor("new")}>
-              <Plus size={16} /> Add attribute
+              <Plus size={16} /> Add field
             </Button>
           )
         }
@@ -138,7 +138,7 @@ export default function AttributesCatalogPage() {
       <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
-        Attributes are the fields a product collects — Material, Fit, Movement, Embroidery Type. Add them to a template to
+        Product fields are what a product collects — Material, Fit, Movement, Embroidery Type. Add them to a template to
         make them appear for a product type. (Color and size variant options are managed under Products → Variant options.)
       </p>
 
@@ -146,7 +146,7 @@ export default function AttributesCatalogPage() {
         <table className="ui-table">
           <thead className="ui-table-head">
             <tr>
-              <th className="px-4 py-3">Attribute</th>
+              <th className="px-4 py-3">Field</th>
               <th className="px-4 py-3">Type</th>
               <th className="hidden px-4 py-3 md:table-cell">Options</th>
               <th className="px-4 py-3">Used</th>
@@ -158,7 +158,7 @@ export default function AttributesCatalogPage() {
             {!isLoading && attributes.length === 0 && (
               <tr>
                 <td colSpan={5}>
-                  <EmptyState icon={ListChecks} title="No attributes yet" description="Add fields like Material or Fit, then attach them to a template." />
+                  <EmptyState icon={ListChecks} title="No product fields yet" description="Add fields like Material or Fit, then attach them to a template." />
                 </td>
               </tr>
             )}
@@ -205,7 +205,7 @@ export default function AttributesCatalogPage() {
       </div>
       {!canManage && <p className="mt-3 text-xs text-ink-400">Only the store owner can change catalog setup.</p>}
 
-      <Modal open={editing !== null} onClose={() => setEditing(null)} title={isNew ? "Add attribute" : `Edit ${editing ? editing.label : ""}`} widthClassName="max-w-lg">
+      <Modal open={editing !== null} onClose={() => setEditing(null)} title={isNew ? "Add field" : `Edit ${editing ? editing.label : ""}`} widthClassName="max-w-lg">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
         <form
           onSubmit={(e) => {

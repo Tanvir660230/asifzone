@@ -214,7 +214,7 @@ export default function TemplatesPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Templates"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
@@ -442,7 +442,7 @@ export default function TemplatesPage() {
               })}
             </div>
             <div className="flex gap-2">
-              <Select value={toAdd} onChange={(e) => setToAdd(e.target.value)} aria-label="Attribute to add">
+              <Select value={toAdd} onChange={(e) => setToAdd(e.target.value)} aria-label="Field to add">
                 <option value="">Add an attribute…</option>
                 {addable.map((d) => (
                   <option key={d.id} value={d.id}>
