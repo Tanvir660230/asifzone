@@ -26,9 +26,9 @@ const csvFile = (name: string, text: string) => ({ name, mimeType: "text/csv", b
 
 async function findInList(page: Page, name: string) {
   await page.goto("/admin/products");
-  await page.getByPlaceholder("Search products…").fill(name);
+  await page.getByPlaceholder("Search name or SKU…").fill(name);
   // The list filters after a debounce; wait until exactly this product's row is left.
-  await expect(page.getByRole("button", { name: `Duplicate ${name}`, exact: true })).toHaveCount(1);
+  await expect(page.getByRole("checkbox", { name: `Select ${name}`, exact: true })).toHaveCount(1);
 }
 
 test.describe.configure({ mode: "serial" });
@@ -123,7 +123,11 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
   test("3. duplicate from the list, taking the stock and leaving the images", async ({ page }) => {
     await login(page);
     await findInList(page, SOURCE);
-    await page.getByRole("button", { name: `Duplicate ${SOURCE}`, exact: true }).click();
+    // Row actions live in the row's "More actions" menu (Products list, Blueprint V2 P4).
+    // The search also matches the earlier copies (newest first), so open the menu on the source's own row.
+    const sourceRow = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${SOURCE}`, exact: true }) });
+    await sourceRow.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("button", { name: "Duplicate", exact: true }).click();
 
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Name of the copy").fill(`${SOURCE} second copy`);
@@ -222,7 +226,7 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
 
     // The new product exists, as a draft.
     await page.goto("/admin/products");
-    await page.getByPlaceholder("Search products…").fill(IMPORTED);
+    await page.getByPlaceholder("Search name or SKU…").fill(IMPORTED);
     await expect(page.getByText(IMPORTED).locator("visible=true").first()).toBeVisible(); // the list renders a table row (desktop) and a card (mobile)
     const api = process.env.E2E_API_URL ?? "http://localhost:4000";
     const listed = (await (await page.request.get(`${api}/api/products?search=${encodeURIComponent(IMPORTED)}`)).json()).items;
@@ -252,9 +256,9 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     await expect(page.getByTestId("import-result")).toContainText("1 created");
 
     await page.goto("/admin/products");
-    await page.getByPlaceholder("Search products…").fill(`E2E Tools Fine ${RUN}`);
+    await page.getByPlaceholder("Search name or SKU…").fill(`E2E Tools Fine ${RUN}`);
     await expect(page.getByText(`E2E Tools Fine ${RUN}`).locator("visible=true").first()).toBeVisible();
-    await page.getByPlaceholder("Search products…").fill(`E2E Tools Broken ${RUN}`);
+    await page.getByPlaceholder("Search name or SKU…").fill(`E2E Tools Broken ${RUN}`);
     await expect(page.getByText(`E2E Tools Broken ${RUN}`)).toHaveCount(0);
   });
 

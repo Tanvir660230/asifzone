@@ -165,12 +165,11 @@ test.describe("product workflow: draft → ready → published → unpublished",
 
   test("6. filter by status and bulk-unpublish from the list", async ({ page }) => {
     await login(page);
-    await page.goto("/admin/products");
+    // Filters live in the URL (Products list, Blueprint V2 P4): ?f.status= is the Status quick filter, ?q= the search.
+    await page.goto(`/admin/products?f.status=PUBLISHED&q=${encodeURIComponent(PRODUCT)}`);
     // Table on desktop, card list on mobile — the row checkbox carries the same label in both, so it is layout-agnostic.
     const rowCheckbox = page.getByRole("checkbox", { name: `Select ${PRODUCT}` });
 
-    await page.getByLabel("Filter by status").selectOption("PUBLISHED");
-    await page.getByPlaceholder("Search products…").fill(PRODUCT);
     await expect(rowCheckbox).toBeVisible(); // it's in the Published list…
 
     await rowCheckbox.check();
@@ -184,7 +183,7 @@ test.describe("product workflow: draft → ready → published → unpublished",
 
     // …and now it has moved: gone from Published, present under Unpublished.
     await expect(rowCheckbox).toHaveCount(0);
-    await page.getByLabel("Filter by status").selectOption("UNPUBLISHED");
+    await page.goto(`/admin/products?f.status=UNPUBLISHED&q=${encodeURIComponent(PRODUCT)}`);
     await expect(rowCheckbox).toBeVisible();
   });
 

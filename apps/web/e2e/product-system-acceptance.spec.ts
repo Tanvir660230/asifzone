@@ -578,7 +578,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     expect(pageErrors, "no hydration or script errors on the live page").toEqual([]);
   });
 
-  test("12. the product page shows units sold in the last 7 days to a logged-in admin only", async ({ page, browser, isMobile }) => {
+  test("12. the product page shows units sold in the last 7 days to a logged-in admin only", async ({ page, browser }) => {
     const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3000"; // contexts made by hand don't inherit the project's baseURL
     // Step 5 placed one order for one unit of this product.
     await login(page); // the admin area marks this browser as an admin's while its session is verified
@@ -593,7 +593,8 @@ test.describe("product management system — the brief's acceptance tests", () =
     await expect(panel).toContainText("White"); // the variant that sold
     // Signing out removes it again.
     await page.goto("/admin/dashboard");
-    if (isMobile) await page.getByRole("button", { name: "Open menu" }).click();
+    // Signing out lives in the toolbar's account menu (Admin V2), on every screen size.
+    await page.getByRole("button", { name: /^Account/ }).click();
     await page.getByRole("button", { name: "Log out", exact: true }).click();
     await page.goto(`/product/${slug.panjabi}`);
     await expect(page.getByRole("heading", { level: 1, name: N.panjabi })).toBeVisible();
