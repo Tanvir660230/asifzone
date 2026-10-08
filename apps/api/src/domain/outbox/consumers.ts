@@ -10,6 +10,7 @@ import { deliverPaymentConfirmationEmail } from "../../lib/order-mailer";
 import { processMetaPurchase } from "../../lib/meta/purchase";
 import { getProviders } from "../../providers/registry";
 import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
+import { deliverConversationReply } from "../../lib/conversation-reply";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
 
@@ -78,6 +79,16 @@ export const OUTBOX_CONSUMERS = {
       return deliverPaymentLinkMessage(paymentLinkId, channel, event.id);
     },
   } satisfies OutboxConsumer<{ paymentLinkId: string; channel: "SMS" | "EMAIL" }>,
+
+  "conversation-reply": {
+    eventTypes: ["conversation.reply_requested.v1"],
+    payload: z.object({ messageId: z.string().min(1) }),
+    idempotency:
+      "Outbox row claim (one row per reply message — eventKey is the message id); EMAIL also passes the outbox event id as the Resend idempotencyKey. SMS has no provider key, so a crash after the provider accepted can resend once the lease expires (at-least-once).",
+    async handle({ messageId }, event) {
+      return deliverConversationReply(messageId, event.id);
+    },
+  } satisfies OutboxConsumer<{ messageId: string }>,
 
   "meta-capi-purchase": {
     eventTypes: ["order.placed.v1"],

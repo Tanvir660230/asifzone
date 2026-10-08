@@ -29,6 +29,7 @@ import { newsletterRouter } from "./modules/newsletter/newsletter.routes";
 import { feedbackRouter } from "./modules/feedback/feedback.routes";
 import { customerRouter } from "./modules/customers/customer.routes";
 import { adminHomeRouter } from "./modules/admin-home/admin-home.routes";
+import { inboxRouter } from "./modules/inbox/inbox.routes";
 import { wishlistRouter } from "./modules/wishlist/wishlist.routes";
 import { cartRouter } from "./modules/cart/cart.routes";
 import { stockAlertRouter } from "./modules/stock-alerts/stock-alert.routes";
@@ -130,6 +131,7 @@ app.use("/api/v1/checkout", checkoutV1Router);
 app.use("/api/v1/storefront/read-model", storefrontReadModelRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/outbox", outboxRouter);
+app.use("/api/v1/admin/conversations", inboxRouter);
 app.use("/api/v1/admin", adminHomeRouter);
 // Phase 11: counts-only attention signals — an admin with ops.read, or an external monitor with OPS_MONITOR_TOKEN.
 // Mounted before the ops router (whose router-level requireAdmin would otherwise run first).

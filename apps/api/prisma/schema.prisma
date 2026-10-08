@@ -268,6 +268,7 @@ model AdminUser {
   notificationReads      NotificationRead[]
   savedViews             SavedView[]
   aiProposals            AiProposal[]
+  conversationReplies    ConversationMessage[]
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -763,6 +764,7 @@ model Customer {
   creditEntries            CustomerCreditEntry[]
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
+  conversations            Conversation[]
 
   @@index([phone])
 }
@@ -1700,6 +1702,63 @@ model Feedback {
 
   @@index([readAt])
   @@index([createdAt])
+}
+
+enum ConversationChannel {
+  WEB_FORM
+  EMAIL
+  SMS
+  WHATSAPP
+  MESSENGER
+}
+
+enum ConversationStatus {
+  OPEN
+  HANDLED
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+/// Admin V2 Inbox R2 (DR-4): one thread with a customer, whatever channel it arrived on. The Inbox binds to this, never
+/// to a provider. Website contact-form messages are channel WEB_FORM (Feedback rows were backfilled; new ones land here).
+model Conversation {
+  id            String                @id @default(cuid())
+  channel       ConversationChannel
+  subject       String
+  contactName   String
+  email         String?
+  phone         String?
+  customerId    String?
+  customer      Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  status        ConversationStatus    @default(OPEN)
+  lastMessageAt DateTime              @default(now())
+  createdAt     DateTime              @default(now())
+  /// The Feedback row this thread was backfilled from (provenance only).
+  feedbackId    String?               @unique
+  messages      ConversationMessage[]
+
+  @@index([status, lastMessageAt])
+  @@index([lastMessageAt])
+}
+
+/// One message in a conversation. An OUT message is sent by the `conversation-reply` outbox consumer (eventKey = this id);
+/// its delivery state is that outbox row's status — never written here.
+model ConversationMessage {
+  id             String              @id @default(cuid())
+  conversationId String
+  conversation   Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      MessageDirection
+  /// How it travelled: WEB_FORM for an incoming contact-form message; EMAIL or SMS for a reply.
+  channel        ConversationChannel
+  body           String
+  adminId        String?
+  admin          AdminUser?          @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  createdAt      DateTime            @default(now())
+
+  @@index([conversationId, createdAt])
 }
 
 model WishlistItem {

@@ -45,6 +45,9 @@ export const CAPABILITIES = {
   "customers.view": { permission: "customers.read" },
   "customers.manage": { permission: "customers.manage" },
   "customers.message": { permission: "customers.message" },
+  /** Inbox replies (R2) — offered only when that provider is set up on this deployment. */
+  "inbox.replyEmail": { permission: "customers.message", provider: "email" },
+  "inbox.replySms": { permission: "customers.message", provider: "sms" },
   "content.manage": { permission: "content.manage" },
   // growth
   "promotions.manage": { permission: "promotions.manage" },

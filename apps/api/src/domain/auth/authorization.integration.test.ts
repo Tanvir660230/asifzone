@@ -227,9 +227,9 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 341 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets; +4: delivery zones; +3: AI assistant chat + proposal confirm/cancel (Admin V2)
-    expect(routes).toHaveLength(341);
+  it("covers all 343 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets; +4: delivery zones; +3: AI assistant chat + proposal confirm/cancel; +5 −3: Inbox conversations replace the admin feedback routes (Admin V2)
+    expect(routes).toHaveLength(343);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

@@ -3,6 +3,7 @@ import { can, type AdminIdentity } from "../../domain/auth/authorization";
 import { getOrderStats } from "../orders/order.service";
 import { getPaymentsOverview } from "../payments/payments-overview.service";
 import { countUnreadNotifications } from "../notifications/notification.service";
+import { countOpenConversations } from "../inbox/inbox.service";
 
 /**
  * Everything waiting on an admin, in one response (Blueprint V2 PERF-03, §I4) — the sidebar badges, the bell and Home's
@@ -16,7 +17,7 @@ export async function adminAttention(identity: AdminIdentity) {
     can(identity, "orders.read") ? getOrderStats() : null,
     can(identity, "payments.read") ? getPaymentsOverview() : null,
     content ? prisma.productReview.count({ where: { status: "PENDING" } }) : null,
-    content ? prisma.feedback.count({ where: { readAt: null } }) : null,
+    content ? countOpenConversations() : null,
     countUnreadNotifications(identity),
   ]);
   return { orders, payments, pendingReviews, unreadFeedback, unreadNotifications };

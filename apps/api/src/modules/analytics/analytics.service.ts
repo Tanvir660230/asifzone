@@ -1801,9 +1801,9 @@ export async function getFeedbackVolume(days?: number) {
 
   const since = await windowStart(days);
   const rows = await prisma.$queryRaw<Array<{ total: bigint; read: bigint }>>`
-    SELECT COUNT(*)::bigint AS total, COUNT(*) FILTER (WHERE "readAt" IS NOT NULL)::bigint AS read
-    FROM "Feedback"
-    WHERE "createdAt" >= ${utcInstant(since)}
+    SELECT COUNT(*)::bigint AS total, COUNT(*) FILTER (WHERE "status" = 'HANDLED')::bigint AS read
+    FROM "Conversation"
+    WHERE "channel" = 'WEB_FORM' AND "createdAt" >= ${utcInstant(since)}
   `;
 
   const row = rows[0]!;
