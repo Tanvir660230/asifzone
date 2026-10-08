@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowDownLeft, ArrowUpRight, Wallet } from "lucide-react";
 import type { StoreCreditEntryType } from "@clothing-brand/shared";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
-import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountTitle } from "@/components/account/account-ui";
 import { Button } from "@/components/ui/button";
 import { getMyStoreCredit } from "@/lib/api/customers";
 import { formatPrice, formatStoreDate } from "@/lib/format";
@@ -29,32 +29,32 @@ export default function StoreBalancePage() {
   const summary = data?.storeCredit;
 
   return (
-    <div className="space-y-6">
-      <AccountPageHeader title="Store Balance" description="Credit from cancelled orders, order changes and returns. Use it on any future order at checkout." />
+    <div>
+      <AccountTitle title="Store balance" description="Money from cancelled orders, order changes and returns. Use it on any order at checkout." />
 
       <section
-        className="glossy relative overflow-hidden rounded-2xl border border-line-subtle bg-surface p-5 sm:p-6"
+        className="relative mb-10 max-w-xl overflow-hidden rounded-[22px] bg-surface-inverse p-6 text-cream-50 shadow-floatLg ring-1 ring-inset ring-white/[0.08] sm:p-8"
         aria-labelledby="balance-title"
         data-testid="store-balance-card"
       >
-        <p id="balance-title" className="flex items-center gap-2 text-sm text-ink-500">
+        <p id="balance-title" className="flex items-center gap-2 text-sm text-ink-400">
           <Wallet size={16} aria-hidden="true" /> Available balance
         </p>
         {isLoading ? (
-          <div className="mt-2 h-10 w-40 animate-pulse rounded-lg bg-ink-100" aria-busy="true" aria-label="Loading balance" />
+          <div className="mt-2 h-12 w-44 animate-pulse rounded-lg bg-white/10" aria-busy="true" aria-label="Loading balance" />
         ) : isError ? (
           <div className="mt-2 flex items-center gap-3">
-            <p className="text-sm text-danger-700">Your balance couldn&apos;t be loaded.</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <p className="text-sm text-cream-50">Your balance didn&apos;t load.</p>
+            <Button variant="glass" size="sm" onClick={() => refetch()}>
               Try again
             </Button>
           </div>
         ) : (
-          <p className="mt-1 font-display text-4xl tabular-nums tracking-tight text-ink-900" data-testid="store-balance-amount">
+          <p className="mt-1 font-display text-5xl tabular-nums tracking-tight sm:text-6xl" data-testid="store-balance-amount">
             {formatPrice(summary?.balance ?? 0)}
           </p>
         )}
-        <p className="mt-2 text-xs text-ink-500">Store-use only — it can&apos;t be withdrawn as cash. It doesn&apos;t expire.</p>
+        <p className="mt-4 text-sm text-ink-400">For use in this store only, not as cash. It never expires.</p>
       </section>
 
       {summary && summary.entries.length === 0 ? (
@@ -71,14 +71,14 @@ export default function StoreBalancePage() {
       ) : (
         summary && (
           <section aria-labelledby="history-title">
-            <h2 id="history-title" className="mb-3 font-display text-lg text-ink-900">
+            <h2 id="history-title" className="mb-3.5 px-1 text-lg font-semibold tracking-tight text-fg sm:text-xl">
               History
             </h2>
-            <ul className="divide-y divide-ink-100 overflow-hidden rounded-2xl border border-line-subtle bg-surface" data-testid="store-balance-history">
+            <ul className="divide-y divide-line-subtle overflow-hidden rounded-2xl bg-surface shadow-sm ring-1 ring-inset ring-line-subtle" data-testid="store-balance-history">
               {summary.entries.map((e) => {
                 const credit = e.amount > 0;
                 return (
-                  <li key={e.id} className="flex items-start gap-3 p-4">
+                  <li key={e.id} className="flex items-start gap-4 px-4 py-4 sm:px-5">
                     <span
                       className={cn("mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full", credit ? "bg-success-50 text-success-700" : "bg-ink-100 text-ink-700")}
                       aria-hidden="true"

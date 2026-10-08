@@ -103,7 +103,7 @@ Presentation that differs between brands is a CSS variable in `componentTokens` 
 | Overlays | `Modal` (`description`, `footer`), `Drawer` (prev/next stepping), `Popover`, `DropdownMenu`, `Tooltip`, `useConfirmDialog` |
 | States | `Skeleton` / `SkeletonText`, `EmptyState` (`plain` / `bordered`, `tone`), `ErrorState` (`onRetry`) |
 
-`components/admin/{page-header,empty-state,pagination,table-skeleton,form-section,sub-nav}` and `components/account/{account-page-header,account-empty-state}` are thin re-exports or wrappers of the above, kept so existing imports don't change.
+`components/admin/{page-header,empty-state,pagination,table-skeleton,form-section,sub-nav}` and `components/account/account-empty-state` are thin re-exports or wrappers of the above, kept so existing imports don't change.
 
 ## 5. Rules
 

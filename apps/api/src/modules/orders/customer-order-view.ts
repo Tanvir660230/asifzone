@@ -51,6 +51,7 @@ const ORDER_FIELDS = [
   "courierTrackingLink",
   "createdAt",
   "updatedAt",
+  "previewImageUrl", // first line's product photo, attached by the customer order list
 ] as const;
 
 const ITEM_FIELDS = [

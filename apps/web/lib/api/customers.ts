@@ -1,4 +1,5 @@
 import type {
+  AccountSummary,
   Address,
   CreateAddressInput,
   UpdateAddressInput,
@@ -77,4 +78,12 @@ export function listMyOrderChanges(id: string) {
 /** Pays a change that is waiting for its price difference (the server decides the amount). Returns the gateway URL. */
 export function payMyOrderChange(id: string, modificationId: string, provider: "SSLCOMMERZ" | "EPS_PG") {
   return apiFetch<{ gatewayUrl: string }>(`/api/customers/me/orders/${id}/modifications/${modificationId}/pay`, { method: "POST", body: { provider } });
+}
+
+// ─── Account home (docs/ACCOUNT_HOME.md) ─────────────────────────────────────────────────────────────────────────────
+
+export const ACCOUNT_SUMMARY_KEY = ["account-summary"] as const;
+
+export function getMyAccountSummary() {
+  return apiFetch<{ summary: AccountSummary }>("/api/customers/me/summary");
 }

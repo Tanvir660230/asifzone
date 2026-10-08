@@ -24,14 +24,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountTitle } from "@/components/account/account-ui";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/empty-state";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
 import * as customersApi from "@/lib/api/customers";
 import { ApiError } from "@/lib/api-client";
 
 export default function AccountAddressesPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["my-addresses"], queryFn: customersApi.listAddresses });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ["my-addresses"], queryFn: customersApi.listAddresses });
   const [editing, setEditing] = useState<Address | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -79,81 +82,79 @@ export default function AccountAddressesPage() {
 
   return (
     <div>
-      <AccountPageHeader
-        title="Saved addresses"
-        description="Manage the addresses you ship orders to."
+      <AccountTitle
+        title="Addresses"
+        description="Where we deliver your orders. The default one is filled in at checkout."
         action={
-          <Button variant="brass" onClick={() => setEditing("new")}>
-            <Plus size={16} /> Add address
-          </Button>
+          data && data.addresses.length > 0 ? (
+            <Button onClick={() => setEditing("new")}>
+              <Plus size={16} aria-hidden="true" /> Add address
+            </Button>
+          ) : undefined
         }
       />
 
-      {isLoading && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2" aria-busy="true">
           {Array.from({ length: 2 }, (_, i) => (
-            <div key={i} className="animate-pulse rounded-lg border border-ink-100 bg-cream-50 p-4">
-              <div className="h-3.5 w-24 rounded bg-ink-100" />
-              <div className="mt-3 h-3 w-32 rounded bg-ink-100" />
-              <div className="mt-1.5 h-3 w-28 rounded bg-ink-100" />
-              <div className="mt-1.5 h-3 w-full rounded bg-ink-100" />
-            </div>
+            <Skeleton key={i} className="h-40 rounded-2xl" />
           ))}
         </div>
-      )}
-      {!isLoading && data?.addresses.length === 0 && (
+      ) : isError ? (
+        <ErrorState variant="bordered" title="Your addresses didn't load" onRetry={() => refetch()} />
+      ) : data?.addresses.length === 0 ? (
         <AccountEmptyState
           icon={MapPin}
           title="No saved addresses yet"
-          description="Add an address to speed through checkout next time."
+          description="Add one and checkout fills it in for you next time."
           action={
             <Button size="sm" onClick={() => setEditing("new")}>
-              <Plus size={16} /> Add address
+              <Plus size={16} aria-hidden="true" /> Add address
             </Button>
           }
         />
-      )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {data?.addresses.map((address) => (
-          <div
-            key={address.id}
-            className="rounded-lg border border-ink-100 bg-cream-50 p-4 shadow-sm transition-shadow duration-150 ease-smooth hover:shadow-float"
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-ink-900">{address.label || "Address"}</span>
-                {address.isDefault && (
-                  <span className="flex items-center gap-1 text-xs text-brass-600">
-                    <Star size={12} fill="currentColor" /> Default
-                  </span>
-                )}
+      ) : (
+        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {data?.addresses.map((address) => (
+            <li key={address.id} className="flex flex-col rounded-2xl bg-surface p-5 shadow-sm ring-1 ring-inset ring-line-subtle sm:p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate font-semibold text-fg">{address.label || address.fullName}</p>
+                  {address.isDefault && (
+                    <Badge variant="neutral">
+                      <Star size={11} fill="currentColor" aria-hidden="true" /> Default
+                    </Badge>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-3">
-                <button
+              <p className="mt-3 text-sm leading-relaxed text-ink-600">
+                {address.fullName}, {address.phone}
+                <br />
+                {address.addressLine}, {address.area}, {address.district}, {address.division}
+              </p>
+              <div className="mt-auto flex gap-2 pt-5">
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setEditing(address)}
                   aria-label={`Edit the ${address.label || address.fullName} address`}
-                  className="text-xs text-ink-500 hover:text-ink-900"
                 >
                   Edit
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => handleDelete(address)}
                   aria-label={`Remove the ${address.label || address.fullName} address`}
-                  className="text-ink-400 hover:text-danger-600"
+                  className="text-fg-muted hover:text-danger-600"
                 >
-                  <Trash2 size={14} />
-                </button>
+                  <Trash2 size={14} aria-hidden="true" /> Remove
+                </Button>
               </div>
-            </div>
-            <p className="text-sm text-ink-700">{address.fullName}</p>
-            <p className="text-sm text-ink-500">{address.phone}</p>
-            <p className="mt-1 text-sm text-ink-500">
-              {address.addressLine}, {address.area}, {address.district}, {address.division}
-            </p>
-          </div>
-        ))}
-      </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <Modal
         open={editing !== null}
@@ -289,7 +290,7 @@ function AddressForm({
         <Textarea id="addressLine" rows={2} {...register("addressLine")} />
         {errors.addressLine && <p className="ui-field-error">{errors.addressLine.message}</p>}
       </div>
-      <label className="flex items-center gap-2 text-sm text-ink-700">
+      <label className="flex items-center gap-3 text-sm text-ink-700">
         <Checkbox {...register("isDefault")} />
         Set as default address
       </label>
@@ -298,8 +299,8 @@ function AddressForm({
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" variant="brass" disabled={isSubmitting}>
-          {isSubmitting ? "Saving…" : "Save address"}
+        <Button type="submit" loading={isSubmitting}>
+          Save address
         </Button>
       </div>
     </form>

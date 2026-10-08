@@ -1,161 +1,248 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { updateCustomerSchema, type UpdateCustomerInput } from "@clothing-brand/shared";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
+import { useQuery } from "@tanstack/react-query";
+import { Mail, MapPin, Smartphone } from "lucide-react";
+import type { AccountSummary, Customer } from "@clothing-brand/shared";
 import { useCurrentCustomer } from "@/hooks/use-current-customer";
-import { updateCustomerProfile } from "@/lib/customer-auth";
+import { ACCOUNT_SUMMARY_KEY, getMyAccountSummary } from "@/lib/api/customers";
+import { listWishlist } from "@/lib/api/wishlist";
+import { resendVerificationEmail } from "@/lib/customer-auth";
+import { firstName, orderHeadline, partOfDay } from "@/lib/account";
+import { formatPrice, formatStoreDate, orderStatusLabel } from "@/lib/format";
 import { toast } from "@/components/ui/toast";
-import { ApiError } from "@/lib/api-client";
-import { PushNotificationToggle } from "@/components/account/push-notification-toggle";
-import { AccountPageHeader } from "@/components/account/account-page-header";
-import { SmartOrderTracker } from "@/components/account/smart-order-tracker";
+import { ErrorState } from "@/components/ui/empty-state";
+import { ProductCard } from "@/components/storefront/product-card";
 import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
-import { PhoneVerificationPanel } from "@/components/account/phone-verification-panel";
-import { AccountSecurity } from "@/components/account/account-security";
+import { AccountHomeSkeleton } from "@/components/account/account-skeleton";
+import { MemberCard } from "@/components/account/member-card";
+import { ActiveOrder, FirstOrderWelcome } from "@/components/account/active-order";
+import { GroupedList, ListRow, OrderThumb, RowIcon, SectionHeading } from "@/components/account/account-ui";
 
-export default function AccountProfilePage() {
-  const { data, isLoading, refetch } = useCurrentCustomer();
-  const [serverError, setServerError] = useState<string | null>(null);
-  const [verifyingPhone, setVerifyingPhone] = useState(false);
-  // Forces the loading skeleton on the very first client render regardless of how fast the query
-  // resolves — react-query can settle before hydration's DOM comparison in some navigation timings,
-  // which would otherwise make the client's first paint (form) diverge from the server's (skeleton).
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+/** The account home (docs/ACCOUNT_HOME.md): a greeting that says what's happening, the order on its way, the member card,
+ * anything left to set up, recent orders, saved items and the delivery address — everything at a glance, from one
+ * summary request. Editing lives in Settings; this page is for looking. */
+export default function AccountHomePage() {
+  const { data: me } = useCurrentCustomer();
+  // staleTime 0: shows the cached summary instantly, then refreshes it — orders, addresses and balance change elsewhere.
+  const summaryQuery = useQuery({ queryKey: ACCOUNT_SUMMARY_KEY, queryFn: getMyAccountSummary, staleTime: 0 });
+  // The greeting reads the viewer's clock — only after mount, so the server and client render the same first paint.
+  const [greeting, setGreeting] = useState<string | null>(null);
+  useEffect(() => setGreeting(`Good ${partOfDay()}`), []);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<UpdateCustomerInput>({ resolver: zodResolver(updateCustomerSchema) });
+  const customer = me?.customer;
+  if (!customer || summaryQuery.isPending) return <AccountHomeSkeleton />;
 
-  useEffect(() => {
-    if (data?.customer) {
-      reset({
-        name: data.customer.name,
-        phone: data.customer.phone,
-        smsMarketingOptIn: data.customer.smsMarketingOptIn,
-        emailMarketingOptIn: data.customer.emailMarketingOptIn,
-      });
-    }
-  }, [data, reset]);
-
-  async function onSubmit(values: UpdateCustomerInput) {
-    setServerError(null);
-    try {
-      await updateCustomerProfile(values);
-      await refetch();
-      toast.success("Profile updated");
-    } catch (err) {
-      setServerError(err instanceof ApiError ? err.message : "Failed to update profile");
-    }
+  if (summaryQuery.isError) {
+    return (
+      <div>
+        <Greeting greeting={greeting} name={customer.name} line={null} />
+        <ErrorState
+          variant="bordered"
+          className="mt-10"
+          title="Your account summary didn't load"
+          description="Your orders and balance are safe. Try again, or open a section from the tabs above."
+          onRetry={() => summaryQuery.refetch()}
+        />
+      </div>
+    );
   }
 
-  const profileLoading = !mounted || isLoading || !data?.customer;
-  // Phase 11: a verified phone is the sign-in phone — it changes only through a code sent to the new number.
-  const phoneVerified = Boolean(data?.customer.phoneVerifiedAt);
+  const summary = summaryQuery.data.summary;
 
   return (
     <div>
-      <AccountPageHeader title="Dashboard" description="Your latest order, picks for you, and account settings." />
+      <Greeting greeting={greeting} name={customer.name} line={storyLine(summary)} />
 
-      <SmartOrderTracker />
-
-      <h2 className="mb-3 font-display text-lg text-ink-900">Personal details</h2>
-      {profileLoading ? (
-        <div className="max-w-md animate-pulse space-y-4">
-          <div className="h-10 w-full rounded-lg bg-ink-100" />
-          <div className="h-10 w-full rounded-lg bg-ink-100" />
-          <div className="h-10 w-full rounded-lg bg-ink-100" />
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit(onSubmit)} className="max-w-md space-y-4">
-          <div>
-            <Label htmlFor="name">Full name</Label>
-            <Input id="name" {...register("name")} />
-            {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
-          </div>
-
-          <div>
-            <Label>Email</Label>
-            <Input value={data!.customer.email ?? ""} placeholder="No email on file" disabled />
-          </div>
-
-          <div>
-            <Label htmlFor="phone">Phone</Label>
-            <Input id="phone" placeholder="01XXXXXXXXX" {...register("phone", { disabled: phoneVerified })} />
-            {phoneVerified ? (
-              <p className="mt-1 text-xs text-ink-500">
-                Verified — you can sign in with this number.{" "}
-                <button type="button" className="underline hover:text-ink-900" onClick={() => setVerifyingPhone(true)}>
-                  Change sign-in phone
-                </button>
-              </p>
-            ) : (
-              data!.customer.phone && (
-                <p className="mt-1 text-xs text-ink-500">
-                  Not verified yet.{" "}
-                  <button type="button" className="underline hover:text-ink-900" onClick={() => setVerifyingPhone(true)}>
-                    Verify this number
-                  </button>{" "}
-                  to sign in with it.
-                </p>
-              )
-            )}
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-ink-700">
-            <Checkbox {...register("smsMarketingOptIn")} />
-            Send me SMS updates about sales and offers
-          </label>
-
-          <label className="flex items-center gap-2 text-sm text-ink-700">
-            <Checkbox {...register("emailMarketingOptIn")} />
-            Send me email updates about sales and offers
-          </label>
-
-          {serverError && <p className="text-sm text-danger-600">{serverError}</p>}
-
-          <Button type="submit" variant="brass" disabled={isSubmitting}>
-            {isSubmitting ? "Saving…" : "Save changes"}
-          </Button>
-        </form>
-      )}
-
-      {verifyingPhone && data?.customer && (
-        <div className="mt-4 max-w-md">
-          <PhoneVerificationPanel
-            initialPhone={phoneVerified ? "" : (data.customer.phone ?? "")}
-            onCancel={() => setVerifyingPhone(false)}
-            onVerified={async () => {
-              setVerifyingPhone(false);
-              await refetch();
-              toast.success("Phone verified");
-            }}
+      <div className="mt-10 grid gap-x-8 gap-y-10 lg:mt-12 lg:grid-cols-[minmax(0,1fr)_22.5rem]">
+        {/* Member card first on small screens: what you can spend is the most-used thing after the order. */}
+        <div className="lg:order-2">
+          <MemberCard
+            name={customer.name}
+            memberSince={summary.memberSince}
+            storeBalance={summary.storeBalance}
+            rewardPoints={summary.rewardPoints}
+            couponCount={summary.couponCount}
           />
         </div>
-      )}
 
-      <div className="mt-8">
-        <h2 className="mb-3 font-display text-lg text-ink-900">Security</h2>
-        <AccountSecurity hasEmail={Boolean(data?.customer.email)} />
-      </div>
+        <div className="min-w-0 space-y-10 lg:order-1 lg:row-span-3">
+          {summary.activeOrder ? <ActiveOrder order={summary.activeOrder} /> : summary.orderCount === 0 && <FirstOrderWelcome />}
+          <RecentOrders summary={summary} />
+          <SavedForLater />
+        </div>
 
-      <div className="mt-8 max-w-md">
-        <h2 className="mb-3 font-display text-lg text-ink-900">Notifications</h2>
-        <PushNotificationToggle />
-      </div>
-
-      <div className="mt-10">
-        <RecentlyViewedCarousel title="Picked for you" />
+        <div className="space-y-10 lg:order-3">
+          <SetupList customer={customer} />
+          <DeliveringTo summary={summary} />
+        </div>
       </div>
     </div>
+  );
+}
+
+function Greeting({ greeting, name, line }: { greeting: string | null; name: string; line: string | null }) {
+  return (
+    <header className="max-w-3xl">
+      <h1 className="text-balance font-display text-[2.5rem] leading-[1.05] tracking-[-0.025em] text-fg sm:text-[3.25rem] lg:text-[3.75rem]">
+        {/* "Hello" until the clock is read on the client, so the first paint never flips between greetings. */}
+        {greeting ?? "Hello"}, {firstName(name)}.
+      </h1>
+      {line && <p className="mt-4 max-w-2xl text-pretty text-base leading-relaxed text-ink-600 sm:text-lg">{line}</p>}
+    </header>
+  );
+}
+
+/** One sentence about what matters right now, written from the summary. */
+function storyLine(s: AccountSummary): string {
+  const balance = s.storeBalance > 0 ? ` You have ${formatPrice(s.storeBalance)} in store balance for your next order.` : "";
+  if (s.activeOrder) {
+    const status = s.activeOrder.status;
+    const where =
+      status === "SHIPPED"
+        ? "is on its way to you"
+        : status === "PACKED"
+          ? "is packed and goes to the courier next"
+          : status === "PENDING"
+            ? "is waiting for confirmation"
+            : `is ${orderHeadline(status).title.toLowerCase()}`;
+    return `Your order ${s.activeOrder.orderNumber} ${where}.${balance}`;
+  }
+  if (s.orderCount === 0) return "Everything you order, save and earn will live here.";
+  if (balance) return balance.trim();
+  if (s.wishlistCount > 0) return `You have ${s.wishlistCount} ${s.wishlistCount === 1 ? "item" : "items"} saved for later.`;
+  return "Your orders, wallet and saved items, all in one place.";
+}
+
+function RecentOrders({ summary }: { summary: AccountSummary }) {
+  if (summary.recentOrders.length === 0) return null;
+  return (
+    <section aria-labelledby="recent-orders-title">
+      <SectionHeading id="recent-orders-title" title="Recent orders" action={{ href: "/account/orders", label: "All orders" }} />
+      <GroupedList data-testid="recent-orders">
+        {summary.recentOrders.map((order) => (
+          <ListRow
+            key={order.id}
+            href={`/account/orders/${order.id}`}
+            leading={<OrderThumb imageUrl={order.imageUrl} alt="" className="h-12 w-12 rounded-xl sm:h-14 sm:w-14" />}
+            title={order.firstItemName ? (order.lineCount > 1 ? `${order.firstItemName} and ${order.lineCount - 1} more` : order.firstItemName) : order.orderNumber}
+            subtitle={`${orderStatusLabel(order.status)}, ${formatStoreDate(order.createdAt, { day: "numeric", month: "short" })}`}
+            trailing={<span className="tabular-nums text-fg">{formatPrice(order.total)}</span>}
+          />
+        ))}
+      </GroupedList>
+    </section>
+  );
+}
+
+/** Wishlist preview; falls back to recently viewed products so the page never ends on an empty block. */
+function SavedForLater() {
+  const { data, isPending, isError } = useQuery({ queryKey: ["wishlist"], queryFn: listWishlist });
+  const products = data?.items.map((i) => i.product).slice(0, 4) ?? [];
+
+  if (isPending) return null;
+  if (isError || products.length === 0) {
+    return <RecentlyViewedCarousel title="Recently viewed" />;
+  }
+
+  return (
+    <section aria-labelledby="saved-title">
+      <SectionHeading id="saved-title" title="Saved for later" action={{ href: "/account/saved", label: "All saved items" }} />
+      <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-4">
+        {products.map((product) => (
+          <ProductCard key={product.id} product={product} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Account setup still to do — replaces the old warning banner with a calm checklist that disappears when done. */
+function SetupList({ customer }: { customer: Customer }) {
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const needsEmail = Boolean(customer.email) && !customer.emailVerifiedAt;
+  const needsPhone = !customer.phoneVerifiedAt;
+  if (!needsEmail && !needsPhone) return null;
+
+  async function resend() {
+    setSending(true);
+    try {
+      await resendVerificationEmail();
+      setSent(true);
+      toast.success("Verification email sent — check your inbox");
+    } catch {
+      toast.error("Couldn't send the email. Try again in a minute.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="setup-title">
+      <SectionHeading id="setup-title" title="Finish setting up" />
+      <GroupedList>
+        {needsEmail && (
+          <ListRow
+            onClick={sent || sending ? undefined : resend}
+            leading={
+              <RowIcon tone="attention">
+                <Mail size={17} />
+              </RowIcon>
+            }
+            title="Verify your email"
+            subtitle={sent ? `Sent to ${customer.email}. Open the link to finish.` : sending ? "Sending…" : "We'll send a link to confirm it's you."}
+            plain={sent}
+          />
+        )}
+        {needsPhone && (
+          <ListRow
+            href="/account/settings#phone"
+            leading={
+              <RowIcon>
+                <Smartphone size={17} />
+              </RowIcon>
+            }
+            title={customer.phone ? "Verify your phone" : "Add your phone"}
+            subtitle="Sign in with a code, no password needed."
+          />
+        )}
+      </GroupedList>
+    </section>
+  );
+}
+
+function DeliveringTo({ summary }: { summary: AccountSummary }) {
+  const address = summary.defaultAddress;
+  return (
+    <section aria-labelledby="address-title">
+      <SectionHeading id="address-title" title="Delivering to" action={address ? { href: "/account/addresses", label: "Manage addresses" } : undefined} />
+      <GroupedList>
+        {address ? (
+          <ListRow
+            href="/account/addresses"
+            title={address.label || address.fullName}
+            subtitle={
+              <span className="block whitespace-normal leading-relaxed">
+                {address.addressLine}, {address.area}, {address.district}
+                <br />
+                {address.phone}
+              </span>
+            }
+          />
+        ) : (
+          <ListRow
+            href="/account/addresses"
+            leading={
+              <RowIcon>
+                <MapPin size={17} />
+              </RowIcon>
+            }
+            title="Add a delivery address"
+            subtitle="Check out faster next time."
+          />
+        )}
+      </GroupedList>
+    </section>
   );
 }

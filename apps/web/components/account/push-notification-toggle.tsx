@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   getExistingPushSubscription,
   isPushSupported,
@@ -11,7 +11,9 @@ import { registerPushSubscription, unregisterPushSubscription } from "@/lib/api/
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 
-export function PushNotificationToggle() {
+/** Push on/off for this browser. Renders nothing where push isn't supported — `renderShell` wraps the control in its
+ * section (heading and all), so a page never shows a heading with nothing under it. */
+export function PushNotificationToggle({ renderShell = (control) => control }: { renderShell?: (control: ReactNode) => ReactNode } = {}) {
   const [supported, setSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [busy, setBusy] = useState(false);
@@ -28,7 +30,7 @@ export function PushNotificationToggle() {
       const sub = await subscribeToPush();
       await registerPushSubscription(sub);
       setSubscription(sub);
-      toast.success("Push notifications enabled");
+      toast.success("Push notifications turned on");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't enable push notifications");
     } finally {
@@ -44,7 +46,7 @@ export function PushNotificationToggle() {
       await unsubscribeFromPush(subscription);
       await unregisterPushSubscription(endpoint);
       setSubscription(null);
-      toast.success("Push notifications disabled");
+      toast.success("Push notifications turned off");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't disable push notifications");
     } finally {
@@ -54,23 +56,21 @@ export function PushNotificationToggle() {
 
   if (!supported) return null;
 
-  return (
-    <div className="flex items-center justify-between rounded-lg border border-ink-100 px-4 py-3">
+  return renderShell(
+    <div className="flex items-center justify-between gap-4">
       <div>
-        <p className="text-sm font-medium text-ink-900">Push notifications</p>
-        <p className="text-xs text-ink-500">
-          {subscription ? "Enabled on this browser" : "Get flash sale and order updates in your browser"}
-        </p>
+        <p className="text-sm font-medium text-fg">Push notifications</p>
+        <p className="text-sm text-fg-muted">{subscription ? "On in this browser" : "Off in this browser"}</p>
       </div>
       {subscription ? (
-        <Button type="button" variant="outline" onClick={handleDisable} disabled={busy}>
-          {busy ? "Working…" : "Disable"}
+        <Button type="button" variant="outline" onClick={handleDisable} loading={busy}>
+          Turn off
         </Button>
       ) : (
-        <Button type="button" variant="outline" onClick={handleEnable} disabled={busy}>
-          {busy ? "Working…" : "Enable"}
+        <Button type="button" variant="outline" onClick={handleEnable} loading={busy}>
+          Turn on
         </Button>
       )}
-    </div>
+    </div>,
   );
 }

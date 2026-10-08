@@ -79,6 +79,8 @@ customerRouter.post("/me/phone/otp", requireCustomer, otpRequestRateLimit, valid
 customerRouter.post("/me/phone/verify", requireCustomer, loginRateLimit, validate(phoneVerificationConfirmSchema), customerController.confirmPhoneVerification);
 customerRouter.post("/me/password", requireCustomer, loginRateLimit, validate(changeCustomerPasswordSchema), customerController.changePassword);
 
+customerRouter.get("/me/summary", requireCustomer, customerController.summary);
+
 customerRouter.get("/me/addresses", requireCustomer, customerController.listAddresses);
 customerRouter.post(
   "/me/addresses",

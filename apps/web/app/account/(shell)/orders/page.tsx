@@ -1,70 +1,124 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Package } from "lucide-react";
-import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
-import { AccountPageHeader } from "@/components/account/account-page-header";
-import { AccountEmptyState } from "@/components/account/account-empty-state";
-import { Button } from "@/components/ui/button";
+import type { Order } from "@clothing-brand/shared";
+import { AccountTitle, GroupedList, ListRow, OrderThumb } from "@/components/account/account-ui";
+import { EmptyState, ErrorState } from "@/components/ui/empty-state";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { SegmentedControl } from "@/components/ui/tabs";
+import { AccountPageSkeleton } from "@/components/account/account-skeleton";
 import { listMyOrders } from "@/lib/api/customers";
-import { formatStoreDate } from "@/lib/format";
+import { formatPrice, formatStoreDate, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 
-function OrderSummaryCardSkeleton() {
-  return (
-    <div className="animate-pulse rounded-lg border border-ink-100 p-6">
-      <div className="mb-4 flex items-center justify-between border-b border-ink-100 pb-4">
-        <div className="h-3 w-14 rounded bg-ink-100" />
-        <div className="h-3 w-24 rounded bg-ink-100" />
-      </div>
-      <div className="space-y-2">
-        <div className="h-3 w-full rounded bg-ink-100" />
-        <div className="h-3 w-2/3 rounded bg-ink-100" />
-      </div>
-    </div>
-  );
+const PAGE_SIZE = 20;
+const OPEN: Order["status"][] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED", "SHIPPED"];
+
+type Filter = "all" | "open" | "done";
+
+function itemsTitle(order: Order): string {
+  const first = order.items[0]?.productNameSnapshot;
+  if (!first) return order.orderNumber;
+  return order.items.length > 1 ? `${first} and ${order.items.length - 1} more` : first;
 }
 
 export default function AccountOrdersPage() {
-  const { data, isLoading } = useQuery({ queryKey: ["my-orders"], queryFn: () => listMyOrders() });
+  // The filter lives in the URL (?show=open|done) so a filtered list can be linked to and survives Back.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const show = searchParams.get("show");
+  const filter: Filter = show === "open" || show === "done" ? show : "all";
+  const setFilter = (next: Filter) => router.replace(next === "all" ? pathname : `${pathname}?show=${next}`, { scroll: false });
+  const query = useInfiniteQuery({
+    queryKey: ["my-orders", "infinite"],
+    queryFn: ({ pageParam }) => listMyOrders({ page: pageParam, pageSize: PAGE_SIZE }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page * last.pageSize < last.total ? last.page + 1 : undefined),
+  });
+
+  if (query.isPending) return <AccountPageSkeleton />;
+
+  const orders = query.data?.pages.flatMap((p) => p.items) ?? [];
+  const total = query.data?.pages[0]?.total ?? 0;
+  const shown = orders.filter((o) => (filter === "all" ? true : filter === "open" ? OPEN.includes(o.status) : !OPEN.includes(o.status)));
 
   return (
     <div>
-      <AccountPageHeader title="Order history" description="Track and review everything you've ordered." />
+      <AccountTitle
+        title="Orders"
+        description={total > 0 ? `${total} ${total === 1 ? "order" : "orders"} so far. Open one to track it, change it or ask for a return.` : "Track and review everything you've ordered."}
+        action={
+          total > 0 && (
+            <SegmentedControl<Filter>
+              aria-label="Show orders"
+              size="md"
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: "all", label: "All" },
+                { value: "open", label: "In progress" },
+                { value: "done", label: "Completed" },
+              ]}
+            />
+          )
+        }
+      />
 
-      {isLoading && (
-        <div className="space-y-6">
-          {Array.from({ length: 3 }, (_, i) => (
-            <OrderSummaryCardSkeleton key={i} />
-          ))}
-        </div>
-      )}
-      {!isLoading && data?.items.length === 0 && (
-        <AccountEmptyState
+      {query.isError ? (
+        <ErrorState variant="bordered" title="Your orders didn't load" onRetry={() => query.refetch()} />
+      ) : total === 0 ? (
+        <EmptyState
+          variant="bordered"
           icon={Package}
           title="No orders yet"
-          description="Once you place an order, it'll show up here."
+          description="Once you place an order, you can follow it here."
           action={
-            <Link href="/search">
-              <Button size="sm">Start shopping</Button>
+            <Link href="/search" className={buttonVariants({ size: "sm" })}>
+              Start shopping
             </Link>
           }
         />
+      ) : shown.length === 0 ? (
+        <EmptyState
+          variant="bordered"
+          icon={Package}
+          title={filter === "open" ? "Nothing on its way right now" : "No completed orders yet"}
+          description={query.hasNextPage ? "Older orders may match — load more below." : undefined}
+        />
+      ) : (
+        <GroupedList data-testid="orders-list">
+          {shown.map((order) => (
+            <ListRow
+              key={order.id}
+              href={`/account/orders/${order.id}`}
+              leading={<OrderThumb imageUrl={order.previewImageUrl ?? null} alt="" className="h-14 w-14 rounded-xl sm:h-16 sm:w-16" sizes="64px" />}
+              title={itemsTitle(order)}
+              subtitle={
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <Badge className={orderStatusBadgeClass(order.status)}>{orderStatusLabel(order.status)}</Badge>
+                  <span className="font-medium tabular-nums text-fg sm:hidden">{formatPrice(order.total)}</span>
+                  <span className="w-full sm:w-auto">
+                    {order.orderNumber}, {formatStoreDate(order.createdAt, { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                </span>
+              }
+              trailing={<span className="hidden font-medium tabular-nums text-fg sm:inline">{formatPrice(order.total)}</span>}
+            />
+          ))}
+        </GroupedList>
       )}
 
-      <div className="space-y-6">
-        {data?.items.map((order) => (
-          <div key={order.id}>
-            <div className="mb-2 flex items-center justify-between">
-              <Link href={`/account/orders/${order.id}`} className="text-sm font-medium text-ink-900 hover:text-brass-600">
-                {order.orderNumber}
-              </Link>
-              <span className="text-xs text-ink-400">{formatStoreDate(order.createdAt)}</span>
-            </div>
-            <OrderSummaryCard order={order} />
-          </div>
-        ))}
-      </div>
+      {query.hasNextPage && (
+        <div className="mt-6 flex justify-center">
+          <Button variant="outline" onClick={() => query.fetchNextPage()} loading={query.isFetchingNextPage}>
+            Show older orders
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

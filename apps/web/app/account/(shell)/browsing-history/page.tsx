@@ -1,21 +1,27 @@
 import Link from "next/link";
+import { History } from "lucide-react";
 import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-carousel";
-import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountTitle } from "@/components/account/account-ui";
+import { AccountEmptyState } from "@/components/account/account-empty-state";
+import { buttonVariants } from "@/components/ui/button";
 
 export default function AccountBrowsingHistoryPage() {
   return (
     <div>
-      <AccountPageHeader title="Browsing History" description="Products you've recently looked at." />
+      <AccountTitle title="Recently viewed" description="Products you've looked at on this device." />
       <RecentlyViewedCarousel
-        title="Recently Viewed"
+        title="Recently viewed"
         emptyState={
-          <p className="text-ink-400">
-            You haven&rsquo;t viewed any products yet —{" "}
-            <Link href="/search" className="text-brass-600 underline hover:text-brass-500">
-              browse the collection
-            </Link>
-            .
-          </p>
+          <AccountEmptyState
+            icon={History}
+            title="Nothing viewed yet"
+            description="Products you open will appear here so you can find them again."
+            action={
+              <Link href="/search" className={buttonVariants({ size: "sm", variant: "outline" })}>
+                Browse the collection
+              </Link>
+            }
+          />
         }
       />
     </div>

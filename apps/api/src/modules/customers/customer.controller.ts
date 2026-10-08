@@ -13,6 +13,7 @@ import {
 import * as customerService from "./customer.service";
 import { getOrderForCustomer } from "../orders/order.service";
 import { toCustomerOrder } from "../orders/customer-order-view";
+import { getAccountSummary } from "./account-summary.service";
 
 // Same double-submit token as the admin login flow (middlewares/csrf.ts) — customer login was
 // never issuing this cookie, which left every customer-session mutation unprotected by the CSRF
@@ -112,6 +113,10 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 export const updateMe = asyncHandler(async (req: Request, res: Response) => {
   const customer = await customerService.updateCustomerProfile(req.customer!.customerId, req.body);
   res.json({ customer });
+});
+
+export const summary = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ summary: await getAccountSummary(req.customer!.customerId) });
 });
 
 export const listAddresses = asyncHandler(async (req: Request, res: Response) => {

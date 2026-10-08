@@ -5,25 +5,26 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Printer, RotateCcw, PackageSearch } from "lucide-react";
+import { ChevronDown, Printer, RotateCcw, PackageSearch, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { BackLink } from "@/components/ui/back-link";
-import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { toast } from "@/components/ui/toast";
-import { AccountPageHeader } from "@/components/account/account-page-header";
+import { OrderThumb } from "@/components/account/account-ui";
+import { ORDER_PROGRESS_STEPS, RETURN_STATUS_LABEL, orderHeadline, orderProgressIndex } from "@/lib/account";
+import { cn } from "@/lib/utils";
 import { AccountEmptyState } from "@/components/account/account-empty-state";
 import { OrderSelfService } from "@/components/account/order-self-service";
 import { getMyOrder } from "@/lib/api/customers";
 import { createReturnRequest } from "@/lib/api/return-requests";
 import { getProductBySlug, listStorefrontProducts } from "@/lib/api/storefront";
 import { useCartStore } from "@/store/cart";
-import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
+import { formatPrice, formatStoreDateTime, orderStatusLabel } from "@/lib/format";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { variantAvailabilityOf } from "@/lib/availability-display";
 import { ApiError } from "@/lib/api-client";
@@ -114,14 +115,14 @@ export default function AccountOrderDetailPage() {
   if (isError) {
     return (
       <div className="space-y-6">
-        <BackLink href="/account/orders" label="Back to Orders" />
+        <BackLink href="/account/orders" label="All orders" />
         <AccountEmptyState
           icon={PackageSearch}
           title="Order not found"
           description="This order doesn't exist, or isn't linked to your account."
           action={
-            <Link href="/account/orders">
-              <Button size="sm">Back to Orders</Button>
+            <Link href="/account/orders" className={buttonVariants({ size: "sm" })}>
+              See all orders
             </Link>
           }
         />
@@ -131,16 +132,11 @@ export default function AccountOrderDetailPage() {
 
   if (isLoading || !data) {
     return (
-      <div className="animate-pulse space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <div className="h-7 w-40 rounded bg-ink-100" />
-            <div className="h-3 w-32 rounded bg-ink-100" />
-          </div>
-          <div className="h-8 w-24 rounded bg-ink-100" />
-        </div>
-        <div className="h-32 rounded-lg border border-ink-100 bg-ink-50" />
-        <div className="h-40 rounded-lg border border-ink-100 bg-ink-50" />
+      <div className="space-y-8" aria-busy="true" aria-label="Loading order">
+        <Skeleton className="h-4 w-24 rounded" />
+        <Skeleton className="h-12 w-72 max-w-full rounded-lg" />
+        <Skeleton className="h-48 rounded-3xl" />
+        <Skeleton className="h-64 rounded-2xl" />
       </div>
     );
   }
@@ -207,109 +203,165 @@ export default function AccountOrderDetailPage() {
     router.push("/cart");
   }
 
+  const { title: statusTitle, detail: statusDetail } = orderHeadline(order.status);
+  const progressIndex = orderProgressIndex(order.status);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <Breadcrumb items={[{ label: "Account", href: "/account" }, { label: "Orders", href: "/account/orders" }, { label: order.orderNumber }]} />
-        <BackLink href="/account/orders" label="Back to Orders" />
-      </div>
-      <AccountPageHeader
-        title={order.orderNumber}
-        description={`Placed ${new Date(order.createdAt).toLocaleString()}`}
-        action={
-          <div className="flex items-center gap-3">
-            <Link href={`/account/orders/${id}/invoice`} target="_blank">
-              <Button variant="outline" size="sm">
-                <Printer size={14} /> Invoice
-              </Button>
+        <BackLink href="/account/orders" label="All orders" />
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="font-display text-display-md tracking-tight text-fg sm:text-display-lg">Order {order.orderNumber}</h1>
+            <p className="mt-2 text-base text-fg-muted">Placed {formatStoreDateTime(order.createdAt)}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/account/orders/${id}/invoice`} target="_blank" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <Printer size={14} aria-hidden="true" /> Invoice
             </Link>
-            <Button variant="brass" size="sm" onClick={handleReorder}>
-              <RotateCcw size={14} /> Reorder
+            <Button size="sm" onClick={handleReorder}>
+              <RotateCcw size={14} aria-hidden="true" /> Buy again
             </Button>
           </div>
-        }
-      />
+        </div>
+      </div>
 
-      <OrderSelfService order={order} />
+      <section aria-labelledby="order-status-title" className="rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-inset ring-line-subtle sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-xl">
+            <h2 id="order-status-title" className="font-display text-[1.75rem] leading-tight tracking-tight text-fg">
+              {statusTitle}
+            </h2>
+            {statusDetail && <p className="mt-1.5 text-[15px] text-ink-600">{statusDetail}</p>}
+          </div>
+          {order.courierTrackingLink && order.status === "SHIPPED" && (
+            <a href={order.courierTrackingLink} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "secondary", size: "sm" })}>
+              <Truck size={14} aria-hidden="true" /> Track parcel
+            </a>
+          )}
+        </div>
 
-      <Card>
-        <CardHeader className="flex items-center justify-between">
-          <CardTitle>Status</CardTitle>
-          <Badge className={orderStatusBadgeClass(order.status)}>{orderStatusLabel(order.status)}</Badge>
-        </CardHeader>
-        <CardContent>
-          <ol className="space-y-3 border-l border-ink-100 pl-4">
+        {progressIndex !== null && (
+          <ol className="mt-8 grid grid-cols-5 gap-2" aria-label="Order progress">
+            {ORDER_PROGRESS_STEPS.map((step, i) => {
+              const done = i <= progressIndex;
+              return (
+                <li key={step.status} aria-current={i === progressIndex ? "step" : undefined} className="min-w-0">
+                  <div className={cn("h-1 rounded-full", done ? "bg-accent" : "bg-line")} />
+                  <p
+                    className={cn(
+                      "mt-2 text-xs sm:truncate sm:text-[13px]",
+                      i === progressIndex ? "whitespace-nowrap font-semibold text-fg" : done ? "text-fg" : "text-fg-subtle",
+                      // Phones show only the current step's label; the bars carry the rest.
+                      i !== progressIndex && "invisible sm:visible",
+                    )}
+                  >
+                    {step.label}
+                  </p>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        <details className="group mt-8 border-t border-line-subtle pt-5">
+          <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
+            Full history
+            <ChevronDown size={16} className="text-fg-muted transition-transform duration-base ease-smooth group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <ol className="mt-4 space-y-4 border-l border-line pl-5">
             {order.statusHistory.map((entry, i) => (
-              <li
-                key={entry.id}
-                className="relative text-sm"
-                aria-current={i === order.statusHistory.length - 1 ? "step" : undefined}
-              >
-                <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-brass-400" />
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-ink-900">{orderStatusLabel(entry.status)}</span>
-                  <span className="text-xs text-ink-400">{new Date(entry.createdAt).toLocaleString()}</span>
-                </div>
-                {entry.note && <p className="mt-0.5 text-ink-600">{entry.note}</p>}
+              <li key={entry.id} className="relative text-sm" aria-current={i === order.statusHistory.length - 1 ? "step" : undefined}>
+                <span className="absolute -left-[25px] top-1.5 h-2 w-2 rounded-full bg-accent ring-4 ring-surface" aria-hidden="true" />
+                <p className="font-medium text-fg">{orderStatusLabel(entry.status)}</p>
+                <p className="text-xs text-fg-muted">{formatStoreDateTime(entry.createdAt)}</p>
+                {entry.note && <p className="mt-1 text-ink-600">{entry.note}</p>}
               </li>
             ))}
           </ol>
-        </CardContent>
-      </Card>
+        </details>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Items</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
+      <OrderSelfService order={order} />
+
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <section aria-labelledby="items-title">
+          <h2 id="items-title" className="mb-3.5 px-1 text-lg font-semibold tracking-tight text-fg sm:text-xl">
+            {order.items.length === 1 ? "1 item" : `${order.items.length} items`}
+          </h2>
+          <ul className="divide-y divide-line-subtle overflow-hidden rounded-2xl bg-surface shadow-sm ring-1 ring-inset ring-line-subtle">
             {order.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="text-ink-900">
-                    {item.productNameSnapshot}{formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} × {item.quantity}
+              <li key={item.id} className="flex items-center gap-4 px-4 py-4 sm:px-5">
+                <OrderThumb imageUrl={item.live?.imageUrl ?? null} alt="" className="h-20 w-16 rounded-xl" sizes="64px" />
+                <div className="min-w-0 flex-1">
+                  {item.live ? (
+                    <Link href={`/product/${item.live.productSlug}`} className="font-medium text-fg hover:underline hover:underline-offset-2">
+                      {item.productNameSnapshot}
+                    </Link>
+                  ) : (
+                    <p className="font-medium text-fg">{item.productNameSnapshot}</p>
+                  )}
+                  <p className="mt-0.5 text-sm text-fg-muted">
+                    {formatVariantLabel(item.sizeSnapshot, item.colorSnapshot)}
+                    {item.quantity > 1 && `, ${item.quantity} pieces`}
                   </p>
-                  {!item.live && <p className="text-xs text-ink-400">No longer available</p>}
+                  {!item.live && <p className="mt-0.5 text-xs text-fg-subtle">No longer available</p>}
                 </div>
-                <span className="text-ink-600">{formatPrice(Number(item.priceSnapshot) * item.quantity)}</span>
-              </div>
+                <span className="shrink-0 tabular-nums text-fg">{formatPrice(Number(item.priceSnapshot) * item.quantity)}</span>
+              </li>
             ))}
-          </div>
+          </ul>
+        </section>
 
-          <div className="mt-4 ml-auto max-w-xs space-y-1 border-t border-ink-100 pt-4 text-sm">
-            <div className="flex justify-between text-ink-600">
-              <span>Subtotal</span>
-              <span>{formatPrice(order.subtotal)}</span>
-            </div>
-            {Number(order.discount) > 0 && (
-              <div className="flex justify-between text-success-600">
-                <span>Discount</span>
-                <span>−{formatPrice(order.discount)}</span>
+        <aside className="space-y-8 lg:pt-11">
+          <section aria-label="Payment summary" className="rounded-2xl bg-surface p-5 text-sm shadow-sm ring-1 ring-inset ring-line-subtle">
+            <dl className="space-y-2">
+              <div className="flex justify-between text-ink-600">
+                <dt>Subtotal</dt>
+                <dd className="tabular-nums">{formatPrice(order.subtotal)}</dd>
               </div>
-            )}
-            <div className="flex justify-between text-ink-600">
-              <span>Shipping</span>
-              <span>{formatPrice(order.shippingFee)}</span>
-            </div>
-            <div className="flex justify-between border-t border-ink-100 pt-1 text-base text-ink-900">
-              <span>Total</span>
-              <span>{formatPrice(order.total)}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              {Number(order.discount) > 0 && (
+                <div className="flex justify-between text-success-700">
+                  <dt>Discount</dt>
+                  <dd className="tabular-nums">−{formatPrice(order.discount)}</dd>
+                </div>
+              )}
+              <div className="flex justify-between text-ink-600">
+                <dt>Delivery</dt>
+                <dd className="tabular-nums">{Number(order.shippingFee) > 0 ? formatPrice(order.shippingFee) : "Free"}</dd>
+              </div>
+              <div className="flex justify-between border-t border-line-subtle pt-3 text-base font-semibold text-fg">
+                <dt>Total</dt>
+                <dd className="tabular-nums">{formatPrice(order.total)}</dd>
+              </div>
+            </dl>
+            <p className="mt-3 text-fg-muted">{order.paymentMethod === "COD" ? "Cash on delivery" : "Paid online"}</p>
+          </section>
+
+          <section aria-labelledby="ship-to-title" className="rounded-2xl bg-surface p-5 text-sm shadow-sm ring-1 ring-inset ring-line-subtle">
+            <h2 id="ship-to-title" className="font-medium text-fg">
+              Delivering to
+            </h2>
+            <p className="mt-1.5 leading-relaxed text-ink-600">
+              {order.customerName}, {order.customerPhone}
+              <br />
+              {order.shippingAddressLine}, {order.shippingArea}, {order.shippingDistrict}
+            </p>
+          </section>
+        </aside>
+      </div>
 
       {(latestReturnRequest || canRequestNew) && (
-        <Card>
+        <Card className="rounded-2xl">
           <CardHeader>
-            <CardTitle>Returns &amp; Exchanges</CardTitle>
+            <CardTitle>Return or exchange</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {latestReturnRequest && (
               <div className="text-sm text-ink-700">
                 <p>
                   {latestReturnRequest.type === "EXCHANGE" ? "Exchange request" : "Return request"}:{" "}
-                  <span className="font-medium text-ink-900">{latestReturnRequest.status}</span>
+                  <span className="font-medium text-ink-900">{RETURN_STATUS_LABEL[latestReturnRequest.status] ?? latestReturnRequest.status}</span>
                 </p>
                 {latestReturnRequest.type === "EXCHANGE" && latestReturnRequest.originalSizeSnapshot && (
                   <p className="mt-0.5 text-ink-500">
@@ -345,7 +397,7 @@ export default function AccountOrderDetailPage() {
                         Your replacement is on order{" "}
                         <Link
                           href={`/account/orders/${latestReturnRequest.exchangeOrder.id}`}
-                          className="font-medium text-brass-600 hover:underline"
+                          className="font-medium text-fg underline underline-offset-2 hover:text-ink-700"
                         >
                           {latestReturnRequest.exchangeOrder.orderNumber}
                         </Link>
@@ -397,7 +449,7 @@ export default function AccountOrderDetailPage() {
                     Cancel
                   </Button>
                   <Button
-                    variant="brass"
+                   
                     size="sm"
                     disabled={requestMutation.isPending}
                     onClick={() => {
@@ -532,7 +584,7 @@ export default function AccountOrderDetailPage() {
                     Cancel
                   </Button>
                   <Button
-                    variant="brass"
+                   
                     size="sm"
                     disabled={requestMutation.isPending || !exchangeItemId || !exchangeVariantId}
                     onClick={() => {
