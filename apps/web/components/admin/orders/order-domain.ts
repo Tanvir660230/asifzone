@@ -1,13 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { attentionKeys } from "@/lib/query-keys";
 import {
-  MONEY_HELD_PAYMENT_STATUSES,
-  PRE_SHIPMENT_STATUSES,
   orderStatusEnum,
   type Order,
   type OrderStatus,
   type OrderTransitionContext,
   orderTransitionContext,
+  orderAttentionItems,
+  type OrderAttentionItem,
 } from "@clothing-brand/shared";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
 import { useCapabilities } from "@/hooks/use-capability";
@@ -87,74 +87,12 @@ export function transitionContextOf(order: OrderFacts): OrderTransitionContext {
   return orderTransitionContext(order);
 }
 
-export interface OrderAttentionItem {
-  key: string;
-  tone: "danger" | "warning" | "info";
-  label: string;
-  detail?: string;
-}
+export type { OrderAttentionItem } from "@clothing-brand/shared";
 
-const moneyHeld = (paymentStatus: string) => (MONEY_HELD_PAYMENT_STATUSES as readonly string[]).includes(paymentStatus);
-
-/**
- * What about this order needs someone's attention, most urgent first — each item restates a server fact (status,
- * payment status, ledger summary, courier sync state, return requests); nothing is computed beyond comparing them. Works
- * on a list row (no ledger summary) and on the full detail (ledger summary + return requests).
- */
+/** What about this order needs attention, most urgent first — the shared definition (packages/shared order-attention),
+ * written with the store's formatters. The AI assistant reads the same items. */
 export function orderAttention(order: OrderFacts, now = new Date()): OrderAttentionItem[] {
-  const items: OrderAttentionItem[] = [];
-  const refundDue = order.payment?.refundDue ?? 0;
-
-  if (order.status === "CANCELLED" && moneyHeld(order.paymentStatus)) {
-    items.push({
-      key: "cancelled-paid",
-      tone: "danger",
-      label: "Cancelled but paid",
-      detail: refundDue > 0 ? `${formatPrice(refundDue)} is owed back to the customer.` : "A refund may be owed.",
-    });
-  } else if (order.status === "RETURNED" && moneyHeld(order.paymentStatus)) {
-    items.push({
-      key: "returned-refund",
-      tone: "danger",
-      label: "Returned — refund due",
-      detail: refundDue > 0 ? `${formatPrice(refundDue)} is owed back to the customer.` : "A refund may be owed.",
-    });
-  } else if (refundDue > 0) {
-    items.push({ key: "refund-due", tone: "warning", label: "Refund owed", detail: `${formatPrice(refundDue)} is owed back to the customer.` });
-  }
-  if ((order.payment?.refundPending ?? 0) > 0) {
-    items.push({ key: "refund-pending", tone: "warning", label: "Refund not paid out yet", detail: `${formatPrice(order.payment!.refundPending)} recorded as owed.` });
-  }
-  // Same scope as the server's "Courier issues" queue: only a parcel still on its way.
-  const inFlight = PRE_SHIPMENT_STATUSES.includes(order.status) || order.status === "SHIPPED";
-  if (inFlight && order.courierConsignmentId && order.courierSyncError) {
-    items.push({ key: "courier-sync", tone: "danger", label: "Courier sync failing", detail: order.courierSyncError });
-  }
-  if (inFlight && order.courierConsignmentId && order.courierStatus === "hold") {
-    items.push({ key: "courier-hold", tone: "warning", label: "Courier put the parcel on hold", detail: "Often an address or phone issue — check with the courier." });
-  }
-  if (order.status === "PARTIALLY_DELIVERED" && !order.partialDeliveryReconciledAt) {
-    items.push({ key: "partial", tone: "warning", label: "Partial delivery to reconcile", detail: "Declare which units came back so stock is restored." });
-  }
-  if (order.paymentStatus === "FAILED") items.push({ key: "payment-failed", tone: "warning", label: "Payment failed" });
-  if (order.status === "PENDING" && order.followUpAt) {
-    const due = new Date(order.followUpAt) <= now;
-    items.push({
-      key: "follow-up",
-      tone: due ? "warning" : "info",
-      label: due ? "Follow-up call due" : "Follow-up scheduled",
-      detail: formatStoreDateTime(order.followUpAt),
-    });
-  }
-  const pendingRequests = order.returnRequests?.filter((r) => r.status === "PENDING") ?? [];
-  if (pendingRequests.length > 0) {
-    items.push({
-      key: "return-request",
-      tone: "warning",
-      label: pendingRequests.some((r) => r.type === "EXCHANGE") ? "Exchange request awaiting review" : "Return request awaiting review",
-    });
-  }
-  return items;
+  return orderAttentionItems(order, { price: formatPrice, dateTime: formatStoreDateTime }, now);
 }
 
 /** A line's amount as snapshotted at checkout (unit price snapshot × quantity) — the same figure the invoice prints. Order

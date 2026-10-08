@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { PermissionGate } from "@/components/admin/permission-gate";
 import { MetricCard, MetricCardSkeleton, MetricStrip } from "@/components/admin/metric-card";
 import { RevenueChartCard, type RevenueRangeDays } from "@/components/admin/revenue-chart-card";
 import { LowStockTable } from "@/components/admin/low-stock-table";
@@ -153,13 +154,11 @@ export default function DashboardPage() {
               {activeVisitors.count} on the store now
             </Link>
           )}
-          {can("orders.manage") && (
-            <Link href="/admin/orders/new">
-              <Button variant="primary">
-                <Plus size={16} /> Create order
-              </Button>
+          <PermissionGate capability="orders.manage">
+            <Link href="/admin/orders/new" className={buttonVariants({ variant: "primary" })}>
+              <Plus size={16} aria-hidden="true" /> Create order
             </Link>
-          )}
+          </PermissionGate>
         </div>
       </header>
 

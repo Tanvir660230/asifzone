@@ -20,10 +20,10 @@ import {
 } from "lucide-react";
 import type { Order, OrderModificationRecord, PaymentLinkDto } from "@clothing-brand/shared";
 import { SegmentedControl } from "@/components/ui/tabs";
+import { Timeline, TimelineItem } from "@/components/ui/timeline";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
 import { formatPrice, formatStoreDateTime, orderStatusLabel } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { orderKeys } from "../order-domain";
 import { useOrderModifications } from "./changes-section";
 import { DetailSection } from "./detail-section";
@@ -215,12 +215,6 @@ const FILTERS = [
   { value: "courier", label: "Courier" },
 ] as const;
 
-const TONE: Record<NonNullable<Event["tone"]>, string> = {
-  danger: "bg-danger-50 text-danger-600",
-  success: "bg-success-50 text-success-700",
-  warning: "bg-warning-50 text-warning-700",
-  info: "bg-info-50 text-info-700",
-};
 
 /** 6 — the audit trail, money included: who, when, and which financial concept. */
 export function ActivityTimeline({ order }: { order: Order }) {
@@ -241,38 +235,36 @@ export function ActivityTimeline({ order }: { order: Order }) {
       {events.length === 0 ? (
         <p className="text-sm text-ink-500">Nothing recorded for this filter.</p>
       ) : (
-        <ol className="space-y-0">
+        <Timeline>
           {events.map((e, i) => {
             const isAdmin = Boolean(e.actor);
             return (
-              <li key={e.key} className="flex gap-3" data-concept={e.concept}>
-                <div className="flex flex-col items-center">
-                  <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full", e.tone ? TONE[e.tone] : "bg-ink-100 text-ink-600")} aria-hidden="true">
-                    {"status" in e.icon ? <OrderStatusIcon status={e.icon.status} size={13} /> : <e.icon size={13} />}
-                  </span>
-                  {i < events.length - 1 && <span className="my-1 w-px flex-1 bg-line-subtle" aria-hidden="true" />}
-                </div>
-                <div className="min-w-0 flex-1 pb-4">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                    <p className="text-sm font-medium text-ink-900">
-                      {e.concept && <span className="mr-1.5 rounded-md border border-line px-1.5 py-px text-[11px] font-medium uppercase tracking-wide text-ink-500">{e.concept}</span>}
-                      {e.title}
-                    </p>
-                    <time dateTime={e.at} className="text-xs tabular-nums text-ink-400">
-                      {formatStoreDateTime(e.at)}
-                    </time>
-                  </div>
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-500">
+              <TimelineItem
+                key={e.key}
+                data-concept={e.concept}
+                tone={e.tone ?? "neutral"}
+                icon={"status" in e.icon ? <OrderStatusIcon status={e.icon.status} size={13} /> : <e.icon size={13} />}
+                title={
+                  <>
+                    {e.concept && <span className="mr-1.5 rounded-md border border-line px-1.5 py-px text-[11px] font-medium uppercase tracking-wide text-ink-500">{e.concept}</span>}
+                    {e.title}
+                  </>
+                }
+                time={e.at}
+                timeLabel={formatStoreDateTime(e.at)}
+                meta={
+                  <>
                     {isAdmin ? <User size={11} aria-hidden="true" /> : <Bot size={11} aria-hidden="true" />}
                     {isAdmin ? e.actor : (e.actorLabel ?? "System")}
                     <span className="sr-only">{isAdmin ? "(admin action)" : "(automatic)"}</span>
-                  </p>
-                  {e.note && <p className="mt-1.5 whitespace-pre-line break-words rounded-lg bg-surface-muted px-2.5 py-1.5 text-sm text-ink-700">{e.note}</p>}
-                </div>
-              </li>
+                  </>
+                }
+                note={e.note || undefined}
+                last={i === events.length - 1}
+              />
             );
           })}
-        </ol>
+        </Timeline>
       )}
     </DetailSection>
   );

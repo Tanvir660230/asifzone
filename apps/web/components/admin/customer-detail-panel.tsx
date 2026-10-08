@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toBdInternationalDigits } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Timeline, TimelineItem } from "@/components/ui/timeline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { SmsComposer } from "@/components/admin/sms-composer";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
-import { formatPrice, formatStoreDate } from "@/lib/format";
+import { formatPrice, formatStoreDate, formatStoreDateTime } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { TAG_META } from "@/lib/customer-tags";
@@ -479,18 +480,19 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ol className="space-y-3 border-l border-ink-100 pl-4">
-              {customer.timeline.slice(0, 25).map((entry, i) => (
-                <li key={i} className="relative text-sm">
-                  <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-ink-400" />
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-ink-900">{entry.label}</span>
-                    <span className="text-xs text-ink-400">{new Date(entry.date).toLocaleString()}</span>
-                  </div>
-                  {entry.detail && <p className="mt-0.5 text-ink-600">{entry.detail}</p>}
-                </li>
+            <Timeline aria-label="Customer history">
+              {customer.timeline.slice(0, 25).map((entry, i, shown) => (
+                <TimelineItem
+                  key={i}
+                  tone={entry.type === "ORDER" ? "info" : entry.type === "POINTS" ? "success" : "neutral"}
+                  title={entry.label}
+                  time={entry.date}
+                  timeLabel={formatStoreDateTime(entry.date)}
+                  meta={entry.detail}
+                  last={i === shown.length - 1}
+                />
               ))}
-            </ol>
+            </Timeline>
           </CardContent>
         </Card>
       )}

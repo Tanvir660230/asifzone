@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, ChevronDown, ExternalLink, FileText, MoreHorizontal, Printer, RotateCcw, Trash2 } from "lucide-react";
-import { allowedNextOrderStatuses, canTransitionOrder, type Order, type OrderStatus } from "@clothing-brand/shared";
+import { allowedNextOrderStatuses, suggestedNextOrderStatus, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { BackLink } from "@/components/ui/back-link";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -17,14 +17,6 @@ import { OrderProgress } from "./order-progress";
 import type { OrderPermissions } from "../order-domain";
 import type { OrderCommands } from "../use-order-commands";
 
-// The happy path, only to suggest the obvious next step — whether a move is allowed at all is the shared state machine's call.
-const PIPELINE: OrderStatus[] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED", "SHIPPED", "DELIVERED"];
-
-function suggestedNext(current: OrderStatus): OrderStatus | null {
-  const i = PIPELINE.indexOf(current);
-  const next = i === -1 ? undefined : PIPELINE[i + 1];
-  return next && canTransitionOrder(current, next) ? next : null;
-}
 
 /** 1 — identity and status: number, status, when, how it's paid; the next step and the status control; document and
  * Trash actions. */
@@ -47,7 +39,7 @@ export function DetailHeader({
   const menuRef = useRef<HTMLButtonElement>(null);
   const deleted = Boolean(order.deletedAt);
   const canChangeStatus = perms.manage && !deleted;
-  const next = canChangeStatus ? suggestedNext(order.status) : null;
+  const next = canChangeStatus ? suggestedNextOrderStatus(order.status) : null;
   const allowed = canChangeStatus ? allowedNextOrderStatuses(order.status) : [];
   const Heading = variant === "page" ? "h1" : "h2";
 

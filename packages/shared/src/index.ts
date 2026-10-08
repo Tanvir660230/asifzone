@@ -54,6 +54,7 @@ export * from "./resolved-view";
 export * from "./wizard-steps";
 export * from "./order-state";
 export * from "./order-operations";
+export * from "./order-attention";
 export * from "./purchasable";
 export * from "./tax";
 export * from "./flash-sale-state";

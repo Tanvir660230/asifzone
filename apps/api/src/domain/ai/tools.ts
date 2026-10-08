@@ -9,7 +9,9 @@ import {
   metricDefinition,
   orderListQuerySchema,
   orderStatusEnum,
+  orderAttentionItems,
   orderTransitionContext,
+  suggestedNextOrderStatus,
   stockLevelStateEnum,
   stockLevelsQuerySchema,
   type AiResultCard,
@@ -161,6 +163,9 @@ async function orderByNumber(orderNumber: string) {
       customerPhone: true,
       courierConsignmentId: true,
       courierStatus: true,
+      courierSyncError: true,
+      partialDeliveryReconciledAt: true,
+      returnRequests: { select: { status: true, type: true } },
       couponId: true,
       followUpAt: true,
       deletedAt: true,
@@ -193,6 +198,13 @@ const getOrder: ReadTool = {
         { field: "Customer", value: `${o.customerName} · ${maskPhone(o.customerPhone)}` },
         { field: "Courier", value: o.courierConsignmentId ? (o.courierStatus ?? "booked") : "not booked" },
         { field: "Placed", value: o.createdAt.toISOString().slice(0, 10) },
+        { field: "Next step", value: suggestedNextOrderStatus(o.status) ?? "—" },
+        {
+          field: "Needs attention",
+          value: orderAttentionItems(o, { price: (n) => n.toFixed(2), dateTime: (at) => new Date(at).toISOString().slice(0, 16).replace("T", " ") })
+            .map((i) => (i.detail ? `${i.label} (${i.detail})` : i.label))
+            .join("; ") || "nothing",
+        },
       ],
       href: `/admin/orders/${o.id}`,
     };
