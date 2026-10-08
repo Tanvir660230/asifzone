@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { RoleSummary } from "@/components/admin/role-summary";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { PasswordInput } from "@/components/account/password-input";
@@ -35,6 +36,7 @@ function InviteForm({ onSubmit, onCancel }: { onSubmit: (values: CreateAdminInvi
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<CreateAdminInviteInput>({
     resolver: zodResolver(createAdminInviteSchema),
@@ -59,6 +61,9 @@ function InviteForm({ onSubmit, onCancel }: { onSubmit: (values: CreateAdminInvi
           <option value="STAFF">Staff</option>
           <option value="OWNER">Owner (super admin)</option>
         </Select>
+        <div className="mt-2">
+          <RoleSummary role={watch("role") ?? "STAFF"} />
+        </div>
       </div>
       <p className="text-xs text-ink-500">
         They&rsquo;ll get an email with a link to set their own password — you won&rsquo;t need to share a password with them.
@@ -87,6 +92,7 @@ function EditAdminForm({
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<UpdateAdminInput>({
     resolver: zodResolver(updateAdminSchema),
@@ -111,6 +117,9 @@ function EditAdminForm({
           <option value="STAFF">Staff</option>
           <option value="OWNER">Owner (super admin)</option>
         </Select>
+        <div className="mt-2">
+          <RoleSummary role={watch("role") ?? "STAFF"} />
+        </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel}>
