@@ -91,7 +91,7 @@ financeRouter.use((_req: Request, res: Response, next: NextFunction) => {
 });
 
 /** The acting admin, with a label readable without joins (email when the account still exists). */
-async function actorOf(req: Request): Promise<FinanceActor> {
+export async function actorOf(req: Request): Promise<FinanceActor> {
   const admin = req.admin!;
   const row = await prisma.adminUser.findUnique({ where: { id: admin.adminId }, select: { email: true } });
   return { type: "ADMIN", adminId: admin.adminId, label: row?.email ?? `admin:${admin.adminId}`, permissions: admin.permissions };

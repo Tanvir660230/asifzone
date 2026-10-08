@@ -64,6 +64,17 @@ export const PERMISSIONS = [
   "finance.reconcile", // run reconciliation checks, retry financial events
   "finance.approve_high_value", // approve a money movement at or above an account's approval threshold (Phase 3)
   "finance.sensitive", // ownership, partner and payroll balances (Phase 3) — OWNER only
+  // purchasing, suppliers / AP and inventory costing (docs/FINANCE_PHASE_4.md §23)
+  "suppliers.read",
+  "suppliers.manage", // create / edit / hold suppliers
+  "purchasing.read", // purchase orders, goods receipts, supplier returns
+  "purchasing.manage", // draft / submit purchase orders and returns
+  "purchasing.approve", // approve POs and returns, over-receipts, receipts without a PO
+  "purchasing.receive", // post goods receipts, ship supplier returns (moves stock)
+  "ap.read", // supplier invoices, payables, aging, statements
+  "ap.manage", // draft invoices / credit notes, allocate payments
+  "costing.read", // inventory valuation, average costs, cost movements
+  "costing.adjust", // manual revaluation, valuation cutover
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -89,15 +100,27 @@ export const OWNER_ONLY_PERMISSIONS = [
   "finance.reconcile",
   "finance.approve_high_value",
   "finance.sensitive",
+  // Phase 4: STAFF runs purchasing and receiving but never approves, sees payables or the valuation ledger.
+  "purchasing.approve",
+  "ap.read",
+  "ap.manage",
+  "costing.read",
+  "costing.adjust",
 ] as const satisfies readonly Permission[];
 
 const ownerOnly = new Set<Permission>(OWNER_ONLY_PERMISSIONS);
 
-/** Finance roles: the books only. Configuration, period closing, high-value approvals and sensitive (ownership, partner,
+/** Finance roles: the books only (and, from Phase 4, the purchasing documents the books rest on — never receiving stock). Configuration, period closing, high-value approvals and sensitive (ownership, partner,
  * payroll) data stay with OWNER. ACCOUNTANT records and reconciles but can't post — what they record waits for approval. */
-const FINANCE_ADMIN_PERMISSIONS = ["finance.read", "finance.transact", "finance.post", "finance.reverse", "finance.reconcile"] as const satisfies readonly Permission[];
-const ACCOUNTANT_PERMISSIONS = ["finance.read", "finance.transact", "finance.reconcile"] as const satisfies readonly Permission[];
-const FINANCE_VIEWER_PERMISSIONS = ["finance.read"] as const satisfies readonly Permission[];
+const FINANCE_ADMIN_PERMISSIONS = [
+  "finance.read", "finance.transact", "finance.post", "finance.reverse", "finance.reconcile",
+  "suppliers.read", "suppliers.manage", "purchasing.read", "purchasing.manage", "purchasing.approve", "ap.read", "ap.manage", "costing.read",
+] as const satisfies readonly Permission[];
+const ACCOUNTANT_PERMISSIONS = [
+  "finance.read", "finance.transact", "finance.reconcile",
+  "suppliers.read", "suppliers.manage", "purchasing.read", "ap.read", "ap.manage", "costing.read",
+] as const satisfies readonly Permission[];
+const FINANCE_VIEWER_PERMISSIONS = ["finance.read", "suppliers.read", "purchasing.read", "ap.read", "costing.read"] as const satisfies readonly Permission[];
 
 export const ROLE_PERMISSIONS: Readonly<Record<AdminRoleName, readonly Permission[]>> = Object.freeze({
   OWNER: Object.freeze([...PERMISSIONS]),

@@ -206,6 +206,9 @@ enum StockMovementReason {
   IMPORT
   DAMAGED
   LOST
+  /// Phase 4 (docs/FINANCE_PHASE_4.md §4): goods received from a supplier on a goods receipt, and goods sent back to one.
+  PURCHASE_RECEIPT
+  PURCHASE_RETURN
 }
 
 /// The two purchase-funnel steps that have no other trace anywhere in the schema — everything
@@ -610,35 +613,38 @@ model StockAlert {
 }
 
 model ProductVariant {
-  id              String                  @id @default(cuid())
-  productId       String
-  product         Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sku             String                  @unique
-  barcode         String?
-  size            String
-  sizeLabel       String?
-  color           String
-  colorHex        String?
-  price           Decimal?                @db.Decimal(10, 2)
+  id               String                    @id @default(cuid())
+  productId        String
+  product          Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku              String                    @unique
+  barcode          String?
+  size             String
+  sizeLabel        String?
+  color            String
+  colorHex         String?
+  price            Decimal?                  @db.Decimal(10, 2)
   /// "Was" price for this variant (shown struck through when above its selling price).
-  compareAtPrice  Decimal?                @db.Decimal(10, 2)
-  costPrice       Decimal?                @db.Decimal(10, 2)
-  stock           Int                     @default(0)
-  weight          Decimal?                @db.Decimal(6, 2)
+  compareAtPrice   Decimal?                  @db.Decimal(10, 2)
+  costPrice        Decimal?                  @db.Decimal(10, 2)
+  stock            Int                       @default(0)
+  weight           Decimal?                  @db.Decimal(6, 2)
   /// An inactive variant is hidden from the storefront and refused at checkout, but keeps its order and stock history.
-  isActive        Boolean                 @default(true)
+  isActive         Boolean                   @default(true)
   /// The variant's primary image (swatch / cart thumbnail) — always the first of its `images` when it has any.
-  imageId         String?
-  image           ProductImage?           @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
+  imageId          String?
+  image            ProductImage?             @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
   /// The variant's own gallery, in display order.
-  images          VariantImage[]
-  sortOrder       Int                     @default(0)
-  attributeValues VariantAttributeValue[]
-  stockMovements  StockMovement[]
-  cartItems       CartItem[]
-  stockAlerts     StockAlert[]
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  images           VariantImage[]
+  sortOrder        Int                       @default(0)
+  attributeValues  VariantAttributeValue[]
+  stockMovements   StockMovement[]
+  /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
+  valuationEntries InventoryValuationEntry[]
+  costState        InventoryCostState?
+  cartItems        CartItem[]
+  stockAlerts      StockAlert[]
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
 
   @@unique([productId, size, color])
   @@index([imageId])
@@ -1574,19 +1580,24 @@ model OrderItem {
 }
 
 model StockMovement {
-  id        String              @id @default(cuid())
-  variantId String
-  variant   ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  change    Int
-  reason    StockMovementReason
-  orderId   String?
-  adminId   String?
-  admin     AdminUser?          @relation(fields: [adminId], references: [id], onDelete: SetNull)
-  note      String?
-  createdAt DateTime            @default(now())
+  id             String                   @id @default(cuid())
+  variantId      String
+  variant        ProductVariant           @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  change         Int
+  reason         StockMovementReason
+  orderId        String?
+  adminId        String?
+  admin          AdminUser?               @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  note           String?
+  /// Phase 4: the document line that caused the movement (e.g. GoodsReceiptLine) — null for order and manual movements.
+  sourceType     String?
+  sourceId       String?
+  createdAt      DateTime                 @default(now())
+  valuationEntry InventoryValuationEntry?
 
   @@index([variantId])
   @@index([reason])
+  @@index([sourceType, sourceId])
 }
 
 /// A ledger entry for money the store loses to courier round-trips it can't recover — logged
@@ -2560,22 +2571,22 @@ enum ReconciliationStatus {
 
 /// The business whose books these are. Brands (and, later, other installations) report INTO a business.
 model FinanceBusiness {
-  id                   String                 @id @default(cuid())
-  key                  String                 @unique
+  id                   String                    @id @default(cuid())
+  key                  String                    @unique
   name                 String
   /// ISO 4217 functional currency; every journal is in it (multi-currency is not supported in Phase 1).
-  baseCurrency         String                 @db.VarChar(3)
+  baseCurrency         String                    @db.VarChar(3)
   /// IANA timezone of the business day that journal dates and periods use.
   timezone             String
   /// 1–12. Bangladesh's fiscal year starts in July.
-  fiscalYearStartMonth Int                    @default(7)
+  fiscalYearStartMonth Int                       @default(7)
   /// The Financial Opening Date: the books start here. Nothing posts before it; opening balances are dated on it. Locked
   /// once the opening balances are posted.
-  openingDate          DateTime?              @db.Date
+  openingDate          DateTime?                 @db.Date
   /// Phase 3: may an approved ESTIMATED cost be posted for a sale line with no recorded cost? Default: never (KNOWN only).
-  costPolicy           FinanceCostPolicy      @default(KNOWN_ONLY)
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  costPolicy           FinanceCostPolicy         @default(KNOWN_ONLY)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
   brands               FinanceBrand[]
   accounts             LedgerAccount[]
   mappings             AccountMapping[]
@@ -2593,20 +2604,25 @@ model FinanceBusiness {
   exceptions           FinanceException[]
   clearingSettlements  ClearingSettlement[]
   syncState            FinanceSyncState?
+  suppliers            Supplier[]
+  taxCodes             TaxCode[]
+  valuationEntries     InventoryValuationEntry[]
+  costStates           InventoryCostState[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
 /// that runs as its own installation records that installation's INSTALL_ID; its events identify themselves by it.
 model FinanceBrand {
-  id         String          @id @default(cuid())
-  businessId String
-  business   FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  key        String
-  name       String
-  installId  String?
-  isActive   Boolean         @default(true)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id               String                    @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness           @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  key              String
+  name             String
+  installId        String?
+  isActive         Boolean                   @default(true)
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  valuationEntries InventoryValuationEntry[]
 
   @@unique([businessId, key])
   @@unique([businessId, installId])
@@ -2639,6 +2655,7 @@ model LedgerAccount {
   financialAccount         FinancialAccount?
   openingLines             OpeningBalanceLine[]
   treasuryCounterMovements TreasuryMovement[]   @relation("TreasuryCounterAccount")
+  supplierDefaults         Supplier[]           @relation("SupplierDefaultExpense")
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -3359,4 +3376,158 @@ model FinanceSyncState {
   leaseToken   String?
   leaseUntil   DateTime?
   updatedAt    DateTime        @updatedAt
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// FINANCIAL CORE — Phase 4: purchasing, suppliers / AP & inventory costing (docs/FINANCE_PHASE_4.md). 4A: the supplier
+// master, purchase tax codes and the valuation ledger. Suppliers are installation-scoped (one FinanceBusiness per
+// installation today); `code` is the stable key for a future cross-installation merge. A supplier's balance is never
+// stored — it is the AP ledger filtered by party.
+// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+enum SupplierStatus {
+  ACTIVE
+  /// No new purchase orders or payments without an override.
+  ON_HOLD
+  INACTIVE
+}
+
+model Supplier {
+  id                      String          @id @default(cuid())
+  businessId              String
+  business                FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// Stable, immutable code (SUP-0001 by default) — the merge key across installations.
+  code                    String
+  legalName               String
+  displayName             String
+  contactName             String?
+  phone                   String?
+  email                   String?
+  /// {line, area, district, division, postalCode, country}
+  address                 Json?
+  taxId                   String?
+  vatRegistrationNo       String?
+  /// Default document currency (ISO 4217).
+  currency                String          @db.VarChar(3)
+  paymentTermsDays        Int             @default(0)
+  paymentTermsNote        String?
+  /// A warning threshold, never a block.
+  creditLimit             Decimal?        @db.Decimal(18, 2)
+  defaultTaxCodeId        String?
+  defaultTaxCode          TaxCode?        @relation(fields: [defaultTaxCodeId], references: [id], onDelete: Restrict)
+  defaultExpenseAccountId String?
+  defaultExpenseAccount   LedgerAccount?  @relation("SupplierDefaultExpense", fields: [defaultExpenseAccountId], references: [id], onDelete: Restrict)
+  status                  SupplierStatus  @default(ACTIVE)
+  statusReason            String?
+  notes                   String?
+  /// References to documents held elsewhere (trade licence, agreement) — evidence, not a file store.
+  evidence                String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@unique([businessId, code])
+  @@index([businessId, status])
+  @@index([businessId, displayName])
+}
+
+/// A purchase tax rate. Rate, recoverable share and the mapping keys never change once created — a new rate is a new
+/// code. No jurisdiction rules: recoverable tax goes to `recoverableMappingKey`, the rest into cost (stock) or expense.
+model TaxCode {
+  id                       String          @id @default(cuid())
+  businessId               String
+  business                 FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  code                     String
+  name                     String
+  description              String?
+  /// Percent, e.g. 15.0000.
+  rate                     Decimal         @db.Decimal(7, 4)
+  /// Percent of the tax that is recoverable (0–100).
+  recoverablePct           Decimal         @db.Decimal(7, 4)
+  recoverableMappingKey    String          @default("asset.vat_input")
+  /// Where the non-recoverable part of tax on an EXPENSE line goes (on a stock line it is part of the unit cost).
+  nonRecoverableMappingKey String          @default("expense.non_recoverable_tax")
+  isActive                 Boolean         @default(true)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  suppliers                Supplier[]
+
+  @@unique([businessId, code])
+}
+
+enum InventoryValuationKind {
+  /// The one-time valuation cutover.
+  CUTOVER
+  /// Units in: supplier receipt, customer return / cancellation, count gain.
+  INFLOW
+  /// Units out: sale, write-off, supplier return.
+  OUTFLOW
+  /// Value only (no units): a late price difference or landed cost on units still held.
+  REVALUATION
+}
+
+/// The cost ledger: one append-only entry per valued stock movement (1:1, `stockMovementId` unique) or per revaluation.
+/// Written only by costing.service.ts. `valueChange` is what the valuation moved; `bookValue` is what the ledger's
+/// inventory account moves for the same fact (posted by its owner — Phase 3 for orders, Phase 4 documents otherwise);
+/// `costAdjustment` = valueChange − bookValue is posted to inventory against 5150, so the ledger always equals the valuation.
+model InventoryValuationEntry {
+  id                String                 @id @default(cuid())
+  /// Global processing order — costing follows processing order, never re-sorted by document date.
+  sequence          BigInt                 @unique @default(autoincrement())
+  businessId        String
+  business          FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId           String
+  brand             FinanceBrand           @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  variantId         String
+  variant           ProductVariant         @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  stockMovementId   String?                @unique
+  stockMovement     StockMovement?         @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
+  kind              InventoryValuationKind
+  /// Physical units this entry covers (signed; 0 for a revaluation).
+  qtyChange         Int
+  valueChange       Decimal                @db.Decimal(18, 2)
+  bookValue         Decimal                @db.Decimal(18, 2)
+  costAdjustment    Decimal                @db.Decimal(18, 2)
+  /// The unit cost the entry applied (major units, 6 dp); null when no cost was known.
+  unitCost          Decimal?               @db.Decimal(18, 6)
+  /// SNAPSHOT (an order line's cost), AVERAGE, DOCUMENT (receipt / invoice), MANUAL, CUTOVER, NONE.
+  costBasis         String
+  valuationStatus   FinanceValuationStatus
+  /// Of the units: issued beyond valued stock (deficit), of an inflow covering a deficit, without any cost.
+  deficitQtyChange  Int                    @default(0)
+  coveredQty        Int                    @default(0)
+  unvaluedQtyChange Int                    @default(0)
+  qtyAfter          Int
+  valueAfter        Decimal                @db.Decimal(18, 2)
+  avgAfter          Decimal?               @db.Decimal(18, 6)
+  unvaluedAfter     Int
+  deficitAfter      Int
+  sourceType        String
+  sourceId          String
+  financialDate     DateTime               @db.Date
+  note              String?
+  createdAt         DateTime               @default(now())
+  costState         InventoryCostState?
+
+  @@index([variantId, sequence])
+  @@index([sourceType, sourceId])
+  @@index([businessId, financialDate])
+}
+
+/// The running cost position of one variant — always equal to its latest valuation entry (trigger-checked). Physical
+/// units = valuedQty + unvaluedQty − deficitQty. `deficitLayers` keeps the provisional cost of units issued short (FIFO).
+model InventoryCostState {
+  variantId     String                  @id
+  variant       ProductVariant          @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  businessId    String
+  business      FinanceBusiness         @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  valuedQty     Int
+  value         Decimal                 @db.Decimal(18, 2)
+  /// Average unit cost of valued units (major, 6 dp). Kept at its last value when valuedQty reaches 0; null until known.
+  avgUnitCost   Decimal?                @db.Decimal(18, 6)
+  unvaluedQty   Int
+  deficitQty    Int
+  deficitLayers Json
+  lastEntryId   String                  @unique
+  lastEntry     InventoryValuationEntry @relation(fields: [lastEntryId], references: [id], onDelete: Restrict)
+  updatedAt     DateTime                @updatedAt
 }

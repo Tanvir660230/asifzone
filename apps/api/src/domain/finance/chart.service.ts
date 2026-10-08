@@ -158,7 +158,7 @@ export async function updateAccount(id: string, input: { name?: string; descript
 
 // ── mappings ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const EXPECTED_TYPE: Record<string, LedgerAccountType> = { group: "ASSET", asset: "ASSET", liability: "LIABILITY", equity: "EQUITY", revenue: "REVENUE", cogs: "COGS", expense: "EXPENSE", clearing: "ASSET" };
+const EXPECTED_TYPE: Record<string, LedgerAccountType> = { group: "ASSET", asset: "ASSET", liability: "LIABILITY", equity: "EQUITY", revenue: "REVENUE", cogs: "COGS", expense: "EXPENSE", clearing: "ASSET", income: "OTHER_INCOME" };
 
 export async function listMappings() {
   const { business } = await getFinanceContext();

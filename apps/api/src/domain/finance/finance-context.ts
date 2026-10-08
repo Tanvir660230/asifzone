@@ -10,7 +10,7 @@
  * this installation's brand, the default chart of accounts and its mappings — each with its audit entry, in one
  * transaction, serialised by an advisory lock so two first requests can't both create it.
  */
-import { DEFAULT_CHART_OF_ACCOUNTS, businessDate, defaultNormalBalance } from "@clothing-brand/shared";
+import { DEFAULT_CHART_OF_ACCOUNTS, businessDate, defaultNormalBalance, templateMappings } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { installId } from "../../config/installation";
 import { getCommerceSettings } from "../config/commerce-settings";
@@ -84,8 +84,8 @@ export async function getFinanceContext(businessKey: string = FINANCE_BUSINESS_K
         });
         idByCode.set(t.code, account.id);
         audit.push({ businessId: business.id, actor: SYSTEM_BOOTSTRAP, action: "account.create", entityType: "LedgerAccount", entityId: account.id, after: account });
-        if (t.mapping) {
-          const mapping = await tx.accountMapping.create({ data: { businessId: business.id, key: t.mapping, accountId: account.id } });
+        for (const key of templateMappings(t)) {
+          const mapping = await tx.accountMapping.create({ data: { businessId: business.id, key, accountId: account.id } });
           audit.push({ businessId: business.id, actor: SYSTEM_BOOTSTRAP, action: "mapping.set", entityType: "AccountMapping", entityId: mapping.id, after: mapping });
         }
       }

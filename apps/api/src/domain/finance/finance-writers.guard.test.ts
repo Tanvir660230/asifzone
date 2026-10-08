@@ -47,6 +47,8 @@ describe("financial core — architecture guards", () => {
       // Phase 3 (docs/FINANCE_PHASE_3.md)
       ["financeException", "FinanceException"], ["clearingSettlement", "ClearingSettlement"], ["clearingSettlementLine", "ClearingSettlementLine"],
       ["financeSyncState", "FinanceSyncState"],
+      // Phase 4 (docs/FINANCE_PHASE_4.md)
+      ["supplier", "Supplier"], ["taxCode", "TaxCode"], ["inventoryValuationEntry", "InventoryValuationEntry"], ["inventoryCostState", "InventoryCostState"],
     ];
     const offenders = MODELS.flatMap(([m, t]) => writers(m, t).filter((f) => !f.startsWith("domain/finance/")).map((f) => `${f}: ${t}`));
     expect(offenders).toEqual([]);
@@ -93,6 +95,18 @@ describe("financial core — architecture guards", () => {
   it("Phase 3: commerce posting rules name mapping keys, never an account id", () => {
     const rules = code(join(SRC, "domain", "finance", "commerce-posting-rules.ts"));
     expect(rules).not.toMatch(/accountId\s*:/);
+  });
+
+  it("Phase 4: only costing.service.ts writes the valuation ledger — there is one costing engine", () => {
+    expect(writers("inventoryValuationEntry", "InventoryValuationEntry")).toEqual(["domain/finance/costing.service.ts"]);
+    expect(writers("inventoryCostState", "InventoryCostState")).toEqual(["domain/finance/costing.service.ts"]);
+  });
+
+  it("Phase 4: no stored supplier balance — a supplier is owed what the AP ledger says", () => {
+    const schema = readFileSync(join(SRC, "..", "prisma", "schema.prisma"), "utf8");
+    const body = /^model Supplier \{([\s\S]*?)^\}/m.exec(schema)?.[1] ?? "";
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.split("\n").filter((l) => /^\s+\w*([bB]alance|[oO]utstanding|[pP]ayable)\w*\s+(Decimal|Int|Float|BigInt)/.test(l))).toEqual([]);
   });
 
   it("the guards detect what they forbid (self-test)", () => {

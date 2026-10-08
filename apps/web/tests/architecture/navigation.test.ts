@@ -125,6 +125,8 @@ describe("navigation manifest — derivation", () => {
     expect(resolveNavNode("/admin/finance/settlements")?.id).toBe("finance.settlements");
     expect(resolveNavNode("/admin/finance/exceptions")?.id).toBe("finance.exceptions");
     expect(resolveNavNode("/admin/finance/checks")?.id).toBe("finance.checks");
+    expect(resolveNavNode("/admin/finance/suppliers")?.id).toBe("finance.suppliers");
+    expect(resolveNavNode("/admin/finance/tax-codes")?.id).toBe("finance.tax-codes");
     expect(resolveNavNode("/admin/nowhere")).toBeUndefined();
   });
 

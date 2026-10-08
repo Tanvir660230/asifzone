@@ -15,6 +15,7 @@ import {
   signedBalance,
   trialBalance,
   validateChartTemplate,
+  templateMappings,
 } from "@clothing-brand/shared";
 
 // Financial Core Phase 1 (docs/FINANCE_PHASE_1.md): the pure double-entry rules, chart template, periods and event contract.
@@ -78,7 +79,7 @@ describe("journal amounts engine", () => {
 describe("chart of accounts template", () => {
   it("is structurally valid and maps every mapping key exactly once", () => {
     expect(validateChartTemplate(DEFAULT_CHART_OF_ACCOUNTS)).toEqual([]);
-    const mapped = DEFAULT_CHART_OF_ACCOUNTS.flatMap((a) => (a.mapping ? [a.mapping] : []));
+    const mapped = DEFAULT_CHART_OF_ACCOUNTS.flatMap((a) => templateMappings(a));
     expect([...mapped].sort()).toEqual([...ACCOUNT_MAPPING_KEYS].sort());
   });
 

@@ -40,6 +40,17 @@ export const CAPABILITIES = {
   "finance.reverse": { permission: "finance.reverse" },
   "finance.configure": { permission: "finance.configure" },
   "finance.reconcile": { permission: "finance.reconcile" },
+  // purchasing, suppliers / AP and inventory costing (docs/FINANCE_PHASE_4.md §23)
+  "suppliers.view": { permission: "suppliers.read" },
+  "suppliers.manage": { permission: "suppliers.manage" },
+  "purchasing.view": { permission: "purchasing.read" },
+  "purchasing.manage": { permission: "purchasing.manage" },
+  "purchasing.approve": { permission: "purchasing.approve" },
+  "purchasing.receive": { permission: "purchasing.receive" },
+  "ap.view": { permission: "ap.read" },
+  "ap.manage": { permission: "ap.manage" },
+  "costing.view": { permission: "costing.read" },
+  "costing.adjust": { permission: "costing.adjust" },
   // catalog & stock
   "catalog.view": { permission: "catalog.read" },
   "catalog.manage": { permission: "catalog.manage" },

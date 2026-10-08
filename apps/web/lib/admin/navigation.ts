@@ -376,6 +376,9 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "finance.settlements", label: "Settlements", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/settlements", capability: "finance.view", order: 6, keywords: ["cod", "courier", "gateway", "clearing", "payout", "fees"] },
   { id: "finance.exceptions", label: "Finance exceptions", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/exceptions", capability: "finance.view", order: 7, keywords: ["missing cost", "estimate", "unmatched"] },
   { id: "finance.checks", label: "Finance checks", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/checks", capability: "finance.view", order: 8, keywords: ["reconciliation", "revenue check", "cogs check"] },
+  // Financial Core Phase 4 (docs/FINANCE_PHASE_4.md §23): purchasing — suppliers and purchase tax codes (4A).
+  { id: "finance.suppliers", label: "Suppliers", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/suppliers", capability: "suppliers.view", order: 9, keywords: ["vendor", "purchasing", "payables", "supplier"] },
+  { id: "finance.tax-codes", label: "Purchase tax codes", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/tax-codes", capability: "purchasing.view", order: 10, keywords: ["vat", "input tax", "tax rate"] },
 
   {
     id: "analytics",

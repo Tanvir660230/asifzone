@@ -60,6 +60,17 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.courier_fees",
   "expense.gateway_fees",
   "expense.settlement_adjustments",
+  // Phase 4 (docs/FINANCE_PHASE_4.md §3) — purchasing, AP and inventory costing
+  "liability.grni",
+  "liability.supplier_returns",
+  "asset.vat_input",
+  "cogs.cost_adjustments",
+  "cogs.purchase_price_differences",
+  "cogs.count_adjustments",
+  "expense.non_recoverable_tax",
+  "expense.freight_in",
+  "expense.purchases_other",
+  "income.purchase_discounts",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -95,6 +106,14 @@ export const COMMERCE_MAPPING_KEYS: readonly AccountMappingKey[] = [
   ...CLEARING_MAPPING_KEYS,
 ];
 
+/** Every key purchasing, AP and inventory costing (Phase 4) post to — all must be mapped before a purchasing document or a
+ * valuation adjustment can post. Several share an account by default (aliases on the template), each stays re-mappable. */
+export const PURCHASING_MAPPING_KEYS: readonly AccountMappingKey[] = [
+  "asset.inventory", "liability.payable_trade", "liability.grni", "liability.supplier_returns", "asset.vat_input",
+  "cogs.cost_adjustments", "cogs.purchase_price_differences", "cogs.count_adjustments", "cogs.inventory_shrinkage",
+  "expense.non_recoverable_tax", "expense.freight_in", "expense.purchases_other", "income.purchase_discounts",
+];
+
 /**
  * Mapping keys whose ledger figure is reconciled against an existing authoritative business figure (the metrics registry,
  * docs/METRICS_REGISTRY.md). Revenue: the dashboard's realised net sales = merchandise sales − merchandise refunds, both
@@ -114,6 +133,8 @@ export interface ChartTemplateAccount {
   /** Overrides the type's normal balance (contra accounts). */
   normalBalance?: NormalBalance;
   mapping?: AccountMappingKey;
+  /** Further keys that post to this same account by default (Phase 4) — each is its own mapping row, re-mappable alone. */
+  aliases?: readonly AccountMappingKey[];
   /** Ownership, partner and payroll accounts: balances visible only with finance.sensitive (Phase 3 §11). */
   sensitive?: boolean;
 }
@@ -133,7 +154,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "1600", name: "Inventory", type: "ASSET", parent: "1000", group: true },
   { code: "1610", name: "Merchandise inventory", type: "ASSET", parent: "1600", mapping: "asset.inventory" },
   { code: "1700", name: "Other current assets", type: "ASSET", parent: "1000", group: true },
-  { code: "1710", name: "VAT input recoverable", type: "ASSET", parent: "1700" },
+  { code: "1710", name: "VAT input recoverable", type: "ASSET", parent: "1700", mapping: "asset.vat_input" },
   { code: "1720", name: "Prepaid expenses", type: "ASSET", parent: "1700" },
   { code: "1800", name: "Fixed assets", type: "ASSET", parent: "1000", group: true },
   { code: "1810", name: "Equipment & machinery", type: "ASSET", parent: "1800", mapping: "asset.fixed_assets" },
@@ -145,6 +166,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "2000", name: "Liabilities", type: "LIABILITY", group: true },
   { code: "2100", name: "Payables", type: "LIABILITY", parent: "2000", group: true },
   { code: "2110", name: "Trade payables (suppliers)", type: "LIABILITY", parent: "2100", mapping: "liability.payable_trade" },
+  { code: "2115", name: "Goods received not invoiced", type: "LIABILITY", parent: "2100", mapping: "liability.grni", aliases: ["liability.supplier_returns"] },
   { code: "2120", name: "Owner paid on behalf of business", type: "LIABILITY", parent: "2100" },
   { code: "2200", name: "Customer liabilities", type: "LIABILITY", parent: "2000", group: true },
   { code: "2210", name: "Customer deposits", type: "LIABILITY", parent: "2200", mapping: "liability.customer_deposits" },
@@ -179,7 +201,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
 
   { code: "5000", name: "Cost of goods sold", type: "COGS", group: true },
   { code: "5100", name: "Cost of goods sold", type: "COGS", parent: "5000", mapping: "cogs.goods" },
+  { code: "5150", name: "Inventory cost adjustments", type: "COGS", parent: "5000", mapping: "cogs.cost_adjustments", aliases: ["cogs.purchase_price_differences"] },
   { code: "5200", name: "Inventory shrinkage & write-offs", type: "COGS", parent: "5000", mapping: "cogs.inventory_shrinkage" },
+  { code: "5210", name: "Inventory count adjustments", type: "COGS", parent: "5000", mapping: "cogs.count_adjustments" },
 
   { code: "6000", name: "Operating expenses", type: "EXPENSE", group: true },
   { code: "6100", name: "Rent", type: "EXPENSE", parent: "6000" },
@@ -188,14 +212,17 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "6400", name: "Internet, software & hosting", type: "EXPENSE", parent: "6000" },
   { code: "6500", name: "Marketing & advertising", type: "EXPENSE", parent: "6000" },
   { code: "6600", name: "Delivery & courier", type: "EXPENSE", parent: "6000", mapping: "expense.courier_fees" },
+  { code: "6650", name: "Freight-in & purchase charges", type: "EXPENSE", parent: "6000", mapping: "expense.freight_in" },
   { code: "6700", name: "Payment gateway fees", type: "EXPENSE", parent: "6000", mapping: "expense.gateway_fees" },
   { code: "6800", name: "Packaging", type: "EXPENSE", parent: "6000" },
   { code: "6850", name: "Depreciation", type: "EXPENSE", parent: "6000" },
-  { code: "6900", name: "Other operating expenses", type: "EXPENSE", parent: "6000" },
+  { code: "6900", name: "Other operating expenses", type: "EXPENSE", parent: "6000", mapping: "expense.purchases_other" },
   { code: "6950", name: "Settlement adjustments", type: "EXPENSE", parent: "6000", mapping: "expense.settlement_adjustments" },
+  { code: "6960", name: "Non-recoverable purchase tax", type: "EXPENSE", parent: "6000", mapping: "expense.non_recoverable_tax" },
 
   { code: "7000", name: "Other income", type: "OTHER_INCOME", group: true },
   { code: "7100", name: "Interest income", type: "OTHER_INCOME", parent: "7000" },
+  { code: "7200", name: "Purchase discounts received", type: "OTHER_INCOME", parent: "7000", mapping: "income.purchase_discounts" },
   { code: "7900", name: "Miscellaneous income", type: "OTHER_INCOME", parent: "7000" },
 
   { code: "8000", name: "Other expenses & finance costs", type: "OTHER_EXPENSE", group: true },
@@ -206,6 +233,11 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
 
 /** Structural check of a chart template (also run on the default in tests): unique codes, parents exist and share the
  * type, mappings unique and complete. Returns problems; empty = valid. */
+/** The mapping keys a template account carries: its primary mapping, then its aliases. */
+export function templateMappings(a: ChartTemplateAccount): AccountMappingKey[] {
+  return a.mapping ? [a.mapping, ...(a.aliases ?? [])] : [];
+}
+
 export function validateChartTemplate(accounts: readonly ChartTemplateAccount[]): string[] {
   const problems: string[] = [];
   const byCode = new Map<string, ChartTemplateAccount>();
@@ -223,10 +255,11 @@ export function validateChartTemplate(accounts: readonly ChartTemplateAccount[])
         if (parent.type !== a.type) problems.push(`${a.code}: type ${a.type} differs from parent ${parent.type}`);
       }
     }
-    if (a.mapping) {
-      if (mapped.has(a.mapping)) problems.push(`mapping ${a.mapping} on ${mapped.get(a.mapping)} and ${a.code}`);
-      mapped.set(a.mapping, a.code);
-      if (a.mapping.startsWith("group.") !== Boolean(a.group)) problems.push(`${a.code}: mapping ${a.mapping} must ${a.group ? "not " : ""}be a group mapping`);
+    if (a.aliases?.length && !a.mapping) problems.push(`${a.code}: aliases without a primary mapping`);
+    for (const key of templateMappings(a)) {
+      if (mapped.has(key)) problems.push(`mapping ${key} on ${mapped.get(key)} and ${a.code}`);
+      mapped.set(key, a.code);
+      if (key.startsWith("group.") !== Boolean(a.group)) problems.push(`${a.code}: mapping ${key} must ${a.group ? "not " : ""}be a group mapping`);
     }
   }
   for (const key of ACCOUNT_MAPPING_KEYS) if (!mapped.has(key)) problems.push(`mapping ${key} not assigned`);
