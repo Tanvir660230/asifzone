@@ -424,6 +424,64 @@ export const RECONCILIATION_CHECKS = {
       };
     },
   },
+
+  // ── Phase 4B: inventory costing (docs/FINANCE_PHASE_4.md §9) — not applicable until costing is activated (4C) ──────
+  "inventory.order_cost_links": {
+    label: "Order-line cost = stock-exit valuation",
+    description: "Every order line costed from inventory is linked to the stock exit it left with, and its recorded unit cost is exactly that exit's valuation — the dashboard's COGS, the books' COGS and the inventory valuation are one number. Lines are also counted by where their cost came from (inventory, provisional, catalog, none).",
+    async run(ctx) {
+      const active = await prisma.financeBusiness.findUnique({ where: { id: ctx.business.id }, select: { inventoryCostingActivatedAt: true } });
+      const sources = await prisma.orderItem.groupBy({ by: ["unitCostSource"], _count: { _all: true } });
+      const bySource = Object.fromEntries(sources.map((g) => [g.unitCostSource ?? "BEFORE_PHASE_4B", g._count._all]));
+      if (!active?.inventoryCostingActivatedAt) return { status: "NOT_APPLICABLE", details: { reason: "inventory costing is not active (activated by the 4C valuation cutover)", linesByCostSource: bySource } };
+      const unlinked = await prisma.orderItem.findMany({ where: { unitCostSource: { in: ["INVENTORY", "INVENTORY_PROVISIONAL"] }, costMovementId: null }, select: { id: true, orderId: true, variantId: true }, take: 50 });
+      const diverged = await prisma.$queryRaw<Array<{ id: string; orderId: string; snapshot: number | null; valuation: number | null }>>`
+        SELECT i.id, i."orderId", i."unitCostSnapshot" AS snapshot, e."unitCostMinor" AS valuation
+        FROM "OrderItem" i JOIN "InventoryValuationEntry" e ON e."stockMovementId" = i."costMovementId"
+        WHERE i."costMovementId" IS NOT NULL AND e."unitCostMinor" IS DISTINCT FROM i."unitCostSnapshot" LIMIT 50`;
+      return { status: unlinked.length || diverged.length ? "DIFFERENCE" : "MATCHED", details: { unlinkedLines: unlinked, divergedLines: diverged, linesByCostSource: bySource } };
+    },
+  },
+
+  "inventory.quantity_vs_valuation": {
+    label: "Stock quantity = valuation position",
+    description: "For every costed variant: physical stock (inventory.service's) equals valued + unvalued − units issued short (the costing position), and every stock movement since the variant entered costing has exactly one valuation entry.",
+    async run(ctx) {
+      const active = await prisma.financeBusiness.findUnique({ where: { id: ctx.business.id }, select: { inventoryCostingActivatedAt: true } });
+      if (!active?.inventoryCostingActivatedAt) return { status: "NOT_APPLICABLE", details: { reason: "inventory costing is not active (activated by the 4C valuation cutover)" } };
+      const quantity = await prisma.$queryRaw<Array<{ variantId: string; sku: string; stock: number; position: number }>>`
+        SELECT s."variantId", v.sku, v.stock, (s."valuedQty" + s."unvaluedQty" - s."deficitQty") AS position
+        FROM "InventoryCostState" s JOIN "ProductVariant" v ON v.id = s."variantId"
+        WHERE s."businessId" = ${ctx.business.id} AND v.stock <> s."valuedQty" + s."unvaluedQty" - s."deficitQty" LIMIT 50`;
+      const unvalued = await prisma.$queryRaw<Array<{ movementId: string; variantId: string; reason: string; change: number }>>`
+        SELECT m.id AS "movementId", m."variantId", m.reason::text AS reason, m.change
+        FROM "StockMovement" m
+        JOIN (SELECT "variantId", MIN(sequence) AS first FROM "InventoryValuationEntry" WHERE "businessId" = ${ctx.business.id} GROUP BY "variantId") f ON f."variantId" = m."variantId"
+        JOIN "InventoryValuationEntry" fe ON fe.sequence = f.first
+        LEFT JOIN "InventoryValuationEntry" e ON e."stockMovementId" = m.id
+        WHERE m."createdAt" >= fe."createdAt" AND e.id IS NULL AND m.change <> 0 AND (fe."stockMovementId" IS NULL OR m.id <> fe."stockMovementId") LIMIT 50`;
+      return { status: quantity.length || unvalued.length ? "DIFFERENCE" : "MATCHED", details: { quantityMismatches: quantity, movementsWithoutValuation: unvalued } };
+    },
+  },
+
+  "inventory.valuation_postings": {
+    label: "Valuation postings in the books",
+    description: "Every valuation entry that moves the ledger (a cost adjustment to 5150, or a manual adjustment's own value) has its inventory.valued event posted, with the amounts of the entry — the inventory account and the valuation converge through explicit journals, never by editing history.",
+    async run(ctx) {
+      const active = await prisma.financeBusiness.findUnique({ where: { id: ctx.business.id }, select: { inventoryCostingActivatedAt: true } });
+      if (!active?.inventoryCostingActivatedAt) return { status: "NOT_APPLICABLE", details: { reason: "inventory costing is not active (activated by the 4C valuation cutover)" } };
+      const cur = ctx.business.baseCurrency;
+      const rows = await prisma.$queryRaw<Array<{ entryId: string; adjustment: Prisma.Decimal; eventStatus: string | null; payloadAdjustment: number | null }>>`
+        SELECT e.id AS "entryId", e."costAdjustment" AS adjustment, fe.status::text AS "eventStatus", (fe.payload->>'costAdjustmentMinor')::bigint::int AS "payloadAdjustment"
+        FROM "InventoryValuationEntry" e
+        LEFT JOIN "FinancialEvent" fe ON fe."businessId" = e."businessId" AND fe."eventKey" = 'valuation:' || e.id
+        WHERE e."businessId" = ${ctx.business.id} AND (e."costAdjustment" <> 0 OR fe.id IS NOT NULL)`;
+      const problems = rows
+        .map((r) => ({ entryId: r.entryId, adjustment: toMinor(r.adjustment, cur), eventStatus: r.eventStatus, posted: r.payloadAdjustment }))
+        .filter((r) => r.eventStatus !== "POSTED" || r.posted !== r.adjustment);
+      return { status: problems.length ? "DIFFERENCE" : "MATCHED", details: { entriesWithPostings: rows.length, problems: problems.slice(0, 50) } };
+    },
+  },
 } satisfies Record<string, ReconciliationCheck>;
 
 export type ReconciliationCheckKey = keyof typeof RECONCILIATION_CHECKS;

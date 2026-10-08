@@ -197,6 +197,14 @@ enum ReviewStatus {
 /// Why a variant's stock changed. Every change is written by inventory.service.ts, the only stock writer
 /// (docs/INVENTORY_INVARIANTS.md). Older rows keep their original reason — cancellations before Phase 1 are
 /// ADJUSTMENT rows carrying an orderId.
+/// Phase 4B: the origin of an order line's recorded unit cost (docs/FINANCE_PHASE_4.md §9).
+enum OrderLineCostSource {
+  INVENTORY
+  INVENTORY_PROVISIONAL
+  CATALOG
+  NONE
+}
+
 enum StockMovementReason {
   ORDER
   RESTOCK
@@ -1527,42 +1535,51 @@ model ProductReview {
 }
 
 model OrderItem {
-  id                      String   @id @default(cuid())
+  id                      String               @id @default(cuid())
   orderId                 String
-  order                   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order                   Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
   variantId               String
   productNameSnapshot     String
   skuSnapshot             String
   sizeSnapshot            String
   colorSnapshot           String
-  priceSnapshot           Decimal  @db.Decimal(10, 2)
+  priceSnapshot           Decimal              @db.Decimal(10, 2)
   quantity                Int
   /// How many units of this line were reconciled as "came back to us" on a PARTIALLY_DELIVERED
   /// order (see Order.partialDeliveryReconciledAt) — 0 means either not yet reconciled or the
   /// customer kept the full quantity. Set once by reconcilePartialDelivery in order.service.ts,
   /// which also restocks exactly this many units via a matching StockMovement.
-  returnedQuantity        Int      @default(0)
+  returnedQuantity        Int                  @default(0)
   /// How many units of this line have been put back into stock by any path — cancellation, return,
   /// partial-delivery reconciliation, exchange, or moving the order to Trash. Releasing stock for a line
   /// never exceeds `quantity - restockedQuantity`, which is what makes every restock path idempotent
   /// (docs/INVENTORY_INVARIANTS.md). Only inventory.service.ts writes it.
-  restockedQuantity       Int      @default(0)
+  restockedQuantity       Int                  @default(0)
   /// Pricing snapshot (Phase 2). A line has ONE unit price: a cart line that is partly flash-priced (D4 stockLimit)
   /// is stored as two OrderItem rows. Null before Phase 2.
   /// The regular (pre-flash) unit price: the variant's own price, else the product base price.
-  listPriceSnapshot       Decimal? @db.Decimal(10, 2)
+  listPriceSnapshot       Decimal?             @db.Decimal(10, 2)
   /// The flash sale that priced these units (snapshot ids, no FK — history outlives the sale). Null = regular price.
   flashSaleId             String?
   flashSaleItemId         String?
   /// This line's share of the order's bundle / coupon discount (proportional allocation, sums to the order amount).
-  bundleDiscountAllocated Decimal? @db.Decimal(10, 2)
-  couponDiscountAllocated Decimal? @db.Decimal(10, 2)
+  bundleDiscountAllocated Decimal?             @db.Decimal(10, 2)
+  couponDiscountAllocated Decimal?             @db.Decimal(10, 2)
   /// Historical facts (Phase 6, docs/PHASE_6_AUDIT.md) — captured once, in the transaction that writes this line
   /// (order creation or exchange-replacement creation), never updated. No FKs: history outlives the catalog.
   /// Per-unit cost in MINOR units of the store currency (StoreSetting.currency, locked once orders exist):
   /// variant.costPrice ?? product.costPrice at order time. NULL = unknown (no cost configured, or before Phase 6) —
   /// never 0 by default. Omitted from every Prisma read unless selected (config/prisma.ts).
   unitCostSnapshot        Int?
+  /// Phase 4B (docs/FINANCE_PHASE_4.md §9): where `unitCostSnapshot` came from — INVENTORY (the moving average of valued
+  /// stock at the stock exit), INVENTORY_PROVISIONAL (part of the line left stock that wasn't valued: the cost is a
+  /// provisional one, trued up through 5150 later), CATALOG (the catalog cost: untracked products, or costing not active),
+  /// NONE (no cost known). NULL = written before Phase 4B. Omitted from every read unless selected, like the cost itself.
+  unitCostSource          OrderLineCostSource?
+  /// The stock exit (ORDER movement) whose valuation entry carries exactly this line's unit cost — set for INVENTORY*
+  /// and NONE-at-exit lines of costed variants; a database trigger proves the two costs are the same number.
+  costMovementId          String?
+  costMovement            StockMovement?       @relation("OrderItemCostMovement", fields: [costMovementId], references: [id], onDelete: Restrict)
   /// The variant's product (backfilled for older lines from ProductVariant.productId — a variant never changes product).
   productIdSnapshot       String?
   /// The product's category and its name at order time. NULL = not recorded (line predates Phase 6); every product has
@@ -1594,6 +1611,7 @@ model StockMovement {
   sourceId       String?
   createdAt      DateTime                 @default(now())
   valuationEntry InventoryValuationEntry?
+  costedLines    OrderItem[]              @relation("OrderItemCostMovement")
 
   @@index([variantId])
   @@index([reason])
@@ -2571,43 +2589,46 @@ enum ReconciliationStatus {
 
 /// The business whose books these are. Brands (and, later, other installations) report INTO a business.
 model FinanceBusiness {
-  id                   String                    @id @default(cuid())
-  key                  String                    @unique
-  name                 String
+  id                          String                    @id @default(cuid())
+  key                         String                    @unique
+  name                        String
   /// ISO 4217 functional currency; every journal is in it (multi-currency is not supported in Phase 1).
-  baseCurrency         String                    @db.VarChar(3)
+  baseCurrency                String                    @db.VarChar(3)
   /// IANA timezone of the business day that journal dates and periods use.
-  timezone             String
+  timezone                    String
   /// 1–12. Bangladesh's fiscal year starts in July.
-  fiscalYearStartMonth Int                       @default(7)
+  fiscalYearStartMonth        Int                       @default(7)
   /// The Financial Opening Date: the books start here. Nothing posts before it; opening balances are dated on it. Locked
   /// once the opening balances are posted.
-  openingDate          DateTime?                 @db.Date
+  openingDate                 DateTime?                 @db.Date
   /// Phase 3: may an approved ESTIMATED cost be posted for a sale line with no recorded cost? Default: never (KNOWN only).
-  costPolicy           FinanceCostPolicy         @default(KNOWN_ONLY)
-  createdAt            DateTime                  @default(now())
-  updatedAt            DateTime                  @updatedAt
-  brands               FinanceBrand[]
-  accounts             LedgerAccount[]
-  mappings             AccountMapping[]
-  financialAccounts    FinancialAccount[]
-  periods              FinancialPeriod[]
-  journalEntries       JournalEntry[]
-  events               FinancialEvent[]
-  openingBatch         OpeningBalanceBatch?
-  reconciliationRuns   ReconciliationRun[]
-  treasuryMovements    TreasuryMovement[]
-  bankTransactions     BankTransaction[]
-  bankMatches          BankTransactionMatch[]
-  statementImports     StatementImport[]
-  bankReconciliations  BankReconciliation[]
-  exceptions           FinanceException[]
-  clearingSettlements  ClearingSettlement[]
-  syncState            FinanceSyncState?
-  suppliers            Supplier[]
-  taxCodes             TaxCode[]
-  valuationEntries     InventoryValuationEntry[]
-  costStates           InventoryCostState[]
+  costPolicy                  FinanceCostPolicy         @default(KNOWN_ONLY)
+  /// Phase 4: when inventory costing became authoritative (set by the 4C valuation cutover). Null = costing is not active:
+  /// order lines keep the catalog cost (labelled CATALOG) and no valuation entry is written.
+  inventoryCostingActivatedAt DateTime?
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+  brands                      FinanceBrand[]
+  accounts                    LedgerAccount[]
+  mappings                    AccountMapping[]
+  financialAccounts           FinancialAccount[]
+  periods                     FinancialPeriod[]
+  journalEntries              JournalEntry[]
+  events                      FinancialEvent[]
+  openingBatch                OpeningBalanceBatch?
+  reconciliationRuns          ReconciliationRun[]
+  treasuryMovements           TreasuryMovement[]
+  bankTransactions            BankTransaction[]
+  bankMatches                 BankTransactionMatch[]
+  statementImports            StatementImport[]
+  bankReconciliations         BankReconciliation[]
+  exceptions                  FinanceException[]
+  clearingSettlements         ClearingSettlement[]
+  syncState                   FinanceSyncState?
+  suppliers                   Supplier[]
+  taxCodes                    TaxCode[]
+  valuationEntries            InventoryValuationEntry[]
+  costStates                  InventoryCostState[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -3489,6 +3510,8 @@ model InventoryValuationEntry {
   costAdjustment    Decimal                @db.Decimal(18, 2)
   /// The unit cost the entry applied (major units, 6 dp); null when no cost was known.
   unitCost          Decimal?               @db.Decimal(18, 6)
+  /// SNAPSHOT entries: the exact order-line unit cost in minor units (the same integer as OrderItem.unitCostSnapshot).
+  unitCostMinor     Int?
   /// SNAPSHOT (an order line's cost), AVERAGE, DOCUMENT (receipt / invoice), MANUAL, CUTOVER, NONE.
   costBasis         String
   valuationStatus   FinanceValuationStatus

@@ -302,6 +302,8 @@ async function createExchangeOrder(
         ? `Exchange for order ${originalOrder.orderNumber} (${label}) — ${cur} ${toMajor(refundDue)} owed back to the customer (${compensation === "REFUND" || !originalOrder.customerId ? "refund requested" : "store credit"})`
         : `Free exchange for order ${originalOrder.orderNumber} (${label})`;
 
+  // Phase 4B: the replacement is a new stock exit — its own cost, determined at that exit (recordSale), never the original
+  // item's.
   const replacementSnapshots = await captureLineSnapshots(tx, [requestedVariant.id], cur);
   const exchangeOrder = await tx.order.create({
     data: {
@@ -364,8 +366,9 @@ async function createExchangeOrder(
   });
 
   // Same "stock changed underneath us" guard checkout uses — a 409 here rolls the whole approval back.
+  const replacementLines = await tx.orderItem.findMany({ where: { orderId: exchangeOrder.id }, select: { id: true } });
   try {
-    await recordSale(tx, exchangeOrder.id, [{ variantId: requestedVariant.id, quantity: originalItem.quantity }], {
+    await recordSale(tx, exchangeOrder.id, [{ variantId: requestedVariant.id, quantity: originalItem.quantity, orderItemIds: replacementLines.map((l) => l.id) }], {
       adminId,
       note: "Exchange shipment",
       untrackedVariantIds: requestedVariant.product.trackInventory ? undefined : new Set([requestedVariant.id]),

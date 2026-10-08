@@ -98,8 +98,14 @@ describe("financial core — architecture guards", () => {
   });
 
   it("Phase 4: only costing.service.ts writes the valuation ledger — there is one costing engine", () => {
-    expect(writers("inventoryValuationEntry", "InventoryValuationEntry")).toEqual(["domain/finance/costing.service.ts"]);
-    expect(writers("inventoryCostState", "InventoryCostState")).toEqual(["domain/finance/costing.service.ts"]);
+    // Phase 4B: the rows are persisted by the database function finance_persist_valuations (no arithmetic — it writes what the
+    // engine computed, in one round trip); no application code writes the tables directly, and only the costing service
+    // calls the function.
+    expect(writers("inventoryValuationEntry", "InventoryValuationEntry")).toEqual([]);
+    expect(writers("inventoryCostState", "InventoryCostState")).toEqual([]);
+    expect(ALL.filter((f) => /finance_persist_valuations/.test(code(f))).map(rel)).toEqual(["domain/finance/costing.service.ts"]);
+    // …and the average is computed nowhere else: the costing rules live in applyCostOperation only.
+    expect(ALL.filter((f) => rel(f) !== "domain/finance/costing.service.ts" && /\bapplyCostOperation\b|avgScaled\s*[=:]/.test(code(f))).map(rel)).toEqual([]);
   });
 
   it("Phase 4: no stored supplier balance — a supplier is owed what the AP ledger says", () => {

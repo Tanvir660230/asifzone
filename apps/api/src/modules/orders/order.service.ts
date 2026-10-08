@@ -328,7 +328,8 @@ export async function insertOrderRecord(
   const currency = await getCurrency();
 
   const order = await prisma.$transaction(async (tx) => {
-    // Phase 6: cost and attribution as the catalog stands when the line is written (docs/PHASE_6_AUDIT.md).
+    // Phase 6: cost and attribution as the catalog stands when the line is written (docs/PHASE_6_AUDIT.md). Phase 4B: a
+    // costed variant's line takes the moving average at its stock exit below (recordSale), in this same transaction.
     const lineSnapshots = await captureLineSnapshots(tx, snapshots.map((s) => s.variantId), currency);
     const created = await tx.order.create({
       data: {
@@ -404,7 +405,7 @@ export async function insertOrderRecord(
     const sale = await recordSale(
       tx,
       created.id,
-      [...perVariant].map(([variantId, quantity]) => ({ variantId, quantity })),
+      [...perVariant].map(([variantId, quantity]) => ({ variantId, quantity, orderItemIds: created.items.filter((i) => i.variantId === variantId).map((i) => i.id) })),
       { allowOversell: opts.allowOversell, untrackedVariantIds: untracked },
     );
     stockAfter = sale.stockAfter;

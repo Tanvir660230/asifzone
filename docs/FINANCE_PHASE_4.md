@@ -1,6 +1,7 @@
 # Financial Core — Phase 4: Purchasing, Suppliers / AP & Inventory Costing
 
-Status: **4A (foundations) implemented, not committed.** It sits on Phase 3 (`31c6ae7`). Sub-phases 4B–4H follow the
+Status: **4A committed (`cf4a1b2`); 4B (costing integration) implemented and verified, not committed — costing stays OFF
+until the 4C cutover.** It sits on Phase 3 (`31c6ae7`). Sub-phases 4B–4H follow the
 approved sequence, and each one stops for review. The architecture is the approved proposal
 (`FINANCE_PHASE_4_PROPOSAL.md`), with the owner's locked decisions recorded in §2.
 
@@ -17,8 +18,8 @@ posting engine (`journal.service.ts`).
 
 | Sub-phase | Contents | State |
 |---|---|---|
-| 4A Foundations | schema, accounts and mappings, permissions, suppliers, tax codes, valuation ledger, costing engine (not wired) | **implemented** |
-| 4B Costing engine | cost determination at stock exit, wiring into `inventory.service`, valuation postings, activation flag, benchmark | next |
+| 4A Foundations | schema, accounts and mappings, permissions, suppliers, tax codes, valuation ledger, costing engine (not wired) | committed `cf4a1b2` |
+| 4B Costing integration | cost determination at stock exit, wiring into `inventory.service`, valuation postings, activation flag, benchmark (§9) | **implemented** |
 | 4C Valuation cutover | owner-approved cutover batch, deletion guard, switch-on | — |
 | 4D Purchasing | purchase orders, goods receipts (including approved no-PO receipts), supplier returns | — |
 | 4E Invoices / AP | supplier invoices and credit notes, 3-way / 2-way matching, GRNI → AP | — |
@@ -228,3 +229,136 @@ codes.
 - **Guards:** the Phase 4 tables are written only in the finance domain; only `costing.service.ts` writes the valuation
   ledger; no supplier balance column.
 - **Authorization matrix:** 418 routes, with OWNER-only purchasing configuration.
+
+## 9. Costing integration (4B)
+
+### 9.1 Responsibilities
+
+| Truth | Owner |
+|---|---|
+| Physical quantity | `inventory.service.ts` — the only writer of `ProductVariant.stock` and `StockMovement` |
+| Cost / valuation | `costing.service.ts` — the only code that computes cost (`applyCostOperation`) and the only caller of the persistence function |
+| Accounting | the Phase 1 engine — postings arrive as `inventory.valued` financial events |
+
+### 9.2 Activation
+
+Costing is **off until the 4C valuation cutover**. `FinanceBusiness.inventoryCostingActivatedAt` is null, and a database
+trigger makes it a one-way switch once set. 4C's approved cutover is the only production caller of
+`activateInventoryCostingInTx`; 4B uses it only in tests. The value is shown read-only in `GET /api/v1/finance/business`.
+
+While costing is off, behaviour is exactly as before 4B:
+- order lines take the catalog cost;
+- no valuation entry is written;
+- Phase 3 posts and raises exceptions as before;
+- the three new checks report NOT_APPLICABLE.
+
+**Scope rule** (one function, `inScope`). A variant is costed when costing is active, its product is stock-tracked, and
+it either has a cost position (cut over, or costed since) or was created after activation.
+
+### 9.3 Cost determined at the stock exit
+
+Every path that creates order lines goes through the same steps:
+- checkout, including admin and online orders and the paid oversell settlement;
+- order modification;
+- exchange replacement.
+
+1. Write the order lines as before, with the catalog cost labelled `CATALOG` (or `NONE` when there is none).
+2. `recordSale` decrements stock. This takes the variant row lock — the same lock as before 4B; there is no earlier lock.
+3. While holding that lock, one statement writes the `ORDER` movements and returns each variant's costing facts. Its
+   snapshot is taken after the lock, and every writer of a position needs that lock, so the position is current.
+4. `exitCost` reads the average and labels the cost:
+   - `INVENTORY` when valued stock covers the units;
+   - `INVENTORY_PROVISIONAL` when some units leave beyond valued stock;
+   - `NONE` when no cost was ever known — never zero, never the catalog.
+5. One call to `finance_persist_valuations` writes the valuation entry, the position, and the exit's cost, source and
+   link (`costMovementId`) onto exactly the order lines created for that exit.
+
+**Guarantees:**
+- A costed exit without its lines is refused (`COSTING_EXIT_UNLINKED`), so no transaction can commit a costed exit whose
+  lines don't carry its cost.
+- A database trigger refuses any line whose cost differs from its exit's valuation entry, and freezes linked lines.
+- `OrderItem.unitCostSnapshot` = the valuation's `unitCostMinor` = the dashboard's COGS = Phase 3's COGS.
+
+**Untracked products** (`trackInventory = false`) are never costed: they keep the catalog cost, labelled `CATALOG`, with
+no valuation and no negative inventory.
+
+### 9.4 Every other movement
+
+| Movement | Valued at | Ledger |
+|---|---|---|
+| Cancellation, return, partial-delivery release (`releaseOrderLines`) | the line's own snapshot — never today's average | Phase 3 (at snapshot), plus any 5150 adjustment |
+| Units released by a modification | each source line's snapshot (lines of one variant may differ) | as above |
+| Damaged return (`writeOffReturnedUnits`) | the returned line's snapshot | Phase 3 write-off, plus any adjustment |
+| Restore from trash (`reReserveOrderLines`) | the line's snapshot — a compensating entry for the trash release | Phase 3 |
+| Manual decrease, damaged / lost, form edit, CSV count down, variant zeroed | the running average | `inventory.valued`: shrinkage (damaged / lost) or 5210 count adjustments |
+| Manual increase, count gain, opening stock of a new variant | the average, labelled ESTIMATED; held **unvalued** (MISSING) when no average ever existed | `inventory.valued` (5210); nothing when unvalued |
+
+Phase 3's stock scan skips movements the costing engine valued. Only unvalued ones still raise
+`UNVALUED_STOCK_RECEIPT` / `UNVALUED_STOCK_WRITE_OFF`.
+
+### 9.5 Where the costing rules live — and why the database function is not a second engine
+
+- **The rules live only in `applyCostOperation`** (plus `exitCost`, which reads the average it keeps). That covers the
+  moving average, deficit cover, provisional cost, rounding at zero, revaluation and the adjustment rule.
+- **`finance_persist_valuations` is a persistence path.** It receives figures already computed, makes no decision and
+  does no arithmetic. It writes them in order in one round trip, so the stock lock is held briefly. The existing guard
+  triggers (continuity, position = latest entry, line cost = exit valuation) run on every row it writes.
+- **Guard tests enforce this:**
+  - no application code writes the valuation tables directly;
+  - only `costing.service.ts` calls the function;
+  - no file except `costing.service.ts` uses `applyCostOperation` or sets an average.
+
+### 9.6 Postings
+
+One `inventory.valued` event per valuation entry that moves the ledger (`inventory-posting-rules.ts`, mapping keys only):
+- the movement's own value when nothing else books it (manual and count movements);
+- the cost adjustment (valuation change − ledger change) against 5150.
+
+Order-linked units are booked by Phase 3 at the line snapshot, so Phase 3's rules are unchanged.
+
+New reconciliation checks, each NOT_APPLICABLE while costing is off:
+
+| Check | Verifies |
+|---|---|
+| `inventory.order_cost_links` | every inventory-costed line is linked to its exit at the same cost; it also counts lines by cost source |
+| `inventory.quantity_vs_valuation` | stock = valued + unvalued − deficit, and every movement of a costed variant is valued |
+| `inventory.valuation_postings` | each posting exists with the entry's amounts |
+
+### 9.7 Performance (accepted)
+
+`createOrder`, 150 orders per scenario, same database and method throughout (ms, median / p95 / p99):
+
+| Scenario | 4A (costing off) | 4B, first wiring | 4B, lock fix | 4B, one-call persistence |
+|---|---|---|---|---|
+| Tracked, sequential | 18.5–21.2 / 22–24.5 / 25.5–28.5 | 31.8–32.3 / 37–38.5 / 44–49 | 24.4–26.2 / 27–30 / 31 | 18.8–24.5 / 21–30 / 22–57 |
+| Tracked, 8 concurrent on one SKU | 36.5–38 / 75 / 94–105 | 69–76 / 341–511 / 1,842–1,968 | 63–67 / 207–211 / 244–261 | 40–54 / 108–131 / 148–194 |
+| Untracked, sequential | 21 / 27.5–28 / 30.5 | 25.4–26.5 / 29–32 / 34–36 | 19.5–21.4 / 24–26 / 28 | 17.2–21.7 / 18.6–27.6 / 19.5–33.3 |
+
+The remaining same-SKU tail comes from the costing writes and the safety triggers executing while orders for one SKU
+queue on the existing stock lock. The owner accepted it. With costing off, the new code performs like 4A.
+
+### 9.8 Known pre-existing defect (not 4B)
+
+**Pre-existing commerce concurrency defect — separate follow-up required.**
+
+When the **same customer**'s checkout races a store-credit item return, they deadlock. Reproduced on untouched
+`cf4a1b2` without costing: 26 deadlocks in 40 operations. The likely cause is a lock-order inversion — checkout locks the
+customer before the stock, the return locks the stock before the customer. Different customers don't reproduce it, with
+costing off or on. It was not modified in 4B.
+
+### 9.9 Tests (4B)
+
+- **`finance-costing.integration.test.ts`** (21 tests, real commerce services, costing activated after a test cutover):
+  - line = exit valuation = dashboard and Phase 3 COGS; the database refuses divergence;
+  - uncosted or unlinked exits are refused; failures — including inside the one-call persistence and on a multi-SKU
+    exit's second SKU — leave nothing behind;
+  - concurrency: guarded concurrent checkouts, concurrent paid oversells (provisional and 5150), concurrent multi-SKU
+    orders, returns racing orders;
+  - untracked, not-cut-over and new variants; returns, damage and cancellation at the original cost; trash and restore;
+    modification; exchange; manual adjustments;
+  - full-cycle convergence (Δ inventory account = Σ valuation change); every new check MATCHED; one-way activation.
+- **`costing.test.ts`:** the mixed inflow (valued + unvalued) case.
+- **Guards:** the writer guard (function-only persistence), and the Phase 6 snapshot guard, which allows the costing
+  service as the one other assigner of a costed line's cost.
+- **Browser** (`e2e/admin-finance-costing.spec.ts`, costing off): checks NOT_APPLICABLE, cost-source labels, an
+  inventory adjustment through the UI with no valuation and the Phase 3 exception unchanged, and activation still off.

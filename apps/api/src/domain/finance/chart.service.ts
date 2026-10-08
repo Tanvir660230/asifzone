@@ -28,7 +28,7 @@ export async function getBusinessSettings() {
     openingBalancesStatus: batch?.status ?? null,
     postedJournals: posted,
     openingDateLocked: batch?.status === "POSTED" || posted > 0,
-    costPolicy: (await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { costPolicy: true } })).costPolicy,
+    ...(await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { costPolicy: true, inventoryCostingActivatedAt: true } })),
   };
 }
 

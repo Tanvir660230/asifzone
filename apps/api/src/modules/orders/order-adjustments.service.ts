@@ -131,7 +131,10 @@ export async function recordItemReturn(orderId: string, input: RecordItemReturnI
         if (got !== l.quantity) throw AppError.conflict("These items were returned by another request just now — reload the order");
       }
       replenished = released.replenished;
-      const writeOffs = lines.filter((l) => l.writtenOff > 0).map((l) => ({ variantId: byId.get(l.orderItemId)!.variantId, quantity: l.writtenOff }));
+      const recordedCost = new Map((await tx.orderItem.findMany({ where: { orderId }, select: { id: true, unitCostSnapshot: true } })).map((i) => [i.id, i.unitCostSnapshot]));
+      const writeOffs = lines
+        .filter((l) => l.writtenOff > 0)
+        .map((l) => ({ variantId: byId.get(l.orderItemId)!.variantId, quantity: l.writtenOff, unitCostMinor: recordedCost.get(l.orderItemId) ?? null }));
       await writeOffReturnedUnits(tx, order.orderNumber, writeOffs, { adminId, note: input.reason });
 
       const value = lines.reduce((n, l) => n + m(l.value).amount, 0);

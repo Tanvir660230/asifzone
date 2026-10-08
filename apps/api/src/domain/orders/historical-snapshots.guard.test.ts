@@ -29,7 +29,10 @@ describe("historical order-line snapshots — guard", () => {
     const offenders = files(SRC)
       .map((f) => relative(SRC, f).replace(/\\/g, "/"))
       // The writer; the loader maps DB rows onto the engine's LineFact; the fixture builds in-memory facts for tests.
-      .filter((f) => !["domain/orders/line-snapshots.ts", "domain/metrics/facts.repository.ts", "lib/metrics-facts.fixture.ts"].includes(f))
+      // Phase 4B (docs/FINANCE_PHASE_4.md §9): the costing service gives a COSTED line its unit cost at its stock exit — the
+      // moving average, in the line's own creating transaction — and a database trigger proves it equals the exit's
+      // valuation. It is the one other assigner; nothing else may write the snapshot columns.
+      .filter((f) => !["domain/orders/line-snapshots.ts", "domain/metrics/facts.repository.ts", "lib/metrics-facts.fixture.ts", "domain/finance/costing.service.ts"].includes(f))
       .filter((f) => {
         const text = code(join(SRC, f));
         if (!SNAPSHOT_COLUMNS.test(text)) return false;

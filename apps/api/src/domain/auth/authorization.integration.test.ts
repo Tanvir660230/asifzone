@@ -455,7 +455,7 @@ describe("customer ownership", () => {
 
 describe("sensitive data never reaches a customer", () => {
   const STAFF_ONLY = ["adminNotes", "callAttempts", "followUpAt", "courierSyncError", "courierBookingStartedAt", "idempotencyKey", "paymentSessionKey", "sessionId", "deletedAt", "deletedByAdminId", "partialDeliveryReconciledAt", "couponReleasedAt"];
-  const ITEM_INTERNAL = ["unitCostSnapshot", "productIdSnapshot", "categoryIdSnapshot", "categoryNameSnapshot", "brandSnapshot", "flashSaleId", "flashSaleItemId", "restockedQuantity"];
+  const ITEM_INTERNAL = ["unitCostSnapshot", "unitCostSource", "costMovementId", "productIdSnapshot", "categoryIdSnapshot", "categoryNameSnapshot", "brandSnapshot", "flashSaleId", "flashSaleItemId", "restockedQuantity"];
 
   function expectCustomerSafe(order: Record<string, unknown>, where: string) {
     for (const f of STAFF_ONLY) expect(order, `${where}: ${f}`).not.toHaveProperty(f);

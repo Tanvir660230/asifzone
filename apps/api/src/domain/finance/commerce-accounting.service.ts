@@ -411,7 +411,7 @@ async function scanStock(tx: AppTransactionClient, ctx: FinanceContext, since: D
   const from = since && since > openingStart ? since : openingStart;
   const moves = await tx.stockMovement.findMany({
     where: { orderId: null, reason: { in: ["RESTOCK", "IMPORT", "ADJUSTMENT", "DAMAGED", "LOST"] }, createdAt: { gte: from } },
-    select: { id: true, variantId: true, change: true, reason: true, note: true, createdAt: true, variant: { select: { sku: true, costPrice: true, product: { select: { name: true, costPrice: true } } } } },
+    select: { id: true, variantId: true, change: true, reason: true, note: true, createdAt: true, valuationEntry: { select: { valuationStatus: true } }, variant: { select: { sku: true, costPrice: true, product: { select: { name: true, costPrice: true } } } } },
     orderBy: { createdAt: "asc" },
     take: 2000,
   });
@@ -419,6 +419,9 @@ async function scanStock(tx: AppTransactionClient, ctx: FinanceContext, since: D
   for (const m of moves) {
     if (m.change === 0 || businessDate(m.createdAt, ctx.business.timezone) < ctx.business.openingDate!) continue;
     if (m.reason === "DAMAGED" && (m.note ?? "").startsWith("Returned damaged — order")) continue;
+    // Phase 4B: a movement the costing engine valued is booked by its `inventory.valued` posting — only an unvalued one
+    // (no cost ever known) is still an exception here.
+    if (m.valuationEntry && m.valuationEntry.valuationStatus !== "MISSING") continue;
     const unit = toMinor(m.variant.costPrice ?? m.variant.product.costPrice ?? 0, ctx.business.baseCurrency);
     const receipt = m.change > 0;
     await upsertException(tx, ctx.business, ctx.brand.id, {

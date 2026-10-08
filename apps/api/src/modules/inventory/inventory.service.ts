@@ -5,11 +5,18 @@ import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { notifyBackInStock } from "../stock-alerts/stock-alert.service";
 import { captureError } from "../../lib/observability/error-capture";
+import { randomUUID } from "node:crypto";
+import { activeCostingInTx, valueStockMovementsInTx, type CostingScope, type MovementToValue, type StoredPosition, type VariantCosting } from "../../domain/finance/costing.service";
 
 /** The ONLY application code allowed to change `ProductVariant.stock` or write `StockMovement` rows
  * (docs/INVENTORY_INVARIANTS.md; enforced by inventory-writer.guard.test.ts). Every change is a relative,
  * guarded update written in the same transaction as its ledger row, so `stock = Σ movements` holds. Order-
- * linked releases are idempotent per order line through `OrderItem.restockedQuantity`. */
+ * linked releases are idempotent per order line through `OrderItem.restockedQuantity`.
+ *
+ * Phase 4B (docs/FINANCE_PHASE_4.md §9): quantity stays here; VALUE is the costing service's. Every movement written below
+ * is handed, in the same transaction, to costing.service.valueStockMovementsInTx — which values it when its variant is
+ * costed (and does nothing otherwise). Order exits carry the unit cost determined at the exit (the order line's snapshot);
+ * order releases carry each line's own snapshot; manual changes are valued at the running average. */
 
 type Tx = Prisma.TransactionClient;
 
@@ -54,6 +61,13 @@ function movement(variantId: string, change: number, reason: MovementReason, act
   return { variantId, change, reason, orderId: orderId ?? null, adminId: actor.adminId ?? null, note: actor.note ?? null };
 }
 
+type MovementRow = { id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date };
+
+/** Hands movements just written to the costing service (same transaction — the stock change and its value are atomic). */
+async function value(tx: Tx, items: Array<{ movement: MovementRow; basis: MovementToValue["basis"]; ledger: MovementToValue["ledger"] }>, scope?: CostingScope | null, known?: Map<string, VariantCosting>) {
+  return valueStockMovementsInTx(tx, items.map((i) => ({ movement: i.movement, basis: i.basis, ledger: i.ledger })), scope, known);
+}
+
 /** Fire-and-forget back-in-stock emails for variants that just went from 0 to positive. Call after commit. */
 export function notifyReplenished(variantIds: string[]): void {
   for (const id of new Set(variantIds)) {
@@ -77,9 +91,15 @@ export interface SaleResult {
 export async function recordSale(
   tx: Tx,
   orderId: string,
-  items: Array<{ variantId: string; quantity: number }>,
+  /** `orderItemIds`: the order lines this exit is for (Phase 4B). For a costed variant the cost is determined under the
+   * stock row lock taken by the decrement below and written to exactly these lines with the link to the exit — a costed
+   * exit without its lines is refused, so an order can't commit a costed exit whose lines don't carry its cost. */
+  items: Array<{ variantId: string; quantity: number; orderItemIds?: string[] }>,
   opts: { allowOversell?: boolean; untrackedVariantIds?: Set<string> } & Actor = {},
 ): Promise<SaleResult> {
+  // Whether costing is active needs no lock: read it before the decrement, so the row lock covers only the stock change and
+  // the cost determination that depends on it.
+  const scope = await activeCostingInTx(tx);
   const oversold: string[] = [];
   const stockAfter = new Map<string, number>();
   // Distinct variant rows are independent — run the guarded decrements concurrently (checkout latency).
@@ -95,7 +115,32 @@ export async function recordSale(
     }
     stockAfter.set(item.variantId, after);
   }
-  await tx.stockMovement.createMany({ data: items.map((item) => movement(item.variantId, -item.quantity, "ORDER", opts, orderId)) });
+  if (!scope) {
+    await tx.stockMovement.createMany({ data: items.map((item) => movement(item.variantId, -item.quantity, "ORDER", opts, orderId)) });
+    return { oversold, stockAfter };
+  }
+  // One statement, run while this transaction holds the rows' locks (taken by the decrements above): writes the ORDER
+  // movements and returns each variant's costing facts with a snapshot taken after the locks — no other transaction can
+  // change a locked variant's position, so it is current. The costing service then values every exit in one call.
+  const rows = await tx.$queryRaw<Array<{ id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date; variantCreatedAt: Date; trackInventory: boolean; hasState: boolean } & StoredPosition>>`
+    WITH mv AS (
+      INSERT INTO "StockMovement" (id, "variantId", change, reason, "orderId", "adminId", note, "createdAt")
+      SELECT x.id, x."variantId", x.change, 'ORDER'::"StockMovementReason", ${orderId}, ${opts.adminId ?? null}, ${opts.note ?? null}, (NOW() AT TIME ZONE 'UTC')
+      FROM jsonb_to_recordset(${JSON.stringify(items.map((item) => ({ id: randomUUID(), variantId: item.variantId, change: -item.quantity })))}::jsonb) AS x(id text, "variantId" text, change int)
+      RETURNING id, "variantId", change, reason::text AS reason, "orderId", "createdAt"
+    )
+    SELECT mv.*, v."createdAt" AS "variantCreatedAt", p."trackInventory", s."variantId" IS NOT NULL AS "hasState",
+           s."valuedQty", s.value, s."avgUnitCost", s."unvaluedQty", s."deficitQty", s."deficitLayers"
+    FROM mv JOIN "ProductVariant" v ON v.id = mv."variantId" JOIN "Product" p ON p.id = v."productId"
+    LEFT JOIN "InventoryCostState" s ON s."variantId" = mv."variantId"`;
+  const known = new Map<string, VariantCosting>(rows.map((r) => [r.variantId, { trackInventory: r.trackInventory, variantCreatedAt: r.variantCreatedAt, hasState: r.hasState, position: r.hasState ? r : null }]));
+  const byVariant = new Map(rows.map((r) => [r.variantId, r]));
+  await value(
+    tx,
+    items.map((item) => ({ movement: byVariant.get(item.variantId)!, basis: { kind: "ORDER_EXIT" as const, orderItemIds: item.orderItemIds ?? [] }, ledger: "ORDER" as const })),
+    scope,
+    known,
+  );
   return { oversold, stockAfter };
 }
 
@@ -116,7 +161,7 @@ export async function releaseOrderLines(
   kind: "release" | "return",
   opts: Actor & { lines?: Array<{ orderItemId: string; quantity: number }> } = {},
 ): Promise<{ released: ReleasedLine[]; replenished: string[] }> {
-  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, quantity: true, restockedQuantity: true } });
+  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, quantity: true, restockedQuantity: true, unitCostSnapshot: true } });
   const requested = opts.lines ? new Map(opts.lines.map((l) => [l.orderItemId, l.quantity])) : null;
   const released: ReleasedLine[] = [];
   const replenished: string[] = [];
@@ -142,7 +187,9 @@ export async function releaseOrderLines(
     // to go, but the line is still marked released so no later path retries it.
     const after = await applyDelta(tx, item.variantId, amount, false);
     if (after === null) continue;
-    await tx.stockMovement.create({ data: movement(item.variantId, amount, kind === "return" ? "RETURN" : "CANCELLATION", opts, orderId) });
+    const mv = await tx.stockMovement.create({ data: movement(item.variantId, amount, kind === "return" ? "RETURN" : "CANCELLATION", opts, orderId) });
+    // The units come back at the cost they left at — this line's own snapshot, never today's average.
+    await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: item.unitCostSnapshot }, ledger: "ORDER" }]);
     released.push({ orderItemId: item.id, variantId: item.variantId, quantity: amount });
     if (after - amount <= 0 && after > 0) replenished.push(item.variantId);
   }
@@ -153,13 +200,20 @@ export async function releaseOrderLines(
  * go away (the modification record keeps what they were), so the units are put back as a CANCELLATION movement on the
  * order — never through `restockedQuantity`, which tracks units released from lines that still exist. INV-3 holds per
  * line: −quantity(after) = −quantity(before) + released. The caller writes the line change in the same transaction. */
-export async function releaseModifiedUnits(tx: Tx, orderId: string, units: Array<{ variantId: string; quantity: number }>, actor: Actor = {}): Promise<string[]> {
+export async function releaseModifiedUnits(
+  tx: Tx,
+  orderId: string,
+  /** `lines`: which order lines the units come from, with each line's recorded unit cost (Phase 4B: they come back at it). */
+  units: Array<{ variantId: string; quantity: number; lines: Array<{ quantity: number; unitCostMinor: number | null }> }>,
+  actor: Actor = {},
+): Promise<string[]> {
   const replenished: string[] = [];
   for (const u of units) {
     if (u.quantity <= 0) continue;
     const after = await applyDelta(tx, u.variantId, u.quantity, false);
     if (after === null) continue; // the variant was hard-deleted since: nothing to put back
-    await tx.stockMovement.create({ data: movement(u.variantId, u.quantity, "CANCELLATION", actor, orderId) });
+    const mv = await tx.stockMovement.create({ data: movement(u.variantId, u.quantity, "CANCELLATION", actor, orderId) });
+    await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT_LINES", lines: u.lines }, ledger: "ORDER" }]);
     if (after - u.quantity <= 0 && after > 0) replenished.push(u.variantId);
   }
   return replenished;
@@ -169,12 +223,19 @@ export async function releaseModifiedUnits(tx: Tx, orderId: string, units: Array
  * straight out again as DAMAGED — so the ledger shows both what came back and what could not be resold. The write-off is
  * not attributed to the order (orderId null, the order number is in the note): INV-3 keeps an order's own movements equal
  * to −(quantity − restocked) per variant. */
-export async function writeOffReturnedUnits(tx: Tx, orderNumber: string, units: Array<{ variantId: string; quantity: number }>, actor: Actor = {}) {
+export async function writeOffReturnedUnits(
+  tx: Tx,
+  orderNumber: string,
+  /** `unitCostMinor`: the returned line's recorded unit cost — the write-off leaves at it (Phase 3 books it at the same cost). */
+  units: Array<{ variantId: string; quantity: number; unitCostMinor: number | null }>,
+  actor: Actor = {},
+) {
   for (const u of units) {
     if (u.quantity <= 0) continue;
     const after = await applyDelta(tx, u.variantId, -u.quantity, false);
     if (after === null) continue;
-    await tx.stockMovement.create({ data: movement(u.variantId, -u.quantity, "DAMAGED", { ...actor, note: `Returned damaged — order ${orderNumber}${actor.note ? `: ${actor.note}` : ""}` }) });
+    const mv = await tx.stockMovement.create({ data: movement(u.variantId, -u.quantity, "DAMAGED", { ...actor, note: `Returned damaged — order ${orderNumber}${actor.note ? `: ${actor.note}` : ""}` }) });
+    await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: u.unitCostMinor }, ledger: "ORDER" }]);
   }
 }
 
@@ -193,7 +254,7 @@ export async function stockShortfalls(tx: Tx, units: Array<{ variantId: string; 
 /** Restoring a pre-shipment order from Trash takes back the units released when it was trashed. All-or-nothing:
  * if any line's stock has since been sold, nothing changes and a 409 explains why. */
 export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor = {}): Promise<void> {
-  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, restockedQuantity: true, returnedQuantity: true } });
+  const items = await tx.orderItem.findMany({ where: { orderId }, select: { id: true, variantId: true, restockedQuantity: true, returnedQuantity: true, unitCostSnapshot: true } });
   for (const item of items) {
     const amount = item.restockedQuantity - item.returnedQuantity;
     if (amount <= 0) continue;
@@ -202,7 +263,10 @@ export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor 
       throw AppError.conflict("Not enough stock to restore this order — its items have been sold since it was trashed. Adjust stock first.");
     }
     await tx.orderItem.update({ where: { id: item.id }, data: { restockedQuantity: { decrement: amount } } });
-    await tx.stockMovement.create({ data: movement(item.variantId, -amount, "ORDER", actor, orderId) });
+    const mv = await tx.stockMovement.create({ data: movement(item.variantId, -amount, "ORDER", actor, orderId) });
+    // Undoes the trash release, which brought these units back at this line's cost: they leave at it again (a compensating
+    // entry), so the line's recorded cost stays the cost of every one of its units.
+    await value(tx, [{ movement: mv, basis: { kind: "SNAPSHOT", unitCostMinor: item.unitCostSnapshot }, ledger: "ORDER" }]);
   }
 }
 
@@ -212,7 +276,8 @@ export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor 
 export async function recordInitialStock(tx: Tx, variantId: string, quantity: number, reason: "RESTOCK" | "IMPORT", actor: Actor = {}) {
   if (quantity <= 0) return;
   await applyDelta(tx, variantId, quantity, false);
-  await tx.stockMovement.create({ data: movement(variantId, quantity, reason, actor) });
+  const mv = await tx.stockMovement.create({ data: movement(variantId, quantity, reason, actor) });
+  await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
 }
 
 /** A product-form stock edit as compare-and-set (docs/INVENTORY_INVARIANTS.md rule 6). `expected` is the value
@@ -229,7 +294,8 @@ export async function setVariantStockFromForm(tx: Tx, variantId: string, desired
   }
   const delta = desired - current;
   await applyDelta(tx, variantId, delta, true);
-  await tx.stockMovement.create({ data: movement(variantId, delta, "ADJUSTMENT", actor) });
+  const mv = await tx.stockMovement.create({ data: movement(variantId, delta, "ADJUSTMENT", actor) });
+  await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
   return delta;
 }
 
@@ -240,7 +306,8 @@ export async function setVariantStockCount(tx: Tx, variantId: string, counted: n
   const delta = counted - current;
   if (delta === 0) return 0;
   await applyDelta(tx, variantId, delta, false);
-  await tx.stockMovement.create({ data: movement(variantId, delta, reason, actor) });
+  const mv = await tx.stockMovement.create({ data: movement(variantId, delta, reason, actor) });
+  await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
   return delta;
 }
 
@@ -250,7 +317,8 @@ export async function zeroVariantStock(tx: Tx, variantIds: string[], actor: Acto
     const current = await lockStock(tx, variantId);
     if (!current) continue;
     await applyDelta(tx, variantId, -current, false);
-    await tx.stockMovement.create({ data: movement(variantId, -current, "ADJUSTMENT", actor) });
+    const mv = await tx.stockMovement.create({ data: movement(variantId, -current, "ADJUSTMENT", actor) });
+    await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
   }
 }
 
@@ -269,7 +337,10 @@ export async function adjustVariantStock(variantId: string, delta: number, reaso
       const exists = await tx.productVariant.count({ where: { id: variantId } });
       throw exists ? AppError.conflict("Stock cannot go below zero") : AppError.notFound("Variant not found");
     }
-    await tx.stockMovement.create({ data: movement(variantId, delta, reason, { adminId, note }) });
+    const mv = await tx.stockMovement.create({ data: movement(variantId, delta, reason, { adminId, note }) });
+    // Manual adjustments are valued at the running average (a gain labelled ESTIMATED, or unvalued when no cost was ever
+    // known) and booked against shrinkage / count adjustments — never as a purchase.
+    await value(tx, [{ movement: mv, basis: { kind: "AVERAGE" }, ledger: "MOVEMENT" }]);
     return { variant: await tx.productVariant.findUniqueOrThrow({ where: { id: variantId } }), replenished: after - delta <= 0 && after > 0 };
   });
   if (replenished) notifyReplenished([variantId]);

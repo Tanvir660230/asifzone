@@ -42,6 +42,8 @@ export { registerPostingRule, postingRuleKeys, unregisterPostingRuleForTests, ty
 import { RULES } from "./posting-rules";
 // Phase 3: the commerce posting rules register on load.
 import "./commerce-posting-rules";
+// Phase 4B: inventory valuation postings.
+import "./inventory-posting-rules";
 
 // ── recording ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
