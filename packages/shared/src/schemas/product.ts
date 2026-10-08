@@ -178,13 +178,27 @@ export const updateProductSchema = baseProductSchema.partial().extend({
   variants: z.array(variantUpdateWithRules).min(1, "At least one variant is required").optional(),
 });
 
+/** Admin product list (Blueprint V2 P4): stock state over a product's active variants — out = none in stock, low = some
+ * variant at or below the product's low-stock threshold (or out while others aren't). */
+export const productStockFilterEnum = z.enum(["out", "low"]);
+export const productListSortEnum = z.enum(["newest", "updated", "name", "price", "-price"]);
+
 export const productListQuerySchema = paginationQuerySchema.extend({
   categoryId: z.string().cuid().optional(),
   status: productStatusEnum.optional(),
   typeId: z.string().min(1).optional(),
   search: z.string().min(1).max(200).optional(),
   trashed: z.coerce.boolean().optional(),
+  stock: productStockFilterEnum.optional(),
+  sort: productListSortEnum.default("newest"),
 });
+
+/** What the admin list adds to each product: how complete it is (the editor's meter) and its stock state. */
+export interface ProductListExtras {
+  completeness: { score: number; missing: string[] } | null;
+  stockState: "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK" | "UNLIMITED";
+  totalStock: number;
+}
 
 export const updateImageAltTextSchema = z.object({ altText: z.string().min(1).max(300) });
 

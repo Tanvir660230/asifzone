@@ -8,13 +8,14 @@ import { z } from "zod";
  *   view  saved/system view id   size  page size           cmp        comparison period
  *   f.*   one filter per key     sort  `col` / `-col`      gran       granularity (day / week / month)
  *   tab   in-page tab            open  open drawer/record  step       editor step (Product Builder)
+ *   layout  list / grid display of a list
  *
  * Pure: parse and serialise against a schema of typed fields built from zod. A bad value in a link falls back to the
  * field's default instead of breaking the page; a value equal to its default is left out of the URL. Keys the schema
  * doesn't own are preserved untouched. The React binding is hooks/use-url-state.ts.
  */
 
-export const URL_STATE_KEYS = ["q", "view", "sort", "page", "size", "tab", "from", "to", "cmp", "gran", "open", "step"] as const;
+export const URL_STATE_KEYS = ["q", "view", "sort", "page", "size", "tab", "from", "to", "cmp", "gran", "open", "step", "layout"] as const;
 export type ReservedUrlKey = (typeof URL_STATE_KEYS)[number];
 export type UrlStateKey = ReservedUrlKey | `f.${string}`;
 
@@ -110,7 +111,7 @@ export type UrlAliases<S extends UrlSchema> = Partial<Record<keyof S, string>>;
 
 export function assertUrlSchema(schema: UrlSchema): void {
   for (const key of Object.keys(schema)) {
-    if (!isUrlStateKey(key)) throw new Error(`[url-state] "${key}" is not part of the URL-state grammar (q, view, f.*, sort, page, size, tab, from, to, cmp, gran, open, step)`);
+    if (!isUrlStateKey(key)) throw new Error(`[url-state] "${key}" is not part of the URL-state grammar (q, view, f.*, sort, page, size, tab, from, to, cmp, gran, open, step, layout)`);
   }
 }
 

@@ -8,6 +8,7 @@ import type {
   DuplicateProductResult,
   ProductImportReport,
   ProductImportResult,
+  ProductListExtras,
 } from "@clothing-brand/shared";
 import { apiFetch, apiUploadWithProgress } from "../api-client";
 import { apiBaseUrl } from "../runtime-config";
@@ -20,6 +21,8 @@ export interface ProductListParams {
   trashed?: boolean;
   status?: ProductStatus;
   typeId?: string;
+  stock?: "low" | "out";
+  sort?: "newest" | "updated" | "name" | "price" | "-price";
 }
 
 export function listProducts(params: ProductListParams = {}) {
@@ -31,8 +34,10 @@ export function listProducts(params: ProductListParams = {}) {
   if (params.trashed) query.set("trashed", "true");
   if (params.status) query.set("status", params.status);
   if (params.typeId) query.set("typeId", params.typeId);
+  if (params.stock) query.set("stock", params.stock);
+  if (params.sort && params.sort !== "newest") query.set("sort", params.sort);
 
-  return apiFetch<PaginatedResult<Product>>(`/api/products?${query.toString()}`);
+  return apiFetch<PaginatedResult<Product & ProductListExtras>>(`/api/products?${query.toString()}`);
 }
 
 export function getProduct(id: string) {

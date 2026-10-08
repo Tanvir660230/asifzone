@@ -37,6 +37,7 @@ export const CAPABILITIES = {
   "catalog.view": { permission: "catalog.read" },
   "catalog.manage": { permission: "catalog.manage" },
   "catalog.configure": { permission: "catalog.configure" },
+  "catalog.purge": { permission: "catalog.purge" },
   "products.import": { permission: "products.import" },
   "inventory.view": { permission: "inventory.read" },
   "inventory.adjust": { permission: "inventory.adjust" },

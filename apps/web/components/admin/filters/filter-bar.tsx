@@ -25,6 +25,7 @@ export function FilterBar({
   searchPlaceholder = "Search",
   onClearAll,
   actions,
+  leading,
 }: {
   defs: readonly FilterDefinition[];
   values: FilterValues;
@@ -35,6 +36,8 @@ export function FilterBar({
   onClearAll: () => void;
   /** Right-aligned controls (page size, export). */
   actions?: ReactNode;
+  /** Controls before the search (e.g. a list's Products / Trash switch) — one control row instead of two. */
+  leading?: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
@@ -49,6 +52,7 @@ export function FilterBar({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
+        {leading}
         {onSearchChange && (
           <SearchInput value={search ?? ""} onChange={onSearchChange} placeholder={searchPlaceholder} data-page-search="" wrapperClassName="w-full sm:w-72" />
         )}
@@ -68,9 +72,16 @@ export function FilterBar({
         {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
 
-      {quick.map((def) => (
-        <div key={def.key} role="group" aria-label={def.label} className="flex flex-wrap items-center gap-1">
-          {filterOptions(def, values).map((option) => {
+      {quick.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {quick.map((def, i) => (
+            <div key={def.key} role="group" aria-label={def.label} className="flex flex-wrap items-center gap-1">
+              {i > 0 && <span className="mr-2 hidden h-4 w-px bg-ink-900/[0.1] sm:block" aria-hidden="true" />}
+              {/* A visible name for the group, so "Draft · Ready" and "Running low" read as filters, not text. */}
+              <span className="mr-1 text-[13px] font-medium text-fg-subtle" aria-hidden="true">
+                {def.label}
+              </span>
+              {filterOptions(def, values).map((option) => {
             const current = values[def.key];
             const on = Array.isArray(current) ? current.includes(option.value) : current === option.value;
             const next = def.kind === "multi" ? (on ? (current as string[]).filter((v) => v !== option.value) : [...((current as string[]) ?? []), option.value]) : on ? "" : option.value;
@@ -89,8 +100,10 @@ export function FilterBar({
               </button>
             );
           })}
+            </div>
+          ))}
         </div>
-      ))}
+      )}
 
       {chips.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5" aria-label="Active filters">

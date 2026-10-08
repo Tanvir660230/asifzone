@@ -27,6 +27,7 @@ import {
   type ProductStatus,
   type ResolvedAttributeField,
   type ResolvedTypeConfig,
+  variantStockState,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
@@ -458,8 +459,58 @@ async function logSearch(query: string, resultCount: number, suggestion?: string
   }
 }
 
+/** Product stock state over its active variants (the inventory page's rule, variantStockState, rolled up). */
+function productStockState(p: { trackInventory: boolean; lowStockThreshold: number; variants: { stock: number; isActive: boolean }[] }) {
+  const active = p.variants.filter((v) => v.isActive);
+  const totalStock = active.reduce((sum, v) => sum + Math.max(v.stock, 0), 0);
+  if (!p.trackInventory) return { stockState: "UNLIMITED" as const, totalStock };
+  const states = active.map((v) => variantStockState(true, v.stock, p.lowStockThreshold));
+  if (states.length === 0 || states.every((s) => s === "OUT_OF_STOCK")) return { stockState: "OUT_OF_STOCK" as const, totalStock };
+  if (states.some((s) => s !== "IN_STOCK")) return { stockState: "LOW_STOCK" as const, totalStock };
+  return { stockState: "IN_STOCK" as const, totalStock };
+}
+
+/** "low": tracked, something in stock, and some active variant at or below the product's threshold (a column compare,
+ * so SQL). The ids feed the list's where clause. */
+async function lowStockProductIds(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT p.id FROM "Product" p
+    WHERE p."trackInventory"
+      AND EXISTS (SELECT 1 FROM "ProductVariant" v WHERE v."productId" = p.id AND v."isActive" AND v.stock > 0)
+      AND EXISTS (SELECT 1 FROM "ProductVariant" v WHERE v."productId" = p.id AND v."isActive" AND v.stock <= p."lowStockThreshold")`;
+  return rows.map((r) => r.id);
+}
+
+const LIST_ORDER: Record<NonNullable<ProductListQuery["sort"]>, Prisma.ProductOrderByWithRelationInput[]> = {
+  newest: [{ createdAt: "desc" }],
+  updated: [{ updatedAt: "desc" }],
+  name: [{ name: "asc" }],
+  price: [{ basePrice: "asc" }, { name: "asc" }],
+  "-price": [{ basePrice: "desc" }, { name: "asc" }],
+};
+
+/** Completeness of one page of products — the editor's meter, from the same detail read the editor uses. */
+async function completenessForPage(ids: string[]) {
+  if (ids.length === 0) return new Map<string, { score: number; missing: string[] }>();
+  const rows = await prisma.product.findMany({ where: { id: { in: ids } }, include: detailInclude });
+  const out = new Map<string, { score: number; missing: string[] }>();
+  for (const row of rows) {
+    const { presented, config } = await presentWithConfig(row);
+    const result = completenessOf(presented, config);
+    out.set(row.id, { score: result.score, missing: result.checks.filter((c) => c.status === "missing").map((c) => c.label) });
+  }
+  return out;
+}
+
 export async function listProducts(query: ProductListQuery) {
+  const stockWhere: Prisma.ProductWhereInput =
+    query.stock === "out"
+      ? { trackInventory: true, variants: { none: { isActive: true, stock: { gt: 0 } } } }
+      : query.stock === "low"
+        ? { id: { in: await lowStockProductIds() } }
+        : {};
   const where = {
+    ...stockWhere,
     deletedAt: query.trashed ? { not: null } : null,
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
     ...(query.status ? { status: query.status } : {}),
@@ -477,11 +528,16 @@ export async function listProducts(query: ProductListQuery) {
       : {}),
   };
 
-  return paginate(
+  const result = await paginate(
     query,
-    (p) => prisma.product.findMany({ where, include: { ...include, type: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, ...p }),
+    (p) => prisma.product.findMany({ where, include: { ...include, type: { select: { id: true, name: true } } }, orderBy: LIST_ORDER[query.sort ?? "newest"], ...p }),
     () => prisma.product.count({ where }),
   );
+  const completeness = await completenessForPage(result.items.map((p) => p.id));
+  return {
+    ...result,
+    items: result.items.map((p) => ({ ...p, ...productStockState(p), completeness: completeness.get(p.id) ?? null })),
+  };
 }
 
 export async function getProductById(id: string) {
