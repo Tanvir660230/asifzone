@@ -15,6 +15,7 @@ import {
   refreshSteadfastStatus,
   unlinkCourierBooking,
 } from "../courier/courier.service";
+import { can } from "../../domain/auth/authorization";
 
 /** The Idempotency-Key header (PRICING_INVARIANTS §11): printable, bounded, or absent. */
 export function idempotencyKeyOf(req: Request): string | null {
@@ -103,7 +104,13 @@ export const bulkGet = asyncHandler(async (req: Request, res: Response) => {
   res.json({ orders: await orderService.getOrdersByIds(req.body.ids) });
 });
 
+/** DR-5: a move to Cancelled also needs orders.cancel (the route already required orders.manage). */
+function assertMayCancel(req: Request, status: unknown) {
+  if (status === "CANCELLED" && !can(req.admin!, "orders.cancel")) throw AppError.forbidden("You don't have permission to cancel orders");
+}
+
 export const updateStatus = asyncHandler(async (req: Request, res: Response) => {
+  assertMayCancel(req, req.body.status);
   res.json({ order: await orderService.updateOrderStatus(req.params.id!, req.body, req.admin!.adminId) });
 });
 
@@ -152,6 +159,7 @@ export const exportCsv = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const bulkStatus = asyncHandler(async (req: Request, res: Response) => {
+  assertMayCancel(req, req.body.status);
   res.json(await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId, req.body.note));
 });
 

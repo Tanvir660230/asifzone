@@ -236,7 +236,7 @@ const cancelOrder: ExecuteTool = {
   kind: "execute",
   name: "cancel_order",
   description: "Prepares cancelling one order (needs a reason the customer-facing team would accept). It is NOT cancelled until an admin confirms the proposal.",
-  permission: "orders.manage",
+  permission: "orders.cancel",
   schema: z.object({ orderNumber: z.string().min(3).max(40), reason: z.string().trim().min(3).max(300) }),
   inputSchema: {
     type: "object",

@@ -25,6 +25,7 @@ export const CAPABILITIES = {
   // orders & money
   "orders.view": { permission: "orders.read" },
   "orders.manage": { permission: "orders.manage" },
+  "orders.cancel": { permission: "orders.cancel" },
   "orders.adjustPrice": { permission: "orders.adjust_price" },
   "orders.export": { permission: "orders.export" },
   "orders.trash": { permission: "orders.delete" },

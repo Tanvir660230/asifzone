@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { ChevronDown, MoreHorizontal, Printer, RefreshCw, RotateCcw, ShieldCheck, Trash2, Truck, X } from "lucide-react";
-import { allowedNextOrderStatuses, type AdminOrderListItem, type OrderStatus } from "@clothing-brand/shared";
+import type { AdminOrderListItem, OrderStatus } from "@clothing-brand/shared";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -10,7 +10,7 @@ import { Popover } from "@/components/ui/popover";
 import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { orderStatusLabel } from "@/lib/format";
-import { ORDER_STATUSES, type OrderPermissions } from "./order-domain";
+import { ORDER_STATUSES, nextStatusesFor, type OrderPermissions } from "./order-domain";
 import type { OrderCommands } from "./use-order-commands";
 
 /** Bulk actions for the selected orders, on the shared BulkActionBar. Every action reports per-order results. */
@@ -35,9 +35,9 @@ export function OrdersBulkBar({
   // Only statuses at least one selected order may legally move to, with how many can.
   const reachable = useMemo(() => {
     const counts = new Map<OrderStatus, number>();
-    for (const o of orders) for (const s of allowedNextOrderStatuses(o.status)) counts.set(s, (counts.get(s) ?? 0) + 1);
+    for (const o of orders) for (const s of nextStatusesFor(o.status, perms)) counts.set(s, (counts.get(s) ?? 0) + 1);
     return ORDER_STATUSES.filter((s) => counts.has(s)).map((s) => ({ status: s, count: counts.get(s)! }));
-  }, [orders]);
+  }, [orders, perms]);
 
   const more: DropdownMenuItem[] = [
     ...(perms.courier ? [{ label: "Sync courier status", icon: RefreshCw, onClick: () => commands.bulkSync(orders), disabled: commands.pending.sync }] : []),

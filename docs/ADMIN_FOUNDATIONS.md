@@ -76,6 +76,9 @@ excluded), and Home is interactive in ≤ 2.5 s on a mid-range phone over 4G.
   customers and the builder) don't prefetch it; the admin layout fetches `/api/auth/me` and the provider capabilities
   on the server with the admin's cookie (lib/admin/session-prefetch.ts, best effort, 1.5 s cap), so
   permission-gated queries start on hydration instead of one round trip later.
+- PERF-03 (Home composite request): the attention counts — the part Home and the sidebar poll — are one composite
+  (`/api/v1/admin/attention`), charts and tables wait for it (`belowFold`), and the session arrives with the page. The
+  remaining ~5 first-screen reads run in parallel over HTTP/2 and Home is inside budget, so no second composite was added.
 - Not yet done: the root layout preloads the storefront's display font (105 KB) on admin pages too; it only
   matters on Slow 4G.
 

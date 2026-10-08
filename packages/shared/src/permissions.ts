@@ -26,6 +26,7 @@ export const PERMISSIONS = [
   // orders & money
   "orders.read",
   "orders.manage", // manual order, status, details, follow-up, partial-delivery reconcile
+  "orders.cancel", // DR-5: cancelling moves stock and money — its own permission (OWNER and STAFF, owner 2026-10-08)
   "orders.adjust_price",
   "orders.export",
   "orders.delete", // delete / restore / permanent

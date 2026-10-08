@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { attentionKeys } from "@/lib/query-keys";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import {
+  allowedNextOrderStatuses,
   orderStatusEnum,
   type Order,
   type OrderStatus,
@@ -63,6 +64,7 @@ export function useOrderPermissions() {
     /** False until the admin profile has loaded — don't show "not allowed" states before then. */
     ready,
     manage: can("orders.manage"),
+    cancel: can("orders.cancel"),
     adjustPrice: can("orders.adjustPrice"),
     exportCsv: can("orders.export"),
     trash: can("orders.trash"),
@@ -74,6 +76,11 @@ export function useOrderPermissions() {
   };
 }
 export type OrderPermissions = ReturnType<typeof useOrderPermissions>;
+
+/** The moves this admin may offer from `status`: the state machine's, minus Cancelled without orders.cancel (DR-5). */
+export function nextStatusesFor(status: OrderStatus, perms: { cancel: boolean }): OrderStatus[] {
+  return allowedNextOrderStatuses(status).filter((s) => s !== "CANCELLED" || perms.cancel);
+}
 
 type OrderFacts = Pick<
   Order,

@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, ChevronDown, ExternalLink, FileText, MoreHorizontal, Printer, RotateCcw, Trash2 } from "lucide-react";
-import { allowedNextOrderStatuses, primaryOrderAction, type Order } from "@clothing-brand/shared";
+import { primaryOrderAction, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { BackLink } from "@/components/ui/back-link";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatStoreDateTime, orderStatusLabel } from "@/lib/format";
 import { OrderStatusBadge, PaymentBadges } from "../order-badges";
 import { OrderProgress } from "./order-progress";
-import type { OrderPermissions } from "../order-domain";
+import { nextStatusesFor, type OrderPermissions } from "../order-domain";
 import type { OrderCommands } from "../use-order-commands";
 
 
@@ -40,7 +40,7 @@ export function DetailHeader({
   const deleted = Boolean(order.deletedAt);
   const canChangeStatus = perms.manage && !deleted;
   const { primary, show: canPrimary, run: runPrimary } = usePrimaryOrderAction(order, perms, commands);
-  const allowed = canChangeStatus ? allowedNextOrderStatuses(order.status) : [];
+  const allowed = canChangeStatus ? nextStatusesFor(order.status, perms) : [];
   const Heading = variant === "page" ? "h1" : "h2";
 
   const menu: DropdownMenuItem[] = !perms.trash

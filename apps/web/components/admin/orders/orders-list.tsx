@@ -21,7 +21,7 @@ import {
   Trash2,
   Truck,
 } from "lucide-react";
-import { allowedNextOrderStatuses, courierBookingBlocker, type AdminOrderListItem, type OrderListItemSummary } from "@clothing-brand/shared";
+import { courierBookingBlocker, type AdminOrderListItem, type OrderListItemSummary } from "@clothing-brand/shared";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -32,7 +32,7 @@ import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CourierCell, DeliveryScoreBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
-import { COURIER_PROVIDER_LABEL, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
+import { COURIER_PROVIDER_LABEL, nextStatusesFor, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
 import type { OrderCommands } from "./use-order-commands";
 import type { SortColumn } from "./use-orders-list-state";
 import { Thumbnail } from "@/components/admin/thumbnail";
@@ -116,10 +116,10 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
 }
 
 /** The status pill doubles as the status control: it lists only the moves the shared state machine allows from here. */
-function StatusPicker({ order, commands, canManage }: { order: AdminOrderListItem; commands: OrderCommands; canManage: boolean }) {
+function StatusPicker({ order, commands, canManage, canCancel }: { order: AdminOrderListItem; commands: OrderCommands; canManage: boolean; canCancel: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
-  const next = allowedNextOrderStatuses(order.status);
+  const next = nextStatusesFor(order.status, { cancel: canCancel });
   if (order.deletedAt || !canManage || next.length === 0) return <OrderStatusBadge status={order.status} short className="h-8" />;
   return (
     <>
@@ -350,7 +350,7 @@ export function OrdersList(props: OrdersListProps) {
                   {formatPrice(order.total)}
                 </TableCell>
                 <TableCell className="px-3 py-2.5">
-                  <StatusPicker order={order} commands={commands} canManage={perms.manage} />
+                  <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
                 </TableCell>
                 <TableCell className="px-3 py-2.5">
                   <CourierCell order={order} />
@@ -411,7 +411,7 @@ export function OrdersList(props: OrdersListProps) {
                 </div>
 
                 <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line-subtle pt-2.5">
-                  <StatusPicker order={order} commands={commands} canManage={perms.manage} />
+                  <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
                   <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
                   <span className="ml-auto">
                     <CourierCell order={order} compact />
