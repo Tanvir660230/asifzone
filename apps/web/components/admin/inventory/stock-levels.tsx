@@ -14,9 +14,9 @@ import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMess
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as inventoryApi from "@/lib/api/inventory";
 import { formatCount } from "@/lib/format";
-import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 import type { AdjustStockPrefill } from "@/components/admin/adjust-stock-modal";
+import { Thumbnail } from "@/components/admin/thumbnail";
 
 type State = StockLevelRow["state"];
 
@@ -129,8 +129,7 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
                     <span className="flex items-center gap-2.5">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-subtle bg-ink-50">
                         {r.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={resolveImageUrl(r.imageUrl)} alt="" loading="lazy" className="h-full w-full object-cover" />
+                          <Thumbnail src={r.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
                         ) : (
                           <Package size={14} className="text-ink-300" aria-hidden />
                         )}

@@ -31,10 +31,10 @@ import * as productsApi from "@/lib/api/products";
 import * as categoriesApi from "@/lib/api/categories";
 import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
-import { resolveImageUrl } from "@/lib/image-url";
 import { PRODUCT_NEW_HREF, productEditHref } from "@/lib/admin-routes";
 import { formatCount, formatPrice, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Thumbnail } from "@/components/admin/thumbnail";
 
 type ListedProduct = Product & ProductListExtras & { type?: { id: string; name: string } | null };
 
@@ -74,8 +74,7 @@ function Thumb({ p, className }: { p: ListedProduct; className?: string }) {
   return (
     <div className={cn("flex shrink-0 items-center justify-center overflow-hidden bg-ink-900/[0.04]", className)}>
       {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={resolveImageUrl(image.url)} alt="" className="h-full w-full object-cover" loading="lazy" />
+        <Thumbnail src={image.url} alt="" className="h-full w-full object-cover" loading="lazy" />
       ) : (
         <ImageOff size={18} className="text-fg-subtle" aria-label="No image" />
       )}

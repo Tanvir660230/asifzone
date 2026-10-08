@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { formatPrice, storeCurrencySymbol } from "@/lib/format";
-import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 import { orderLineAmount, type OrderPermissions } from "../order-domain";
 import { BlockedHint, DetailSection } from "./detail-section";
 import type { OrderDetailCommands } from "./use-order-detail-commands";
+import { Thumbnail } from "@/components/admin/thumbnail";
 
 function Row({ label, value, tone, strong }: { label: string; value: string; tone?: "success"; strong?: boolean }) {
   return (
@@ -55,8 +55,7 @@ export function ItemsSection({ order, detail, perms }: { order: Order; detail: O
           <li key={item.id} className="flex items-start gap-3 py-3 first:pt-0">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line-subtle bg-ink-50">
               {item.live?.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={resolveImageUrl(item.live.imageUrl)} alt="" loading="lazy" className="h-full w-full object-cover" />
+                <Thumbnail src={item.live.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
               ) : (
                 <Package size={16} className="text-ink-300" aria-hidden="true" />
               )}

@@ -49,3 +49,26 @@ Single-key shortcuts pause while the admin is typing or an overlay is open. Esca
 - **Rewrite every table, query key or permission check.** These migrate module by module. The lint guards warn on new
   bespoke tables, hand-written URL parsing, role checks and `adminCan` imports.
 - **Add a search API.** The command palette's record search still uses the list endpoints.
+
+## Performance budgets (P9)
+
+Blueprint V2 budgets: each admin page ships ≤ 250 KB gzip of its own JavaScript (shared framework/layout chunks
+excluded), and Home is interactive in ≤ 2.5 s on a mid-range phone over 4G.
+
+- **Bundle check:** after `next build`, `pnpm --filter web budget:admin` lists every admin page's own JS and fails
+  if one is over. Measured 2026-10-08: all 59 pages within budget (largest: print labels 162 KB); shared by every
+  admin page 276 KB.
+- **Load time** (production build, Pixel 7, CPU 4×, cold cache; "interactive" = content in, 500 ms with no long task):
+
+  | Page | 4G (9 Mbps, 170 ms) | Slow 4G (1.6 Mbps, 150 ms) |
+  |---|---|---|
+  | Home | 1.63 s | 2.54 s |
+  | Orders | 1.85 s | 2.99 s |
+  | Products | 1.83 s | 3.18 s |
+  | Customers | 1.68 s | 2.05 s |
+
+- What keeps it there: the web bundles `@clothing-brand/shared` from source (`transpilePackages` + alias,
+  `"sideEffects": false`) so pages only get the modules they import; list thumbnails use the 300 px `-thumb`
+  rendition (`<Thumbnail>`); the "View store" link doesn't prefetch the storefront.
+- Not yet done: Home's data queries wait for `/me` + capabilities (one extra round trip), and the root layout
+  preloads the storefront's display font. Both matter mainly on Slow 4G.

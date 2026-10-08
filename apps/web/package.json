@@ -9,7 +9,8 @@
     "start:e2e": "node scripts/clear-data-cache.mjs && next start",
     "lint": "eslint .",
     "test:e2e": "playwright test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "budget:admin": "node scripts/check-admin-budget.mjs"
   },
   "dependencies": {
     "@clothing-brand/shared": "workspace:*",

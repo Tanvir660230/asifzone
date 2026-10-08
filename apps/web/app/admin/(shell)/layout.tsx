@@ -139,6 +139,8 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                 )}
                 <Link
                   href="/"
+                  // Opens in a new tab — prefetching the storefront would only load its JS and hero images into the admin.
+                  prefetch={false}
                   target="_blank"
                   rel="noreferrer"
                   aria-label="View store (opens in a new tab)"

@@ -29,12 +29,12 @@ import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-me
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
-import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 import { CourierCell, DeliveryScoreBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
 import { COURIER_PROVIDER_LABEL, orderAttention, type OrderPermissions } from "./order-domain";
 import type { OrderCommands } from "./use-order-commands";
 import type { SortColumn } from "./use-orders-list-state";
+import { Thumbnail } from "@/components/admin/thumbnail";
 
 // Left accent by status group: amber = waiting on someone, blue = in flight, green = done, red = cancelled.
 export interface OrdersListProps {
@@ -88,8 +88,7 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
     <>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-subtle bg-ink-50">
         {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={resolveImageUrl(imageUrl)} alt="" loading="lazy" className="h-full w-full object-cover" />
+          <Thumbnail src={imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
         ) : (
           <Package size={14} className="text-ink-300" aria-hidden="true" />
         )}
