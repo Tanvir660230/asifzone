@@ -10,7 +10,7 @@ import { ApiError } from "@/lib/api-client";
 import { orderAttention, orderKeys, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { useOrderCommands } from "@/components/admin/orders/use-order-commands";
 import { useOrderDetailCommands } from "@/components/admin/orders/detail/use-order-detail-commands";
-import { DetailHeader } from "@/components/admin/orders/detail/detail-header";
+import { DetailHeader, OrderPhoneActionBar } from "@/components/admin/orders/detail/detail-header";
 import { CustomerSection } from "@/components/admin/orders/detail/customer-section";
 import { ItemsSection } from "@/components/admin/orders/detail/items-section";
 import { PaymentsSection } from "@/components/admin/orders/detail/payments-section";
@@ -124,6 +124,7 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
         </div>
       )}
 
+      {variant === "page" && <OrderPhoneActionBar order={order} perms={perms} commands={commands} />}
       {commands.dialogs}
       <ModifyOrderDialog order={order} open={dialog === "modify"} onClose={() => setDialog(null)} />
       <ItemReturnDialog order={order} open={dialog === "return"} onClose={() => setDialog(null)} />

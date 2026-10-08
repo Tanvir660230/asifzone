@@ -39,19 +39,7 @@ export function DetailHeader({
   const menuRef = useRef<HTMLButtonElement>(null);
   const deleted = Boolean(order.deletedAt);
   const canChangeStatus = perms.manage && !deleted;
-  // Blueprint V2 K6: the one obvious next step, from the shared table — offered only when this admin may do it.
-  const primary = deleted ? null : primaryOrderAction(order, { courierAvailable: perms.courierConfigured });
-  const canPrimary =
-    primary !== null &&
-    (primary.kind === "transition" ? canChangeStatus : primary.kind === "book_courier" ? perms.courier : primary.kind === "record_refund" ? perms.refunds : perms.manage);
-  const goTo = (testId: string) => document.querySelector(`[data-testid="${testId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  function runPrimary() {
-    if (!primary) return;
-    if (primary.kind === "transition") commands.requestStatusChange([order], primary.to);
-    else if (primary.kind === "book_courier") void commands.bookCourier(order);
-    else if (primary.kind === "reconcile") goTo("partial-delivery");
-    else goTo("order-payments");
-  }
+  const { primary, show: canPrimary, run: runPrimary } = usePrimaryOrderAction(order, perms, commands);
   const allowed = canChangeStatus ? allowedNextOrderStatuses(order.status) : [];
   const Heading = variant === "page" ? "h1" : "h2";
 
@@ -178,5 +166,37 @@ export function DetailHeader({
         )}
       </div>
     </header>
+  );
+}
+
+/** Blueprint V2 K6: the order's one obvious next step (shared primaryOrderAction), offered only when this admin may do
+ * it. Status moves open the status dialog; Book courier books; Reconcile / Record refund take you to that section. */
+export function usePrimaryOrderAction(order: Order, perms: OrderPermissions, commands: OrderCommands) {
+  const deleted = Boolean(order.deletedAt);
+  const primary = deleted ? null : primaryOrderAction(order, { courierAvailable: perms.courierConfigured });
+  const show =
+    primary !== null &&
+    (primary.kind === "transition" ? perms.manage : primary.kind === "book_courier" ? perms.courier : primary.kind === "record_refund" ? perms.refunds : perms.manage);
+  const goTo = (testId: string) => document.querySelector(`[data-testid="${testId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function run() {
+    if (!primary) return;
+    if (primary.kind === "transition") commands.requestStatusChange([order], primary.to);
+    else if (primary.kind === "book_courier") void commands.bookCourier(order);
+    else if (primary.kind === "reconcile") goTo("partial-delivery");
+    else goTo("order-payments");
+  }
+  return { primary, show, run };
+}
+
+/** Phones (K6): the primary action pinned above the tab bar while the order scrolls. */
+export function OrderPhoneActionBar({ order, perms, commands }: { order: Order; perms: OrderPermissions; commands: OrderCommands }) {
+  const { primary, show, run } = usePrimaryOrderAction(order, perms, commands);
+  if (!primary || !show) return null;
+  return (
+    <div className="sticky bottom-0 z-raised -mx-4 mt-6 border-t border-line bg-canvas/90 px-4 py-3 backdrop-blur md:hidden print:hidden">
+      <Button className="w-full" onClick={run} loading={primary.kind === "book_courier" && commands.pending.book}>
+        {primary.label} <ArrowRight size={16} aria-hidden="true" />
+      </Button>
+    </div>
   );
 }
