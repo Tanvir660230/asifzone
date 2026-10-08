@@ -18,6 +18,7 @@ import type { FilterDefinition, FilterOption } from "@/lib/admin/filters";
 import * as auditApi from "@/lib/api/audit";
 import { useCapability } from "@/hooks/use-capability";
 import { formatCount, formatStoreDateTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const VERBS: Record<string, { label: string; variant: "success" | "info" | "danger" | "warning" | "neutral" }> = {
   create: { label: "Created", variant: "success" },
@@ -33,6 +34,26 @@ function describeAction(action: string) {
   const bulk = raw.startsWith("bulk_");
   const verb = raw.replace(/^bulk_/, "");
   return { ...(VERBS[verb] ?? { label: verb.replace(/_/g, " "), variant: "neutral" as const }), bulk };
+}
+
+const show = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : typeof v === "object" ? JSON.stringify(v) : String(v));
+
+/** Before/after rows from the three shapes audit metadata uses: `changes: [{field, from, to}]`, `{before, after}` and
+ * `{from, to}` objects. Only fields that actually differ. */
+function auditChanges(metadata: Record<string, unknown> | null): Array<{ field: string; from: string; to: string }> {
+  if (!metadata) return [];
+  if (Array.isArray(metadata.changes)) {
+    return (metadata.changes as Array<{ field?: unknown; from?: unknown; to?: unknown }>)
+      .filter((c) => c && typeof c.field === "string")
+      .map((c) => ({ field: String(c.field), from: show(c.from), to: show(c.to) }));
+  }
+  const pair = (a: unknown, b: unknown) =>
+    a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)
+      ? [...new Set([...Object.keys(a), ...Object.keys(b)])]
+          .filter((k) => JSON.stringify((a as Record<string, unknown>)[k]) !== JSON.stringify((b as Record<string, unknown>)[k]))
+          .map((k) => ({ field: k, from: show((a as Record<string, unknown>)[k]), to: show((b as Record<string, unknown>)[k]) }))
+      : null;
+  return pair(metadata.before, metadata.after) ?? pair(metadata.from, metadata.to) ?? [];
 }
 
 /** Where a record of this area opens in the admin, when it has its own page. */
@@ -100,6 +121,7 @@ export default function AuditLogPage() {
   }
 
   const requestId = open?.metadata && typeof open.metadata.requestId === "string" ? open.metadata.requestId : null;
+  const changes = auditChanges(open?.metadata ?? null);
 
   return (
     <div>
@@ -191,11 +213,36 @@ export default function AuditLogPage() {
               <dt className="text-fg-muted">IP address</dt>
               <dd className="font-mono text-xs">{open.ipAddress ?? "—"}</dd>
             </dl>
-            {open.metadata && (
+            {changes.length > 0 && (
               <div>
-                <p className="mb-1.5 text-[13px] font-medium text-fg">Details</p>
-                <pre className="max-h-80 overflow-auto rounded-lg bg-ink-900/[0.03] p-3 font-mono text-xs leading-relaxed text-fg">{JSON.stringify(open.metadata, null, 2)}</pre>
+                <p className="mb-1.5 text-[13px] font-medium text-fg">What changed</p>
+                <TableContainer>
+                  <Table aria-label="What changed">
+                    <TableHead>
+                      <tr>
+                        <TableHeaderCell>Field</TableHeaderCell>
+                        <TableHeaderCell>Before</TableHeaderCell>
+                        <TableHeaderCell>After</TableHeaderCell>
+                      </tr>
+                    </TableHead>
+                    <tbody>
+                      {changes.map((c) => (
+                        <TableRow key={c.field}>
+                          <TableCell className="align-top font-medium">{c.field}</TableCell>
+                          <TableCell className={cn("break-words align-top text-fg-muted", c.from !== "—" && "line-through decoration-ink-300")}>{c.from}</TableCell>
+                          <TableCell className="break-words align-top">{c.to}</TableCell>
+                        </TableRow>
+                      ))}
+                    </tbody>
+                  </Table>
+                </TableContainer>
               </div>
+            )}
+            {open.metadata && (
+              <details open={changes.length === 0}>
+                <summary className="cursor-pointer text-[13px] font-medium text-fg">{changes.length > 0 ? "Technical details" : "Details"}</summary>
+                <pre className="mt-1.5 max-h-80 overflow-auto rounded-lg bg-ink-900/[0.03] p-3 font-mono text-xs leading-relaxed text-fg">{JSON.stringify(open.metadata, null, 2)}</pre>
+              </details>
             )}
             {requestId && (
               <Button
