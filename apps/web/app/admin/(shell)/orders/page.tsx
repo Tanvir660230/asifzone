@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArchiveX, Download, Plus, SearchX, ShoppingBag } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
@@ -14,7 +14,7 @@ import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
 import { OrdersFilterBar } from "@/components/admin/orders/orders-filter-bar";
 import { OrdersList } from "@/components/admin/orders/orders-list";
 import { OrdersBulkBar } from "@/components/admin/orders/orders-bulk-bar";
-import { orderKeys, useOrderPermissions } from "@/components/admin/orders/order-domain";
+import { orderKeys, prefetchOrder, useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { useOrderCommands } from "@/components/admin/orders/use-order-commands";
 import { useOrdersListState } from "@/components/admin/orders/use-orders-list-state";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
@@ -69,6 +69,14 @@ export default function OrdersPage() {
     const next = drawerIndex === -1 ? undefined : items[drawerIndex + offset];
     if (next) setDrawerOrderId(next.id);
   };
+  // ↑/↓ land on an order that's already loaded: warm the neighbours of the one in the drawer.
+  const queryClient = useQueryClient();
+  const prevId = drawerIndex > 0 ? items[drawerIndex - 1]?.id : undefined;
+  const nextId = drawerIndex >= 0 ? items[drawerIndex + 1]?.id : undefined;
+  useEffect(() => {
+    if (prevId) prefetchOrder(queryClient, prevId);
+    if (nextId) prefetchOrder(queryClient, nextId);
+  }, [queryClient, prevId, nextId]);
 
   function toggle(id: string) {
     setSelected((prev) => {

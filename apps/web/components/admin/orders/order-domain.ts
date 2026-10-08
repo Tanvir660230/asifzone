@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { attentionKeys } from "@/lib/query-keys";
+import * as adminOrdersApi from "@/lib/api/admin-orders";
 import {
   orderStatusEnum,
   type Order,
@@ -35,6 +36,12 @@ export const orderKeys = {
   modifications: (id: string) => ["admin-order", id, "modifications"] as const,
   paymentLinks: (id: string) => ["admin-order", id, "payment-links"] as const,
 };
+
+/** Warm an order's detail before it's opened (Blueprint V2 §Z): row hover/focus, and the drawer's neighbours. Fresh
+ * data within 30 s isn't fetched again. */
+export function prefetchOrder(queryClient: QueryClient, orderId: string) {
+  void queryClient.prefetchQuery({ queryKey: orderKeys.detail(orderId), queryFn: () => adminOrdersApi.getOrder(orderId), staleTime: 30_000 });
+}
 
 /** After any order command: the list, the KPI/queue counts and (when given) that order's detail are stale — the detail key
  * prefixes the order's changes and payment links, so those refresh with it. */

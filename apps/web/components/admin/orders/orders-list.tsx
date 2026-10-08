@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowDown,
@@ -31,7 +32,7 @@ import { OrderStatusIcon } from "@/components/admin/order-status-icon";
 import { formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CourierCell, DeliveryScoreBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
-import { COURIER_PROVIDER_LABEL, orderAttention, type OrderPermissions } from "./order-domain";
+import { COURIER_PROVIDER_LABEL, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
 import type { OrderCommands } from "./use-order-commands";
 import type { SortColumn } from "./use-orders-list-state";
 import { Thumbnail } from "@/components/admin/thumbnail";
@@ -241,6 +242,18 @@ function CustomerCell({ order, commands, perms }: { order: AdminOrderListItem } 
 /** ≥xl: the data table. Below xl: cards — a compressed table on a touch tablet reads worse than fewer, larger cards. */
 export function OrdersList(props: OrdersListProps) {
   const { items, isLoading, selected, onToggle, onToggleAll, onOpen, commands, perms, empty } = props;
+  // A row the pointer rests on (120 ms — not one it sweeps across) or that takes keyboard focus has its detail fetched,
+  // so Quick view opens already filled in.
+  const queryClient = useQueryClient();
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const warm = (id: string) => ({
+    onMouseEnter: () => {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = window.setTimeout(() => prefetchOrder(queryClient, id), 120);
+    },
+    onMouseLeave: () => window.clearTimeout(hoverTimer.current),
+    onFocus: () => prefetchOrder(queryClient, id),
+  });
   const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
 
   return (
@@ -269,7 +282,7 @@ export function OrdersList(props: OrdersListProps) {
             {isLoading && <TableSkeleton rows={6} cols={10} />}
             {!isLoading && items.length === 0 && <TableMessageRow colSpan={10}>{empty}</TableMessageRow>}
             {items.map((order) => (
-              <TableRow key={order.id} className={cn(selected.has(order.id) && "bg-accent/[0.05]")} data-testid="order-row">
+              <TableRow key={order.id} className={cn(selected.has(order.id) && "bg-accent/[0.05]")} data-testid="order-row" {...warm(order.id)}>
                 <TableCell className="px-3 py-2.5">
                   <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
                 </TableCell>
