@@ -65,9 +65,12 @@ export default function OrdersPage() {
 
   // Drawer prev/next steps through the rows currently on screen.
   const drawerIndex = drawerOrderId ? items.findIndex((o) => o.id === drawerOrderId) : -1;
+  const [stepAnnouncement, setStepAnnouncement] = useState("");
   const stepDrawer = (offset: number) => {
     const next = drawerIndex === -1 ? undefined : items[drawerIndex + offset];
-    if (next) setDrawerOrderId(next.id);
+    if (!next) return;
+    setDrawerOrderId(next.id);
+    setStepAnnouncement(`Order ${next.orderNumber} loaded, ${drawerIndex + offset + 1} of ${items.length}`);
   };
   // ↑/↓ land on an order that's already loaded: warm the neighbours of the one in the drawer.
   const queryClient = useQueryClient();
@@ -168,7 +171,10 @@ export default function OrdersPage() {
 
       <Drawer
         open={Boolean(drawerOrderId)}
-        onClose={() => setDrawerOrderId(null)}
+        onClose={() => {
+          setDrawerOrderId(null);
+          setStepAnnouncement("");
+        }}
         title="Order details"
         widthClassName="max-w-3xl"
         onPrev={() => stepDrawer(-1)}
@@ -177,6 +183,7 @@ export default function OrdersPage() {
         nextDisabled={drawerIndex === -1 || drawerIndex >= items.length - 1}
         navLabel={drawerIndex !== -1 ? `${drawerIndex + 1} of ${items.length}` : undefined}
         navItemLabel="order"
+        announcement={stepAnnouncement}
       >
         {drawerOrderId && <OrderDetailPanel orderId={drawerOrderId} onClose={() => setDrawerOrderId(null)} variant="drawer" />}
       </Drawer>

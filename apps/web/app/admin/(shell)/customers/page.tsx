@@ -131,6 +131,7 @@ function SortableHeader({
   const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
     <button
+      type="button"
       onClick={() => onSort(column)}
       className={cn(
         "flex items-center gap-1 whitespace-nowrap font-medium uppercase tracking-wide transition-colors",
@@ -168,6 +169,7 @@ export default function CustomersPage() {
 
   const [sortBy, setSortBy] = useState<AdminCustomerListParams["sortBy"]>(undefined);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const ariaSortFor = (column: SortColumn) => (sortBy === column ? (sortDir === "asc" ? "ascending" : "descending") : "none");
 
   function toggleSort(column: SortColumn) {
     if (sortBy === column) {
@@ -566,28 +568,28 @@ export default function CustomersPage() {
                     the app shell header (z-20) in the same stacking context, so as this non-sticky
                     header row scrolled past them, it painted in FRONT of both instead of being
                     covered by them, showing up as a floating box overlapping the tabs/header. */}
-                <th className="sticky left-0 z-[1] bg-surface px-4 py-3">
+                <th aria-sort={ariaSortFor("name")} className="sticky left-0 z-[1] bg-surface px-4 py-3">
                   <SortableHeader column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Customer
                   </SortableHeader>
                 </th>
                 <th className="px-4 py-3">Phone</th>
                 <th className="hidden px-4 py-3 xl:table-cell">Email</th>
-                <th className="px-4 py-3">
+                <th aria-sort={ariaSortFor("totalOrders")} className="px-4 py-3">
                   <div className="flex justify-end">
                     <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Orders
                     </SortableHeader>
                   </div>
                 </th>
-                <th className="px-4 py-3">
+                <th aria-sort={ariaSortFor("totalSpent")} className="px-4 py-3">
                   <div className="flex justify-end">
                     <SortableHeader column="totalSpent" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Spent
                     </SortableHeader>
                   </div>
                 </th>
-                <th className="px-4 py-3">
+                <th aria-sort={ariaSortFor("lastOrderAt")} className="px-4 py-3">
                   <SortableHeader column="lastOrderAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Last Order
                   </SortableHeader>

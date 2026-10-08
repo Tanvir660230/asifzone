@@ -26,6 +26,9 @@ interface DrawerProps {
   navLabel?: string;
   /** What the prev/next buttons step through, for their accessible names ("Previous order"). */
   navItemLabel?: string;
+  /** Read out politely when it changes — after a prev/next step the panel's content changes under a fixed title, so
+   * say what's now showing ("Order ORD-… loaded, 4 of 20"). */
+  announcement?: string;
 }
 
 /** Right-side slide-in panel (full width on mobile) — portal, backdrop-click and Escape to close,
@@ -42,6 +45,7 @@ export function Drawer({
   nextDisabled,
   navLabel,
   navItemLabel = "item",
+  announcement,
 }: DrawerProps) {
   const layerRef = useRef<number | null>(null);
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, layerRef });
@@ -92,6 +96,9 @@ export function Drawer({
           widthClassName,
         )}
       >
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </p>
         <div className="glass sticky top-0 z-raised flex shrink-0 items-center gap-3 border-b border-line-subtle px-5 py-3.5">
           <div className="min-w-0 flex-1 truncate font-display text-lg tracking-tight text-fg">{title}</div>
           {(onPrev || onNext) && (
