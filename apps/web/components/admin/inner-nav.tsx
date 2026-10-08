@@ -30,7 +30,7 @@ export function InnerNav({ title }: { title: string }) {
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "block rounded-lg px-3 py-1.5 text-[13px] transition-colors duration-fast ease-smooth",
-                  active ? "bg-accent/[0.1] font-medium text-accent" : "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg",
+                  active ? "bg-ink-900/[0.07] font-medium text-fg" : "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg",
                 )}
               >
                 {item.node.label}

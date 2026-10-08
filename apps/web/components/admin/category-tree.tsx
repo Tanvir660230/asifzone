@@ -293,7 +293,7 @@ function CategoryNode({
                 variant={stock[category.id]!.totalStock > 0 ? "success" : "neutral"}
                 className={cn(
                   "gap-1 border-0 tabular-nums",
-                  stock[category.id]!.totalStock === 0 && "bg-ink-50 text-ink-300",
+                  stock[category.id]!.totalStock === 0 && "bg-ink-50 text-fg-subtle",
                 )}
                 title={`${stock[category.id]!.inStockProducts} of ${stock[category.id]!.totalProducts} products in stock, including subcategories`}
               >

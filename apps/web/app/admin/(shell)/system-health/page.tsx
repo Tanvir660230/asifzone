@@ -303,7 +303,7 @@ export default function SystemHealthPage() {
           </ul>
           <p className="text-[13px] text-fg-muted">
             Payment, SMS, email and courier connections are under{" "}
-            <Link href="/admin/settings" className="text-accent hover:underline">
+            <Link href="/admin/settings" className="text-accent underline underline-offset-2">
               Settings
             </Link>
             .

@@ -468,8 +468,10 @@ const surfaceDefinitions = {
         100: "#f5f5f7",
         200: "#e8e8ed",
         300: "#d2d2d7",
-        400: "#86868b", // tertiary text — 3.6:1 on white (placeholders, hints)
-        500: "#6e6e73", // secondary text — 5.0:1 on white, 4.6:1 on the canvas
+        // P9 a11y (WCAG AA 4.5:1 for small text on white, the canvas #f5f5f7 AND the sidebar #efeff2): Apple's #86868b /
+        // #6e6e73 measured 3.2–4.4:1 there, so the two text greys are a step darker.
+        400: "#6a6a6f", // tertiary text — 5.4 / 4.9 / 4.7:1 (placeholders, hints, captions)
+        500: "#5e5e63", // secondary text — 6.5 / 5.9 / 5.6:1
         600: "#515154",
         700: "#3a3a3c",
         800: "#2c2c2e",
@@ -477,9 +479,14 @@ const surfaceDefinitions = {
         950: "#111113",
       },
       cream: { 50: "#ffffff", 100: "#f5f5f7", 200: "#ececf0", 300: "#dedee3" },
+      // Badge text on its pale fill ("Active"): #087d64 was 4.2:1 on success-100.
+      success: { 700: "#06705a" },
+      // Small warning text ("Unpaid", hints): #a66c1f was 4.0:1 on the canvas.
+      warning: { 600: "#96611b" },
     },
-    // Roles given a color of their own instead of a palette step. Blueprint V2 DR-3: Apple blue (4.6:1 under white text).
-    roles: { accent: "#0071e3", "accent-hover": "#0077ed", "accent-fg": "#ffffff" },
+    // Roles given a color of their own instead of a palette step. Blueprint V2 DR-3: Apple blue. P9 a11y: Apple's link blue
+    // #0066cc (5.6:1 under white text, 5.1:1 as text on the canvas) — #0071e3 was 4.3:1 as link text on the canvas.
+    roles: { accent: "#0066cc", "accent-hover": "#0071e3", "accent-fg": "#ffffff" },
     fontVariables: {
       // San Francisco on Apple devices, the app's sans face everywhere else. No serif titles in the admin.
       "--font-body-family": "-apple-system, BlinkMacSystemFont, var(--font-sans)",
@@ -505,7 +512,7 @@ const surfaceDefinitions = {
       glass: "0 0 0 0.5px rgba(0,0,0,0.08), 0 12px 32px -12px rgba(0,0,0,0.18)",
       "glass-lg": "0 0 0 0.5px rgba(0,0,0,0.10), 0 28px 64px -18px rgba(0,0,0,0.30)",
       inset: "0 0 #0000", // flat fields (a literal "none" would break Tailwind's composed box-shadow list)
-      glow: "0 0 0 4px rgba(0,113,227,0.18)",
+      glow: "0 0 0 4px rgba(0,102,204,0.18)",
     },
     // Room to breathe: the airier Apple rhythm over the dense ERP baseline.
     density: { sidebar: "248px", "sidebar-collapsed": "84px", header: "64px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
