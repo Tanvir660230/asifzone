@@ -4,13 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Copy, ExternalLink, MessageCircle, Pencil, Phone, User } from "lucide-react";
 import {
-  BD_ALL_AREA_OPTIONS,
-  BD_ALL_DISTRICTS,
-  BD_AREAS_BY_DISTRICT,
   BD_DIVISION_BY_DISTRICT,
   customerDetailsEditBlocker,
   toBdInternationalDigits,
-  parseAreaDistrictOption,
   updateOrderDetailsSchema,
   type Order,
 } from "@clothing-brand/shared";
@@ -18,7 +14,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DistrictAreaFields } from "@/components/admin/district-area-fields";
 import { Textarea } from "@/components/ui/textarea";
 import { copyToClipboard } from "@/lib/clipboard";
 import { initials } from "@/lib/format";
@@ -52,7 +48,6 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
   const blocker = customerDetailsEditBlocker(order);
   const fullAddress = `${order.shippingAddressLine}, ${order.shippingArea}, ${order.shippingDistrict}, ${order.shippingDivision}`;
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${fullAddress}, Bangladesh`)}`;
-  const areaOptions: readonly string[] = draft?.shippingDistrict ? (BD_AREAS_BY_DISTRICT[draft.shippingDistrict] ?? []) : BD_ALL_AREA_OPTIONS;
 
   function startEdit() {
     setError(null);
@@ -101,27 +96,11 @@ export function CustomerSection({ order, detail, perms, stacked = false }: { ord
             <Field htmlFor="edit-customer-phone" label="Phone">
               <Input id="edit-customer-phone" inputMode="tel" value={draft.customerPhone} onChange={(e) => setDraft({ ...draft, customerPhone: e.target.value })} />
             </Field>
-            <Field htmlFor="edit-district" label="District">
-              <SearchableSelect
-                id="edit-district"
-                value={draft.shippingDistrict}
-                onChange={(v) => setDraft({ ...draft, shippingDistrict: v, shippingArea: "" })}
-                options={BD_ALL_DISTRICTS}
-                placeholder="Search district…"
-              />
-            </Field>
-            <Field htmlFor="edit-area" label="Area / Thana">
-              <SearchableSelect
-                id="edit-area"
-                value={draft.shippingArea}
-                onChange={(v) => {
-                  const p = parseAreaDistrictOption(v);
-                  setDraft(p ? { ...draft, shippingDistrict: p.district, shippingArea: p.area } : { ...draft, shippingArea: v });
-                }}
-                options={areaOptions}
-                placeholder="Search area…"
-              />
-            </Field>
+            <DistrictAreaFields
+              idPrefix="edit"
+              value={{ district: draft.shippingDistrict, area: draft.shippingArea }}
+              onChange={(next) => setDraft({ ...draft, shippingDistrict: next.district, shippingArea: next.area })}
+            />
           </div>
           <Field htmlFor="edit-address" label="House / road / details" error={error ?? undefined}>
             <Textarea id="edit-address" rows={2} value={draft.shippingAddressLine} onChange={(e) => setDraft({ ...draft, shippingAddressLine: e.target.value })} />
