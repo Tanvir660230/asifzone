@@ -69,11 +69,11 @@ const TAG_OPTIONS: CustomerTag[] = [
 type QuickFilter = "noOrders" | "dhaka" | "gazipur" | "last30" | "last90" | null;
 
 const QUICK_FILTERS: Array<{ id: Exclude<QuickFilter, null>; label: string }> = [
-  { id: "noOrders", label: "No Orders" },
+  { id: "noOrders", label: "No orders" },
   { id: "dhaka", label: "Dhaka" },
   { id: "gazipur", label: "Gazipur" },
-  { id: "last30", label: "Last 30 Days" },
-  { id: "last90", label: "Last 90 Days" },
+  { id: "last30", label: "Ordered in 30 days" },
+  { id: "last90", label: "Ordered in 90 days" },
 ];
 
 function quickFilterParams(filter: QuickFilter): Partial<AdminCustomerListParams> {
@@ -288,7 +288,7 @@ export default function CustomersPage() {
     const tone = primaryTag(customer.tags);
     const toneMeta = tone ? TAG_META[tone] : null;
     return toneMeta ? (
-      <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", toneMeta.className)}>
+      <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", toneMeta.className)}>
         <toneMeta.icon size={11} /> {toneMeta.label}
       </span>
     ) : (
@@ -572,7 +572,7 @@ export default function CustomersPage() {
                   </SortableHeader>
                 </th>
                 <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Email</th>
+                <th className="hidden px-4 py-3 xl:table-cell">Email</th>
                 <th className="px-4 py-3">
                   <div className="flex justify-end">
                     <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
@@ -593,7 +593,7 @@ export default function CustomersPage() {
                   </SortableHeader>
                 </th>
                 <th className="px-4 py-3">Status</th>
-                <th className="hidden px-4 py-3 sm:table-cell">Last SMS</th>
+                <th className="hidden whitespace-nowrap px-4 py-3 2xl:table-cell">Last SMS</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -634,7 +634,7 @@ export default function CustomersPage() {
                         aria-label={`Select ${customer.name}`}
                       />
                     </td>
-                    <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3.5 group-hover:bg-ink-50">
+                    <td className="sticky left-0 z-[1] bg-surface px-4 py-3.5 group-hover:bg-ink-50">
                       <button
                         onClick={() => setDrawer({ id: customer.id })}
                         className="flex items-center gap-3 text-left"
@@ -642,22 +642,22 @@ export default function CustomersPage() {
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
                           {initials(customer.name)}
                         </span>
-                        <span className="font-medium text-ink-900 hover:text-info-600 hover:underline">{customer.name}</span>
+                        <span className="max-w-[180px] truncate whitespace-nowrap font-medium text-ink-900 hover:text-info-600 hover:underline" title={customer.name}>{customer.name}</span>
                       </button>
                     </td>
-                    <td className="px-4 py-3.5 text-ink-500">{customer.phone ?? "—"}</td>
-                    <td className="px-4 py-3.5 text-ink-500">{customer.email ?? "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">{customer.phone ?? "—"}</td>
+                    <td className="hidden max-w-[220px] truncate px-4 py-3.5 text-ink-500 xl:table-cell" title={customer.email ?? undefined}>{customer.email ?? "—"}</td>
                     <td className="px-4 py-3.5 text-right tabular-nums text-ink-700">{customer.totalOrders}</td>
                     <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</td>
-                    <td className="px-4 py-3.5 text-ink-500">
+                    <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">
                       {customer.lastOrderAt ? formatStoreDate(customer.lastOrderAt) : "—"}
                     </td>
                     <td className="px-4 py-3.5">{renderTagBadge(customer)}</td>
-                    <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
+                    <td className="hidden whitespace-nowrap px-4 py-3.5 text-ink-500 2xl:table-cell">
                       {customer.lastSmsSentAt ? formatStoreDate(customer.lastSmsSentAt) : "—"}
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className="flex justify-end gap-3">{renderRowActions(customer)}</div>
+                      <div className="flex justify-end gap-1">{renderRowActions(customer)}</div>
                     </td>
                   </tr>
                 );
