@@ -13,7 +13,7 @@ import type {
   ReconcilePartialDeliveryInput,
   OrderQueueId,
 } from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
+import { apiFetch, type FetchSignal } from "../api-client";
 import { apiBaseUrl } from "../runtime-config";
 
 export interface AdminOrderListParams {
@@ -91,8 +91,8 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   return query;
 }
 
-export function listOrders(params: AdminOrderListParams = {}) {
-  return apiFetch<PaginatedResult<AdminOrderListItem>>(`/api/orders?${buildOrderListQuery(params).toString()}`);
+export function listOrders(params: AdminOrderListParams = {}, { signal }: FetchSignal = {}) {
+  return apiFetch<PaginatedResult<AdminOrderListItem>>(`/api/orders?${buildOrderListQuery(params).toString()}`, { signal });
 }
 
 export function getOrderStats() {

@@ -48,7 +48,7 @@ export default function OrdersPage() {
   const { page, pageSize, filterParams } = state;
   const { data, isLoading } = useQuery({
     queryKey: [...orderKeys.list, { page, pageSize, ...filterParams }],
-    queryFn: () => adminOrdersApi.listOrders({ page, pageSize, ...filterParams }),
+    queryFn: ({ signal }) => adminOrdersApi.listOrders({ page, pageSize, ...filterParams }, { signal }),
     placeholderData: (prev) => prev,
     // Courier statuses change server-side (webhook, sync cron) — poll so the list stays current. Paused in background tabs.
     refetchInterval: 30_000,

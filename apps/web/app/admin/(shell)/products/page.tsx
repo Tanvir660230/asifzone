@@ -182,7 +182,7 @@ export default function ProductsPage() {
   };
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["products", params],
-    queryFn: () => productsApi.listProducts(params),
+    queryFn: ({ signal }) => productsApi.listProducts(params, { signal }),
     placeholderData: (prev) => prev,
   });
   const items = (data?.items ?? []) as ListedProduct[];

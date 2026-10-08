@@ -1,5 +1,5 @@
 import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, RecordPaymentInput, Refund, RecordRefundInput, PaginatedResult, PaymentTransactionRow, RefundRow, PaymentSessionRow } from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
+import { apiFetch, type FetchSignal } from "../api-client";
 
 export interface PaymentsOverview {
   attemptsToday: number;
@@ -43,28 +43,26 @@ function ledgerQuery(params: object) {
 }
 
 /** Finance › Transactions: every Payment ledger row, newest first. */
-export function listPaymentTransactions(params: LedgerListParams & { provider?: string; status?: "SUCCEEDED" | "FAILED" } = {}) {
-  return apiFetch<PaginatedResult<PaymentTransactionRow>>(`/api/payment-admin/transactions?${ledgerQuery(params)}`);
+export function listPaymentTransactions(params: LedgerListParams & { provider?: string; status?: "SUCCEEDED" | "FAILED" } = {}, { signal }: FetchSignal = {}) {
+  return apiFetch<PaginatedResult<PaymentTransactionRow>>(`/api/payment-admin/transactions?${ledgerQuery(params)}`, { signal });
 }
 
 /** Finance › Online attempts: gateway checkout sessions, newest first (incl. ones that never became an order). */
-export function listPaymentSessions(params: LedgerListParams & { status?: PaymentSessionRow["status"]; provider?: PaymentSessionRow["provider"] } = {}) {
-  return apiFetch<PaginatedResult<PaymentSessionRow>>(`/api/payment-admin/sessions?${ledgerQuery(params)}`);
+export function listPaymentSessions(params: LedgerListParams & { status?: PaymentSessionRow["status"]; provider?: PaymentSessionRow["provider"] } = {}, { signal }: FetchSignal = {}) {
+  return apiFetch<PaginatedResult<PaymentSessionRow>>(`/api/payment-admin/sessions?${ledgerQuery(params)}`, { signal });
 }
 
 /** Finance › Refunds: every Refund ledger row, waiting ones first. */
-export function listAllRefunds(params: LedgerListParams & { status?: "REQUESTED" | "COMPLETED" } = {}) {
-  return apiFetch<PaginatedResult<RefundRow>>(`/api/payment-admin/refunds?${ledgerQuery(params)}`);
+export function listAllRefunds(params: LedgerListParams & { status?: "REQUESTED" | "COMPLETED" } = {}, { signal }: FetchSignal = {}) {
+  return apiFetch<PaginatedResult<RefundRow>>(`/api/payment-admin/refunds?${ledgerQuery(params)}`, { signal });
 }
 
 export function getPaymentsOverview() {
   return apiFetch<PaymentsOverview>("/api/payment-admin/overview");
 }
 
-export function searchPaymentAttempts(phone: string) {
-  return apiFetch<{ results: PaymentAttemptSearchResult[] }>(
-    `/api/payment-admin/search?phone=${encodeURIComponent(phone)}`,
-  );
+export function searchPaymentAttempts(phone: string, { signal }: FetchSignal = {}) {
+  return apiFetch<{ results: PaymentAttemptSearchResult[] }>(`/api/payment-admin/search?phone=${encodeURIComponent(phone)}`, { signal });
 }
 
 export function listRefunds(orderId: string) {

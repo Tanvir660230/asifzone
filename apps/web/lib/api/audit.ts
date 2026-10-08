@@ -1,5 +1,5 @@
 import type { AuditLogEntry, PaginatedResult } from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
+import { apiFetch, type FetchSignal } from "../api-client";
 
 export interface AuditLogParams {
   page?: number;
@@ -13,10 +13,10 @@ export interface AuditLogParams {
   to?: string;
 }
 
-export function listAuditLogs(params: AuditLogParams = {}) {
+export function listAuditLogs(params: AuditLogParams = {}, { signal }: FetchSignal = {}) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== "") query.set(key, String(value));
-  return apiFetch<PaginatedResult<AuditLogEntry>>(`/api/audit-logs?${query.toString()}`);
+  return apiFetch<PaginatedResult<AuditLogEntry>>(`/api/audit-logs?${query.toString()}`, { signal });
 }
 
 /** What the log can be filtered by: areas with entries and every admin (incl. removed ones). */

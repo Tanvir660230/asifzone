@@ -103,7 +103,7 @@ export default function AuditLogPage() {
   };
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["audit-logs", params],
-    queryFn: () => auditApi.listAuditLogs(params),
+    queryFn: ({ signal }) => auditApi.listAuditLogs(params, { signal }),
     enabled: canRead,
     placeholderData: (prev) => prev,
   });

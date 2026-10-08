@@ -53,7 +53,7 @@ export default function PaymentTransactionsPage() {
   };
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["payment-transactions", params],
-    queryFn: () => paymentsApi.listPaymentTransactions(params),
+    queryFn: ({ signal }) => paymentsApi.listPaymentTransactions(params, { signal }),
     placeholderData: (prev) => prev,
   });
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;

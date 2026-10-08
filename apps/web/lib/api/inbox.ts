@@ -1,5 +1,5 @@
 import type { ConversationDetail, ConversationListRow, ConversationMessageRow, ConversationReplyInput, PaginatedResult } from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
+import { apiFetch, type FetchSignal } from "../api-client";
 
 /** Messages › Inbox (Blueprint V2 R2): conversations with customers. */
 export interface ConversationListParams {
@@ -11,10 +11,10 @@ export interface ConversationListParams {
   search?: string;
 }
 
-export function listConversations(params: ConversationListParams = {}) {
+export function listConversations(params: ConversationListParams = {}, { signal }: FetchSignal = {}) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== "") query.set(key, String(value));
-  return apiFetch<PaginatedResult<ConversationListRow>>(`/api/v1/admin/conversations?${query.toString()}`);
+  return apiFetch<PaginatedResult<ConversationListRow>>(`/api/v1/admin/conversations?${query.toString()}`, { signal });
 }
 
 export function getConversation(id: string) {

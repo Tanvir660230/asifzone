@@ -10,7 +10,7 @@ import type {
   ProductImportResult,
   ProductListExtras,
 } from "@clothing-brand/shared";
-import { apiFetch, apiUploadWithProgress } from "../api-client";
+import { apiFetch, apiUploadWithProgress, type FetchSignal } from "../api-client";
 import { apiBaseUrl } from "../runtime-config";
 
 export interface ProductListParams {
@@ -25,7 +25,7 @@ export interface ProductListParams {
   sort?: "newest" | "updated" | "name" | "price" | "-price";
 }
 
-export function listProducts(params: ProductListParams = {}) {
+export function listProducts(params: ProductListParams = {}, { signal }: FetchSignal = {}) {
   const query = new URLSearchParams();
   if (params.page) query.set("page", String(params.page));
   if (params.pageSize) query.set("pageSize", String(params.pageSize));
@@ -37,7 +37,7 @@ export function listProducts(params: ProductListParams = {}) {
   if (params.stock) query.set("stock", params.stock);
   if (params.sort && params.sort !== "newest") query.set("sort", params.sort);
 
-  return apiFetch<PaginatedResult<Product & ProductListExtras>>(`/api/products?${query.toString()}`);
+  return apiFetch<PaginatedResult<Product & ProductListExtras>>(`/api/products?${query.toString()}`, { signal });
 }
 
 export function getProduct(id: string) {

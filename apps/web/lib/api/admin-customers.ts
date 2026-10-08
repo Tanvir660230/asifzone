@@ -1,5 +1,5 @@
 import type { AdminCustomerListItem, AdminCustomerDetail, Customer, CustomerStats, CustomerTag, PaginatedResult, UpdateCustomerAdminFieldsInput, CreateCustomerAdminInput, StoreCreditSummary } from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
+import { apiFetch, type FetchSignal } from "../api-client";
 
 export interface AdminCustomerListParams {
   page?: number;
@@ -31,8 +31,8 @@ function buildCustomerListQuery(params: AdminCustomerListParams) {
   return query;
 }
 
-export function listCustomers(params: AdminCustomerListParams = {}) {
-  return apiFetch<PaginatedResult<AdminCustomerListItem>>(`/api/customers/admin?${buildCustomerListQuery(params).toString()}`);
+export function listCustomers(params: AdminCustomerListParams = {}, { signal }: FetchSignal = {}) {
+  return apiFetch<PaginatedResult<AdminCustomerListItem>>(`/api/customers/admin?${buildCustomerListQuery(params).toString()}`, { signal });
 }
 
 export function getCustomerStats() {

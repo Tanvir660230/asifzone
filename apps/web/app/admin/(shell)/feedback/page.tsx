@@ -308,7 +308,7 @@ export default function InboxPage() {
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: [...inboxKeys.list, { page, status, mine, search: debounced }],
-    queryFn: () => inboxApi.listConversations({ page, pageSize: PAGE_SIZE, status, mine: mine ? "true" : undefined, search: debounced || undefined }),
+    queryFn: ({ signal }) => inboxApi.listConversations({ page, pageSize: PAGE_SIZE, status, mine: mine ? "true" : undefined, search: debounced || undefined }, { signal }),
     placeholderData: (prev) => prev,
     refetchInterval: 60_000,
   });

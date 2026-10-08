@@ -92,19 +92,19 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   const orders = useQuery({
     queryKey: paletteKeys.search("orders", debounced),
-    queryFn: () => adminOrdersApi.listOrders({ search: debounced, pageSize: SEARCH_LIMIT }),
+    queryFn: ({ signal }) => adminOrdersApi.listOrders({ search: debounced, pageSize: SEARCH_LIMIT }, { signal }),
     enabled: open && searching && can("orders.view"),
     staleTime: 30_000,
   });
   const customers = useQuery({
     queryKey: paletteKeys.search("customers", debounced),
-    queryFn: () => adminCustomersApi.listCustomers({ search: debounced, pageSize: SEARCH_LIMIT }),
+    queryFn: ({ signal }) => adminCustomersApi.listCustomers({ search: debounced, pageSize: SEARCH_LIMIT }, { signal }),
     enabled: open && searching && can("customers.view"),
     staleTime: 30_000,
   });
   const products = useQuery({
     queryKey: paletteKeys.search("products", debounced),
-    queryFn: () => productsApi.listProducts({ search: debounced, pageSize: SEARCH_LIMIT }),
+    queryFn: ({ signal }) => productsApi.listProducts({ search: debounced, pageSize: SEARCH_LIMIT }, { signal }),
     enabled: open && searching && can("catalog.view"),
     staleTime: 30_000,
   });

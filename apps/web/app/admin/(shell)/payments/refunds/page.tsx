@@ -44,7 +44,7 @@ export default function RefundsPage() {
   };
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["refund-list", params],
-    queryFn: () => paymentsApi.listAllRefunds(params),
+    queryFn: ({ signal }) => paymentsApi.listAllRefunds(params, { signal }),
     placeholderData: (prev) => prev,
   });
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;

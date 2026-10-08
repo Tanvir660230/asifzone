@@ -46,7 +46,7 @@ export default function PaymentsOverviewPage() {
   const debouncedPhone = useDebouncedValue(phoneInput, 350);
   const { data: searchData, isFetching: searching } = useQuery({
     queryKey: ["payment-attempt-search", debouncedPhone],
-    queryFn: () => paymentsAdminApi.searchPaymentAttempts(debouncedPhone),
+    queryFn: ({ signal }) => paymentsAdminApi.searchPaymentAttempts(debouncedPhone, { signal }),
     enabled: debouncedPhone.trim().length >= 4,
   });
   const searchResults = debouncedPhone.trim().length >= 4 ? (searchData?.results ?? []) : [];

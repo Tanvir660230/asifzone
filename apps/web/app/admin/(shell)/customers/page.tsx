@@ -207,8 +207,8 @@ export default function CustomersPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-customers", { page, pageSize, search: debouncedSearch, filterParams }],
-    queryFn: () =>
-      adminCustomersApi.listCustomers({ page, pageSize, search: debouncedSearch || undefined, ...filterParams }),
+    queryFn: ({ signal }) =>
+      adminCustomersApi.listCustomers({ page, pageSize, search: debouncedSearch || undefined, ...filterParams }, { signal }),
     placeholderData: (prev) => prev,
   });
 
