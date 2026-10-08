@@ -143,7 +143,7 @@ export default function AdminReturnRequestsPage() {
 
   return (
     <div>
-      <PageHeader title="Return Requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order." />
+      <PageHeader title="Return requests" description="Review customer returns and exchanges. Approving runs the return or exchange on the order." />
       <ModuleTabs />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

@@ -199,7 +199,7 @@ test.describe("orders workspace", () => {
 
   test("return requests: status filter and deep link", async ({ page }) => {
     await page.goto("/admin/return-requests?status=ALL");
-    await expect(page.getByRole("heading", { name: "Return Requests" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Return requests" })).toBeVisible();
     await expect(page.getByRole("group", { name: "Filter by review status" })).toBeVisible();
     await expect(page.getByRole("button", { name: "All", pressed: true })).toBeVisible();
   });

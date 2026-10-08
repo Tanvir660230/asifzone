@@ -83,7 +83,7 @@ export default function HomepageBuilderPage() {
   return (
     <div>
       <PageHeader
-        title="Homepage Builder"
+        title="Homepage"
         description="Drag to reorder, toggle sections on or off, and edit each section's content."
       />
 

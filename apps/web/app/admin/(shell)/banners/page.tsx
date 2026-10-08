@@ -107,7 +107,7 @@ export default function BannersPage() {
   return (
     <div>
       <PageHeader
-        title="Homepage Banners"
+        title="Banners"
         action={
           <Button variant="brass" onClick={openCreate}>
             <Plus size={16} /> Add banner
