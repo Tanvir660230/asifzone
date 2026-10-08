@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "../../config/prisma";
-import { cleanupFixtures, createStockedProduct, ownerId, trackOrder } from "../../test-fixtures";
+import { asOwner, cleanupFixtures, createStockedProduct, ownerId, trackOrder } from "../../test-fixtures";
 import { createManualOrder } from "../../modules/orders/order.service";
 import { computeMetrics } from "./metrics.service";
+import { metricsConsistency } from "./consistency.service";
 
 // D25 (owner, 2026-10-08): conversion rate = sale orders placed from a storefront session ÷ storefront sessions.
 // A fixed day long ago, so no other test's pageviews or orders fall inside the range.
@@ -52,6 +53,17 @@ describe("behaviour metrics", () => {
     expect(m.metrics.orders_placed!.value).toBe(2);
     expect(m.metrics.conversion_rate!.value).toBeCloseTo(1 / 4, 6);
     expect(m.metrics.conversion_rate!.unit).toBe("ratio");
+  });
+
+  it("the new keys are in /definitions and pass the consistency check (P6 acceptance)", async () => {
+    const defs = await (await asOwner()).get("/api/v1/metrics/definitions");
+    const keys = defs.body.metrics.map((d: { key: string }) => d.key);
+    expect(keys).toEqual(expect.arrayContaining(["sessions", "conversion_rate", "return_rate"]));
+    const report = await metricsConsistency(range);
+    const names = report.checks.map((c) => c.check);
+    expect(names).toEqual(expect.arrayContaining(["sessions = distinct storefront sessions with a pageview", "return_rate = units_returned ÷ units_sold"]));
+    expect(report.checks.find((c) => c.check.startsWith("sessions"))).toMatchObject({ expected: 4, actual: 4, ok: true });
+    expect(report.ok).toBe(true);
   });
 
   it("return rate is 0 (not NaN) when nothing was sold in the range", async () => {

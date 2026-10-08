@@ -20,7 +20,24 @@ const sum = (xs: number[]) => Math.round(xs.reduce((s, x) => s + x, 0) * 100) / 
 export async function metricsConsistency(range: RangeInput | BusinessRange): Promise<{ range: unknown; checks: ConsistencyCheck[]; ok: boolean }> {
   const { currency } = await storeContext();
   const totals = await computeMetrics({
-    metrics: ["realised_net_sales", "gross_merchandise_sales", "discounts", "merchandise_vat", "merchandise_refunds", "net_sales", "net_merchandise_sales", "collected_cash", "orders_placed", "cogs", "gross_margin"],
+    metrics: [
+      "realised_net_sales",
+      "gross_merchandise_sales",
+      "discounts",
+      "merchandise_vat",
+      "merchandise_refunds",
+      "net_sales",
+      "net_merchandise_sales",
+      "collected_cash",
+      "orders_placed",
+      "cogs",
+      "gross_margin",
+      // Admin V2 behaviour / rate family (METRICS_REGISTRY §4.3a)
+      "sessions",
+      "return_rate",
+      "units_sold",
+      "units_returned",
+    ],
     range,
     fresh: true,
   });
@@ -34,10 +51,13 @@ export async function metricsConsistency(range: RangeInput | BusinessRange): Pro
   ]);
 
   const window = { gte: new Date(totals.range.startUtc), lt: new Date(totals.range.endUtc) };
-  const [paid, refunded] = await Promise.all([
+  const [paid, refunded, sessionGroups] = await Promise.all([
     prisma.payment.aggregate({ where: { status: "SUCCEEDED", settledAt: window }, _sum: { amount: true } }),
     prisma.refund.aggregate({ where: { status: "COMPLETED", completedAt: window }, _sum: { amount: true } }),
+    // Counted a second way (ORM group-by, not the engine's raw COUNT DISTINCT) — the sessions denominator of D25.
+    prisma.pageView.groupBy({ by: ["sessionId"], where: { createdAt: window } }),
   ]);
+  const unitsSold = totals.metrics.units_sold!.value;
   const ledgerCash = toMajor(money(fromMajor(String(paid._sum.amount ?? 0), currency).amount - fromMajor(String(refunded._sum.amount ?? 0), currency).amount, currency));
 
   const checks: ConsistencyCheck[] = [
@@ -54,6 +74,12 @@ export async function metricsConsistency(range: RangeInput | BusinessRange): Pro
     { check: "collected_cash = ledger payments − ledger refunds", expected: ledgerCash, actual: totals.metrics.collected_cash!.value },
     { check: "Σ product gross margin = gross_margin (recorded cost)", expected: totals.metrics.gross_margin!.value, actual: sum(byProduct.groups!.map((g) => g.metrics.gross_margin!)) },
     { check: "Σ category COGS (incl. not recorded) = cogs", expected: totals.metrics.cogs!.value, actual: sum(byCategory.groups!.map((g) => g.metrics.cogs!)) },
+    { check: "sessions = distinct storefront sessions with a pageview", expected: sessionGroups.length, actual: totals.metrics.sessions!.value },
+    {
+      check: "return_rate = units_returned ÷ units_sold",
+      expected: unitsSold > 0 ? totals.metrics.units_returned!.value / unitsSold : 0,
+      actual: totals.metrics.return_rate!.value,
+    },
   ].map((c) => ({ ...c, ok: close(c.expected, c.actual) }));
   return { range: totals.range, checks, ok: checks.every((c) => c.ok) };
 }
