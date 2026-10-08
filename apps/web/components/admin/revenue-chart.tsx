@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { RevenuePoint } from "@/lib/api/admin-analytics";
 import { formatBusinessDate, formatPrice, storeCurrencySymbol } from "@/lib/format";
+import { ChartFrame, type ChartTableData } from "@/components/admin/chart-frame";
 
 const WIDTH = 760;
 const HEIGHT = 280;
@@ -51,6 +52,28 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
     return { points: pts, maxRevenue: max, areaPath: area, linePath: line };
   }, [data]);
 
+  // The same numbers in words and as a table (ChartFrame) — the drawing alone says nothing to a screen reader.
+  const { summary, table } = useMemo(() => {
+    const day = (date: string) => formatBusinessDate(date, { weekday: "short", month: "short", day: "numeric" });
+    const total = data.reduce((sum, d) => sum + d.revenue, 0);
+    const orders = data.reduce((sum, d) => sum + d.orders, 0);
+    const best = data.reduce<RevenuePoint | null>((top, d) => (!top || d.revenue > top.revenue ? d : top), null);
+    const range = data.length ? `${day(data[0]!.date)} to ${day(data[data.length - 1]!.date)}` : "";
+    const text =
+      !best || total === 0
+        ? `Realised net sales by day${range ? `, ${range}` : ""}: no sales in this period.`
+        : `Realised net sales by day, ${range}: ${formatPrice(total)} from ${orders} order${orders === 1 ? "" : "s"}. Highest day ${day(best.date)}, ${formatPrice(best.revenue)}.`;
+    const rows: ChartTableData["rows"] = data.map((d) => ({ key: d.date, cells: [day(d.date), formatPrice(d.revenue), d.orders] }));
+    return {
+      summary: text,
+      table: {
+        caption: "Realised net sales by day",
+        columns: [{ label: "Day" }, { label: "Net sales", align: "right" as const }, { label: "Orders", align: "right" as const }],
+        rows,
+      },
+    };
+  }, [data]);
+
   const hovered = hoverIndex !== null ? points[hoverIndex] : null;
   const labelEvery = Math.max(1, Math.ceil(points.length / 6));
   const innerH = HEIGHT - PADDING.top - PADDING.bottom;
@@ -70,93 +93,95 @@ export function RevenueChart({ data }: { data: RevenuePoint[] }) {
   }
 
   return (
-    <div className="relative">
-      <svg
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="w-full touch-none"
-        onMouseLeave={() => setHoverIndex(null)}
-        onMouseMove={(e) => setHoverIndex(pickNearestPoint(e.clientX, e.currentTarget.getBoundingClientRect()))}
-        onTouchStart={(e) => {
-          const touch = e.touches[0];
-          if (touch) setHoverIndex(pickNearestPoint(touch.clientX, e.currentTarget.getBoundingClientRect()));
-        }}
-        onTouchMove={(e) => {
-          const touch = e.touches[0];
-          if (touch) setHoverIndex(pickNearestPoint(touch.clientX, e.currentTarget.getBoundingClientRect()));
-        }}
-        onTouchEnd={() => setHoverIndex(null)}
-      >
-        <defs>
-          <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="currentColor" stopOpacity={0.14} className="text-accent" />
-            <stop offset="100%" stopColor="currentColor" stopOpacity={0} className="text-accent" />
-          </linearGradient>
-        </defs>
+    <ChartFrame summary={summary} table={table}>
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          className="w-full touch-none"
+          onMouseLeave={() => setHoverIndex(null)}
+          onMouseMove={(e) => setHoverIndex(pickNearestPoint(e.clientX, e.currentTarget.getBoundingClientRect()))}
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            if (touch) setHoverIndex(pickNearestPoint(touch.clientX, e.currentTarget.getBoundingClientRect()));
+          }}
+          onTouchMove={(e) => {
+            const touch = e.touches[0];
+            if (touch) setHoverIndex(pickNearestPoint(touch.clientX, e.currentTarget.getBoundingClientRect()));
+          }}
+          onTouchEnd={() => setHoverIndex(null)}
+        >
+          <defs>
+            <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity={0.14} className="text-accent" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity={0} className="text-accent" />
+            </linearGradient>
+          </defs>
 
-        {/* recessive gridlines + y-axis labels */}
-        {GRID_FRACTIONS.map((frac) => {
-          const y = PADDING.top + innerH * (1 - frac);
-          return (
-            <g key={frac}>
-              <line x1={PADDING.left} x2={WIDTH - PADDING.right} y1={y} y2={y} className="stroke-ink-100" strokeWidth={1} />
-              <text
-                x={PADDING.left - 10}
-                y={y}
-                dy={frac === 0 ? -2 : frac === 1 ? 10 : 4}
-                textAnchor="end"
-                fontSize={10.5}
-                className="fill-ink-400"
-              >
-                {formatCompactPrice(maxRevenue * frac)}
-              </text>
+          {/* recessive gridlines + y-axis labels */}
+          {GRID_FRACTIONS.map((frac) => {
+            const y = PADDING.top + innerH * (1 - frac);
+            return (
+              <g key={frac}>
+                <line x1={PADDING.left} x2={WIDTH - PADDING.right} y1={y} y2={y} className="stroke-ink-100" strokeWidth={1} />
+                <text
+                  x={PADDING.left - 10}
+                  y={y}
+                  dy={frac === 0 ? -2 : frac === 1 ? 10 : 4}
+                  textAnchor="end"
+                  fontSize={10.5}
+                  className="fill-ink-400"
+                >
+                  {formatCompactPrice(maxRevenue * frac)}
+                </text>
+              </g>
+            );
+          })}
+
+          <path d={areaPath} fill="url(#revenueFill)" stroke="none" />
+          <path d={linePath} fill="none" className="stroke-accent" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />
+
+          {points.map(
+            (p, i) =>
+              i % labelEvery === 0 && (
+                <text key={p.date} x={p.x} y={HEIGHT - 8} fontSize={10.5} className="fill-ink-400" textAnchor="middle">
+                  {formatBusinessDate(p.date, { month: "short", day: "numeric" })}
+                </text>
+              ),
+          )}
+
+          {hovered && (
+            <g>
+              <line
+                x1={hovered.x}
+                x2={hovered.x}
+                y1={PADDING.top}
+                y2={HEIGHT - PADDING.bottom}
+                className="stroke-ink-200"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+              />
+              <circle cx={hovered.x} cy={hovered.y} r={5} className="fill-accent stroke-cream-50" strokeWidth={2.5} />
             </g>
-          );
-        })}
-
-        <path d={areaPath} fill="url(#revenueFill)" stroke="none" />
-        <path d={linePath} fill="none" className="stroke-accent" strokeWidth={2.25} strokeLinecap="round" strokeLinejoin="round" />
-
-        {points.map(
-          (p, i) =>
-            i % labelEvery === 0 && (
-              <text key={p.date} x={p.x} y={HEIGHT - 8} fontSize={10.5} className="fill-ink-400" textAnchor="middle">
-                {formatBusinessDate(p.date, { month: "short", day: "numeric" })}
-              </text>
-            ),
-        )}
+          )}
+        </svg>
 
         {hovered && (
-          <g>
-            <line
-              x1={hovered.x}
-              x2={hovered.x}
-              y1={PADDING.top}
-              y2={HEIGHT - PADDING.bottom}
-              className="stroke-ink-200"
-              strokeWidth={1}
-              strokeDasharray="3 3"
-            />
-            <circle cx={hovered.x} cy={hovered.y} r={5} className="fill-accent stroke-cream-50" strokeWidth={2.5} />
-          </g>
+          <div
+            className="pointer-events-none absolute top-0 z-10 min-w-[9.5rem] -translate-x-1/2 rounded-2xl border border-ink-100 bg-cream-50 px-4 py-3 shadow-lg"
+            style={{ left: `${(hovered.x / WIDTH) * 100}%` }}
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+              {formatBusinessDate(hovered.date, { weekday: "short", month: "short", day: "numeric" })}
+            </p>
+            <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-ink-900">{formatPrice(hovered.revenue)}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-500">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" />
+              {hovered.orders} order{hovered.orders === 1 ? "" : "s"}
+            </p>
+          </div>
         )}
-      </svg>
-
-      {hovered && (
-        <div
-          className="pointer-events-none absolute top-0 z-10 min-w-[9.5rem] -translate-x-1/2 rounded-2xl border border-ink-100 bg-cream-50 px-4 py-3 shadow-lg"
-          style={{ left: `${(hovered.x / WIDTH) * 100}%` }}
-        >
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
-            {formatBusinessDate(hovered.date, { weekday: "short", month: "short", day: "numeric" })}
-          </p>
-          <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-ink-900">{formatPrice(hovered.revenue)}</p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-500">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent" />
-            {hovered.orders} order{hovered.orders === 1 ? "" : "s"}
-          </p>
-        </div>
-      )}
-    </div>
+      </div>
+    </ChartFrame>
   );
 }
 

@@ -44,7 +44,7 @@ export function OrderStatusBreakdown({ counts }: { counts: OrderStatusCount[] })
     <div className="flex flex-col items-center gap-7 sm:flex-row sm:items-center">
       {/* Donut — a single-glance read of the mix; the list beside it is where the precision lives. */}
       <div className="relative shrink-0">
-        <svg viewBox="0 0 100 100" className="h-32 w-32 -rotate-90">
+        <svg viewBox="0 0 100 100" className="h-32 w-32 -rotate-90" aria-hidden="true">
           <circle cx="50" cy="50" r={RADIUS} fill="none" strokeWidth="10" className="stroke-ink-100" />
           {active.map((c) => {
             const meta = STATUS_META[c.status] ?? FALLBACK_META;

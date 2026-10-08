@@ -44,7 +44,7 @@ export function RevenueChartCard({ series, range, onRangeChange, loading }: Reve
 
         {/* Range control for this chart only; it doesn't touch the 30-day queries other cards rely on. */}
         <SegmentedControl
-          aria-label="Revenue range"
+          aria-label="Chart range"
           className="self-start"
           options={RANGE_OPTIONS.map((days) => ({ value: days, label: `${days}D` }))}
           value={range}
