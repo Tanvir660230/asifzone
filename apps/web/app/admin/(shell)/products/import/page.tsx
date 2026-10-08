@@ -102,7 +102,7 @@ export default function ProductImportPage() {
   const canImport = mayImport && report !== null && willWrite > 0 && (!hasErrors || (skipInvalid && !fileLevel)) && !result && busy === null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="space-y-6">
       <PageHeader title="Import & export products" action={<BackLink href="/admin/products" label="Back to Products" />} />
       <ModuleTabs />
 

@@ -121,7 +121,7 @@ export default function SmsNotificationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <PageHeader
         title="SMS Notifications"
         description="Text messages sent automatically over the order lifecycle, via BulkSMSBD."

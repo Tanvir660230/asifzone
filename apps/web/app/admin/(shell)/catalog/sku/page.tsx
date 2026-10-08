@@ -88,7 +88,7 @@ export default function SkuSettingsPage() {
         reused, so two products can&rsquo;t end up with the same SKU. Existing SKUs are never changed.
       </p>
 
-      <div className="max-w-2xl space-y-8">
+      <div className="space-y-8">
         <FormSection title="Pattern">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
             <div>

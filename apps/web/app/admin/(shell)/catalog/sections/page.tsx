@@ -48,7 +48,7 @@ export default function PageSectionsPage() {
         video) is written on the product itself.
       </p>
 
-      <div className="max-w-3xl">
+      <div>
         {isLoading ? (
           <p className="text-ink-400">Loading…</p>
         ) : (

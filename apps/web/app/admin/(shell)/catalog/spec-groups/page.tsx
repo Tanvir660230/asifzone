@@ -88,7 +88,7 @@ export default function SpecGroupsPage() {
         </form>
       )}
 
-      <div className="max-w-2xl overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
+      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         {isLoading && <p className="p-4 text-sm text-ink-400">Loading…</p>}
         {!isLoading && groups.length === 0 && <EmptyState icon={LayoutList} title="No spec groups yet" description="Add one, then assign template attributes to it." />}
         {groups.map((g) => (

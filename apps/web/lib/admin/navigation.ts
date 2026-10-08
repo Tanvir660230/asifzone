@@ -651,6 +651,28 @@ export function goTargets(access: NavAccess): Array<{ key: string; node: NavNode
 }
 
 /** The current location of a deprecated route (query string kept), or null when the pathname isn't deprecated. */
+/**
+ * Page width (Admin V2): the console uses the full screen — lists, tables, reports and dashboards get every pixel, like
+ * an ERP. Pages that are mostly a form or a short list of settings read better in one centered column, so they are named
+ * here (exact routes) instead of each page capping itself.
+ */
+export const FORM_WIDTH_ROUTES: readonly string[] = [
+  "/admin/settings",
+  "/admin/settings/delivery-zones",
+  "/admin/payment-methods",
+  "/admin/sms-notifications",
+  "/admin/team",
+  "/admin/system-health",
+  "/admin/products/import",
+  "/admin/catalog/sku",
+  "/admin/catalog/sections",
+  "/admin/catalog/spec-groups",
+];
+
+export function pageWidthFor(pathname: string): "form" | "full" {
+  return FORM_WIDTH_ROUTES.includes(pathname.replace(/\/+$/, "") || "/") ? "form" : "full";
+}
+
 export function deprecatedRedirect(pathname: string, search = ""): string | null {
   for (const node of NAV_NODES) {
     for (const entry of node.deprecatedRoutes ?? []) {

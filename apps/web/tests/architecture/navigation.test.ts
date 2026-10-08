@@ -6,6 +6,8 @@ import {
   breadcrumbsFor,
   createCommands,
   deprecatedRedirect,
+  FORM_WIDTH_ROUTES,
+  pageWidthFor,
   documentTitleFor,
   goTargets,
   hrefOf,
@@ -96,6 +98,12 @@ describe("navigation manifest — coverage of the app", () => {
   it("every admin page has a navigation node (or is a declared deprecated route)", () => {
     const missing = routes.filter((r) => !deprecated.has(r) && !NAV_NODES.some((n) => n.route === r));
     expect(missing).toEqual([]);
+  });
+
+  it("every form-width route is a real page", () => {
+    expect(FORM_WIDTH_ROUTES.filter((r) => !routes.includes(r))).toEqual([]);
+    expect(pageWidthFor("/admin/settings")).toBe("form");
+    expect(pageWidthFor("/admin/orders")).toBe("full");
   });
 
   it("every node route is a real page", () => {

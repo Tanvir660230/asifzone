@@ -15,7 +15,8 @@ import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { Toaster } from "@/components/ui/toast";
 import { useNavAccess } from "@/hooks/use-nav-access";
 import { useShortcut } from "@/hooks/use-shortcut";
-import { documentTitleFor, goTargets } from "@/lib/admin/navigation";
+import { documentTitleFor, goTargets, pageWidthFor } from "@/lib/admin/navigation";
+import { cn } from "@/lib/utils";
 
 export default function ShellLayout({ children }: { children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -137,7 +138,9 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
             </div>
           </header>
           <main className="flex-1 px-4 py-6 sm:px-page sm:py-8 print:p-0">
-            <div className="mx-auto w-full max-w-[1320px]">
+            {/* Full screen for data pages; one centered column for forms (pageWidthFor). The 2400px ceiling only matters on
+                ultra-wide monitors, where a single table row would otherwise be too long to follow. */}
+            <div className={cn("mx-auto w-full", pageWidthFor(pathname) === "form" ? "max-w-[880px]" : "max-w-[2400px]")}>
               <Breadcrumbs className="mb-3 print:hidden md:hidden" />
               {children}
             </div>

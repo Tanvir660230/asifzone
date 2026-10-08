@@ -222,7 +222,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <PageHeader title="Settings" />
       <ModuleTabs />
 
