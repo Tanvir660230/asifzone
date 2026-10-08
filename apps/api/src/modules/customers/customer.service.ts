@@ -910,12 +910,20 @@ export async function getCustomerDetailAdmin(customerId: string) {
 
   // Favorite products — aggregated from the recently-fetched orders (capped at 20 above) rather
   // than a full unpaginated item scan; fine at this store's order volumes, revisit if that changes.
-  const productTotals = new Map<string, { name: string; quantity: number }>();
+  // Counted per product (every size/colour of it together), not per SKU — one row per product. Order lines keep only the
+  // variant id, so the products come from one lookup; a since-deleted variant falls back to the product name it had.
+  const variantIds = [...new Set(customer.orders.flatMap((o) => o.items.map((i) => i.variantId)))];
+  const productOf = new Map(
+    (await prisma.productVariant.findMany({ where: { id: { in: variantIds } }, select: { id: true, productId: true } })).map((v) => [v.id, v.productId]),
+  );
+  const productTotals = new Map<string, { productId: string | null; name: string; quantity: number }>();
   for (const order of customer.orders) {
     for (const item of order.items) {
-      const existing = productTotals.get(item.skuSnapshot);
+      const productId = productOf.get(item.variantId) ?? null;
+      const key = productId ?? `name:${item.productNameSnapshot}`;
+      const existing = productTotals.get(key);
       if (existing) existing.quantity += item.quantity;
-      else productTotals.set(item.skuSnapshot, { name: item.productNameSnapshot, quantity: item.quantity });
+      else productTotals.set(key, { productId, name: item.productNameSnapshot, quantity: item.quantity });
     }
   }
   const favoriteProducts = [...productTotals.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5);

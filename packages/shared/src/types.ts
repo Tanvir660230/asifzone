@@ -855,7 +855,10 @@ export interface WishlistItem {
 }
 
 export interface FavoriteProduct {
+  /** Null when every variant bought has since been deleted. */
+  productId: string | null;
   name: string;
+  /** Units bought across every size/colour of the product. */
   quantity: number;
 }
 

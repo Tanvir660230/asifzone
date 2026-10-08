@@ -246,8 +246,14 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
             {customer.favoriteProducts.map((p) => (
-              <div key={p.name} className="flex items-center justify-between">
-                <span className="text-ink-700">{p.name}</span>
+              <div key={p.productId ?? p.name} className="flex items-center justify-between">
+                {p.productId ? (
+                  <Link href={`/admin/products/${p.productId}/edit`} className="text-ink-700 hover:text-accent hover:underline">
+                    {p.name}
+                  </Link>
+                ) : (
+                  <span className="text-ink-700">{p.name}</span>
+                )}
                 <span className="text-ink-400">×{p.quantity}</span>
               </div>
             ))}

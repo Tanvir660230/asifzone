@@ -36,7 +36,7 @@ test.describe("provider actions follow provider availability (D-4)", () => {
   test("OWNER: the Integrations panel shows each provider's status and the missing variables by name", async ({ page }) => {
     await login(page, OWNER);
     await page.goto("/admin/settings");
-    await page.getByRole("button", { name: "Shipping, Tax & Rewards" }).click();
+    await page.getByRole("button", { name: "Checkout, tax & rewards" }).click();
     const panel = page.locator("li", { hasText: "Courier" });
     await expect(panel).toContainText("steadfast");
     await expect(panel).toContainText("Missing credentials");
