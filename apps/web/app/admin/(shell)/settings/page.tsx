@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
+import { useCapability } from "@/hooks/use-capability";
+import { SegmentedControl } from "@/components/ui/tabs";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { ImageUploadField } from "@/components/admin/image-upload-field";
@@ -18,9 +22,7 @@ import { toast } from "@/components/ui/toast";
 import * as settingsApi from "@/lib/api/settings";
 import * as socialLinksApi from "@/lib/api/admin-social-links";
 import { ApiError } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { adminCan } from "@/lib/auth";
 import { storeCurrencyCode } from "@/lib/format";
 import { ProviderStatusPanel } from "@/components/admin/provider-status-panel";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
@@ -119,35 +121,59 @@ function WhatsAppQuickConfig() {
 }
 
 const TABS = [
-  { value: "branding", label: "Store & Branding" },
-  { value: "contact", label: "Contact & Support" },
-  { value: "shipping", label: "Shipping, Tax & Rewards" },
+  { value: "branding", label: "Store & branding" },
+  { value: "contact", label: "Contact & support" },
+  { value: "shipping", label: "Checkout, tax & rewards" },
 ] as const;
 type SettingsTab = (typeof TABS)[number]["value"];
 
+/** Blueprint V2 P7: each section saves only its own fields (one PATCH → one settings audit entry), so saving one
+ * section never sends another section's untouched — possibly stale — values. */
+const SECTIONS = {
+  store: ["storeName", "currency", "tagline", "logoUrl", "logoOnDarkUrl", "faviconUrl"],
+  seo: ["googleSiteVerification"],
+  contact: ["contactEmail", "contactPhone"],
+  identity: ["legalName", "legalJurisdiction", "addressLine", "addressCity", "addressRegion", "addressPostalCode", "addressCountry", "supportHours"],
+  contactOptions: ["whatsappLabel", "whatsappMessage", "callEnabled", "callLabel", "liveChatEnabled", "liveChatLabel", "tawkPropertyId", "tawkWidgetId"],
+  policy: ["returnWindowDays", "returnConditions", "handlingDaysMin", "handlingDaysMax"],
+  taxRewards: ["courierReturnFeeDhaka", "courierReturnFeeOutsideDhaka", "rewardPointsPerCurrency", "taxEnabled", "defaultTaxRate", "shippingTaxable"],
+  payments: ["codEnabled", "onlinePaymentEnabled", "epsPaymentEnabled"],
+} as const satisfies Record<string, ReadonlyArray<keyof UpdateSettingsInput>>;
+type SettingsSection = keyof typeof SECTIONS;
+
 export default function SettingsPage() {
-  const [tab, setTab] = useState<SettingsTab>("branding");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab: SettingsTab = TABS.find((t) => t.value === searchParams.get("pane"))?.value ?? "branding";
+  const setTab = (next: SettingsTab) => router.replace(next === "branding" ? pathname : `${pathname}?pane=${next}`, { scroll: false });
+  const [savingSection, setSavingSection] = useState<SettingsSection | null>(null);
+  const loaded = useRef(false);
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: settingsApi.getSettings });
   const gateways = useProviderCapabilities(); // Phase 12 D-4
   const { data: currentAdmin } = useCurrentAdmin();
-  const canManageSettings = adminCan(currentAdmin?.admin, "settings.manage");
+  const canManageSettings = useCapability("settings.manage");
 
   const {
     register,
-    handleSubmit,
     reset,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    trigger,
+    getValues,
+    resetField,
+    formState: { errors, dirtyFields },
   } = useForm<UpdateSettingsInput>({ resolver: zodResolver(updateSettingsSchema) });
 
   const logoUrl = watch("logoUrl");
   const logoOnDarkUrl = watch("logoOnDarkUrl");
   const faviconUrl = watch("faviconUrl");
 
+  // Filled once: a later refetch must not wipe what's being edited in another section.
   useEffect(() => {
-    if (!data) return;
+    if (!data || loaded.current) return;
+    loaded.current = true;
     const s = data.settings;
     reset({
       storeName: s.storeName,
@@ -193,12 +219,38 @@ export default function SettingsPage() {
 
   const updateMutation = useMutation({
     mutationFn: settingsApi.updateSettings,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      toast.success("Settings saved");
+    onSuccess: (saved) => {
+      // The response is the whole settings row: the shell (store name, logo) reads it without a refetch.
+      queryClient.setQueryData(["settings"], saved);
+      toast.success("Saved");
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to save settings"),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save"),
   });
+
+  async function saveSection(section: SettingsSection) {
+    const fields = SECTIONS[section];
+    if (!(await trigger([...fields]))) return;
+    const values = getValues();
+    const payload = Object.fromEntries(fields.map((f) => [f, values[f]])) as UpdateSettingsInput;
+    setSavingSection(section);
+    updateMutation.mutate(payload, {
+      onSuccess: () => fields.forEach((f) => resetField(f, { defaultValue: values[f] as never })),
+      onSettled: () => setSavingSection(null),
+    });
+  }
+
+  function sectionSave(section: SettingsSection) {
+    const dirty = SECTIONS[section].some((f) => Boolean((dirtyFields as Record<string, unknown>)[f]));
+    const saving = savingSection === section;
+    return (
+      <div className="flex items-center justify-end gap-3 pt-1">
+        {dirty && !saving && <span className="text-[12px] text-fg-subtle">Unsaved changes</span>}
+        <Button type="button" size="sm" disabled={!dirty || updateMutation.isPending} onClick={() => saveSection(section)}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    );
+  }
 
   const taxEnabled = watch("taxEnabled");
   const callEnabled = watch("callEnabled");
@@ -226,23 +278,12 @@ export default function SettingsPage() {
       <PageHeader title="Settings" />
       <ModuleTabs />
 
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-ink-100">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            type="button"
-            onClick={() => setTab(t.value)}
-            className={cn(
-              "border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-              tab === t.value ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Scrolls sideways on a phone rather than spilling past the screen edge. */}
+      <HScrollShadow className="mb-6 overflow-x-auto">
+        <SegmentedControl aria-label="Settings pane" size="md" className="w-max" value={tab} onChange={setTab} options={TABS.map((t) => ({ value: t.value, label: t.label }))} />
+      </HScrollShadow>
 
-      <form onSubmit={handleSubmit((values) => updateMutation.mutate(values))} className="space-y-6">
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
         {tab === "branding" && (
         <>
         <FormSection title="Store information" description="Name and branding shown across the storefront.">
@@ -300,6 +341,7 @@ export default function SettingsPage() {
               />
             </div>
           </div>
+          {sectionSave("store")}
         </FormSection>
 
         <FormSection
@@ -314,6 +356,7 @@ export default function SettingsPage() {
             </p>
             <Input id="googleSiteVerification" placeholder="abc123XYZ..." {...register("googleSiteVerification")} />
           </div>
+          {sectionSave("seo")}
         </FormSection>
         </>
         )}
@@ -331,6 +374,7 @@ export default function SettingsPage() {
               <Input id="contactPhone" {...register("contactPhone")} />
             </div>
           </div>
+          {sectionSave("contact")}
         </FormSection>
 
         <FormSection
@@ -372,6 +416,7 @@ export default function SettingsPage() {
               <Input id="supportHours" placeholder="e.g. Sat–Thu, 10am–8pm" {...register("supportHours")} />
             </div>
           </div>
+          {sectionSave("identity")}
         </FormSection>
 
         <FormSection
@@ -439,6 +484,7 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          {sectionSave("contactOptions")}
         </FormSection>
         </>
         )}
@@ -473,6 +519,7 @@ export default function SettingsPage() {
           <p className="mt-4 text-xs text-ink-400">
             “Cash on Delivery available” follows the Cash on Delivery switch under Payment methods; delivery times follow your delivery zones.
           </p>
+          {sectionSave("policy")}
         </FormSection>
 
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
@@ -545,6 +592,7 @@ export default function SettingsPage() {
               Shipping fee includes VAT
             </label>
           </div>
+          {sectionSave("taxRewards")}
         </FormSection>
 
         <FormSection
@@ -579,16 +627,12 @@ export default function SettingsPage() {
               <p className="text-xs text-danger-600">At least one payment method must stay enabled.</p>
             )}
           </div>
+          {sectionSave("payments")}
         </FormSection>
         <ProviderStatusPanel />
         </>
         )}
 
-        <div className="flex justify-end">
-          <Button type="submit" variant="brass" disabled={isSubmitting || updateMutation.isPending}>
-            {updateMutation.isPending ? "Saving…" : "Save settings"}
-          </Button>
-        </div>
       </form>
     </div>
   );
