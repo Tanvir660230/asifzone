@@ -1,5 +1,7 @@
 import { Router } from "express";
-import { updateSettingsSchema } from "@clothing-brand/shared";
+import { createShippingZoneSchema, updateShippingZoneSchema, updateSettingsSchema } from "@clothing-brand/shared";
+import { asyncHandler } from "../../lib/async-handler";
+import { createShippingZone, deleteShippingZone, listShippingZones, updateShippingZone } from "./shipping-zones.service";
 import { validate } from "../../middlewares/validate";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { imageUpload } from "../uploads/upload.middleware";
@@ -16,6 +18,33 @@ settingsRouter.get("/", settingsController.get);
 // (docs/PRICING_INVARIANTS.md §10). Empty `drift` = consistent.
 settingsRouter.get("/pricing-config-drift", requireAdmin, requirePermission("ops.read"), settingsController.pricingDrift);
 settingsRouter.patch("/", requireAdmin, requirePermission("settings.manage"), validate(updateSettingsSchema), settingsController.update);
+
+// Delivery zones (Admin V2 DR-17) — what checkout charges per address; OWNER-only like the rest of store config.
+settingsRouter.get(
+  "/shipping-zones", requireAdmin, requirePermission("settings.manage"),
+  asyncHandler(async (_req, res) => {
+    res.json({ items: await listShippingZones() });
+  }),
+);
+settingsRouter.post(
+  "/shipping-zones", requireAdmin, requirePermission("settings.manage"), validate(createShippingZoneSchema),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await createShippingZone(req.body));
+  }),
+);
+settingsRouter.patch(
+  "/shipping-zones/:id", requireAdmin, requirePermission("settings.manage"), validate(updateShippingZoneSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await updateShippingZone(req.params.id!, req.body));
+  }),
+);
+settingsRouter.delete(
+  "/shipping-zones/:id", requireAdmin, requirePermission("settings.manage"),
+  asyncHandler(async (req, res) => {
+    await deleteShippingZone(req.params.id!);
+    res.status(204).send();
+  }),
+);
 settingsRouter.post(
   "/upload-logo",
   requireAdmin,

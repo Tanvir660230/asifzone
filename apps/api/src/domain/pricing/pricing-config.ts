@@ -76,6 +76,54 @@ export async function applySettingsToPricingConfig(
   }
 }
 
+type ZoneMatchInput = { field: "DISTRICT" | "DIVISION" | "POSTCODE"; value: string };
+
+/** Admin V2 DR-17: the zone/rate writes (the only writer of ShippingZone / ShippingZoneMatch / ShippingRate). The rules
+ * about which zones may change how live in modules/settings/shipping-zones.service.ts. */
+export async function insertShippingZone(
+  tx: Prisma.TransactionClient,
+  data: { key: string; name: string; priority: number; isActive: boolean; matches: ZoneMatchInput[]; fee: number; freeOverAmount: number | null },
+) {
+  return tx.shippingZone.create({
+    data: {
+      key: data.key,
+      name: data.name,
+      priority: data.priority,
+      isActive: data.isActive,
+      matches: { create: data.matches },
+      rate: { create: { fee: data.fee, freeOverAmount: data.freeOverAmount } },
+    },
+    select: { id: true },
+  });
+}
+
+export async function writeShippingZone(
+  tx: Prisma.TransactionClient,
+  id: string,
+  patch: { name?: string; priority?: number; isActive?: boolean; matches?: ZoneMatchInput[]; rate?: { fee: number; freeOverAmount?: number | null } | { freeOverAmount: number | null } },
+) {
+  const fields = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+    ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
+  };
+  if (Object.keys(fields).length) await tx.shippingZone.update({ where: { id }, data: fields });
+  if (patch.matches) {
+    await tx.shippingZoneMatch.deleteMany({ where: { zoneId: id } });
+    if (patch.matches.length) await tx.shippingZoneMatch.createMany({ data: patch.matches.map((m) => ({ zoneId: id, ...m })) });
+  }
+  if (patch.rate) {
+    const current = await tx.shippingRate.findUnique({ where: { zoneId: id } });
+    const fee = "fee" in patch.rate ? patch.rate.fee : current ? Number(current.fee) : 0;
+    const rate = { ...("fee" in patch.rate ? { fee: patch.rate.fee } : {}), ...(patch.rate.freeOverAmount !== undefined ? { freeOverAmount: patch.rate.freeOverAmount } : {}) };
+    await tx.shippingRate.upsert({ where: { zoneId: id }, update: rate, create: { zoneId: id, fee, freeOverAmount: patch.rate.freeOverAmount ?? null } });
+  }
+}
+
+export async function removeShippingZone(db: Db, id: string) {
+  await db.shippingZone.delete({ where: { id } });
+}
+
 /** Reconciliation: do the legacy StoreSetting mirrors still equal their authorities? (docs/PRICING_INVARIANTS.md §10) */
 export async function pricingConfigDrift(db: Db = prisma) {
   const [store, tax, zones] = await Promise.all([

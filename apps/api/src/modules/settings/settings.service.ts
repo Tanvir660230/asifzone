@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { UpdateSettingsInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDel, cacheGet, cacheSet } from "../../config/redis";
@@ -21,6 +22,18 @@ export function currencyChangeBlocked(requested: string | undefined, current: st
 }
 
 /** Lazily creates the one settings row on first read — no seed step required for a fresh database. */
+/** DR-17: a seeded zone's fee changed on Settings › Delivery zones — keep its legacy StoreSetting mirror equal, in the
+ * zone's own transaction (pricingConfigDrift stays empty). Call invalidateSettingsCache() after the commit. */
+export async function mirrorLegacyShippingFee(tx: Prisma.TransactionClient, field: "shippingFeeDhaka" | "shippingFeeOutsideDhaka", fee: number) {
+  await tx.storeSetting.update({ where: { id: SINGLETON_ID }, data: { [field]: fee } });
+}
+
+/** Drops the cached settings (API + the storefront's tagged copy) after a write that changes them. */
+export async function invalidateSettingsCache() {
+  await cacheDel(CACHE_KEY);
+  void revalidateStorefrontTags([SETTINGS_CACHE_TAG]);
+}
+
 export async function getSettings() {
   const cached = await cacheGet<Awaited<ReturnType<typeof fetchOrCreate>>>(CACHE_KEY);
   if (cached) return cached;

@@ -33,7 +33,8 @@ Related: [TARGET_ARCHITECTURE.md §16](TARGET_ARCHITECTURE.md) · [PRICING_PIPEL
 | D22 | Cancelling an order (Owner or Staff) requires a reason | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — `updateOrderStatusSchema` / `bulkOrderStatusSchema` |
 | D23 | Courier pickup moves the order to SHIPPED automatically | APPROVED (owner, 2026-10-08) · BLOCKED — Steadfast reports no pickup state (see entry) | — |
 | D24 | Phone orders entered by staff are created CONFIRMED by default | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — `createManualOrder` `confirmNow` |
-| D25 | Conversion rate = orders placed ÷ sessions | APPROVED (owner, 2026-10-08) | Admin V2 — metrics registry (behavioural family) |
+| D25 | Conversion rate = orders placed ÷ sessions | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — registry `conversion_rate` |
+| D26 | Delivery fees are set per zone (district / division / postcode), each with its own fee and free-delivery limit | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — Settings › Delivery zones (DR-17) |
 
 Phase 2 implemented D3–D10 in the canonical pricing pipeline ([PRICING_PIPELINE.md](PRICING_PIPELINE.md),
 [PRICING_INVARIANTS.md](PRICING_INVARIANTS.md)). The interpretations Phase 2 had to make where a decision's wording
@@ -382,6 +383,7 @@ are the installation-isolation decisions on the portable-foundation line.
 | D23 | When the courier picks a parcel up, the order moves to SHIPPED by itself. | **Not implementable with Steadfast today:** its status API never reports a picked-up / in-transit state (only `in_review` / `pending` / `hold` until `delivered` / `partial_delivered` / `cancelled`; see `courier.service.ts`). SHIPPED therefore stays a staff action. Revisit if Steadfast adds a pickup status or webhook, or with another courier that reports one. |
 | D24 | A phone order staff enter is confirmed on that call: created CONFIRMED by default, with a checkbox to leave it PENDING. | `createManualOrder({ confirmNow })` applies the PENDING → CONFIRMED transition inside the order's insert transaction, attributed to the admin; stock is reserved once, as for any order. The customer gets the "order placed" SMS (no separate "confirmed" SMS for an order they just confirmed). |
 | D25 | Conversion rate = orders placed ÷ storefront sessions in the same business-date range. | To be added to the metrics registry as a behavioural-family metric (orders with a `sessionId` ÷ distinct sessions), so Home, Analytics and AI read one definition. |
+| D26 | Delivery fees are set per zone. A zone covers districts, whole divisions and/or postcodes and has its own fee and optional "free delivery over" amount; the matching active zone with the highest priority wins, the default zone covers everywhere else. | The two zones the store started with (inside Dhaka district, rest of the country) can't be deleted and their fees still mirror the legacy setting fields; the default zone can't be switched off or given rules. A free-shipping coupon or an all-free-delivery cart still waives the fee. |
 
 **Engineering note — Customers list (Blueprint V2 PERF-01), 2026-10-08.** Not moved to SQL yet. Measured on the
 Asif Zone demo mirror (467 customers): list 16–45 ms, stats 13 ms. The list's spend and order count are the registry

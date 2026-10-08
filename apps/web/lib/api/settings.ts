@@ -1,4 +1,4 @@
-import type { StoreSettings, UpdateSettingsInput } from "@clothing-brand/shared";
+import type { CreateShippingZoneInput, ShippingZoneRow, StoreSettings, UpdateSettingsInput, UpdateShippingZoneInput } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export function getSettings() {
@@ -7,6 +7,23 @@ export function getSettings() {
 
 export function updateSettings(input: UpdateSettingsInput) {
   return apiFetch<{ settings: StoreSettings }>("/api/settings", { method: "PATCH", body: input });
+}
+
+/** Delivery zones (DR-17): what checkout charges per area. */
+export function listShippingZones() {
+  return apiFetch<{ items: ShippingZoneRow[] }>("/api/settings/shipping-zones");
+}
+
+export function createShippingZone(input: CreateShippingZoneInput) {
+  return apiFetch<ShippingZoneRow>("/api/settings/shipping-zones", { method: "POST", body: input });
+}
+
+export function updateShippingZone(id: string, input: UpdateShippingZoneInput) {
+  return apiFetch<ShippingZoneRow>(`/api/settings/shipping-zones/${id}`, { method: "PATCH", body: input });
+}
+
+export function deleteShippingZone(id: string) {
+  return apiFetch<void>(`/api/settings/shipping-zones/${id}`, { method: "DELETE" });
 }
 
 export function uploadLogo(file: File) {

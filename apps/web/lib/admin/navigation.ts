@@ -407,6 +407,17 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "settings.store", label: "Store & branding", title: term("settings"), kind: "settings", parent: "settings", domain: "system", route: "/admin/settings", order: 0, keywords: ["logo", "store info"] },
   { id: "settings.payment-methods", label: "Payment methods", kind: "settings", parent: "settings", domain: "system", route: "/admin/payment-methods", order: 1, keywords: ["checkout", "logos"] },
   {
+    id: "settings.delivery-zones",
+    label: "Delivery zones",
+    kind: "settings",
+    parent: "settings",
+    domain: "system",
+    route: "/admin/settings/delivery-zones",
+    capability: "settings.manage",
+    order: 2,
+    keywords: ["shipping fee", "delivery charge", "free delivery", "zones"],
+  },
+  {
     id: "settings.sms",
     label: "SMS notifications",
     kind: "settings",
@@ -414,7 +425,7 @@ export const NAV_NODES: readonly NavNode[] = [
     domain: "system",
     route: "/admin/sms-notifications",
     capability: "settings.manage",
-    order: 2,
+    order: 3,
     keywords: ["sms templates"],
   },
 

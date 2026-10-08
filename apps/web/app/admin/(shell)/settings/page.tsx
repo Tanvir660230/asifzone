@@ -158,8 +158,6 @@ export default function SettingsPage() {
       currency: s.currency,
       contactEmail: s.contactEmail,
       contactPhone: s.contactPhone,
-      shippingFeeDhaka: Number(s.shippingFeeDhaka),
-      shippingFeeOutsideDhaka: Number(s.shippingFeeOutsideDhaka),
       courierReturnFeeDhaka: Number(s.courierReturnFeeDhaka),
       courierReturnFeeOutsideDhaka: Number(s.courierReturnFeeOutsideDhaka),
       taxEnabled: s.taxEnabled,
@@ -479,22 +477,11 @@ export default function SettingsPage() {
 
         <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="shippingFeeDhaka">Shipping fee — inside Dhaka district ({storeCurrencyCode()})</Label>
-              <Input id="shippingFeeDhaka" type="number" step="0.01" {...register("shippingFeeDhaka", { valueAsNumber: true })} />
-              {errors.shippingFeeDhaka && <p className="ui-field-error">{errors.shippingFeeDhaka.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="shippingFeeOutsideDhaka">Shipping fee — outside Dhaka ({storeCurrencyCode()})</Label>
-              <Input
-                id="shippingFeeOutsideDhaka"
-                type="number"
-                step="0.01"
-                {...register("shippingFeeOutsideDhaka", { valueAsNumber: true })}
-              />
-              {errors.shippingFeeOutsideDhaka && (
-                <p className="ui-field-error">{errors.shippingFeeOutsideDhaka.message}</p>
-              )}
+            <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-lg bg-ink-900/[0.03] px-3 py-2.5">
+              <p className="text-[13px] text-fg-muted">Delivery fees and free-delivery limits are set per area.</p>
+              <Link href="/admin/settings/delivery-zones" className="shrink-0 text-[13px] font-medium text-accent hover:underline">
+                Delivery zones
+              </Link>
             </div>
             <div>
               <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka district ({storeCurrencyCode()})</Label>
