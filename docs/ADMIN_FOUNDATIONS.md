@@ -62,16 +62,22 @@ excluded), and Home is interactive in ≤ 2.5 s on a mid-range phone over 4G.
 
   | Page | 4G (9 Mbps, 170 ms) | Slow 4G (1.6 Mbps, 150 ms) |
   |---|---|---|
-  | Home | 1.63 s | 2.54 s |
-  | Orders | 1.85 s | 2.99 s |
-  | Products | 1.83 s | 3.18 s |
-  | Customers | 1.68 s | 2.05 s |
+  | Home | 1.56 s | 2.48 s |
+  | Orders | 1.92 s | 3.07 s |
+  | Products | 1.82 s | 3.20 s |
+  | Customers | 1.65 s | 2.04 s |
+
+  Measured locally without nginx, so API JSON is uncompressed (orders page 38 KB, products 50 KB); production
+  gzips it, which takes roughly 150 ms off Orders and Products on Slow 4G.
 
 - What keeps it there: the web bundles `@clothing-brand/shared` from source (`transpilePackages` + alias,
   `"sideEffects": false`) so pages only get the modules they import; list thumbnails use the 300 px `-thumb`
-  rendition (`<Thumbnail>`); the "View store" link doesn't prefetch the storefront.
-- Not yet done: Home's data queries wait for `/me` + capabilities (one extra round trip), and the root layout
-  preloads the storefront's display font. Both matter mainly on Slow 4G.
+  rendition (`<Thumbnail>`); links that open the storefront in a new tab ("View store", product links in orders,
+  customers and the builder) don't prefetch it; the admin layout fetches `/api/auth/me` and the provider capabilities
+  on the server with the admin's cookie (lib/admin/session-prefetch.ts, best effort, 1.5 s cap), so
+  permission-gated queries start on hydration instead of one round trip later.
+- Not yet done: the root layout preloads the storefront's display font (105 KB) on admin pages too; it only
+  matters on Slow 4G.
 
 ## Visual baseline (P9)
 

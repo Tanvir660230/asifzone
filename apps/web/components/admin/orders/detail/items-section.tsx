@@ -62,7 +62,7 @@ export function ItemsSection({ order, detail, perms }: { order: Order; detail: O
             </span>
             <div className="min-w-0 flex-1">
               {item.live?.productSlug ? (
-                <Link href={`/product/${item.live.productSlug}`} target="_blank" className="font-medium text-ink-900 hover:text-info-700 hover:underline">
+                <Link prefetch={false} href={`/product/${item.live.productSlug}`} target="_blank" className="font-medium text-ink-900 hover:text-info-700 hover:underline">
                   {item.productNameSnapshot}
                 </Link>
               ) : (

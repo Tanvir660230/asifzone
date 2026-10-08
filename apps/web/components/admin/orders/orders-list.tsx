@@ -107,7 +107,7 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
     );
   }
   return (
-    <Link href={`/product/${productSlug}`} target="_blank" className="group/product flex items-center gap-2.5" title={`View ${name} on the store (new tab)`}>
+    <Link prefetch={false} href={`/product/${productSlug}`} target="_blank" className="group/product flex items-center gap-2.5" title={`View ${name} on the store (new tab)`}>
       {content}
     </Link>
   );

@@ -49,7 +49,7 @@ export default function EditProductPage() {
               <Eye size={14} aria-hidden="true" /> Preview
             </Link>
             {product.status === "PUBLISHED" && (
-              <Link href={`/product/${product.slug}`} target="_blank" rel="noreferrer" className={pill}>
+              <Link prefetch={false} href={`/product/${product.slug}`} target="_blank" rel="noreferrer" className={pill}>
                 <ExternalLink size={14} aria-hidden="true" /> View on site
               </Link>
             )}

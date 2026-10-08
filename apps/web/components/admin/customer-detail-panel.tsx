@@ -470,6 +470,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
               <p key={item.id}>
                 <Link
                   href={`/product/${item.product.slug}`}
+                  prefetch={false}
                   target="_blank"
                   className="text-info-600 hover:underline"
                 >
