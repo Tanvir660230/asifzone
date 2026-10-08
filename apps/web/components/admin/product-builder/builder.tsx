@@ -73,7 +73,7 @@ export function ProductBuilder({ categories, initial }: ProductBuilderProps) {
       <div className={cn("grid grid-cols-1 items-start gap-6", showPreview && "xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]")}>
         <div className="min-w-0 space-y-4">
           {/* Sticky glass header: where you are, whether it's saved, and the step track. */}
-          <div className="glass-panel space-y-3 rounded-2xl p-3 sm:p-4 lg:sticky lg:top-16 lg:z-sticky">
+          <div className="glass-panel space-y-3 rounded-2xl p-3 sm:p-4 lg:sticky lg:top-chrome lg:z-sticky">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-1">
               <div className="min-w-0">
                 <p className="truncate font-display text-lg tracking-tight text-fg">{b.productName || "New product"}</p>
@@ -118,7 +118,7 @@ export function ProductBuilder({ categories, initial }: ProductBuilderProps) {
         </div>
 
         {showPreview && (
-          <aside className="min-w-0 xl:sticky xl:top-16" aria-label="Live preview">
+          <aside className="min-w-0 xl:sticky xl:top-chrome" aria-label="Live preview">
             <PreviewPane product={b.previewProduct} height={720} />
           </aside>
         )}

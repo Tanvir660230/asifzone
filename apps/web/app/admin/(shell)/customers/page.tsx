@@ -384,7 +384,7 @@ export default function CustomersPage() {
       {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx and the Orders page's
           equivalent bar: this floats over the scrolling customer rows, and translucency there let
           row text visibly bleed/cut through the bar's bottom edge as it scrolled underneath. */}
-      <div className="sticky top-header z-10 -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
+      <div className="sticky top-chrome z-10 -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
         {/* Search, more filters, page size — the same toolbar row as the Orders list. */}
         <div className="flex flex-wrap items-center gap-2.5">
           <SearchInput

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ExternalLink, Menu, Plus, Search } from "lucide-react";
 import { MobileBottomNav, Sidebar } from "@/components/admin/sidebar";
+import { SectionBar } from "@/components/admin/section-bar";
 import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { NotificationBell } from "@/components/admin/notification-bell";
 import { CommandPalette, useCommandPaletteHotkey, useCreateCommands } from "@/components/admin/command-palette";
@@ -15,7 +16,8 @@ import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { Toaster } from "@/components/ui/toast";
 import { useNavAccess } from "@/hooks/use-nav-access";
 import { useShortcut } from "@/hooks/use-shortcut";
-import { documentTitleFor, goTargets, pageWidthFor } from "@/lib/admin/navigation";
+import { useSidebarCollapse } from "@/hooks/use-sidebar-collapse";
+import { documentTitleFor, goTargets, pageWidthFor, sectionBarFor } from "@/lib/admin/navigation";
 import { cn } from "@/lib/utils";
 
 export default function ShellLayout({ children }: { children: ReactNode }) {
@@ -27,6 +29,10 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const access = useNavAccess();
+  const sidebar = useSidebarCollapse();
+  // The module's pages under the toolbar whenever the sidebar isn't listing them: under a collapsed rail, and below lg.
+  const sectionBar = access.ready ? sectionBarFor(pathname, access) : null;
+  const sectionBarMode = sidebar.collapsed ? "always" : "compact";
   // The Create menu: the navigation manifest's create commands this admin may run, each with its module's icon.
   const createItems = useCreateCommands().map((c) => ({
     label: c.label,
@@ -71,9 +77,11 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   return (
     // data-surface="admin": the Store Console's own tokens (Apple-style, light only), whatever the store's brand theme.
     // On this element for the server render; portalled overlays get it from <body> (effect above).
-    <div data-surface="admin" className="relative flex h-screen overflow-hidden bg-canvas font-sans text-fg">
-      <div className="print:hidden">
-        <Sidebar mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
+    <div data-surface="admin" data-shell="" data-section-bar={sectionBar ? sectionBarMode : undefined} className="relative flex h-screen overflow-hidden bg-canvas font-sans text-fg">
+      {/* Its own layer above the page column: the rail's flyouts live inside the sidebar's (blurred, so stacking) box and
+          would otherwise paint under the page's cards. */}
+      <div className="relative z-sticky print:hidden">
+        <Sidebar collapsed={sidebar.collapsed} onToggleCollapsed={sidebar.toggle} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       </div>
       {/* min-w-0 overrides the flex item's default min-width:auto — without it, a flex child never
           shrinks below its content's natural width (e.g. a wide table), which forces the whole page
@@ -90,58 +98,62 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
         <div className="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
           {/* The toolbar (macOS-style): where you are on the left, one search for everything in the middle, actions on the
               right — three columns so the search stays centred whatever the breadcrumb's length. */}
-          <header className="sticky top-0 z-20 grid h-header shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-ink-900/[0.07] bg-surface/85 px-4 backdrop-blur-xl backdrop-saturate-150 print:hidden sm:px-6">
-            <div className="flex min-w-0 items-center gap-2">
-              <button onClick={() => setMobileNavOpen(true)} className="-ml-1 flex h-9 w-9 items-center justify-center rounded-full text-ink-600 hover:bg-ink-900/[0.05] lg:hidden" aria-label="Open menu">
-                <Menu size={20} />
-              </button>
-              <Breadcrumbs className="hidden min-w-0 md:flex" />
-            </div>
+          {/* Toolbar and section bar share one pinned, translucent layer — one material, one bottom edge. */}
+          <div className="sticky top-0 z-20 shrink-0 border-b border-ink-900/[0.07] bg-surface/85 backdrop-blur-xl backdrop-saturate-150 print:hidden">
+            <header className="grid h-header grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 sm:px-6">
+              <div className="flex min-w-0 items-center gap-2">
+                <button onClick={() => setMobileNavOpen(true)} className="-ml-1 flex h-10 w-10 items-center justify-center rounded-full text-ink-600 hover:bg-ink-900/[0.05] lg:hidden" aria-label="Open menu">
+                  <Menu size={20} />
+                </button>
+                <Breadcrumbs titleOnLanding className="hidden min-w-0 md:flex" />
+              </div>
 
-            <button
-              onClick={() => setPaletteOpen(true)}
-              className="flex h-9 w-9 items-center justify-center gap-2 rounded-full text-fg-muted transition-[border-color,box-shadow,background-color] duration-fast ease-smooth hover:bg-ink-900/[0.05] sm:w-[min(440px,38vw)] sm:justify-start sm:rounded-xl sm:border sm:border-line sm:bg-canvas sm:px-3 sm:hover:border-line-strong sm:hover:bg-surface sm:hover:shadow-xs"
-              aria-label="Search"
-            >
-              <Search size={16} className="shrink-0" />
-              <span className="hidden truncate text-[13px] text-fg-subtle sm:inline">Search orders, products, customers…</span>
-              <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] font-medium leading-none text-fg-subtle sm:inline">
-                {modKey} K
-              </kbd>
-            </button>
-
-            <div className="flex items-center justify-end gap-1">
-              {createItems.length > 0 && (
-                <>
-                  <button
-                    ref={createRef}
-                    onClick={() => setCreateOpen((o) => !o)}
-                    aria-label="Create"
-                    aria-haspopup="menu"
-                    aria-expanded={createOpen}
-                    title="Create"
-                    className="flex h-9 w-9 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
-                  >
-                    <Plus size={19} />
-                  </button>
-                  <DropdownMenu open={createOpen} onClose={() => setCreateOpen(false)} anchorRef={createRef} items={createItems} />
-                </>
-              )}
-              <Link
-                href="/"
-                target="_blank"
-                rel="noreferrer"
-                aria-label="View store (opens in a new tab)"
-                title="View store"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
+              <button
+                onClick={() => setPaletteOpen(true)}
+                className="flex h-10 w-10 items-center justify-center gap-2 rounded-full text-fg-muted transition-[border-color,box-shadow,background-color] duration-fast ease-smooth hover:bg-ink-900/[0.05] sm:w-[min(480px,38vw)] sm:justify-start sm:rounded-xl sm:border sm:border-line sm:bg-canvas sm:px-3 sm:hover:border-line-strong sm:hover:bg-surface sm:hover:shadow-xs"
+                aria-label="Search"
               >
-                <ExternalLink size={17} />
-              </Link>
-              <NotificationBell />
-              <span className="mx-2 h-5 w-px bg-ink-900/[0.1]" aria-hidden />
-              <AccountMenu onShowShortcuts={() => setHelpOpen(true)} />
-            </div>
-          </header>
+                <Search size={16} className="shrink-0" />
+                <span className="hidden truncate text-[13.5px] text-fg-subtle sm:inline">Search orders, products, customers…</span>
+                <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] font-medium leading-none text-fg-subtle sm:inline">
+                  {modKey} K
+                </kbd>
+              </button>
+
+              <div className="flex items-center justify-end gap-1">
+                {createItems.length > 0 && (
+                  <>
+                    <button
+                      ref={createRef}
+                      onClick={() => setCreateOpen((o) => !o)}
+                      aria-label="Create"
+                      aria-haspopup="menu"
+                      aria-expanded={createOpen}
+                      title="Create"
+                      className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
+                    >
+                      <Plus size={19} />
+                    </button>
+                    <DropdownMenu open={createOpen} onClose={() => setCreateOpen(false)} anchorRef={createRef} items={createItems} />
+                  </>
+                )}
+                <Link
+                  href="/"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="View store (opens in a new tab)"
+                  title="View store"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
+                >
+                  <ExternalLink size={17} />
+                </Link>
+                <NotificationBell />
+                <span className="mx-2 h-5 w-px bg-ink-900/[0.1]" aria-hidden />
+                <AccountMenu onShowShortcuts={() => setHelpOpen(true)} />
+              </div>
+            </header>
+            <SectionBar bar={sectionBar} mode={sectionBarMode} />
+          </div>
           <main className="flex-1 px-4 py-6 sm:px-page sm:py-8 print:p-0">
             {/* Full screen for data pages; one centered column for forms (pageWidthFor). The 2400px ceiling only matters on
                 ultra-wide monitors, where a single table row would otherwise be too long to follow. */}

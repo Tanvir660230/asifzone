@@ -31,6 +31,7 @@ export const SHORTCUTS = {
   "palette.toggle": { keys: "mod+k", display: "Ctrl/⌘ K", description: "Search and jump anywhere", scope: "global", group: "General", allowInInputs: true, allowInLayers: true },
   "search.focus": { keys: "/", display: "/", description: "Search this page (or open search)", scope: "global", group: "General" },
   "create.open": { keys: "c", display: "C", description: "Create…", scope: "global", group: "General" },
+  "sidebar.toggle": { keys: "mod+\\", display: "Ctrl/⌘ \\", description: "Collapse or expand the sidebar", scope: "global", group: "General", allowInInputs: true },
   "help.open": { keys: "?", display: "?", description: "Keyboard shortcuts", scope: "global", group: "General" },
   "nav.goTo": { keys: "g *", display: "G then a key", description: "Go to a module (G O orders, G P products, …)", scope: "global", group: "Go to" },
   "list.next": { keys: "j", display: "J", description: "Next row", scope: "list", group: "Lists" },

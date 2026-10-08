@@ -68,7 +68,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
 
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
-      <div className="sticky top-header z-raised -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
+      <div className="sticky top-chrome z-raised -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
         <div className="flex flex-wrap items-center gap-2.5">
           {canSeeTrash && (
             <SegmentedControl

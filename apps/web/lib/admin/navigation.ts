@@ -67,6 +67,8 @@ export interface NavNode {
   keywords?: string[];
   /** Sort order among siblings. */
   order: number;
+  /** Label under the icon in the collapsed sidebar rail and the mobile tab bar, when `label` is too long for them. */
+  shortLabel?: string;
   /** Breadcrumb label when it differs from `label`. */
   breadcrumb?: string;
   /** Document / page title when it differs from `label`. */
@@ -437,6 +439,7 @@ export const NAV_NODES: readonly NavNode[] = [
     index: "/admin/team",
     activeFor: ["/admin/team", "/admin/audit-log", "/admin/storage", "/admin/system-health"],
     icon: "administration",
+    shortLabel: "Admin",
     order: 110,
     keywords: ["admin"],
   },
@@ -585,6 +588,24 @@ export function sectionTabsFor(pathname: string, access: NavAccess): NavItem[] {
   if (own.length > 1) return own;
   const siblings = node.parent ? visibleChildren(node.parent, access) : [];
   return siblings.length > 1 ? siblings : [];
+}
+
+/**
+ * The shell's section bar for a pathname: the current module's pages (the same list the sidebar shows under it) and the
+ * one that holds the current page. Null when the module has nothing to switch between, or on a page outside that list —
+ * a create flow or a detail view (New order, an order, the product builder) gets its focus, not the module's tabs.
+ */
+export function sectionBarFor(pathname: string, access: NavAccess): { module: NavNode; tabs: NavItem[]; activeHref: string } | null {
+  const node = resolveNavNode(pathname);
+  if (!node) return null;
+  const moduleId = moduleOf(node).id;
+  const item = navTree(access)
+    .flatMap((g) => g.modules)
+    .find((m) => m.node.id === moduleId);
+  if (!item || item.children.length < 2) return null;
+  const trail = new Set(ancestryOf(node).map((n) => n.id));
+  const active = item.children.find((c) => trail.has(c.node.id));
+  return active ? { module: item.node, tabs: item.children, activeHref: active.href } : null;
 }
 
 export interface Breadcrumb {

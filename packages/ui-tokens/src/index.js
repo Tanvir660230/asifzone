@@ -196,6 +196,8 @@ const density = {
   sidebar: "232px", // expanded admin sidebar
   "sidebar-collapsed": "56px", // icon rail
   header: "48px", // admin top bar
+  "section-bar": "44px", // the module's pages under the top bar (components/admin/section-bar.tsx)
+  chrome: "48px", // everything pinned at the top of the page column — `top-chrome` for a page's own sticky bars; the shell retunes it
   page: "24px", // page padding (desktop)
   "page-compact": "20px", // page padding (dense / tablet)
   row: "40px", // table row
@@ -506,7 +508,7 @@ const surfaceDefinitions = {
       glow: "0 0 0 4px rgba(0,113,227,0.18)",
     },
     // Room to breathe: the airier Apple rhythm over the dense ERP baseline.
-    density: { sidebar: "248px", "sidebar-collapsed": "72px", header: "56px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
+    density: { sidebar: "248px", "sidebar-collapsed": "84px", header: "64px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
   },
   storefront: {},
 };

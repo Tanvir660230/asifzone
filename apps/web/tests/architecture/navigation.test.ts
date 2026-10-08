@@ -18,6 +18,7 @@ import {
   navTree,
   resolveNavNode,
   searchableNodes,
+  sectionBarFor,
   sectionTabsFor,
   type NavAccess,
 } from "@/lib/admin/navigation";
@@ -164,6 +165,21 @@ describe("navigation manifest — derivation", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(10);
     expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
     expect(sectionTabsFor("/admin/inventory", access("OWNER"))).toEqual([]);
+  });
+
+  it("section bar: the module's pages with the current one, on every page in them, never on create or detail views", () => {
+    const products = sectionBarFor("/admin/categories", access("OWNER"));
+    expect(products?.module.id).toBe("products");
+    expect(products?.tabs.map((t) => t.href)).toContain("/admin/products/import");
+    expect(products?.activeHref).toBe("/admin/categories");
+    // A deeper page keeps its module-level tab: Catalog setup's pages light up "Catalog setup".
+    const setup = sectionBarFor("/admin/catalog/materials", access("OWNER"));
+    expect(setup?.tabs.find((t) => t.href === setup.activeHref)?.node.id).toBe("products.catalog-setup");
+    expect(sectionBarFor("/admin/return-requests", access("OWNER"))?.activeHref).toBe("/admin/return-requests");
+    expect(sectionBarFor("/admin/orders/new", access("OWNER"))).toBeNull();
+    expect(sectionBarFor("/admin/orders/abc123", access("OWNER"))).toBeNull();
+    expect(sectionBarFor("/admin/products/abc123/edit", access("OWNER"))).toBeNull();
+    expect(sectionBarFor("/admin/inventory", access("OWNER"))).toBeNull();
   });
 
   it("create commands and palette entries respect capabilities; the product route is the Product Builder", () => {

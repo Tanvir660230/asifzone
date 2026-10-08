@@ -20,14 +20,18 @@ import { NAV_ICONS } from "./nav-icons";
  * work-queue badges, capability and feature-flag visibility. No route list lives here.
  *
  * Look: a light, translucent source list in the manner of a Mac sidebar — the store's own name and logo on top, grey
- * selection with a blue icon, quiet section labels. Desktop: `w-sidebar`, or a `w-sidebar-collapsed` icon rail with a
- * flyout per module. Mobile: an off-canvas drawer with the full tree, plus a tab bar of the primary destinations
- * (MobileBottomNav). Signing out lives in the toolbar's account menu.
+ * selection with a blue icon, quiet section labels. Desktop: `w-sidebar`, or a `w-sidebar-collapsed` rail — icon with a
+ * short label under it, queue counts on the icon, and a flyout of the module's pages. Until the admin picks a width
+ * (button or Ctrl/⌘ \), the rail follows the window (hooks/use-sidebar-collapse.ts). Collapsed, the module's pages also
+ * show in the shell's section bar, so they never sit behind a hover.
+ * Mobile: an off-canvas drawer with the full tree, plus a tab bar of the primary destinations (MobileBottomNav).
+ * Signing out lives in the toolbar's account menu.
  */
 
-const COLLAPSE_STORAGE_KEY = "admin-sidebar-collapsed";
-
 interface SidebarProps {
+  /** Desktop rail width — owned by the shell (hooks/use-sidebar-collapse.ts), which also decides the section bar. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
 }
@@ -42,28 +46,28 @@ function StoreIdentity({ collapse }: { collapse: boolean }) {
   const settings = data?.settings;
   const name = settings?.storeName ?? "Store";
   const monogram = (
-    <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-ink-900 font-semibold text-cream-50", collapse ? "h-10 w-10 text-[15px]" : "h-8 w-8 text-[13px]")}>
+    <span className={cn("flex shrink-0 items-center justify-center rounded-[10px] bg-ink-900 font-semibold text-cream-50", collapse ? "h-9 w-9 text-[15px]" : "h-9 w-9 text-[14px]")}>
       {name.trim().charAt(0).toUpperCase()}
     </span>
   );
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       {settings?.faviconUrl ? (
-        <StoreLogoImage src={resolveImageUrl(settings.faviconUrl)} alt="" className={cn("shrink-0 rounded-lg object-contain", collapse ? "h-10 w-10" : "h-8 w-8")} fallback={monogram} />
+        <StoreLogoImage src={resolveImageUrl(settings.faviconUrl)} alt="" className="h-9 w-9 shrink-0 rounded-[10px] object-contain" fallback={monogram} />
       ) : (
         monogram
       )}
       {!collapse && (
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-[13px] font-semibold text-fg">{name}</p>
-          <p className="text-[11px] text-fg-muted">Store Console</p>
+          <p className="truncate text-[14px] font-semibold text-fg">{name}</p>
+          <p className="text-[11.5px] text-fg-muted">Store Console</p>
         </div>
       )}
     </div>
   );
 }
 
-export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
+export function Sidebar({ collapsed, onToggleCollapsed: toggleCollapsed, mobileOpen = false, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
   const access = useNavAccess();
   const badges = useNavBadges();
@@ -71,17 +75,6 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
     active: mobileOpen,
     onEscape: () => onCloseMobile?.(),
   });
-
-  // Desktop-only compact mode — read from storage after mount (localStorage isn't available
-  // during SSR, so starting expanded and correcting client-side avoids a hydration mismatch, at
-  // the cost of a brief flash back to expanded for a returning admin who'd collapsed it before).
-  const [collapsed, setCollapsed] = useState(false);
-  useEffect(() => {
-    if (localStorage.getItem(COLLAPSE_STORAGE_KEY) === "true") setCollapsed(true);
-  }, []);
-  useEffect(() => {
-    localStorage.setItem(COLLAPSE_STORAGE_KEY, String(collapsed));
-  }, [collapsed]);
 
   const tree = navTree(access);
   const current = resolveNavNode(pathname);
@@ -118,13 +111,13 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
           )}
         </div>
 
-        <nav aria-label="Admin" aria-busy={!access.ready} className={cn("flex-1 space-y-5 overflow-y-auto overflow-x-hidden pb-4 pt-2", collapse ? "px-2" : "px-3")}>
+        <nav aria-label="Admin" aria-busy={!access.ready} className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-4 pt-2", collapse ? "space-y-2.5 px-2" : "space-y-5 px-3")}>
           {/* Until the admin profile arrives nothing is known to be allowed — a neutral placeholder rather than a partial
               menu that rearranges itself a moment later. */}
           {!access.ready && (
             <div className="space-y-1.5 px-1" aria-hidden>
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className={cn("animate-pulse bg-ink-900/[0.05]", collapse ? "mx-auto h-10 w-10 rounded-xl" : "h-8 w-full rounded-lg")} />
+                <div key={i} className={cn("animate-pulse bg-ink-900/[0.05]", collapse ? "mx-auto h-12 w-full rounded-xl" : "h-8 w-full rounded-lg")} />
               ))}
             </div>
           )}
@@ -132,26 +125,32 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
             mainGroups.map((group) => (
               <div key={group.domain}>
                 {group.label && !collapse && <p className="mb-1 px-2.5 text-[11px] font-semibold text-fg-subtle">{group.label}</p>}
-                {group.label && collapse && <div className="mx-3 mb-2 border-t border-ink-900/[0.08]" aria-hidden />}
-                <div className={collapse ? "space-y-1" : "space-y-px"}>{group.modules.map((m) => moduleRow(m, collapse))}</div>
+                {group.label && collapse && <div className="mx-4 mb-2 border-t border-ink-900/[0.08]" aria-hidden />}
+                <div className={collapse ? "space-y-0.5" : "space-y-px"}>{group.modules.map((m) => moduleRow(m, collapse))}</div>
               </div>
             ))}
         </nav>
 
-        <div className={cn("mb-3 border-t border-ink-900/[0.08] pt-3", collapse ? "mx-2 space-y-1" : "mx-3 space-y-px")}>
+        <div className={cn("mb-3 border-t border-ink-900/[0.08] pt-3", collapse ? "mx-2 space-y-0.5" : "mx-3 space-y-px")}>
           {access.ready && footerModules.map((m) => moduleRow(m, collapse))}
           {!mobileDrawer && (
             <button
-              onClick={() => setCollapsed((c) => !c)}
+              onClick={toggleCollapsed}
               aria-label={collapse ? "Expand sidebar" : "Collapse sidebar"}
-              title={collapse ? "Expand sidebar" : undefined}
+              aria-keyshortcuts={"Control+\\ Meta+\\"}
+              title={collapse ? "Expand sidebar (Ctrl/⌘ \\)" : "Collapse sidebar (Ctrl/⌘ \\)"}
               className={cn(
-                "flex items-center gap-2.5 text-[13px] text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] hover:text-fg",
-                collapse ? "mx-auto h-10 w-10 justify-center rounded-xl px-0" : "h-8 w-full rounded-lg px-2.5",
+                "group/toggle flex items-center gap-2.5 text-[13px] text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] hover:text-fg",
+                collapse ? "mx-auto h-9 w-full justify-center rounded-xl px-0" : "h-8 w-full rounded-lg px-2.5",
               )}
             >
-              {collapse ? <PanelLeftOpen size={19} className="shrink-0" /> : <PanelLeftClose size={16} className="shrink-0" />}
-              {!collapse && "Collapse sidebar"}
+              {collapse ? <PanelLeftOpen size={18} className="shrink-0" /> : <PanelLeftClose size={16} className="shrink-0" />}
+              {!collapse && (
+                <>
+                  Collapse sidebar
+                  <kbd className="ml-auto font-sans text-[11px] text-fg-subtle opacity-0 transition-opacity duration-fast group-hover/toggle:opacity-100">Ctrl \</kbd>
+                </>
+              )}
             </button>
           )}
         </div>
@@ -197,9 +196,10 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
 const rowClass = (active: boolean, collapse: boolean) =>
   cn(
-    "group relative flex items-center gap-2.5 text-[13.5px] transition-colors duration-fast ease-smooth",
-    // Collapsed: a 40×40 rounded target per module (iPad / macOS icon rail), not a squeezed text row.
-    collapse ? "mx-auto h-10 w-10 justify-center rounded-xl px-0" : "h-8 rounded-lg px-2.5",
+    "group relative flex transition-colors duration-fast ease-smooth",
+    // Collapsed: a tile per module — icon with a short label under it (a navigation rail), so the rail still reads
+    // without hovering, not a squeezed text row.
+    collapse ? "h-12 w-full flex-col items-center justify-center gap-1 rounded-xl px-1" : "h-8 items-center gap-2.5 rounded-lg px-2.5 text-[13.5px]",
     active ? "bg-ink-900/[0.07] font-semibold text-fg" : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-fg",
   );
 
@@ -226,8 +226,9 @@ function ModuleRow({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
 
+  // The rail shows the module's name already — a flyout only earns its place when there are pages to pick.
   function openFlyout() {
-    if (!collapse) return;
+    if (!collapse || children.length === 0) return;
     if (closeTimer.current) clearTimeout(closeTimer.current);
     setFlyoutTop(rowRef.current?.getBoundingClientRect().top ?? null);
   }
@@ -249,11 +250,26 @@ function ModuleRow({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) scheduleClose();
       }}
     >
-      <Link href={href} onClick={onNavigate} title={collapse && flyoutTop === null ? node.label : undefined} aria-current={active && trail.size === 1 ? "page" : undefined} className={rowClass(active, collapse)}>
+      <Link
+        href={href}
+        onClick={onNavigate}
+        aria-label={collapse ? (badge > 0 ? `${node.label}, ${badge} waiting` : node.label) : undefined}
+        aria-current={active && trail.size === 1 ? "page" : undefined}
+        className={rowClass(active, collapse)}
+      >
         {Icon && (
           <span className={cn("relative shrink-0", active ? "text-accent" : "text-ink-500 group-hover:text-ink-700")}>
             <Icon size={collapse ? 20 : 17} strokeWidth={collapse ? 1.8 : 1.9} />
-            {collapse && badge > 0 && <span className="absolute -right-1.5 -top-1 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-cream-200" aria-hidden />}
+            {collapse && badge > 0 && (
+              <span className="absolute -top-1.5 left-3 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold tabular-nums leading-none text-accent-fg ring-2 ring-cream-200" aria-hidden>
+                {formatBadge(badge)}
+              </span>
+            )}
+          </span>
+        )}
+        {collapse && (
+          <span className={cn("max-w-full truncate text-[10.5px] leading-none tracking-[-0.005em]", active ? "text-fg" : "text-ink-600 group-hover:text-fg")} aria-hidden>
+            {node.shortLabel ?? node.label}
           </span>
         )}
         {!collapse && <span className="truncate">{node.label}</span>}
@@ -333,7 +349,7 @@ export function MobileBottomNav({ onOpenMore }: { onOpenMore: () => void }) {
             className={cn("relative flex h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium", active ? "text-accent" : "text-ink-500")}
           >
             {Icon && <Icon size={21} strokeWidth={active ? 2.1 : 1.8} aria-hidden />}
-            {node.breadcrumb ?? node.label}
+            {node.shortLabel ?? node.breadcrumb ?? node.label}
             {badge > 0 && <span className="absolute right-[calc(50%-17px)] top-1.5 h-2 w-2 rounded-full bg-danger-500 ring-2 ring-surface" aria-label={`${badge} waiting`} />}
           </Link>
         );
