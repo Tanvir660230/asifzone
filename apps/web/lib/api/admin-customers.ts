@@ -1,13 +1,4 @@
-import type {
-  AdminCustomerListItem,
-  AdminCustomerDetail,
-  Customer,
-  CustomerStats,
-  CustomerTag,
-  PaginatedResult,
-  UpdateCustomerAdminFieldsInput,
-  CreateCustomerAdminInput,
-} from "@clothing-brand/shared";
+import type { AdminCustomerListItem, AdminCustomerDetail, Customer, CustomerStats, CustomerTag, PaginatedResult, UpdateCustomerAdminFieldsInput, CreateCustomerAdminInput, StoreCreditSummary } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export interface AdminCustomerListParams {
@@ -57,6 +48,11 @@ export function createCustomer(input: CreateCustomerAdminInput) {
 
 export function getCustomer(id: string) {
   return apiFetch<{ customer: AdminCustomerDetail }>(`/api/customers/admin/${id}`);
+}
+
+/** The customer's store balance and its ledger entries (read-only). */
+export function getCustomerStoreCredit(id: string) {
+  return apiFetch<{ storeCredit: StoreCreditSummary }>(`/api/customers/admin/${id}/store-credit`);
 }
 
 export function adjustPoints(id: string, points: number, reason?: string) {

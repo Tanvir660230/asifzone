@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toBdInternationalDigits } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StoreBalanceCard } from "@/components/admin/customers/store-balance-card";
 import { Timeline, TimelineItem } from "@/components/ui/timeline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -236,6 +237,8 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           </div>
         </CardContent>
       </Card>
+
+      <StoreBalanceCard customerId={customer.id} />
 
       {customer.favoriteProducts.length > 0 && (
         <Card>
