@@ -1,4 +1,4 @@
-import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, RecordPaymentInput, Refund, RecordRefundInput, PaginatedResult, PaymentTransactionRow, RefundRow } from "@clothing-brand/shared";
+import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, RecordPaymentInput, Refund, RecordRefundInput, PaginatedResult, PaymentTransactionRow, RefundRow, PaymentSessionRow } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export interface PaymentsOverview {
@@ -45,6 +45,11 @@ function ledgerQuery(params: object) {
 /** Finance › Transactions: every Payment ledger row, newest first. */
 export function listPaymentTransactions(params: LedgerListParams & { provider?: string; status?: "SUCCEEDED" | "FAILED" } = {}) {
   return apiFetch<PaginatedResult<PaymentTransactionRow>>(`/api/payment-admin/transactions?${ledgerQuery(params)}`);
+}
+
+/** Finance › Online attempts: gateway checkout sessions, newest first (incl. ones that never became an order). */
+export function listPaymentSessions(params: LedgerListParams & { status?: PaymentSessionRow["status"]; provider?: PaymentSessionRow["provider"] } = {}) {
+  return apiFetch<PaginatedResult<PaymentSessionRow>>(`/api/payment-admin/sessions?${ledgerQuery(params)}`);
 }
 
 /** Finance › Refunds: every Refund ledger row, waiting ones first. */

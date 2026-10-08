@@ -52,6 +52,32 @@ export const paymentTransactionListQuerySchema = ledgerListBase.extend({
   provider: paymentProviderEnum.optional(),
   status: z.enum(["SUCCEEDED", "FAILED"]).optional(),
 });
+/** Finance › Online attempts (Blueprint V2 P5): gateway checkout sessions. */
+export const paymentSessionStatusEnum = z.enum(["ACTIVE", "SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"]);
+export const paymentSessionListQuerySchema = ledgerListBase.extend({
+  status: paymentSessionStatusEnum.optional(),
+  provider: z.enum(["SSLCOMMERZ", "EPS_PG"]).optional(),
+});
+export type PaymentSessionListQuery = z.infer<typeof paymentSessionListQuerySchema>;
+export interface PaymentSessionRow {
+  id: string;
+  provider: "SSLCOMMERZ" | "EPS_PG";
+  status: z.infer<typeof paymentSessionStatusEnum>;
+  /** What the gateway was asked to collect; null for sessions from before that was recorded. */
+  amount: number | null;
+  gatewayRef: string;
+  providerTransactionId: string | null;
+  createdAt: string;
+  expiresAt: string;
+  /** Null for a storefront checkout that never became an order (failed / abandoned / still open). */
+  order: { id: string; orderNumber: string } | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  /** What started it: a storefront checkout, a retry on an order, a payment link, or an order change's difference. */
+  source: "checkout" | "order" | "payment_link" | "modification";
+  lastEvent: { type: string; note: string | null; at: string } | null;
+}
+
 /** Administration › Audit log filters (Admin V2). */
 export const auditLogListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

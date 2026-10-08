@@ -353,6 +353,17 @@ export const NAV_NODES: readonly NavNode[] = [
     keywords: ["payments received", "bkash", "cod collected", "ledger"],
   },
   { id: "finance.refunds", label: "Refunds", kind: "page", parent: "finance", domain: "manage", route: "/admin/payments/refunds", capability: "payments.view", order: 2, keywords: ["refund", "money back"] },
+  {
+    id: "finance.attempts",
+    label: "Online attempts",
+    kind: "page",
+    parent: "finance",
+    domain: "manage",
+    route: "/admin/payments/attempts",
+    capability: "payments.view",
+    order: 3,
+    keywords: ["payment session", "failed payment", "sslcommerz", "eps", "paid but no order", "gateway"],
+  },
 
   {
     id: "analytics",

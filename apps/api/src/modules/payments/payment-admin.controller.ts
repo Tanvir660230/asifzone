@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
-import { listPaymentTransactions, listRefunds } from "./payment-ledger-lists.service";
+import type { PaymentSessionListQuery } from "@clothing-brand/shared";
+import { listPaymentSessions, listPaymentTransactions, listRefunds } from "./payment-ledger-lists.service";
 import { getPaymentsOverview, searchPaymentAttempts } from "./payments-overview.service";
 import { paymentLedgerDrift, repairPaymentLedger } from "../../domain/payments/payment-ledger.service";
 
@@ -19,6 +20,10 @@ export const ledgerDrift = asyncHandler(async (_req: Request, res: Response) => 
 
 export const ledgerRepair = asyncHandler(async (req: Request, res: Response) => {
   res.json(await repairPaymentLedger({ apply: req.body.apply === true }));
+});
+
+export const sessions = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await listPaymentSessions(req.query as unknown as PaymentSessionListQuery));
 });
 
 export const transactions = asyncHandler(async (req: Request, res: Response) => {
