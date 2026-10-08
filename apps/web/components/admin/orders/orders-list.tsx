@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -36,6 +36,7 @@ import { COURIER_PROVIDER_LABEL, orderAttention, prefetchOrder, type OrderPermis
 import type { OrderCommands } from "./use-order-commands";
 import type { SortColumn } from "./use-orders-list-state";
 import { Thumbnail } from "@/components/admin/thumbnail";
+import { useShortcut } from "@/hooks/use-shortcut";
 
 // Left accent by status group: amber = waiting on someone, blue = in flight, green = done, red = cancelled.
 export interface OrdersListProps {
@@ -256,10 +257,41 @@ export function OrdersList(props: OrdersListProps) {
   });
   const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
 
+  // Keyboard (the registry's list shortcuts): J/K move the highlighted row, Enter opens it, X selects it. Bound only while
+  // focus is inside the table, like DataTable, so nothing else on the page competes for the keys.
+  const [focused, setFocused] = useState(false);
+  // Enter/X only while the table itself has focus: on a button inside a row, Enter must stay that button's.
+  const [onTable, setOnTable] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const active = activeIndex >= 0 ? items[activeIndex] : undefined;
+  useEffect(() => setActiveIndex(-1), [items]);
+  useEffect(() => {
+    if (!active) return;
+    prefetchOrder(queryClient, active.id);
+    document.querySelector<HTMLElement>(`[data-testid="order-row"][data-row-index="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active, activeIndex, queryClient]);
+  const keys = { enabled: focused && items.length > 0 };
+  useShortcut("list.next", () => setActiveIndex((i) => Math.min(i + 1, items.length - 1)), keys);
+  useShortcut("list.prev", () => setActiveIndex((i) => Math.max(i - 1, 0)), keys);
+  useShortcut("list.open", () => active && onOpen(active.id), { enabled: keys.enabled && onTable && Boolean(active) });
+  useShortcut("list.select", () => active && onToggle(active.id), { enabled: keys.enabled && onTable && Boolean(active) });
+
   return (
     <>
       <TableContainer className="mt-4 hidden xl:block">
-        <Table aria-label="Orders">
+        <Table
+          aria-label="Orders"
+          tabIndex={0}
+          className="focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+          onFocus={(e) => {
+            setFocused(true);
+            setOnTable(e.target === e.currentTarget);
+          }}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);
+            setOnTable(false);
+          }}
+        >
           <TableHead>
             <tr>
               <TableHeaderCell className="w-10 px-3 py-2.5">
@@ -281,8 +313,15 @@ export function OrdersList(props: OrdersListProps) {
           <tbody>
             {isLoading && <TableSkeleton rows={6} cols={10} />}
             {!isLoading && items.length === 0 && <TableMessageRow colSpan={10}>{empty}</TableMessageRow>}
-            {items.map((order) => (
-              <TableRow key={order.id} className={cn(selected.has(order.id) && "bg-accent/[0.05]")} data-testid="order-row" {...warm(order.id)}>
+            {items.map((order, index) => (
+              <TableRow
+                key={order.id}
+                className={cn(selected.has(order.id) && "bg-accent/[0.05]", index === activeIndex && "bg-ink-50 outline outline-1 -outline-offset-1 outline-ink-300")}
+                data-testid="order-row"
+                data-row-index={index}
+                data-active={index === activeIndex || undefined}
+                {...warm(order.id)}
+              >
                 <TableCell className="px-3 py-2.5">
                   <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
                 </TableCell>
