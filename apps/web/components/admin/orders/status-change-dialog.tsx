@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Ban, Info, TriangleAlert } from "lucide-react";
-import { cancellationReasonMissing, canTransitionOrder, describeOrderTransitionConsequences, describeRefusedTransition, type Order, type OrderStatus, type OrderTransitionConsequence } from "@clothing-brand/shared";
+import { transitionNeedsReason, transitionReasonMissing, canTransitionOrder, describeOrderTransitionConsequences, describeRefusedTransition, type Order, type OrderStatus, type OrderTransitionConsequence } from "@clothing-brand/shared";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -99,9 +99,10 @@ export function StatusChangeDialog({
   const { to } = request;
   const destructive = to === "CANCELLED" || to === "RETURNED";
   const singleBlocked = plan.single && plan.consequences.some((c) => c.tone === "blocked");
-  // D22: a cancellation needs a reason (single or bulk) — the server refuses one without it too.
-  const needsReason = to === "CANCELLED";
-  const reasonMissing = cancellationReasonMissing(to, note);
+  // DR-8: cancelling (D22) and the SHIPPED → PACKED correction need a reason — the server refuses them without one too.
+  const reasonKind = to === "CANCELLED" ? "cancel" : plan.moving.some((o) => transitionNeedsReason(o.status, to)) ? "correction" : null;
+  const needsReason = reasonKind !== null;
+  const reasonMissing = plan.moving.some((o) => transitionReasonMissing(o.status, to, note));
 
   return (
     <Modal
@@ -169,7 +170,13 @@ export function StatusChangeDialog({
         {(plan.single || needsReason) && (
           <div>
             <Label htmlFor="status-change-note" required={needsReason}>
-              {needsReason ? (plan.single ? "Reason for cancelling" : "Reason for cancelling these orders") : "Note for the timeline (optional)"}
+              {reasonKind === "cancel"
+                ? plan.single
+                  ? "Reason for cancelling"
+                  : "Reason for cancelling these orders"
+                : reasonKind === "correction"
+                  ? "Why is this going back to Packed?"
+                  : "Note for the timeline (optional)"}
             </Label>
             <Textarea
               id="status-change-note"
@@ -177,7 +184,13 @@ export function StatusChangeDialog({
               maxLength={500}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder={needsReason ? "e.g. customer changed their mind on the confirmation call" : "e.g. customer confirmed on the phone"}
+              placeholder={
+                reasonKind === "cancel"
+                  ? "e.g. customer changed their mind on the confirmation call"
+                  : reasonKind === "correction"
+                    ? "e.g. marked shipped before the courier picked it up"
+                    : "e.g. customer confirmed on the phone"
+              }
             />
             {needsReason && <p className="ui-field-hint">Saved on each order&apos;s timeline and in the audit log.</p>}
           </div>

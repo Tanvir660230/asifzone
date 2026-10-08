@@ -23,6 +23,8 @@ import {
   type OrderTransitionRule,
   clampNonNegative,
   subtract,
+  transitionNeedsReason,
+  transitionReasonMissing,
 } from "@clothing-brand/shared";
 import type {
   CheckoutInput,
@@ -1200,6 +1202,11 @@ export async function applyOrderTransition(
   const to = input.status;
   const rule = getOrderTransition(from, to);
   if (!rule) throw AppError.badRequest(describeRefusedTransition(from, to));
+  // DR-8: the T3 correction (SHIPPED → PACKED) undoes a fact, so it needs a reason — checked here against the locked
+  // status, because the request schema can't know where the order is now. (Cancel reasons: the schema, D22.)
+  if (transitionNeedsReason(from, to) === "correction" && transitionReasonMissing(from, to, input.note)) {
+    throw AppError.badRequest("Give a reason for moving this order back to Packed", { code: "REASON_REQUIRED" });
+  }
 
   const base = { previousStatus: from, previousPaymentStatus: locked.paymentStatus, rule };
 

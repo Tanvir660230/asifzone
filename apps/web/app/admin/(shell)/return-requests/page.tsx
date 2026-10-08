@@ -255,7 +255,7 @@ export default function AdminReturnRequestsPage() {
               variant={review?.decision === "REJECTED" ? "destructive" : "primary"}
               size="sm"
               loading={reviewMutation.isPending}
-              disabled={review?.decision === "APPROVED" && review.request.type === "EXCHANGE" && !exchangeReady}
+              disabled={(review?.decision === "APPROVED" && review.request.type === "EXCHANGE" && !exchangeReady) || (review?.decision === "REJECTED" && note.trim().length < 3)}
               onClick={() => review && reviewMutation.mutate({ id: review.request.id, decision: review.decision, adminNote: note.trim() || null })}
             >
               {review?.decision === "APPROVED" ? "Approve" : "Reject"}
@@ -292,7 +292,12 @@ export default function AdminReturnRequestsPage() {
             ) : (
               <p className="text-sm text-ink-600">The order is left unchanged. The customer can see the decision on their order.</p>
             )}
-            <Field htmlFor="review-note" label="Note (optional)" hint="Saved on the request.">
+            <Field
+              htmlFor="review-note"
+              label={review.decision === "REJECTED" ? "Reason" : "Note (optional)"}
+              required={review.decision === "REJECTED"}
+              hint={review.decision === "REJECTED" ? "The customer sees this on their order." : "Saved on the request."}
+            >
               <Textarea id="review-note" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
             </Field>
           </div>

@@ -166,6 +166,21 @@ export const CANCELLATION_REASON_MIN_LENGTH = 3;
 export function cancellationReasonMissing(status: string, note: string | null | undefined): boolean {
   return status === "CANCELLED" && (note ?? "").trim().length < CANCELLATION_REASON_MIN_LENGTH;
 }
+
+/**
+ * DR-8: the moves that need a written reason — cancelling (D22) and the T3 correction SHIPPED → PACKED ("marked shipped
+ * too early"). Money and stock effects, or undoing a fact, deserve a why; routine forward moves don't. The schema can only
+ * check cancel (it doesn't know the current status); the transition command checks T3 against the locked status.
+ */
+export function transitionNeedsReason(from: string | null | undefined, to: string): "cancel" | "correction" | null {
+  if (to === "CANCELLED") return "cancel";
+  if (from === "SHIPPED" && to === "PACKED") return "correction";
+  return null;
+}
+
+export function transitionReasonMissing(from: string | null | undefined, to: string, note: string | null | undefined): boolean {
+  return transitionNeedsReason(from, to) !== null && (note ?? "").trim().length < CANCELLATION_REASON_MIN_LENGTH;
+}
 const requireCancellationReason = <T extends { status: string; note?: string | null }>(value: T, ctx: z.RefinementCtx) => {
   if (cancellationReasonMissing(value.status, value.note)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["note"], message: "Give a reason for cancelling this order" });

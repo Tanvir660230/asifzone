@@ -26,11 +26,18 @@ export const createReturnRequestSchema = z
  * (docs/ORDER_ADJUSTMENTS.md §8–9). */
 export const returnCompensationEnum = z.enum(["STORE_CREDIT", "REFUND", "NONE"]);
 
-export const reviewReturnRequestSchema = z.object({
-  status: z.enum(["APPROVED", "REJECTED"]),
-  adminNote: nullableString(1000),
-  compensation: returnCompensationEnum.optional(),
-});
+export const reviewReturnRequestSchema = z
+  .object({
+    status: z.enum(["APPROVED", "REJECTED"]),
+    adminNote: nullableString(1000),
+    compensation: returnCompensationEnum.optional(),
+  })
+  // DR-8: a rejection says why — the customer sees this note on their order.
+  .superRefine((value, ctx) => {
+    if (value.status === "REJECTED" && (value.adminNote ?? "").trim().length < 3) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["adminNote"], message: "Tell the customer why the request is rejected" });
+    }
+  });
 
 export const returnRequestListQuerySchema = paginationQuerySchema.extend({
   status: returnRequestStatusEnum.optional(),
