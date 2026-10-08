@@ -138,12 +138,39 @@ export async function revokeAllRefreshTokens(adminId: string) {
   await prisma.refreshToken.updateMany({ where: { adminId, revokedAt: null }, data: { revokedAt: new Date() } });
 }
 
-export async function listActiveSessions(adminId: string) {
-  return prisma.refreshToken.findMany({
+/** The admin's signed-in devices (one active refresh token each — rotation revokes the old row). `current` marks the
+ * session making the request, matched by its refresh cookie. */
+export async function listActiveSessions(adminId: string, currentRefreshToken?: string) {
+  const currentHash = currentRefreshToken ? hashToken(currentRefreshToken) : null;
+  const rows = await prisma.refreshToken.findMany({
     where: { adminId, revokedAt: null, expiresAt: { gt: new Date() } },
-    select: { id: true, userAgent: true, createdAt: true, expiresAt: true },
+    select: { id: true, tokenHash: true, userAgent: true, createdAt: true, expiresAt: true },
     orderBy: { createdAt: "desc" },
   });
+  return rows.map(({ tokenHash, ...row }) => ({ ...row, current: tokenHash === currentHash }));
+}
+
+/** Signs one of the admin's other devices out. Only their own, still-active sessions; the current one is Log out. */
+export async function revokeSession(adminId: string, sessionId: string, currentRefreshToken?: string) {
+  const session = await prisma.refreshToken.findFirst({
+    where: { id: sessionId, adminId, revokedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true, tokenHash: true },
+  });
+  if (!session) throw AppError.notFound("Session not found");
+  if (currentRefreshToken && session.tokenHash === hashToken(currentRefreshToken)) {
+    throw AppError.badRequest("That's this device — use Log out instead");
+  }
+  await prisma.refreshToken.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
+}
+
+/** "Sign out all other devices": every active session of this admin except the one making the request. */
+export async function revokeOtherSessions(adminId: string, currentRefreshToken?: string) {
+  if (!currentRefreshToken) throw AppError.badRequest("Can't tell which device this is — sign in again first");
+  const { count } = await prisma.refreshToken.updateMany({
+    where: { adminId, revokedAt: null, tokenHash: { not: hashToken(currentRefreshToken) } },
+    data: { revokedAt: new Date() },
+  });
+  return count;
 }
 
 export async function getAdminById(adminId: string) {

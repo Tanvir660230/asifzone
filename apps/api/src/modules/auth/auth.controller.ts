@@ -56,17 +56,39 @@ export const logoutAllDevices = asyncHandler(async (req: Request, res: Response)
 });
 
 export const sessions = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ sessions: await authService.listActiveSessions(req.admin!.adminId) });
+  res.json({ sessions: await authService.listActiveSessions(req.admin!.adminId, req.cookies?.refresh_token as string | undefined) });
+});
+
+/** Sign out every other device (Account › Active sessions); this one stays signed in. */
+export const revokeOtherSessions = asyncHandler(async (req: Request, res: Response) => {
+  const revoked = await authService.revokeOtherSessions(req.admin!.adminId, req.cookies?.refresh_token as string | undefined);
+  res.locals.auditHandled = true;
+  recordAudit({ adminId: req.admin!.adminId, action: "sessions.revoke_others", entityType: "sessions", entityId: null, ipAddress: req.ip ?? null, metadata: { revoked } });
+  res.json({ revoked });
+});
+
+/** Sign one of my other devices out (Account › Active sessions). */
+export const revokeSession = asyncHandler(async (req: Request, res: Response) => {
+  await authService.revokeSession(req.admin!.adminId, req.params.id!, req.cookies?.refresh_token as string | undefined);
+  res.locals.auditHandled = true;
+  recordAudit({ adminId: req.admin!.adminId, action: "sessions.revoke", entityType: "sessions", entityId: req.params.id!, ipAddress: req.ip ?? null });
+  res.status(204).send();
 });
 
 export const refresh = asyncHandler(async (req: Request, res: Response) => {
   const refreshToken = req.cookies?.refresh_token as string | undefined;
   if (!refreshToken) throw AppError.unauthorized("Login required");
 
-  const { accessToken, refreshToken: newRefreshToken } = await authService.refreshAdminSession(
-    refreshToken,
-    req.headers["user-agent"],
-  );
+  let session: Awaited<ReturnType<typeof authService.refreshAdminSession>>;
+  try {
+    session = await authService.refreshAdminSession(refreshToken, req.headers["user-agent"]);
+  } catch (err) {
+    // A revoked, expired or reused refresh token: drop the dead cookies, or the web (which treats "has a refresh cookie"
+    // as signed in) bounces between the login page and the dashboard.
+    if (err instanceof AppError && err.statusCode === 401) res.clearCookie("access_token").clearCookie("refresh_token").clearCookie("csrf_token");
+    throw err;
+  }
+  const { accessToken, refreshToken: newRefreshToken } = session;
   issueCsrfCookie(res);
   res
     .cookie("access_token", accessToken, accessTokenCookieOptions)

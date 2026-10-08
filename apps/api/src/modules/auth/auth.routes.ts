@@ -19,6 +19,8 @@ import {
   me,
   refresh,
   sessions,
+  revokeSession,
+  revokeOtherSessions,
   listAdmins,
   setAdminActive,
   updateAdmin,
@@ -36,6 +38,8 @@ authRouter.post("/google", loginRateLimit, validate(googleLoginSchema), googleLo
 authRouter.post("/logout", logout);
 authRouter.post("/logout-all", requireAdmin, requireSelf, logoutAllDevices);
 authRouter.get("/sessions", requireAdmin, requireSelf, sessions);
+authRouter.post("/sessions/revoke-others", requireAdmin, requireSelf, revokeOtherSessions);
+authRouter.delete("/sessions/:id", requireAdmin, requireSelf, revokeSession);
 authRouter.post("/refresh", refreshRateLimit, refresh);
 authRouter.get("/me", requireAdmin, requireSelf, me);
 

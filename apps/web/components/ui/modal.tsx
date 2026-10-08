@@ -1,6 +1,7 @@
 "use client";
 
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -23,10 +24,15 @@ export function Modal({ open, onClose, title, description, children, footer, wid
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose });
+  // Portalled to <body>, like Drawer and Popover: a dialog opened from inside the sticky toolbar (whose backdrop blur
+  // makes it the containing block for `fixed` children) would otherwise be clipped to the toolbar. Rendered after mount,
+  // since document.body doesn't exist during the server render.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     // No backdrop-click-to-close, unlike Drawer — Modal content is almost always an unsaved form,
     // and a stray click just outside the panel shouldn't discard it.
     <div className="ui-overlay fixed inset-0 z-overlay flex items-start justify-center overflow-y-auto p-4 pt-16 animate-fade-in">
@@ -60,6 +66,7 @@ export function Modal({ open, onClose, title, description, children, footer, wid
         <div className="px-6 py-5">{children}</div>
         {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-line-subtle px-6 py-4">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

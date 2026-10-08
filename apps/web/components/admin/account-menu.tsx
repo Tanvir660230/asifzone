@@ -2,12 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Keyboard, LogOut, ShieldOff } from "lucide-react";
+import { Keyboard, LogOut, MonitorSmartphone, ShieldOff } from "lucide-react";
 import { logoutAdmin, logoutAllDevices } from "@/lib/auth";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Popover } from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
+import { ActiveSessionsDialog } from "@/components/admin/active-sessions-dialog";
 
 /** "Store Owner" -> "SO" — fallback avatar monogram, same convention as the storefront header's logo fallback. */
 function getInitials(name: string): string {
@@ -28,6 +29,7 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [open, setOpen] = useState(false);
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const admin = data?.admin;
 
@@ -85,6 +87,17 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
           <Keyboard size={15} aria-hidden />
           Keyboard shortcuts
         </button>
+        <button
+          type="button"
+          className="ui-menu-item"
+          onClick={() => {
+            setOpen(false);
+            setSessionsOpen(true);
+          }}
+        >
+          <MonitorSmartphone size={15} aria-hidden />
+          Active sessions
+        </button>
         <div className="my-1 border-t border-line-subtle" />
         <button type="button" className="ui-menu-item" onClick={handleLogout}>
           <LogOut size={15} aria-hidden />
@@ -96,6 +109,7 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
         </button>
       </Popover>
       {confirmDialog}
+      <ActiveSessionsDialog open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
     </>
   );
 }

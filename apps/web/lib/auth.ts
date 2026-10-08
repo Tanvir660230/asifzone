@@ -65,10 +65,22 @@ export interface AdminSession {
   userAgent: string | null;
   createdAt: string;
   expiresAt: string;
+  /** The session making the request (this browser). */
+  current: boolean;
 }
 
 export function listAdminSessions() {
   return apiFetch<{ sessions: AdminSession[] }>("/api/auth/sessions");
+}
+
+/** Signs out every other device; this one stays signed in. */
+export function revokeOtherAdminSessions() {
+  return apiFetch<{ revoked: number }>("/api/auth/sessions/revoke-others", { method: "POST" });
+}
+
+/** Signs one of my other devices out; the current one is Log out. */
+export function revokeAdminSession(id: string) {
+  return apiFetch<void>(`/api/auth/sessions/${id}`, { method: "DELETE" });
 }
 
 export function getCurrentAdmin() {
