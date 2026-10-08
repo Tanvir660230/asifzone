@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, ChevronDown, ExternalLink, FileText, MoreHorizontal, Printer, RotateCcw, Trash2 } from "lucide-react";
-import { allowedNextOrderStatuses, suggestedNextOrderStatus, type Order } from "@clothing-brand/shared";
+import { allowedNextOrderStatuses, primaryOrderAction, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
 import { BackLink } from "@/components/ui/back-link";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -39,7 +39,19 @@ export function DetailHeader({
   const menuRef = useRef<HTMLButtonElement>(null);
   const deleted = Boolean(order.deletedAt);
   const canChangeStatus = perms.manage && !deleted;
-  const next = canChangeStatus ? suggestedNextOrderStatus(order.status) : null;
+  // Blueprint V2 K6: the one obvious next step, from the shared table — offered only when this admin may do it.
+  const primary = deleted ? null : primaryOrderAction(order, { courierAvailable: perms.courierConfigured });
+  const canPrimary =
+    primary !== null &&
+    (primary.kind === "transition" ? canChangeStatus : primary.kind === "book_courier" ? perms.courier : primary.kind === "record_refund" ? perms.refunds : perms.manage);
+  const goTo = (testId: string) => document.querySelector(`[data-testid="${testId}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function runPrimary() {
+    if (!primary) return;
+    if (primary.kind === "transition") commands.requestStatusChange([order], primary.to);
+    else if (primary.kind === "book_courier") void commands.bookCourier(order);
+    else if (primary.kind === "reconcile") goTo("partial-delivery");
+    else goTo("order-payments");
+  }
   const allowed = canChangeStatus ? allowedNextOrderStatuses(order.status) : [];
   const Heading = variant === "page" ? "h1" : "h2";
 
@@ -108,9 +120,9 @@ export function DetailHeader({
       {!deleted && <OrderProgress order={order} />}
 
       <div className="flex flex-wrap items-center gap-2" data-testid="order-actions">
-        {next && (
-          <Button size="sm" onClick={() => commands.requestStatusChange([order], next)}>
-            Mark as {orderStatusLabel(next)} <ArrowRight size={14} />
+        {primary && canPrimary && (
+          <Button size="sm" onClick={runPrimary} loading={primary.kind === "book_courier" && commands.pending.book}>
+            {primary.label} <ArrowRight size={14} aria-hidden="true" />
           </Button>
         )}
         {allowed.length > 0 && (

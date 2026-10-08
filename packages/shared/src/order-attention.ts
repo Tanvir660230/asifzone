@@ -19,6 +19,45 @@ export function suggestedNextOrderStatus(current: OrderStatus): OrderStatus | nu
   return next && canTransitionOrder(current, next) ? next : null;
 }
 
+/**
+ * The one obvious next step for an order (Blueprint V2 K6) — the primary button on the order page, the preview and the
+ * phone sticky bar. A status move only when the state machine allows it; courier booking only when a courier is set up
+ * and the order isn't booked yet; reconciling a partial delivery; and, when nothing else applies, money owed back.
+ */
+export type PrimaryOrderAction =
+  | { kind: "transition"; to: OrderStatus; label: string }
+  | { kind: "book_courier"; label: string }
+  | { kind: "reconcile"; label: string }
+  | { kind: "record_refund"; label: string };
+
+const TRANSITION_LABEL: Partial<Record<OrderStatus, string>> = { CONFIRMED: "Confirm order", PACKED: "Mark packed", SHIPPED: "Mark shipped" };
+
+export function primaryOrderAction(
+  order: Pick<OrderAttentionFacts, "status" | "courierConsignmentId" | "partialDeliveryReconciledAt" | "payment">,
+  opts: { courierAvailable: boolean },
+): PrimaryOrderAction | null {
+  const move = (to: OrderStatus): PrimaryOrderAction | null =>
+    canTransitionOrder(order.status, to) ? { kind: "transition", to, label: TRANSITION_LABEL[to] ?? `Mark ${to.toLowerCase()}` } : null;
+  let action: PrimaryOrderAction | null = null;
+  switch (order.status) {
+    case "PENDING":
+      action = move("CONFIRMED");
+      break;
+    case "CONFIRMED":
+    case "PROCESSING":
+      action = opts.courierAvailable && !order.courierConsignmentId ? { kind: "book_courier", label: "Book courier" } : move("PACKED");
+      break;
+    case "PACKED":
+      action = move("SHIPPED");
+      break;
+    case "PARTIALLY_DELIVERED":
+      if (!order.partialDeliveryReconciledAt) action = { kind: "reconcile", label: "Reconcile returned units" };
+      break;
+  }
+  if (!action && (order.payment?.refundDue ?? 0) > 0) action = { kind: "record_refund", label: "Record refund" };
+  return action;
+}
+
 export interface OrderAttentionFacts {
   status: OrderStatus;
   paymentStatus: string;

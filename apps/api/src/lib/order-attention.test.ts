@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { orderAttentionItems, suggestedNextOrderStatus, type OrderAttentionFacts } from "@clothing-brand/shared";
+import { orderAttentionItems, primaryOrderAction, suggestedNextOrderStatus, type OrderAttentionFacts } from "@clothing-brand/shared";
 
 // Blueprint V2 P0: one definition of "what needs attention on this order" and "the obvious next step", shared by the
 // order screens and the AI assistant.
@@ -54,5 +54,24 @@ describe("orderAttentionItems", () => {
   it("pending return and exchange requests, and unreconciled partial deliveries", () => {
     expect(orderAttentionItems({ ...base, returnRequests: [{ status: "PENDING", type: "EXCHANGE" }] }, fmt)[0]!.label).toBe("Exchange request awaiting review");
     expect(orderAttentionItems({ ...base, status: "PARTIALLY_DELIVERED" }, fmt)[0]!.key).toBe("partial");
+  });
+});
+
+describe("primaryOrderAction (Blueprint V2 K6)", () => {
+  const f = (status: OrderAttentionFacts["status"], extra: Partial<OrderAttentionFacts> = {}) => ({ ...base, status, ...extra });
+  it("follows the fulfilment table", () => {
+    expect(primaryOrderAction(f("PENDING"), { courierAvailable: true })).toMatchObject({ kind: "transition", to: "CONFIRMED", label: "Confirm order" });
+    expect(primaryOrderAction(f("CONFIRMED"), { courierAvailable: true })).toMatchObject({ kind: "book_courier" });
+    expect(primaryOrderAction(f("PROCESSING"), { courierAvailable: false })).toMatchObject({ kind: "transition", to: "PACKED", label: "Mark packed" });
+    expect(primaryOrderAction(f("PACKED"), { courierAvailable: true })).toMatchObject({ kind: "transition", to: "SHIPPED", label: "Mark shipped" });
+    expect(primaryOrderAction(f("SHIPPED"), { courierAvailable: true })).toBeNull();
+    expect(primaryOrderAction(f("PARTIALLY_DELIVERED"), { courierAvailable: true })).toMatchObject({ kind: "reconcile" });
+  });
+  it("a booked order is packed next, not booked again", () => {
+    expect(primaryOrderAction(f("CONFIRMED", { courierConsignmentId: "C1" }), { courierAvailable: true })).toMatchObject({ kind: "transition", to: "PACKED" });
+  });
+  it("money owed back is the action when nothing else is", () => {
+    expect(primaryOrderAction(f("CANCELLED", { payment: { refundDue: 500, refundPending: 0 } }), { courierAvailable: true })).toMatchObject({ kind: "record_refund" });
+    expect(primaryOrderAction(f("DELIVERED"), { courierAvailable: true })).toBeNull();
   });
 });

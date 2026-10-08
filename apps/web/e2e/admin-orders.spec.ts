@@ -116,7 +116,7 @@ test.describe("orders workspace", () => {
     await expect(menu.getByRole("menuitem", { name: "Refunded" })).toHaveCount(0);
     await expect(menu.getByRole("menuitem", { name: "Returned" })).toHaveCount(0);
     await page.keyboard.press("Escape");
-    await detail.getByRole("button", { name: "Mark as Confirmed" }).click();
+    await detail.getByRole("button", { name: "Confirm order" }).click();
     await expect(dialog(page).getByText(/order confirmed.*SMS/)).toBeVisible();
     await dialog(page).getByLabel("Note for the timeline (optional)").fill("e2e: confirmed on call");
     await dialog(page).getByRole("button", { name: "Move to Confirmed" }).click();

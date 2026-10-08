@@ -156,7 +156,7 @@ export default function AdminReturnRequestsPage() {
           }}
           options={STATUS_FILTERS}
         />
-        {data && <span className="text-xs tabular-nums text-ink-400">{data.total} request(s)</span>}
+        {data && <span className="text-xs tabular-nums text-ink-400">{data.total} {data.total === 1 ? "request" : "requests"}</span>}
       </div>
 
       <div className="hidden overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-sm md:block">
