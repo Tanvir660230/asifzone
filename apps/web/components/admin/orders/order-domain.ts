@@ -1,6 +1,14 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { attentionKeys } from "@/lib/query-keys";
-import { MONEY_HELD_PAYMENT_STATUSES, PRE_SHIPMENT_STATUSES, orderStatusEnum, type Order, type OrderStatus, type OrderTransitionContext } from "@clothing-brand/shared";
+import {
+  MONEY_HELD_PAYMENT_STATUSES,
+  PRE_SHIPMENT_STATUSES,
+  orderStatusEnum,
+  type Order,
+  type OrderStatus,
+  type OrderTransitionContext,
+  orderTransitionContext,
+} from "@clothing-brand/shared";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
@@ -76,13 +84,7 @@ type OrderFacts = Pick<
   Partial<Pick<Order, "payment" | "returnRequests">>;
 
 export function transitionContextOf(order: OrderFacts): OrderTransitionContext {
-  return {
-    paymentMethod: order.paymentMethod,
-    paymentStatus: order.paymentStatus,
-    courierBooked: Boolean(order.courierConsignmentId),
-    hasCoupon: Boolean(order.couponId),
-    hasFollowUp: Boolean(order.followUpAt),
-  };
+  return orderTransitionContext(order);
 }
 
 export interface OrderAttentionItem {

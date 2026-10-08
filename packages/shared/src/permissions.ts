@@ -21,7 +21,8 @@ export const PERMISSIONS = [
   "catalog.export",
   "catalog.purge", // permanent catalog delete (products, categories)
   "products.import",
-  "ai.use", // billed AI generation
+  "ai.use", // billed AI generation, the assistant's read tools and proposals
+  "ai.execute", // confirm an AI proposal — the change runs as this admin (DR-23)
   // orders & money
   "orders.read",
   "orders.manage", // manual order, status, details, follow-up, partial-delivery reconcile
@@ -64,6 +65,7 @@ export const OWNER_ONLY_PERMISSIONS = [
   "promotions.purge",
   "products.import",
   "ai.use",
+  "ai.execute",
   "orders.delete",
   "storefront.configure",
   "settings.manage",

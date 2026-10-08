@@ -7,6 +7,7 @@ import type { AiContentType } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/admin/page-header";
 import { RankedBarList } from "@/components/admin/ranked-bar-list";
+import { AssistantChat } from "@/components/admin/ai/assistant-chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,8 +17,7 @@ import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as aiApi from "@/lib/api/ai";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
-import { adminCan } from "@/lib/auth";
+import { useCapability } from "@/hooks/use-capability";
 
 const CONTENT_TYPES: Array<{ value: AiContentType; label: string }> = [
   { value: "product_description", label: "Product description" },
@@ -33,8 +33,7 @@ const PRODUCT_TYPES = new Set<AiContentType>(["product_description", "seo_title"
 
 export default function AiAssistantPage() {
   const { data: aiStatus } = useQuery({ queryKey: ["ai-status"], queryFn: aiApi.getAiStatus });
-  const { data: currentAdmin } = useCurrentAdmin();
-  const canUseAi = adminCan(currentAdmin?.admin, "ai.use");
+  const canUseAi = useCapability("ai.use");
   const { data: slowMoving } = useQuery({ queryKey: ["ai-slow-moving"], queryFn: () => analyticsApi.getSlowMovingProducts(30, 8) });
   const { data: bestSelling } = useQuery({ queryKey: ["ai-best-selling"], queryFn: () => analyticsApi.getBestSellingPrediction(8) });
   const { data: demandForecast } = useQuery({ queryKey: ["ai-demand-forecast"], queryFn: () => analyticsApi.getDemandForecast(14, 8) });
@@ -70,7 +69,9 @@ export default function AiAssistantPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="AI Admin Assistant" description="Smart alerts and AI-generated store content, in one place." />
+      <PageHeader title="AI assistant" description="Ask about your store, get alerts, and write store content." />
+
+      {canUseAi && <AssistantChat configured={configured} />}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card>

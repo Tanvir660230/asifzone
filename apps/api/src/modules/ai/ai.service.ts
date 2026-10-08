@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { AiContentType, GenerateAiContentInput } from "@clothing-brand/shared";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
+import type { AiModel, ModelBlock } from "../../domain/ai/chat.service";
 
 const MAX_TOKENS = 1024;
 // Without this, a hung upstream call holds the request (and its Express connection) open
@@ -85,6 +86,30 @@ export async function generateContent(input: GenerateAiContentInput): Promise<st
     throw new AppError(502, "AI returned no text content");
   }
   return textBlock.text.trim();
+}
+
+const ASSISTANT_MAX_TOKENS = 1500;
+
+/** The assistant's model (Blueprint V2 §T) on the store's Anthropic key — tool use, one turn per call. */
+export function anthropicAssistantModel(): AiModel {
+  return {
+    async create({ system, messages, tools }) {
+      const res = await getClient().messages.create(
+        {
+          model: env.anthropic.model,
+          max_tokens: ASSISTANT_MAX_TOKENS,
+          system,
+          messages: messages as Anthropic.MessageParam[],
+          tools: tools as Anthropic.Tool[],
+        },
+        { timeout: AI_REQUEST_TIMEOUT_MS },
+      );
+      const content: ModelBlock[] = res.content.flatMap((b): ModelBlock[] =>
+        b.type === "text" ? [{ type: "text", text: b.text }] : b.type === "tool_use" ? [{ type: "tool_use", id: b.id, name: b.name, input: b.input }] : [],
+      );
+      return { content, stop_reason: res.stop_reason };
+    },
+  };
 }
 
 const IMAGE_MEDIA_TYPES: Record<string, string> = {

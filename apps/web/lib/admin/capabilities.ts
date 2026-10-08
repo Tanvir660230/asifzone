@@ -52,6 +52,7 @@ export const CAPABILITIES = {
   // insight
   "analytics.view": { permission: "analytics.read" },
   "ai.use": { permission: "ai.use" },
+  "ai.execute": { permission: "ai.execute" },
   // administration
   "settings.manage": { permission: "settings.manage" },
   "team.manage": { permission: "users.manage" },

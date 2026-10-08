@@ -267,6 +267,7 @@ model AdminUser {
   paymentLinksCancelled  PaymentLink[]         @relation("PaymentLinkCancelledBy")
   notificationReads      NotificationRead[]
   savedViews             SavedView[]
+  aiProposals            AiProposal[]
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -1734,6 +1735,33 @@ model Notification {
 
   @@index([readAt, createdAt])
   @@index([createdAt])
+}
+
+enum AiProposalStatus {
+  PENDING
+  EXECUTED
+  CANCELLED
+  FAILED
+}
+
+/// Blueprint V2 §T / DR-23: a change the AI assistant prepared. It runs only when an admin with ai.execute confirms it,
+/// within 10 minutes, and only if what it was previewed against hasn't changed (`previewHash`).
+model AiProposal {
+  id          String           @id @default(cuid())
+  adminId     String
+  tool        String
+  input       Json
+  title       String
+  effects     Json
+  previewHash String
+  status      AiProposalStatus @default(PENDING)
+  result      Json?
+  expiresAt   DateTime
+  decidedAt   DateTime?
+  createdAt   DateTime         @default(now())
+  admin       AdminUser        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, createdAt])
 }
 
 /// Admin V2 DR-18: a named filter set for one admin list (its URL query), kept per admin across devices; `shared`

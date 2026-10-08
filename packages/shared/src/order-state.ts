@@ -124,6 +124,23 @@ export interface OrderTransitionContext {
   hasFollowUp: boolean;
 }
 
+/** The transition context of an order — one definition for the admin dialogs and the AI assistant's previews. */
+export function orderTransitionContext(order: {
+  paymentMethod: string;
+  paymentStatus: string;
+  courierConsignmentId?: string | null;
+  couponId?: string | null;
+  followUpAt?: Date | string | null;
+}): OrderTransitionContext {
+  return {
+    paymentMethod: order.paymentMethod,
+    paymentStatus: order.paymentStatus,
+    courierBooked: Boolean(order.courierConsignmentId),
+    hasCoupon: Boolean(order.couponId),
+    hasFollowUp: Boolean(order.followUpAt),
+  };
+}
+
 export interface OrderTransitionConsequence {
   /** `blocked`: the server will refuse the move as things stand; `warning`: money/stock/courier risk; `info`: routine. */
   tone: "info" | "warning" | "blocked";
