@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,10 @@ export function Drawer({
 }: DrawerProps) {
   const layerRef = useRef<number | null>(null);
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, layerRef });
+  // The panel portals into document.body, which doesn't exist during server rendering — a drawer opened from the URL on
+  // first load (?open=, ?reports=1) renders once the page has mounted instead of failing the server render.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Kept as its own effect, separate from the focus-trap hook above — onPrev/onNext are fresh
   // closures every render of the parent (e.g. the Orders list), and folding this into the trap's
@@ -72,7 +76,7 @@ export function Drawer({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   return createPortal(
     <div className="ui-overlay fixed inset-0 z-overlay animate-fade-in" onClick={onClose}>

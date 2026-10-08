@@ -104,7 +104,7 @@ export const MAX_NAV_DEPTH = 3;
 /** Analytics (Blueprint V2 DR-26): six tabs; each folds in the BI pages it replaced, whose old paths redirect to the
  * tab's view (`?view=`). */
 const ANALYTICS_TABS: Array<[slug: string, label: string, keywords: string[], deprecated: string[]]> = [
-  ["overview", "Overview", ["analytics", "reports", "export", "ai insights", "lifetime", "ltv"], ["/admin/bi/overview", "/admin/bi/ai-insights?view=insights", "/admin/bi/lifetime?view=lifetime", "/admin/bi/reports?view=reports"]],
+  ["overview", "Overview", ["analytics", "reports", "export", "ai insights", "lifetime", "ltv"], ["/admin/bi/overview", "/admin/bi/ai-insights?view=insights", "/admin/bi/lifetime?view=lifetime", "/admin/bi/reports?reports=1"]],
   ["sales", "Sales", ["revenue", "sales analytics", "profit", "margin", "cogs", "financial"], ["/admin/bi/sales", "/admin/bi/financial?view=financial"]],
   ["products", "Products", ["product analytics", "stock turnover", "inventory intel", "search", "queries", "zero results"], ["/admin/bi/products", "/admin/bi/inventory?view=inventory", "/admin/bi/search?view=search"]],
   ["customers", "Customers", ["cohort", "retention", "rfm", "customer analytics", "behavior", "heatmap"], ["/admin/bi/customers", "/admin/bi/behavior?view=behavior"]],

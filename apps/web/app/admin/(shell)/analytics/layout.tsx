@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { DateRangePicker } from "@/components/admin/date-range-picker";
+import { ReportsSheet } from "@/components/admin/analytics/reports-sheet";
 import { BiDateRangeProvider, useBiDateRange } from "@/components/admin/bi-date-range-context";
 
 /** The one report period for every Analytics tab — a sticky strip under the toolbar, so it reads as the section's
@@ -14,7 +15,10 @@ function ReportPeriodBar() {
       <p className="text-[13px] text-fg-muted">
         <span className="font-medium text-fg">Report period</span> · applies to every Analytics tab
       </p>
-      <DateRangePicker value={range} onChange={setRange} />
+      <div className="flex items-center gap-2">
+        <ReportsSheet />
+        <DateRangePicker value={range} onChange={setRange} />
+      </div>
     </div>
   );
 }
