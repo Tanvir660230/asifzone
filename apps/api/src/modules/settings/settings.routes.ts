@@ -60,6 +60,13 @@ settingsRouter.post(
   settingsController.uploadFavicon,
 );
 settingsRouter.post(
+  "/upload-social-image",
+  requireAdmin,
+  requirePermission("settings.manage"),
+  imageUpload.single("image"),
+  settingsController.uploadSocialImage,
+);
+settingsRouter.post(
   "/upload-payment-methods-image",
   requireAdmin,
   requirePermission("settings.manage"),

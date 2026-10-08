@@ -13,7 +13,7 @@ const CACHE_TTL_SECONDS = 300;
 const SINGLETON_ID = "singleton";
 // Single-file image fields where a new upload fully replaces the old one — the old file has no
 // other referrer once overwritten, so it should be cleaned up rather than left on disk forever.
-const REPLACEABLE_IMAGE_FIELDS = ["logoUrl", "faviconUrl", "paymentMethodsImageUrl"] as const;
+const REPLACEABLE_IMAGE_FIELDS = ["logoUrl", "faviconUrl", "ogImageUrl", "paymentMethodsImageUrl"] as const;
 
 /** P6-4 / Phase 7: the store currency may be set freely until the first order exists; after that every recorded amount is in
  * it, so a change is refused. Saving the same currency is never a change. */

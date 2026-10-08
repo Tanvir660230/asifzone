@@ -116,6 +116,7 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/settings/upload-logo",
   "POST /api/settings/upload-favicon",
   "POST /api/settings/upload-payment-methods-image",
+  "POST /api/settings/upload-social-image",
   "GET /api/sms-settings/",
   "PATCH /api/sms-settings/",
   "POST /api/ai/generate",
@@ -227,9 +228,9 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 346 admin routes, each with exactly one permission (or explicit self-service)", () => {
-    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets; +4: delivery zones; +3: AI assistant chat + proposal confirm/cancel; +5 −3: Inbox conversations replace the admin feedback routes; +1: payment attempts list (Admin V2)
-    expect(routes).toHaveLength(346);
+  it("covers all 347 admin routes, each with exactly one permission (or explicit self-service)", () => {
+    // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets; +4: delivery zones; +3: AI assistant chat + proposal confirm/cancel; +5 −3: Inbox conversations replace the admin feedback routes; +1: payment attempts list (Admin V2); +1: store social-share image upload (Phase 7)
+    expect(routes).toHaveLength(347);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

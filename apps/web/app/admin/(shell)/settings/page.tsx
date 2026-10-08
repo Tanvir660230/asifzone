@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { updateSettingsSchema, type UpdateSettingsInput, type UpdateSocialLinkInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
@@ -131,7 +132,8 @@ type SettingsTab = (typeof TABS)[number]["value"];
  * section never sends another section's untouched — possibly stale — values. */
 const SECTIONS = {
   store: ["storeName", "currency", "tagline", "logoUrl", "logoOnDarkUrl", "faviconUrl"],
-  seo: ["googleSiteVerification"],
+  seo: ["googleSiteVerification", "seoTitle", "seoDescription", "ogImageUrl"],
+  newsletter: ["newsletterHeading", "newsletterText"],
   contact: ["contactEmail", "contactPhone"],
   identity: ["legalName", "legalJurisdiction", "addressLine", "addressCity", "addressRegion", "addressPostalCode", "addressCountry", "supportHours"],
   contactOptions: ["whatsappLabel", "whatsappMessage", "callEnabled", "callLabel", "liveChatEnabled", "liveChatLabel", "tawkPropertyId", "tawkWidgetId"],
@@ -169,6 +171,7 @@ export default function SettingsPage() {
   const logoUrl = watch("logoUrl");
   const logoOnDarkUrl = watch("logoOnDarkUrl");
   const faviconUrl = watch("faviconUrl");
+  const ogImageUrl = watch("ogImageUrl");
 
   // Filled once: a later refetch must not wipe what's being edited in another section.
   useEffect(() => {
@@ -181,6 +184,11 @@ export default function SettingsPage() {
       logoUrl: s.logoUrl,
       logoOnDarkUrl: s.logoOnDarkUrl,
       faviconUrl: s.faviconUrl,
+      ogImageUrl: s.ogImageUrl,
+      seoTitle: s.seoTitle,
+      seoDescription: s.seoDescription,
+      newsletterHeading: s.newsletterHeading,
+      newsletterText: s.newsletterText,
       currency: s.currency,
       contactEmail: s.contactEmail,
       contactPhone: s.contactPhone,
@@ -356,7 +364,48 @@ export default function SettingsPage() {
             </p>
             <Input id="googleSiteVerification" placeholder="abc123XYZ..." {...register("googleSiteVerification")} />
           </div>
+          <div className="mt-4 grid grid-cols-1 gap-4">
+            <div>
+              <Label htmlFor="seoTitle">Homepage title</Label>
+              <p className="mb-1 text-xs text-ink-400">The title search results show for the homepage. Empty uses the store name.</p>
+              <Input id="seoTitle" maxLength={70} {...register("seoTitle")} />
+              {errors.seoTitle && <p className="ui-field-error">{errors.seoTitle.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="seoDescription">Homepage description</Label>
+              <p className="mb-1 text-xs text-ink-400">The short summary under the title in search results. Empty uses the tagline.</p>
+              <Textarea id="seoDescription" rows={2} maxLength={300} {...register("seoDescription")} />
+              {errors.seoDescription && <p className="ui-field-error">{errors.seoDescription.message}</p>}
+            </div>
+            <div className="sm:max-w-md">
+              <input type="hidden" {...register("ogImageUrl")} />
+              <ImageUploadField
+                label="Social sharing image"
+                hint="Shown when the store is shared on Facebook, WhatsApp and similar. Cropped to 1200×630; pages with their own image (products, categories) use theirs. Empty uses the logo."
+                value={ogImageUrl}
+                upload={settingsApi.uploadSocialImage}
+                onChange={(url) => setValue("ogImageUrl", url, { shouldValidate: true })}
+                uploadLabel="Upload image"
+              />
+            </div>
+          </div>
           {sectionSave("seo")}
+        </FormSection>
+
+        <FormSection title="Newsletter" description="The newsletter sign-up block in the footer.">
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <Label htmlFor="newsletterHeading">Heading</Label>
+              <p className="mb-1 text-xs text-ink-400">Empty uses &quot;Get in Touch&quot;.</p>
+              <Input id="newsletterHeading" maxLength={80} {...register("newsletterHeading")} />
+            </div>
+            <div>
+              <Label htmlFor="newsletterText">Supporting line</Label>
+              <p className="mb-1 text-xs text-ink-400">Empty uses &quot;New arrivals, offers and news — no spam, unsubscribe any time.&quot;</p>
+              <Input id="newsletterText" maxLength={300} {...register("newsletterText")} />
+            </div>
+          </div>
+          {sectionSave("newsletter")}
         </FormSection>
         </>
         )}

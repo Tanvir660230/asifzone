@@ -36,6 +36,16 @@ export function uploadLogo(file: File) {
   });
 }
 
+/** The default social-sharing image (1200×630, see the API's processSocialImage). */
+export function uploadSocialImage(file: File) {
+  const form = new FormData();
+  form.append("image", file);
+  return apiFetch<{ url: string }>("/api/settings/upload-social-image", {
+    method: "POST",
+    body: form,
+  });
+}
+
 export function uploadFavicon(file: File) {
   const formData = new FormData();
   formData.append("image", file);

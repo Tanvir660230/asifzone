@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
-import { processLogoImage, processFaviconImage, processPaymentMethodsImage } from "../uploads/upload.service";
+import { processLogoImage, processFaviconImage, processPaymentMethodsImage, processSocialImage } from "../uploads/upload.service";
 import * as settingsService from "./settings.service";
 import { loadTaxConfig, pricingConfigDrift } from "../../domain/pricing/pricing-config";
 import { capabilities } from "../../providers/registry";
@@ -39,6 +39,15 @@ export const uploadFavicon = asyncHandler(async (req: Request, res: Response) =>
     return;
   }
   const url = await processFaviconImage(req.file.buffer);
+  res.status(201).json({ url });
+});
+
+export const uploadSocialImage = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    res.status(400).json({ error: "No image file provided" });
+    return;
+  }
+  const url = await processSocialImage(req.file.buffer);
   res.status(201).json({ url });
 });
 

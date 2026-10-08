@@ -8,7 +8,7 @@ import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { cn } from "@/lib/utils";
 
 const NAV_LINK_CLASS =
-  "group/navlink relative flex items-center gap-1 whitespace-nowrap py-2 text-sm ui-caps text-ink-800 transition-colors duration-200 ease-smooth hover:text-brass-500";
+  "group/navlink relative flex items-center gap-1 whitespace-nowrap py-2 text-sm ui-caps text-ink-800 transition-colors duration-200 ease-smooth hover:text-[color:var(--nav-hover)]";
 // Fully opaque, not the shared `.glass` (75% opacity) — this floats over whatever's on the page below it, including the
 // hero photo, and translucency let the image visibly show through behind the menu text. A functional nav menu needs to
 // read cleanly regardless of what's behind it; the header's translucency (deliberate, sits over plain scrolling content)
@@ -120,7 +120,7 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
               className={NAV_LINK_CLASS}
             >
               {cat.name}
-              <span className="absolute inset-x-0 -bottom-0.5 h-px origin-center scale-x-0 bg-brass-500 transition-transform duration-200 ease-smooth group-hover/navlink:scale-x-100" />
+              <span className="absolute inset-x-0 -bottom-0.5 h-px origin-center scale-x-0 bg-[color:var(--nav-underline)] transition-transform duration-200 ease-smooth group-hover/navlink:scale-x-100" />
             </Link>
 
             {cat.children.length > 0 && openId === cat.id && (

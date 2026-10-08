@@ -17,6 +17,9 @@ const STORE_B = {
   addressCountry: "BD",
   legalJurisdiction: "Bangladesh",
   supportHours: "Sat–Thu, 10am–6pm",
+  // No homepage search title/description of its own, so the homepage title is the store name.
+  seoTitle: null,
+  seoDescription: null,
 };
 const KEYS = Object.keys(STORE_B) as Array<keyof typeof STORE_B>;
 

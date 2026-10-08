@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Truck, MapPin, Wallet, PackageCheck, Ban } from "lucide-react";
 import { BD_DELIVERY_TIME_TEXT, dayRange, storePolicy, type StorePolicy } from "@clothing-brand/shared";
 import { getSiteSettings } from "@/lib/api/storefront";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 
@@ -28,7 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/shipping-returns`,
-      images: settings.logoUrl ? [settings.logoUrl] : undefined,
+      images: storeShareImages(settings),
     }),
   };
 }

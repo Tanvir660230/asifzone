@@ -18,6 +18,12 @@ interface OpenGraphOptions {
   images?: string[];
 }
 
+/** A page's share image when it has none of its own: the store's social-sharing image, else its logo, else none. */
+export function storeShareImages(settings: { ogImageUrl?: string | null; logoUrl?: string | null }): string[] | undefined {
+  const url = settings.ogImageUrl || settings.logoUrl;
+  return url ? [url] : undefined;
+}
+
 /** Shared `openGraph`/`twitter` metadata block — every page assembles the same shape instead of
  * hand-rolling it, so link previews (Facebook/LinkedIn/Slack via OG, X via Twitter Card) stay consistent. */
 export function buildOpenGraph({ title, description, url, siteName, images }: OpenGraphOptions): Pick<Metadata, "openGraph" | "twitter"> {

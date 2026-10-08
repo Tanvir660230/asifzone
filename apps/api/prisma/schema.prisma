@@ -1993,6 +1993,12 @@ model StoreSetting {
   /// Business days between an order and its dispatch.
   handlingDaysMin              Int?
   handlingDaysMax              Int?
+  // Store content (Phase 7): the default social-sharing image, the homepage's search title/description, newsletter copy.
+  ogImageUrl         String?
+  seoTitle           String?
+  seoDescription     String?
+  newsletterHeading  String?
+  newsletterText     String?
   updatedAt                    DateTime @updatedAt
 }
 
