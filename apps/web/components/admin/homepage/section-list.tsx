@@ -17,7 +17,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Pencil, Trash2 } from "lucide-react";
 import { REPEATABLE_SECTION_TYPES, type HomepageSection } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -31,9 +31,11 @@ interface SectionListProps {
   onToggle: (section: HomepageSection, isActive: boolean) => void;
   onEdit: (section: HomepageSection) => void;
   onDelete: (section: HomepageSection) => void;
+  /** Phones (DR-25): the order and on/off state are shown, nothing can be changed. */
+  readOnly?: boolean;
 }
 
-export function SectionList({ sections, onReorder, onToggle, onEdit, onDelete }: SectionListProps) {
+export function SectionList({ sections, onReorder, onToggle, onEdit, onDelete, readOnly = false }: SectionListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -48,6 +50,18 @@ export function SectionList({ sections, onReorder, onToggle, onEdit, onDelete }:
     if (oldIndex === -1 || newIndex === -1) return;
     onReorder(arrayMove(ids, oldIndex, newIndex));
   }
+  // Blueprint V2 §Y: dragging always has a button alternative.
+  const move = (index: number, offset: -1 | 1) => onReorder(arrayMove(ids, index, index + offset));
+
+  if (readOnly) {
+    return (
+      <ol className="space-y-2" aria-label="Homepage sections, top to bottom">
+        {sections.map((section) => (
+          <ReadOnlyRow key={section.id} section={section} />
+        ))}
+      </ol>
+    );
+  }
 
   return (
     // Explicit id: dnd-kit auto-generates aria-describedby ids from a render-order counter when
@@ -56,8 +70,16 @@ export function SectionList({ sections, onReorder, onToggle, onEdit, onDelete }:
     <DndContext id="homepage-section-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <div className="space-y-2">
-          {sections.map((section) => (
-            <SortableRow key={section.id} section={section} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
+          {sections.map((section, i) => (
+            <SortableRow
+              key={section.id}
+              section={section}
+              onToggle={onToggle}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onMoveUp={i > 0 ? () => move(i, -1) : undefined}
+              onMoveDown={i < sections.length - 1 ? () => move(i, 1) : undefined}
+            />
           ))}
         </div>
       </SortableContext>
@@ -70,9 +92,30 @@ interface RowProps {
   onToggle: SectionListProps["onToggle"];
   onEdit: SectionListProps["onEdit"];
   onDelete: SectionListProps["onDelete"];
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
-function SortableRow({ section, onToggle, onEdit, onDelete }: RowProps) {
+function ReadOnlyRow({ section }: { section: HomepageSection }) {
+  const meta = SECTION_META[section.type];
+  const Icon = meta.icon;
+  const status = scheduleStatus(section);
+  return (
+    <li className={cn("flex items-center gap-3 rounded-lg border border-ink-100 bg-cream-50 px-3 py-3", !section.isActive && "opacity-60")}>
+      <Icon size={18} className="shrink-0 text-brass-500" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-ink-900">{meta.label}</p>
+          {status && <Badge className={status.className}>{status.label}</Badge>}
+        </div>
+        <p className="truncate text-xs text-ink-500">{meta.description}</p>
+      </div>
+      <Badge variant={section.isActive ? "success" : "neutral"}>{section.isActive ? "On" : "Off"}</Badge>
+    </li>
+  );
+}
+
+function SortableRow({ section, onToggle, onEdit, onDelete, onMoveUp, onMoveDown }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id });
   const style = { transform: CSS.Transform.toString(transform), transition };
   const meta = SECTION_META[section.type];
@@ -106,6 +149,26 @@ function SortableRow({ section, onToggle, onEdit, onDelete }: RowProps) {
           {status && <Badge className={status.className}>{status.label}</Badge>}
         </div>
         <p className="truncate text-xs text-ink-500">{meta.description}</p>
+      </div>
+      <div className="flex flex-col">
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={!onMoveUp}
+          className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900 disabled:invisible"
+          aria-label={`Move ${meta.label} up`}
+        >
+          <ChevronUp size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={!onMoveDown}
+          className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900 disabled:invisible"
+          aria-label={`Move ${meta.label} down`}
+        >
+          <ChevronDown size={14} />
+        </button>
       </div>
       <Switch
         checked={section.isActive}

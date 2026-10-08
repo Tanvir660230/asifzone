@@ -139,8 +139,10 @@ export const updateHomepageSectionSchema = z.object({
   endsAt: nullableDate(),
 });
 
+// Not .cuid(): the default sections are created with fixed ids ("seed-hero", …). The service checks the list is exactly
+// the existing sections, which is the real guard.
 export const reorderHomepageSectionsSchema = z.object({
-  ids: z.array(z.string().cuid()).min(1),
+  ids: z.array(z.string().min(1).max(64)).min(1).max(200),
 });
 
 export type CreateHomepageSectionInput = z.infer<typeof createHomepageSectionSchema>;
