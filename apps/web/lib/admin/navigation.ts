@@ -280,7 +280,7 @@ export const NAV_NODES: readonly NavNode[] = [
     goKey: "e",
     keywords: ["support", "feedback"],
   },
-  { id: "messages.feedback", label: "Feedback", kind: "page", parent: "messages", domain: "operate", route: "/admin/feedback", capability: "content.manage", order: 0, keywords: ["support", "messages"] },
+  { id: "messages.feedback", label: "Inbox", kind: "page", parent: "messages", domain: "operate", route: "/admin/feedback", capability: "content.manage", order: 0, keywords: ["support", "messages", "feedback", "contact form", "reply"] },
   { id: "messages.reviews", label: term("review"), kind: "page", parent: "messages", domain: "operate", route: "/admin/reviews", capability: "content.manage", order: 1 },
 
   // ── Grow ────────────────────────────────────────────────────────────────────────────────────────────────────────────
