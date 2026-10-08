@@ -37,7 +37,7 @@ import { paginate } from "../../lib/paginate";
 import { csvCell } from "../../lib/csv";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteProductImageFiles } from "../uploads/upload.service";
-import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds } from "../categories/category.service";
+import { getCategoryBySlug, getCategoryDescendantIds, getSiblingCategoryIds, inCategoriesWhere } from "../categories/category.service";
 import { priceProductsForDisplay, type ProductPricingDto } from "../../domain/pricing/pricing.service";
 import {
   ensureFreshReadModels,
@@ -126,6 +126,7 @@ const relationOrder: Prisma.ProductRelationOrderByWithRelationInput[] = [{ kind:
 const detailRelations = {
   ...publicDetailRelations,
   relations: { orderBy: relationOrder, include: { related: { select: { id: true, name: true } } } },
+  alsoListedIn: { select: { categoryId: true }, orderBy: { createdAt: "asc" as const } },
 } as const;
 const detailInclude = { ...include, ...detailRelations };
 // What the product page itself needs beyond the shared public select: status-independent SEO overrides and
@@ -257,7 +258,13 @@ function completenessOf(presented: Presented<DetailRow>, config: ResolvedTypeCon
 /** Admin detail read: the presented product plus its completeness (never sent to the storefront). */
 async function presentForAdmin(row: DetailRow) {
   const { presented, config, admin } = await presentWithConfig(row);
-  return { ...presented, completeness: completenessOf(presented, config), ...admin };
+  const { alsoListedIn, ...product } = presented;
+  return {
+    ...product,
+    additionalCategoryIds: alsoListedIn.map((l) => l.categoryId),
+    completeness: completenessOf(presented, config),
+    ...admin,
+  };
 }
 
 /** JSON column input: `undefined` leaves the column alone, `null` clears it (Prisma needs the JsonNull
@@ -401,7 +408,9 @@ function computeRelevanceScore(candidate: RelevanceCandidate, rawQuery: string, 
  * Scoped to active products (and category, if given); intentionally doesn't also honor
  * price/size/color facet filters, since this is a fallback safety net, not a full facet-aware query path. */
 async function findTypoTolerantProductIds(query: string, categoryIds: string[] | undefined, limit: number) {
-  const categoryFilter = categoryIds && categoryIds.length > 0 ? Prisma.sql`AND "categoryId" IN (${Prisma.join(categoryIds)})` : Prisma.empty;
+  const categoryFilter = categoryIds && categoryIds.length > 0
+    ? Prisma.sql`AND ("categoryId" IN (${Prisma.join(categoryIds)}) OR id IN (SELECT "productId" FROM "ProductCategoryListing" WHERE "categoryId" IN (${Prisma.join(categoryIds)})))`
+    : Prisma.empty;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM (
       SELECT id, GREATEST(word_similarity(${query}, name), word_similarity(${query}, array_to_string(tags, ' '))) AS sim
@@ -512,7 +521,7 @@ export async function listProducts(query: ProductListQuery) {
   const where = {
     ...stockWhere,
     deletedAt: query.trashed ? { not: null } : null,
-    ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+    ...(query.categoryId ? inCategoriesWhere([query.categoryId]) : {}),
     ...(query.status ? { status: query.status } : {}),
     ...(query.typeId ? { typeId: query.typeId } : {}),
     // Matches by product name OR any variant's SKU — the admin product list and the "Create
@@ -606,7 +615,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
   const where = {
     isActive: true,
     deletedAt: null,
-    ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
+    ...(categoryIds ? inCategoriesWhere(categoryIds) : {}),
     ...(query.featured ? { isFeatured: true } : {}),
     ...(searchTerms.length ? buildFieldSearchOr(searchTerms) : {}),
     ...(query.sizes?.length ? { variants: { some: { size: { in: query.sizes } } } } : {}),
@@ -696,7 +705,7 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
   const where = {
     isActive: true,
     deletedAt: null,
-    ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
+    ...(categoryIds ? inCategoriesWhere(categoryIds) : {}),
     ...(facetSearchTerms.length ? buildFieldSearchOr(facetSearchTerms) : {}),
   };
 
@@ -1327,6 +1336,18 @@ async function assertPublishable(tx: Prisma.TransactionClient, productId: string
   }
 }
 
+/** Replaces the "also show in" categories. The home category is dropped from the list (it's already where the product
+ * lives), as are duplicates; every other id must be a live category. */
+async function replaceAdditionalCategories(tx: Prisma.TransactionClient, productId: string, homeCategoryId: string, categoryIds: string[]) {
+  const ids = [...new Set(categoryIds)].filter((id) => id !== homeCategoryId);
+  if (ids.length) {
+    const found = await tx.category.count({ where: { id: { in: ids }, deletedAt: null } });
+    if (found !== ids.length) throw AppError.badRequest("One of the extra categories no longer exists");
+  }
+  await tx.productCategoryListing.deleteMany({ where: { productId } });
+  if (ids.length) await tx.productCategoryListing.createMany({ data: ids.map((categoryId) => ({ productId, categoryId })) });
+}
+
 /** Validates the composition lines (real, non-archived materials) and replaces the product's rows. */
 async function replaceMaterials(
   tx: Prisma.TransactionClient,
@@ -1440,6 +1461,7 @@ export async function createProduct(
     sections,
     faqs,
     relations,
+    additionalCategoryIds,
     ...productData
   } = input;
   void _typeId; void _productType;
@@ -1479,6 +1501,7 @@ export async function createProduct(
         .map((f) => ({ productId: created.id, definitionId: f.definitionId, ...attributeRowData(f, defined[f.key]) }));
       if (rows.length) await tx.productAttributeValue.createMany({ data: rows });
       if (materials?.length) await replaceMaterials(tx, created.id, materials);
+      if (additionalCategoryIds?.length) await replaceAdditionalCategories(tx, created.id, created.categoryId, additionalCategoryIds);
       if (sections?.length) await saveProductSections(tx, created.id, sections);
       if (faqs?.length) await replaceFaqs(tx, created.id, faqs);
       if (relations?.length) await replaceRelations(tx, created.id, relations);
@@ -1589,6 +1612,7 @@ export async function updateProduct(
     sections,
     faqs,
     relations,
+    additionalCategoryIds,
     ...rest
   } = input;
   void _typeId; void _productType; void _attributes; void _variants;
@@ -1649,6 +1673,13 @@ export async function updateProduct(
       await tx.product.update({ where: { id }, data });
       if (slugRedirect) await upsertSlugRedirect(tx, slugRedirect.from, slugRedirect.to);
       if (materials !== undefined) await replaceMaterials(tx, id, materials);
+      const homeCategoryId = input.categoryId ?? existing.categoryId;
+      if (additionalCategoryIds !== undefined) {
+        await replaceAdditionalCategories(tx, id, homeCategoryId, additionalCategoryIds);
+      } else if (homeCategoryId !== existing.categoryId) {
+        // The new home category may have been one of the extras — it can't be listed twice.
+        await tx.productCategoryListing.deleteMany({ where: { productId: id, categoryId: homeCategoryId } });
+      }
       if (sections !== undefined) await saveProductSections(tx, id, sections);
       if (faqs !== undefined) await replaceFaqs(tx, id, faqs);
       if (relations !== undefined) await replaceRelations(tx, id, relations);

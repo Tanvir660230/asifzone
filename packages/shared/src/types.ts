@@ -170,6 +170,8 @@ export interface Product {
   sortOrder: number;
   categoryId: string;
   category: Category;
+  /** Admin reads only: extra categories the product is also listed in ("Also show in"). */
+  additionalCategoryIds?: string[];
   /** Deprecated legacy enum mirror — use `typeId` / `resolved.type`. */
   productType: ProductType;
   typeId: string | null;

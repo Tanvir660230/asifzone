@@ -45,6 +45,63 @@ interface StepProps {
 
 /* ───────────────────────────────────────── Basics ───────────────────────────────────────── */
 
+/** "Also show in": extra categories the product is listed under besides its home category — e.g. a unisex item that
+ * lives in Men but should also appear when browsing Women. The home category is left out of the choices. */
+function AlsoShowIn({ state, categories }: StepProps & { categories: Category[] }) {
+  const { control, watch } = state.form;
+  const homeId = watch("categoryId");
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  // Full path ("Men › Panjabi"), so same-named subcategories under different parents stay distinguishable.
+  const pathOf = (c: Category): string => {
+    const parent = c.parentId ? byId.get(c.parentId) : undefined;
+    return parent ? `${pathOf(parent)} › ${c.name}` : c.name;
+  };
+  const choices = buildCategoryOptions(categories).filter((c) => c.id !== homeId);
+  return (
+    <Controller
+      control={control}
+      name="additionalCategoryIds"
+      render={({ field }) => {
+        const selected = new Set((field.value ?? []).filter((id) => id !== homeId));
+        const toggle = (id: string) => {
+          const next = new Set(selected);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          field.onChange([...next]);
+        };
+        return (
+          <fieldset>
+            <legend className="text-sm font-medium text-ink-900">Also show in</legend>
+            <p className="mt-0.5 text-xs text-ink-500">
+              Optional. List the product under more categories too — e.g. a unisex item in Men that should also appear in Women.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {choices.map((c) => {
+                  const on = selected.has(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggle(c.id)}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors",
+                        on ? "border-brass-500 bg-brass-50 text-ink-900" : "border-ink-200 text-ink-600 hover:border-ink-400",
+                      )}
+                    >
+                      {on && <Check size={12} aria-hidden="true" />}
+                      {pathOf(byId.get(c.id)!)}
+                    </button>
+                  );
+                })}
+            </div>
+          </fieldset>
+        );
+      }}
+    />
+  );
+}
+
 export function BasicsStep({ state, categories }: StepProps & { categories: Category[] }) {
   const { form, selectedConfig, canUseAi, typeId, types } = state;
   const { register, control, watch, setValue, formState: { errors } } = form;
@@ -70,6 +127,10 @@ export function BasicsStep({ state, categories }: StepProps & { categories: Cate
               ))}
             </Select>
           </Field>
+
+          <div className="sm:col-span-2">
+            <AlsoShowIn state={state} categories={categories} />
+          </div>
 
           <div className="sm:col-span-2">
             <Field htmlFor="typeId" label="Product type" required error={errors.typeId?.message} hint={selectedConfig?.description ?? undefined}>

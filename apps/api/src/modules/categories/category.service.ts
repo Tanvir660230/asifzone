@@ -99,6 +99,14 @@ async function getCategoryParentPairs(): Promise<Array<{ id: string; parentId: s
   return all;
 }
 
+/** Products browsable in any of `categoryIds`: their home category or one they're also listed in. Wrapped in AND so it
+ * can sit beside a search `OR` in the same where. */
+export function inCategoriesWhere(categoryIds: string[]) {
+  return {
+    AND: [{ OR: [{ categoryId: { in: categoryIds } }, { alsoListedIn: { some: { categoryId: { in: categoryIds } } } }] }],
+  };
+}
+
 /** Category id plus every descendant id (self included) — used to show a parent category's products from all its subcategories. */
 export async function getCategoryDescendantIds(categoryId: string): Promise<string[]> {
   const all = await getCategoryParentPairs();
@@ -128,7 +136,7 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
  * Public, so it deliberately carries no unit quantities (P0-04) — those stay on the admin-only stock-map. */
 async function getCategoryAvailabilityStat(categoryId: string): Promise<CategoryAvailabilityStat> {
   const descendantIds = await getCategoryDescendantIds(categoryId);
-  const where = { categoryId: { in: descendantIds }, isActive: true, deletedAt: null };
+  const where = { ...inCategoriesWhere(descendantIds), isActive: true, deletedAt: null };
 
   const [totalProducts, inStockProducts] = await Promise.all([
     prisma.product.count({ where }),
