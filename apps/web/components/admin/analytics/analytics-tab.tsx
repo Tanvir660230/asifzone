@@ -8,7 +8,7 @@ import { SegmentedControl } from "@/components/ui/tabs";
 export interface AnalyticsView {
   value: string;
   label: string;
-  /** A next/dynamic component — each view's code loads only when it is opened. */
+  /** A React.lazy component — each view's code loads only when it is opened. */
   Component: ComponentType;
 }
 
@@ -40,7 +40,11 @@ function AnalyticsTabInner({ title, description, views }: AnalyticsTabProps) {
       {views.length > 1 && (
         <SegmentedControl aria-label={`${title} views`} size="md" value={current.value} onChange={setView} options={views.map((v) => ({ value: v.value, label: v.label }))} />
       )}
-      <View />
+      {/* React.lazy, not next/dynamic: next/dynamic adds a <link rel=preload> without the CSP nonce, which the strict
+          policy blocks (a console error, and no preload); lazy chunks load through webpack's runtime under 'strict-dynamic'. */}
+      <Suspense fallback={<AnalyticsViewSkeleton />}>
+        <View />
+      </Suspense>
     </div>
   );
 }

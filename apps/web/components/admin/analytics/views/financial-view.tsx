@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Info, Wallet, TrendingUp, Package, Clock, Receipt, Banknote, Undo2, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
+import { MetricDrillDown, type DrillTarget } from "@/components/admin/analytics/metric-drill-down";
 import * as analyticsApi from "@/lib/api/admin-analytics";
 import * as biApi from "@/lib/api/bi";
 import { formatBusinessDate, formatPrice } from "@/lib/format";
@@ -17,6 +19,9 @@ export default function FinancialAnalyticsPage() {
   const { data: tax } = useQuery({ queryKey: ["bi-financial-tax"], queryFn: () => analyticsApi.getEstimatedTax(undefined) });
 
   const recentTrend = profitTrend ? [...profitTrend.series].reverse().slice(0, 14) : [];
+  // Click a "This month" tile to break it down (registry groupings) with links to the filtered lists.
+  const [target, setTarget] = useState<DrillTarget | null>(null);
+  const drill = (metric: string) => setTarget({ metric, range: { preset: "this_month" }, rangeLabel: "This month" });
 
   return (
     <div className="space-y-8">
@@ -29,22 +34,23 @@ export default function FinancialAnalyticsPage() {
 
       <section>
         <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-ink-500">This month</h2>
+        <p className="-mt-2 mb-3 text-[12px] text-fg-subtle">Click a number to see what it&apos;s made of.</p>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           {!overview ? (
             Array.from({ length: 11 }).map((_, i) => <StatTileSkeleton key={i} />)
           ) : (
             <>
-              <StatTile label="Gross merchandise (as charged)" value={formatPrice(overview.grossMerchandiseThisMonth)} icon={<Wallet size={18} />} />
-              <StatTile label="Discounts" value={formatPrice(overview.discountsThisMonth)} icon={<Receipt size={18} />} />
-              <StatTile label="Merchandise VAT" value={formatPrice(overview.merchandiseVatThisMonth)} icon={<Receipt size={18} />} />
-              <StatTile label="Merchandise refunds" value={formatPrice(overview.merchandiseRefundsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile label="Realised net sales" value={formatPrice(overview.revenueThisMonth)} icon={<TrendingUp size={18} />} tone="accent" trendPct={overview.revenueGrowthPct} />
-              <StatTile label="Shipping charged" value={formatPrice(overview.shippingThisMonth)} icon={<Truck size={18} />} />
-              <StatTile label="VAT collected" value={formatPrice(overview.taxThisMonth)} icon={<Receipt size={18} />} />
-              <StatTile label="All refunds" value={formatPrice(overview.refundsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile label="Collected cash" value={formatPrice(overview.collectedCashThisMonth)} icon={<Banknote size={18} />} />
-              <StatTile label="Returns (goods back)" value={formatPrice(overview.returnsThisMonth)} icon={<Undo2 size={18} />} />
-              <StatTile label="Net sales incl. shipping, less returns" value={formatPrice(overview.netSalesInclShippingThisMonth)} icon={<Wallet size={18} />} />
+              <StatTile onClick={() => drill("gross_merchandise_sales")} label="Gross merchandise (as charged)" value={formatPrice(overview.grossMerchandiseThisMonth)} icon={<Wallet size={18} />} />
+              <StatTile onClick={() => drill("discounts")} label="Discounts" value={formatPrice(overview.discountsThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile onClick={() => drill("merchandise_vat")} label="Merchandise VAT" value={formatPrice(overview.merchandiseVatThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile onClick={() => drill("merchandise_refunds")} label="Merchandise refunds" value={formatPrice(overview.merchandiseRefundsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile onClick={() => drill("realised_net_sales")} label="Realised net sales" value={formatPrice(overview.revenueThisMonth)} icon={<TrendingUp size={18} />} tone="accent" trendPct={overview.revenueGrowthPct} />
+              <StatTile onClick={() => drill("shipping_charged")} label="Shipping charged" value={formatPrice(overview.shippingThisMonth)} icon={<Truck size={18} />} />
+              <StatTile onClick={() => drill("tax_collected")} label="VAT collected" value={formatPrice(overview.taxThisMonth)} icon={<Receipt size={18} />} />
+              <StatTile onClick={() => drill("refunds")} label="All refunds" value={formatPrice(overview.refundsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile onClick={() => drill("collected_cash")} label="Collected cash" value={formatPrice(overview.collectedCashThisMonth)} icon={<Banknote size={18} />} />
+              <StatTile onClick={() => drill("returns")} label="Returns (goods back)" value={formatPrice(overview.returnsThisMonth)} icon={<Undo2 size={18} />} />
+              <StatTile onClick={() => drill("net_sales")} label="Net sales incl. shipping, less returns" value={formatPrice(overview.netSalesInclShippingThisMonth)} icon={<Wallet size={18} />} />
             </>
           )}
         </div>
@@ -172,6 +178,7 @@ export default function FinancialAnalyticsPage() {
           rate today never changes a past figure.
         </p>
       </Card>
+      <MetricDrillDown target={target} onClose={() => setTarget(null)} />
     </div>
   );
 }

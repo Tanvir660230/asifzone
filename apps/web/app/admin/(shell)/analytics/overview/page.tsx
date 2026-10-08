@@ -1,12 +1,12 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { AnalyticsTab, AnalyticsViewSkeleton } from "@/components/admin/analytics/analytics-tab";
+import { lazy } from "react";
+import { AnalyticsTab } from "@/components/admin/analytics/analytics-tab";
 
-const OverviewView = dynamic(() => import("@/components/admin/analytics/views/overview-view"), { loading: () => <AnalyticsViewSkeleton /> });
-const AiInsightsView = dynamic(() => import("@/components/admin/analytics/views/ai-insights-view"), { loading: () => <AnalyticsViewSkeleton /> });
-const LifetimeView = dynamic(() => import("@/components/admin/analytics/views/lifetime-view"), { loading: () => <AnalyticsViewSkeleton /> });
-const ReportsView = dynamic(() => import("@/components/admin/analytics/views/reports-view"), { loading: () => <AnalyticsViewSkeleton /> });
+const OverviewView = lazy(() => import("@/components/admin/analytics/views/overview-view"));
+const AiInsightsView = lazy(() => import("@/components/admin/analytics/views/ai-insights-view"));
+const LifetimeView = lazy(() => import("@/components/admin/analytics/views/lifetime-view"));
+const ReportsView = lazy(() => import("@/components/admin/analytics/views/reports-view"));
 
 export default function AnalyticsOverviewPage() {
   return (

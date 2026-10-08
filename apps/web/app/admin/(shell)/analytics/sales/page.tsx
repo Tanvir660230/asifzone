@@ -1,10 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { AnalyticsTab, AnalyticsViewSkeleton } from "@/components/admin/analytics/analytics-tab";
+import { lazy } from "react";
+import { AnalyticsTab } from "@/components/admin/analytics/analytics-tab";
 
-const SalesView = dynamic(() => import("@/components/admin/analytics/views/sales-view"), { loading: () => <AnalyticsViewSkeleton /> });
-const FinancialView = dynamic(() => import("@/components/admin/analytics/views/financial-view"), { loading: () => <AnalyticsViewSkeleton /> });
+const SalesView = lazy(() => import("@/components/admin/analytics/views/sales-view"));
+const FinancialView = lazy(() => import("@/components/admin/analytics/views/financial-view"));
 
 export default function AnalyticsSalesPage() {
   return (
