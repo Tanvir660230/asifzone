@@ -71,7 +71,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   return (
     // data-surface="admin": the Store Console's own tokens (Apple-style, light only), whatever the store's brand theme.
     // On this element for the server render; portalled overlays get it from <body> (effect above).
-    <div data-surface="admin" className="flex h-screen overflow-hidden bg-canvas font-sans text-fg">
+    <div data-surface="admin" className="relative flex h-screen overflow-hidden bg-canvas font-sans text-fg">
       <div className="print:hidden">
         <Sidebar mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       </div>
@@ -87,25 +87,30 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
           Below lg the mobile bottom bar sits UNDER that scrolling box, in normal flow — not fixed over it — so the
           scroll viewport ends above the bar and no content (or a page's own sticky toolbar) can be hidden behind it. */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-          <header className="glass sticky top-0 z-20 flex h-header shrink-0 items-center gap-3 border-b border-ink-900/[0.08] px-4 print:hidden sm:px-6">
-            <button onClick={() => setMobileNavOpen(true)} className="-ml-1 rounded-md p-1 text-ink-600 hover:bg-ink-900/[0.05] lg:hidden" aria-label="Open menu">
-              <Menu size={20} />
-            </button>
-
-            <Breadcrumbs className="hidden min-w-0 md:flex" />
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
+          {/* The toolbar (macOS-style): where you are on the left, one search for everything in the middle, actions on the
+              right — three columns so the search stays centred whatever the breadcrumb's length. */}
+          <header className="sticky top-0 z-20 grid h-header shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-ink-900/[0.07] bg-surface/85 px-4 backdrop-blur-xl backdrop-saturate-150 print:hidden sm:px-6">
+            <div className="flex min-w-0 items-center gap-2">
+              <button onClick={() => setMobileNavOpen(true)} className="-ml-1 flex h-9 w-9 items-center justify-center rounded-full text-ink-600 hover:bg-ink-900/[0.05] lg:hidden" aria-label="Open menu">
+                <Menu size={20} />
+              </button>
+              <Breadcrumbs className="hidden min-w-0 md:flex" />
+            </div>
 
             <button
               onClick={() => setPaletteOpen(true)}
-              className="ml-auto flex h-8 min-w-0 items-center gap-2 rounded-lg bg-ink-900/[0.05] px-2.5 text-[13px] text-fg-subtle transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.08] hover:text-fg-muted sm:w-64"
+              className="flex h-9 w-9 items-center justify-center gap-2 rounded-full text-fg-muted transition-[border-color,box-shadow,background-color] duration-fast ease-smooth hover:bg-ink-900/[0.05] sm:w-[min(440px,38vw)] sm:justify-start sm:rounded-xl sm:border sm:border-line sm:bg-canvas sm:px-3 sm:hover:border-line-strong sm:hover:bg-surface sm:hover:shadow-xs"
               aria-label="Search"
             >
-              <Search size={14} className="shrink-0" />
-              <span className="hidden truncate sm:inline">Search</span>
-              <kbd className="ml-auto hidden shrink-0 font-sans text-[11px] font-medium text-fg-subtle sm:inline">{modKey} K</kbd>
+              <Search size={16} className="shrink-0" />
+              <span className="hidden truncate text-[13px] text-fg-subtle sm:inline">Search orders, products, customers…</span>
+              <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] font-medium leading-none text-fg-subtle sm:inline">
+                {modKey} K
+              </kbd>
             </button>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center justify-end gap-1">
               {createItems.length > 0 && (
                 <>
                   <button
@@ -115,9 +120,9 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                     aria-haspopup="menu"
                     aria-expanded={createOpen}
                     title="Create"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
                   >
-                    <Plus size={18} />
+                    <Plus size={19} />
                   </button>
                   <DropdownMenu open={createOpen} onClose={() => setCreateOpen(false)} anchorRef={createRef} items={createItems} />
                 </>
@@ -128,12 +133,12 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
                 rel="noreferrer"
                 aria-label="View store (opens in a new tab)"
                 title="View store"
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
               >
-                <ExternalLink size={16} />
+                <ExternalLink size={17} />
               </Link>
               <NotificationBell />
-              <span className="mx-1.5 h-5 w-px bg-ink-900/[0.1]" aria-hidden />
+              <span className="mx-2 h-5 w-px bg-ink-900/[0.1]" aria-hidden />
               <AccountMenu onShowShortcuts={() => setHelpOpen(true)} />
             </div>
           </header>

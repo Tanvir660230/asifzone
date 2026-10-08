@@ -60,7 +60,7 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
         aria-label={admin ? `Account: ${admin.name}` : "Account"}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-200 text-[11px] font-semibold text-ink-700 transition-shadow duration-fast ease-smooth hover:ring-4 hover:ring-ink-900/[0.06]"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink-200 text-[12px] font-semibold text-ink-700 transition-shadow duration-fast ease-smooth hover:ring-4 hover:ring-ink-900/[0.06]"
       >
         {isLoading || !admin ? "…" : getInitials(admin.name)}
       </button>

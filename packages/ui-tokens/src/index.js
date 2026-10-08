@@ -506,7 +506,7 @@ const surfaceDefinitions = {
       glow: "0 0 0 4px rgba(0,113,227,0.18)",
     },
     // Room to breathe: the airier Apple rhythm over the dense ERP baseline.
-    density: { sidebar: "248px", "sidebar-collapsed": "60px", header: "52px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
+    density: { sidebar: "248px", "sidebar-collapsed": "72px", header: "56px", page: "32px", "page-compact": "20px", row: "48px", "row-dense": "40px", control: "36px", "filter-bar": "44px" },
   },
   storefront: {},
 };

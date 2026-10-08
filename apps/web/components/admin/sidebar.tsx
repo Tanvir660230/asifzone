@@ -42,14 +42,14 @@ function StoreIdentity({ collapse }: { collapse: boolean }) {
   const settings = data?.settings;
   const name = settings?.storeName ?? "Store";
   const monogram = (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ink-900 text-[13px] font-semibold text-cream-50">
+    <span className={cn("flex shrink-0 items-center justify-center rounded-lg bg-ink-900 font-semibold text-cream-50", collapse ? "h-10 w-10 text-[15px]" : "h-8 w-8 text-[13px]")}>
       {name.trim().charAt(0).toUpperCase()}
     </span>
   );
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       {settings?.faviconUrl ? (
-        <StoreLogoImage src={resolveImageUrl(settings.faviconUrl)} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" fallback={monogram} />
+        <StoreLogoImage src={resolveImageUrl(settings.faviconUrl)} alt="" className={cn("shrink-0 rounded-lg object-contain", collapse ? "h-10 w-10" : "h-8 w-8")} fallback={monogram} />
       ) : (
         monogram
       )}
@@ -124,7 +124,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
           {!access.ready && (
             <div className="space-y-1.5 px-1" aria-hidden>
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className={cn("h-8 animate-pulse rounded-lg bg-ink-900/[0.05]", collapse ? "mx-auto w-8" : "w-full")} />
+                <div key={i} className={cn("animate-pulse bg-ink-900/[0.05]", collapse ? "mx-auto h-10 w-10 rounded-xl" : "h-8 w-full rounded-lg")} />
               ))}
             </div>
           )}
@@ -132,13 +132,13 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
             mainGroups.map((group) => (
               <div key={group.domain}>
                 {group.label && !collapse && <p className="mb-1 px-2.5 text-[11px] font-semibold text-fg-subtle">{group.label}</p>}
-                {group.label && collapse && <div className="mx-2 mb-2 border-t border-ink-900/[0.08]" aria-hidden />}
-                <div className="space-y-px">{group.modules.map((m) => moduleRow(m, collapse))}</div>
+                {group.label && collapse && <div className="mx-3 mb-2 border-t border-ink-900/[0.08]" aria-hidden />}
+                <div className={collapse ? "space-y-1" : "space-y-px"}>{group.modules.map((m) => moduleRow(m, collapse))}</div>
               </div>
             ))}
         </nav>
 
-        <div className={cn("mb-3 space-y-px border-t border-ink-900/[0.08] pt-3", collapse ? "mx-2" : "mx-3")}>
+        <div className={cn("mb-3 border-t border-ink-900/[0.08] pt-3", collapse ? "mx-2 space-y-1" : "mx-3 space-y-px")}>
           {access.ready && footerModules.map((m) => moduleRow(m, collapse))}
           {!mobileDrawer && (
             <button
@@ -146,11 +146,11 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
               aria-label={collapse ? "Expand sidebar" : "Collapse sidebar"}
               title={collapse ? "Expand sidebar" : undefined}
               className={cn(
-                "flex h-8 w-full items-center gap-2.5 rounded-lg text-[13px] text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] hover:text-fg",
-                collapse ? "justify-center px-0" : "px-2.5",
+                "flex items-center gap-2.5 text-[13px] text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] hover:text-fg",
+                collapse ? "mx-auto h-10 w-10 justify-center rounded-xl px-0" : "h-8 w-full rounded-lg px-2.5",
               )}
             >
-              {collapse ? <PanelLeftOpen size={16} className="shrink-0" /> : <PanelLeftClose size={16} className="shrink-0" />}
+              {collapse ? <PanelLeftOpen size={19} className="shrink-0" /> : <PanelLeftClose size={16} className="shrink-0" />}
               {!collapse && "Collapse sidebar"}
             </button>
           )}
@@ -197,8 +197,9 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
 const rowClass = (active: boolean, collapse: boolean) =>
   cn(
-    "group relative flex h-8 items-center gap-2.5 rounded-lg text-[13.5px] transition-colors duration-fast ease-smooth",
-    collapse ? "justify-center px-0" : "px-2.5",
+    "group relative flex items-center gap-2.5 text-[13.5px] transition-colors duration-fast ease-smooth",
+    // Collapsed: a 40×40 rounded target per module (iPad / macOS icon rail), not a squeezed text row.
+    collapse ? "mx-auto h-10 w-10 justify-center rounded-xl px-0" : "h-8 rounded-lg px-2.5",
     active ? "bg-ink-900/[0.07] font-semibold text-fg" : "font-medium text-ink-700 hover:bg-ink-900/[0.045] hover:text-fg",
   );
 
@@ -251,8 +252,8 @@ function ModuleRow({
       <Link href={href} onClick={onNavigate} title={collapse && flyoutTop === null ? node.label : undefined} aria-current={active && trail.size === 1 ? "page" : undefined} className={rowClass(active, collapse)}>
         {Icon && (
           <span className={cn("relative shrink-0", active ? "text-accent" : "text-ink-500 group-hover:text-ink-700")}>
-            <Icon size={17} strokeWidth={1.9} />
-            {collapse && badge > 0 && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-accent ring-2 ring-cream-200" aria-hidden />}
+            <Icon size={collapse ? 20 : 17} strokeWidth={collapse ? 1.8 : 1.9} />
+            {collapse && badge > 0 && <span className="absolute -right-1.5 -top-1 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-cream-200" aria-hidden />}
           </span>
         )}
         {!collapse && <span className="truncate">{node.label}</span>}
