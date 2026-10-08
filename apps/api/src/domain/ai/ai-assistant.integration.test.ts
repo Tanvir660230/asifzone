@@ -116,8 +116,13 @@ describe("proposals", () => {
     expect((await cancelProposal(owner, q.id)).status).toBe("CANCELLED");
     await expect(executeProposal(owner, q.id)).rejects.toMatchObject({ statusCode: 409 });
 
-    const audit = await prisma.auditLog.findMany({ where: { entityType: "ai", entityId: { in: [p.id, q.id] } }, select: { action: true } });
-    expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(["ai.propose", "ai.cancel"]));
+    // recordAudit is fire-and-forget — wait for the rows instead of racing them.
+    let actions: string[] = [];
+    for (let i = 0; i < 40 && !(actions.includes("ai.propose") && actions.includes("ai.cancel")); i++) {
+      if (i) await new Promise((r) => setTimeout(r, 50));
+      actions = (await prisma.auditLog.findMany({ where: { entityType: "ai", entityId: { in: [p.id, q.id] } }, select: { action: true } })).map((a) => a.action);
+    }
+    expect(actions).toEqual(expect.arrayContaining(["ai.propose", "ai.cancel"]));
   });
 });
 
