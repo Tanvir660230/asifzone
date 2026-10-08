@@ -6,6 +6,8 @@ export interface ConversationListParams {
   page?: number;
   pageSize?: number;
   status?: "open" | "handled" | "all";
+  /** Only conversations assigned to me. */
+  mine?: "true";
   search?: string;
 }
 
@@ -24,8 +26,9 @@ export function replyToConversation(id: string, input: ConversationReplyInput) {
   return apiFetch<ConversationMessageRow>(`/api/v1/admin/conversations/${id}/replies`, { method: "POST", body: input });
 }
 
-export function setConversationStatus(id: string, status: "OPEN" | "HANDLED") {
-  return apiFetch<{ id: string; status: string }>(`/api/v1/admin/conversations/${id}`, { method: "PATCH", body: { status } });
+/** Handled ↔ new, and/or take it (assignedToMe: true) or let it go (false). */
+export function updateConversation(id: string, input: { status?: "OPEN" | "HANDLED"; assignedToMe?: boolean }) {
+  return apiFetch<{ id: string; status: string; assignedTo: { id: string; name: string } | null }>(`/api/v1/admin/conversations/${id}`, { method: "PATCH", body: input });
 }
 
 export function deleteConversation(id: string) {

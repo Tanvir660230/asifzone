@@ -4,6 +4,8 @@ import { paginationQuerySchema } from "./common";
 /** Admin V2 Inbox R2 (DR-4): conversation list filters. */
 export const conversationListQuerySchema = paginationQuerySchema.extend({
   status: z.enum(["open", "handled", "all"]).default("open"),
+  /** Only the conversations assigned to the admin asking. */
+  mine: z.enum(["true"]).optional(),
   search: z.string().trim().max(120).optional(),
 });
 export type ConversationListQuery = z.infer<typeof conversationListQuerySchema>;
@@ -14,7 +16,10 @@ export const conversationReplySchema = z
   .refine((r) => r.channel !== "SMS" || r.body.length <= 600, { path: ["body"], message: "An SMS reply can be at most 600 characters" });
 export type ConversationReplyInput = z.infer<typeof conversationReplySchema>;
 
-export const updateConversationSchema = z.object({ status: z.enum(["OPEN", "HANDLED"]) });
+/** Handled ↔ new, and/or take it (assignedToMe: true) or let it go (false). At least one. */
+export const updateConversationSchema = z
+  .object({ status: z.enum(["OPEN", "HANDLED"]).optional(), assignedToMe: z.boolean().optional() })
+  .refine((v) => v.status !== undefined || v.assignedToMe !== undefined, { message: "Nothing to change" });
 
 export type ConversationChannelName = "WEB_FORM" | "EMAIL" | "SMS" | "WHATSAPP" | "MESSENGER";
 /** An OUT message's delivery, read from its outbox row. */
@@ -32,6 +37,7 @@ export interface ConversationListRow {
   /** The latest message's first line, for the list. */
   preview: string;
   messageCount: number;
+  assignedTo: { id: string; name: string } | null;
 }
 
 export interface ConversationMessageRow {

@@ -41,9 +41,10 @@ export async function openWebConversation(input: CreateFeedbackInput) {
   });
 }
 
-export async function listConversations(query: ConversationListQuery) {
+export async function listConversations(query: ConversationListQuery, adminId?: string) {
   const where: Prisma.ConversationWhereInput = {
     ...(query.status === "open" ? { status: "OPEN" } : query.status === "handled" ? { status: "HANDLED" } : {}),
+    ...(query.mine === "true" && adminId ? { assignedToId: adminId } : {}),
     ...(query.search
       ? {
           OR: [
@@ -63,7 +64,11 @@ export async function listConversations(query: ConversationListQuery) {
         where,
         orderBy: { lastMessageAt: "desc" },
         ...p,
-        include: { messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true } }, _count: { select: { messages: true } } },
+        include: {
+          messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true } },
+          _count: { select: { messages: true } },
+          assignedTo: { select: { id: true, name: true } },
+        },
       }),
     () => prisma.conversation.count({ where }),
   );
@@ -78,6 +83,7 @@ export async function listConversations(query: ConversationListQuery) {
     lastMessageAt: c.lastMessageAt.toISOString(),
     preview: (c.messages[0]?.body ?? "").split("\n")[0]!.slice(0, 160),
     messageCount: c._count.messages,
+    assignedTo: c.assignedTo,
   }));
   return { ...page, items };
 }
@@ -93,6 +99,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     where: { id },
     include: {
       customer: { select: { id: true, name: true } },
+      assignedTo: { select: { id: true, name: true } },
       messages: { orderBy: { createdAt: "asc" }, include: { admin: { select: { name: true } } } },
     },
   });
@@ -127,6 +134,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     lastMessageAt: c.lastMessageAt.toISOString(),
     createdAt: c.createdAt.toISOString(),
     customer: c.customer,
+    assignedTo: c.assignedTo,
     messages,
   };
 }
@@ -160,10 +168,18 @@ export async function replyToConversation(id: string, input: ConversationReplyIn
   };
 }
 
-export async function setConversationStatus(id: string, status: "OPEN" | "HANDLED") {
-  const updated = await prisma.conversation.updateMany({ where: { id }, data: { status } });
-  if (updated.count === 0) throw AppError.notFound("Conversation not found");
-  return { id, status };
+/** Handled ↔ new, and/or assign to the admin asking (or clear it). */
+export async function updateConversation(id: string, input: { status?: "OPEN" | "HANDLED"; assignedToMe?: boolean }, adminId: string) {
+  const exists = await prisma.conversation.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) throw AppError.notFound("Conversation not found");
+  return prisma.conversation.update({
+    where: { id },
+    data: {
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.assignedToMe !== undefined ? { assignedToId: input.assignedToMe ? adminId : null } : {}),
+    },
+    select: { id: true, status: true, assignedTo: { select: { id: true, name: true } } },
+  });
 }
 
 export async function deleteConversation(id: string) {

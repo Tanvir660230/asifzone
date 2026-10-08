@@ -269,6 +269,7 @@ model AdminUser {
   savedViews             SavedView[]
   aiProposals            AiProposal[]
   conversationReplies    ConversationMessage[]
+  assignedConversations  Conversation[]        @relation("ConversationAssignee")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -346,29 +347,29 @@ model SearchLog {
 }
 
 model Category {
-  id                String             @id @default(cuid())
+  id                String                   @id @default(cuid())
   name              String
-  slug              String             @unique
+  slug              String                   @unique
   imageUrl          String?
   imageAltText      String?
   bannerImageUrl    String?
-  sortOrder         Int                @default(0)
-  isActive          Boolean            @default(true)
-  isFeatured        Boolean            @default(false)
+  sortOrder         Int                      @default(0)
+  isActive          Boolean                  @default(true)
+  isFeatured        Boolean                  @default(false)
   seoTitle          String?
   seoDescription    String?
   parentId          String?
-  parent            Category?          @relation("CategoryToParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children          Category[]         @relation("CategoryToParent")
+  parent            Category?                @relation("CategoryToParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children          Category[]               @relation("CategoryToParent")
   products          Product[]
   /// Products whose home category is elsewhere but that are also listed here (e.g. a unisex item under Men and Women).
   listedProducts    ProductCategoryListing[]
-  bundleAnchors     Bundle[]           @relation("BundleAnchor")
-  bundleSuggestions BundleSuggestion[] @relation("BundleSuggestionCategory")
+  bundleAnchors     Bundle[]                 @relation("BundleAnchor")
+  bundleSuggestions BundleSuggestion[]       @relation("BundleSuggestionCategory")
   couponCategories  CouponCategory[]
   deletedAt         DateTime?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
 
   @@index([parentId])
   @@index([deletedAt])
@@ -400,51 +401,51 @@ model AttributeValue {
 }
 
 model Product {
-  id                String                  @id @default(cuid())
+  id                String                   @id @default(cuid())
   name              String
-  slug              String                  @unique
-  description       String                  @default("")
+  slug              String                   @unique
+  description       String                   @default("")
   shortDescription  String?
-  sortOrder         Int                     @default(0)
+  sortOrder         Int                      @default(0)
   categoryId        String
-  category          Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category          Category                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   /// Extra categories the product is also listed in on the storefront. `categoryId` stays its one home category
   /// (breadcrumb, coupons, bundles, reports); these only widen where it can be browsed.
   alsoListedIn      ProductCategoryListing[]
   /// Deprecated mirror of typeId's legacy enum value — kept so a rollback and any stale client keep working.
-  productType       ProductType             @default(CLOTHING)
+  productType       ProductType              @default(CLOTHING)
   /// Real product type (admin-managed). Nullable so rows written by older code still load; the service
   /// resolves `typeId ?? ProductTypeDef.key = productType`.
   typeId            String?
-  type              ProductTypeDef?         @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  type              ProductTypeDef?          @relation(fields: [typeId], references: [id], onDelete: Restrict)
   /// Now only holds what has no attribute definition: the product's own sizeGuide and any legacy key
   /// nobody has defined. Values for defined attributes live in ProductAttributeValue.
   attributes        Json?
   attributeValues   ProductAttributeValue[]
   brand             String?
-  brandTier         BrandTier               @default(PREMIUM)
-  basePrice         Decimal                 @db.Decimal(10, 2)
-  compareAtPrice    Decimal?                @db.Decimal(10, 2)
-  costPrice         Decimal?                @db.Decimal(10, 2)
-  taxRate           Decimal?                @db.Decimal(5, 2)
-  trackInventory    Boolean                 @default(true)
+  brandTier         BrandTier                @default(PREMIUM)
+  basePrice         Decimal                  @db.Decimal(10, 2)
+  compareAtPrice    Decimal?                 @db.Decimal(10, 2)
+  costPrice         Decimal?                 @db.Decimal(10, 2)
+  taxRate           Decimal?                 @db.Decimal(5, 2)
+  trackInventory    Boolean                  @default(true)
   /// Ships free: the canonical quote waives shipping when EVERY line of the cart is a free-delivery product (one normal
   /// product → the zone fee applies). Read only when pricing; each order line snapshots it (OrderItem.freeDeliverySnapshot)
   /// so changing it never touches an existing order (docs/ORDER_ADJUSTMENTS.md §2).
-  freeDelivery      Boolean                 @default(false)
-  lowStockThreshold Int                     @default(5)
+  freeDelivery      Boolean                  @default(false)
+  lowStockThreshold Int                      @default(5)
   restockDate       DateTime?
-  isActive          Boolean                 @default(true)
+  isActive          Boolean                  @default(true)
   /// Defaults to PUBLISHED so rows written by code that only knows `isActive` stay live.
-  status            ProductStatus           @default(PUBLISHED)
-  isFeatured        Boolean                 @default(false)
+  status            ProductStatus            @default(PUBLISHED)
+  isFeatured        Boolean                  @default(false)
   seoTitle          String?
   seoDescription    String?
   focusKeyword      String?
   /// Admin-entered search tags (YouTube-style): extra words shoppers type that the name/description don't say —
   /// e.g. "ator", "আতর" on a perfume. Stored normalized (lowercase, Bangla vowel variants unified) so storefront
   /// search matches them exactly against its expanded terms. Never shown on the storefront.
-  tags              String[]                @default([])
+  tags              String[]                 @default([])
   ogTitle           String?
   ogDescription     String?
   ogImageUrl        String?
@@ -452,7 +453,7 @@ model Product {
   canonicalUrl      String?
   /// Care steps: a preset (falls back to the template's), or this product's own list when `careOverride` is set.
   carePresetId      String?
-  carePreset        CareGuidePreset?        @relation(fields: [carePresetId], references: [id], onDelete: SetNull)
+  carePreset        CareGuidePreset?         @relation(fields: [carePresetId], references: [id], onDelete: SetNull)
   /// string[] — the product's own care steps; wins over the preset.
   careOverride      Json?
   materials         ProductMaterial[]
@@ -460,8 +461,8 @@ model Product {
   sections          ProductSection[]
   faqs              ProductFaq[]
   /// Curated lists this product owns ("related", "cross-sell", ...), and the reverse side.
-  relations         ProductRelation[]       @relation("ProductRelations")
-  relatedTo         ProductRelation[]       @relation("RelatedToProducts")
+  relations         ProductRelation[]        @relation("ProductRelations")
+  relatedTo         ProductRelation[]        @relation("RelatedToProducts")
   deletedAt         DateTime?
   variants          ProductVariant[]
   images            ProductImage[]
@@ -475,10 +476,10 @@ model Product {
   /// Denormalized from ProductReview (APPROVED only) so every product listing can show a rating
   /// without an aggregate join on every request — recomputed whenever a review is approved,
   /// rejected (after having been approved), or deleted.
-  avgRating         Float                   @default(0)
-  reviewCount       Int                     @default(0)
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  avgRating         Float                    @default(0)
+  reviewCount       Int                      @default(0)
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
 
   @@index([categoryId, isActive])
   @@index([deletedAt])
@@ -1739,6 +1740,9 @@ model Conversation {
   customerId    String?
   customer      Customer?             @relation(fields: [customerId], references: [id], onDelete: SetNull)
   status        ConversationStatus    @default(OPEN)
+  /// Who is handling it (Blueprint V2 Inbox "assignment"); null = nobody yet.
+  assignedToId  String?
+  assignedTo    AdminUser?            @relation("ConversationAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   lastMessageAt DateTime              @default(now())
   createdAt     DateTime              @default(now())
   /// The Feedback row this thread was backfilled from (provenance only).
@@ -1747,6 +1751,7 @@ model Conversation {
 
   @@index([status, lastMessageAt])
   @@index([lastMessageAt])
+  @@index([assignedToId])
 }
 
 /// One message in a conversation. An OUT message is sent by the `conversation-reply` outbox consumer (eventKey = this id);

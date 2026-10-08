@@ -15,7 +15,7 @@ vi.mock("../../providers/email/resend", async (importOriginal) => ({
 import request from "supertest";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
-import { asOwner } from "../../test-fixtures";
+import { asOwner, ownerId } from "../../test-fixtures";
 import { processOutboxEvent } from "../../domain/outbox/processor";
 
 // Admin V2 Inbox R2 (DR-4, owner 2026-10-08): website messages are conversations; staff reply by email or SMS from the
@@ -115,6 +115,20 @@ describe("Inbox R2 — conversations", () => {
     const agent = await asOwner();
     expect((await agent.post(`/api/v1/admin/conversations/${c.id}/replies`, { channel: "SMS", body: "Hi" })).status).toBe(400);
     expect((await agent.post(`/api/v1/admin/conversations/${c.id}/replies`, { channel: "EMAIL", body: "" })).status).toBe(400);
+  });
+
+  it("assigns a conversation to the admin who takes it, filters by it, and unassigns", async () => {
+    const agent = await asOwner();
+    const id = conversationIds[0]!;
+    const assigned = await agent.patch(`/api/v1/admin/conversations/${id}`, { assignedToMe: true });
+    expect(assigned.status).toBe(200);
+    expect(assigned.body.assignedTo).toMatchObject({ id: await ownerId() });
+    const mine = await agent.get(`/api/v1/admin/conversations?status=all&mine=true&search=${RUN}`);
+    expect(mine.body.items.map((c: { id: string }) => c.id)).toEqual([id]);
+    expect(mine.body.items[0].assignedTo).toMatchObject({ id: await ownerId() });
+    expect((await agent.get(`/api/v1/admin/conversations/${id}`)).body.assignedTo).toMatchObject({ id: await ownerId() });
+    expect((await agent.patch(`/api/v1/admin/conversations/${id}`, { assignedToMe: false })).body.assignedTo).toBeNull();
+    expect((await agent.patch(`/api/v1/admin/conversations/${id}`, {})).status).toBe(400);
   });
 
   it("reopens, filters by status and deletes", async () => {

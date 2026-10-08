@@ -4,9 +4,10 @@ import { useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ArrowLeft, Check, Inbox, Loader2, MessageCircle, Phone, RotateCcw, Trash2, UserRound } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Inbox, Loader2, MessageCircle, Phone, RotateCcw, Trash2, UserCheck, UserRound } from "lucide-react";
 import { isBdMobileLocal, normalizeBdPhone, toBdInternationalDigits, type ConversationDetail, type ConversationMessageRow } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { SearchInput } from "@/components/ui/search-input";
@@ -18,6 +19,7 @@ import { ModuleTabs } from "@/components/admin/module-tabs";
 import { Pagination } from "@/components/ui/pagination";
 import * as inboxApi from "@/lib/api/inbox";
 import { useCapability } from "@/hooks/use-capability";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { describeApiError } from "@/lib/api-client";
 import { attentionKeys } from "@/lib/query-keys";
@@ -159,6 +161,7 @@ function Composer({ thread }: { thread: ConversationDetail }) {
 
 function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const { data: currentAdmin } = useCurrentAdmin();
   const { confirm, dialog } = useConfirmDialog();
   const { data: thread, isLoading, isError, refetch } = useQuery({
     queryKey: inboxKeys.thread(id),
@@ -171,10 +174,19 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
     queryClient.invalidateQueries({ queryKey: attentionKeys.all });
   };
   const status = useMutation({
-    mutationFn: (next: "OPEN" | "HANDLED") => inboxApi.setConversationStatus(id, next),
+    mutationFn: (next: "OPEN" | "HANDLED") => inboxApi.updateConversation(id, { status: next }),
     onSuccess: (_d, next) => {
       refresh();
       toast.success(next === "HANDLED" ? "Marked as handled" : "Moved back to New");
+    },
+    onError: (err) => toast.error(describeApiError(err, "Couldn't update the conversation")),
+  });
+  const assign = useMutation({
+    mutationFn: (toMe: boolean) => inboxApi.updateConversation(id, { assignedToMe: toMe }),
+    onSuccess: (_d, toMe) => {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: inboxKeys.thread(id) });
+      toast.success(toMe ? "Assigned to you" : "Unassigned");
     },
     onError: (err) => toast.error(describeApiError(err, "Couldn't update the conversation")),
   });
@@ -191,6 +203,7 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
   if (isError && !thread) return <ErrorState onRetry={() => refetch()} />;
   if (isLoading || !thread) return <div className="m-6 h-40 animate-pulse rounded-2xl bg-ink-900/[0.04]" aria-busy="true" aria-label="Loading" />;
 
+  const me = currentAdmin?.admin.id;
   const mobile = thread.phone && isBdMobileLocal(normalizeBdPhone(thread.phone)) ? toBdInternationalDigits(thread.phone) : null;
   const handled = thread.status === "HANDLED";
 
@@ -206,6 +219,19 @@ function Thread({ id, onBack }: { id: string; onBack: () => void }) {
             <p className="mt-1 text-[13px] text-fg-muted">
               <span className="font-medium text-fg">{thread.contactName}</span>
               {[thread.email, thread.phone].filter(Boolean).length > 0 && <> · {[thread.email, thread.phone].filter(Boolean).join(" · ")}</>}
+            </p>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-fg-muted">
+              <UserCheck size={13} aria-hidden="true" />
+              {thread.assignedTo ? <>Handled by {thread.assignedTo.id === me ? "you" : thread.assignedTo.name}</> : "Not assigned"}
+              {thread.assignedTo?.id === me ? (
+                <button type="button" className="font-medium text-accent hover:underline" disabled={assign.isPending} onClick={() => assign.mutate(false)}>
+                  Unassign
+                </button>
+              ) : (
+                <button type="button" className="font-medium text-accent hover:underline" disabled={assign.isPending} onClick={() => assign.mutate(true)}>
+                  Assign to me
+                </button>
+              )}
             </p>
             {thread.customer && (
               <Link href={`/admin/customers/${thread.customer.id}`} className="mt-1 inline-flex items-center gap-1 text-[13px] text-accent hover:underline">
@@ -266,6 +292,8 @@ export default function InboxPage() {
   const searchParams = useSearchParams();
   const status = STATUS.find((s) => s.value === searchParams.get("status"))?.value ?? "open";
   const openId = searchParams.get("open");
+  const mine = searchParams.get("mine") === "true";
+  const { data: currentAdmin } = useCurrentAdmin();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const debounced = useDebouncedValue(search, 350);
@@ -279,8 +307,8 @@ export default function InboxPage() {
   };
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: [...inboxKeys.list, { page, status, search: debounced }],
-    queryFn: () => inboxApi.listConversations({ page, pageSize: PAGE_SIZE, status, search: debounced || undefined }),
+    queryKey: [...inboxKeys.list, { page, status, mine, search: debounced }],
+    queryFn: () => inboxApi.listConversations({ page, pageSize: PAGE_SIZE, status, mine: mine ? "true" : undefined, search: debounced || undefined }),
     placeholderData: (prev) => prev,
     refetchInterval: 60_000,
   });
@@ -303,6 +331,16 @@ export default function InboxPage() {
               }}
               options={STATUS.map((s) => ({ value: s.value, label: s.label }))}
             />
+            <label className="flex items-center gap-2 text-[13px] text-fg-muted">
+              <Checkbox
+                checked={mine}
+                onChange={(e) => {
+                  setPage(1);
+                  setParam({ mine: e.target.checked ? "true" : null, open: null });
+                }}
+              />
+              Assigned to me
+            </label>
             <SearchInput
               value={search}
               onChange={(v) => {
@@ -347,6 +385,7 @@ export default function InboxPage() {
                         {c.messageCount > 1 && <span className="shrink-0 rounded-full bg-ink-900/[0.06] px-1.5 text-[11px] font-medium tabular-nums text-fg-muted">{c.messageCount}</span>}
                       </span>
                       <span className="block truncate text-[13px] text-fg-subtle">{c.preview}</span>
+                      {c.assignedTo && <span className="mt-0.5 block truncate text-[12px] text-fg-subtle">Handled by {c.assignedTo.id === currentAdmin?.admin.id ? "you" : c.assignedTo.name}</span>}
                     </span>
                   </button>
                 </li>
