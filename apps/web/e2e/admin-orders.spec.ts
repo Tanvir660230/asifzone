@@ -75,6 +75,8 @@ test.describe("orders workspace", () => {
     await area.fill("Uttara");
     await area.press("Enter");
     await page.getByLabel("House / Road / Details").fill("House 1, Road 2");
+    // Phone orders are created Confirmed by default (D24); this pass needs a Pending order for the follow-up hold.
+    await page.getByLabel(/Customer confirmed on the call/).uncheck();
 
     const productSearch = page.getByRole("textbox", { name: "Search products to add" });
     await productSearch.fill("a");

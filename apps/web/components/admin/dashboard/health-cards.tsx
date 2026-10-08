@@ -216,7 +216,8 @@ export function CourierHealthCard({ courierLoss30d, enabled = true }: { courierL
           )}
 
           <div className="grid grid-cols-2 gap-4 border-t border-line-subtle pt-4">
-            {balance ? <MiniStat label="Steadfast balance" value={formatPrice(balance.balance)} /> : <MiniStat label="Steadfast balance" value="—" />}
+            {/* No courier set up on this store → no balance to show (not a "—" that reads like a broken number). */}
+            {courierConfigured && <MiniStat label="Steadfast balance" value={balance ? formatPrice(balance.balance) : "—"} />}
             <MiniStat
               label="Cancellation loss"
               value={formatPrice(courierLoss30d ?? perf.totalLoss)}
