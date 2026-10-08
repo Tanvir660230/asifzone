@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { chordPrefix, SHORTCUTS, type ShortcutDefinition, type ShortcutId } from "@/lib/admin/shortcuts";
 import { comboOf, isTypingTarget } from "@/lib/keyboard";
 import { hasOpenLayer } from "@/lib/layer-stack";
@@ -31,6 +31,44 @@ function definition(id: ShortcutId): ShortcutDefinition {
   return SHORTCUTS[id];
 }
 
+// WCAG 2.1.4: shortcuts made of one character key (C, /, ?, G…, J, K, X, .) can be turned off — they can fire by
+// accident with speech input or a slip of the hand. Combos with Ctrl/⌘, Enter, the arrows and Esc keep working.
+// A per-browser preference; it reads as on when storage is unavailable.
+const SINGLE_KEY_PREF = "admin-single-key-shortcuts";
+let singleKeysOn: boolean | null = null;
+
+function singleKeysEnabled(): boolean {
+  if (singleKeysOn === null) {
+    try {
+      singleKeysOn = localStorage.getItem(SINGLE_KEY_PREF) !== "off";
+    } catch {
+      singleKeysOn = true;
+    }
+  }
+  return singleKeysOn;
+}
+
+export function isCharacterKeyShortcut(keys: string): boolean {
+  return (chordPrefix(keys) ?? keys).length === 1;
+}
+
+/** `[on, setOn]` for the single-key shortcut preference (the shortcuts dialog's switch). */
+export function useSingleKeyShortcuts(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(true);
+  useEffect(() => setOn(singleKeysEnabled()), []);
+  const set = useCallback((next: boolean) => {
+    singleKeysOn = next;
+    setOn(next);
+    try {
+      if (next) localStorage.removeItem(SINGLE_KEY_PREF);
+      else localStorage.setItem(SINGLE_KEY_PREF, "off");
+    } catch {
+      // Storage blocked: the choice lasts for this page load.
+    }
+  }, []);
+  return [on, set];
+}
+
 function dispatch(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing) return;
   const typing = isTypingTarget(event.target);
@@ -56,6 +94,7 @@ function dispatch(event: KeyboardEvent) {
     const def = definition(id);
     if (def.handledBy) continue;
     if (typing && !def.allowInInputs) continue;
+    if (!singleKeysEnabled() && isCharacterKeyShortcut(def.keys)) continue;
     if (layered && def.scope === "global" && !def.allowInLayers) continue;
     const prefix = chordPrefix(def.keys);
     if (prefix) {
@@ -101,6 +140,7 @@ export function useShortcut(id: ShortcutId, handler: Handler, { enabled = true }
 export function resetShortcutsForTests() {
   bindings.clear();
   pendingChord = null;
+  singleKeysOn = null;
 }
 
 /** Test-only access to the dispatcher (the hook installs it on the document in the browser). */

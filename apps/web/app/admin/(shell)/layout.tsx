@@ -17,6 +17,7 @@ import { Toaster } from "@/components/ui/toast";
 import { useNavAccess } from "@/hooks/use-nav-access";
 import { useShortcut } from "@/hooks/use-shortcut";
 import { useSidebarCollapse } from "@/hooks/use-sidebar-collapse";
+import { useKeyboardFlag } from "@/hooks/use-keyboard-flag";
 import { documentTitleFor, goTargets, pageWidthFor, sectionBarFor } from "@/lib/admin/navigation";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const access = useNavAccess();
   const sidebar = useSidebarCollapse();
+  useKeyboardFlag();
   // The module's pages under the toolbar whenever the sidebar isn't listing them: under a collapsed rail, and below lg.
   const sectionBar = access.ready ? sectionBarFor(pathname, access) : null;
   const sectionBarMode = sidebar.collapsed ? "always" : "compact";
@@ -78,6 +80,13 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
     // data-surface="admin": the Store Console's own tokens (Apple-style, light only), whatever the store's brand theme.
     // On this element for the server render; portalled overlays get it from <body> (effect above).
     <div data-surface="admin" data-shell="" data-section-bar={sectionBar ? sectionBarMode : undefined} className="relative flex h-screen overflow-hidden bg-canvas font-sans text-fg">
+      {/* First stop for keyboard users: past the sidebar and toolbar straight to the page. */}
+      <a
+        href="#main-content"
+        className="sr-only z-overlay rounded-full bg-fg px-4 py-2 text-sm font-medium text-surface focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        Skip to content
+      </a>
       {/* Its own layer above the page column: the rail's flyouts live inside the sidebar's (blurred, so stacking) box and
           would otherwise paint under the page's cards. */}
       <div className="relative z-sticky print:hidden">
@@ -156,7 +165,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
             </header>
             <SectionBar bar={sectionBar} mode={sectionBarMode} />
           </div>
-          <main className="flex-1 px-4 py-6 sm:px-page sm:py-8 print:p-0">
+          <main id="main-content" tabIndex={-1} className="flex-1 outline-none px-4 py-6 sm:px-page sm:py-8 print:p-0">
             {/* Full screen for data pages; one centered column for forms (pageWidthFor). The 2400px ceiling only matters on
                 ultra-wide monitors, where a single table row would otherwise be too long to follow. */}
             <div className={cn("mx-auto w-full", pageWidthFor(pathname) === "form" ? "max-w-[880px]" : "max-w-[2400px]")}>

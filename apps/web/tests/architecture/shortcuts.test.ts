@@ -71,6 +71,27 @@ describe("shortcut dispatcher", () => {
     expect(palette).toHaveBeenCalledTimes(2);
   });
 
+  it("with single-key shortcuts turned off, only modifier combos fire (WCAG 2.1.4)", () => {
+    vi.stubGlobal("localStorage", { getItem: () => "off", setItem() {}, removeItem() {} });
+    try {
+      const create = vi.fn();
+      const palette = vi.fn();
+      const go = vi.fn();
+      bind("create.open", create);
+      bind("palette.toggle", palette);
+      bind("nav.goTo", go);
+      __dispatchForTests(key("c"));
+      __dispatchForTests(key("g"));
+      __dispatchForTests(key("o"));
+      __dispatchForTests(key("k", { ctrlKey: true }));
+      expect(create).not.toHaveBeenCalled();
+      expect(go).not.toHaveBeenCalled();
+      expect(palette).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("routes a g-chord's second key to the go-to handler", () => {
     const go = vi.fn();
     bind("nav.goTo", go);

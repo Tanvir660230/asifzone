@@ -27,6 +27,7 @@ export function BulkActionBar({ count, itemLabel = "items", children, className 
           exit="exit"
           role="region"
           aria-label={`Actions for ${count} selected ${itemLabel}`}
+          data-hide-on-keyboard=""
           className={cn(
             "glass-panel fixed inset-x-0 bottom-4 z-dock mx-auto flex w-fit max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 rounded-2xl px-4 py-3 text-sm",
             className,

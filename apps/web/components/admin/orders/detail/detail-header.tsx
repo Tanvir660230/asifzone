@@ -193,7 +193,7 @@ export function OrderPhoneActionBar({ order, perms, commands }: { order: Order; 
   const { primary, show, run } = usePrimaryOrderAction(order, perms, commands);
   if (!primary || !show) return null;
   return (
-    <div className="sticky bottom-0 z-raised -mx-4 mt-6 border-t border-line bg-canvas/90 px-4 py-3 backdrop-blur md:hidden print:hidden">
+    <div data-hide-on-keyboard="" className="sticky bottom-0 z-raised -mx-4 mt-6 border-t border-line bg-canvas/90 px-4 py-3 backdrop-blur md:hidden print:hidden">
       <Button className="w-full" onClick={run} loading={primary.kind === "book_courier" && commands.pending.book}>
         {primary.label} <ArrowRight size={16} aria-hidden="true" />
       </Button>

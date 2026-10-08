@@ -226,7 +226,7 @@ function StepCard({ controller: b }: { controller: ProductBuilderController }) {
         {renderStep(step.id, b)}
       </div>
 
-      <footer className="glass sticky bottom-0 z-raised flex flex-wrap items-center justify-between gap-3 rounded-b-2xl border-t border-line-subtle px-5 py-3.5 sm:px-7">
+      <footer data-hide-on-keyboard="" className="glass sticky bottom-0 z-raised flex flex-wrap items-center justify-between gap-3 rounded-b-2xl border-t border-line-subtle px-5 py-3.5 sm:px-7">
         <Button type="button" variant="outline" onClick={b.back} disabled={b.currentIndex === 0 || b.creating}>
           <ArrowLeft size={15} aria-hidden="true" /> Back
         </Button>

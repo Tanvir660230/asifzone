@@ -336,7 +336,7 @@ export function MobileBottomNav({ onOpenMore }: { onOpenMore: () => void }) {
   if (!access.ready || primary.length === 0) return null;
 
   return (
-    <nav aria-label="Primary" className="glass flex shrink-0 border-t border-ink-900/[0.08] pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden">
+    <nav aria-label="Primary" data-hide-on-keyboard="" className="glass flex shrink-0 border-t border-ink-900/[0.08] pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden">
       {primary.map(({ node, href }) => {
         const Icon = node.icon ? NAV_ICONS[node.icon] : undefined;
         const active = node.id === activeModuleId;

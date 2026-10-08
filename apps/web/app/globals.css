@@ -331,6 +331,18 @@
   [data-surface="admin"] textarea.ui-control {
     @apply h-auto;
   }
+  /* While the on-screen keyboard is open (hooks/use-keyboard-flag.ts), sticky bars step aside for the field. */
+  @media (max-width: 1023px) {
+    html[data-keyboard="open"] [data-hide-on-keyboard] {
+      display: none;
+    }
+  }
+  /* Phones: form fields at 16px, or iOS zooms the page in on focus (Blueprint V2 §X). */
+  @media (max-width: 767px) {
+    [data-surface="admin"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+      font-size: 16px;
+    }
+  }
   /* Sentence-case column titles on a white head, like a Mac list view. */
   [data-surface="admin"] .ui-table-container {
     @apply border-line bg-surface shadow;
