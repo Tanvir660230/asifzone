@@ -72,3 +72,11 @@ excluded), and Home is interactive in ≤ 2.5 s on a mid-range phone over 4G.
   rendition (`<Thumbnail>`); the "View store" link doesn't prefetch the storefront.
 - Not yet done: Home's data queries wait for `/me` + capabilities (one extra round trip), and the root layout
   preloads the storefront's display font. Both matter mainly on Slow 4G.
+
+## Visual baseline (P9)
+
+`apps/web/e2e/admin-visual.spec.ts` screenshots nine key pages (Home, Orders, Products, Customers, Inbox, Payments,
+Analytics, Settings, Audit log) on desktop and phone. Data — rows, figures, dates, counts, charts — is masked, so a
+diff means the layout, chrome or controls changed. Opt-in because screenshots depend on OS fonts and the database:
+`VISUAL=1 pnpm --filter web test:e2e admin-visual` (add `--update-snapshots=all` after an intended change). The stored
+baseline (`*-win32.png`) was taken 2026-10-08 against a production build on the demo-data mirror.
