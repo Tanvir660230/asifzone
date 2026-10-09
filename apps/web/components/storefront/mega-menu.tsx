@@ -88,17 +88,21 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
 
   return (
     <nav ref={containerRef} aria-label="Categories" className={cn("relative flex min-w-0 flex-1", !measured && "[overflow-x:clip]")}>
-      {/* Measuring row: the same typography, laid out but invisible and unreachable. First child is the "More" probe. */}
-      <div ref={measureRef} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex gap-8">
-        <span className={NAV_LINK_CLASS}>
-          More
-          <ChevronDown size={14} />
-        </span>
-        {categories.map((cat) => (
-          <span key={cat.id} className={NAV_LINK_CLASS}>
-            {cat.name}
+      {/* Measuring row: the same typography, laid out but invisible and unreachable. First child is the "More" probe.
+          Inside a zero-height clipping box: once the nav stops clipping (so dropdowns can hang out), a long row must not
+          widen the page and give every storefront page a horizontal scroll. */}
+      <div aria-hidden="true" className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden">
+        <div ref={measureRef} className="flex w-max gap-8">
+          <span className={NAV_LINK_CLASS}>
+            More
+            <ChevronDown size={14} />
           </span>
-        ))}
+          {categories.map((cat) => (
+            <span key={cat.id} className={NAV_LINK_CLASS}>
+              {cat.name}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* `mx-auto` centres the row while it fits and starts it at the left (never clipped on both sides) while it doesn't. */}
