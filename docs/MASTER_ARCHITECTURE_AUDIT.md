@@ -342,7 +342,7 @@ Implicit "events" today (the hooks a formal event bus would replace):
 - Order-of-operations risk: new api code starts **before** migrations are applied; there is no expand/contract discipline enforced.
 - Uploads live on a named Docker volume on one host (no object storage abstraction).
 - `NEXT_PUBLIC_*` values are baked at image build time — a new store domain requires a rebuild.
-- A second, legacy deployment path exists: [deploy_vps.py](../deploy_vps.py) / [inspect_vps.py](../inspect_vps.py) target a shared-hosting account over password SSH (now read from `VPS_SSH_PASSWORD`, no longer committed). Its credential appeared in earlier git history; rotation should be confirmed.
+- A second, legacy deployment path existed (removed 2026-10-09): `deploy_vps.py` / `inspect_vps.py` targeted a shared-hosting account over password SSH (now read from `VPS_SSH_PASSWORD`, no longer committed). Its credential appeared in earlier git history; rotation should be confirmed.
 - CI gates: `pnpm audit --audit-level critical`, migrations applied, **schema-drift check** (`prisma migrate diff --exit-code`), seed, typecheck api+web, API tests, web build, Playwright e2e. **Lint is not run in CI.**
 
 ## 14. Testing map

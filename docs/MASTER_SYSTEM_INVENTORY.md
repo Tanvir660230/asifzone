@@ -1025,7 +1025,7 @@ No runtime-crash bugs were confirmed by reading code. Behavioral verification (r
 
 | # | Item | Evidence |
 |---|---|---|
-| DEAD-01 | `WEB/components/storefront/skeletons/product-detail-skeleton.tsx`: never imported | import scan |
+| DEAD-01 | `WEB/components/storefront/skeletons/product-detail-skeleton.tsx`: never imported | import scan | **Removed 2026-10-09.**
 | DEAD-02 | Web API wrappers never called: `getCompleteYourLook`, `getFrequentlyBoughtTogether`, `getUpgradeOptions`, `getActiveHomepageSectionsSafe`, `getCampaign`, `getFlashSale`, `scheduleCampaign`, `listMyPushSubscriptions`, `listRefunds` (payments-admin), `listAdminSessions`; and `getVisitorId`, `getSessionAttribution` are only used inside `lib/analytics.ts` | usage scan |
 | DEAD-03 | Legacy public endpoints `POST /api/coupons/validate`, `POST /api/coupons/best` (pricing moved to `/api/v1/checkout/quote`) | no web caller |
 | DEAD-04 | Product rail endpoints `/:id/similar`, `/frequently-bought-together`, `/complete-your-look`, `/upgrade-options` (still used internally as rail fallbacks, but the HTTP endpoints have no caller) | §20.2 |
@@ -1033,8 +1033,8 @@ No runtime-crash bugs were confirmed by reading code. Behavioral verification (r
 | DEAD-06 | Deprecated `Order.paymentSessionKey`, `paymentTransactionId`; likely `trackingNumber`/`carrier` (Steadfast fields replaced them; Needs Verification) | schema comments |
 | DEAD-07 | `meta-capi-worker.ts`: drains a pre-outbox queue; nothing new writes to it | job comment |
 | DEAD-08 | `SHARED/config/product-types.ts` hardcoded legacy product types (8). Types moved to the DB; this remains a fallback/seed source (Needs Verification of remaining readers). | file |
-| DEAD-09 | `deploy_vps.py`, `inspect_vps.py`: Paramiko scripts for the **old shared-hosting** account (`u139868009`, port 65002). Production is now Docker on a VPS via `docker/deploy.sh` + CI. | repo root |
-| DEAD-10 | `morgan` dependency (replaced by the correlation logger) | `apps/api/package.json`, `app.ts` comment |
+| DEAD-09 | `deploy_vps.py`, `inspect_vps.py`: Paramiko scripts for the **old shared-hosting** account (`u139868009`, port 65002). Production is now Docker on a VPS via `docker/deploy.sh` + CI. | repo root | **Removed 2026-10-09.**
+| DEAD-10 | `morgan` dependency (replaced by the correlation logger) | `apps/api/package.json`, `app.ts` comment | **Removed 2026-10-09.**
 | DEAD-11 | Root `.next/` folder (stray build output at the repo root; gitignored) | `ls` |
 
 ---
@@ -1077,7 +1077,7 @@ Overall posture is **strong**: DB-backed role resolution per request, a permissi
 | SEC-09 | **Steadfast webhook auth is a shared token in the query string** (may appear in proxy logs). Mitigated by re-verification against Steadfast. | Low | `courier.controller.ts` |
 | SEC-10 | **Ad pixels fire without consent** (consent gate hard-wired to `true`). This is a privacy/compliance exposure if targeting regions with consent laws. | Medium (compliance) | `lib/pixels/consent.ts` |
 | SEC-11 | **Live EPS credentials sit in `AsifZone Eps/`** inside a OneDrive-synced working tree (gitignored, so not in git). This is a cloud-sync exposure. | Medium (operational) | repo root |
-| SEC-12 | **Legacy shared-hosting scripts** reference the old host/user (no password committed) | Low | `deploy_vps.py`, `inspect_vps.py` |
+| SEC-12 | **Legacy shared-hosting scripts** reference the old host/user (no password committed) | Low | `deploy_vps.py`, `inspect_vps.py` | **Removed 2026-10-09.**
 | SEC-13 | **Order tracking by orderNumber + phone** returns the full address/order. Rate-limited to 20 per 10 min per IP. Order numbers are `ORD-YYYYMMDD-` plus a 6-character `crypto.randomInt` suffix (~2.2 billion per day), so guessing is impractical; the phone requirement is the second factor. | Low | `trackOrder`, `lib/order-number.ts` |
 | SEC-14 | **Notifications aren't permission-scoped**: STAFF see owner-only operational alerts | Low | `Notification` |
 | SEC-15 | **Uploaded files are served from the API origin** with `crossOriginResourcePolicy: cross-origin`. Files are re-encoded to WebP by sharp, which neutralises polyglots. | Positive / Low | `app.ts`, `upload.service.ts` |
