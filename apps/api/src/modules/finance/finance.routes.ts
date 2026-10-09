@@ -44,6 +44,11 @@ import {
   ledgerAccountUpdateSchema,
   ledgerRangeQuerySchema,
   statementPeriodQuerySchema,
+  expenseCreateSchema,
+  expenseListQuerySchema,
+  commitmentCreateSchema,
+  commitmentUpdateSchema,
+  commitmentListQuerySchema,
   balanceSheetQuerySchema,
   openingBalanceLinesSchema,
   openingInventoryItemsSchema,
@@ -71,6 +76,7 @@ import * as periods from "../../domain/finance/periods.service";
 import * as journals from "../../domain/finance/journal.service";
 import * as ledger from "../../domain/finance/ledger.service";
 import * as statements from "../../domain/finance/statements.service";
+import * as expenses from "../../domain/finance/expenses.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -166,6 +172,17 @@ financeRouter.get("/trial-balance", requirePermission("finance.read"), validate(
 financeRouter.get("/statements/income", requirePermission("finance.read"), validate(statementPeriodQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await statements.incomeStatement(req.query as never, viewerOf(req)))));
 financeRouter.get("/statements/balance-sheet", requirePermission("finance.read"), validate(balanceSheetQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await statements.balanceSheet(req.query as never, viewerOf(req)))));
 financeRouter.get("/statements/cash-flow", requirePermission("finance.read"), validate(statementPeriodQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await statements.cashFlow(req.query as never, viewerOf(req)))));
+
+// ── expenses & recurring commitments (docs/FINANCE_EXPENSES.md) ─────────────────────────────────────────────────────────
+financeRouter.get("/expenses", requirePermission("finance.read"), validate(expenseListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await expenses.listExpenses(req.query as never))));
+financeRouter.get("/expenses/summary", requirePermission("finance.read"), validate(statementPeriodQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await expenses.expenseSummary(req.query as never))));
+financeRouter.post("/expenses", requirePermission("finance.transact"), validate(expenseCreateSchema), asyncHandler(async (req, res) => {
+  const r = await expenses.recordExpense(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.get("/commitments", requirePermission("finance.read"), validate(commitmentListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await expenses.listCommitments(req.query as never))));
+financeRouter.post("/commitments", requirePermission("finance.transact"), validate(commitmentCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await expenses.createCommitment(req.body, await actorOf(req)))));
+financeRouter.patch("/commitments/:id", requirePermission("finance.transact"), validate(commitmentUpdateSchema), asyncHandler(async (req, res) => res.json(await expenses.updateCommitment(id(req), req.body, await actorOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

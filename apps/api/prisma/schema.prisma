@@ -2678,6 +2678,8 @@ model FinanceBusiness {
   productionCostCategories    ProductionCostCategory[]
   supplierInvoices            SupplierInvoice[]
   supplierAllocations         SupplierAllocation[]
+  expenses                    Expense[]
+  recurringCommitments        RecurringCommitment[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2734,6 +2736,8 @@ model LedgerAccount {
   supplierDefaults         Supplier[]            @relation("SupplierDefaultExpense")
   purchaseOrderLines       PurchaseOrderLine[]
   supplierInvoiceLines     SupplierInvoiceLine[] @relation("SupplierInvoiceExpense")
+  expenses                 Expense[]             @relation("ExpenseAccount")
+  recurringCommitments     RecurringCommitment[] @relation("CommitmentAccount")
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -2757,42 +2761,43 @@ model AccountMapping {
 /// A place money is held (cash box, bank account, bKash/Nagad wallet, gateway or courier clearing). Each has its own ledger
 /// account; its balance IS that account's ledger balance — never a stored number.
 model FinancialAccount {
-  id                      String               @id @default(cuid())
+  id                      String                @id @default(cuid())
   businessId              String
-  business                FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business                FinanceBusiness       @relation(fields: [businessId], references: [id], onDelete: Restrict)
   brandId                 String?
   kind                    FinancialAccountKind
   name                    String
   /// "bKash", "Nagad", "Dutch-Bangla Bank", "SSLCommerz", "Steadfast", …
   provider                String?
-  accountNumberLast4      String?              @db.VarChar(4)
+  accountNumberLast4      String?               @db.VarChar(4)
   /// Phase 2: the account's title as the bank shows it (no credentials, ever).
   accountTitle            String?
   /// Bank branch, where it matters.
   branch                  String?
   /// A non-secret reference: masked account number, merchant / wallet id. Never a password, PIN or API key.
-  accountReference        String?              @db.VarChar(64)
+  accountReference        String?               @db.VarChar(64)
   /// Free-form, non-secret facts (keys that look like credentials are refused by the service).
   metadata                Json?
   /// Movements of at least this amount wait for a second person's approval (null = no approval step).
-  approvalThreshold       Decimal?             @db.Decimal(18, 2)
+  approvalThreshold       Decimal?              @db.Decimal(18, 2)
   /// The first day covered by a completed bank reconciliation — ledger lines before it are covered by that run's opening
   /// statement balance.
-  reconciliationStartDate DateTime?            @db.Date
-  currency                String               @db.VarChar(3)
-  ledgerAccountId         String               @unique
-  ledgerAccount           LedgerAccount        @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
-  isActive                Boolean              @default(true)
-  createdAt               DateTime             @default(now())
-  updatedAt               DateTime             @updatedAt
+  reconciliationStartDate DateTime?             @db.Date
+  currency                String                @db.VarChar(3)
+  ledgerAccountId         String                @unique
+  ledgerAccount           LedgerAccount         @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  isActive                Boolean               @default(true)
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
   openingLines            OpeningBalanceLine[]
-  movementsOut            TreasuryMovement[]   @relation("TreasuryFrom")
-  movementsIn             TreasuryMovement[]   @relation("TreasuryTo")
+  movementsOut            TreasuryMovement[]    @relation("TreasuryFrom")
+  movementsIn             TreasuryMovement[]    @relation("TreasuryTo")
   bankTransactions        BankTransaction[]
   statementImports        StatementImport[]
   bankReconciliations     BankReconciliation[]
-  settlementsCleared      ClearingSettlement[] @relation("SettlementClearing")
-  settlementsReceived     ClearingSettlement[] @relation("SettlementDestination")
+  settlementsCleared      ClearingSettlement[]  @relation("SettlementClearing")
+  settlementsReceived     ClearingSettlement[]  @relation("SettlementDestination")
+  recurringCommitments    RecurringCommitment[]
 
   @@unique([businessId, name])
 }
@@ -3156,6 +3161,7 @@ model TreasuryMovement {
   updatedAt              DateTime               @updatedAt
   matches                BankTransactionMatch[]
   supplierAllocations    SupplierAllocation[]
+  expense                Expense?
 
   @@unique([businessId, idempotencyKey])
   @@index([fromFinancialAccountId, movementDate])
@@ -3517,6 +3523,7 @@ model Supplier {
   supplierInvoices        SupplierInvoice[]
   payments                TreasuryMovement[]
   allocations             SupplierAllocation[]
+  recurringCommitments    RecurringCommitment[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -4452,4 +4459,81 @@ model SupplierAllocation {
   @@index([paymentMovementId])
   @@index([creditNoteId])
   @@index([supplierId])
+}
+
+// ── Expenses & recurring commitments (docs/FINANCE_EXPENSES.md) ─────────────────
+
+/// How a cost moves with sales: FIXED (rent, salaries — the break-even base) or VARIABLE (packaging, delivery).
+enum CostBehaviour {
+  FIXED
+  VARIABLE
+}
+
+enum CommitmentFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+/// A cost the business owes every period (rent, salaries, a subscription): its account, amount and schedule. It posts
+/// nothing itself — paying a period records an Expense linked to it; the schedule shows what is due and what is paid.
+model RecurringCommitment {
+  id                 String              @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  name               String
+  expenseAccountId   String
+  expenseAccount     LedgerAccount       @relation("CommitmentAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  amount             Decimal             @db.Decimal(18, 2)
+  frequency          CommitmentFrequency
+  /// Day of the month it falls due (1–28, so every month has it).
+  dayOfMonth         Int
+  startDate          DateTime            @db.Date
+  endDate            DateTime?           @db.Date
+  costBehaviour      CostBehaviour       @default(FIXED)
+  payee              String?
+  supplierId         String?
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  /// The money account it is usually paid from (a default, never enforced).
+  financialAccountId String?
+  financialAccount   FinancialAccount?   @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  isActive           Boolean             @default(true)
+  notes              String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  expenses           Expense[]
+
+  @@index([businessId, isActive])
+}
+
+/// An operating expense paid from a money account: a Treasury WITHDRAWAL (Dr the expense account / Cr the money
+/// account — approval thresholds, overdraft rules and reversal as for any money movement) plus what the movement doesn't
+/// say: cost behaviour, payee, evidence and the commitment period it pays. Its state is its movement's state. Immutable.
+model Expense {
+  id               String               @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "expense" — EXP-000001.
+  number           Int
+  expenseDate      DateTime             @db.Date
+  expenseAccountId String
+  expenseAccount   LedgerAccount        @relation("ExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  amount           Decimal              @db.Decimal(18, 2)
+  costBehaviour    CostBehaviour
+  payee            String?
+  description      String
+  reference        String?
+  evidence         String?
+  movementId       String               @unique
+  movement         TreasuryMovement     @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  commitmentId     String?
+  commitment       RecurringCommitment? @relation(fields: [commitmentId], references: [id], onDelete: Restrict)
+  /// The commitment period it pays (YYYY-MM of the due date).
+  periodKey        String?
+  createdByAdminId String?
+  createdAt        DateTime             @default(now())
+
+  @@unique([businessId, number])
+  @@index([businessId, expenseDate])
+  @@index([commitmentId, periodKey])
 }

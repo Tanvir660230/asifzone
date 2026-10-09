@@ -128,6 +128,50 @@ export const statementPeriodQuerySchema = z
   .refine((v) => !v.from || !v.to || v.from <= v.to, "The period starts before it ends");
 export const balanceSheetQuerySchema = z.object({ asOf: businessDate.optional(), brandId: id.optional() });
 
+// ERP E7 (docs/FINANCE_EXPENSES.md): expenses and recurring commitments
+export const COST_BEHAVIOURS = ["FIXED", "VARIABLE"] as const;
+export const COMMITMENT_FREQUENCIES = ["MONTHLY", "QUARTERLY", "YEARLY"] as const;
+const periodKey = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM");
+const positive = financeAmountSchema.refine((v) => v > 0, "More than zero");
+export const expenseCreateSchema = z
+  .object({
+    expenseDate: businessDate.optional(),
+    expenseAccountId: id.optional().nullable(),
+    amount: positive.optional().nullable(),
+    costBehaviour: z.enum(COST_BEHAVIOURS).optional().nullable(),
+    payee: optionalText(200),
+    description: optionalText(300),
+    reference: optionalText(120),
+    evidence: optionalText(500),
+    fromFinancialAccountId: id.optional().nullable(),
+    commitmentId: id.optional().nullable(),
+    periodKey: periodKey.optional().nullable(),
+  })
+  .refine((v) => Boolean(v.commitmentId) || (Boolean(v.expenseAccountId) && v.amount != null && Boolean(v.fromFinancialAccountId)), "Give the expense account, the amount and the money account (or pay a commitment)")
+  .refine((v) => !v.commitmentId || Boolean(v.periodKey), "Name the period this pays");
+export const expenseListQuerySchema = z.object({
+  from: businessDate.optional(), to: businessDate.optional(), expenseAccountId: id.optional(), costBehaviour: z.enum(COST_BEHAVIOURS).optional(), commitmentId: id.optional(),
+  page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+const commitmentFields = {
+  name: z.string().trim().min(2).max(120),
+  expenseAccountId: id,
+  amount: positive,
+  frequency: z.enum(COMMITMENT_FREQUENCIES),
+  dayOfMonth: z.coerce.number().int().min(1).max(28),
+  startDate: businessDate,
+  endDate: businessDate.optional().nullable(),
+  costBehaviour: z.enum(COST_BEHAVIOURS).optional(),
+  payee: optionalText(200),
+  supplierId: id.optional().nullable(),
+  financialAccountId: id.optional().nullable(),
+  notes: optionalText(1000),
+  isActive: z.boolean().optional(),
+};
+export const commitmentCreateSchema = z.object(commitmentFields).refine((v) => !v.endDate || v.endDate >= v.startDate, "The end is after the start");
+export const commitmentUpdateSchema = z.object(commitmentFields).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export const commitmentListQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional(), includeInactive: z.coerce.boolean().optional() });
+
 export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 export const OPENING_BALANCE_CATEGORIES = [

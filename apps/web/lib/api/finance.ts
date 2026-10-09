@@ -480,3 +480,38 @@ export const getTrialBalance = (q: { from?: string; to?: string } = {}) => apiFe
 export const getIncomeStatement = (q: { from?: string; to?: string } = {}) => apiFetch<IncomeStatement>(`${BASE}/statements/income${range(q)}`);
 export const getBalanceSheet = (q: { asOf?: string } = {}) => apiFetch<BalanceSheet>(`${BASE}/statements/balance-sheet${range(q)}`);
 export const getCashFlow = (q: { from?: string; to?: string } = {}) => apiFetch<CashFlow>(`${BASE}/statements/cash-flow${range(q)}`);
+
+// ── ERP E7: expenses and recurring commitments (docs/FINANCE_EXPENSES.md) ────────────────────────────────────────────────
+export type CostBehaviour = "FIXED" | "VARIABLE";
+export type CommitmentFrequency = "MONTHLY" | "QUARTERLY" | "YEARLY";
+export interface Expense {
+  id: string; number: string; expenseDate: string; expenseAccount: { id: string; code: string; name: string }; amount: number; costBehaviour: CostBehaviour;
+  payee: string | null; description: string; reference: string | null; evidence: string | null; commitment: { id: string; name: string } | null; periodKey: string | null;
+  status: MovementStatus; paidFrom: { id: string; name: string } | null; movementId: string; note: string | null; createdAt: string;
+}
+export interface CommitmentPeriod { periodKey: string; dueDate: string; status: "PAID" | "AWAITING_APPROVAL" | "OVERDUE" | "DUE"; expense: { id: string; number: string; amount: number } | null }
+export interface Commitment {
+  id: string; name: string; expenseAccount: { id: string; code: string; name: string }; amount: number; monthlyAmount: number; frequency: CommitmentFrequency; dayOfMonth: number;
+  startDate: string; endDate: string | null; costBehaviour: CostBehaviour; payee: string | null; financialAccount: { id: string; name: string } | null; isActive: boolean; notes: string | null;
+  schedule: CommitmentPeriod[]; nextDue: CommitmentPeriod | null;
+}
+export interface CommitmentsOverview {
+  asOf: string; commitments: Commitment[]; totals: { fixedMonthly: number; variableMonthly: number };
+  overdue: Array<CommitmentPeriod & { commitmentId: string; name: string; amount: number }>; dueSoon: Array<CommitmentPeriod & { commitmentId: string; name: string; amount: number }>;
+}
+export interface ExpenseSummary {
+  period: { from: string; to: string }; accounts: Array<{ account: { id: string; code: string; name: string }; fixed: number; variable: number; total: number }>;
+  totals: { fixed: number; variable: number; total: number }; fixedMonthlyCommitments: number; grossMarginPct: number | null; breakEvenMonthlyRevenue: number | null;
+}
+export const expenseKeys = {
+  all: ["finance", "expenses"] as const,
+  list: (q: object) => ["finance", "expenses", "list", q] as const,
+  summary: (q: object) => ["finance", "expenses", "summary", q] as const,
+  commitments: () => ["finance", "expenses", "commitments"] as const,
+};
+export const listExpenses = (q: { from?: string; to?: string; pageSize?: number } = {}) => apiFetch<{ total: number; expenses: Expense[] }>(`${BASE}/expenses${range(Object.fromEntries(Object.entries(q).map(([k, v]) => [k, v === undefined ? undefined : String(v)])))}`);
+export const getExpenseSummary = (q: { from?: string; to?: string } = {}) => apiFetch<ExpenseSummary>(`${BASE}/expenses/summary${range(q)}`);
+export const recordExpense = (body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ expense: Expense; replayed: boolean }>(`${BASE}/expenses`, { method: "POST", body, idempotencyKey });
+export const listCommitments = () => apiFetch<CommitmentsOverview>(`${BASE}/commitments`);
+export const createCommitment = (body: Record<string, unknown>) => apiFetch<Commitment>(`${BASE}/commitments`, { method: "POST", body });
+export const updateCommitment = (id: string, body: Record<string, unknown>) => apiFetch<Commitment>(`${BASE}/commitments/${id}`, { method: "PATCH", body });

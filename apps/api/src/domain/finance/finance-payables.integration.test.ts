@@ -21,6 +21,7 @@ import { allocateToBill, paySupplier, releaseAllocation, supplierAccount } from 
 import { createFinancialAccount } from "./financial-accounts.service";
 import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
+import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
 import { costAdjustments, grniAgeing, inventoryValuation, paymentsRegister, priceVariance, purchaseRegister } from "./purchasing-reports.service";
 import { rejectMovement, reverseMovement } from "./treasury.service";
 import type { FinanceActor } from "./finance-audit";
@@ -349,5 +350,43 @@ describe("financial statements (E6) — tie to the trial balance", () => {
     const restricted = await balanceSheet({ asOf: today }, { sensitive: false });
     expect(restricted.totalAssets).toBe(bs.totalAssets);
     expect(restricted.totalLiabilitiesAndEquity).toBe(bs.totalLiabilitiesAndEquity);
+  });
+});
+
+describe("expenses and recurring commitments (E7)", () => {
+  it("schedules monthly / quarterly periods inside a window", () => {
+    expect(dueDates({ frequency: "MONTHLY", dayOfMonth: 5, startDate: "2026-07-15", endDate: null }, "2026-08-01", "2026-10-31").map((d) => d.dueDate)).toEqual(["2026-08-05", "2026-09-05", "2026-10-05"]);
+    expect(dueDates({ frequency: "QUARTERLY", dayOfMonth: 10, startDate: "2026-01-10", endDate: "2026-09-30" }, "2026-01-01", "2026-12-31").map((d) => d.periodKey)).toEqual(["2026-01", "2026-04", "2026-07"]);
+  });
+
+  it("a commitment period is paid once through a money movement; reversing the payment reopens it", async () => {
+    const { business } = await getFinanceContext();
+    const rent = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "6100" } });
+    const packaging = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "6800" } });
+    const bankId = (await createFinancialAccount({ kind: "BANK", name: `Expense bank ${Date.now() % 100000}` } as never, OWNER)).id;
+    const c = await createCommitment({ name: "Shop rent", expenseAccountId: rent.id, amount: 2000, frequency: "MONTHLY", dayOfMonth: 1, startDate: "2026-08-01", financialAccountId: bankId, payee: "Landlord" }, OWNER);
+    expect(c.schedule.map((x) => [x.periodKey, x.status])).toEqual(expect.arrayContaining([["2026-08", "OVERDUE"], ["2026-09", "OVERDUE"]]));
+
+    const paid = await recordExpense({ commitmentId: c.id, periodKey: "2026-09", expenseDate: "2026-09-02" }, OWNER, "rent-sep");
+    expect(paid.expense).toMatchObject({ status: "POSTED", amount: 2000, costBehaviour: "FIXED", payee: "Landlord", periodKey: "2026-09" });
+    expect((await recordExpense({ commitmentId: c.id, periodKey: "2026-09", expenseDate: "2026-09-02" }, OWNER, "rent-sep")).replayed).toBe(true);
+    await expect(recordExpense({ commitmentId: c.id, periodKey: "2026-09" }, OWNER, "rent-sep-again")).rejects.toMatchObject({ statusCode: 409 });
+    await expect(recordExpense({ commitmentId: c.id, periodKey: "2026-11" }, OWNER, "rent-not-due-yet-bad")).resolves.toBeTruthy(); // paying ahead is allowed
+    await expect(recordExpense({ commitmentId: c.id, periodKey: "2026-07" }, OWNER, "rent-before-start")).rejects.toMatchObject({ statusCode: 400 });
+    const box = await recordExpense({ expenseAccountId: packaging.id, amount: 300, fromFinancialAccountId: bankId, description: "Mailer boxes", payee: "Box Co" }, OWNER, "boxes-1");
+    expect(box.expense).toMatchObject({ costBehaviour: "VARIABLE", status: "POSTED" });
+    await expect(prisma.expense.update({ where: { id: box.expense.id }, data: { payee: "x" } })).rejects.toThrow(/immutable/);
+
+    const list = await listCommitments();
+    const rentRow = list.commitments.find((x) => x.id === c.id)!;
+    expect(rentRow.schedule.find((x) => x.periodKey === "2026-09")).toMatchObject({ status: "PAID" });
+    expect(list.totals.fixedMonthly).toBe(2000);
+    const sum = await expenseSummary({ from: "2026-09-01", to: "2026-12-31" });
+    expect(sum.totals).toMatchObject({ fixed: 4000, variable: 300, total: 4300 });
+
+    await reverseMovement(paid.expense.movementId, { reason: "Paid twice by mistake" }, OWNER);
+    expect((await listCommitments()).commitments.find((x) => x.id === c.id)!.schedule.find((x) => x.periodKey === "2026-09")).toMatchObject({ status: "OVERDUE" });
+    const r = await runReconciliation({ checks: ["ledger.integrity", "events.unposted"] }, OWNER);
+    expect(r.results.every((x) => x.status === "MATCHED")).toBe(true);
   });
 });
