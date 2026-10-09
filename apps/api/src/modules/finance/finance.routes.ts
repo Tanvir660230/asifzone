@@ -43,6 +43,8 @@ import {
   ledgerAccountCreateSchema,
   ledgerAccountUpdateSchema,
   ledgerRangeQuerySchema,
+  statementPeriodQuerySchema,
+  balanceSheetQuerySchema,
   openingBalanceLinesSchema,
   openingInventoryItemsSchema,
   periodActionSchema,
@@ -68,6 +70,7 @@ import * as financialAccounts from "../../domain/finance/financial-accounts.serv
 import * as periods from "../../domain/finance/periods.service";
 import * as journals from "../../domain/finance/journal.service";
 import * as ledger from "../../domain/finance/ledger.service";
+import * as statements from "../../domain/finance/statements.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -160,6 +163,9 @@ financeRouter.post("/journals/:id/correct", requirePermission("finance.reverse")
 
 // ── general ledger ──────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/trial-balance", requirePermission("finance.read"), validate(ledgerRangeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ledger.getTrialBalance(req.query as never, viewerOf(req)))));
+financeRouter.get("/statements/income", requirePermission("finance.read"), validate(statementPeriodQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await statements.incomeStatement(req.query as never, viewerOf(req)))));
+financeRouter.get("/statements/balance-sheet", requirePermission("finance.read"), validate(balanceSheetQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await statements.balanceSheet(req.query as never, viewerOf(req)))));
+financeRouter.get("/statements/cash-flow", requirePermission("finance.read"), validate(statementPeriodQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await statements.cashFlow(req.query as never, viewerOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

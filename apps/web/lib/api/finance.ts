@@ -425,3 +425,58 @@ export const updateCutoverLines = (lines: CutoverLineInput[]) => apiFetch<{ upda
 export const approveCutover = (acknowledgeMissing: boolean) => apiFetch<{ batch: CutoverBatch; summary: CutoverSummary }>(`${BASE}/inventory-cutover/approve`, { method: "POST", body: { acknowledgeMissing } });
 export const reopenCutover = (reason: string) => apiFetch<CutoverBatch>(`${BASE}/inventory-cutover/reopen`, { method: "POST", body: { reason } });
 export const postCutover = () => apiFetch<{ batch: CutoverBatch; replayed: boolean }>(`${BASE}/inventory-cutover/post`, { method: "POST", body: {} });
+
+// ── ERP E6: chart, journals, trial balance, statements (docs/FINANCE_STATEMENTS.md) ─────────────────────────────────────
+export type LedgerAccountType = "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "COGS" | "EXPENSE" | "OTHER_INCOME" | "OTHER_EXPENSE";
+export interface ChartAccount {
+  id: string; code: string; name: string; description: string | null; type: LedgerAccountType; normalBalance: "DEBIT" | "CREDIT";
+  parentId: string | null; isPostable: boolean; isSystem: boolean; isActive: boolean; isSensitive: boolean; mappings: string[];
+  balance: number | null; restricted: boolean;
+}
+export interface JournalEntry {
+  id: string; number: number | null; status: "DRAFT" | "POSTED"; kind: "MANUAL" | "OPENING_BALANCE" | "EVENT" | "REVERSAL" | "CORRECTION" | "TREASURY" | "ADJUSTMENT";
+  entryDate: string; description: string; reference: string | null; brandId: string | null; totalDebit: number; totalCredit: number;
+  sourceType: string | null; sourceId: string | null; reversesEntryId: string | null; correctsEntryId: string | null; reason: string | null; postedAt: string | null; createdAt: string;
+  reversedBy?: unknown; correctedBy?: unknown;
+  lines: Array<{ id: string; lineNo: number; accountId: string; debit: number; credit: number; memo: string | null; partyType: string | null; partyId: string | null }>;
+}
+export interface AccountLedger {
+  account: { id: string; code: string; name: string; type: LedgerAccountType; normalBalance: "DEBIT" | "CREDIT" };
+  openingBalance: number; closingBalance: number; truncated: boolean;
+  lines: Array<{ entryId: string; number: number; entryDate: string; kind: string; description: string; reference: string | null; lineNo: number; debit: number; credit: number; memo: string | null; balance: number }>;
+}
+export interface TrialBalance {
+  currency: string; range: { from: string | null; to: string | null };
+  rows: Array<{ accountId: string; code: string; name: string; type: string; opening: number | null; periodDebit: number | null; periodCredit: number | null; closingDebit: number; closingCredit: number; balance: number | null }>;
+  totalDebit: number; totalCredit: number; balanced: boolean;
+}
+export interface StatementSection { key: string; label: string; total: number; lines: Array<{ accountId: string | null; code: string; name: string; group: string; amount: number }> }
+export interface ProfitAndLoss { sections: StatementSection[]; grossProfit: number; operatingProfit: number; netProfit: number; grossMarginPct: number | null }
+export interface IncomeStatement { period: { from: string; to: string }; prior: { from: string; to: string }; current: ProfitAndLoss; priorPeriod: ProfitAndLoss }
+export interface BalanceSheet { asOf: string; sections: StatementSection[]; totalAssets: number; totalLiabilitiesAndEquity: number; balanced: boolean }
+export interface CashFlow { period: { from: string; to: string }; netProfit: number; sections: StatementSection[]; operatingCashFlow: number; netChange: number; money: { opening: number; change: number; closing: number }; reconciles: boolean }
+
+const range = (q: Record<string, string | undefined>) => {
+  const s = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as Array<[string, string]>).toString();
+  return s ? `?${s}` : "";
+};
+export const ledgerKeys = {
+  chart: () => ["finance", "chart"] as const,
+  ledger: (id: string, q: object) => ["finance", "ledger", id, q] as const,
+  journals: (q: object) => ["finance", "journals", q] as const,
+  trialBalance: (q: object) => ["finance", "trial-balance", q] as const,
+  statement: (kind: string, q: object) => ["finance", "statements", kind, q] as const,
+};
+export const listChart = () => apiFetch<{ accounts: ChartAccount[] }>(`${BASE}/accounts`);
+export const getLedger = (id: string, q: { from?: string; to?: string } = {}) => apiFetch<AccountLedger>(`${BASE}/accounts/${id}/ledger${range(q)}`);
+export const listJournals = (q: { status?: string; kind?: string; from?: string; to?: string; accountId?: string; page?: number; pageSize?: number } = {}) =>
+  apiFetch<{ total: number; journals: JournalEntry[] }>(`${BASE}/journals${range(Object.fromEntries(Object.entries(q).map(([k, v]) => [k, v === undefined ? undefined : String(v)])))}`);
+export const createJournal = (body: { entryDate: string; description: string; reference?: string | null; lines: Array<{ accountId: string; debit: number; credit: number; memo?: string | null }> }, idempotencyKey: string) =>
+  apiFetch<{ journal: JournalEntry; replayed: boolean }>(`${BASE}/journals`, { method: "POST", body, idempotencyKey });
+export const postJournal = (id: string) => apiFetch<{ journal: JournalEntry }>(`${BASE}/journals/${id}/post`, { method: "POST", body: {} });
+export const deleteJournal = (id: string) => apiFetch<void>(`${BASE}/journals/${id}`, { method: "DELETE" });
+export const reverseJournal = (id: string, reason: string) => apiFetch<unknown>(`${BASE}/journals/${id}/reverse`, { method: "POST", body: { reason } });
+export const getTrialBalance = (q: { from?: string; to?: string } = {}) => apiFetch<TrialBalance>(`${BASE}/trial-balance${range(q)}`);
+export const getIncomeStatement = (q: { from?: string; to?: string } = {}) => apiFetch<IncomeStatement>(`${BASE}/statements/income${range(q)}`);
+export const getBalanceSheet = (q: { asOf?: string } = {}) => apiFetch<BalanceSheet>(`${BASE}/statements/balance-sheet${range(q)}`);
+export const getCashFlow = (q: { from?: string; to?: string } = {}) => apiFetch<CashFlow>(`${BASE}/statements/cash-flow${range(q)}`);

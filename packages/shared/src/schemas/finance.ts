@@ -122,6 +122,12 @@ export const ledgerRangeQuerySchema = z.object({
   brandId: id.optional(),
 });
 
+// ERP E6 (docs/FINANCE_STATEMENTS.md): financial statements
+export const statementPeriodQuerySchema = z
+  .object({ from: businessDate.optional(), to: businessDate.optional(), brandId: id.optional() })
+  .refine((v) => !v.from || !v.to || v.from <= v.to, "The period starts before it ends");
+export const balanceSheetQuerySchema = z.object({ asOf: businessDate.optional(), brandId: id.optional() });
+
 export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 export const OPENING_BALANCE_CATEGORIES = [

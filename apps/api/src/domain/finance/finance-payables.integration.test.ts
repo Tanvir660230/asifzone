@@ -19,6 +19,8 @@ import { approvePurchaseReturn, createPurchaseReturn, shipPurchaseReturn } from 
 import { createSupplierInvoice, deleteDraftSupplierInvoice, payablesAgeing, postSupplierInvoice, supplierOpenItems, taxOf, updateSupplierInvoice, voidSupplierInvoice } from "./supplier-invoices.service";
 import { allocateToBill, paySupplier, releaseAllocation, supplierAccount } from "./supplier-payments.service";
 import { createFinancialAccount } from "./financial-accounts.service";
+import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
+import { getTrialBalance } from "./ledger.service";
 import { costAdjustments, grniAgeing, inventoryValuation, paymentsRegister, priceVariance, purchaseRegister } from "./purchasing-reports.service";
 import { rejectMovement, reverseMovement } from "./treasury.service";
 import type { FinanceActor } from "./finance-audit";
@@ -318,5 +320,34 @@ describe("reports (Phase 4G) — every total ties to its account", () => {
     expect(reg.totals).toMatchObject({ received: 2616, billed: 1500, credited: 100 });
     const pv = await priceVariance({});
     expect(pv.totals.booked).toBe(0); // the only priced bill was voided
+  });
+});
+
+describe("financial statements (E6) — tie to the trial balance", () => {
+  it("balance sheet balances, the income statement equals the P&L accounts, cash flow explains the money accounts", async () => {
+    await postPending();
+    const today = new Date().toISOString().slice(0, 10);
+    const bs = await balanceSheet({ asOf: today });
+    expect(bs.balanced).toBe(true);
+    const tb = await getTrialBalance({ to: today });
+    const assets = tb.rows.filter((r) => r.type === "ASSET").reduce((s, r) => s + Math.round((r.closingDebit - r.closingCredit) * 100), 0);
+    expect(Math.round(bs.totalAssets * 100)).toBe(assets);
+
+    const is = await incomeStatement({ from: "2026-01-01", to: today });
+    const pl = tb.rows.filter((r) => ["REVENUE", "COGS", "EXPENSE", "OTHER_INCOME", "OTHER_EXPENSE"].includes(r.type)).reduce((s, r) => s + Math.round((r.closingCredit - r.closingDebit) * 100), 0);
+    expect(Math.round(is.current.netProfit * 100)).toBe(pl);
+    expect(is.prior.to < is.period.from).toBe(true);
+    // the profit not yet closed appears in equity
+    expect(bs.sections.find((x) => x.key === "equity")!.lines.some((l) => l.group === "Current earnings")).toBe(pl !== 0);
+
+    const cf = await cashFlow({ from: "2026-10-01", to: today });
+    expect(cf.reconciles).toBe(true);
+    expect(cf.netChange).toBe(cf.money.change);
+    expect(cf.money.change).toBe(4500); // the cash box: 5,000 opening funding − the 500 advance (the 1,200 payment was reversed)
+
+    // without finance.sensitive the same totals, nothing attributed
+    const restricted = await balanceSheet({ asOf: today }, { sensitive: false });
+    expect(restricted.totalAssets).toBe(bs.totalAssets);
+    expect(restricted.totalLiabilitiesAndEquity).toBe(bs.totalLiabilitiesAndEquity);
   });
 });
