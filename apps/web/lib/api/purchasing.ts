@@ -198,6 +198,8 @@ export interface SupplierInvoice {
   net: number;
   tax: number;
   total: number;
+  settled: number;
+  outstanding: number | null;
   postedAt: string | null;
   voidReason: string | null;
   lines: Array<{
@@ -228,8 +230,8 @@ export interface SupplierOpenItems {
 }
 export interface PayablesAgeing {
   asOf: string;
-  suppliers: Array<{ supplier: { id: string; code: string; displayName: string }; invoices: number; current: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; credits: number; balance: number; overdue: number }>;
-  totals: { current: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; credits: number; balance: number; overdue: number };
+  suppliers: Array<{ supplier: { id: string; code: string; displayName: string }; invoices: number; current: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; credits: number; advances: number; balance: number; overdue: number }>;
+  totals: { current: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; credits: number; advances: number; balance: number; overdue: number };
 }
 export const payablesKeys = {
   all: ["purchasing", "payables"] as const,
@@ -246,3 +248,21 @@ export const postSupplierInvoice = (id: string, varianceReason?: string | null) 
   apiFetch<{ invoice: SupplierInvoice; replayed: boolean }>(`${BASE}/supplier-invoices/${id}/post`, { method: "POST", body: varianceReason ? { varianceReason } : {} });
 export const voidSupplierInvoice = (id: string, reason: string) => apiFetch<SupplierInvoice>(`${BASE}/supplier-invoices/${id}/void`, { method: "POST", body: { reason } });
 export const payablesAgeing = () => apiFetch<PayablesAgeing>(`${BASE}/payables/ageing`);
+
+// ── Phase 4F: supplier payments and allocations (docs/FINANCE_PHASE_4F.md) ───────────────────────────────────────────────
+export interface SupplierAccount {
+  supplier: { id: string; code: string; displayName: string; paymentTermsDays: number };
+  asOf: string;
+  opening: number;
+  balance: number;
+  statement: Array<{ id: string; date: string; description: string; reference: string | null; kind: string; owedMore: number; owedLess: number; balance: number }>;
+  openBills: Array<{ id: string; number: string; supplierRef: string; invoiceDate: string; dueDate: string; overdue: boolean; total: number; settled: number; awaitingApproval: number; outstanding: number; allocatable: number }>;
+  advances: Array<{ paymentMovementId: string; date: string; reference: string | null; from: string | null; amount: number; unallocated: number }>;
+  unappliedCredits: Array<{ creditNoteId: string; number: string; supplierRef: string; date: string; total: number; unallocated: number }>;
+}
+export const supplierAccountKey = (id: string) => ["purchasing", "payables", "account", id] as const;
+export const getSupplierAccount = (id: string) => apiFetch<SupplierAccount>(`${BASE}/suppliers/${id}/account`);
+export const paySupplier = (body: { supplierId: string; fromFinancialAccountId: string; movementDate?: string; amount: number; reference?: string | null; allocations: Array<{ invoiceId: string; amount: number }> }, idempotencyKey: string) =>
+  apiFetch<{ payment: { id: string; status: "PENDING_APPROVAL" | "POSTED"; amount: number }; replayed: boolean }>(`${BASE}/supplier-payments`, { method: "POST", body, idempotencyKey });
+export const allocateToBill = (body: { invoiceId: string; amount: number; paymentMovementId?: string | null; creditNoteId?: string | null }) =>
+  apiFetch<{ id: string; amount: number }>(`${BASE}/supplier-allocations`, { method: "POST", body });

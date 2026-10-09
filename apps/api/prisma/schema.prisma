@@ -2677,6 +2677,7 @@ model FinanceBusiness {
   productionOrders            ProductionOrder[]
   productionCostCategories    ProductionCostCategory[]
   supplierInvoices            SupplierInvoice[]
+  supplierAllocations         SupplierAllocation[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -3062,6 +3063,8 @@ enum TreasuryMovementKind {
   TRANSFER
   ADJUSTMENT
   OPENING_FUNDING
+  /// Phase 4F: money paid to a supplier — Dr trade payables (the supplier) / Cr the money account.
+  SUPPLIER_PAYMENT
 }
 
 enum TreasuryMovementStatus {
@@ -3123,6 +3126,9 @@ model TreasuryMovement {
   /// Deposits, withdrawals, adjustments, opening funding: the other side of the journal (capital, drawings, a loan, …).
   counterAccountId       String?
   counterAccount         LedgerAccount?         @relation("TreasuryCounterAccount", fields: [counterAccountId], references: [id], onDelete: Restrict)
+  /// SUPPLIER_PAYMENT only: the supplier paid (the party of its payables line).
+  supplierId             String?
+  supplier               Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   reference              String?
   description            String
   reason                 String?
@@ -3149,6 +3155,7 @@ model TreasuryMovement {
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
   matches                BankTransactionMatch[]
+  supplierAllocations    SupplierAllocation[]
 
   @@unique([businessId, idempotencyKey])
   @@index([fromFinancialAccountId, movementDate])
@@ -3508,6 +3515,8 @@ model Supplier {
   productionOrders        ProductionOrder[]
   productionCosts         ProductionCostEntry[]
   supplierInvoices        SupplierInvoice[]
+  payments                TreasuryMovement[]
+  allocations             SupplierAllocation[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -4330,39 +4339,41 @@ enum SupplierInvoiceLineType {
 /// a price difference on received goods revalues them — held share — or goes to 5150) → VOID (its journal reversed).
 /// The supplier's own reference is unique per supplier and kind while live, so a bill is never entered twice.
 model SupplierInvoice {
-  id               String                @id @default(cuid())
-  businessId       String
-  business         FinanceBusiness       @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  brandId          String
-  brand            FinanceBrand          @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  supplierId       String
-  supplier         Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  kind             SupplierInvoiceKind
+  id                String                @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId           String
+  brand             FinanceBrand          @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  supplierId        String
+  supplier          Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  kind              SupplierInvoiceKind
   /// FinanceSequence "supplier_invoice" — BILL-000001 / CN-000001.
-  number           Int
-  status           SupplierInvoiceStatus @default(DRAFT)
+  number            Int
+  status            SupplierInvoiceStatus @default(DRAFT)
   /// The supplier's invoice / credit-note number.
-  supplierRef      String
-  invoiceDate      DateTime              @db.Date
-  dueDate          DateTime              @db.Date
-  currency         String                @db.VarChar(3)
-  notes            String?
-  evidence         String?
+  supplierRef       String
+  invoiceDate       DateTime              @db.Date
+  dueDate           DateTime              @db.Date
+  currency          String                @db.VarChar(3)
+  notes             String?
+  evidence          String?
   /// Price beyond the business's tolerance against the order: approved (purchasing.approve) with this reason.
-  varianceReason   String?
+  varianceReason    String?
   /// Set when posted: Σ net, Σ tax, total payable (minor-exact).
-  netTotal         Decimal?              @db.Decimal(18, 2)
-  taxTotal         Decimal?              @db.Decimal(18, 2)
-  total            Decimal?              @db.Decimal(18, 2)
-  createdByAdminId String?
-  postedByAdminId  String?
-  postedAt         DateTime?
-  voidedByAdminId  String?
-  voidedAt         DateTime?
-  voidReason       String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
-  lines            SupplierInvoiceLine[]
+  netTotal          Decimal?              @db.Decimal(18, 2)
+  taxTotal          Decimal?              @db.Decimal(18, 2)
+  total             Decimal?              @db.Decimal(18, 2)
+  createdByAdminId  String?
+  postedByAdminId   String?
+  postedAt          DateTime?
+  voidedByAdminId   String?
+  voidedAt          DateTime?
+  voidReason        String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  lines             SupplierInvoiceLine[]
+  allocations       SupplierAllocation[]  @relation("AllocationBill")
+  creditAllocations SupplierAllocation[]  @relation("AllocationCredit")
 
   @@unique([businessId, number])
   @@index([businessId, status])
@@ -4406,4 +4417,39 @@ model SupplierInvoiceLine {
   @@index([goodsReceiptLineId])
   @@index([purchaseReturnLineId])
   @@index([productionCostEntryId])
+}
+
+enum SupplierAllocationStatus {
+  ACTIVE
+  RELEASED
+}
+
+/// Settles part of a supplier bill (Phase 4F, docs/FINANCE_PHASE_4F.md) from a supplier payment or a credit note. No
+/// journal: payment and bill already sit on the same payables account for the same supplier — an allocation only says which
+/// bill the money or credit went to. A bill's outstanding amount = its total − its ACTIVE allocations. Released (with a
+/// reason), never changed or deleted.
+model SupplierAllocation {
+  id                String                   @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  supplierId        String
+  supplier          Supplier                 @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  invoiceId         String
+  invoice           SupplierInvoice          @relation("AllocationBill", fields: [invoiceId], references: [id], onDelete: Restrict)
+  paymentMovementId String?
+  paymentMovement   TreasuryMovement?        @relation(fields: [paymentMovementId], references: [id], onDelete: Restrict)
+  creditNoteId      String?
+  creditNote        SupplierInvoice?         @relation("AllocationCredit", fields: [creditNoteId], references: [id], onDelete: Restrict)
+  amount            Decimal                  @db.Decimal(18, 2)
+  status            SupplierAllocationStatus @default(ACTIVE)
+  createdByAdminId  String?
+  createdAt         DateTime                 @default(now())
+  releasedByAdminId String?
+  releasedAt        DateTime?
+  releaseReason     String?
+
+  @@index([invoiceId, status])
+  @@index([paymentMovementId])
+  @@index([creditNoteId])
+  @@index([supplierId])
 }

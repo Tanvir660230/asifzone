@@ -597,14 +597,18 @@ export const RECONCILIATION_CHECKS = {
   // ── Phase 4E: accounts payable ───────────────────────────────────────────────────────────────────────────────────────
   "payables.subledger": {
     label: "Payables = supplier invoices",
-    description: "The trade-payables account equals posted supplier invoices less posted credit notes (less payments from Phase 4F) — in total and for each supplier, which every payables posting names as its party. Unposted payables events are listed.",
+    description: "The trade-payables account equals posted supplier invoices less posted credit notes less posted supplier payments — in total and for each supplier, which every payables posting names as its party. Unposted payables events are listed.",
     async run(ctx) {
       const cur = ctx.business.baseCurrency;
       const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "liability.payable_trade" } } });
       if (!map) return { status: "NOT_APPLICABLE", details: { reason: "purchasing is not set up" } };
       const docs = await prisma.$queryRaw<Array<{ supplierId: string; v: P.Decimal }>>`
-        SELECT "supplierId", SUM(CASE WHEN kind = 'INVOICE' THEN total ELSE -total END) AS v
-        FROM "SupplierInvoice" WHERE "businessId" = ${ctx.business.id} AND status = 'POSTED' GROUP BY "supplierId"`;
+        SELECT x."supplierId", SUM(x.v) AS v FROM (
+          SELECT "supplierId", CASE WHEN kind = 'INVOICE' THEN total ELSE -total END AS v
+          FROM "SupplierInvoice" WHERE "businessId" = ${ctx.business.id} AND status = 'POSTED'
+          UNION ALL
+          SELECT "supplierId", -amount FROM "TreasuryMovement" WHERE "businessId" = ${ctx.business.id} AND kind = 'SUPPLIER_PAYMENT' AND status = 'POSTED'
+        ) x GROUP BY x."supplierId"`;
       const books = await prisma.$queryRaw<Array<{ supplierId: string | null; v: P.Decimal }>>`
         SELECT l."partyId" AS "supplierId", SUM(l.credit - l.debit) AS v
         FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"

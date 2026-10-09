@@ -17,6 +17,9 @@ import { approvePurchaseOrder, createPurchaseOrder, submitPurchaseOrder } from "
 import { createGoodsReceipt, postGoodsReceipt, reverseGoodsReceipt } from "./goods-receipts.service";
 import { approvePurchaseReturn, createPurchaseReturn, shipPurchaseReturn } from "./purchase-returns.service";
 import { createSupplierInvoice, deleteDraftSupplierInvoice, payablesAgeing, postSupplierInvoice, supplierOpenItems, taxOf, updateSupplierInvoice, voidSupplierInvoice } from "./supplier-invoices.service";
+import { allocateToBill, paySupplier, releaseAllocation, supplierAccount } from "./supplier-payments.service";
+import { createFinancialAccount } from "./financial-accounts.service";
+import { rejectMovement, reverseMovement } from "./treasury.service";
 import type { FinanceActor } from "./finance-audit";
 
 // Financial Core Phase 4E (docs/FINANCE_PHASE_4E.md): supplier invoices and credit notes against the real database, after a
@@ -204,5 +207,86 @@ describe("supplier invoices", () => {
     expect((await voidSupplierInvoice(creditId, "Entered against the wrong return", OWNER)).status).toBe("VOID");
     allMatched(await checks());
     expect(await balance("liability.payable_trade")).toBe(0);
+  });
+});
+
+describe("supplier payments (Phase 4F)", () => {
+  let cashId = "";
+  let bill1 = "";
+  let bill2 = "";
+  let firstPayment = "";
+  const bill = async (ref: string, amount: number) => {
+    const b = await createSupplierInvoice({ kind: "INVOICE", supplierId, supplierRef: ref, invoiceDate: "2026-10-01", lines: [{ lineType: "EXPENSE", expenseAccountId, description: `Service ${ref}`, quantity: 1, unitPrice: amount }] } as never, OWNER);
+    return (await postSupplierInvoice(b.id, {}, OWNER)).invoice.id;
+  };
+  const outstanding = async (id: string) => (await prisma.supplierInvoice.findUniqueOrThrow({ where: { id }, include: { allocations: { where: { status: "ACTIVE" }, include: { paymentMovement: true } } } })).allocations
+    .filter((a) => a.creditNoteId || a.paymentMovement?.status === "POSTED").reduce((s, a) => s - Number(a.amount), 0);
+
+  it("a payment settles the bills it names, from a money account, exactly once", async () => {
+    cashId = (await createFinancialAccount({ kind: "CASH", name: `AP cash ${Date.now() % 100000}`, openingBalance: { amount: 5000, date: "2026-10-01" } } as never, OWNER)).id;
+    bill1 = await bill("PF-2001", 1000);
+    bill2 = await bill("PF-2002", 500);
+    const body = { supplierId, fromFinancialAccountId: cashId, movementDate: "2026-10-05", amount: 1200, reference: "CHQ-1", allocations: [{ invoiceId: bill1, amount: 1000 }, { invoiceId: bill2, amount: 200 }] };
+    const r = await paySupplier(body, OWNER, "pay-1");
+    expect(r).toMatchObject({ replayed: false, payment: { kind: "SUPPLIER_PAYMENT", status: "POSTED", amount: 1200, supplierId } });
+    firstPayment = r.payment.id;
+    expect((await paySupplier(body, OWNER, "pay-1")).replayed).toBe(true);
+    expect(await outstanding(bill1)).toBe(-1000);
+    allMatched(await checks());
+    const acct = await supplierAccount(supplierId);
+    expect(acct.balance).toBe(300);
+    expect(acct.openBills).toEqual([expect.objectContaining({ id: bill2, total: 500, settled: 200, outstanding: 300 })]);
+    expect(acct.statement.filter((l) => l.owedLess === 1200)).toHaveLength(1);
+    expect(acct.statement.at(-1)!.balance).toBe(300);
+  });
+
+  it("refuses paying more than a bill owes, or more than a cash box holds", async () => {
+    await expect(paySupplier({ supplierId, fromFinancialAccountId: cashId, amount: 400, allocations: [{ invoiceId: bill2, amount: 400 }] }, OWNER, "pay-over")).rejects.toMatchObject({ statusCode: 409 });
+    await expect(paySupplier({ supplierId, fromFinancialAccountId: cashId, amount: 10_000 }, OWNER, "pay-big")).rejects.toMatchObject({ statusCode: 409 });
+    expect(await prisma.treasuryMovement.count({ where: { idempotencyKey: { in: ["supplier-payment:pay-over", "supplier-payment:pay-big"] } } })).toBe(0);
+  });
+
+  it("an unallocated payment is an advance until allocated; allocations are released, never edited", async () => {
+    const adv = await paySupplier({ supplierId, fromFinancialAccountId: cashId, amount: 500, reference: "ADV" }, OWNER, "pay-adv");
+    let acct = await supplierAccount(supplierId);
+    expect(acct.balance).toBe(-200);
+    expect(acct.advances).toEqual([expect.objectContaining({ paymentMovementId: adv.payment.id, unallocated: 500 })]);
+    expect((await payablesAgeing()).suppliers.find((s) => s.supplier.id === supplierId)).toMatchObject({ advances: 500, balance: -200 });
+    const a = await allocateToBill({ invoiceId: bill2, amount: 300, paymentMovementId: adv.payment.id }, OWNER);
+    acct = await supplierAccount(supplierId);
+    expect(acct.openBills).toEqual([]);
+    expect(acct.advances[0]).toMatchObject({ unallocated: 200 });
+    await expect(allocateToBill({ invoiceId: bill1, amount: 1, paymentMovementId: adv.payment.id }, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // bill1 is settled
+    await expect(voidSupplierInvoice(bill2, "wrong", OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(prisma.supplierAllocation.update({ where: { id: a.id }, data: { amount: 1 } })).rejects.toThrow(/immutable/);
+    await releaseAllocation(a.id, "Allocated to the wrong bill", OWNER);
+    expect((await supplierAccount(supplierId)).openBills).toEqual([expect.objectContaining({ id: bill2, outstanding: 300 })]);
+    allMatched(await checks());
+  });
+
+  it("a credit note settles a bill without a journal; a payment awaiting approval reserves but settles nothing; reject and reverse release", async () => {
+    const cn = await createSupplierInvoice({ kind: "CREDIT_NOTE", supplierId, supplierRef: "PF-CN-20", lines: [{ lineType: "EXPENSE", expenseAccountId, description: "Discount", quantity: 1, unitPrice: 100 }] } as never, OWNER);
+    await postSupplierInvoice(cn.id, {}, OWNER);
+    const entries = await prisma.journalEntry.count();
+    await allocateToBill({ invoiceId: bill2, amount: 100, creditNoteId: cn.id }, OWNER);
+    expect(await prisma.journalEntry.count()).toBe(entries);
+    expect((await supplierAccount(supplierId)).openBills).toEqual([expect.objectContaining({ id: bill2, outstanding: 200 })]);
+
+    const CLERK: FinanceActor = { type: "ADMIN", adminId: OWNER.type === "ADMIN" ? OWNER.adminId : "", label: "clerk@test", permissions: PERMISSIONS.filter((p) => p !== "finance.post" && p !== "purchasing.approve") };
+    const pending = await paySupplier({ supplierId, fromFinancialAccountId: cashId, amount: 150, allocations: [{ invoiceId: bill2, amount: 150 }] }, CLERK, "pay-pending");
+    expect(pending.payment.status).toBe("PENDING_APPROVAL");
+    let open = (await supplierAccount(supplierId)).openBills[0]!;
+    expect(open).toMatchObject({ outstanding: 200, awaitingApproval: 150, allocatable: 50 });
+    await expect(paySupplier({ supplierId, fromFinancialAccountId: cashId, amount: 100, allocations: [{ invoiceId: bill2, amount: 100 }] }, OWNER, "pay-race")).rejects.toMatchObject({ statusCode: 409 });
+    await rejectMovement(pending.payment.id, "Pay by bank instead", OWNER);
+    open = (await supplierAccount(supplierId)).openBills[0]!;
+    expect(open).toMatchObject({ outstanding: 200, awaitingApproval: 0, allocatable: 200 });
+
+    await reverseMovement(firstPayment, { reason: "Cheque bounced" }, OWNER);
+    await postPending(); // the credit note's journal posts through the event inbox
+    const acct = await supplierAccount(supplierId);
+    expect(acct.openBills.map((b) => [b.id, b.outstanding])).toEqual([[bill1, 1000], [bill2, 400]]);
+    expect(acct.balance).toBe(1500 - 100 - 500);
+    allMatched(await checks());
   });
 });

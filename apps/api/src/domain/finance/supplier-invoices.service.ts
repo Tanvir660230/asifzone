@@ -14,8 +14,8 @@
  *   - Recoverable tax → its mapping (asset.vat_input); non-recoverable tax is part of a stock line's cost, otherwise
  *     expense.non_recoverable_tax. The total is payable (liability.payable_trade), the supplier as party.
  *   A unit price beyond the business's tolerance against the order needs purchasing.approve and a reason.
- * VOID (with a reason) reverses the journal (a superseding revision) and the price-difference revaluation. Payments arrive
- * with Phase 4F; until then every posted invoice is fully outstanding.
+ * VOID (with a reason) reverses the journal (a superseding revision) and the price-difference revaluation — only while
+ * nothing is allocated to or from the document. Payments and allocations: supplier-payments.service (Phase 4F).
  */
 import { Prisma, type SupplierInvoiceKind, type SupplierInvoiceStatus, type TaxCode } from "@prisma/client";
 import { isAccountMappingKey, type SupplierInvoiceCreateInput, type SupplierInvoiceUpdateInput } from "@clothing-brand/shared";
@@ -46,6 +46,8 @@ export function taxOf(netMinor: number, tax: Pick<TaxCode, "rate" | "recoverable
 
 const INCLUDE = {
   supplier: { select: { id: true, code: true, displayName: true, paymentTermsDays: true } },
+  allocations: { where: { status: "ACTIVE" }, select: { amount: true, creditNoteId: true, paymentMovement: { select: { status: true } } } },
+  creditAllocations: { where: { status: "ACTIVE" }, select: { amount: true } },
   lines: {
     orderBy: { lineNo: "asc" },
     include: {
@@ -65,6 +67,9 @@ export function supplierInvoiceDto(i: InvoiceRow, cur: string, today?: string) {
   const net = i.lines.reduce((s, l) => s + toMinor(l.netAmount, cur), 0);
   const tax = i.lines.reduce((s, l) => s + toMinor(l.taxAmount, cur), 0);
   const due = businessDateOf(i.dueDate);
+  // Phase 4F: what payments and credit notes settle (a payment awaiting approval settles nothing yet)
+  const settled = i.allocations.filter((a) => a.creditNoteId || a.paymentMovement?.status === "POSTED").reduce((s, a) => s + toMinor(a.amount, cur), 0);
+  const appliedCredit = i.creditAllocations.reduce((s, a) => s + toMinor(a.amount, cur), 0);
   return {
     id: i.id,
     number: invoiceNumber(i.kind, i.number),
@@ -82,6 +87,9 @@ export function supplierInvoiceDto(i: InvoiceRow, cur: string, today?: string) {
     net: toMajorNumber(net, cur),
     tax: toMajorNumber(tax, cur),
     total: toMajorNumber(net + tax, cur),
+    /** A bill: settled by payments / credit notes, and what is still owed. A credit note: allocated to bills, and what is left. */
+    settled: toMajorNumber(i.kind === "INVOICE" ? settled : appliedCredit, cur),
+    outstanding: i.status === "POSTED" ? toMajorNumber(net + tax - (i.kind === "INVOICE" ? settled : appliedCredit), cur) : null,
     postedAt: i.postedAt,
     voidedAt: i.voidedAt,
     voidReason: i.voidReason,
@@ -431,6 +439,8 @@ export async function voidSupplierInvoice(id: string, reason: string, actor: Fin
     const inv = await lockInvoice(tx, business.id, id);
     if (inv.status === "VOID") return supplierInvoiceDto(inv, cur);
     if (inv.status !== "POSTED") throw financeError(409, "INVOICE_NOT_POSTED", "Only a posted document is voided — delete a draft");
+    const allocated = await tx.supplierAllocation.count({ where: { status: "ACTIVE", OR: [{ invoiceId: inv.id }, { creditNoteId: inv.id }] } });
+    if (allocated) throw financeError(409, "INVOICE_ALLOCATED", "Payments or credits are allocated to this document — release them first");
     const today = businessToday(business);
     const revalue = new Map<string, { deltaMinor: number; qty: number }>();
     for (const l of inv.lines) {
@@ -524,35 +534,45 @@ export async function supplierOpenItems(supplierId: string) {
   };
 }
 
-/** Accounts payable ageing: each supplier's posted invoices by days past due, less unapplied credit notes (payments: 4F). */
+/** Accounts payable ageing: each supplier's outstanding bills by days past due, less credit notes and payments not yet
+ * allocated to a bill (advances). The balance equals the supplier's payables account. */
 export async function payablesAgeing() {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const today = businessToday(business);
-  const rows = await prisma.supplierInvoice.findMany({ where: { businessId: business.id, status: "POSTED" }, select: { kind: true, dueDate: true, total: true, supplier: { select: { id: true, code: true, displayName: true } } } });
+  const rows = await prisma.supplierInvoice.findMany({ where: { businessId: business.id, status: "POSTED" }, select: { id: true, kind: true, dueDate: true, total: true, supplier: { select: { id: true, code: true, displayName: true } }, allocations: INCLUDE.allocations, creditAllocations: INCLUDE.creditAllocations } });
+  const payments = await prisma.treasuryMovement.findMany({ where: { businessId: business.id, kind: "SUPPLIER_PAYMENT", status: "POSTED" }, select: { amount: true, supplier: { select: { id: true, code: true, displayName: true } }, supplierAllocations: { where: { status: "ACTIVE" }, select: { amount: true } } } });
   const BUCKETS = ["current", "d1_30", "d31_60", "d61_90", "d90_plus"] as const;
-  type Row = { supplier: { id: string; code: string; displayName: string }; buckets: Record<(typeof BUCKETS)[number], number>; credits: number; invoices: number };
+  type Row = { supplier: { id: string; code: string; displayName: string }; buckets: Record<(typeof BUCKETS)[number], number>; credits: number; advances: number; invoices: number };
   const by = new Map<string, Row>();
+  const rowOf = (supplier: Row["supplier"]) => by.get(supplier.id) ?? { supplier, buckets: { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90_plus: 0 }, credits: 0, advances: 0, invoices: 0 };
+  const sum = (xs: Array<{ amount: Prisma.Decimal }>) => xs.reduce((s, a) => s + toMinor(a.amount, cur), 0);
   for (const r of rows) {
-    const row = by.get(r.supplier.id) ?? { supplier: r.supplier, buckets: { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d90_plus: 0 }, credits: 0, invoices: 0 };
-    const amount = toMinor(r.total!, cur);
-    if (r.kind === "CREDIT_NOTE") row.credits += amount;
+    const row = rowOf(r.supplier);
+    const total = toMinor(r.total!, cur);
+    if (r.kind === "CREDIT_NOTE") row.credits += total - sum(r.creditAllocations);
     else {
-      row.invoices += 1;
+      const open = total - sum(r.allocations.filter((a) => a.creditNoteId || a.paymentMovement?.status === "POSTED"));
+      if (open > 0) row.invoices += 1;
       const days = Math.round((Date.parse(`${today}T00:00:00Z`) - r.dueDate.getTime()) / 86_400_000);
       const b = days <= 0 ? "current" : days <= 30 ? "d1_30" : days <= 60 ? "d31_60" : days <= 90 ? "d61_90" : "d90_plus";
-      row.buckets[b] += amount;
+      row.buckets[b] += open;
     }
     by.set(r.supplier.id, row);
   }
+  for (const p of payments) {
+    const row = rowOf(p.supplier!);
+    row.advances += toMinor(p.amount, cur) - sum(p.supplierAllocations);
+    by.set(p.supplier!.id, row);
+  }
   const major = (n: number) => toMajorNumber(n, cur);
-  const figures = (buckets: Row["buckets"], credits: number) => {
+  const figures = (buckets: Row["buckets"], credits: number, advances: number) => {
     const gross = BUCKETS.reduce((s, b) => s + buckets[b], 0);
-    return { ...Object.fromEntries(BUCKETS.map((b) => [b, major(buckets[b])])) as Record<(typeof BUCKETS)[number], number>, credits: major(credits), balance: major(gross - credits), overdue: major(gross - buckets.current) };
+    return { ...Object.fromEntries(BUCKETS.map((b) => [b, major(buckets[b])])) as Record<(typeof BUCKETS)[number], number>, credits: major(credits), advances: major(advances), balance: major(gross - credits - advances), overdue: major(gross - buckets.current) };
   };
-  const all = [...by.values()];
-  const suppliers = all.map((r) => ({ supplier: r.supplier, invoices: r.invoices, ...figures(r.buckets, r.credits) })).sort((a, b) => b.balance - a.balance);
+  const all = [...by.values()].filter((r) => BUCKETS.some((b) => r.buckets[b]) || r.credits || r.advances);
+  const suppliers = all.map((r) => ({ supplier: r.supplier, invoices: r.invoices, ...figures(r.buckets, r.credits, r.advances) })).sort((a, b) => b.balance - a.balance);
   const sumBuckets = Object.fromEntries(BUCKETS.map((b) => [b, all.reduce((s, r) => s + r.buckets[b], 0)])) as Row["buckets"];
-  const totals = figures(sumBuckets, all.reduce((s, r) => s + r.credits, 0));
+  const totals = figures(sumBuckets, all.reduce((s, r) => s + r.credits, 0), all.reduce((s, r) => s + r.advances, 0));
   return { asOf: today, suppliers, totals };
 }

@@ -7,6 +7,7 @@
  *   DEPOSIT / OPENING_FUNDING / ADJUSTMENT IN   Dr the account        Cr the counter account
  *   WITHDRAWAL / ADJUSTMENT OUT                 Dr the counter        Cr the account
  *   TRANSFER                                    Dr the destination    Cr the source        (no revenue, no expense)
+ *   SUPPLIER_PAYMENT (Phase 4F)                 Dr trade payables (the supplier as party)  Cr the account
  *
  * Rules: counter accounts are never revenue or COGS (sales and their cost arrive as commerce events, Phase 3) and never a
  * money account (that is a transfer); transfers never cross brands; cash and mobile-wallet balances never go negative
@@ -39,6 +40,8 @@ export interface MovementRequest {
   counterAccountId?: string | null;
   bankTransactionId?: string | null;
   reconciliationId?: string | null;
+  /** SUPPLIER_PAYMENT only (supplier-payments.service): the supplier paid, party of the payables line. */
+  supplierId?: string | null;
 }
 
 /** Kinds of money account whose balance can't go below zero (an overdraft exists only at a bank or a gateway). */
@@ -73,6 +76,7 @@ export function movementDto(m: MovementRow) {
     reversalJournalEntryId: m.reversalJournalEntryId,
     bankTransactionId: m.bankTransactionId,
     reconciliationId: m.reconciliationId,
+    supplierId: m.supplierId,
     requestedByAdminId: m.requestedByAdminId,
     approvedByAdminId: m.approvedByAdminId,
     approvedAt: m.approvedAt,
@@ -92,7 +96,7 @@ const adminId = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId
 function fingerprintOf(r: MovementRequest, currency: string): string {
   return JSON.stringify([
     r.kind, r.direction ?? null, r.movementDate, toMinor(r.amount, currency), r.fromFinancialAccountId ?? null, r.toFinancialAccountId ?? null,
-    r.counterAccountId ?? null, r.reference ?? null, r.description, r.bankTransactionId ?? null,
+    r.counterAccountId ?? null, r.reference ?? null, r.description, r.bankTransactionId ?? null, ...(r.supplierId ? [r.supplierId] : []),
   ]);
 }
 
@@ -150,6 +154,9 @@ async function resolve(tx: AppTransactionClient, business: FinanceBusinessInfo, 
       throw financeError(409, "OPENING_BALANCES_PENDING", "The books' opening balances aren't posted yet — enter this account's balance there");
     }
     counter = await resolveMappedAccount(tx, business.id, "equity.opening_balance");
+  } else if (r.kind === "SUPPLIER_PAYMENT") {
+    if (!from || !r.supplierId) throw financeError(400, "SUPPLIER_PAYMENT_SHAPE", "A supplier payment leaves a money account for a supplier");
+    counter = await resolveMappedAccount(tx, business.id, "liability.payable_trade");
   } else if (r.kind !== "TRANSFER") {
     if (!r.counterAccountId) throw financeError(400, "COUNTER_ACCOUNT_REQUIRED", "Choose the account on the other side");
     counter = await loadCounterAccount(tx, business, r.counterAccountId);
@@ -164,8 +171,9 @@ function journalLines(m: TreasuryMovement, x: Resolved, currency: string): Journ
     { accountId: fa.ledgerAccountId, debit: amount, credit: 0, brandId: fa.brandId, memo },
     { accountId: counterId, debit: 0, credit: amount, brandId: fa.brandId, memo },
   ];
+  const party = m.supplierId ? { partyType: "Supplier", partyId: m.supplierId } : {};
   const outOf = (fa: MoneyAccount, counterId: string): JournalLineSpec[] => [
-    { accountId: counterId, debit: amount, credit: 0, brandId: fa.brandId, memo },
+    { accountId: counterId, debit: amount, credit: 0, brandId: fa.brandId, memo, ...party },
     { accountId: fa.ledgerAccountId, debit: 0, credit: amount, brandId: fa.brandId, memo },
   ];
   switch (m.kind) {
@@ -173,6 +181,7 @@ function journalLines(m: TreasuryMovement, x: Resolved, currency: string): Journ
     case "OPENING_FUNDING":
       return into(x.to!, x.counter!.id);
     case "WITHDRAWAL":
+    case "SUPPLIER_PAYMENT":
       return outOf(x.from!, x.counter!.id);
     case "ADJUSTMENT":
       return m.direction === "IN" ? into(x.to!, x.counter!.id) : outOf(x.from!, x.counter!.id);
@@ -186,9 +195,9 @@ function journalLines(m: TreasuryMovement, x: Resolved, currency: string): Journ
 
 /** The account money LEAVES with this movement's journal (or, reversing it, the account money leaves on reversal). */
 function outgoing(m: TreasuryMovement, x: Resolved, reversing: boolean): MoneyAccount | null {
-  const leaves = m.kind === "WITHDRAWAL" || m.kind === "TRANSFER" || (m.kind === "ADJUSTMENT" && m.direction === "OUT");
+  const leaves = m.kind === "WITHDRAWAL" || m.kind === "SUPPLIER_PAYMENT" || m.kind === "TRANSFER" || (m.kind === "ADJUSTMENT" && m.direction === "OUT");
   if (!reversing) return leaves ? x.from : null;
-  return m.kind === "WITHDRAWAL" || (m.kind === "ADJUSTMENT" && m.direction === "OUT") ? null : x.to;
+  return m.kind === "WITHDRAWAL" || m.kind === "SUPPLIER_PAYMENT" || (m.kind === "ADJUSTMENT" && m.direction === "OUT") ? null : x.to;
 }
 
 async function assertNoOverdraft(tx: AppTransactionClient, business: FinanceBusinessInfo, fa: MoneyAccount | null, amountMinor: number) {
@@ -207,6 +216,7 @@ const DESCRIPTION: Record<TreasuryMovementKind, string> = {
   TRANSFER: "Transfer",
   ADJUSTMENT: "Adjustment",
   OPENING_FUNDING: "Opening balance",
+  SUPPLIER_PAYMENT: "Supplier payment",
 };
 
 async function postMovement(tx: AppTransactionClient, business: FinanceBusinessInfo, m: TreasuryMovement, x: Resolved, actor: FinanceActor, approval: boolean) {
@@ -231,6 +241,16 @@ async function postMovement(tx: AppTransactionClient, business: FinanceBusinessI
   });
   await recordFinanceAudit(tx, { businessId: business.id, actor, action: approval ? "movement.approve" : "movement.post", entityType: "TreasuryMovement", entityId: m.id, before: { status: m.status }, after: { status: after.status, journalEntryId: entry.id }, sourceRef: entry.id });
   return after;
+}
+
+/** A rejected or reversed supplier payment settles nothing: its allocations are released (audited, with the reason). */
+async function releasePaymentAllocations(tx: AppTransactionClient, businessId: string, m: TreasuryMovement, reason: string, actor: FinanceActor) {
+  if (m.kind !== "SUPPLIER_PAYMENT") return;
+  const live = await tx.supplierAllocation.findMany({ where: { paymentMovementId: m.id, status: "ACTIVE" } });
+  for (const a of live) {
+    await tx.supplierAllocation.update({ where: { id: a.id }, data: { status: "RELEASED", releasedAt: new Date(), releasedByAdminId: adminId(actor), releaseReason: `Payment ${m.status === "PENDING_APPROVAL" ? "rejected" : "reversed"}: ${reason}` } });
+    await recordFinanceAudit(tx, { businessId, actor, action: "supplier_allocation.release", entityType: "SupplierAllocation", entityId: a.id, before: { status: "ACTIVE" }, after: { status: "RELEASED" }, reason });
+  }
 }
 
 async function lockKey(tx: AppTransactionClient, businessId: string, key: string) {
@@ -279,6 +299,7 @@ export async function requestMovementInTx(tx: AppTransactionClient, business: Fi
       fingerprint,
       bankTransactionId: r.bankTransactionId ?? null,
       reconciliationId: r.reconciliationId ?? null,
+      supplierId: r.kind === "SUPPLIER_PAYMENT" ? r.supplierId ?? null : null,
       requestedByAdminId: adminId(actor),
     },
     include: MOVEMENT_INCLUDE,
@@ -340,6 +361,7 @@ export async function rejectMovement(id: string, reason: string, actor: FinanceA
     const m = await lockMovement(tx, business.id, id);
     if (m.status === "REJECTED") return movementDto(m);
     if (m.status !== "PENDING_APPROVAL") throw financeError(409, "MOVEMENT_NOT_PENDING", `A ${m.status.toLowerCase()} movement can't be rejected`);
+    await releasePaymentAllocations(tx, business.id, m, reason, actor);
     const after = await tx.treasuryMovement.update({ where: { id }, data: { status: "REJECTED", rejectedByAdminId: adminId(actor), rejectedAt: new Date(), rejectionReason: reason }, include: MOVEMENT_INCLUDE });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "movement.reject", entityType: "TreasuryMovement", entityId: id, before: { status: m.status }, after: { status: after.status }, reason });
     return movementDto(after);
@@ -360,6 +382,7 @@ export async function reverseMovement(id: string, input: { reason: string; rever
     await assertNoOverdraft(tx, business, outgoing(m, x, true), toMinor(m.amount, business.baseCurrency));
     const date = input.reversalDate ?? (businessToday(business) < businessDateOf(m.movementDate) ? businessDateOf(m.movementDate) : businessToday(business));
     const { reversal } = await reverseJournalInTx(tx, business, m.journalEntryId!, input.reason, date, actor);
+    await releasePaymentAllocations(tx, business.id, m, input.reason, actor);
     const after = await tx.treasuryMovement.update({
       where: { id },
       data: { status: "REVERSED", reversalJournalEntryId: reversal.id, reversedByAdminId: adminId(actor), reversedAt: new Date(), reversalReason: input.reason },

@@ -43,7 +43,7 @@ export default function PayablesPage() {
   return (
     <div className="space-y-6">
       <ModuleTabs />
-      <PageHeader title="Payables" description="What you owe each supplier, by how far past due — from posted bills, less credit notes." action={<Link href="/admin/finance/supplier-invoices"><Button size="sm" variant="outline">Supplier bills</Button></Link>} />
+      <PageHeader title="Payables" description="What you owe each supplier, by how far past due — open bills, less credits and advances. Open a supplier to pay." action={<Link href="/admin/finance/supplier-invoices"><Button size="sm" variant="outline">Supplier bills</Button></Link>} />
       {q.isLoading && <Skeleton className="h-48 w-full" />}
       {q.isError && <Alert variant="danger" title="Payables couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>}
       {d && (
@@ -52,7 +52,7 @@ export default function PayablesPage() {
             <Stat label="Owed to suppliers" value={formatPrice(d.totals.balance)} />
             <Stat label="Overdue" value={formatPrice(d.totals.overdue)} tone={d.totals.overdue > 0 ? "warning" : undefined} />
             <Stat label="Not yet due" value={formatPrice(d.totals.current)} />
-            <Stat label="Unapplied credits" value={formatPrice(d.totals.credits)} />
+            <Stat label="Credits and advances" value={formatPrice(d.totals.credits + d.totals.advances)} />
           </dl>
           {d.suppliers.length ? (
             <Card className="overflow-hidden p-0">
@@ -63,15 +63,17 @@ export default function PayablesPage() {
                       <TableHeaderCell>Supplier</TableHeaderCell>
                       {BUCKETS.map((b) => <TableHeaderCell key={b.key} align="right">{b.label}</TableHeaderCell>)}
                       <TableHeaderCell align="right">Credits</TableHeaderCell>
+                      <TableHeaderCell align="right">Advances</TableHeaderCell>
                       <TableHeaderCell align="right">Balance</TableHeaderCell>
                     </tr>
                   </TableHead>
                   <tbody>
                     {d.suppliers.map((s) => (
                       <TableRow key={s.supplier.id} data-testid="ageing-row">
-                        <TableCell className="min-w-44">{s.supplier.displayName}<span className="block text-xs text-ink-500">{s.supplier.code} · {s.invoices} bill{s.invoices === 1 ? "" : "s"}</span></TableCell>
+                        <TableCell className="min-w-44"><Link href={`/admin/finance/payables/${s.supplier.id}`} className="underline-offset-4 hover:underline">{s.supplier.displayName}</Link><span className="block text-xs text-ink-500">{s.supplier.code} · {s.invoices} bill{s.invoices === 1 ? "" : "s"}</span></TableCell>
                         {BUCKETS.map((b) => <TableCell key={b.key} align="right" className={b.key !== "current" && s[b.key] > 0 ? "tabular-nums text-danger-700" : "tabular-nums"}>{s[b.key] ? formatPrice(s[b.key]) : "—"}</TableCell>)}
                         <TableCell align="right" className="tabular-nums">{s.credits ? `−${formatPrice(s.credits)}` : "—"}</TableCell>
+                        <TableCell align="right" className="tabular-nums">{s.advances ? `−${formatPrice(s.advances)}` : "—"}</TableCell>
                         <TableCell align="right" className="font-semibold tabular-nums">{formatPrice(s.balance)}</TableCell>
                       </TableRow>
                     ))}
@@ -79,6 +81,7 @@ export default function PayablesPage() {
                       <TableCell className="font-semibold">Total</TableCell>
                       {BUCKETS.map((b) => <TableCell key={b.key} align="right" className="font-semibold tabular-nums">{formatPrice(d.totals[b.key])}</TableCell>)}
                       <TableCell align="right" className="font-semibold tabular-nums">{d.totals.credits ? `−${formatPrice(d.totals.credits)}` : "—"}</TableCell>
+                      <TableCell align="right" className="font-semibold tabular-nums">{d.totals.advances ? `−${formatPrice(d.totals.advances)}` : "—"}</TableCell>
                       <TableCell align="right" className="font-semibold tabular-nums">{formatPrice(d.totals.balance)}</TableCell>
                     </TableRow>
                   </tbody>

@@ -59,7 +59,7 @@ export const adjustmentSchema = z.object({
 });
 export const openingFundingSchema = z.object({ ...movementBase, financialAccountId: id, description: z.string().trim().min(1).max(300).default("Opening balance") });
 
-export const TREASURY_MOVEMENT_KINDS = ["DEPOSIT", "WITHDRAWAL", "TRANSFER", "ADJUSTMENT", "OPENING_FUNDING"] as const;
+export const TREASURY_MOVEMENT_KINDS = ["DEPOSIT", "WITHDRAWAL", "TRANSFER", "ADJUSTMENT", "OPENING_FUNDING", "SUPPLIER_PAYMENT"] as const;
 export const TREASURY_MOVEMENT_STATUSES = ["PENDING_APPROVAL", "POSTED", "REJECTED", "REVERSED"] as const;
 
 export const movementListQuerySchema = z.object({

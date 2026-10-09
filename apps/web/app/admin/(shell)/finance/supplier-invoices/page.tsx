@@ -113,7 +113,12 @@ export default function SupplierInvoicesPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium tabular-nums">{i.kind === "CREDIT_NOTE" ? "−" : ""}{formatPrice(i.total)}</span>
+                <span className="text-right text-sm font-medium tabular-nums">
+                  {i.kind === "CREDIT_NOTE" ? "−" : ""}{formatPrice(i.total)}
+                  {i.status === "POSTED" && i.outstanding !== null && i.settled > 0 && (
+                    <span className="block text-xs font-normal text-ink-500">{i.outstanding === 0 ? (i.kind === "INVOICE" ? "paid in full" : "fully used") : `${formatPrice(i.outstanding)} ${i.kind === "INVOICE" ? "still owed" : "left"}`}</span>
+                  )}
+                </span>
                 <Badge variant={INVOICE_STATUS_BADGE[i.status]}>{INVOICE_STATUS_LABEL[i.status]}</Badge>
               </div>
             </div>

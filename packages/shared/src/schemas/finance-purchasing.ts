@@ -263,6 +263,26 @@ export const supplierInvoicePostSchema = z.object({ varianceReason: optionalText
 export const supplierInvoiceVoidSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 export const supplierInvoiceListQuerySchema = z.object({ status: z.enum(SUPPLIER_INVOICE_STATUSES).optional(), kind: z.enum(SUPPLIER_INVOICE_KINDS).optional(), supplierId: id.optional(), q: z.string().trim().max(100).optional(), ...page });
 export const supplierOpenItemsQuerySchema = z.object({ supplierId: id });
+// ── Phase 4F: supplier payments and allocations (docs/FINANCE_PHASE_4F.md) ───────────────────────────────────────────────
+const positiveAmount = financeAmountSchema.refine((v) => v > 0, "More than zero");
+export const supplierPaymentCreateSchema = z
+  .object({
+    supplierId: id,
+    fromFinancialAccountId: id,
+    movementDate: businessDateSchema.optional(),
+    amount: positiveAmount,
+    reference: optionalText(100),
+    description: optionalText(300),
+    allocations: z.array(z.object({ invoiceId: id, amount: positiveAmount })).max(200).default([]),
+  })
+  .refine((p) => new Set(p.allocations.map((a) => a.invoiceId)).size === p.allocations.length, "Each bill once per payment")
+  .refine((p) => p.allocations.reduce((s, a) => s + Math.round(a.amount * 100), 0) <= Math.round(p.amount * 100), "The allocations exceed the payment");
+export const supplierAllocationCreateSchema = z
+  .object({ invoiceId: id, amount: positiveAmount, paymentMovementId: id.optional().nullable(), creditNoteId: id.optional().nullable() })
+  .refine((a) => Boolean(a.paymentMovementId) !== Boolean(a.creditNoteId), "Allocate from a payment or a credit note");
+export const supplierAllocationReleaseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+export const supplierAccountQuerySchema = z.object({ from: businessDateSchema.optional(), to: businessDateSchema.optional() });
+
 export type SupplierInvoiceCreateInput = z.infer<typeof supplierInvoiceCreateSchema>;
 export type SupplierInvoiceUpdateInput = z.infer<typeof supplierInvoiceUpdateSchema>;
 

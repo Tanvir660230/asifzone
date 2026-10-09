@@ -10,7 +10,11 @@ import {
   purchaseReturnCreateSchema,
   purchaseReturnListQuerySchema,
   purchasingSettingsSchema,
+  supplierAccountQuerySchema,
+  supplierAllocationCreateSchema,
+  supplierAllocationReleaseSchema,
   supplierCreateSchema,
+  supplierPaymentCreateSchema,
   supplierInvoiceCreateSchema,
   supplierInvoiceListQuerySchema,
   supplierInvoicePostSchema,
@@ -35,6 +39,8 @@ import * as orders from "../../domain/finance/purchase-orders.service";
 import * as receipts from "../../domain/finance/goods-receipts.service";
 import * as returns from "../../domain/finance/purchase-returns.service";
 import * as invoices from "../../domain/finance/supplier-invoices.service";
+import * as payments from "../../domain/finance/supplier-payments.service";
+import { idempotencyKeyOf } from "../orders/order.controller";
 
 /**
  * Purchasing, suppliers / AP and inventory costing (Financial Core Phase 4, docs/FINANCE_PHASE_4.md §23). 4A: set-up,
@@ -118,3 +124,12 @@ purchasingRouter.delete("/supplier-invoices/:id", requirePermission("ap.manage")
 purchasingRouter.post("/supplier-invoices/:id/post", requirePermission("ap.manage"), validate(supplierInvoicePostSchema), asyncHandler(async (req, res) => res.json(await invoices.postSupplierInvoice(id(req), req.body, await actorOf(req)))));
 purchasingRouter.post("/supplier-invoices/:id/void", requirePermission("ap.manage"), validate(supplierInvoiceVoidSchema), asyncHandler(async (req, res) => res.json(await invoices.voidSupplierInvoice(id(req), reason(req), await actorOf(req)))));
 purchasingRouter.get("/payables/ageing", requirePermission("ap.read"), asyncHandler(async (_req, res) => res.json(await invoices.payablesAgeing())));
+
+// ── Phase 4F: supplier payments and allocations (docs/FINANCE_PHASE_4F.md) — approval / reversal via /finance/movements ──
+purchasingRouter.post("/supplier-payments", requirePermission("ap.manage"), validate(supplierPaymentCreateSchema), asyncHandler(async (req, res) => {
+  const r = await payments.paySupplier(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+purchasingRouter.post("/supplier-allocations", requirePermission("ap.manage"), validate(supplierAllocationCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await payments.allocateToBill(req.body, await actorOf(req)))));
+purchasingRouter.post("/supplier-allocations/:id/release", requirePermission("ap.manage"), validate(supplierAllocationReleaseSchema), asyncHandler(async (req, res) => res.json(await payments.releaseAllocation(id(req), reason(req), await actorOf(req)))));
+purchasingRouter.get("/suppliers/:id/account", requirePermission("ap.read"), validate(supplierAccountQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await payments.supplierAccount(id(req), req.query as never))));
