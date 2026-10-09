@@ -1,0 +1,531 @@
+# Master Blueprint — ERP, Manufacturing, Inventory Costing & Central Finance
+
+> **This file is the persistent source of truth for the ERP / finance / manufacturing programme.** A new session starts
+> here: read §0, verify the git state it records, then continue from §27 (next eligible task). Phase-level detail lives
+> in the phase specs it links (`docs/FINANCE_PHASE_*.md`, `docs/MANUFACTURING.md`); this file holds the map, the
+> decisions, the dependency order and the exact status.
+
+Labels used throughout:
+
+- **[VERIFIED]** — read in code and covered by a test run recorded here.
+- **[EXISTS-UNVERIFIED]** — present in code, not re-verified in this programme.
+- **[PROPOSED]** — target design, not built.
+- **[DECIDED]** — a decision taken (by the owner, or under the owner's delegation recorded in §21), with rationale.
+- **[BLOCKED]** — needs an owner decision or authorisation; see §21.
+- **[DEFECT]** — known wrong behaviour.
+- **[DEFERRED]** — consciously out of scope for now.
+
+---
+
+## 0. Session resume card
+
+| Item | Value |
+|---|---|
+| Worktree | `C:/dev/asifzone-finance` (dedicated; never the shared main checkout `…/OneDrive/Documents/All Website/Asif Zone`) |
+| Branch | `finance/phase-1-foundation` (based on `p1/foundations` @ `f879c16`) |
+| HEAD at programme start | `4b68828` feat(finance): add phase 4b inventory costing integration |
+| Remote | not pushed — **never push, never deploy** |
+| Test DB | `clothing_brand_test` in container `asifzone-finance-pg` (:5437); Redis `asifzone-finance-redis` (:6383). Both have no restart policy: `docker start asifzone-finance-pg asifzone-finance-redis` |
+| Dev DB | `finance_dev` (same container); QA DB `finance_qa` (browser QA) |
+| Baseline | `pnpm --filter api test` → **103 files, 1238/1238 passed** (2026-10-09, 157 s) |
+| Stashes | 3 pre-existing repo stashes (Aug/Sep, unrelated) — never touch |
+| Current phase | see §23 |
+
+Every session: (1) `git -C C:/dev/asifzone-finance status --short && git log --oneline -5`; (2) compare with §23/§24;
+(3) start containers; (4) continue at §27.
+
+---
+
+## 1. Executive summary and business objectives
+
+The platform runs two brands (Asif Zone, Nasihamart) as **separate installations** of one codebase, each with its own
+commerce database. A Financial Core (double-entry ledger, events, treasury, commerce accounting, purchasing foundations,
+weighted-average costing) lives inside each installation's API (`apps/api/src/domain/finance`).
+
+Objectives of this programme:
+
+1. Finish the inventory-costing roadmap (4C cutover) so inventory value, COGS and the ledger agree.
+2. Purchasing and accounts payable on one supplier / inventory / AP / finance chain.
+3. **First-class manufacturing**: commission products from internal or external producers (e.g. 1,000 caps), plan by
+   size/colour, plan and issue materials, capture every production cost, receive and inspect deliveries, move accepted
+   goods into stock at their true cost, and reconcile planned vs actual.
+4. Complete the finance back-office: expenses, payroll, fixed assets, loans, partner capital, budgets, statements,
+   tax configuration, alerts.
+5. Never compromise the invariants already built: one quantity writer, one valuation writer, one posting engine,
+   immutable posted journals, append-only valuation, brand separation.
+
+---
+
+## 2. Existing architecture — verified current state
+
+**Monorepo:** pnpm + turbo. `apps/web` (Next.js 15, React 19, Tailwind 3), `apps/api` (Express, Prisma 5, Postgres,
+Vitest), `packages/shared` (zod schemas, permissions, finance helpers), `packages/ui-tokens`.
+
+**Installation model [VERIFIED]:** `config/installation.ts` gives each deployment an `installId`. A `FinanceBusiness`
+(key `FINANCE_BUSINESS_KEY`) with one `FinanceBrand` per installation lives in that installation's database. Brands are
+not merged; there is no `brandId` on commerce tables — the brand *is* the installation.
+
+**Financial Core [VERIFIED by the 1238-test baseline]:**
+
+| Layer | Owner (single writer) | Spec |
+|---|---|---|
+| Chart, mappings, periods, journals (post / reverse), audit, opening balances | `journal.service.ts`, `chart.service.ts`, `periods.service.ts`, `opening-balances.service.ts` | FINANCE_PHASE_1 |
+| Financial event inbox → posting rules → journal, exactly-once via outbox | `events.service.ts`, `posting-rules.ts` | FINANCE_PHASE_1 §5 |
+| Money accounts, treasury movements, statements, matching, bank reconciliation | `treasury.service.ts`, `bank*.service.ts` | FINANCE_PHASE_2 |
+| Commerce accounting projector, settlements, finance exceptions, finance roles, checks | `commerce-accounting.service.ts`, `settlements.service.ts`, `reconciliation.service.ts` | FINANCE_PHASE_3 |
+| Suppliers, tax codes, valuation ledger, costing engine | `suppliers.service.ts`, `tax-codes.service.ts`, `costing.service.ts` | FINANCE_PHASE_4 §1–§8 |
+| Costing wired into every stock movement (dormant until activation) | `inventory.service.ts` → `costing.service.valueStockMovementsInTx` | FINANCE_PHASE_4 §9 |
+
+**Physical inventory [VERIFIED]:** `ProductVariant.stock` + append-only `StockMovement`, written only by
+`modules/inventory/inventory.service.ts` (guard test `inventory-writer.guard.test.ts`). Reasons: ORDER, RESTOCK,
+ADJUSTMENT, RETURN, CANCELLATION, IMPORT, DAMAGED, LOST, PURCHASE_RECEIPT, PURCHASE_RETURN (the last two reserved, unused).
+No location / warehouse concept.
+
+**Costing [VERIFIED]:** perpetual moving weighted average per variant, BigInt minor units, half-even rounding, deficit
+layers for negative stock, unvalued (MISSING) units never valued at zero, one adjustment rule
+(`costAdjustment = valueChange − bookValue` → 5150). Persisted only through `finance_persist_valuations` (no arithmetic in
+SQL). Activation flag `FinanceBusiness.inventoryCostingActivatedAt` is one-way (trigger) and **null** — costing is OFF.
+
+**Admin UI [VERIFIED by file listing]:** Finance → Money accounts, Reconciliation, Sales accounting, Settlements, Finance
+exceptions, Finance checks, Suppliers, Purchase tax codes. Navigation manifest `apps/web/lib/admin/navigation.ts`,
+capabilities `apps/web/lib/admin/capabilities.ts`.
+
+**Permissions [VERIFIED]:** `packages/shared/src/permissions.ts` — roles OWNER, STAFF, FINANCE_ADMIN, ACCOUNTANT,
+FINANCE_VIEWER; server-side `requirePermission`.
+
+---
+
+## 3. Completed functionality and evidence
+
+| Capability | Evidence |
+|---|---|
+| Phase 1 ledger, events, opening balances, reconciliation framework | commit `2a233db`; `finance.integration.test.ts`, `finance-engine.test.ts` |
+| Phase 2 treasury, statement import, matching, bank reconciliation, UI | commit `ce4db08`; `finance-treasury.integration.test.ts`; e2e `admin-finance-treasury.spec.ts` |
+| Phase 3 commerce accounting, settlements, exceptions, finance roles | commit `31c6ae7`; `finance-commerce.integration.test.ts`; e2e `admin-finance-commerce.spec.ts` |
+| Phase 4A suppliers, tax codes, valuation ledger, engine | commit `cf4a1b2`; `costing.test.ts`, `finance-purchasing.integration.test.ts`; e2e `admin-finance-purchasing.spec.ts` |
+| Phase 4B costing integration (dormant) | commit `4b68828`; `finance-costing.integration.test.ts` (21), e2e `admin-finance-costing.spec.ts` |
+| Whole API regression | 1238/1238 on 2026-10-09 at `4b68828` |
+
+---
+
+## 4. Incomplete, duplicated, missing and defective functionality
+
+| Item | State |
+|---|---|
+| Valuation cutover (4C): cutover batch, approval, activation, full deletion guard | **missing** — `activateInventoryCostingInTx` exists, no production caller |
+| Purchase orders, goods receipts, supplier returns (4D) | **missing** (stock reasons reserved) |
+| Supplier invoices, matching, GRNI → AP (4E) | **missing** |
+| Supplier payments & allocations (4F) | **missing** |
+| Purchasing / AP / valuation reports (4G) | **missing** |
+| Manufacturing (BOM, production orders, materials, costs, QC, FG receipt) | **missing entirely** — no model, no code (repository search: no `manufactur*`, `BOM`, `production order`) |
+| Raw-material inventory | **missing** — `Material` model is a catalog fabric attribute, not stock |
+| Ledger UI: chart, journals, trial balance, periods, opening balances | **missing** (API exists, Phase 1 §11 deferred the UI) |
+| Financial statements (IS / BS / CF) | **missing** (trial balance API only) |
+| Expenses & recurring commitments, payroll, fixed assets, loans, partner capital, budgets, tax engine | **missing** |
+| Pre-existing same-customer deadlock (checkout vs store-credit return) | **[DEFECT]** documented in FINANCE_PHASE_4 §9.8, commerce follow-up, not in this programme's critical path |
+| Branch divergence: `finance/phase-1-foundation` is based on `p1/foundations`; `main` / release branches carry other work (orders workspace, courier notes, admin-v2) | integration risk, see §21 R-1 |
+
+No duplicated engines were found: one inventory writer, one costing engine, one posting engine.
+
+---
+
+## 5. Target architecture
+
+```
+                        ┌──────────────── one installation (brand) ────────────────┐
+ Commerce (orders) ─┐   │                                                         │
+ Purchasing (PO/GRN)┼──►│ inventory.service  ──►  costing.service  ──► FinancialEvent│──► posting rules ──► journal.service
+ Manufacturing ─────┘   │ (quantity, sole)       (value, sole)        (inbox, exactly│     (mapping keys)     (sole writer,
+                        │                                              once)        │                         immutable)
+ Finance documents (invoices, payments, expenses, payroll, assets, loans) ───────────┼──► postJournalInTx directly
+                        └─────────────────────────────────────────────────────────┘
+ Reports / checks read authoritative tables only (ledger, valuation ledger, documents) — one service per shared metric.
+```
+
+Rules:
+
+- **Stock-moving operational documents** (GRN, supplier return, material issue/return, production receipt, write-offs)
+  move quantity through `inventory.service`, value through `costing.service`, and post through the event inbox in the
+  same transaction (receiving is never blocked by a missing mapping — the event waits FAILED/retryable).
+- **Finance documents** (invoices, credit notes, payments, allocations, expense bills, payroll runs, depreciation, loan
+  schedules) post directly with `postJournalInTx` and fail loudly.
+- **No module computes cost, quantity or a ledger balance of its own.**
+
+---
+
+## 6. System boundaries and module ownership
+
+| Module | Location | Owns | Never does |
+|---|---|---|---|
+| Inventory | `modules/inventory/inventory.service.ts` | `ProductVariant.stock`, `StockMovement` | value, accounting |
+| Costing | `domain/finance/costing.service.ts` | `InventoryValuationEntry`, `InventoryCostState`, cost determination | quantity, journals |
+| Ledger | `domain/finance/journal.service.ts` (+events) | `JournalEntry/Line`, events | business documents |
+| Purchasing | `domain/finance/purchasing/*` [PROPOSED] | PO, GRN, supplier return documents | stock/value writes except via the two above |
+| AP | `domain/finance/ap/*` [PROPOSED] | supplier invoices, credit notes, allocations | its own balance column |
+| Manufacturing | `domain/manufacturing/*` [PROPOSED] | BOMs, production orders, material custody, cost entries, deliveries/QC | stock, value or journal writes except via the services above |
+| Treasury | `domain/finance/treasury.service.ts` | money movements | AP balances |
+| Reports | `domain/finance/reports/*` [PROPOSED] | read models / queries | writes |
+
+Architecture guards (existing, to be extended): finance tables written only from the finance domain; valuation tables
+only via `costing.service`; stock only via `inventory.service`; **[PROPOSED]** manufacturing tables only from
+`domain/manufacturing`.
+
+---
+
+## 7. Data ownership and database boundaries
+
+| Level | Entities |
+|---|---|
+| Business (installation's `FinanceBusiness`, no brand) | Supplier, TaxCode, settings, account mappings, cost categories |
+| Brand / installation (`brandId` = the installation's brand) | PO, GRN, supplier return, valuation ledger, BOM, production order, material custody, production receipt |
+| Transaction (brand on document and every journal line) | invoices, credit notes, allocations, payments, production cost entries, expenses |
+
+Commerce tables get **no** `brandId`. Manufacturing references variants by id (Restrict FK where history must outlive
+the catalog, plain id + snapshot where the document is history).
+
+---
+
+## 8. Brand and business isolation rules
+
+1. One installation = one brand's commerce DB = one `FinanceBrand` (`installId` match enforced in `recordFinancialEvent`).
+2. Every financial event names `businessKey` + `brandKey`; the inbox refuses a brand reporting from another install.
+3. Inventory, revenue, cost and cash are never mixed across installations; consolidated reporting is a union by
+   `Supplier.code` / account code in a future central-finance step (**[DEFERRED]**, F8).
+4. Never merge commerce databases.
+
+---
+
+## 9. Accounting principles and financial invariants
+
+Existing (enforced by triggers/tests) **[VERIFIED]**: balanced journals; posted journals immutable, corrected by
+reversal; period locks (closed periods roll late events forward); idempotency keys per business; audit entry required at
+commit for finance tables (F-6); no TRUNCATE; money as `Decimal(18,2)` / BigInt minor units, never floats; valuation
+append-only with continuity; ledger 1610 = valuation (adjustment rule); line cost = exit valuation (trigger).
+
+Added by this programme **[DECIDED]**:
+
+- **I-1** Every manufacturing / purchasing posting names mapping keys, never account ids.
+- **I-2** WIP (1630) = Σ open production orders' WIP balance (new reconciliation check).
+- **I-3** Production cost accrual (2116) = Σ approved, not-yet-invoiced production costs (check, live from 4E).
+- **I-4** A production receipt's units enter stock exactly once (unique movement per receipt line; idempotency key).
+- **I-5** Delivered = accepted + rejected + rework-pending per receipt line (CHECK); Σ accepted ≤ planned + approved
+  over-receipt per order variant line.
+- **I-6** Issued = consumed + returned + scrapped + at-producer for every material line (derived, CHECK ≥ 0).
+- **I-7** No manufacturing code writes stock, valuation or journals except through the owning services (guard).
+
+---
+
+## 10. Manufacturing and production business processes [PROPOSED → building]
+
+Full spec: `docs/MANUFACTURING.md` (written with phase M1). Summary:
+
+1. **Materials** are stock-tracked items of a non-sellable product kind (`Product.kind = MATERIAL`, CHECK: never
+   active/published) → they reuse variants, `inventory.service`, costing, valuation, cutover and checks unchanged.
+2. **BOM** (`BillOfMaterials` + versioned lines) per finished product (optionally per variant): material variant,
+   quantity per unit, expected wastage %, supplied-by (BUSINESS / PRODUCER). Approved BOM versions are frozen.
+3. **Production order** (`ProductionOrder`): finished product, BOM version snapshot, producer (an existing `Supplier`, or
+   INTERNAL), terms, expected dates; **order lines per finished variant** (size × colour × attributes) with planned qty —
+   the order total is the derived sum (no stored total).
+4. **Lifecycle (server-enforced):** `DRAFT → APPROVED → IN_PRODUCTION → (PARTIALLY_RECEIVED) → RECEIVED → CLOSED`;
+   `CANCELLED` only before any material issue or receipt. "Materials planned / issued / partially delivered / in QC" are
+   **derived facets** shown in the UI, not extra states (avoids a state for every fact).
+5. **Material requirements** are computed from BOM × planned qty (+ expected wastage); business-supplied materials are
+   issued to the order (custody = at producer); producer-supplied materials are never the business's stock (cost comes
+   only via the producer's charges).
+6. **Issue / return / consume / scrap** of materials: issue = stock out of the material variant (valued at average) into
+   the order's WIP; return = stock back in at the order line's issued average cost; consumption and scrap are declared at
+   reconciliation; `at producer = issued − returned − consumed − scrapped` must reach 0 before close.
+7. **Production costs** (`ProductionCostEntry`): configurable categories (`ProductionCostCategory`: MATERIAL,
+   LABOUR, EXTERNAL_SERVICE, OVERHEAD, OTHER groups; e.g. cutting, sewing, embroidery, freight, samples, setup), amount,
+   qty × rate, payee supplier, reference, status `DRAFT → APPROVED (accrued) → INVOICED → (PAID via AP)`, `VOID` by
+   reversal. Approved costs post Dr WIP / Cr 2116 accrued production costs.
+8. **Deliveries & QC** (`ProductionReceipt` + lines per order variant line): delivered, accepted, rejected, rework;
+   multiple partial deliveries; posting is idempotent; accepted units enter finished stock through
+   `inventory.service` (reason `PRODUCTION_RECEIPT`) at the order's **provisional unit cost**; rejected units never enter
+   saleable stock.
+9. **Close / reconcile**: all material custody resolved, all costs approved or explicitly excluded; final cost = WIP
+   total; final unit cost = final cost ÷ total accepted units; difference between final and provisionally transferred
+   value → REVALUE of units still held + 5150 for the sold share (locked decision 11); WIP returns to 0.
+10. **Late costs after close**: a cost entry on a CLOSED order posts Dr 5150-or-inventory split via the same REVALUE path
+    (never rewriting COGS).
+
+---
+
+## 11. Inventory and costing model
+
+Existing (FINANCE_PHASE_4 §5, §9) **[VERIFIED]**. Additions:
+
+| Movement (new reason) | Costing op | Ledger owner | Posting |
+|---|---|---|---|
+| `PRODUCTION_ISSUE` (material out to an order) | OUTFLOW AVERAGE | document | Dr 1630 WIP / Cr 1610 at valuation value |
+| `PRODUCTION_RETURN` (unused material back) | INFLOW at issued average (DOCUMENT) | document | Dr 1610 / Cr 1630 |
+| `PRODUCTION_RECEIPT` (accepted finished goods) | INFLOW at provisional unit cost (DOCUMENT) | document | Dr 1610 / Cr 1630 |
+| `PRODUCTION_SCRAP` / write-off of finished rejects held | OUTFLOW AVERAGE | document | Dr production loss / Cr 1610 |
+| `PURCHASE_RECEIPT` (GRN, 4D) | INFLOW at document cost | document | Dr 1610 / Cr 2115 GRNI |
+| `PURCHASE_RETURN` (4D) | OUTFLOW AVERAGE | document | Dr 2115 / Cr 1610 |
+
+A new `LedgerOwner = "DOCUMENT"`: the costing engine values the movement and posts only the cost adjustment; the
+document's own event posts the book value it received back from the engine (same transaction).
+
+**[DECIDED] D-C1** Raw materials and finished goods share the inventory control account `asset.inventory` (1610) in this
+programme; the valuation report splits them by product kind. A separate raw-materials account is a later mapping change
+(alias key `asset.inventory_materials`), not a schema change.
+
+---
+
+## 12. Integration and event contracts
+
+New financial events (envelope `finance.event` v1, posting rules registered per type@version):
+
+| Event | Producer | Key | Posting |
+|---|---|---|---|
+| `purchasing.goods_received` | GRN post | `grn:<id>#r<rev>` | Dr 1610 / Cr 2115 |
+| `purchasing.return_shipped` | return ship | `preturn:<id>#r<rev>` | Dr 2115 / Cr 1610 |
+| `manufacturing.material_moved` | issue/return | `mfg-mat:<movementId>` | Dr/Cr 1630 vs 1610 |
+| `manufacturing.cost_accrued` | cost approval | `mfg-cost:<entryId>#r<rev>` | Dr 1630 / Cr 2116 (void revision supersedes) |
+| `manufacturing.goods_received` | receipt post | `mfg-rcpt:<receiptId>` | Dr 1610 / Cr 1630 |
+| `manufacturing.order_closed` | close | `mfg-close:<orderId>` | WIP residual: Dr/Cr 1610 (held share, via REVALUE) & 5150 (sold share) vs 1630; abnormal loss → production losses |
+
+Stock movements gain `sourceType` / `sourceId` (nullable, additive) so every document movement names its document.
+
+---
+
+## 13. API and UI requirements
+
+API: `/api/v1/purchasing/*` (extended), `/api/v1/manufacturing/*` (new), `/api/v1/finance/*` (extended). zod schemas in
+`packages/shared/src/schemas/`. Every route `requireAdmin` + `requirePermission`; services audit every state change.
+
+UI (admin, Apple-style, light only, `docs/DESIGN_SYSTEM.md` tokens and `components/ui/*` primitives; loading / empty /
+error states; 375 px): Finance → Valuation cutover; Purchasing → Purchase orders, Goods receipts, Supplier returns;
+**Manufacturing** (new nav group) → Overview, Production orders (list, create, detail with tabs Plan · Materials · Costs
+· Deliveries · Reconciliation · History), BOMs, Materials, Cost categories, Reports.
+
+---
+
+## 14. Roles, permissions and approval workflows
+
+New permissions **[DECIDED]** (granted in `permissions.ts`):
+
+| Permission | OWNER | STAFF | FINANCE_ADMIN | ACCOUNTANT | FINANCE_VIEWER |
+|---|---|---|---|---|---|
+| `manufacturing.read` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `manufacturing.manage` (draft orders, BOMs, plan, record deliveries/QC drafts, draft costs) | ✓ | ✓ | ✓ | | |
+| `manufacturing.approve` (approve orders, BOM versions, costs, write-offs, over-receipts, close) | ✓ | | ✓ | | |
+| `manufacturing.move_stock` (issue/return materials, post receipts) | ✓ | ✓ | | | |
+| existing `costing.adjust` — valuation cutover approval & post | ✓ | | | | |
+
+Separation: production order approver ≠ creator above the business threshold; cost approver ≠ cost enterer (always);
+cutover approver = OWNER.
+
+---
+
+## 15. Audit, idempotency, concurrency and recovery
+
+- Every new finance/manufacturing table: `businessId` FK Restrict, audit entry required at commit (F-6 constraint
+  trigger), no TRUNCATE, no hard delete once referenced.
+- Document post operations take the document row `FOR UPDATE`, check status, and use an idempotency key (`Idempotency-Key`
+  header or document-derived key); a repeated post returns the posted result.
+- Lock order: document row → variant rows (sorted by id, via inventory.service) → cost state (via costing) → event.
+- Recovery: a FAILED event is retried from Finance → Sales accounting / events; documents are never partially posted
+  (single transaction).
+
+---
+
+## 16. Database migration strategy
+
+Additive migrations only, one per phase, timestamp after `20261015100000`. Enum additions are separate statements.
+CHECK constraints and triggers ship in the same migration as their tables. No data backfill touches production data;
+new columns are nullable or defaulted. Rollback = the previous release ignores new tables (no destructive down
+migration).
+
+---
+
+## 17. Testing and acceptance criteria
+
+Per phase: pure unit tests for calculations; integration tests on `clothing_brand_test` (real services, real triggers)
+covering happy path, validation, authorization matrix, idempotent retry, concurrency (parallel posts), rollback,
+invalid transitions, DB constraints, ledger = valuation convergence; guard tests; browser e2e on a fresh QA DB for UI
+phases; full API regression at phase boundaries.
+
+---
+
+## 18. Performance and scalability
+
+Checkout path must not regress (4B benchmark is the budget). Document posting is O(lines) with batched inserts; reports
+use set-based SQL with indexes on `(businessId, status)`, `(productionOrderId)`; no unbounded in-memory scans
+(paginate lists, cap reports by date range).
+
+---
+
+## 19. Security and operational requirements
+
+Server-side authorization on every route; zod validation; never trust client totals, costs, quantities, statuses or
+dates — the server derives them; sensitive figures (costs) only behind `costing.read` / `manufacturing.read`; no new
+public endpoints; no secrets in code; production operations (cutover, deploy) are owner actions.
+
+---
+
+## 20. Phase dependencies
+
+```
+E0 audit+blueprint ─► E1 (4C cutover mechanism) ─► E2 (4D purchasing docs) ─► M1 (mfg foundation: materials, BOM, orders)
+                                                                         └──► M2 (materials issue/return, WIP)
+                                                    M1 ─► M2 ─► M3 (production costs) ─► M4 (deliveries, QC, FG receipt) ─► M5 (close, variance, reports, UI polish)
+E2 ─► E3 (4E invoices / AP, incl. production-cost invoices clearing 2116) ─► E4 (4F payments) ─► E5 (4G reports & checks)
+E1..E5 ─► E6 ledger workspace UI + financial statements
+E6 ─► E7 expenses & commitments ─► E8 payroll ─► E9 fixed assets ─► E10 loans ─► E11 partners/equity ─► E12 budgets/forecast ─► E13 tax/VAT ─► E14 alerts & hardening
+```
+
+Stock-moving documents (GRN, issue, receipt) require costing to be **active** (see D-P1).
+
+---
+
+## 21. Risks, unresolved decisions and approved assumptions
+
+### Decisions taken under delegation (owner may revise; each is reversible before production use)
+
+| # | Decision | Rationale | Consequence |
+|---|---|---|---|
+| D-P1 | Stock-moving purchasing/manufacturing documents refuse to post while costing is inactive (`COSTING_NOT_ACTIVE`, 409); drafting/approval works | Locked Phase 4 order ("costing before documents"); avoids unvalued receipts and a second truth | Production use of GRN/manufacturing receipts starts after the owner runs the 4C cutover |
+| D-M1 | Materials = `Product.kind = MATERIAL` (non-sellable, DB CHECK `isActive=false`, status ≠ PUBLISHED) | Reuses inventory/costing/valuation/cutover; no second inventory engine | Admin catalog lists filter by kind; storefront unaffected (single purchasability rule) |
+| D-M2 | Custody via production-order material lines (issued/returned/consumed/scrapped), no location engine | Smallest coherent extension (directive §5.4) | Material at a producer is off the shelf (stock decremented) but in WIP (asset) |
+| D-M3 | WIP account 1630 (`asset.wip`), accrual account 2116 (`liability.production_accrual`), loss account 5220 (`cogs.production_losses`) | Separate controls → reconcilable checks I-2/I-3 | Provisioned by `manufacturing/setup` like purchasing set-up |
+| D-M4 | Normal rejection and wastage are absorbed into accepted units' cost; abnormal loss is expensed only through an explicit, approved write-off with reason | IAS 2 practice; avoids hiding rejects (they are reported) and avoids spreading over planned qty | Cost per accepted unit rises with rejects; rejection cost shown separately |
+| D-M5 | Finished goods enter stock at a provisional unit cost = (actual WIP to date + approved-but-not-yet-incurred planned remainder) ÷ expected accepted units; the final cost at close trues up via REVALUE (held share) and 5150 (sold share) | Partial deliveries need a cost at receipt; locked decision 11 forbids rewriting COGS | Provisional/final status is visible on the order and on valuation entries (ESTIMATED until close) |
+| D-M6 | Producer = an existing `Supplier` (no duplicate factory master); INTERNAL production has no supplier | Directive §5.3 | Supplier performance metrics derive from production orders |
+| D-C1 | One inventory control account (1610) for materials and finished goods | see §11 | Split later by mapping |
+
+### Blockers (owner action required)
+
+| # | Blocker | What is needed | Work that continues meanwhile |
+|---|---|---|---|
+| B-1 | **Running the 4C valuation cutover on live data** (irreversible, sets activation) | Owner approval + per-SKU unit costs (KNOWN / ESTIMATED / MISSING) on a production snapshot; owner runs it in the admin UI | Mechanism built and tested on test DBs; everything downstream is built and tested with costing activated in tests |
+| B-2 | Partner capital, profit distribution, sweat equity | Signed agreements / percentages / vesting terms | Data model and ledger accounts can be designed; no equity journals |
+| B-3 | Payroll statutory rules (tax, PF, festival bonus rules) | Owner/accountant confirmation | Configurable structure without hard-coded rules |
+| B-4 | VAT / Mushak jurisdiction rules | Accountant confirmation | Configurable tax codes (exist) |
+| B-5 | Merging into `main` / deploying | Owner merges; never pushed by Claude | — |
+
+### Risks
+
+- **R-1** Branch divergence with `main` (admin-v2, orders workspace, courier notes): finance branch must be rebased/merged
+  by the owner; schema migrations are additive to reduce conflicts.
+- **R-2** Cutover accuracy depends on owner-chosen costs (mitigated by labels and per-SKU schedule).
+- **R-3** Locking all tracked variants at cutover blocks checkout for its duration (one-time; run off-peak).
+- **R-4** Context/session limits: progress is recorded here per work unit.
+
+---
+
+## 22. Phase-by-phase roadmap
+
+Each phase: scope → data → API → UI → accounting → security → migration → acceptance → tests → exit.
+
+### E1 — Valuation cutover & activation (Finance 4C)
+- **Scope:** `InventoryCutoverBatch` (+ lines): DRAFT built from all tracked variants (proposed unit cost + source:
+  latest variant/product cost price → ESTIMATED; owner may set KNOWN with evidence; none → MISSING); edit lines; owner
+  approval (`costing.adjust`); POST atomically: lock tracked variants, take physical quantity at post, write one CUTOVER
+  valuation entry per variant, post one cutover journal (Dr/Cr 1610 vs 5150 for the difference between the 1610 ledger
+  balance and Σ cutover value; an owner-declared, reasoned opening-balance-error portion to 3900), activate costing at
+  the same instant. One batch per business (unique), POSTED is final. Full deletion guard: a product/variant with stock,
+  valuation, purchase, production, cost or accounting history is archived, never hard-deleted.
+- **Accounting:** journal kind ADJUSTMENT, key `inventory-cutover:<batchId>`; mapping keys only.
+- **Acceptance:** after post, checks `inventory.quantity_vs_valuation`, `inventory.valuation_postings` MATCHED; 1610 =
+  Σ cost-state value; activation set once; retry returns the same result; concurrent posts → one wins; a variant moving
+  between draft and post is cut over at its post-time quantity.
+- **Exit:** tests green; UI page Finance → Valuation cutover; production run = B-1.
+
+### E2 — Purchasing documents (Finance 4D)
+- PO (`DRAFT → SUBMITTED → APPROVED → (PARTIALLY_)RECEIVED / CLOSED / CANCELLED`, derived receive status), GRN
+  (`DRAFT → POSTED → REVERSED`, idempotent post, approved direct receipts, over-receipt tolerance), supplier returns
+  (`DRAFT → APPROVED → SHIPPED → CLOSED`), `inventory.recordPurchaseReceipt/Return`, events, GRNI check `purchasing.grni`.
+
+### M1 — Manufacturing foundation
+- `Product.kind` (FINISHED default / MATERIAL), materials admin list; `ProductionCostCategory` seed; BOM + versions;
+  production orders + variant lines; lifecycle transitions; material requirement calculation; permissions; set-up of
+  accounts 1630 / 2116 / 5220; API + UI (orders list/create/detail Plan tab, BOMs, materials).
+- **Acceptance:** totals derived; illegal transitions refused server-side; BOM version freeze; requirement maths unit-tested.
+
+### M2 — Materials custody & WIP
+- Issue / return (stock via inventory.service, value via costing, event `manufacturing.material_moved`), consumption &
+  scrap declarations, custody invariant I-6, WIP check I-2.
+
+### M3 — Production costs
+- Cost entries, approval (approver ≠ enterer), accrual postings (`manufacturing.cost_accrued`), void by supersession,
+  planned vs actual by category, duplicate guard (unique `(supplierId, reference, category)` when reference given).
+
+### M4 — Deliveries, QC, finished-goods receipt
+- Receipts with per-variant lines, quantity reconciliation I-5, idempotent post, provisional cost D-M5, rework
+  re-inspection, rejected handling (return to producer / write-off approved).
+
+### M5 — Close, variance, reports, UI polish
+- Close checklist, final cost, REVALUE/5150 true-up, late costs, reports (cost per accepted unit, variance by category,
+  wastage, yield, rejection rate, supplier performance), manufacturing overview dashboard, browser QA.
+
+### E3 — Supplier invoices & AP (4E)  ·  E4 — Supplier payments (4F)  ·  E5 — Reports & checks (4G)
+As FINANCE_PHASE_4 §1 / proposal §10–§12, §24–§25; plus production-cost invoice lines clearing 2116 (I-3).
+
+### E6 — Ledger workspace & financial statements
+Chart of accounts, journals (draft/post/reverse), trial balance, periods, opening balances UI; income statement,
+balance sheet, cash-flow (indirect) from the ledger, brand filter.
+
+### E7–E14
+Expenses & recurring commitments (bills to AP or Treasury, fixed/variable classification, break-even); payroll
+(configurable structures, runs, approval, posting; B-3); fixed assets (register, capitalisation, straight-line /
+declining depreciation runs, disposals); loans (schedule, interest accrual, repayments); partners & equity (B-2);
+budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission review, final hardening.
+
+### 4H — Foreign currency **[DEFERRED]** (optional, after E5).
+
+---
+
+## 23. Current phase and exact status
+
+| Phase | Status | Notes |
+|---|---|---|
+| E0 Audit + blueprint | **done** 2026-10-09 | this file |
+| E1 4C cutover | **in progress** | next: schema + service + tests |
+| E2 4D purchasing | not started | |
+| M1–M5 manufacturing | not started | |
+| E3–E14 | not started | |
+
+---
+
+## 24. Files and modules changed per completed phase
+
+| Phase | Commit | Files |
+|---|---|---|
+| E0 | (see §28) | `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` |
+
+---
+
+## 25. Commands executed and verification results
+
+| Date | Command | Result |
+|---|---|---|
+| 2026-10-09 | `npx vitest run` (apps/api) at `4b68828` | 103 files, 1238 passed |
+
+---
+
+## 26. Known limitations and technical debt
+
+- No location/warehouse model (custody is per production order only).
+- No lots/serials/FIFO; AVCO only.
+- Pre-existing same-customer deadlock (FINANCE_PHASE_4 §9.8).
+- `next build` on the Windows dev machine fails only at the standalone symlink copy (EPERM); Docker build is the check.
+- Finance branch not yet integrated with `main` (R-1).
+
+---
+
+## 27. Next eligible task and acceptance criteria
+
+**E1.1 — Cutover schema & service.** Migration `20261016100000_finance_phase4c_cutover`: `InventoryCutoverBatch`,
+`InventoryCutoverLine`, guards (POSTED immutable, one batch per business, audit required, no truncate). Service
+`domain/finance/inventory-cutover.service.ts`: `draftCutover`, `updateCutoverLine`, `approveCutover`, `postCutover`
+(atomic, idempotent). Acceptance: integration tests listed in §22 E1 pass; full regression green.
+
+---
+
+## 28. Changelog
+
+| Date | Change |
+|---|---|
+| 2026-10-09 | v1 — audit of `4b68828`, target architecture, manufacturing design, decisions D-P1/D-M1–M6/D-C1, roadmap E1–E14 + M1–M5 |
