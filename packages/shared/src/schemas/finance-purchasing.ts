@@ -135,3 +135,91 @@ export const cutoverSettingsSchema = z
 export const cutoverApproveSchema = z.object({ acknowledgeMissing: z.boolean().default(false) });
 export const cutoverReopenSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 export const cutoverLineQuerySchema = z.object({ status: z.enum(CUTOVER_VALUATION_STATUSES).optional(), search: z.string().trim().max(100).optional(), ...page });
+
+// ── Phase 4D: purchase orders, goods receipts, supplier returns (docs/FINANCE_PHASE_4D.md) ────────────────────────────
+
+const id = z.string().trim().min(1).max(64);
+const qty = z.coerce.number().int().min(1).max(1_000_000);
+const businessDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
+
+export const PURCHASE_ORDER_STATUSES = ["DRAFT", "SUBMITTED", "APPROVED", "PARTIALLY_RECEIVED", "RECEIVED", "CLOSED", "CANCELLED"] as const;
+export const GOODS_RECEIPT_STATUSES = ["DRAFT", "POSTED", "REVERSED"] as const;
+export const PURCHASE_RETURN_STATUSES = ["DRAFT", "APPROVED", "SHIPPED", "CANCELLED"] as const;
+
+const purchaseOrderLineSchema = z
+  .object({
+    lineType: z.enum(["STOCK", "NON_STOCK"]),
+    variantId: id.optional().nullable(),
+    expenseAccountId: id.optional().nullable(),
+    description: optionalText(300),
+    qtyOrdered: qty,
+    unitPrice: financeAmountSchema,
+    taxCodeId: id.optional().nullable(),
+  })
+  .refine((l) => (l.lineType === "STOCK" ? Boolean(l.variantId) && !l.expenseAccountId : Boolean(l.expenseAccountId) && !l.variantId), "A stock line names a variant; a service / expense line names an expense account")
+  .refine((l) => l.lineType === "STOCK" || Boolean(l.description), "Describe a service / expense line");
+
+export const purchaseOrderCreateSchema = z.object({
+  supplierId: id,
+  orderDate: businessDateSchema.optional(),
+  expectedDate: businessDateSchema.optional().nullable(),
+  deliveryTerms: optionalText(300),
+  notes: optionalText(2000),
+  lines: z.array(purchaseOrderLineSchema).min(1).max(200),
+});
+export const purchaseOrderUpdateSchema = purchaseOrderCreateSchema.partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export const purchaseOrderReasonSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+export const purchaseOrderListQuerySchema = z.object({ status: z.enum(PURCHASE_ORDER_STATUSES).optional(), supplierId: id.optional(), q: z.string().trim().max(100).optional(), ...page });
+
+const goodsReceiptLineSchema = z
+  .object({
+    purchaseOrderLineId: id.optional().nullable(),
+    variantId: id.optional().nullable(),
+    qtyAccepted: z.coerce.number().int().min(0).max(1_000_000),
+    qtyRejected: z.coerce.number().int().min(0).max(1_000_000).default(0),
+    /** A receipt without an order only: the actual unit cost. */
+    unitCost: financeAmountSchema.optional().nullable(),
+  })
+  .refine((l) => l.qtyAccepted + l.qtyRejected > 0, "Receive or reject at least one unit")
+  .refine((l) => Boolean(l.purchaseOrderLineId) !== Boolean(l.variantId), "A line is either an order line or (without an order) a variant");
+
+export const goodsReceiptCreateSchema = z
+  .object({
+    purchaseOrderId: id.optional().nullable(),
+    supplierId: id.optional().nullable(),
+    receiptDate: businessDateSchema.optional(),
+    supplierRef: optionalText(100),
+    notes: optionalText(2000),
+    evidence: optionalText(500),
+    directReason: optionalText(500),
+    lines: z.array(goodsReceiptLineSchema).min(1).max(200),
+  })
+  .refine((r) => Boolean(r.purchaseOrderId) || Boolean(r.supplierId), "Name the purchase order, or the supplier of a receipt without one")
+  .refine((r) => Boolean(r.purchaseOrderId) || Boolean(r.directReason), "A receipt without a purchase order needs its reason");
+export const goodsReceiptPostSchema = z.object({ overReceiptReason: optionalText(500) });
+export const goodsReceiptListQuerySchema = z.object({ status: z.enum(GOODS_RECEIPT_STATUSES).optional(), purchaseOrderId: id.optional(), supplierId: id.optional(), ...page });
+
+export const purchaseReturnCreateSchema = z.object({
+  supplierId: id,
+  returnDate: businessDateSchema.optional(),
+  reason: z.string().trim().min(3).max(500),
+  notes: optionalText(2000),
+  lines: z
+    .array(z.object({ goodsReceiptLineId: id.optional().nullable(), variantId: id.optional().nullable(), quantity: qty }).refine((l) => Boolean(l.goodsReceiptLineId) || Boolean(l.variantId), "Name the receipt line or the variant"))
+    .min(1)
+    .max(200),
+});
+export const purchaseReturnListQuerySchema = z.object({ status: z.enum(PURCHASE_RETURN_STATUSES).optional(), supplierId: id.optional(), ...page });
+
+export const purchasingSettingsSchema = z
+  .object({
+    purchaseApprovalThreshold: financeAmountSchema.nullable().optional(),
+    overReceiptTolerancePct: z.number().min(0).max(100).refine((v) => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, "At most 2 decimals").optional(),
+    reason: optionalText(500),
+  })
+  .refine((v) => v.purchaseApprovalThreshold !== undefined || v.overReceiptTolerancePct !== undefined, "Nothing to change");
+
+export type PurchaseOrderCreateInput = z.infer<typeof purchaseOrderCreateSchema>;
+export type PurchaseOrderUpdateInput = z.infer<typeof purchaseOrderUpdateSchema>;
+export type GoodsReceiptCreateInput = z.infer<typeof goodsReceiptCreateSchema>;
+export type PurchaseReturnCreateInput = z.infer<typeof purchaseReturnCreateSchema>;

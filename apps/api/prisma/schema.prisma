@@ -621,40 +621,44 @@ model StockAlert {
 }
 
 model ProductVariant {
-  id               String                    @id @default(cuid())
-  productId        String
-  product          Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sku              String                    @unique
-  barcode          String?
-  size             String
-  sizeLabel        String?
-  color            String
-  colorHex         String?
-  price            Decimal?                  @db.Decimal(10, 2)
+  id                  String                    @id @default(cuid())
+  productId           String
+  product             Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku                 String                    @unique
+  barcode             String?
+  size                String
+  sizeLabel           String?
+  color               String
+  colorHex            String?
+  price               Decimal?                  @db.Decimal(10, 2)
   /// "Was" price for this variant (shown struck through when above its selling price).
-  compareAtPrice   Decimal?                  @db.Decimal(10, 2)
-  costPrice        Decimal?                  @db.Decimal(10, 2)
-  stock            Int                       @default(0)
-  weight           Decimal?                  @db.Decimal(6, 2)
+  compareAtPrice      Decimal?                  @db.Decimal(10, 2)
+  costPrice           Decimal?                  @db.Decimal(10, 2)
+  stock               Int                       @default(0)
+  weight              Decimal?                  @db.Decimal(6, 2)
   /// An inactive variant is hidden from the storefront and refused at checkout, but keeps its order and stock history.
-  isActive         Boolean                   @default(true)
+  isActive            Boolean                   @default(true)
   /// The variant's primary image (swatch / cart thumbnail) — always the first of its `images` when it has any.
-  imageId          String?
-  image            ProductImage?             @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
+  imageId             String?
+  image               ProductImage?             @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
   /// The variant's own gallery, in display order.
-  images           VariantImage[]
-  sortOrder        Int                       @default(0)
-  attributeValues  VariantAttributeValue[]
-  stockMovements   StockMovement[]
+  images              VariantImage[]
+  sortOrder           Int                       @default(0)
+  attributeValues     VariantAttributeValue[]
+  stockMovements      StockMovement[]
   /// Phase 4C valuation cutover lines (a posted line protects the variant from deletion — line guard trigger).
-  cutoverLines     InventoryCutoverLine[]
+  cutoverLines        InventoryCutoverLine[]
+  /// Phase 4D purchasing documents — Restrict: a variant that was bought keeps its history.
+  purchaseOrderLines  PurchaseOrderLine[]
+  goodsReceiptLines   GoodsReceiptLine[]
+  purchaseReturnLines PurchaseReturnLine[]
   /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
-  valuationEntries InventoryValuationEntry[]
-  costState        InventoryCostState?
-  cartItems        CartItem[]
-  stockAlerts      StockAlert[]
-  createdAt        DateTime                  @default(now())
-  updatedAt        DateTime                  @updatedAt
+  valuationEntries    InventoryValuationEntry[]
+  costState           InventoryCostState?
+  cartItems           CartItem[]
+  stockAlerts         StockAlert[]
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
 
   @@unique([productId, size, color])
   @@index([imageId])
@@ -2610,6 +2614,11 @@ model FinanceBusiness {
   /// Phase 4: when inventory costing became authoritative (set by the 4C valuation cutover). Null = costing is not active:
   /// order lines keep the catalog cost (labelled CATALOG) and no valuation entry is written.
   inventoryCostingActivatedAt DateTime?
+  /// Phase 4D: a purchase order at or above this total (base currency) needs an approver other than its creator. Null = no
+  /// separation (a single-approver business).
+  purchaseApprovalThreshold   Decimal?                  @db.Decimal(18, 2)
+  /// Phase 4D: received units may exceed ordered units by this share without purchasing.approve (0 = none).
+  overReceiptTolerancePct     Decimal                   @default(0) @db.Decimal(5, 2)
   createdAt                   DateTime                  @default(now())
   updatedAt                   DateTime                  @updatedAt
   brands                      FinanceBrand[]
@@ -2634,6 +2643,9 @@ model FinanceBusiness {
   valuationEntries            InventoryValuationEntry[]
   costStates                  InventoryCostState[]
   cutoverBatch                InventoryCutoverBatch?
+  purchaseOrders              PurchaseOrder[]
+  goodsReceipts               GoodsReceipt[]
+  purchaseReturns             PurchaseReturn[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2650,6 +2662,9 @@ model FinanceBrand {
   updatedAt        DateTime                  @updatedAt
   valuationEntries InventoryValuationEntry[]
   cutoverBatches   InventoryCutoverBatch[]
+  purchaseOrders   PurchaseOrder[]
+  goodsReceipts    GoodsReceipt[]
+  purchaseReturns  PurchaseReturn[]
 
   @@unique([businessId, key])
   @@unique([businessId, installId])
@@ -2683,6 +2698,7 @@ model LedgerAccount {
   openingLines             OpeningBalanceLine[]
   treasuryCounterMovements TreasuryMovement[]   @relation("TreasuryCounterAccount")
   supplierDefaults         Supplier[]           @relation("SupplierDefaultExpense")
+  purchaseOrderLines       PurchaseOrderLine[]
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -3421,9 +3437,9 @@ enum SupplierStatus {
 }
 
 model Supplier {
-  id                      String          @id @default(cuid())
+  id                      String           @id @default(cuid())
   businessId              String
-  business                FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business                FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
   /// Stable, immutable code (SUP-0001 by default) — the merge key across installations.
   code                    String
   legalName               String
@@ -3436,22 +3452,25 @@ model Supplier {
   taxId                   String?
   vatRegistrationNo       String?
   /// Default document currency (ISO 4217).
-  currency                String          @db.VarChar(3)
-  paymentTermsDays        Int             @default(0)
+  currency                String           @db.VarChar(3)
+  paymentTermsDays        Int              @default(0)
   paymentTermsNote        String?
   /// A warning threshold, never a block.
-  creditLimit             Decimal?        @db.Decimal(18, 2)
+  creditLimit             Decimal?         @db.Decimal(18, 2)
   defaultTaxCodeId        String?
-  defaultTaxCode          TaxCode?        @relation(fields: [defaultTaxCodeId], references: [id], onDelete: Restrict)
+  defaultTaxCode          TaxCode?         @relation(fields: [defaultTaxCodeId], references: [id], onDelete: Restrict)
   defaultExpenseAccountId String?
-  defaultExpenseAccount   LedgerAccount?  @relation("SupplierDefaultExpense", fields: [defaultExpenseAccountId], references: [id], onDelete: Restrict)
-  status                  SupplierStatus  @default(ACTIVE)
+  defaultExpenseAccount   LedgerAccount?   @relation("SupplierDefaultExpense", fields: [defaultExpenseAccountId], references: [id], onDelete: Restrict)
+  status                  SupplierStatus   @default(ACTIVE)
   statusReason            String?
   notes                   String?
   /// References to documents held elsewhere (trade licence, agreement) — evidence, not a file store.
   evidence                String?
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  purchaseOrders          PurchaseOrder[]
+  goodsReceipts           GoodsReceipt[]
+  purchaseReturns         PurchaseReturn[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -3461,22 +3480,23 @@ model Supplier {
 /// A purchase tax rate. Rate, recoverable share and the mapping keys never change once created — a new rate is a new
 /// code. No jurisdiction rules: recoverable tax goes to `recoverableMappingKey`, the rest into cost (stock) or expense.
 model TaxCode {
-  id                       String          @id @default(cuid())
+  id                       String              @id @default(cuid())
   businessId               String
-  business                 FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business                 FinanceBusiness     @relation(fields: [businessId], references: [id], onDelete: Restrict)
   code                     String
   name                     String
   description              String?
   /// Percent, e.g. 15.0000.
-  rate                     Decimal         @db.Decimal(7, 4)
+  rate                     Decimal             @db.Decimal(7, 4)
   /// Percent of the tax that is recoverable (0–100).
-  recoverablePct           Decimal         @db.Decimal(7, 4)
-  recoverableMappingKey    String          @default("asset.vat_input")
+  recoverablePct           Decimal             @db.Decimal(7, 4)
+  recoverableMappingKey    String              @default("asset.vat_input")
   /// Where the non-recoverable part of tax on an EXPENSE line goes (on a stock line it is part of the unit cost).
-  nonRecoverableMappingKey String          @default("expense.non_recoverable_tax")
-  isActive                 Boolean         @default(true)
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
+  nonRecoverableMappingKey String              @default("expense.non_recoverable_tax")
+  isActive                 Boolean             @default(true)
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  purchaseOrderLines       PurchaseOrderLine[]
   suppliers                Supplier[]
 
   @@unique([businessId, code])
@@ -3627,4 +3647,214 @@ model InventoryCutoverLine {
 
   @@unique([batchId, variantId])
   @@index([batchId, valuationStatus])
+}
+
+// ── Phase 4D: purchasing documents (docs/FINANCE_PHASE_4D.md) ─────────────────────────────────────────────────────────
+
+/// A purchase order commits to buy; it posts nothing. Received quantities are derived from posted goods receipts.
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+/// STOCK = a stock-tracked variant (received on a goods receipt); NON_STOCK = a service or expense with an account.
+enum PurchaseLineType {
+  STOCK
+  NON_STOCK
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum PurchaseReturnStatus {
+  DRAFT
+  APPROVED
+  SHIPPED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id                String              @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId           String
+  brand             FinanceBrand        @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  supplierId        String
+  supplier          Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "purchase_order" — shown as PO-000001.
+  number            Int
+  status            PurchaseOrderStatus @default(DRAFT)
+  orderDate         DateTime            @db.Date
+  expectedDate      DateTime?           @db.Date
+  currency          String              @db.VarChar(3)
+  deliveryTerms     String?
+  notes             String?
+  /// Incremented by an audited revision of an approved order.
+  revision          Int                 @default(0)
+  createdByAdminId  String?
+  submittedAt       DateTime?
+  approvedByAdminId String?
+  approvedAt        DateTime?
+  closedReason      String?
+  closedAt          DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  lines             PurchaseOrderLine[]
+  receipts          GoodsReceipt[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status])
+  @@index([supplierId, status])
+}
+
+model PurchaseOrderLine {
+  id               String             @id @default(cuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  lineNo           Int
+  lineType         PurchaseLineType
+  variantId        String?
+  variant          ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  /// SKU / description as ordered (the catalog may change; the order is history).
+  sku              String?
+  description      String
+  expenseAccountId String?
+  expenseAccount   LedgerAccount?     @relation(fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  qtyOrdered       Int
+  /// Net of discount, per unit, document currency.
+  unitPrice        Decimal            @db.Decimal(18, 2)
+  taxCodeId        String?
+  taxCode          TaxCode?           @relation(fields: [taxCodeId], references: [id], onDelete: Restrict)
+  /// Derived (trigger) from posted, not-reversed goods-receipt lines.
+  qtyReceived      Int                @default(0)
+  /// Derived (trigger) from shipped supplier-return lines that reference a receipt line of this order line.
+  qtyReturned      Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  receiptLines     GoodsReceiptLine[]
+
+  @@unique([purchaseOrderId, lineNo])
+}
+
+/// A goods receipt: DRAFT → POSTED (stock and value in, Dr inventory / Cr GRNI) → REVERSED (stock out again at the receipt
+/// cost; the receipt's journal reversed). Posted lines are immutable.
+model GoodsReceipt {
+  id                      String             @id @default(cuid())
+  businessId              String
+  business                FinanceBusiness    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId                 String
+  brand                   FinanceBrand       @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  supplierId              String
+  supplier                Supplier           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseOrderId         String?
+  purchaseOrder           PurchaseOrder?     @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "goods_receipt" — GRN-000001.
+  number                  Int
+  status                  GoodsReceiptStatus @default(DRAFT)
+  receiptDate             DateTime           @db.Date
+  supplierRef             String?
+  notes                   String?
+  /// A receipt without a purchase order (locked decision 2): reason, approval and evidence are mandatory.
+  directReason            String?
+  directApprovedByAdminId String?
+  evidence                String?
+  /// Over-receipt beyond the tolerance needs purchasing.approve and a reason.
+  overReceiptReason       String?
+  createdByAdminId        String?
+  postedByAdminId         String?
+  postedAt                DateTime?
+  reversedByAdminId       String?
+  reversedAt              DateTime?
+  reversalReason          String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  lines                   GoodsReceiptLine[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status])
+  @@index([purchaseOrderId])
+}
+
+model GoodsReceiptLine {
+  id                  String               @id @default(cuid())
+  goodsReceiptId      String
+  goodsReceipt        GoodsReceipt         @relation(fields: [goodsReceiptId], references: [id], onDelete: Restrict)
+  lineNo              Int
+  purchaseOrderLineId String?
+  purchaseOrderLine   PurchaseOrderLine?   @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+  variantId           String
+  variant             ProductVariant       @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  /// The only quantity that becomes stock.
+  qtyAccepted         Int
+  /// Refused at the door — no stock, no value; visible on the order.
+  qtyRejected         Int                  @default(0)
+  /// Unit cost (base currency, minor-exact): the order's net price, or the entered cost of a direct receipt.
+  unitCost            Decimal              @db.Decimal(18, 2)
+  /// qtyAccepted × unitCost — the valuation and GRNI amount.
+  value               Decimal              @db.Decimal(18, 2)
+  stockMovementId     String?              @unique
+  reversalMovementId  String?              @unique
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  returnLines         PurchaseReturnLine[]
+
+  @@unique([goodsReceiptId, lineNo])
+  @@index([variantId])
+}
+
+/// Goods sent back to a supplier: DRAFT → APPROVED → SHIPPED (stock out at the average, Dr 2115 / Cr inventory). How the
+/// supplier settles it (credit note, replacement, refund) is Phase 4E/4F.
+model PurchaseReturn {
+  id                String               @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId           String
+  brand             FinanceBrand         @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  supplierId        String
+  supplier          Supplier             @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "purchase_return" — RTN-000001.
+  number            Int
+  status            PurchaseReturnStatus @default(DRAFT)
+  returnDate        DateTime             @db.Date
+  reason            String
+  notes             String?
+  createdByAdminId  String?
+  approvedByAdminId String?
+  approvedAt        DateTime?
+  shippedByAdminId  String?
+  shippedAt         DateTime?
+  cancelledReason   String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  lines             PurchaseReturnLine[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status])
+}
+
+model PurchaseReturnLine {
+  id                 String            @id @default(cuid())
+  purchaseReturnId   String
+  purchaseReturn     PurchaseReturn    @relation(fields: [purchaseReturnId], references: [id], onDelete: Restrict)
+  lineNo             Int
+  goodsReceiptLineId String?
+  goodsReceiptLine   GoodsReceiptLine? @relation(fields: [goodsReceiptLineId], references: [id], onDelete: Restrict)
+  variantId          String
+  variant            ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity           Int
+  /// Set when shipped: the value the stock left at (the running average, from the valuation).
+  value              Decimal?          @db.Decimal(18, 2)
+  stockMovementId    String?           @unique
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@unique([purchaseReturnId, lineNo])
 }

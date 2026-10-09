@@ -44,6 +44,8 @@ import { RULES } from "./posting-rules";
 import "./commerce-posting-rules";
 // Phase 4B: inventory valuation postings.
 import "./inventory-posting-rules";
+// Phase 4D: purchasing documents.
+import "./purchasing-posting-rules";
 
 // ── recording ──────────────────────────────────────────────────────────────────────────────────────────────────────
 

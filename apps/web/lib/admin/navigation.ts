@@ -381,6 +381,11 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "finance.tax-codes", label: "Purchase tax codes", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/tax-codes", capability: "purchasing.view", order: 10, keywords: ["vat", "input tax", "tax rate"] },
   // Financial Core Phase 4C (docs/FINANCE_PHASE_4C.md): the one-time valuation cutover that switches inventory costing on.
   { id: "finance.inventory-cutover", label: "Valuation cutover", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/inventory-cutover", capability: "costing.view", order: 11, keywords: ["inventory valuation", "costing", "average cost", "opening stock value"] },
+  // Financial Core Phase 4D (docs/FINANCE_PHASE_4D.md): purchasing documents.
+  { id: "finance.purchase-orders", label: "Purchase orders", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/purchase-orders", capability: "purchasing.view", order: 12, keywords: ["po", "buy", "order stock", "procurement"] },
+  { id: "finance.purchase-order-detail", label: "Purchase order", kind: "detail", parent: "finance", domain: "manage", route: "/admin/finance/purchase-orders/[id]", capability: "purchasing.view", order: 13, visibility: "hidden" },
+  { id: "finance.goods-receipts", label: "Goods receipts", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/goods-receipts", capability: "purchasing.view", order: 14, keywords: ["grn", "receive", "delivery", "restock"] },
+  { id: "finance.supplier-returns", label: "Supplier returns", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/supplier-returns", capability: "purchasing.view", order: 15, keywords: ["return to vendor", "rtv", "send back"] },
 
   {
     id: "analytics",

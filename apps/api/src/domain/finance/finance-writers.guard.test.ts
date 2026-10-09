@@ -49,6 +49,9 @@ describe("financial core — architecture guards", () => {
       ["financeSyncState", "FinanceSyncState"],
       // Phase 4 (docs/FINANCE_PHASE_4.md)
       ["supplier", "Supplier"], ["taxCode", "TaxCode"], ["inventoryValuationEntry", "InventoryValuationEntry"], ["inventoryCostState", "InventoryCostState"],
+      ["inventoryCutoverBatch", "InventoryCutoverBatch"], ["inventoryCutoverLine", "InventoryCutoverLine"],
+      ["purchaseOrder", "PurchaseOrder"], ["purchaseOrderLine", "PurchaseOrderLine"], ["goodsReceipt", "GoodsReceipt"], ["goodsReceiptLine", "GoodsReceiptLine"],
+      ["purchaseReturn", "PurchaseReturn"], ["purchaseReturnLine", "PurchaseReturnLine"],
     ];
     const offenders = MODELS.flatMap(([m, t]) => writers(m, t).filter((f) => !f.startsWith("domain/finance/")).map((f) => `${f}: ${t}`));
     expect(offenders).toEqual([]);

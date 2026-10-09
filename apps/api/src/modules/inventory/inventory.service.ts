@@ -274,6 +274,49 @@ export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor 
   }
 }
 
+// --- document-driven movements (Phase 4D+: purchasing, later manufacturing) ----------------------
+
+/** Reasons a stock document may move stock with. Each document owns the ledger posting of the value it moves. */
+export type DocumentStockReason = "PURCHASE_RECEIPT" | "PURCHASE_RETURN";
+
+export interface DocumentMovementInput {
+  variantId: string;
+  /** Signed: positive in, negative out. */
+  change: number;
+  reason: DocumentStockReason;
+  /** Inflows: the document's value (DOCUMENT) or a line's own unit cost (SNAPSHOT — e.g. a receipt reversed at its cost);
+   * outflows: AVERAGE or SNAPSHOT. */
+  basis: MovementToValue["basis"];
+}
+
+/**
+ * Moves stock for a stock document (goods receipt, supplier return, …) in the caller's transaction: one guarded update and
+ * one movement per line, each valued by the costing service with the DOCUMENT as ledger owner — the caller posts the book
+ * value it gets back (`valuation.figures.bookValue`); the costing side posts only a cost adjustment. Variants are locked in
+ * id order. An outflow never takes stock below zero (409). Every line's variant must be costed: a document that moved
+ * stock the valuation doesn't follow would split the books from the valuation, so it is refused (409).
+ */
+export async function recordDocumentMovements(tx: Tx, items: DocumentMovementInput[], actor: Actor = {}) {
+  const ordered = items.map((item, index) => ({ item, index })).sort((a, b) => (a.item.variantId < b.item.variantId ? -1 : a.item.variantId > b.item.variantId ? 1 : a.index - b.index));
+  const rows: Array<{ index: number; movement: MovementRow }> = [];
+  const replenished: string[] = [];
+  for (const { item, index } of ordered) {
+    if (!Number.isSafeInteger(item.change) || item.change === 0) throw AppError.badRequest("A document line moves a whole, non-zero number of units");
+    const after = await applyDelta(tx, item.variantId, item.change, item.change < 0);
+    if (after === null) {
+      const exists = await tx.productVariant.count({ where: { id: item.variantId } });
+      throw exists ? AppError.conflict("Not enough stock for this document — it would take stock below zero") : AppError.notFound("Variant not found");
+    }
+    if (item.change > 0 && after - item.change <= 0 && after > 0) replenished.push(item.variantId);
+    rows.push({ index, movement: await tx.stockMovement.create({ data: movement(item.variantId, item.change, item.reason, actor) }) });
+  }
+  rows.sort((a, b) => a.index - b.index);
+  const valued = await value(tx, rows.map((r) => ({ movement: r.movement, basis: items[r.index]!.basis, ledger: "DOCUMENT" as const })));
+  const unvalued = rows.filter((r) => !valued.has(r.movement.id));
+  if (unvalued.length) throw AppError.conflict("Inventory costing doesn't follow some of these variants yet (costing inactive, or a variant not cut over) — stock documents need costed variants");
+  return { lines: rows.map((r) => ({ movement: r.movement, valuation: valued.get(r.movement.id)! })), replenished };
+}
+
 // --- catalog-driven movements -------------------------------------------------------------------
 
 /** Opening stock for a variant just created with stock 0 (product editor → RESTOCK, CSV import → IMPORT). */

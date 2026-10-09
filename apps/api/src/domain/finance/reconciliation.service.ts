@@ -484,6 +484,41 @@ export const RECONCILIATION_CHECKS = {
     },
   },
 
+  // ── Phase 4D: goods received not invoiced ──────────────────────────────────────────────────────────────────────────
+  "purchasing.grni": {
+    label: "Goods received not invoiced",
+    description: "The GRNI account equals the value of posted goods receipts less goods shipped back to suppliers (supplier invoices clear it from Phase 4E). Receipts and returns whose posting is missing are listed.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const maps = await prisma.accountMapping.findMany({ where: { businessId: ctx.business.id, key: { in: ["liability.grni", "liability.supplier_returns"] } } });
+      const grni = maps.find((m) => m.key === "liability.grni")?.accountId;
+      const returnsAcc = maps.find((m) => m.key === "liability.supplier_returns")?.accountId;
+      if (!grni || !returnsAcc) return { status: "NOT_APPLICABLE", details: { reason: "purchasing accounts are not set up" } };
+      const [rec] = await prisma.$queryRaw<Array<{ v: P.Decimal }>>`
+        SELECT COALESCE(SUM(l.value), 0) AS v FROM "GoodsReceiptLine" l JOIN "GoodsReceipt" r ON r.id = l."goodsReceiptId" WHERE r."businessId" = ${ctx.business.id} AND r.status = 'POSTED'`;
+      const [ret] = await prisma.$queryRaw<Array<{ v: P.Decimal }>>`
+        SELECT COALESCE(SUM(l.value), 0) AS v FROM "PurchaseReturnLine" l JOIN "PurchaseReturn" r ON r.id = l."purchaseReturnId" WHERE r."businessId" = ${ctx.business.id} AND r.status = 'SHIPPED'`;
+      const balance = async (accountId: string) => {
+        const [b] = await prisma.$queryRaw<Array<{ d: P.Decimal; c: P.Decimal }>>`
+          SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+          WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${accountId}`;
+        return toMinor(b!.c, cur) - toMinor(b!.d, cur); // liability: credit balance
+      };
+      const receipts = toMinor(rec!.v, cur);
+      const returns = toMinor(ret!.v, cur);
+      const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: { startsWith: "purchasing." }, status: { not: "POSTED" } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
+      const expected = grni === returnsAcc ? receipts - returns : receipts;
+      const actual = await balance(grni);
+      const returnsOk = grni === returnsAcc || (await balance(returnsAcc)) === -returns;
+      return {
+        status: expected === actual && returnsOk && !unposted.length ? "MATCHED" : "DIFFERENCE",
+        expected,
+        actual,
+        details: { receipts: toMajorNumber(receipts, cur), returnsShipped: toMajorNumber(returns, cur), invoiced: 0, unpostedEvents: unposted },
+      };
+    },
+  },
+
   // ── Phase 4C: the valuation cutover set the inventory account equal to valuation + in-transit ──────────────────────
   "inventory.valuation_vs_ledger": {
     label: "Inventory account = valuation",

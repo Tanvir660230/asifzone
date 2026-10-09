@@ -20,8 +20,8 @@ posting engine (`journal.service.ts`).
 |---|---|---|
 | 4A Foundations | schema, accounts and mappings, permissions, suppliers, tax codes, valuation ledger, costing engine (not wired) | committed `cf4a1b2` |
 | 4B Costing integration | cost determination at stock exit, wiring into `inventory.service`, valuation postings, activation flag, benchmark (§9) | committed `4b68828` |
-| 4C Valuation cutover | owner-approved cutover batch, deletion guard, switch-on — see `FINANCE_PHASE_4C.md` | **implemented** (not run on live data) |
-| 4D Purchasing | purchase orders, goods receipts (including approved no-PO receipts), supplier returns | — |
+| 4C Valuation cutover | owner-approved cutover batch, deletion guard, switch-on — see `FINANCE_PHASE_4C.md` | committed `29e6ad1` (not run on live data) |
+| 4D Purchasing | purchase orders, goods receipts (including approved no-PO receipts), supplier returns — see `FINANCE_PHASE_4D.md` | **implemented** |
 | 4E Invoices / AP | supplier invoices and credit notes, 3-way / 2-way matching, GRNI → AP | — |
 | 4F Supplier payments | Treasury movement kind, allocation, reconciliation | — |
 | 4G Reports / reconciliation | purchasing, AP, valuation, costing reports and checks | — |

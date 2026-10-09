@@ -488,8 +488,10 @@ function exitCost(position: CostPosition, qty: number, currency: string): { unit
 }
 
 /** Who books the movement's own value in the ledger. ORDER: the order's accounting (Phase 3, at the line's snapshot, when
- * the order is recognised) — this side posts only the cost adjustment. MOVEMENT: nobody else — this side posts it all. */
-export type LedgerOwner = "ORDER" | "MOVEMENT";
+ * the order is recognised) — this side posts only the cost adjustment. DOCUMENT: the stock document that moved it (a goods
+ * receipt, a supplier return, a production document — Phase 4D+), which posts the book value the engine returns, in the
+ * same transaction — this side posts only the cost adjustment. MOVEMENT: nobody else — this side posts it all. */
+export type LedgerOwner = "ORDER" | "DOCUMENT" | "MOVEMENT";
 
 export interface MovementToValue {
   movement: { id: string; variantId: string; change: number; reason: string; orderId: string | null; createdAt: Date };
@@ -501,6 +503,8 @@ export interface MovementToValue {
      * lines created for this exit) together with the link to the exit. A costed exit without its lines is refused. */
     | { kind: "ORDER_EXIT"; orderItemIds: string[] }
     | { kind: "SNAPSHOT_LINES"; lines: Array<{ quantity: number; unitCostMinor: number | null }> }
+    /** Units in at a document's value (a goods receipt, a production receipt): KNOWN unless stated. */
+    | { kind: "DOCUMENT"; valueMinor: number; status?: "KNOWN" | "ESTIMATED" }
     | { kind: "AVERAGE" };
   ledger: LedgerOwner;
 }
@@ -513,6 +517,10 @@ function opFor(m: MovementToValue, position: CostPosition, currency: string): { 
     if (!m.basis.orderItemIds.length) throw new Error(`COSTING_EXIT_UNLINKED: stock of costed variant ${m.movement.variantId} left for an order without the order lines to cost`);
     const c = exitCost(position, qty, currency);
     return { op: { type: "OUTFLOW", qty, basis: { kind: "SNAPSHOT", unitCostMinor: c.unitCostMinor } }, unitCostMinor: c.unitCostMinor, lineSource: c.source };
+  }
+  if (m.basis.kind === "DOCUMENT") {
+    if (m.movement.change < 0) throw new Error("a document value is an inflow; outflows leave at the average or a snapshot");
+    return { op: { type: "INFLOW", qty, valueMinor: m.basis.valueMinor, basis: "DOCUMENT", status: m.basis.status ?? "KNOWN" }, unitCostMinor: null };
   }
   if (m.movement.change < 0) {
     if (m.basis.kind === "AVERAGE") return { op: { type: "OUTFLOW", qty, basis: { kind: "AVERAGE" } }, unitCostMinor: null };
