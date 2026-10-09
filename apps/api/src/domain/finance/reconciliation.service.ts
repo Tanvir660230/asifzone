@@ -506,7 +506,7 @@ export const RECONCILIATION_CHECKS = {
       };
       const receipts = toMinor(rec!.v, cur);
       const returns = toMinor(ret!.v, cur);
-      const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: { startsWith: "purchasing." }, status: { not: "POSTED" } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
+      const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: { startsWith: "purchasing." }, status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
       const expected = grni === returnsAcc ? receipts - returns : receipts;
       const actual = await balance(grni);
       const returnsOk = grni === returnsAcc || (await balance(returnsAcc)) === -returns;
@@ -516,6 +516,37 @@ export const RECONCILIATION_CHECKS = {
         actual,
         details: { receipts: toMajorNumber(receipts, cur), returnsShipped: toMajorNumber(returns, cur), invoiced: 0, unpostedEvents: unposted },
       };
+    },
+  },
+
+  // ── Manufacturing: work in progress (docs/MANUFACTURING.md §6) ──────────────────────────────────────────────────────
+  "manufacturing.wip": {
+    label: "Work in progress = production documents",
+    description: "The work-in-progress account equals the material issued to production orders less what was returned (production costs and finished goods join it in later steps) — in total and for each order, which every WIP posting names as its party. Unposted manufacturing events are listed.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "asset.wip" } } });
+      if (!map) return { status: "NOT_APPLICABLE", details: { reason: "manufacturing is not set up" } };
+      const docs = await prisma.$queryRaw<Array<{ orderId: string; v: P.Decimal }>>`
+        SELECT m."productionOrderId" AS "orderId", SUM(CASE WHEN m.kind = 'ISSUE' THEN m.value ELSE -m.value END) AS v
+        FROM "ProductionMaterialMove" m JOIN "ProductionOrder" o ON o.id = m."productionOrderId"
+        WHERE o."businessId" = ${ctx.business.id} GROUP BY m."productionOrderId"`;
+      const books = await prisma.$queryRaw<Array<{ orderId: string | null; v: P.Decimal }>>`
+        SELECT l."partyId" AS "orderId", SUM(l.debit - l.credit) AS v
+        FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+        WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${map.accountId}
+        GROUP BY l."partyId"`;
+      const expected = docs.reduce((s, d) => s + toMinor(d.v, cur), 0);
+      const actual = books.reduce((s, b) => s + toMinor(b.v, cur), 0);
+      const byOrder = new Map<string, { documents: number; books: number }>();
+      for (const d of docs) byOrder.set(d.orderId, { documents: toMinor(d.v, cur), books: 0 });
+      for (const b of books) {
+        const key = b.orderId ?? "(no order)";
+        byOrder.set(key, { documents: byOrder.get(key)?.documents ?? 0, books: toMinor(b.v, cur) });
+      }
+      const orders = [...byOrder.entries()].filter(([, x]) => x.documents !== x.books).slice(0, 50).map(([orderId, x]) => ({ orderId, documents: toMajorNumber(x.documents, cur), books: toMajorNumber(x.books, cur) }));
+      const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: { startsWith: "manufacturing." }, status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
+      return { status: expected === actual && !orders.length && !unposted.length ? "MATCHED" : "DIFFERENCE", expected, actual, details: { ordersWithDifference: orders, unpostedEvents: unposted } };
     },
   },
 

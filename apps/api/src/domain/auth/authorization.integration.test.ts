@@ -330,11 +330,11 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 477 admin routes, each with exactly one permission (or explicit self-service)", () => {
+  it("covers all 481 admin routes, each with exactly one permission (or explicit self-service)", () => {
     // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore
     // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7); +17: Phase 3 (docs/FINANCE_PHASE_3.md §7)
-    // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md); +25: manufacturing M1 (docs/MANUFACTURING.md)
-    expect(routes).toHaveLength(477);
+    // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md); +25: manufacturing M1 (docs/MANUFACTURING.md); +4: M2 custody
+    expect(routes).toHaveLength(481);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

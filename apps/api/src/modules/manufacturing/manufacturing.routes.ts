@@ -5,6 +5,9 @@ import {
   bomUpdateSchema,
   costCategoryCreateSchema,
   costCategoryUpdateSchema,
+  materialIssueSchema,
+  materialReturnSchema,
+  materialUsageSchema,
   materialCreateSchema,
   materialListQuerySchema,
   materialUpdateSchema,
@@ -22,6 +25,8 @@ import * as setup from "../../domain/manufacturing/manufacturing-setup.service";
 import * as materials from "../../domain/manufacturing/materials.service";
 import * as boms from "../../domain/manufacturing/boms.service";
 import * as orders from "../../domain/manufacturing/production-orders.service";
+import * as custody from "../../domain/manufacturing/material-custody.service";
+import { idempotencyKeyOf } from "../orders/order.controller";
 
 /**
  * Manufacturing (docs/MANUFACTURING.md) — /api/v1/manufacturing. STAFF plans and runs production; approving plans, BOM
@@ -76,3 +81,9 @@ manufacturingRouter.delete("/production-orders/:id", requirePermission("manufact
 manufacturingRouter.post("/production-orders/:id/approve", requirePermission("manufacturing.approve"), asyncHandler(async (req, res) => res.json(await orders.approveProductionOrder(id(req), await actorOf(req), costView(req)))));
 manufacturingRouter.post("/production-orders/:id/reopen", requirePermission("manufacturing.approve"), asyncHandler(async (req, res) => res.json(await orders.reopenProductionOrder(id(req), await actorOf(req), costView(req)))));
 manufacturingRouter.post("/production-orders/:id/cancel", requirePermission("manufacturing.manage"), validate(productionOrderReasonSchema), asyncHandler(async (req, res) => res.json(await orders.cancelProductionOrder(id(req), reason(req), await actorOf(req), costView(req)))));
+
+// ── M2: materials custody (docs/MANUFACTURING.md §6) — an Idempotency-Key makes a retried issue / return a no-op ─────
+manufacturingRouter.get("/production-orders/:id/moves", requirePermission("manufacturing.read"), asyncHandler(async (req, res) => res.json(await custody.listMaterialMoves(id(req)))));
+manufacturingRouter.post("/production-orders/:id/issue", requirePermission("manufacturing.move_stock"), validate(materialIssueSchema), asyncHandler(async (req, res) => res.json(await custody.issueMaterials(id(req), req.body, await actorOf(req), { ...costView(req), requestKey: idempotencyKeyOf(req) }))));
+manufacturingRouter.post("/production-orders/:id/return", requirePermission("manufacturing.move_stock"), validate(materialReturnSchema), asyncHandler(async (req, res) => res.json(await custody.returnMaterials(id(req), req.body, await actorOf(req), { ...costView(req), requestKey: idempotencyKeyOf(req) }))));
+manufacturingRouter.put("/production-orders/:id/material-usage", requirePermission("manufacturing.manage"), validate(materialUsageSchema), asyncHandler(async (req, res) => res.json(await custody.declareMaterialUsage(id(req), req.body, await actorOf(req), costView(req)))));

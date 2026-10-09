@@ -42,7 +42,7 @@ const MO_INCLUDE = {
   producer: { select: { id: true, code: true, displayName: true, status: true } },
   bom: { select: { id: true, version: true, status: true } },
   lines: { orderBy: { lineNo: "asc" }, include: { variant: { select: { id: true, sku: true, size: true, color: true } } } },
-  materials: { orderBy: { lineNo: "asc" }, include: { materialVariant: { select: { id: true, sku: true, size: true, color: true, stock: true, product: { select: { name: true, stockUnit: true } } } } } },
+  materials: { orderBy: { lineNo: "asc" }, include: { materialVariant: { select: { id: true, sku: true, size: true, color: true, stock: true, product: { select: { name: true, stockUnit: true } } } }, moves: { select: { kind: true, value: true } } } },
   plannedCosts: { include: { category: { select: { id: true, code: true, name: true, group: true } } } },
 } satisfies Prisma.ProductionOrderInclude;
 type MoRow = Prisma.ProductionOrderGetPayload<{ include: typeof MO_INCLUDE }>;
@@ -59,6 +59,8 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
   const costed = business.filter((m) => m.plannedUnitCost !== null);
   const materialMinor = costed.reduce((s, m) => s + materialCostMinor(m.plannedQty, m.plannedUnitCost!, cur), 0);
   const otherMinor = o.plannedCosts.reduce((s, c) => s + toMinor(c.amount, cur), 0);
+  const moveValue = (m: MoRow["materials"][number], kind: "ISSUE" | "RETURN") => m.moves.filter((x) => x.kind === kind).reduce((s, x) => s + toMinor(x.value, cur), 0);
+  const wipMinor = o.materials.reduce((s, m) => s + moveValue(m, "ISSUE") - moveValue(m, "RETURN"), 0);
   const cost = (v: number | null) => (opts.canSeeCost ? v : null);
   return {
     id: o.id,
@@ -101,7 +103,11 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
       consumedQty: m.consumedQty,
       scrappedQty: m.scrappedQty,
       atProducer: m.issuedQty - m.returnedQty - m.consumedQty - m.scrappedQty,
+      issuedValue: cost(toMajorNumber(moveValue(m, "ISSUE"), cur)),
+      returnedValue: cost(toMajorNumber(moveValue(m, "RETURN"), cur)),
     })),
+    /** Material value now in work in progress for this order: issued − returned (production costs join in M3). */
+    wip: opts.canSeeCost ? { materials: toMajorNumber(wipMinor, cur) } : null,
     plannedCosts: o.plannedCosts.map((c) => ({ id: c.id, category: c.category, amount: cost(toMajorNumber(toMinor(c.amount, cur), cur)), basis: c.basis })),
     planned: opts.canSeeCost
       ? {

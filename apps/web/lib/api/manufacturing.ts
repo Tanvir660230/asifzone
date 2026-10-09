@@ -66,6 +66,8 @@ export interface ProductionMaterial {
   consumedQty: number;
   scrappedQty: number;
   atProducer: number;
+  issuedValue: number | null;
+  returnedValue: number | null;
 }
 export interface ProductionOrder {
   id: string;
@@ -87,7 +89,10 @@ export interface ProductionOrder {
   materials: ProductionMaterial[];
   plannedCosts: Array<{ id: string; category: { id: string; code: string; name: string; group: CostGroup }; amount: number | null; basis: string | null }>;
   planned: { materialCost: number; materialsWithoutCost: number; otherCost: number; totalCost: number; costPerUnit: number | null } | null;
+  wip: { materials: number } | null;
+  replayed?: boolean;
 }
+export interface MaterialMove { id: string; kind: "ISSUE" | "RETURN"; quantity: number; value: number; valuationStatus: string; sku: string; name: string; stockUnit: string | null; overIssueReason: string | null; note: string | null; createdAt: string }
 export interface ProducibleProduct { id: string; name: string; variants: Array<{ id: string; sku: string; size: string; color: string; stock: number }> }
 
 export const manufacturingKeys = {
@@ -95,6 +100,7 @@ export const manufacturingKeys = {
   status: () => ["manufacturing", "status"] as const,
   orders: (q: object) => ["manufacturing", "orders", q] as const,
   order: (id: string) => ["manufacturing", "orders", "detail", id] as const,
+  moves: (id: string) => ["manufacturing", "orders", "moves", id] as const,
   boms: (q: object) => ["manufacturing", "boms", q] as const,
   materials: (q: object) => ["manufacturing", "materials", q] as const,
   categories: () => ["manufacturing", "cost-categories"] as const,
@@ -127,3 +133,12 @@ export const updateProductionOrder = (id: string, body: Record<string, unknown>)
 export const deleteProductionOrder = (id: string) => apiFetch<void>(`${BASE}/production-orders/${id}`, { method: "DELETE" });
 export const productionOrderAction = (id: string, action: "approve" | "reopen" | "cancel", reason?: string) =>
   apiFetch<ProductionOrder>(`${BASE}/production-orders/${id}/${action}`, { method: "POST", body: reason ? { reason } : {} });
+
+// ── M2: materials custody ─────────────────────────────────────────────────────────────────────────────────────────────
+export const listMaterialMoves = (id: string) => apiFetch<{ moves: MaterialMove[] }>(`${BASE}/production-orders/${id}/moves`);
+export const issueMaterials = (id: string, body: { lines: Array<{ materialLineId: string; quantity: number }>; note?: string | null; overIssueReason?: string | null }, idempotencyKey: string) =>
+  apiFetch<ProductionOrder>(`${BASE}/production-orders/${id}/issue`, { method: "POST", body, idempotencyKey });
+export const returnMaterials = (id: string, body: { lines: Array<{ materialLineId: string; quantity: number }>; note?: string | null }, idempotencyKey: string) =>
+  apiFetch<ProductionOrder>(`${BASE}/production-orders/${id}/return`, { method: "POST", body, idempotencyKey });
+export const declareMaterialUsage = (id: string, lines: Array<{ materialLineId: string; consumedQty: number; scrappedQty: number }>) =>
+  apiFetch<ProductionOrder>(`${BASE}/production-orders/${id}/material-usage`, { method: "PUT", body: { lines } });

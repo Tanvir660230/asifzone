@@ -222,6 +222,9 @@ enum StockMovementReason {
   /// Phase 4 (docs/FINANCE_PHASE_4.md §4): goods received from a supplier on a goods receipt, and goods sent back to one.
   PURCHASE_RECEIPT
   PURCHASE_RETURN
+  /// Manufacturing (docs/MANUFACTURING.md §6): material issued to a production order, and unused material returned from it.
+  PRODUCTION_ISSUE
+  PRODUCTION_RETURN
 }
 
 /// The two purchase-funnel steps that have no other trace anywhere in the schema — everything
@@ -3989,6 +3992,7 @@ model ProductionOrder {
   lines              ProductionOrderLine[]
   materials          ProductionMaterialLine[]
   plannedCosts       ProductionPlannedCost[]
+  materialMoves      ProductionMaterialMove[]
 
   @@unique([businessId, number])
   @@index([businessId, status])
@@ -4013,30 +4017,31 @@ model ProductionOrderLine {
 /// A material the order needs. Planned from the BOM (or by hand); M2 adds custody: issued = consumed + returned + scrapped
 /// + still at the producer (CHECK). Producer-supplied materials are planned for information and never issued.
 model ProductionMaterialLine {
-  id                String           @id @default(cuid())
+  id                String                   @id @default(cuid())
   productionOrderId String
-  productionOrder   ProductionOrder  @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  productionOrder   ProductionOrder          @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
   lineNo            Int
   materialVariantId String
-  materialVariant   ProductVariant   @relation(fields: [materialVariantId], references: [id], onDelete: Restrict)
+  materialVariant   ProductVariant           @relation(fields: [materialVariantId], references: [id], onDelete: Restrict)
   suppliedBy        MaterialSupplier
   /// Planned from the BOM (true) or added by hand (false) — re-planning replaces only the BOM's.
-  fromBom           Boolean          @default(false)
+  fromBom           Boolean                  @default(false)
   /// Snapshots of the single BOM line the requirement came from (null when planned by hand or combined from several lines).
   bomLineId         String?
-  qtyPerUnit        Decimal?         @db.Decimal(18, 6)
-  wastagePct        Decimal?         @db.Decimal(5, 2)
+  qtyPerUnit        Decimal?                 @db.Decimal(18, 6)
+  wastagePct        Decimal?                 @db.Decimal(5, 2)
   /// Whole stock units: ⌈Σ planned finished units × qty per unit × (1 + wastage)⌉.
   plannedQty        Int
   /// The material's average unit cost when the order was approved (10⁻⁶ major units) — the planned cost basis; null when
   /// no cost was known.
-  plannedUnitCost   Decimal?         @db.Decimal(18, 6)
-  issuedQty         Int              @default(0)
-  returnedQty       Int              @default(0)
-  consumedQty       Int              @default(0)
-  scrappedQty       Int              @default(0)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  plannedUnitCost   Decimal?                 @db.Decimal(18, 6)
+  issuedQty         Int                      @default(0)
+  returnedQty       Int                      @default(0)
+  consumedQty       Int                      @default(0)
+  scrappedQty       Int                      @default(0)
+  moves             ProductionMaterialMove[]
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
 
   @@unique([productionOrderId, lineNo])
 }
@@ -4081,4 +4086,37 @@ model ProductionPlannedCost {
   updatedAt         DateTime               @updatedAt
 
   @@unique([productionOrderId, categoryId])
+}
+
+enum ProductionMoveKind {
+  ISSUE
+  RETURN
+}
+
+/// One issue of material to a production order, or one return of unused material from it (docs/MANUFACTURING.md §6) —
+/// append-only. Its stock movement and valuation come from inventory.service / costing.service; `value` is what the books
+/// moved between inventory and work in progress for it.
+model ProductionMaterialMove {
+  id                String                 @id @default(cuid())
+  productionOrderId String
+  productionOrder   ProductionOrder        @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  materialLineId    String
+  materialLine      ProductionMaterialLine @relation(fields: [materialLineId], references: [id], onDelete: Restrict)
+  kind              ProductionMoveKind
+  quantity          Int
+  /// Book value moved (minor-exact, base currency) — issues at the running average, returns at the line's average issued cost.
+  value             Decimal                @db.Decimal(18, 2)
+  /// The valuation's status for the units (KNOWN / ESTIMATED / MISSING when issued with no known cost).
+  valuationStatus   FinanceValuationStatus
+  stockMovementId   String                 @unique
+  /// Client Idempotency-Key of the request that made it (one request = one set of moves).
+  requestKey        String?
+  overIssueReason   String?
+  note              String?
+  createdByAdminId  String?
+  createdAt         DateTime               @default(now())
+
+  @@unique([productionOrderId, requestKey, materialLineId, kind])
+  @@index([productionOrderId, createdAt])
+  @@index([materialLineId])
 }

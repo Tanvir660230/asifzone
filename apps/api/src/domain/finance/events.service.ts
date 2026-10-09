@@ -46,6 +46,8 @@ import "./commerce-posting-rules";
 import "./inventory-posting-rules";
 // Phase 4D: purchasing documents.
 import "./purchasing-posting-rules";
+// Manufacturing: production documents.
+import "./manufacturing-posting-rules";
 
 // ── recording ──────────────────────────────────────────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 # Manufacturing — production orders, materials, costs and finished goods
 
-Status: **M1 (foundation) implemented and verified (2026-10-09).** M2–M5 are designed here and built next. The roadmap
+Status: **M1 (foundation) and M2 (materials custody & WIP) implemented and verified (2026-10-09).** M3–M5 are designed here and built next. The roadmap
 and decisions are in `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` §10–§12, §21 (D-M1…D-M6) and §22.
 
 Example: Asif Zone orders 1,000 caps from a factory. The system tracks:
@@ -115,20 +115,46 @@ business-supplied material's moving-average cost (`plannedUnitCost`), which beco
 - total and per unit;
 - stock shortfall per material.
 
-## 6. M2 — Materials custody and work in progress [PROPOSED]
+## 6. M2 — Materials custody and work in progress (implemented)
 
-- **Issue** (`manufacturing.move_stock`):
-  - stock moves out of the material variant via `recordDocumentMovements` (reason `PRODUCTION_ISSUE`, AVERAGE basis,
-    DOCUMENT ledger owner);
-  - `issuedQty` increases;
-  - event `manufacturing.material_moved` posts **Dr 1630 WIP / Cr 1610** at the value the engine returns;
-  - the first issue moves the order to IN_PRODUCTION.
-- **Return** of unused material: inflow at the order line's average issued cost (DOCUMENT value); Dr 1610 / Cr 1630.
-- **Consumption and scrap** are declared at reconciliation, not at issue. Custody (CHECK I-6):
-  `issued = consumed + returned + scrapped + at producer`. At close, "at producer" must be 0.
-- **Producer-supplied** materials are never issued (CHECK).
-- **New check `manufacturing.wip`:** the 1630 balance = Σ open orders' WIP (issued value − returned value + accrued costs
-  − value transferred to finished goods).
+- **Issue** (`POST /production-orders/:id/issue`, `manufacturing.move_stock`, Idempotency-Key):
+  - business-supplied material leaves stock via `recordDocumentMovements` (reason `PRODUCTION_ISSUE`, AVERAGE basis,
+    DOCUMENT ledger owner), at the moving average;
+  - one append-only `ProductionMaterialMove` per line (value, valuation status, stock movement);
+  - event `manufacturing.material_moved` posts **Dr 1630 WIP / Cr 1610** with the order as party;
+  - the first issue moves the order to IN_PRODUCTION;
+  - issuing beyond the plan needs `manufacturing.approve` and a reason (kept on the move);
+  - more than the stock on hand is refused;
+  - producer-supplied lines are never issued (service and trigger).
+- **Return** (`POST …/return`):
+  - only what is still with the producer (issued − returned − consumed − scrapped) can come back;
+  - it comes back at the line's average issued cost (net issued value × qty ÷ net issued qty, half-even) as a DOCUMENT
+    inflow, or unvalued if the issue had no known cost;
+  - posts **Dr 1610 / Cr 1630**.
+- **Usage** (`PUT …/material-usage`, `manufacturing.manage`): consumed and scrapped are declared as totals while the order
+  is in production. Nothing posts — the value stays in WIP and becomes the finished goods' cost (M4/M5).
+- **Database:**
+  - `issuedQty` / `returnedQty` are derived from the moves by trigger (W-3); a direct write is refused;
+  - the custody CHECK I-6 holds: issued ≥ returned + consumed + scrapped;
+  - moves are append-only, belong to their order, need a business-supplied line and an open order (W-2);
+  - audit at commit; no TRUNCATE.
+- **Check `manufacturing.wip`:** the 1630 balance = Σ issued − returned move values, both in total and per order (party).
+  It also flags unposted manufacturing events (events a rule ignores are not flagged).
+- **UI:** on the production order:
+  - Issue materials / Return unused / Record usage;
+  - custody columns: issued (value), used · scrap · back, with producer;
+  - an "In work in progress" figure;
+  - the material movement history.
+- **Verified:**
+  - `manufacturing-custody.integration.test.ts` (4): real cutover, then a purchase (PO → GRN) of 50,000 cm @ ৳0.10;
+  - issue 20,000 → WIP ৳2,000, IN_PRODUCTION, idempotent replay;
+  - over-plan needs an approver and a reason; the producer's line refused; more than stock refused; derived quantity
+    write refused; cancel after issue refused;
+  - usage within custody; return capped at custody, valued at ৳100 for 1,000 cm; WIP ৳3,850; moves append-only;
+  - after every step: `manufacturing.wip`, `inventory.valuation_vs_ledger`, `quantity_vs_valuation`,
+    `valuation_postings`, `purchasing.grni`, `ledger.integrity` and `events.unposted` all MATCHED.
+  - Browser QA (`finance_qa`): 20,000 cm received @ ৳0.12; issue 15,600; usage 14,800 / 400; return 400 → WIP ৳1,824
+    = 15,200 × ৳0.12; all seven checks "matches"; 375 px without overflow.
 
 ## 7. M3 — Production costs [PROPOSED]
 
@@ -192,7 +218,7 @@ Set-up needs `finance.configure`. Costs are shown only with `costing.read`.
 | `POST /cost-categories`, `PATCH /cost-categories/:id`, `POST /boms/:id/approve`, `/boms/:id/archive`, `/production-orders/:id/approve`, `/production-orders/:id/reopen` | `manufacturing.approve` |
 | `POST /setup` | `finance.configure` |
 
-There are 25 routes, giving 477 admin routes in total.
+There are 25 routes, giving 477 admin routes in total. M2 adds four: `GET /production-orders/:id/moves`, `POST …/issue` and `POST …/return` (`manufacturing.move_stock`), and `PUT …/material-usage` (`manufacturing.manage`), for 481 in total.
 
 **UI:** Inventory → Stock · Production orders (list, create with a size × colour grid, detail with plan, materials vs
 stock, planned costs) · Bills of materials (versions per product, approve, copy) · Materials. Manufacturing sits inside
@@ -202,7 +228,8 @@ Inventory to keep the 12 primary modules.
 
 Migrations:
 - `20261018100000_manufacturing_foundation` (M-1…M-7);
-- `20261018100100_manufacturing_material_source` (`fromBom`, plan guard).
+- `20261018100100_manufacturing_material_source` (`fromBom`, plan guard);
+- `20261019100000_manufacturing_material_custody` (M2: W-1…W-4, plan guard extended).
 
 | Invariant | Rule |
 |---|---|

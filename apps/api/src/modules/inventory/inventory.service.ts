@@ -277,7 +277,7 @@ export async function reReserveOrderLines(tx: Tx, orderId: string, actor: Actor 
 // --- document-driven movements (Phase 4D+: purchasing, later manufacturing) ----------------------
 
 /** Reasons a stock document may move stock with. Each document owns the ledger posting of the value it moves. */
-export type DocumentStockReason = "PURCHASE_RECEIPT" | "PURCHASE_RETURN";
+export type DocumentStockReason = "PURCHASE_RECEIPT" | "PURCHASE_RETURN" | "PRODUCTION_ISSUE" | "PRODUCTION_RETURN";
 
 export interface DocumentMovementInput {
   variantId: string;

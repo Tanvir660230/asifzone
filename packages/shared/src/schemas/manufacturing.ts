@@ -77,3 +77,18 @@ export const costCategoryCreateSchema = z.object({
 export const costCategoryUpdateSchema = z
   .object({ name: z.string().trim().min(2).max(80).optional(), group: z.enum(PRODUCTION_COST_GROUPS).optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(0).max(10_000).optional() })
   .refine((v) => Object.keys(v).length > 0, "Nothing to change");
+
+// ── M2: materials custody (docs/MANUFACTURING.md §6) ──────────────────────────────────────────────────────────────────
+const moveLines = z
+  .array(z.object({ materialLineId: id, quantity: z.coerce.number().int().min(1).max(1_000_000_000) }))
+  .min(1)
+  .max(200)
+  .refine((ls) => new Set(ls.map((l) => l.materialLineId)).size === ls.length, "Each material once");
+export const materialIssueSchema = z.object({ lines: moveLines, note: optionalText(500), overIssueReason: optionalText(500) });
+export const materialReturnSchema = z.object({ lines: moveLines, note: optionalText(500) });
+export const materialUsageSchema = z.object({
+  lines: z
+    .array(z.object({ materialLineId: id, consumedQty: z.coerce.number().int().min(0).max(1_000_000_000), scrappedQty: z.coerce.number().int().min(0).max(1_000_000_000) }))
+    .min(1)
+    .max(200),
+});
