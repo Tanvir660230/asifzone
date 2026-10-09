@@ -110,3 +110,24 @@ export const productionCostCreateSchema = z
   .refine((v) => (v.quantity != null && v.unitRate != null) !== (v.amount != null), "Give either an amount or a quantity × rate");
 export const productionCostUpdateSchema = z.object(costEntryBase).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
 export const productionCostVoidSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+
+// ── M4: deliveries, inspection and finished goods (docs/MANUFACTURING.md §8) ──────────────────────────────────────────
+const nonNeg = z.coerce.number().int().min(0).max(10_000_000);
+export const productionReceiptCreateSchema = z.object({
+  receiptDate: businessDate.optional(),
+  deliveryRef: optionalText(100),
+  inspectionNotes: optionalText(2000),
+  evidence: optionalText(500),
+  lines: z
+    .array(
+      z
+        .object({ orderLineId: id, delivered: nonNeg, accepted: nonNeg, rejected: nonNeg.default(0), rework: nonNeg.default(0), rejectReason: optionalText(300) })
+        .refine((l) => l.delivered > 0, "Something was delivered")
+        .refine((l) => l.delivered === l.accepted + l.rejected + l.rework, "Delivered must equal accepted + rejected + rework")
+        .refine((l) => l.rejected === 0 || Boolean(l.rejectReason), "Say why units were rejected"),
+    )
+    .min(1)
+    .max(500)
+    .refine((ls) => new Set(ls.map((l) => l.orderLineId)).size === ls.length, "Each variant once"),
+});
+export const productionReceiptPostSchema = z.object({ overReceiptReason: optionalText(500) });

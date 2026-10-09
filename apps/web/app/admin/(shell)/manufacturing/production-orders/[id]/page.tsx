@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { IssueModal, ReturnModal, UsageModal } from "@/components/admin/manufacturing/custody-modals";
 import { ProductionCosts } from "@/components/admin/manufacturing/production-costs";
+import { ProductionDeliveries } from "@/components/admin/manufacturing/production-deliveries";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { SizeColorGrid } from "@/components/admin/manufacturing/size-color-grid";
 import { formatUnitCost } from "@/components/admin/manufacturing/format";
@@ -89,7 +90,7 @@ export default function ProductionOrderPage() {
         <Stat label="Bill of materials" value={o.bom ? `Version ${o.bom.version}` : "By hand"} />
         {o.planned && <Stat label="Planned cost" value={plannedValue(o.planned.totalCost, o.planned.materialsWithoutCost)} hint={o.planned.materialsWithoutCost ? `Excludes ${o.planned.materialsWithoutCost} material(s) with no known cost yet` : undefined} />}
         {o.planned && <Stat label="Planned cost per unit" value={o.planned.costPerUnit === null ? "—" : plannedValue(o.planned.costPerUnit, o.planned.materialsWithoutCost)} />}
-        {o.wip && (issuedAny || o.wip.costs > 0) && <Stat label="In work in progress" value={formatPrice(o.wip.total)} hint={`Materials ${formatPrice(o.wip.materials)} · costs ${formatPrice(o.wip.costs)}`} />}
+        {o.wip && (issuedAny || o.wip.costs > 0) && <Stat label="In work in progress" value={formatPrice(o.wip.total)} hint={`Materials ${formatPrice(o.wip.materials)} · costs ${formatPrice(o.wip.costs)}${o.wip.transferred ? ` · to stock −${formatPrice(o.wip.transferred)}` : ""}`} />}
       </dl>
       {o.terms && <Card className="p-4 text-sm"><p className="text-ink-600">Agreed rate & terms</p><p className="whitespace-pre-line text-ink-900">{o.terms}</p></Card>}
 
@@ -159,6 +160,8 @@ export default function ProductionOrderPage() {
           </Card>
         </section>
       )}
+
+      {o.status !== "DRAFT" && o.status !== "CANCELLED" && <ProductionDeliveries order={o} can={(c) => can(c)} onChanged={refresh} />}
 
       {o.status !== "DRAFT" && o.status !== "CANCELLED" && <ProductionCosts order={o} can={(c) => can(c)} adminId={me.data?.admin.id ?? null} onChanged={refresh} />}
 

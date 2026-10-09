@@ -18,6 +18,8 @@ import {
   productionOrderListQuerySchema,
   productionOrderReasonSchema,
   productionOrderUpdateSchema,
+  productionReceiptCreateSchema,
+  productionReceiptPostSchema,
 } from "@clothing-brand/shared";
 import { z } from "zod";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
@@ -30,6 +32,7 @@ import * as boms from "../../domain/manufacturing/boms.service";
 import * as orders from "../../domain/manufacturing/production-orders.service";
 import * as custody from "../../domain/manufacturing/material-custody.service";
 import * as costs from "../../domain/manufacturing/production-costs.service";
+import * as receipts from "../../domain/manufacturing/production-receipts.service";
 import { idempotencyKeyOf } from "../orders/order.controller";
 
 /**
@@ -101,3 +104,12 @@ manufacturingRouter.delete("/production-costs/:id", requirePermission("manufactu
 }));
 manufacturingRouter.post("/production-costs/:id/approve", requirePermission("manufacturing.approve"), asyncHandler(async (req, res) => res.json(await costs.approveCostEntry(id(req), await actorOf(req)))));
 manufacturingRouter.post("/production-costs/:id/void", requirePermission("manufacturing.approve"), validate(productionCostVoidSchema), asyncHandler(async (req, res) => res.json(await costs.voidCostEntry(id(req), reason(req), await actorOf(req)))));
+
+// ── M4: deliveries, inspection and finished goods (docs/MANUFACTURING.md §8) ─────────────────────────────────────────
+manufacturingRouter.post("/production-orders/:id/receipts", requirePermission("manufacturing.manage"), validate(productionReceiptCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await receipts.createProductionReceipt(id(req), req.body, await actorOf(req), costView(req)))));
+manufacturingRouter.delete("/production-receipts/:id", requirePermission("manufacturing.manage"), asyncHandler(async (req, res) => {
+  await receipts.deleteDraftProductionReceipt(id(req), await actorOf(req));
+  res.status(204).end();
+}));
+manufacturingRouter.post("/production-receipts/:id/post", requirePermission("manufacturing.move_stock"), validate(productionReceiptPostSchema), asyncHandler(async (req, res) => res.json(await receipts.postProductionReceipt(id(req), req.body, await actorOf(req), costView(req)))));
+manufacturingRouter.post("/production-receipts/:id/reverse", requirePermission("manufacturing.approve"), validate(productionCostVoidSchema), asyncHandler(async (req, res) => res.json(await receipts.reverseProductionReceipt(id(req), reason(req), await actorOf(req), costView(req)))));

@@ -85,11 +85,13 @@ export interface ProductionOrder {
   cancelledReason: string | null;
   closedReason: string | null;
   plannedUnits: number;
-  lines: Array<{ id: string; lineNo: number; variantId: string; sku: string; size: string; color: string; plannedQty: number }>;
+  lines: Array<{ id: string; lineNo: number; variantId: string; sku: string; size: string; color: string; plannedQty: number; deliveredQty: number; acceptedQty: number; rejectedQty: number; reworkQty: number; outstanding: number }>;
+  progress: { planned: number; delivered: number; accepted: number; rejected: number; rework: number; outstanding: number };
+  receipts: ProductionReceiptSummary[];
   materials: ProductionMaterial[];
   plannedCosts: Array<{ id: string; category: { id: string; code: string; name: string; group: CostGroup }; amount: number | null; basis: string | null }>;
   planned: { materialCost: number; materialsWithoutCost: number; otherCost: number; totalCost: number; costPerUnit: number | null } | null;
-  wip: { materials: number; costs: number; total: number } | null;
+  wip: { materials: number; costs: number; transferred: number; total: number } | null;
   costs: CostEntry[];
   comparison: {
     materials: { planned: number; actual: number; variance: number; plannedIncomplete: boolean };
@@ -98,6 +100,21 @@ export interface ProductionOrder {
     pendingApproval: number;
   } | null;
   replayed?: boolean;
+}
+export interface ProductionReceiptSummary {
+  id: string;
+  number: string;
+  status: "DRAFT" | "POSTED" | "REVERSED";
+  receiptDate: string;
+  deliveryRef: string | null;
+  inspectionNotes: string | null;
+  reversalReason: string | null;
+  provisionalUnitCost: number | null;
+  delivered: number;
+  accepted: number;
+  rejected: number;
+  rework: number;
+  value: number | null;
 }
 export interface CostEntry {
   id: string;
@@ -171,3 +188,11 @@ export const updateCostEntry = (id: string, body: Record<string, unknown>) => ap
 export const deleteCostEntry = (id: string) => apiFetch<void>(`${BASE}/production-costs/${id}`, { method: "DELETE" });
 export const approveCostEntry = (id: string) => apiFetch<CostEntry>(`${BASE}/production-costs/${id}/approve`, { method: "POST", body: {} });
 export const voidCostEntry = (id: string, reason: string) => apiFetch<CostEntry>(`${BASE}/production-costs/${id}/void`, { method: "POST", body: { reason } });
+
+// ── M4: deliveries and finished goods ─────────────────────────────────────────────────────────────────────────────────
+export interface ReceiptLineInput { orderLineId: string; delivered: number; accepted: number; rejected: number; rework: number; rejectReason?: string | null }
+export const createProductionReceipt = (orderId: string, body: { receiptDate?: string; deliveryRef?: string | null; inspectionNotes?: string | null; lines: ReceiptLineInput[] }) =>
+  apiFetch<ProductionReceiptSummary>(`${BASE}/production-orders/${orderId}/receipts`, { method: "POST", body });
+export const postProductionReceipt = (id: string, overReceiptReason?: string | null) => apiFetch<{ receipt: ProductionReceiptSummary; replayed: boolean }>(`${BASE}/production-receipts/${id}/post`, { method: "POST", body: overReceiptReason ? { overReceiptReason } : {} });
+export const reverseProductionReceipt = (id: string, reason: string) => apiFetch<{ receipt: ProductionReceiptSummary }>(`${BASE}/production-receipts/${id}/reverse`, { method: "POST", body: { reason } });
+export const deleteProductionReceipt = (id: string) => apiFetch<void>(`${BASE}/production-receipts/${id}`, { method: "DELETE" });

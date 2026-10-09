@@ -522,7 +522,7 @@ export const RECONCILIATION_CHECKS = {
   // ── Manufacturing: work in progress (docs/MANUFACTURING.md §6) ──────────────────────────────────────────────────────
   "manufacturing.wip": {
     label: "Work in progress = production documents",
-    description: "The work-in-progress account equals the material issued to production orders less what was returned, plus approved production costs (finished goods join it in a later step) — in total and for each order, which every WIP posting names as its party. Unposted manufacturing events are listed.",
+    description: "The work-in-progress account equals the material issued to production orders less what was returned, plus approved production costs, less the value of finished goods received out of it — in total and for each order, which every WIP posting names as its party. Unposted manufacturing events are listed.",
     async run(ctx) {
       const cur = ctx.business.baseCurrency;
       const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "asset.wip" } } });
@@ -534,6 +534,10 @@ export const RECONCILIATION_CHECKS = {
           UNION ALL
           SELECT c."productionOrderId", c.amount
           FROM "ProductionCostEntry" c JOIN "ProductionOrder" o ON o.id = c."productionOrderId" WHERE o."businessId" = ${ctx.business.id} AND c.status = 'APPROVED'
+          UNION ALL
+          SELECT r."productionOrderId", -rl.value
+          FROM "ProductionReceiptLine" rl JOIN "ProductionReceipt" r ON r.id = rl."receiptId" JOIN "ProductionOrder" o ON o.id = r."productionOrderId"
+          WHERE o."businessId" = ${ctx.business.id} AND r.status = 'POSTED' AND rl.value IS NOT NULL
         ) x GROUP BY x."orderId"`;
       const books = await prisma.$queryRaw<Array<{ orderId: string | null; v: P.Decimal }>>`
         SELECT l."partyId" AS "orderId", SUM(l.debit - l.credit) AS v

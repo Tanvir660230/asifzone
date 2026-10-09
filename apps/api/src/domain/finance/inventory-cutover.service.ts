@@ -87,11 +87,16 @@ export async function inventoryLedgerBridge(db: Db, business: Pick<FinanceBusine
     FROM u FULL OUTER JOIN c ON c."orderId" = u."orderId"`;
   let estimatedSinceMinor = 0;
   if (opts.estimatedSince) {
+    // Only commerce's approved estimates (sale lines with no recorded cost, estimated stock write-offs) — units the valuation
+    // never held a cost for. A production or purchasing line tagged ESTIMATED moves value the valuation DOES hold.
     const [est] = await db.$queryRaw<Array<{ d: Prisma.Decimal; c: Prisma.Decimal }>>`
       SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c
       FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+      LEFT JOIN "JournalEntry" orig ON orig.id = e."reversesEntryId"
+      LEFT JOIN "FinancialEvent" fe ON fe.id = COALESCE(e."financialEventId", orig."financialEventId")
       WHERE e."businessId" = ${business.id} AND e.status = 'POSTED' AND l."accountId" = ${inventory.id}
-        AND l."valuationStatus" = 'ESTIMATED' AND e."postedAt" >= ${opts.estimatedSince}`;
+        AND l."valuationStatus" = 'ESTIMATED' AND e."postedAt" >= ${opts.estimatedSince}
+        AND (fe."eventType" LIKE 'commerce.%' OR fe."eventType" = ${COMMERCE_EVENT_TYPES.stockWriteOff})`;
     estimatedSinceMinor = toMinor(est!.c, cur) - toMinor(est!.d, cur);
   }
   const unitsOutMinor = Number(transit!.out);

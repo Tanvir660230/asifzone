@@ -46,6 +46,7 @@ const MO_INCLUDE = {
   materials: { orderBy: { lineNo: "asc" }, include: { materialVariant: { select: { id: true, sku: true, size: true, color: true, stock: true, product: { select: { name: true, stockUnit: true } } } }, moves: { select: { kind: true, value: true } } } },
   plannedCosts: { include: { category: { select: { id: true, code: true, name: true, group: true } } } },
   costEntries: { orderBy: { createdAt: "asc" }, include: { category: { select: { id: true, code: true, name: true, group: true } }, supplier: { select: { id: true, code: true, displayName: true } } } },
+  receipts: { orderBy: { number: "asc" }, include: { lines: { select: { orderLineId: true, delivered: true, accepted: true, rejected: true, rework: true, value: true } } } },
 } satisfies Prisma.ProductionOrderInclude;
 type MoRow = Prisma.ProductionOrderGetPayload<{ include: typeof MO_INCLUDE }>;
 
@@ -53,6 +54,15 @@ type MoRow = Prisma.ProductionOrderGetPayload<{ include: typeof MO_INCLUDE }>;
 function materialCostMinor(qty: number, unitCost: Prisma.Decimal, cur: string): number {
   const scaled = scaleDecimal(unitCost.toFixed(6), 6);
   return Number(divRound(BigInt(qty) * scaled, 10n ** BigInt(6 - minorDigits(cur))));
+}
+
+/** The order's planned cost (minor): business-supplied materials at their approval snapshot + planned other costs.
+ * `complete` is false when a business-supplied material has no known cost (the plan then understates). */
+export function plannedCostMinor(o: Pick<MoRow, "materials" | "plannedCosts">, cur: string): { totalMinor: number; materialMinor: number; complete: boolean } {
+  const business = o.materials.filter((m) => m.suppliedBy === "BUSINESS");
+  const materialMinor = business.filter((m) => m.plannedUnitCost !== null).reduce((s, m) => s + materialCostMinor(m.plannedQty, m.plannedUnitCost!, cur), 0);
+  const otherMinor = o.plannedCosts.reduce((s, c) => s + toMinor(c.amount, cur), 0);
+  return { totalMinor: materialMinor + otherMinor, materialMinor, complete: business.every((m) => m.plannedUnitCost !== null) };
 }
 
 export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: boolean }) {
@@ -65,6 +75,9 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
   const wipMinor = o.materials.reduce((s, m) => s + moveValue(m, "ISSUE") - moveValue(m, "RETURN"), 0);
   const approved = o.costEntries.filter((c) => c.status === "APPROVED");
   const approvedMinor = approved.reduce((s, c) => s + toMinor(c.amount, cur), 0);
+  const posted = o.receipts.filter((r) => r.status === "POSTED");
+  const transferredMinor = posted.reduce((s, r) => s + r.lines.reduce((t, l) => t + (l.value === null ? 0 : toMinor(l.value, cur)), 0), 0);
+  const sum = (k: "deliveredQty" | "acceptedQty" | "rejectedQty" | "reworkQty") => o.lines.reduce((n, l) => n + l[k], 0);
   // Planned vs actual per category: materials (plan snapshot vs net issued value) and each cost category.
   const categories = new Map<string, { category: { id: string; code: string; name: string; group: string }; plannedMinor: number; actualMinor: number }>();
   for (const pc of o.plannedCosts) categories.set(pc.categoryId, { category: pc.category, plannedMinor: toMinor(pc.amount, cur), actualMinor: 0 });
@@ -93,7 +106,15 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
     cancelledReason: o.cancelledReason,
     createdAt: o.createdAt,
     plannedUnits,
-    lines: o.lines.map((l) => ({ id: l.id, lineNo: l.lineNo, variantId: l.variantId, sku: l.variant.sku, size: l.variant.size, color: l.variant.color, plannedQty: l.plannedQty })),
+    lines: o.lines.map((l) => ({ id: l.id, lineNo: l.lineNo, variantId: l.variantId, sku: l.variant.sku, size: l.variant.size, color: l.variant.color, plannedQty: l.plannedQty, deliveredQty: l.deliveredQty, acceptedQty: l.acceptedQty, rejectedQty: l.rejectedQty, reworkQty: l.reworkQty, outstanding: Math.max(0, l.plannedQty - l.acceptedQty) })),
+    /** Quantities across the order, all derived from posted receipts. */
+    progress: { planned: plannedUnits, delivered: sum("deliveredQty"), accepted: sum("acceptedQty"), rejected: sum("rejectedQty"), rework: sum("reworkQty"), outstanding: o.lines.reduce((n, l) => n + Math.max(0, l.plannedQty - l.acceptedQty), 0) },
+    receipts: o.receipts.map((r) => ({
+      id: r.id, number: `PR-${String(r.number).padStart(6, "0")}`, status: r.status, receiptDate: businessDateOf(r.receiptDate), deliveryRef: r.deliveryRef, inspectionNotes: r.inspectionNotes, reversalReason: r.reversalReason,
+      provisionalUnitCost: opts.canSeeCost && r.provisionalUnitCost !== null ? Number(r.provisionalUnitCost) : null,
+      delivered: r.lines.reduce((n, l) => n + l.delivered, 0), accepted: r.lines.reduce((n, l) => n + l.accepted, 0), rejected: r.lines.reduce((n, l) => n + l.rejected, 0), rework: r.lines.reduce((n, l) => n + l.rework, 0),
+      value: opts.canSeeCost && r.lines.every((l) => l.value !== null) && r.status !== "DRAFT" ? toMajorNumber(r.lines.reduce((t, l) => t + toMinor(l.value!, cur), 0), cur) : null,
+    })),
     materials: o.materials.map((m) => ({
       id: m.id,
       lineNo: m.lineNo,
@@ -119,7 +140,9 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
       returnedValue: cost(toMajorNumber(moveValue(m, "RETURN"), cur)),
     })),
     /** Value now in work in progress for this order: material issued − returned + approved production costs. */
-    wip: opts.canSeeCost ? { materials: toMajorNumber(wipMinor, cur), costs: toMajorNumber(approvedMinor, cur), total: toMajorNumber(wipMinor + approvedMinor, cur) } : null,
+    wip: opts.canSeeCost
+      ? { materials: toMajorNumber(wipMinor, cur), costs: toMajorNumber(approvedMinor, cur), transferred: toMajorNumber(transferredMinor, cur), total: toMajorNumber(wipMinor + approvedMinor - transferredMinor, cur) }
+      : null,
     costs: o.costEntries.map((c) => costEntryDto(c, cur)),
     /** Planned vs actual: actual = net material issued + approved costs; variance = actual − planned (positive = over plan). */
     comparison: opts.canSeeCost

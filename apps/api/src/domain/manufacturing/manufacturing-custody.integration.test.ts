@@ -20,19 +20,23 @@ import { approveBom, createBom } from "./boms.service";
 import { approveProductionOrder, cancelProductionOrder, createProductionOrder } from "./production-orders.service";
 import { declareMaterialUsage, issueMaterials, listMaterialMoves, returnMaterials } from "./material-custody.service";
 import { approveCostEntry, createCostEntry, updateCostEntry, voidCostEntry } from "./production-costs.service";
-import { getProductionOrder } from "./production-orders.service";
+import { approveProductionOrder as approveMo, createProductionOrder as createMo, getProductionOrder } from "./production-orders.service";
+import { createProductionReceipt, postProductionReceipt, reverseProductionReceipt } from "./production-receipts.service";
 
 // Manufacturing M2 (docs/MANUFACTURING.md §6): material issued to and returned from a production order, after a real
 // valuation cutover and a real purchase — so the checks prove WIP and inventory against the documents and the valuation.
 
 let OWNER: FinanceActor;
 let STAFF: FinanceActor;
+let approverId = "";
 const SEE = { canSeeCost: true };
 let twill = "";
 let label = "";
 let moId = "";
 let twillLine = "";
 let labelLine = "";
+let capVariant = "";
+let capProductId = "";
 
 async function postPending() {
   for (let round = 0; round < 10; round++) {
@@ -60,6 +64,8 @@ beforeAll(async () => {
   const owner = await ownerId();
   OWNER = { type: "ADMIN", adminId: owner, label: "owner@test", permissions: [...PERMISSIONS] };
   STAFF = { type: "ADMIN", adminId: owner, label: "staff@test", permissions: PERMISSIONS.filter((p) => p !== "manufacturing.approve" && p !== "purchasing.approve" && p !== "costing.read") };
+  // A real second admin: separation of duties needs a different person, and stock movements reference the admin.
+  approverId = (await prisma.adminUser.upsert({ where: { email: "vitest-approver@example.com" }, update: { role: "FINANCE_ADMIN" }, create: { email: "vitest-approver@example.com", name: "Vitest Approver", role: "FINANCE_ADMIN", passwordHash: "x" } })).id;
   const ctx = await getFinanceContext();
   await ensureCommerceAccounting(OWNER);
   await ensurePurchasingAccounting(OWNER);
@@ -86,6 +92,8 @@ beforeAll(async () => {
   await postGoodsReceipt(grn.id, {}, OWNER);
 
   const cap = await createStockedProduct({ stocks: [0], basePrice: 900 });
+  capVariant = cap.variants[0]!.id;
+  capProductId = cap.product.id;
   const bom = await createBom({ productId: cap.product.id, lines: [{ materialVariantId: twill, qtyPerUnit: "37.5", wastagePct: "4" }, { materialVariantId: label, qtyPerUnit: "1", suppliedBy: "PRODUCER" }] }, OWNER);
   await approveBom(bom.id, OWNER);
   const mo = await createProductionOrder({ productId: cap.product.id, bomId: bom.id, producerSupplierId: supplierId, lines: [{ variantId: cap.variants[0]!.id, plannedQty: 1000 }] }, OWNER, SEE);
@@ -166,7 +174,7 @@ describe("production costs", () => {
   let freight = "";
   let supplierId = "";
   let entryId = "";
-  const APPROVER = (): FinanceActor => ({ type: "ADMIN", adminId: "second-approver", label: "approver@test", permissions: [...PERMISSIONS] });
+  const APPROVER = (): FinanceActor => ({ type: "ADMIN", adminId: approverId, label: "approver@test", permissions: [...PERMISSIONS] });
 
   it("are entered as quantity × rate (exact) or an amount; one live entry per supplier reference", async () => {
     cmt = (await prisma.productionCostCategory.findFirstOrThrow({ where: { code: "CMT" } })).id;
@@ -208,5 +216,63 @@ describe("production costs", () => {
     await approveCostEntry(again.id, APPROVER());
     allMatched(await checks());
     await expect(prisma.productionCostEntry.update({ where: { id: entryId }, data: { status: "APPROVED" } })).rejects.toThrow(/final/);
+  });
+});
+
+describe("deliveries and finished goods", () => {
+  let lineId = "";
+  let secondReceipt = "";
+  const APPROVER = (): FinanceActor => ({ type: "ADMIN", adminId: approverId, label: "approver@test", permissions: [...PERMISSIONS] });
+
+  it("a receipt reconciles delivered = accepted + rejected + rework; rejects need a reason", async () => {
+    lineId = (await getProductionOrder(moId, SEE)).lines[0]!.id;
+    await expect(createProductionReceipt(moId, { lines: [{ orderLineId: lineId, delivered: 10, accepted: 8, rejected: 1, rework: 0, rejectReason: "x" }] }, STAFF, SEE)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(createProductionReceipt(moId, { lines: [{ orderLineId: lineId, delivered: 10, accepted: 9, rejected: 1, rework: 0 }] }, STAFF, SEE)).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("posting puts accepted units into stock at the provisional unit cost, moves their value out of WIP, once", async () => {
+    // actual to date = materials 3,850 + approved costs 45,200 (freight 1,200 + CMT 44,000) = 49,050 over 1,000 planned → 49.05
+    const draft = await createProductionReceipt(moId, { deliveryRef: "DN-77", inspectionNotes: "AQL 2.5", lines: [{ orderLineId: lineId, delivered: 415, accepted: 400, rejected: 10, rework: 5, rejectReason: "Crooked logo" }] }, STAFF, SEE);
+    const wipBefore = await wipBalance();
+    const [a, b] = await Promise.all([postProductionReceipt(draft.id, {}, STAFF, SEE), postProductionReceipt(draft.id, {}, STAFF, SEE)]);
+    expect([a.replayed, b.replayed].sort()).toEqual([false, true]);
+    const posted = a.replayed ? b.receipt : a.receipt;
+    expect(posted).toMatchObject({ status: "POSTED", provisionalUnitCost: 49.05, value: 19_620 });
+    expect(await stock(capVariant)).toBe(400);
+    const state = await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: capVariant } });
+    expect([state.valuedQty, Number(state.value)]).toEqual([400, 19_620]);
+    const o = await getProductionOrder(moId, SEE);
+    expect(o.status).toBe("PARTIALLY_RECEIVED");
+    expect(o.lines[0]).toMatchObject({ deliveredQty: 415, acceptedQty: 400, rejectedQty: 10, reworkQty: 5, outstanding: 600 });
+    expect(o.progress).toMatchObject({ planned: 1000, accepted: 400, rejected: 10, outstanding: 600 });
+    allMatched(await checks());
+    expect(await wipBalance()).toBe(Math.round((wipBefore - 19_620) * 100) / 100);
+    await expect(prisma.productionOrderLine.update({ where: { id: lineId }, data: { acceptedQty: 1 } })).rejects.toThrow(/derived/);
+    await expect(prisma.productionReceipt.update({ where: { id: draft.id }, data: { deliveryRef: "edited" } })).rejects.toThrow(/immutable/);
+  });
+
+  it("accepting beyond the plan needs an approver and a reason; the order is then received; a reversal takes the units back out", async () => {
+    const r2 = await createProductionReceipt(moId, { lines: [{ orderLineId: lineId, delivered: 650, accepted: 650 }] }, STAFF, SEE);
+    secondReceipt = r2.id;
+    await expect(postProductionReceipt(r2.id, { overReceiptReason: "extra" }, STAFF, SEE)).rejects.toMatchObject({ statusCode: 409 });
+    await postProductionReceipt(r2.id, { overReceiptReason: "Factory made a full last bundle" }, OWNER, SEE);
+    expect((await getProductionOrder(moId, SEE)).status).toBe("RECEIVED");
+    expect(await stock(capVariant)).toBe(1050);
+    allMatched(await checks());
+    await expect(reverseProductionReceipt(secondReceipt, "counted twice", STAFF, SEE)).rejects.toMatchObject({ statusCode: 403 });
+    const rev = await reverseProductionReceipt(secondReceipt, "Counted twice at the gate", APPROVER(), SEE);
+    expect(rev.receipt.status).toBe("REVERSED");
+    expect(await stock(capVariant)).toBe(400);
+    expect((await getProductionOrder(moId, SEE)).status).toBe("PARTIALLY_RECEIVED");
+    allMatched(await checks());
+  });
+
+  it("goods never enter stock at zero cost: an order with nothing known about its cost can't post a receipt", async () => {
+    const supplierId = (await prisma.supplier.findFirstOrThrow({ where: { legalName: "Vitest Textiles" } })).id;
+    const bare = await createMo({ productId: capProductId, producerSupplierId: supplierId, lines: [{ variantId: capVariant, plannedQty: 50 }] }, OWNER, SEE);
+    await approveMo(bare.id, OWNER, SEE);
+    const r = await createProductionReceipt(bare.id, { lines: [{ orderLineId: bare.lines[0]!.id, delivered: 50, accepted: 50 }] }, STAFF, SEE);
+    await expect(postProductionReceipt(r.id, {}, STAFF, SEE)).rejects.toMatchObject({ statusCode: 409 });
+    expect(await stock(capVariant)).toBe(400);
   });
 });

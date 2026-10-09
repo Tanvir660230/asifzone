@@ -1,6 +1,6 @@
 # Manufacturing — production orders, materials, costs and finished goods
 
-Status: **M1 (foundation), M2 (materials custody & WIP) and M3 (production costs) implemented and verified (2026-10-09).** M4–M5 are designed here and built next. The roadmap
+Status: **M1–M4 implemented and verified (2026-10-09)** — foundation, materials custody & WIP, production costs, and deliveries / inspection / finished goods. M5 (close, variance, late costs, reports) is designed here and built next. The roadmap
 and decisions are in `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` §10–§12, §21 (D-M1…D-M6) and §22.
 
 Example: Asif Zone orders 1,000 caps from a factory. The system tracks:
@@ -206,19 +206,60 @@ business-supplied material's moving-average cost (`plannedUnitCost`), which beco
   - Browser QA: the owner entered 400 × ৳45 and saw no Approve button; a second owner approved it; actual ৳19,824 =
     ৳1,824 materials + ৳18,000; all checks "matches".
 
-## 8. M4 — Deliveries, inspection and finished goods [PROPOSED]
+## 8. M4 — Deliveries, inspection and finished goods (implemented)
 
-`ProductionReceipt` (+ lines per order variant):
-- delivered, accepted, rejected and rework quantities. **CHECK I-5:** delivered = accepted + rejected + rework.
-- Multiple partial deliveries are allowed. Over-receipt needs approval.
-- **Posting** (idempotent, unique movement per line):
-  - accepted units → `recordDocumentMovements` (`PRODUCTION_RECEIPT`, DOCUMENT value = accepted × provisional unit
-    cost, ESTIMATED until close);
-  - event `manufacturing.goods_received`: **Dr 1610 / Cr 1630**.
-- **Provisional unit cost** (D-M5) = (actual WIP to date + approved planned remainder) ÷ expected accepted units.
-- **Rejected units never enter saleable stock.** They are returned to the producer (a claim) or written off with approval
-  (5220).
-- **Rework:** re-inspected later, then accepted or rejected.
+- **`ProductionReceipt`** (PR-000001) records, per finished variant, delivered / accepted / rejected / rework (CHECK R-1:
+  delivered = accepted + rejected + rework), plus reject reasons, delivery note, inspection notes and evidence.
+  - Many partial deliveries are allowed.
+  - Created as a draft (`manufacturing.manage`); posted with `manufacturing.move_stock`.
+- **Posting** (idempotent; concurrent posts → one posts, one replays):
+  - accepted units → `recordDocumentMovements` (`PRODUCTION_RECEIPT`, DOCUMENT value, **ESTIMATED**);
+  - event `manufacturing.goods_received`: **Dr 1610 / Cr 1630** (the order as party);
+  - status POSTED; the database derives the order lines' delivered / accepted / rejected / rework (R-3; a direct write is
+    refused);
+  - the order becomes PARTIALLY_RECEIVED or RECEIVED (audited).
+  - Accepting beyond the plan needs `manufacturing.approve` and a reason.
+- **Provisional unit cost** (D-M5) = max(actual cost to date, the planned total — only if the plan is complete) ÷ planned
+  units, half-even.
+  - Actual = material issued − returned + approved costs.
+  - **Zero is refused** (`PROVISIONAL_COST_UNKNOWN`): goods never enter stock at zero cost.
+  - It is stored on the receipt and its lines (value = accepted × unit cost).
+- **Rejected units** never become stock. Their cost stays in the order (D-M4) and is reported as rejects.
+- **Reversal** (`manufacturing.approve`, with a reason):
+  - accepted units leave at the receipt's own unit cost (SNAPSHOT);
+  - void revision `#r1` supersedes `#r0`;
+  - the order status follows;
+  - refused if the units are no longer in stock (sold).
+- **Ledger bridge refinement:** the `inventory.valuation_vs_ledger` "estimates since activation" term now counts only
+  commerce estimate postings. A production or purchasing line tagged ESTIMATED moves value the valuation holds.
+- **`manufacturing.wip`** = materials + approved costs − value transferred to finished goods by posted receipts (in total
+  and per order).
+- **Order view:**
+  - progress: planned / delivered / accepted / rejected / still due;
+  - per-variant table;
+  - receipts with value and provisional unit cost;
+  - WIP shows the transfer to stock.
+- **API:**
+  - `POST /production-orders/:id/receipts` and `DELETE /production-receipts/:id` (manage);
+  - `POST /production-receipts/:id/post` (move_stock);
+  - `POST /production-receipts/:id/reverse` (approve);
+  - 490 admin routes in total.
+- **UI:** the Deliveries section. "Record delivery" is a per-variant inspection grid (accepted / rejected / rework / reason;
+  delivered = their sum) with Save draft or Post to stock. Drafts can be posted or deleted; posted receipts reversed.
+- **Verified:**
+  - `manufacturing-custody.integration.test.ts` now has 11 tests:
+    - reconciliation and reject reasons enforced;
+    - provisional cost 49,050 ÷ 1,000 = ৳49.05, so 400 accepted → ৳19,620 into stock, and WIP −৳19,620;
+    - a concurrent post posts once;
+    - order lines derived (415 / 400 / 10 / 5, outstanding 600) and the derived write refused; the posted receipt
+      immutable;
+    - over-plan needs an approver → RECEIVED;
+    - reversal back to PARTIALLY_RECEIVED;
+    - zero-cost receipt refused;
+    - every check MATCHED after each step.
+  - Full API regression: 1284 / 1284.
+  - Browser QA: 300 accepted / 5 rejected / 3 rework at ৳49.56 = ৳14,868; partly received; all seven checks "matches";
+    375 px.
 
 ## 9. M5 — Close, variance, late costs, reports [PROPOSED]
 
@@ -268,7 +309,8 @@ Migrations:
 - `20261018100000_manufacturing_foundation` (M-1…M-7);
 - `20261018100100_manufacturing_material_source` (`fromBom`, plan guard);
 - `20261019100000_manufacturing_material_custody` (M2: W-1…W-4, plan guard extended);
-- `20261020100000_manufacturing_production_costs` (M3: C-1…C-4).
+- `20261020100000_manufacturing_production_costs` (M3: C-1…C-4);
+- `20261021100000_manufacturing_receipts` (M4: R-1…R-4, plan guard extended).
 
 | Invariant | Rule |
 |---|---|

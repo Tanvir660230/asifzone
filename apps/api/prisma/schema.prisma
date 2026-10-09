@@ -225,6 +225,8 @@ enum StockMovementReason {
   /// Manufacturing (docs/MANUFACTURING.md §6): material issued to a production order, and unused material returned from it.
   PRODUCTION_ISSUE
   PRODUCTION_RETURN
+  /// Accepted finished goods received from a production order (docs/MANUFACTURING.md §8).
+  PRODUCTION_RECEIPT
 }
 
 /// The two purchase-funnel steps that have no other trace anywhere in the schema — everything
@@ -672,6 +674,7 @@ model ProductVariant {
   bomFinishedLines        BillOfMaterialsLine[]     @relation("BomFinishedVariant")
   productionLines         ProductionOrderLine[]
   productionMaterialLines ProductionMaterialLine[]
+  productionReceiptLines  ProductionReceiptLine[]
   /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
   valuationEntries        InventoryValuationEntry[]
   costState               InventoryCostState?
@@ -3995,6 +3998,7 @@ model ProductionOrder {
   plannedCosts       ProductionPlannedCost[]
   materialMoves      ProductionMaterialMove[]
   costEntries        ProductionCostEntry[]
+  receipts           ProductionReceipt[]
 
   @@unique([businessId, number])
   @@index([businessId, status])
@@ -4002,15 +4006,21 @@ model ProductionOrder {
 }
 
 model ProductionOrderLine {
-  id                String          @id @default(cuid())
+  id                String                  @id @default(cuid())
   productionOrderId String
-  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  productionOrder   ProductionOrder         @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
   lineNo            Int
   variantId         String
-  variant           ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  variant           ProductVariant          @relation(fields: [variantId], references: [id], onDelete: Restrict)
   plannedQty        Int
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  /// Derived (trigger) from posted, not-reversed production receipts.
+  deliveredQty      Int                     @default(0)
+  acceptedQty       Int                     @default(0)
+  rejectedQty       Int                     @default(0)
+  reworkQty         Int                     @default(0)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  receiptLines      ProductionReceiptLine[]
 
   @@unique([productionOrderId, lineNo])
   @@unique([productionOrderId, variantId])
@@ -4163,4 +4173,65 @@ model ProductionCostEntry {
 
   @@index([productionOrderId, status])
   @@index([supplierId])
+}
+
+enum ProductionReceiptStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+/// A delivery from production, inspected (docs/MANUFACTURING.md §8): per finished variant, what was delivered, accepted,
+/// rejected and sent back for rework. Posting puts the accepted units into stock at the order's provisional unit cost and
+/// moves that value out of work in progress (Dr 1610 / Cr 1630). Idempotent; a posted receipt is immutable — reversed, never
+/// edited. Rejected units never become stock.
+model ProductionReceipt {
+  id                  String                  @id @default(cuid())
+  productionOrderId   String
+  productionOrder     ProductionOrder         @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "production_receipt" — PR-000001.
+  number              Int
+  status              ProductionReceiptStatus @default(DRAFT)
+  receiptDate         DateTime                @db.Date
+  deliveryRef         String?
+  inspectionNotes     String?
+  evidence            String?
+  overReceiptReason   String?
+  /// The provisional unit cost the accepted units entered stock at (major units, 6 dp) — ESTIMATED until the order closes.
+  provisionalUnitCost Decimal?                @db.Decimal(18, 6)
+  createdByAdminId    String?
+  postedByAdminId     String?
+  postedAt            DateTime?
+  reversedByAdminId   String?
+  reversedAt          DateTime?
+  reversalReason      String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  lines               ProductionReceiptLine[]
+
+  @@index([productionOrderId, status])
+}
+
+model ProductionReceiptLine {
+  id                 String              @id @default(cuid())
+  receiptId          String
+  receipt            ProductionReceipt   @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  orderLineId        String
+  orderLine          ProductionOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  variantId          String
+  variant            ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  delivered          Int
+  accepted           Int
+  rejected           Int                 @default(0)
+  rework             Int                 @default(0)
+  rejectReason       String?
+  /// Set at post: accepted × the provisional unit cost (minor-exact).
+  unitCost           Decimal?            @db.Decimal(18, 2)
+  value              Decimal?            @db.Decimal(18, 2)
+  stockMovementId    String?             @unique
+  reversalMovementId String?             @unique
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([receiptId, orderLineId])
 }

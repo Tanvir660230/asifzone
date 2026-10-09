@@ -7,6 +7,8 @@
  *                                 RETURN: Dr asset.inventory / Cr asset.wip   (unused material back to stock)
  *   manufacturing.cost_accrued    Dr asset.wip / Cr liability.production_accrual (an approved production cost, until invoiced)
  *                                 a void revision (#r1) supersedes it — the accrual is reversed
+ *   manufacturing.goods_received  Dr asset.inventory / Cr asset.wip  (accepted finished goods out of WIP into stock)
+ *                                 a void revision (#r1) supersedes it — the receipt reversed
  *
  * Valuation differences (none for issues within stock) are posted by the costing engine, so inventory = valuation.
  */
@@ -16,6 +18,7 @@ import { registerPostingRule, type PostingRuleLine } from "./posting-rules";
 export const MANUFACTURING_EVENT_TYPES = {
   materialMoved: "manufacturing.material_moved",
   costAccrued: "manufacturing.cost_accrued",
+  goodsReceived: "manufacturing.goods_received",
 } as const;
 
 export const orderParty = (productionOrderId: string) => ({ partyType: "ProductionOrder", partyId: productionOrderId });
@@ -69,6 +72,36 @@ registerPostingRule(MANUFACTURING_EVENT_TYPES.costAccrued, 1, {
       lines: [
         { account: "asset.wip", debit: p.amountMinor, credit: 0, valuationStatus: "KNOWN", memo: `${p.category} — ${p.orderNumber}`, ...orderParty(p.productionOrderId) },
         { account: "liability.production_accrual", debit: 0, credit: p.amountMinor, memo: `Accrued, not invoiced — ${p.orderNumber}`, ...accrualParty },
+      ],
+      reverses,
+    };
+  },
+});
+
+const goodsReceivedPayload = z.object({
+  receiptId: z.string(),
+  productionOrderId: z.string(),
+  receiptNumber: z.string(),
+  orderNumber: z.string(),
+  valueMinor: z.number().int().nonnegative(),
+  void: z.boolean(),
+  supersedes: z.string().nullable(),
+});
+export type ProductionGoodsReceivedPayload = z.infer<typeof goodsReceivedPayload>;
+
+registerPostingRule(MANUFACTURING_EVENT_TYPES.goodsReceived, 1, {
+  payload: goodsReceivedPayload,
+  build: (p) => {
+    const reverses = p.supersedes ? [p.supersedes] : [];
+    if (p.void) return { description: `Production receipt ${p.receiptNumber} reversed — ${p.orderNumber}`, reference: p.receiptNumber, lines: [], reverses };
+    if (p.valueMinor === 0) return reverses.length ? { description: `Production receipt ${p.receiptNumber}`, reference: p.receiptNumber, lines: [], reverses } : { ignore: "nothing accepted" };
+    const party = orderParty(p.productionOrderId);
+    return {
+      description: `Finished goods received ${p.receiptNumber} — ${p.orderNumber}`,
+      reference: p.receiptNumber,
+      lines: [
+        { account: "asset.inventory", debit: p.valueMinor, credit: 0, valuationStatus: "ESTIMATED", memo: `Finished goods ${p.receiptNumber} (provisional cost)`, ...party },
+        { account: "asset.wip", debit: 0, credit: p.valueMinor, valuationStatus: "ESTIMATED", memo: `Out of production — ${p.orderNumber}`, ...party },
       ],
       reverses,
     };
