@@ -275,6 +275,21 @@ export const payrollPaySchema = z.object({ payslipIds: z.array(id).max(500).opti
 export const payrollRemitSchema = z.object({ liabilityAccountId: id, amount: financeAmountSchema.refine((v) => v > 0, "More than zero"), fromFinancialAccountId: id, paymentDate: businessDate.optional(), periodKey: payMonth.optional().nullable(), reference: optionalText(120) });
 export const payRunReverseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
+// ERP E11 foundation (docs/FINANCE_EQUITY.md): partner register — the agreed share is a note until B-2
+const partnerBase = {
+  name: z.string().trim().min(2).max(120),
+  phone: optionalText(30),
+  email: optionalText(160),
+  joinedOn: businessDate,
+  leftOn: businessDate.optional().nullable(),
+  agreedSharePct: z.coerce.number().min(0).max(100).optional().nullable(),
+  agreementReference: optionalText(200),
+  notes: optionalText(1000),
+};
+export const partnerCreateSchema = z.object(partnerBase);
+export const partnerUpdateSchema = z.object(partnerBase).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export const equityQuerySchema = z.object({ asOf: businessDate.optional() });
+
 // ERP E14 (docs/FINANCE_ALERTS.md): month-end close checklist
 export const monthEndQuerySchema = z.object({ month: budgetMonth.optional() });
 export const cashForecastQuerySchema = z.object({ weeks: z.coerce.number().int().min(1).max(52).optional() });

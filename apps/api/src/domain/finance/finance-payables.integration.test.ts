@@ -23,6 +23,7 @@ import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
 import { financeAlerts, monthEndChecklist } from "./finance-alerts.service";
+import { createPartner, equityOverview, updatePartner } from "./equity.service";
 import { createComponent, createEmployee, createPayRun, deleteDraftPayRun, payPayslips, payrollOverview, postPayRun, remitDeductions, reversePayRun, standardLines, updateComponent, updatePayslip } from "./payroll.service";
 import { changePeriodStatus } from "./periods.service";
 import { budgetVsActual, cashForecast, createBudget, setBudgetLines } from "./budgets.service";
@@ -30,7 +31,7 @@ import { moneyBalanceAt } from "./ledger.service";
 import { drawLoan, interestFor, listLoans, plannedSchedule, repayLoan, reverseLatestAccrual, runInterestAccrual } from "./loans.service";
 import { assetRegister, createAsset, disposeAsset, monthlyCharge, reverseLatestRun, runDepreciation, updateAsset } from "./fixed-assets.service";
 import { costAdjustments, grniAgeing, inventoryValuation, paymentsRegister, priceVariance, purchaseRegister } from "./purchasing-reports.service";
-import { rejectMovement, reverseMovement } from "./treasury.service";
+import { rejectMovement, requestMovement, reverseMovement } from "./treasury.service";
 import type { FinanceActor } from "./finance-audit";
 
 // Financial Core Phase 4E (docs/FINANCE_PHASE_4E.md): supplier invoices and credit notes against the real database, after a
@@ -704,6 +705,41 @@ describe("payroll (E8) — a configurable structure, posted as one journal, paid
     await deleteDraftPayRun(redo.id, OWNER);
     expect(await sub()).toMatchObject({ status: "MATCHED", expected: 0 });
     expect((await monthEndChecklist({ month: "2026-09" })).steps.find((x) => x.key === "payroll")).toMatchObject({ status: "DONE" });
+    allMatched(await checks());
+  });
+});
+
+describe("partners & equity, foundation (E11) — balances come from the ledger; the summary is the balance sheet's", () => {
+  it("creates each partner's capital and current accounts, reads their balances, and agrees with the balance sheet", async () => {
+    const { business } = await getFinanceContext();
+    const asif = await createPartner({ name: "Asif Rahman", joinedOn: "2026-01-01", agreedSharePct: 60 }, OWNER);
+    const nadia = await createPartner({ name: "Nadia Islam", joinedOn: "2026-03-01", agreedSharePct: 40, agreementReference: "Draft v2 (unsigned)" }, OWNER);
+    expect(asif).toMatchObject({ number: "PT-01", shareConfirmed: false, capitalAccount: { code: "3101", name: "Partner capital — Asif Rahman" }, currentAccount: { code: "3201" } });
+    expect(nadia).toMatchObject({ number: "PT-02", capitalAccount: { code: "3102" }, currentAccount: { code: "3202" } });
+    const accounts = await prisma.ledgerAccount.findMany({ where: { id: { in: [asif.capitalAccount.id, asif.currentAccount.id] } }, include: { parent: { select: { code: true } } } });
+    expect(accounts.every((a) => a.type === "EQUITY" && a.isSensitive && a.isSystem && a.isPostable && a.parent?.code === "3000")).toBe(true);
+    await expect(createPartner({ name: "asif rahman", joinedOn: "2026-01-01" }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(createPartner({ name: "Late", joinedOn: "2026-05-01", leftOn: "2026-04-01" }, OWNER)).rejects.toMatchObject({ statusCode: 400 });
+
+    // money a partner puts in / takes out is an ordinary money movement against their accounts
+    const bank = (await createFinancialAccount({ kind: "BANK", name: `Equity bank ${Date.now() % 100000}` } as never, OWNER)).id;
+    await requestMovement({ kind: "DEPOSIT", movementDate: "2026-10-01", amount: 100_000, toFinancialAccountId: bank, counterAccountId: asif.capitalAccount.id, description: "Capital — Asif" }, OWNER, "equity-asif-in");
+    await requestMovement({ kind: "DEPOSIT", movementDate: "2026-10-01", amount: 50_000, toFinancialAccountId: bank, counterAccountId: nadia.capitalAccount.id, description: "Capital — Nadia" }, OWNER, "equity-nadia-in");
+    await requestMovement({ kind: "WITHDRAWAL", movementDate: "2026-10-05", amount: 8_000, fromFinancialAccountId: bank, counterAccountId: asif.currentAccount.id, description: "Drawing — Asif" }, OWNER, "equity-asif-out");
+
+    const today = businessToday(business);
+    const e = await equityOverview({ asOf: today });
+    expect(e.partners.map((p) => [p.number, p.balances.capital, p.balances.current, p.balances.total])).toEqual([["PT-01", 100_000, -8_000, 92_000], ["PT-02", 50_000, 0, 50_000]]);
+    expect(e.totals).toMatchObject({ capital: 150_000, current: -8_000, total: 142_000, agreedSharesPct: 100 });
+    const bs = await balanceSheet({ asOf: today });
+    expect(e.equity.total).toBe(bs.sections.find((x) => x.key === "equity")!.total);
+    const line = (id: string) => e.equity.lines.find((l) => l.accountId === id)?.amount;
+    expect([line(asif.capitalAccount.id), line(asif.currentAccount.id)]).toEqual([100_000, -8_000]);
+
+    // a rename renames both accounts; a partner keeps their accounts and is never deleted
+    const renamed = await updatePartner(nadia.id, { name: "Nadia Islam Chowdhury" }, OWNER);
+    expect(renamed.currentAccount.name).toBe("Partner current — Nadia Islam Chowdhury");
+    await expect(prisma.partner.delete({ where: { id: nadia.id } })).rejects.toThrow(/FINANCE_INVARIANT/);
     allMatched(await checks());
   });
 });

@@ -494,10 +494,10 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E5 4G reports & checks | **done** 2026-10-09 (`5876081`) | `FINANCE_PHASE_4G.md` |
 | E6 ledger workspace & statements | **done** 2026-10-09 (`a333035`) | `FINANCE_STATEMENTS.md` |
 | E7 expenses & commitments | **done** 2026-10-09 (`6099411`) | `FINANCE_EXPENSES.md` |
-| E8 payroll | **done** 2026-10-10 as a configurable structure (B-3: the owner enters the rules as components) | `FINANCE_PAYROLL.md` |
+| E8 payroll | **done** 2026-10-10 (`6e2c189`) as a configurable structure (B-3: the owner enters the rules as components) | `FINANCE_PAYROLL.md` |
 | E9 fixed assets | **done** 2026-10-09 (`e2a1bc2`) | `FINANCE_FIXED_ASSETS.md` |
 | E10 loans | **done** 2026-10-09 (`1904afe`) | `FINANCE_LOANS.md` |
-| E11 partners & equity | **next**: foundation only (B-2 blocks equity journals) | §27 |
+| E11 partners & equity | **foundation done** 2026-10-10; profit distribution / capital rules wait for B-2 | `FINANCE_EQUITY.md` |
 | E12 budgets, forecast, runway | **done** 2026-10-09 (`2dba8bf`) | `FINANCE_BUDGETS.md` |
 | E13 tax / VAT | **blocked** (B-4) | §21 |
 | E14 alerts & hardening | **done** 2026-10-10 (`deabc51`) | `FINANCE_ALERTS.md` |
@@ -525,7 +525,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E10 | `1904afe` | migration `20261027100000_finance_loans`; `schema.prisma` (`Loan`, `LoanRepayment`, `LoanAccrualRun`, `LoanAccrualLine`); shared `accounts.ts` (2530, keys, `LOAN_MAPPING_KEYS`), schemas; `domain/finance/loans.service.ts`, `reconciliation.service.ts` (`loans.subledger`); finance routes; web `finance/loans`, finance API, navigation; tests: payables suite +2, auth matrix 531; `test-fixtures` purge; docs `FINANCE_LOANS.md` |
 | E12 | `2dba8bf` | migration `20261028100000_finance_budgets`; `schema.prisma` (`Budget`, `BudgetLine`); `domain/finance/budgets.service.ts` (budgets, budget vs actual, cash forecast, runway); finance routes; shared schemas; web `finance/budgets`, finance API, navigation; tests: payables suite +2, auth matrix 537; `test-fixtures` purge; docs `FINANCE_BUDGETS.md` |
 | E14 | `deabc51` | `domain/finance/finance-alerts.service.ts` (alerts feed, month-end checklist); finance routes; shared `monthEndQuerySchema`; web `finance/attention` (alerts, month-end close / reopen), finance API, navigation (Needs attention, Finance badge), capabilities (`finance.period_close`), `use-attention-counts`, `use-nav-access`; tests: payables suite +2 (and the statements test uses the business date), auth matrix 539; docs `FINANCE_ALERTS.md` |
-| E8 | (E8 commit, see git log) | migration `20261029100000_finance_payroll`; `schema.prisma` (`Employee`, `PayComponent`, `EmployeePayItem`, `PayRun`, `Payslip`, `PayslipLine`, `PayslipPayment`, `PayrollRemittance`); shared `finance/accounts.ts` (2410 / 6200 mapped, new 2420 / 6210, `PAYROLL_MAPPING_KEYS`), shared payroll schemas; `domain/finance/payroll.service.ts`; `reconciliation.service.ts` (`payroll.subledger`); `budgets.service.ts` (PAYROLL forecast lines); `finance-alerts.service.ts` (payroll alerts, month-end step); finance routes (17); web `finance/payroll`, finance API, navigation, capabilities (`finance.sensitive`), budgets source label; tests: payables suite +2, commerce set-up sensitive list, auth matrix 556; `test-fixtures` purge; docs `FINANCE_PAYROLL.md` |
+| E8 | `6e2c189` | migration `20261029100000_finance_payroll`; `schema.prisma` (`Employee`, `PayComponent`, `EmployeePayItem`, `PayRun`, `Payslip`, `PayslipLine`, `PayslipPayment`, `PayrollRemittance`); shared `finance/accounts.ts` (2410 / 6200 mapped, new 2420 / 6210, `PAYROLL_MAPPING_KEYS`), shared payroll schemas; `domain/finance/payroll.service.ts`; `reconciliation.service.ts` (`payroll.subledger`); `budgets.service.ts` (PAYROLL forecast lines); `finance-alerts.service.ts` (payroll alerts, month-end step); finance routes (17); web `finance/payroll`, finance API, navigation, capabilities (`finance.sensitive`), budgets source label; tests: payables suite +2, commerce set-up sensitive list, auth matrix 556; `test-fixtures` purge; docs `FINANCE_PAYROLL.md` |
+| E11 (foundation) | (E11 commit, see git log) | migration `20261030100000_finance_partners`; `schema.prisma` (`Partner`); `domain/finance/equity.service.ts` (register, partner accounts 31xx / 32xx, balances, equity summary = balance sheet); finance routes (3); shared partner schemas; web `finance/equity`, `finance/ledger` (`?account=` deep link), finance API, navigation; tests: payables suite +1, auth matrix 559; `test-fixtures` purge; docs `FINANCE_EQUITY.md` |
 
 ---
 
@@ -540,6 +541,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
 | 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-10 | E11 foundation: `npx vitest run` (apps/api) | 110 files, 1314 passed |
+| 2026-10-10 | E11 foundation: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
+| 2026-10-10 | E11 browser QA (`finance_qa`) | two partners (60 / 40 % unconfirmed), capital ৳200,000 + ৳120,000 and a ৳15,000 drawing; equity ৳640,335.84 = balance sheet (balanced); ledger deep link; 1440 and 375 px |
 | 2026-10-10 | E8: `npx vitest run` (apps/api) | 110 files, 1313 passed |
 | 2026-10-10 | E8: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
 | 2026-10-10 | E8 browser QA (`finance_qa`) | components, employee modal (39,000 gross / 36,500 net), October run with a joiner prorated 16/31 and a ৳12,500 bonus, posted, paid from City Bank, ৳5,183.87 of ৳9,748.39 remitted; payroll / ledger / treasury checks MATCHED; 1440 and 375 px |
@@ -598,26 +602,25 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 ## 27. Next eligible task and acceptance criteria
 
-§21 lets each owner-blocked phase build what does not depend on the owner's decision. E8 was built that way: a
-configurable structure. Next:
+**No eligible task remains**, checked against §21's *work that continues meanwhile* column:
 
-**E11 — Partners & equity, foundation only** (`docs/FINANCE_EQUITY.md`). B-2 still blocks equity journals (capital
-contributions by agreement, profit distribution, sweat equity). Built meanwhile:
+| Blocker | What could be built meanwhile | State |
+|---|---|---|
+| B-1 live cutover | mechanism built and tested on test DBs | done (E1); the run itself is the owner's |
+| B-2 partner agreements | data model and ledger accounts | done (E11 foundation) |
+| B-3 payroll rules | configurable structure | done (E8) |
+| B-4 VAT / Mushak rules | configurable tax codes | exist (Phase 4D) |
 
-- **Partner register:** name, contact, joining date, and an *agreed share* field marked unconfirmed until the signed
-  agreement arrives.
-- **Partner accounts:** one sub-account per partner under 3200 Partner current accounts (and 3300 Drawings), provisioned
-  by the system.
-- **Statement of partners' balances:** read from the ledger (capital, current account, drawings), plus an equity summary
-  (owner capital, partners, retained earnings, current year's profit) that ties to the balance sheet.
-- **No new posting kinds:** money a partner puts in or takes out is recorded with the existing Treasury deposit /
-  withdrawal against the partner's account. That is a fact, not an agreement.
+4H foreign currency is **[DEFERRED]** by decision.
 
-**Acceptance:** sub-accounts provisioned and sensitive; balances equal the ledger; the equity summary equals the balance
-sheet's equity; a reconciliation check; browser QA.
+What the owner provides next, and what each unlocks:
 
-Still waiting on the owner: B-2 (profit distribution and capital rules), B-3 (statutory payroll rules: they are entered
-as components), B-4 (VAT / Mushak rules for E13), B-1 (the live inventory cutover).
+| Owner provides | Unlocks |
+|---|---|
+| B-1: approval and per-SKU unit costs on a production snapshot; the owner runs the cutover in the admin | Live inventory valuation; purchasing and manufacturing documents post on production |
+| B-2: signed partner agreements (capital, profit shares, vesting) | E11 rest: profit distribution to partners' current accounts, capital rules, leaving partners |
+| B-3: the payroll rules confirmed by an accountant | Entered as pay components; statutory calculators (tax slabs, PF ceiling) only if a rule can't be a fixed amount or percentage |
+| B-4: the accountant's VAT / Mushak rules | E13: output VAT on sales, VAT returns from the books, input-VAT recovery report |
 
 ## 28. Changelog
 
@@ -640,4 +643,5 @@ as components), B-4 (VAT / Mushak rules for E13), B-1 (the live inventory cutove
 | 2026-10-09 | v15 — E10 loans (drawdown, actual/365 accrual of ended months, interest-first repayments, plan, subledger check) done; next E12 (budgets / forecast / runway) |
 | 2026-10-09 | v16 — E12 budgets (from last year ± %), budget vs actual, 13-week cash forecast and runway done; next E14 (alerts & hardening) |
 | 2026-10-10 | v17 — E14 alerts feed (Finance badge), month-end close checklist with close / reopen, permission review, business-date test fix; no eligible task remains — E8 / E11 / E13 await the owner (B-3 / B-2 / B-4) |
+| 2026-10-10 | v19 — E11 foundation (partner register, own capital / current accounts, balances from the ledger, equity = balance sheet) done; no eligible task remains (checked against §21) |
 | 2026-10-10 | v18 — correction to v17: §21 allows the configurable parts of blocked phases. E8 payroll done as a configurable structure (components, employees, monthly runs as one journal, payments, remittances, subledger check, forecast / alerts / month-end); next E11 foundation |

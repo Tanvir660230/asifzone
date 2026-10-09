@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Lock } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
@@ -35,6 +36,11 @@ export default function LedgerPage() {
   const [q, setQ] = useState("");
   const [hideEmpty, setHideEmpty] = useState(true);
   const [open, setOpen] = useState<ChartAccount | null>(null);
+  // ?account=<id> (e.g. from Partners & equity) opens that account once
+  const linkedId = useSearchParams().get("account");
+  const [linkDismissed, setLinkDismissed] = useState(false);
+  const linked = linkedId && !linkDismissed ? chart.data?.accounts.find((a) => a.id === linkedId && !a.restricted) ?? null : null;
+  const shown = open ?? linked;
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return (chart.data?.accounts ?? []).filter((a) => (!term || a.code.includes(term) || a.name.toLowerCase().includes(term)) && (!hideEmpty || !a.isPostable || a.restricted || (a.balance ?? 0) !== 0));
@@ -93,7 +99,7 @@ export default function LedgerPage() {
           {!filtered.length && <EmptyState icon={BookOpen} title="No accounts match" description="Try another search, or show accounts with no balance." />}
         </div>
       )}
-      {open && <AccountLedgerDrawer account={open} onClose={() => setOpen(null)} />}
+      {shown && <AccountLedgerDrawer account={shown} onClose={() => { setOpen(null); setLinkDismissed(true); }} />}
     </div>
   );
 }

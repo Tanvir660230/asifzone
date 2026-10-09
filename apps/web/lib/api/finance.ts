@@ -633,3 +633,18 @@ export const payPayslips = (id: string, body: { payslipIds?: string[]; fromFinan
   apiFetch<{ run: PayRun; movementId: string; replayed: boolean }>(`${BASE}/payroll/runs/${id}/pay`, { method: "POST", body, idempotencyKey });
 export const remitPayroll = (body: { liabilityAccountId: string; amount: number; fromFinancialAccountId: string; paymentDate?: string; periodKey?: string | null; reference?: string | null }, idempotencyKey: string) =>
   apiFetch<{ remittanceId: string; replayed: boolean }>(`${BASE}/payroll/remittances`, { method: "POST", body, idempotencyKey });
+
+// ── partners & equity, foundation (docs/FINANCE_EQUITY.md) ──────────────────────────────────────────────────────────────
+export interface Partner {
+  id: string; number: string; name: string; phone: string | null; email: string | null; joinedOn: string; leftOn: string | null;
+  agreedSharePct: number | null; shareConfirmed: false; agreementReference: string | null; notes: string | null;
+  capitalAccount: { id: string; code: string; name: string }; currentAccount: { id: string; code: string; name: string };
+  balances: { capital: number; current: number; total: number };
+}
+export interface EquityOverview {
+  asOf: string; partners: Partner[]; totals: { capital: number; current: number; total: number; agreedSharesPct: number };
+  equity: { lines: Array<{ accountId: string | null; code: string; name: string; group: string | null; amount: number | null }>; total: number };
+}
+export const equityKeys = { overview: (asOf?: string) => ["finance", "equity", asOf ?? "today"] as const };
+export const getEquity = (asOf?: string) => apiFetch<EquityOverview>(`${BASE}/equity${asOf ? `?asOf=${asOf}` : ""}`);
+export const savePartner = (id: string | null, body: Record<string, unknown>) => apiFetch<Partner>(id ? `${BASE}/equity/partners/${id}` : `${BASE}/equity/partners`, { method: id ? "PATCH" : "POST", body });

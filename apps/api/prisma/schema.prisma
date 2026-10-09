@@ -2689,6 +2689,7 @@ model FinanceBusiness {
   payComponents               PayComponent[]
   payRuns                     PayRun[]
   payrollRemittances          PayrollRemittance[]
+  partners                    Partner[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2752,6 +2753,8 @@ model LedgerAccount {
   payComponentExpenses     PayComponent[]        @relation("PayComponentExpense")
   payComponentLiabilities  PayComponent[]        @relation("PayComponentLiability")
   payrollRemittances       PayrollRemittance[]   @relation("PayrollRemittanceAccount")
+  partnerCapital           Partner?              @relation("PartnerCapital")
+  partnerCurrent           Partner?              @relation("PartnerCurrent")
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -4975,4 +4978,34 @@ model PayrollRemittance {
   createdAt          DateTime         @default(now())
 
   @@index([businessId, liabilityAccountId])
+}
+
+// ── ERP E11 — partners & equity, foundation (docs/FINANCE_EQUITY.md) ────────────────────────────────────────────────────
+// B-2 (signed partner agreements) blocks profit distribution and capital rules; the register and accounts do not wait.
+
+/// A partner of the business, with their own capital and current accounts (sensitive equity sub-accounts).
+model Partner {
+  id                 String          @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "partner" — shown as PT-01.
+  number             Int
+  name               String
+  phone              String?
+  email              String?
+  joinedOn           DateTime        @db.Date
+  leftOn             DateTime?       @db.Date
+  /// The share the partners have discussed — UNCONFIRMED until the signed agreement (B-2); nothing is computed from it.
+  agreedSharePct     Decimal?        @db.Decimal(7, 4)
+  agreementReference String?
+  capitalAccountId   String          @unique
+  capitalAccount     LedgerAccount   @relation("PartnerCapital", fields: [capitalAccountId], references: [id], onDelete: Restrict)
+  currentAccountId   String          @unique
+  currentAccount     LedgerAccount   @relation("PartnerCurrent", fields: [currentAccountId], references: [id], onDelete: Restrict)
+  notes              String?
+  createdByAdminId   String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@unique([businessId, number])
 }

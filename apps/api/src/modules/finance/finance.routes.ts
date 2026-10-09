@@ -59,6 +59,9 @@ import {
   payrollPaySchema,
   payrollRemitSchema,
   payRunReverseSchema,
+  partnerCreateSchema,
+  partnerUpdateSchema,
+  equityQuerySchema,
   loanCreateSchema,
   loanRepaymentSchema,
   loanAccrualSchema,
@@ -106,6 +109,7 @@ import * as loans from "../../domain/finance/loans.service";
 import * as budgets from "../../domain/finance/budgets.service";
 import * as alerts from "../../domain/finance/finance-alerts.service";
 import * as payroll from "../../domain/finance/payroll.service";
+import * as equity from "../../domain/finance/equity.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -283,6 +287,11 @@ financeRouter.post("/payroll/remittances", requirePermission("finance.transact")
   const r = await payroll.remitDeductions(req.body, await actorOf(req), idempotencyKeyOf(req));
   res.status(r.replayed ? 200 : 201).json(r);
 }));
+
+// ── partners & equity, foundation (docs/FINANCE_EQUITY.md) — partner balances are sensitive ─────────────────────────────
+financeRouter.get("/equity", SENSITIVE, validate(equityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await equity.equityOverview(req.query as never))));
+financeRouter.post("/equity/partners", requirePermission("finance.configure"), validate(partnerCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await equity.createPartner(req.body, await actorOf(req)))));
+financeRouter.patch("/equity/partners/:id", requirePermission("finance.configure"), validate(partnerUpdateSchema), asyncHandler(async (req, res) => res.json(await equity.updatePartner(id(req), req.body, await actorOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));
