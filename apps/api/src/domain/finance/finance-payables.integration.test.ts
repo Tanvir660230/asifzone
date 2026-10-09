@@ -22,6 +22,7 @@ import { createFinancialAccount } from "./financial-accounts.service";
 import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
+import { drawLoan, interestFor, listLoans, plannedSchedule, repayLoan, reverseLatestAccrual, runInterestAccrual } from "./loans.service";
 import { assetRegister, createAsset, disposeAsset, monthlyCharge, reverseLatestRun, runDepreciation, updateAsset } from "./fixed-assets.service";
 import { costAdjustments, grniAgeing, inventoryValuation, paymentsRegister, priceVariance, purchaseRegister } from "./purchasing-reports.service";
 import { rejectMovement, reverseMovement } from "./treasury.service";
@@ -448,5 +449,58 @@ describe("fixed assets and depreciation (E9)", () => {
     expect(await balance("expense.asset_disposal_loss")).toBe(5000);
     expect(await faChecks()).toEqual({ "fixed_assets.register": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED" });
     await expect(reverseLatestRun("undo", OWNER)).rejects.toMatchObject({ statusCode: 409 }); // the laptop is gone
+  });
+});
+
+describe("loans (E10)", () => {
+  const LOAN_CHECKS = ["loans.subledger", "ledger.integrity", "treasury.integrity", "events.unposted"];
+  const loanChecks = async () => {
+    await postPending();
+    const r = await runReconciliation({ checks: LOAN_CHECKS }, OWNER);
+    return Object.fromEntries(r.results.map((x) => [x.checkKey, x.status]));
+  };
+  const allLoanMatched = async () => expect(await loanChecks()).toEqual(Object.fromEntries(LOAN_CHECKS.map((k) => [k, "MATCHED"])));
+
+  it("interest is actual/365 on each day's balance; the plan repays the principal exactly", () => {
+    expect(interestFor(12_000_000, 12, "2026-08-01", "2026-08-31", [])).toBe(122_301); // 120,000 × 12% × 31 / 365
+    // 60,000 repaid on the 15th: 15 days on 120,000, 16 on 60,000
+    expect(interestFor(12_000_000, 12, "2026-08-01", "2026-08-31", [{ date: "2026-08-15", principal: 6_000_000 }])).toBe(Math.round((12_000_000 * 15 + 6_000_000 * 16) * 0.12 / 365));
+    for (const type of ["ANNUITY", "EQUAL_PRINCIPAL"] as const) {
+      const plan = plannedSchedule({ principal: 12_000_000, ratePct: 12, termMonths: 12, type, firstDueDate: "2026-09-01" });
+      expect(plan.reduce((s, x) => s + x.principal, 0)).toBe(12_000_000);
+      expect(plan.at(-1)!.balance).toBe(0);
+    }
+    expect(plannedSchedule({ principal: 12_000_000, ratePct: 12, termMonths: 12, type: "ANNUITY", firstDueDate: "2026-01-31" })[1]!.dueDate).toBe("2026-02-28");
+  });
+
+  it("draws, accrues interest month by month, repays interest first then principal, and ties to the ledger", async () => {
+    const bankId = (await createFinancialAccount({ kind: "BANK", name: `Loan bank ${Date.now() % 100000}` } as never, OWNER)).id;
+    const body = { lender: "City Bank SME desk", principal: 120_000, annualRatePct: 12, termMonths: 12, drawdownDate: "2026-08-01", firstDueDate: "2026-09-01", financialAccountId: bankId };
+    const { loan } = await drawLoan(body, OWNER, "loan-1");
+    expect(loan).toMatchObject({ number: "LN-001", status: "ACTIVE", drawn: 120_000, outstanding: 120_000 });
+    expect((await drawLoan(body, OWNER, "loan-1")).replayed).toBe(true);
+    await allLoanMatched();
+
+    await expect(runInterestAccrual("2099-01", OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    expect((await runInterestAccrual("2026-08", OWNER)).run).toMatchObject({ total: 1223.01, loans: 1 });
+    await expect(runInterestAccrual("2026-08", OWNER)).resolves.toMatchObject({ replayed: true });
+    await allLoanMatched();
+
+    const paid = await repayLoan(loan.id, { paymentDate: "2026-09-01", amount: 11_000, fromFinancialAccountId: bankId, reference: "EMI-1" }, OWNER, "emi-1");
+    expect(paid.loan.repayments[0]).toMatchObject({ interestPart: 1223.01, principalPart: 9776.99 });
+    expect(paid.loan).toMatchObject({ interestDue: 0, outstanding: 110_223.01 });
+    expect((await repayLoan(loan.id, { paymentDate: "2026-09-01", amount: 11_000, fromFinancialAccountId: bankId }, OWNER, "emi-1")).replayed).toBe(true);
+    await expect(repayLoan(loan.id, { amount: 200_000, fromFinancialAccountId: bankId }, OWNER, "emi-too-big")).rejects.toMatchObject({ statusCode: 409 });
+    await allLoanMatched();
+
+    await expect(runInterestAccrual("2026-10", OWNER)).rejects.toMatchObject({ statusCode: 409 }); // September first
+    const sep = await runInterestAccrual("2026-09", OWNER);
+    // 1 Sep on 120,000, then 29 days on 110,223.01
+    expect(sep.run.total).toBe(Math.round((12_000_000 * 1 + 11_022_301 * 29) * 0.12 / 365) / 100);
+    await allLoanMatched();
+    await reverseLatestAccrual("Rate changed — re-run", OWNER);
+    expect((await listLoans()).loans[0]).toMatchObject({ interestAccrued: 1223.01, lastAccruedMonth: "2026-08" });
+    await runInterestAccrual("2026-09", OWNER);
+    await allLoanMatched();
   });
 });

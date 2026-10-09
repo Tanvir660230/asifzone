@@ -2682,6 +2682,8 @@ model FinanceBusiness {
   recurringCommitments        RecurringCommitment[]
   fixedAssets                 FixedAsset[]
   depreciationRuns            DepreciationRun[]
+  loans                       Loan[]
+  loanAccrualRuns             LoanAccrualRun[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2802,6 +2804,7 @@ model FinancialAccount {
   settlementsReceived     ClearingSettlement[]  @relation("SettlementDestination")
   recurringCommitments    RecurringCommitment[]
   fixedAssetDisposals     FixedAsset[]
+  loans                   Loan[]
 
   @@unique([businessId, name])
 }
@@ -2884,6 +2887,7 @@ model JournalEntry {
   settlementReversal ClearingSettlement?    @relation("SettlementReversalJournal")
   depreciationRun    DepreciationRun?       @relation("DepreciationJournal")
   fixedAssetDisposal FixedAsset?            @relation("DisposalJournal")
+  loanAccrualRun     LoanAccrualRun?        @relation("LoanAccrualJournal")
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, number])
@@ -3168,6 +3172,9 @@ model TreasuryMovement {
   matches                BankTransactionMatch[]
   supplierAllocations    SupplierAllocation[]
   expense                Expense?
+  loanDrawdown           Loan?                  @relation("LoanDrawdown")
+  loanRepaymentPrincipal LoanRepayment?         @relation("RepaymentPrincipal")
+  loanRepaymentInterest  LoanRepayment?         @relation("RepaymentInterest")
 
   @@unique([businessId, idempotencyKey])
   @@index([fromFinancialAccountId, movementDate])
@@ -4641,4 +4648,101 @@ model DepreciationLine {
 
   @@unique([runId, assetId])
   @@index([assetId])
+}
+
+// ── Loans (docs/FINANCE_LOANS.md) ───────────────────────────────────────────────
+
+enum LoanRepaymentType {
+  /// Equal instalments (annuity): interest falls and principal rises over the term.
+  ANNUITY
+  /// Equal principal each month, interest on what is left.
+  EQUAL_PRINCIPAL
+}
+
+/// Money borrowed (from a bank or other lender — partner loans wait for B-2): drawn into a money account as a Treasury
+/// DEPOSIT against the loan liability; interest accrues monthly (LoanAccrualRun); repayments pay accrued interest first,
+/// then principal (two Treasury WITHDRAWALs). What is owed is derived from posted documents, never stored.
+model Loan {
+  id                 String            @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "loan" — LN-001.
+  number             Int
+  lender             String
+  reference          String?
+  principal          Decimal           @db.Decimal(18, 2)
+  /// Percent a year.
+  annualRatePct      Decimal           @db.Decimal(7, 4)
+  termMonths         Int
+  repaymentType      LoanRepaymentType @default(ANNUITY)
+  drawdownDate       DateTime          @db.Date
+  firstDueDate       DateTime          @db.Date
+  financialAccountId String
+  financialAccount   FinancialAccount  @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  drawdownMovementId String            @unique
+  drawdownMovement   TreasuryMovement  @relation("LoanDrawdown", fields: [drawdownMovementId], references: [id], onDelete: Restrict)
+  notes              String?
+  createdByAdminId   String?
+  createdAt          DateTime          @default(now())
+  repayments         LoanRepayment[]
+  accrualLines       LoanAccrualLine[]
+
+  @@unique([businessId, number])
+}
+
+/// A repayment: its interest part (clearing accrued interest) and principal part, each a Treasury WITHDRAWAL from the same
+/// money account. It counts while its movements are posted.
+model LoanRepayment {
+  id                  String            @id @default(cuid())
+  loanId              String
+  loan                Loan              @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  paymentDate         DateTime          @db.Date
+  interestPart        Decimal           @db.Decimal(18, 2)
+  principalPart       Decimal           @db.Decimal(18, 2)
+  interestMovementId  String?           @unique
+  interestMovement    TreasuryMovement? @relation("RepaymentInterest", fields: [interestMovementId], references: [id], onDelete: Restrict)
+  principalMovementId String?           @unique
+  principalMovement   TreasuryMovement? @relation("RepaymentPrincipal", fields: [principalMovementId], references: [id], onDelete: Restrict)
+  reference           String?
+  createdByAdminId    String?
+  createdAt           DateTime          @default(now())
+
+  @@index([loanId])
+}
+
+enum LoanAccrualStatus {
+  POSTED
+  REVERSED
+}
+
+/// One month's interest on every active loan: one journal (Dr expense.interest / Cr liability.accrued_interest, each loan
+/// as party), posted once per month; months in order; only the latest reversed.
+model LoanAccrualRun {
+  id               String            @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  periodKey        String
+  status           LoanAccrualStatus @default(POSTED)
+  total            Decimal           @db.Decimal(18, 2)
+  journalEntryId   String?           @unique
+  journalEntry     JournalEntry?     @relation("LoanAccrualJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  createdByAdminId String?
+  createdAt        DateTime          @default(now())
+  reversedAt       DateTime?
+  reversalReason   String?
+  lines            LoanAccrualLine[]
+
+  @@index([businessId, periodKey])
+}
+
+model LoanAccrualLine {
+  id     String         @id @default(cuid())
+  runId  String
+  run    LoanAccrualRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  loanId String
+  loan   Loan           @relation(fields: [loanId], references: [id], onDelete: Restrict)
+  amount Decimal        @db.Decimal(18, 2)
+
+  @@unique([runId, loanId])
+  @@index([loanId])
 }

@@ -663,6 +663,46 @@ export const RECONCILIATION_CHECKS = {
     },
   },
 
+  // ── ERP E10: loans ──────────────────────────────────────────────────────────────────────────────────────────────────
+  "loans.subledger": {
+    label: "Loans = loan documents",
+    description: "The loans account equals the principal drawn (posted drawdowns) less the principal repaid, and accrued interest equals the interest accrued by posted monthly runs less the interest paid — no loan money moves outside its loan.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const loans = await prisma.loan.findMany({
+        where: { businessId: ctx.business.id },
+        select: { principal: true, drawdownMovement: { select: { status: true } }, repayments: { select: { principalPart: true, interestPart: true, principalMovement: { select: { status: true } }, interestMovement: { select: { status: true } } } }, accrualLines: { where: { run: { status: "POSTED" } }, select: { amount: true } } },
+      });
+      if (!loans.length) return { status: "NOT_APPLICABLE", details: { reason: "no loans recorded" } };
+      const maps = await prisma.accountMapping.findMany({ where: { businessId: ctx.business.id, key: { in: ["liability.loans", "liability.accrued_interest"] } } });
+      const credit = async (key: string) => {
+        const m = maps.find((x) => x.key === key);
+        if (!m) return 0;
+        const [b] = await prisma.$queryRaw<Array<{ d: P.Decimal; c: P.Decimal }>>`
+          SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+          WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${m.accountId}`;
+        return toMinor(b!.c, cur) - toMinor(b!.d, cur);
+      };
+      let principal = 0;
+      let interest = 0;
+      for (const l of loans) {
+        if (l.drawdownMovement.status === "POSTED") principal += toMinor(l.principal, cur);
+        for (const r of l.repayments) {
+          if (r.principalMovement?.status === "POSTED") principal -= toMinor(r.principalPart, cur);
+          if (r.interestMovement?.status === "POSTED") interest -= toMinor(r.interestPart, cur);
+        }
+        interest += l.accrualLines.reduce((s, x) => s + toMinor(x.amount, cur), 0);
+      }
+      const booksPrincipal = await credit("liability.loans");
+      const booksInterest = await credit("liability.accrued_interest");
+      return {
+        status: booksPrincipal === principal && booksInterest === interest ? "MATCHED" : "DIFFERENCE",
+        expected: principal + interest, actual: booksPrincipal + booksInterest,
+        details: { principal: { documents: toMajorNumber(principal, cur), books: toMajorNumber(booksPrincipal, cur) }, accruedInterest: { documents: toMajorNumber(interest, cur), books: toMajorNumber(booksInterest, cur) } },
+      };
+    },
+  },
+
   // ── Phase 4C: the valuation cutover set the inventory account equal to valuation + in-transit ──────────────────────
   "inventory.valuation_vs_ledger": {
     label: "Inventory account = valuation",

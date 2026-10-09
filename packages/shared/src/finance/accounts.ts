@@ -80,6 +80,9 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.depreciation",
   "income.asset_disposal_gain",
   "expense.asset_disposal_loss",
+  // Loans (docs/FINANCE_LOANS.md) — interest accrued on loans, the interest charge
+  "liability.accrued_interest",
+  "expense.interest",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -133,6 +136,9 @@ export const MANUFACTURING_MAPPING_KEYS: readonly AccountMappingKey[] = [
 export const FIXED_ASSET_MAPPING_KEYS: readonly AccountMappingKey[] = [
   "asset.fixed_assets", "asset.accumulated_depreciation", "expense.depreciation", "income.asset_disposal_gain", "expense.asset_disposal_loss",
 ];
+
+/** Every key loans post to: the principal owed, interest accrued and not yet paid, and the interest charge. */
+export const LOAN_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.loans", "liability.accrued_interest", "expense.interest"];
 
 /**
  * Mapping keys whose ledger figure is reconciled against an existing authoritative business figure (the metrics registry,
@@ -203,6 +209,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "2500", name: "Loans", type: "LIABILITY", parent: "2000", group: true },
   { code: "2510", name: "Bank loans", type: "LIABILITY", parent: "2500", mapping: "liability.loans" },
   { code: "2520", name: "Partner loans", type: "LIABILITY", parent: "2500", sensitive: true },
+  { code: "2530", name: "Accrued loan interest", type: "LIABILITY", parent: "2500", mapping: "liability.accrued_interest" },
   { code: "2900", name: "Other liabilities", type: "LIABILITY", parent: "2000" },
 
   { code: "3000", name: "Equity", type: "EQUITY", group: true },
@@ -250,7 +257,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "7900", name: "Miscellaneous income", type: "OTHER_INCOME", parent: "7000" },
 
   { code: "8000", name: "Other expenses & finance costs", type: "OTHER_EXPENSE", group: true },
-  { code: "8100", name: "Interest expense", type: "OTHER_EXPENSE", parent: "8000" },
+  { code: "8100", name: "Interest expense", type: "OTHER_EXPENSE", parent: "8000", mapping: "expense.interest" },
   { code: "8200", name: "Bank & financing charges", type: "OTHER_EXPENSE", parent: "8000" },
   { code: "8300", name: "Loss on disposal of assets", type: "OTHER_EXPENSE", parent: "8000", mapping: "expense.asset_disposal_loss" },
   { code: "8900", name: "Miscellaneous expenses", type: "OTHER_EXPENSE", parent: "8000" },

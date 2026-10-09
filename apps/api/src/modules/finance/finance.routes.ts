@@ -45,6 +45,10 @@ import {
   ledgerRangeQuerySchema,
   statementPeriodQuerySchema,
   expenseCreateSchema,
+  loanCreateSchema,
+  loanRepaymentSchema,
+  loanAccrualSchema,
+  loanAccrualReverseSchema,
   fixedAssetCreateSchema,
   fixedAssetUpdateSchema,
   fixedAssetDisposeSchema,
@@ -84,6 +88,7 @@ import * as ledger from "../../domain/finance/ledger.service";
 import * as statements from "../../domain/finance/statements.service";
 import * as expenses from "../../domain/finance/expenses.service";
 import * as fixedAssets from "../../domain/finance/fixed-assets.service";
+import * as loans from "../../domain/finance/loans.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -201,6 +206,22 @@ financeRouter.post("/depreciation-runs", requirePermission("finance.post"), vali
   res.status(r.replayed ? 200 : 201).json(r);
 }));
 financeRouter.post("/depreciation-runs/reverse-latest", requirePermission("finance.reverse"), validate(depreciationReverseSchema), asyncHandler(async (req, res) => res.json(await fixedAssets.reverseLatestRun(req.body.reason, await actorOf(req)))));
+
+// ── loans (docs/FINANCE_LOANS.md) ─────────────────────────────────────────────────────────────────────────────────────────
+financeRouter.get("/loans", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await loans.listLoans())));
+financeRouter.post("/loans", requirePermission("finance.transact"), validate(loanCreateSchema), asyncHandler(async (req, res) => {
+  const r = await loans.drawLoan(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.post("/loans/:id/repayments", requirePermission("finance.transact"), validate(loanRepaymentSchema), asyncHandler(async (req, res) => {
+  const r = await loans.repayLoan(id(req), req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.post("/loan-accruals", requirePermission("finance.post"), validate(loanAccrualSchema), asyncHandler(async (req, res) => {
+  const r = await loans.runInterestAccrual(req.body.periodKey, await actorOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.post("/loan-accruals/reverse-latest", requirePermission("finance.reverse"), validate(loanAccrualReverseSchema), asyncHandler(async (req, res) => res.json(await loans.reverseLatestAccrual(req.body.reason, await actorOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

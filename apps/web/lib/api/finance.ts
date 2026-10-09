@@ -534,3 +534,21 @@ export const createAsset = (body: Record<string, unknown>) => apiFetch<FixedAsse
 export const disposeAsset = (id: string, body: Record<string, unknown>) => apiFetch<FixedAsset>(`${BASE}/fixed-assets/${id}/dispose`, { method: "POST", body });
 export const runDepreciation = (periodKey: string) => apiFetch<{ run: DepreciationRun; replayed: boolean }>(`${BASE}/depreciation-runs`, { method: "POST", body: { periodKey } });
 export const reverseLatestDepreciation = (reason: string) => apiFetch<DepreciationRun>(`${BASE}/depreciation-runs/reverse-latest`, { method: "POST", body: { reason } });
+
+// ── ERP E10: loans (docs/FINANCE_LOANS.md) ────────────────────────────────────────────────────────────────────────────
+export type LoanRepaymentType = "ANNUITY" | "EQUAL_PRINCIPAL";
+export interface Loan {
+  id: string; number: string; lender: string; reference: string | null; principal: number; annualRatePct: number; termMonths: number; repaymentType: LoanRepaymentType;
+  drawdownDate: string; firstDueDate: string; financialAccount: { id: string; name: string }; status: "AWAITING_APPROVAL" | "ACTIVE" | "REPAID" | "CANCELLED"; notes: string | null;
+  drawn: number; principalRepaid: number; outstanding: number; interestAccrued: number; interestPaid: number; interestDue: number; lastAccruedMonth: string | null;
+  nextInstalment: { dueDate: string; payment: number } | null;
+  schedule: Array<{ n: number; dueDate: string; payment: number; interest: number; principal: number; balance: number }>;
+  repayments: Array<{ id: string; paymentDate: string; interestPart: number; principalPart: number; reference: string | null; status: string }>;
+}
+export interface LoansOverview { asOf: string; loans: Loan[]; totals: { outstanding: number; interestDue: number; active: number }; nextAccrual: string | null; runs: Array<{ id: string; periodKey: string; status: "POSTED" | "REVERSED"; total: number; loans: number; reversalReason: string | null }> }
+export const loanKeys = { all: () => ["finance", "loans"] as const };
+export const listLoans = () => apiFetch<LoansOverview>(`${BASE}/loans`);
+export const drawLoan = (body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ loan: Loan; replayed: boolean }>(`${BASE}/loans`, { method: "POST", body, idempotencyKey });
+export const repayLoan = (id: string, body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ loan: Loan; replayed: boolean }>(`${BASE}/loans/${id}/repayments`, { method: "POST", body, idempotencyKey });
+export const runLoanAccrual = (periodKey: string) => apiFetch<{ run: { periodKey: string; total: number } }>(`${BASE}/loan-accruals`, { method: "POST", body: { periodKey } });
+export const reverseLoanAccrual = (reason: string) => apiFetch<{ periodKey: string }>(`${BASE}/loan-accruals/reverse-latest`, { method: "POST", body: { reason } });

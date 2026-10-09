@@ -205,6 +205,26 @@ export const depreciationRunSchema = z.object({ periodKey: monthKeySchema });
 export const depreciationReverseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 export const fixedAssetListQuerySchema = z.object({ includeDisposed: z.coerce.boolean().optional() });
 
+// ERP E10 (docs/FINANCE_LOANS.md): loans
+export const LOAN_REPAYMENT_TYPES = ["ANNUITY", "EQUAL_PRINCIPAL"] as const;
+export const loanCreateSchema = z
+  .object({
+    lender: z.string().trim().min(2).max(160),
+    reference: optionalText(120),
+    principal: financeAmountSchema.refine((v) => v > 0, "More than zero"),
+    annualRatePct: z.coerce.number().min(0).max(100),
+    termMonths: z.coerce.number().int().min(1).max(600),
+    repaymentType: z.enum(LOAN_REPAYMENT_TYPES).optional(),
+    drawdownDate: businessDate,
+    firstDueDate: businessDate,
+    financialAccountId: id,
+    notes: optionalText(1000),
+  })
+  .refine((v) => v.firstDueDate > v.drawdownDate, "The first instalment falls after the drawdown");
+export const loanRepaymentSchema = z.object({ paymentDate: businessDate.optional(), amount: financeAmountSchema.refine((v) => v > 0, "More than zero"), fromFinancialAccountId: id, reference: optionalText(120) });
+export const loanAccrualSchema = z.object({ periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM") });
+export const loanAccrualReverseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+
 export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 export const OPENING_BALANCE_CATEGORIES = [
