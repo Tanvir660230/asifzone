@@ -5,6 +5,8 @@
  *
  *   manufacturing.material_moved  ISSUE:  Dr asset.wip / Cr asset.inventory   (material out of stock into production)
  *                                 RETURN: Dr asset.inventory / Cr asset.wip   (unused material back to stock)
+ *   manufacturing.cost_accrued    Dr asset.wip / Cr liability.production_accrual (an approved production cost, until invoiced)
+ *                                 a void revision (#r1) supersedes it — the accrual is reversed
  *
  * Valuation differences (none for issues within stock) are posted by the costing engine, so inventory = valuation.
  */
@@ -13,6 +15,7 @@ import { registerPostingRule, type PostingRuleLine } from "./posting-rules";
 
 export const MANUFACTURING_EVENT_TYPES = {
   materialMoved: "manufacturing.material_moved",
+  costAccrued: "manufacturing.cost_accrued",
 } as const;
 
 export const orderParty = (productionOrderId: string) => ({ partyType: "ProductionOrder", partyId: productionOrderId });
@@ -39,5 +42,35 @@ registerPostingRule(MANUFACTURING_EVENT_TYPES.materialMoved, 1, {
       { account: "asset.inventory", debit: issue ? 0 : p.valueMinor, credit: issue ? p.valueMinor : 0, valuationStatus: p.status, memo: `${issue ? "Issued to" : "Returned from"} ${p.orderNumber}`, ...party },
     ];
     return { description: `${issue ? "Material issued" : "Material returned"} — ${p.orderNumber}`, reference: p.orderNumber, lines };
+  },
+});
+
+const costAccruedPayload = z.object({
+  entryId: z.string(),
+  productionOrderId: z.string(),
+  orderNumber: z.string(),
+  category: z.string(),
+  supplierId: z.string().nullable(),
+  amountMinor: z.number().int().nonnegative(),
+  void: z.boolean(),
+  supersedes: z.string().nullable(),
+});
+export type CostAccruedPayload = z.infer<typeof costAccruedPayload>;
+
+registerPostingRule(MANUFACTURING_EVENT_TYPES.costAccrued, 1, {
+  payload: costAccruedPayload,
+  build: (p) => {
+    const reverses = p.supersedes ? [p.supersedes] : [];
+    if (p.void) return { description: `Production cost voided — ${p.orderNumber}`, reference: p.orderNumber, lines: [], reverses };
+    const accrualParty = p.supplierId ? { partyType: "Supplier", partyId: p.supplierId } : orderParty(p.productionOrderId);
+    return {
+      description: `Production cost (${p.category}) — ${p.orderNumber}`,
+      reference: p.orderNumber,
+      lines: [
+        { account: "asset.wip", debit: p.amountMinor, credit: 0, valuationStatus: "KNOWN", memo: `${p.category} — ${p.orderNumber}`, ...orderParty(p.productionOrderId) },
+        { account: "liability.production_accrual", debit: 0, credit: p.amountMinor, memo: `Accrued, not invoiced — ${p.orderNumber}`, ...accrualParty },
+      ],
+      reverses,
+    };
   },
 });

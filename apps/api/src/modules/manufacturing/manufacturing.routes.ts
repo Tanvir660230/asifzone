@@ -11,6 +11,9 @@ import {
   materialCreateSchema,
   materialListQuerySchema,
   materialUpdateSchema,
+  productionCostCreateSchema,
+  productionCostUpdateSchema,
+  productionCostVoidSchema,
   productionOrderCreateSchema,
   productionOrderListQuerySchema,
   productionOrderReasonSchema,
@@ -26,6 +29,7 @@ import * as materials from "../../domain/manufacturing/materials.service";
 import * as boms from "../../domain/manufacturing/boms.service";
 import * as orders from "../../domain/manufacturing/production-orders.service";
 import * as custody from "../../domain/manufacturing/material-custody.service";
+import * as costs from "../../domain/manufacturing/production-costs.service";
 import { idempotencyKeyOf } from "../orders/order.controller";
 
 /**
@@ -87,3 +91,13 @@ manufacturingRouter.get("/production-orders/:id/moves", requirePermission("manuf
 manufacturingRouter.post("/production-orders/:id/issue", requirePermission("manufacturing.move_stock"), validate(materialIssueSchema), asyncHandler(async (req, res) => res.json(await custody.issueMaterials(id(req), req.body, await actorOf(req), { ...costView(req), requestKey: idempotencyKeyOf(req) }))));
 manufacturingRouter.post("/production-orders/:id/return", requirePermission("manufacturing.move_stock"), validate(materialReturnSchema), asyncHandler(async (req, res) => res.json(await custody.returnMaterials(id(req), req.body, await actorOf(req), { ...costView(req), requestKey: idempotencyKeyOf(req) }))));
 manufacturingRouter.put("/production-orders/:id/material-usage", requirePermission("manufacturing.manage"), validate(materialUsageSchema), asyncHandler(async (req, res) => res.json(await custody.declareMaterialUsage(id(req), req.body, await actorOf(req), costView(req)))));
+
+// ── M3: production costs (docs/MANUFACTURING.md §7) — entered by production staff, approved by someone else ──────────
+manufacturingRouter.post("/production-orders/:id/costs", requirePermission("manufacturing.manage"), validate(productionCostCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await costs.createCostEntry(id(req), req.body, await actorOf(req)))));
+manufacturingRouter.patch("/production-costs/:id", requirePermission("manufacturing.manage"), validate(productionCostUpdateSchema), asyncHandler(async (req, res) => res.json(await costs.updateCostEntry(id(req), req.body, await actorOf(req)))));
+manufacturingRouter.delete("/production-costs/:id", requirePermission("manufacturing.manage"), asyncHandler(async (req, res) => {
+  await costs.deleteDraftCostEntry(id(req), await actorOf(req));
+  res.status(204).end();
+}));
+manufacturingRouter.post("/production-costs/:id/approve", requirePermission("manufacturing.approve"), asyncHandler(async (req, res) => res.json(await costs.approveCostEntry(id(req), await actorOf(req)))));
+manufacturingRouter.post("/production-costs/:id/void", requirePermission("manufacturing.approve"), validate(productionCostVoidSchema), asyncHandler(async (req, res) => res.json(await costs.voidCostEntry(id(req), reason(req), await actorOf(req)))));

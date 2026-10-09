@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { RECONCILIATION_CHECK_KEYS } from "./reconciliation.service";
 import request from "supertest";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -433,9 +434,10 @@ describe("financial core — reconciliation", () => {
     expect(byKey["cost.completeness"]!).toMatchObject({ status: "DIFFERENCE", details: { missingRecords: 1, estimatedRecords: 1 } });
     expect(res.body.ok).toBe(false);
 
-    expect(await prisma.reconciliationRun.count()).toBe(18); // +1: Phase 4C inventory.valuation_vs_ledger; +1: Phase 4D purchasing.grni; +1: manufacturing.wip
-    expect(await prisma.financeAuditEntry.count({ where: { action: "reconciliation.run" } })).toBe(18);
-    expect((await owner.get("/reconciliation/runs")).body.total).toBe(18);
+    // One run per registered check (the list grows with each phase — 4C, 4D, manufacturing…).
+    expect(await prisma.reconciliationRun.count()).toBe(RECONCILIATION_CHECK_KEYS.length);
+    expect(await prisma.financeAuditEntry.count({ where: { action: "reconciliation.run" } })).toBe(RECONCILIATION_CHECK_KEYS.length);
+    expect((await owner.get("/reconciliation/runs")).body.total).toBe(RECONCILIATION_CHECK_KEYS.length);
     expect((await owner.post("/reconciliation/run", { checks: ["nope"] })).body.details.code).toBe("RECONCILIATION_CHECK_UNKNOWN");
   });
 });

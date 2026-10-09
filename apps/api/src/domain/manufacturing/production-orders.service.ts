@@ -19,6 +19,7 @@ import { financeTransaction } from "../finance/finance-tx";
 import { nextFinanceSequence } from "../finance/suppliers.service";
 import { divRound } from "../finance/costing.service";
 import { computeRequirements, scaleDecimal } from "./requirements";
+import { costEntryDto } from "./production-costs.service";
 
 export const moNumber = (n: number) => `MO-${String(n).padStart(6, "0")}`;
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
@@ -44,6 +45,7 @@ const MO_INCLUDE = {
   lines: { orderBy: { lineNo: "asc" }, include: { variant: { select: { id: true, sku: true, size: true, color: true } } } },
   materials: { orderBy: { lineNo: "asc" }, include: { materialVariant: { select: { id: true, sku: true, size: true, color: true, stock: true, product: { select: { name: true, stockUnit: true } } } }, moves: { select: { kind: true, value: true } } } },
   plannedCosts: { include: { category: { select: { id: true, code: true, name: true, group: true } } } },
+  costEntries: { orderBy: { createdAt: "asc" }, include: { category: { select: { id: true, code: true, name: true, group: true } }, supplier: { select: { id: true, code: true, displayName: true } } } },
 } satisfies Prisma.ProductionOrderInclude;
 type MoRow = Prisma.ProductionOrderGetPayload<{ include: typeof MO_INCLUDE }>;
 
@@ -61,6 +63,16 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
   const otherMinor = o.plannedCosts.reduce((s, c) => s + toMinor(c.amount, cur), 0);
   const moveValue = (m: MoRow["materials"][number], kind: "ISSUE" | "RETURN") => m.moves.filter((x) => x.kind === kind).reduce((s, x) => s + toMinor(x.value, cur), 0);
   const wipMinor = o.materials.reduce((s, m) => s + moveValue(m, "ISSUE") - moveValue(m, "RETURN"), 0);
+  const approved = o.costEntries.filter((c) => c.status === "APPROVED");
+  const approvedMinor = approved.reduce((s, c) => s + toMinor(c.amount, cur), 0);
+  // Planned vs actual per category: materials (plan snapshot vs net issued value) and each cost category.
+  const categories = new Map<string, { category: { id: string; code: string; name: string; group: string }; plannedMinor: number; actualMinor: number }>();
+  for (const pc of o.plannedCosts) categories.set(pc.categoryId, { category: pc.category, plannedMinor: toMinor(pc.amount, cur), actualMinor: 0 });
+  for (const c of approved) {
+    const row = categories.get(c.categoryId) ?? { category: c.category, plannedMinor: 0, actualMinor: 0 };
+    row.actualMinor += toMinor(c.amount, cur);
+    categories.set(c.categoryId, row);
+  }
   const cost = (v: number | null) => (opts.canSeeCost ? v : null);
   return {
     id: o.id,
@@ -106,8 +118,18 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
       issuedValue: cost(toMajorNumber(moveValue(m, "ISSUE"), cur)),
       returnedValue: cost(toMajorNumber(moveValue(m, "RETURN"), cur)),
     })),
-    /** Material value now in work in progress for this order: issued − returned (production costs join in M3). */
-    wip: opts.canSeeCost ? { materials: toMajorNumber(wipMinor, cur) } : null,
+    /** Value now in work in progress for this order: material issued − returned + approved production costs. */
+    wip: opts.canSeeCost ? { materials: toMajorNumber(wipMinor, cur), costs: toMajorNumber(approvedMinor, cur), total: toMajorNumber(wipMinor + approvedMinor, cur) } : null,
+    costs: o.costEntries.map((c) => costEntryDto(c, cur)),
+    /** Planned vs actual: actual = net material issued + approved costs; variance = actual − planned (positive = over plan). */
+    comparison: opts.canSeeCost
+      ? {
+          materials: { planned: toMajorNumber(materialMinor, cur), actual: toMajorNumber(wipMinor, cur), variance: toMajorNumber(wipMinor - materialMinor, cur), plannedIncomplete: business.length - costed.length > 0 },
+          categories: [...categories.values()].map((r) => ({ category: r.category, planned: toMajorNumber(r.plannedMinor, cur), actual: toMajorNumber(r.actualMinor, cur), variance: toMajorNumber(r.actualMinor - r.plannedMinor, cur) })),
+          total: { planned: toMajorNumber(materialMinor + otherMinor, cur), actual: toMajorNumber(wipMinor + approvedMinor, cur), variance: toMajorNumber(wipMinor + approvedMinor - materialMinor - otherMinor, cur) },
+          pendingApproval: toMajorNumber(o.costEntries.filter((c) => c.status === "DRAFT").reduce((s, c) => s + toMinor(c.amount, cur), 0), cur),
+        }
+      : null,
     plannedCosts: o.plannedCosts.map((c) => ({ id: c.id, category: c.category, amount: cost(toMajorNumber(toMinor(c.amount, cur), cur)), basis: c.basis })),
     planned: opts.canSeeCost
       ? {

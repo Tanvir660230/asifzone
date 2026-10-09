@@ -522,15 +522,19 @@ export const RECONCILIATION_CHECKS = {
   // ── Manufacturing: work in progress (docs/MANUFACTURING.md §6) ──────────────────────────────────────────────────────
   "manufacturing.wip": {
     label: "Work in progress = production documents",
-    description: "The work-in-progress account equals the material issued to production orders less what was returned (production costs and finished goods join it in later steps) — in total and for each order, which every WIP posting names as its party. Unposted manufacturing events are listed.",
+    description: "The work-in-progress account equals the material issued to production orders less what was returned, plus approved production costs (finished goods join it in a later step) — in total and for each order, which every WIP posting names as its party. Unposted manufacturing events are listed.",
     async run(ctx) {
       const cur = ctx.business.baseCurrency;
       const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "asset.wip" } } });
       if (!map) return { status: "NOT_APPLICABLE", details: { reason: "manufacturing is not set up" } };
       const docs = await prisma.$queryRaw<Array<{ orderId: string; v: P.Decimal }>>`
-        SELECT m."productionOrderId" AS "orderId", SUM(CASE WHEN m.kind = 'ISSUE' THEN m.value ELSE -m.value END) AS v
-        FROM "ProductionMaterialMove" m JOIN "ProductionOrder" o ON o.id = m."productionOrderId"
-        WHERE o."businessId" = ${ctx.business.id} GROUP BY m."productionOrderId"`;
+        SELECT x."orderId", SUM(x.v) AS v FROM (
+          SELECT m."productionOrderId" AS "orderId", CASE WHEN m.kind = 'ISSUE' THEN m.value ELSE -m.value END AS v
+          FROM "ProductionMaterialMove" m JOIN "ProductionOrder" o ON o.id = m."productionOrderId" WHERE o."businessId" = ${ctx.business.id}
+          UNION ALL
+          SELECT c."productionOrderId", c.amount
+          FROM "ProductionCostEntry" c JOIN "ProductionOrder" o ON o.id = c."productionOrderId" WHERE o."businessId" = ${ctx.business.id} AND c.status = 'APPROVED'
+        ) x GROUP BY x."orderId"`;
       const books = await prisma.$queryRaw<Array<{ orderId: string | null; v: P.Decimal }>>`
         SELECT l."partyId" AS "orderId", SUM(l.debit - l.credit) AS v
         FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
@@ -547,6 +551,25 @@ export const RECONCILIATION_CHECKS = {
       const orders = [...byOrder.entries()].filter(([, x]) => x.documents !== x.books).slice(0, 50).map(([orderId, x]) => ({ orderId, documents: toMajorNumber(x.documents, cur), books: toMajorNumber(x.books, cur) }));
       const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: { startsWith: "manufacturing." }, status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
       return { status: expected === actual && !orders.length && !unposted.length ? "MATCHED" : "DIFFERENCE", expected, actual, details: { ordersWithDifference: orders, unpostedEvents: unposted } };
+    },
+  },
+
+  "manufacturing.production_accrual": {
+    label: "Production costs accrued",
+    description: "The accrued-production-costs account equals the approved production costs not yet invoiced by the supplier (supplier invoices clear it from Phase 4E) — no cost is booked twice or lost.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "liability.production_accrual" } } });
+      if (!map) return { status: "NOT_APPLICABLE", details: { reason: "manufacturing is not set up" } };
+      const [docs] = await prisma.$queryRaw<Array<{ v: P.Decimal; n: number }>>`
+        SELECT COALESCE(SUM(c.amount), 0) AS v, COUNT(*)::int AS n FROM "ProductionCostEntry" c JOIN "ProductionOrder" o ON o.id = c."productionOrderId"
+        WHERE o."businessId" = ${ctx.business.id} AND c.status = 'APPROVED'`;
+      const [book] = await prisma.$queryRaw<Array<{ d: P.Decimal; c: P.Decimal }>>`
+        SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+        WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${map.accountId}`;
+      const expected = toMinor(docs!.v, cur);
+      const actual = toMinor(book!.c, cur) - toMinor(book!.d, cur);
+      return { status: expected === actual ? "MATCHED" : "DIFFERENCE", expected, actual, details: { approvedCosts: docs!.n, invoiced: 0 } };
     },
   },
 

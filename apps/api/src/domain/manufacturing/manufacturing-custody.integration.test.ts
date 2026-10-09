@@ -19,6 +19,8 @@ import { createMaterial } from "./materials.service";
 import { approveBom, createBom } from "./boms.service";
 import { approveProductionOrder, cancelProductionOrder, createProductionOrder } from "./production-orders.service";
 import { declareMaterialUsage, issueMaterials, listMaterialMoves, returnMaterials } from "./material-custody.service";
+import { approveCostEntry, createCostEntry, updateCostEntry, voidCostEntry } from "./production-costs.service";
+import { getProductionOrder } from "./production-orders.service";
 
 // Manufacturing M2 (docs/MANUFACTURING.md §6): material issued to and returned from a production order, after a real
 // valuation cutover and a real purchase — so the checks prove WIP and inventory against the documents and the valuation.
@@ -41,7 +43,7 @@ async function postPending() {
 }
 async function checks() {
   await postPending();
-  const r = await runReconciliation({ checks: ["manufacturing.wip", "inventory.valuation_vs_ledger", "inventory.quantity_vs_valuation", "inventory.valuation_postings", "ledger.integrity", "events.unposted", "purchasing.grni"] }, OWNER);
+  const r = await runReconciliation({ checks: ["manufacturing.wip", "inventory.valuation_vs_ledger", "inventory.quantity_vs_valuation", "inventory.valuation_postings", "ledger.integrity", "events.unposted", "purchasing.grni", "manufacturing.production_accrual"] }, OWNER);
   return Object.fromEntries(r.results.map((x) => [x.checkKey, x.status]));
 }
 const allMatched = (r: Record<string, string>) => expect(r).toEqual(Object.fromEntries(Object.keys(r).map((k) => [k, "MATCHED"])));
@@ -117,7 +119,7 @@ describe("issuing material", () => {
     expect(await stock(twill)).toBe(30_000);
     const line = r.materials.find((m) => m.id === twillLine)!;
     expect(line).toMatchObject({ issuedQty: 20_000, atProducer: 20_000, issuedValue: 2000 });
-    expect(r.wip).toEqual({ materials: 2000 });
+    expect(r.wip).toMatchObject({ materials: 2000, costs: 0, total: 2000 });
     const again = await issueMaterials(moId, { lines: [{ materialLineId: twillLine, quantity: 20_000 }] }, OWNER, { ...SEE, requestKey: "issue-req-0001" });
     expect(again.replayed).toBe(true);
     expect(await stock(twill)).toBe(30_000);
@@ -149,12 +151,62 @@ describe("usage and returns", () => {
     const r = await returnMaterials(moId, { lines: [{ materialLineId: twillLine, quantity: 1000 }], note: "offcuts back" }, OWNER, SEE);
     const line = r.materials.find((m) => m.id === twillLine)!;
     expect(line).toMatchObject({ returnedQty: 1000, atProducer: 0, issuedValue: 3950, returnedValue: 100 });
-    expect(r.wip).toEqual({ materials: 3850 });
+    expect(r.wip).toMatchObject({ materials: 3850, costs: 0, total: 3850 });
     expect(await stock(twill)).toBe(11_500);
     const moves = await listMaterialMoves(moId);
     expect(moves.moves.map((m) => [m.kind, m.quantity])).toEqual([["ISSUE", 20_000], ["ISSUE", 19_500], ["RETURN", 1000]]);
     await expect(prisma.productionMaterialMove.updateMany({ where: { productionOrderId: moId }, data: { note: "x" } })).rejects.toThrow(/append-only/);
     allMatched(await checks());
     expect(await wipBalance()).toBe(3850);
+  });
+});
+
+describe("production costs", () => {
+  let cmt = "";
+  let freight = "";
+  let supplierId = "";
+  let entryId = "";
+  const APPROVER = (): FinanceActor => ({ type: "ADMIN", adminId: "second-approver", label: "approver@test", permissions: [...PERMISSIONS] });
+
+  it("are entered as quantity × rate (exact) or an amount; one live entry per supplier reference", async () => {
+    cmt = (await prisma.productionCostCategory.findFirstOrThrow({ where: { code: "CMT" } })).id;
+    freight = (await prisma.productionCostCategory.findFirstOrThrow({ where: { code: "FREIGHT" } })).id;
+    supplierId = (await prisma.supplier.findFirstOrThrow({ where: { legalName: "Vitest Textiles" } })).id;
+    const e = await createCostEntry(moId, { categoryId: cmt, supplierId, reference: "CH-101", description: "Stitching 1,000 caps", quantity: "1000", unitRate: "45.5" }, STAFF);
+    expect(e).toMatchObject({ status: "DRAFT", amount: 45_500, quantity: "1000", unitRate: "45.5" });
+    entryId = e.id;
+    await expect(createCostEntry(moId, { categoryId: cmt, supplierId, reference: "ch-101 ", description: "same bill again", amount: 100 }, STAFF)).rejects.toMatchObject({ statusCode: 409 });
+    const edited = await updateCostEntry(entryId, { unitRate: "45" , quantity: "1000" }, STAFF);
+    expect(edited.amount).toBe(45_000);
+    await expect(createCostEntry(moId, { categoryId: freight, description: "both", amount: 10, quantity: "1", unitRate: "1" }, STAFF)).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("are approved only by someone else holding manufacturing.approve, accrue into WIP, and are then immutable", async () => {
+    await expect(approveCostEntry(entryId, STAFF)).rejects.toMatchObject({ statusCode: 403 });
+    const ownCost = await createCostEntry(moId, { categoryId: freight, supplierId, reference: "TR-9", description: "Truck to factory", amount: 1200 }, OWNER);
+    await expect(approveCostEntry(ownCost.id, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // its own enterer
+    const wipBefore = await wipBalance();
+    expect((await approveCostEntry(entryId, APPROVER())).status).toBe("APPROVED");
+    expect((await approveCostEntry(entryId, APPROVER())).status).toBe("APPROVED"); // idempotent
+    await approveCostEntry(ownCost.id, APPROVER());
+    allMatched(await checks());
+    expect(await wipBalance()).toBe(Math.round((wipBefore + 45_000 + 1200) * 100) / 100);
+    await expect(prisma.productionCostEntry.update({ where: { id: entryId }, data: { amount: 1 } })).rejects.toThrow(/immutable/);
+    const o = await getProductionOrder(moId, SEE);
+    expect(o.wip).toMatchObject({ costs: 46_200 });
+    expect(o.comparison!.categories.find((c) => c.category.code === "CMT")).toMatchObject({ planned: 0, actual: 45_000, variance: 45_000 });
+    expect(o.comparison!.total.actual).toBe(o.wip!.total);
+  });
+
+  it("void: an approved cost's accrual is reversed; the reference can then be used again", async () => {
+    const wipBefore = await wipBalance();
+    await expect(voidCostEntry(entryId, "wrong rate", STAFF)).rejects.toMatchObject({ statusCode: 403 });
+    expect((await voidCostEntry(entryId, "Rate was ৳44 per piece", APPROVER())).status).toBe("VOID");
+    allMatched(await checks());
+    expect(await wipBalance()).toBe(Math.round((wipBefore - 45_000) * 100) / 100);
+    const again = await createCostEntry(moId, { categoryId: cmt, supplierId, reference: "CH-101", description: "Stitching (corrected)", quantity: "1000", unitRate: "44" }, STAFF);
+    await approveCostEntry(again.id, APPROVER());
+    allMatched(await checks());
+    await expect(prisma.productionCostEntry.update({ where: { id: entryId }, data: { status: "APPROVED" } })).rejects.toThrow(/final/);
   });
 });

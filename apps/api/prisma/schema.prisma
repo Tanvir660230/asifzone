@@ -3461,9 +3461,9 @@ enum SupplierStatus {
 }
 
 model Supplier {
-  id                      String            @id @default(cuid())
+  id                      String                @id @default(cuid())
   businessId              String
-  business                FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business                FinanceBusiness       @relation(fields: [businessId], references: [id], onDelete: Restrict)
   /// Stable, immutable code (SUP-0001 by default) — the merge key across installations.
   code                    String
   legalName               String
@@ -3476,26 +3476,27 @@ model Supplier {
   taxId                   String?
   vatRegistrationNo       String?
   /// Default document currency (ISO 4217).
-  currency                String            @db.VarChar(3)
-  paymentTermsDays        Int               @default(0)
+  currency                String                @db.VarChar(3)
+  paymentTermsDays        Int                   @default(0)
   paymentTermsNote        String?
   /// A warning threshold, never a block.
-  creditLimit             Decimal?          @db.Decimal(18, 2)
+  creditLimit             Decimal?              @db.Decimal(18, 2)
   defaultTaxCodeId        String?
-  defaultTaxCode          TaxCode?          @relation(fields: [defaultTaxCodeId], references: [id], onDelete: Restrict)
+  defaultTaxCode          TaxCode?              @relation(fields: [defaultTaxCodeId], references: [id], onDelete: Restrict)
   defaultExpenseAccountId String?
-  defaultExpenseAccount   LedgerAccount?    @relation("SupplierDefaultExpense", fields: [defaultExpenseAccountId], references: [id], onDelete: Restrict)
-  status                  SupplierStatus    @default(ACTIVE)
+  defaultExpenseAccount   LedgerAccount?        @relation("SupplierDefaultExpense", fields: [defaultExpenseAccountId], references: [id], onDelete: Restrict)
+  status                  SupplierStatus        @default(ACTIVE)
   statusReason            String?
   notes                   String?
   /// References to documents held elsewhere (trade licence, agreement) — evidence, not a file store.
   evidence                String?
-  createdAt               DateTime          @default(now())
-  updatedAt               DateTime          @updatedAt
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
   purchaseOrders          PurchaseOrder[]
   goodsReceipts           GoodsReceipt[]
   purchaseReturns         PurchaseReturn[]
   productionOrders        ProductionOrder[]
+  productionCosts         ProductionCostEntry[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -3993,6 +3994,7 @@ model ProductionOrder {
   materials          ProductionMaterialLine[]
   plannedCosts       ProductionPlannedCost[]
   materialMoves      ProductionMaterialMove[]
+  costEntries        ProductionCostEntry[]
 
   @@unique([businessId, number])
   @@index([businessId, status])
@@ -4068,6 +4070,7 @@ model ProductionCostCategory {
   createdAt    DateTime                @default(now())
   updatedAt    DateTime                @updatedAt
   plannedCosts ProductionPlannedCost[]
+  costEntries  ProductionCostEntry[]
 
   @@unique([businessId, code])
 }
@@ -4119,4 +4122,45 @@ model ProductionMaterialMove {
   @@unique([productionOrderId, requestKey, materialLineId, kind])
   @@index([productionOrderId, createdAt])
   @@index([materialLineId])
+}
+
+enum ProductionCostStatus {
+  DRAFT
+  APPROVED
+  VOID
+}
+
+/// One actual production cost of an order (docs/MANUFACTURING.md §7): CMT, sewing, embroidery, freight, samples… DRAFT →
+/// APPROVED (by someone other than who entered it; accrues Dr 1630 WIP / Cr 2116 production costs accrued) → VOID (the
+/// accrual reversed). The supplier's invoice clears 2116 later (Phase 4E), so a cost is never counted twice.
+model ProductionCostEntry {
+  id                String                 @id @default(cuid())
+  productionOrderId String
+  productionOrder   ProductionOrder        @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  categoryId        String
+  category          ProductionCostCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  /// The payee (factory, embroiderer, transporter); null for an internal cost.
+  supplierId        String?
+  supplier          Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  /// The supplier's bill / challan / reference — unique per supplier and category while not void (no double capture).
+  reference         String?
+  description       String
+  costDate          DateTime               @db.Date
+  /// Optional quantity × rate (e.g. 1,000 pcs × 45); the amount is then their product, half-even to minor units.
+  quantity          Decimal?               @db.Decimal(18, 4)
+  unitRate          Decimal?               @db.Decimal(18, 6)
+  amount            Decimal                @db.Decimal(18, 2)
+  evidence          String?
+  status            ProductionCostStatus   @default(DRAFT)
+  createdByAdminId  String?
+  approvedByAdminId String?
+  approvedAt        DateTime?
+  voidedByAdminId   String?
+  voidedAt          DateTime?
+  voidReason        String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([productionOrderId, status])
+  @@index([supplierId])
 }

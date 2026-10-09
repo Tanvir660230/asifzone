@@ -16,6 +16,8 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { IssueModal, ReturnModal, UsageModal } from "@/components/admin/manufacturing/custody-modals";
+import { ProductionCosts } from "@/components/admin/manufacturing/production-costs";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { SizeColorGrid } from "@/components/admin/manufacturing/size-color-grid";
 import { formatUnitCost } from "@/components/admin/manufacturing/format";
 import { COST_GROUP_LABEL, MO_STATUS_BADGE, MO_STATUS_LABEL } from "@/components/admin/manufacturing/status";
@@ -31,6 +33,7 @@ export default function ProductionOrderPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { can, ready } = useCapabilities();
+  const me = useCurrentAdmin();
   const allowed = can("manufacturing.view");
   const mo = useQuery({ queryKey: mfg.manufacturingKeys.order(id), queryFn: () => mfg.getProductionOrder(id), enabled: allowed });
   const [cancelling, setCancelling] = useState(false);
@@ -86,7 +89,7 @@ export default function ProductionOrderPage() {
         <Stat label="Bill of materials" value={o.bom ? `Version ${o.bom.version}` : "By hand"} />
         {o.planned && <Stat label="Planned cost" value={plannedValue(o.planned.totalCost, o.planned.materialsWithoutCost)} hint={o.planned.materialsWithoutCost ? `Excludes ${o.planned.materialsWithoutCost} material(s) with no known cost yet` : undefined} />}
         {o.planned && <Stat label="Planned cost per unit" value={o.planned.costPerUnit === null ? "—" : plannedValue(o.planned.costPerUnit, o.planned.materialsWithoutCost)} />}
-        {o.wip && issuedAny && <Stat label="In work in progress" value={formatPrice(o.wip.materials)} hint="Material issued, less returns" />}
+        {o.wip && (issuedAny || o.wip.costs > 0) && <Stat label="In work in progress" value={formatPrice(o.wip.total)} hint={`Materials ${formatPrice(o.wip.materials)} · costs ${formatPrice(o.wip.costs)}`} />}
       </dl>
       {o.terms && <Card className="p-4 text-sm"><p className="text-ink-600">Agreed rate & terms</p><p className="whitespace-pre-line text-ink-900">{o.terms}</p></Card>}
 
@@ -140,7 +143,8 @@ export default function ProductionOrderPage() {
         )}
       </section>
 
-      {o.planned && (
+      {/* Once approved, the plan appears in Production costs' planned-vs-actual table. */}
+      {o.planned && o.status === "DRAFT" && (
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-ink-900">Planned costs</h2>
           <Card className="divide-y divide-line p-0 text-sm">
@@ -155,6 +159,8 @@ export default function ProductionOrderPage() {
           </Card>
         </section>
       )}
+
+      {o.status !== "DRAFT" && o.status !== "CANCELLED" && <ProductionCosts order={o} can={(c) => can(c)} adminId={me.data?.admin.id ?? null} onChanged={refresh} />}
 
       {moves.data && moves.data.moves.length > 0 && (
         <section className="space-y-2">

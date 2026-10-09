@@ -92,3 +92,21 @@ export const materialUsageSchema = z.object({
     .min(1)
     .max(200),
 });
+
+// ── M3: production costs (docs/MANUFACTURING.md §7) ───────────────────────────────────────────────────────────────────
+const costEntryBase = {
+  categoryId: id,
+  supplierId: id.optional().nullable(),
+  reference: optionalText(100),
+  description: z.string().trim().min(2).max(300),
+  costDate: businessDate.optional(),
+  quantity: decimalString(4, "Quantity").optional().nullable(),
+  unitRate: decimalString(6, "Rate").optional().nullable(),
+  amount: financeAmountSchema.optional().nullable(),
+  evidence: optionalText(500),
+};
+export const productionCostCreateSchema = z
+  .object(costEntryBase)
+  .refine((v) => (v.quantity != null && v.unitRate != null) !== (v.amount != null), "Give either an amount or a quantity × rate");
+export const productionCostUpdateSchema = z.object(costEntryBase).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export const productionCostVoidSchema = z.object({ reason: z.string().trim().min(3).max(500) });

@@ -1,6 +1,6 @@
 # Manufacturing — production orders, materials, costs and finished goods
 
-Status: **M1 (foundation) and M2 (materials custody & WIP) implemented and verified (2026-10-09).** M3–M5 are designed here and built next. The roadmap
+Status: **M1 (foundation), M2 (materials custody & WIP) and M3 (production costs) implemented and verified (2026-10-09).** M4–M5 are designed here and built next. The roadmap
 and decisions are in `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` §10–§12, §21 (D-M1…D-M6) and §22.
 
 Example: Asif Zone orders 1,000 caps from a factory. The system tracks:
@@ -156,17 +156,55 @@ business-supplied material's moving-average cost (`plannedUnitCost`), which beco
   - Browser QA (`finance_qa`): 20,000 cm received @ ৳0.12; issue 15,600; usage 14,800 / 400; return 400 → WIP ৳1,824
     = 15,200 × ৳0.12; all seven checks "matches"; 375 px without overflow.
 
-## 7. M3 — Production costs [PROPOSED]
+## 7. M3 — Production costs (implemented)
 
-`ProductionCostEntry`:
-- category, amount, quantity × rate, payee supplier, reference, evidence;
-- status DRAFT → APPROVED → INVOICED (4E) → PAID (via AP); VOID.
-- **Approval** (`manufacturing.approve`, approver ≠ enterer) posts `manufacturing.cost_accrued`: **Dr 1630 / Cr 2116**.
-- **Void:** a superseding revision reverses the accrual.
-- **Duplicate guard:** unique (supplier, reference, category) when a reference is given.
-- **AP link:** the supplier's invoice (4E) clears 2116 through a PRODUCTION_COST invoice line linked to the entry, so a
-  cost is never counted twice.
-- **Reporting:** planned vs actual per category, split into incurred / approved / invoiced / paid.
+- **`ProductionCostEntry`** has:
+  - a configurable category;
+  - a payee supplier (or none for an internal cost);
+  - a reference (bill or challan), a description, a date and evidence;
+  - **quantity × rate** (≤ 4 / ≤ 6 decimals; amount = their product, half-even, in BigInt) **or an amount**.
+
+  It is entered on an approved, open order (`manufacturing.manage`).
+- **Lifecycle** (trigger C-3): DRAFT → APPROVED → VOID (or DRAFT → VOID).
+  - An approved cost is immutable except voiding. Only drafts are deleted. A void is final.
+  - **The approver is never the person who entered it** — enforced by the service and by the trigger.
+- **Approval** (`manufacturing.approve`, idempotent) records `manufacturing.cost_accrued`: **Dr 1630 WIP** (the order as
+  party) / **Cr 2116 production costs accrued** (the supplier as party).
+- **Void** of an approved cost records the void revision `#r1`, which supersedes `#r0`; the accrual journal is reversed.
+- **No double capture:** a partial unique index allows one live entry per (supplier, category, reference — trimmed, case-
+  insensitive). The supplier's invoice clears 2116 in Phase 4E instead of adding a second cost.
+- **Order view:**
+  - the cost list;
+  - **planned vs actual** — materials (plan snapshot vs net issued value) and each category (planned vs approved);
+  - variances and the total;
+  - costs awaiting approval;
+  - WIP = materials + approved costs;
+  - aggregated cost figures need `costing.read`.
+- **Checks:**
+  - `manufacturing.wip` now includes approved costs (in total and per order);
+  - new `manufacturing.production_accrual`: the 2116 balance = Σ approved costs not yet invoiced.
+- **API:**
+  - `POST /production-orders/:id/costs`, `PATCH /production-costs/:id` and `DELETE /production-costs/:id`
+    (`manufacturing.manage`);
+  - `POST /production-costs/:id/approve` and `POST /production-costs/:id/void` (`manufacturing.approve`);
+  - 486 admin routes in total.
+- **UI:** the Production costs section on the order:
+  - add / edit drafts (quantity × rate or amount);
+  - Approve, hidden from whoever entered the cost;
+  - Void with a reason; Delete a draft;
+  - the planned-vs-actual table.
+- **Verified:**
+  - `manufacturing-custody.integration.test.ts` now has 7 tests:
+    - 1,000 × 45.5 = ৳45,500, edited to ৳45,000;
+    - duplicate reference refused (case and space insensitive);
+    - amount *and* rate refused;
+    - STAFF can't approve; the enterer can't approve; approval is idempotent;
+    - WIP +৳46,200; immutable once approved;
+    - comparison and WIP agree;
+    - void reverses −৳45,000, and the reference can be reused;
+    - checks after each step, including `manufacturing.production_accrual`, all MATCHED.
+  - Browser QA: the owner entered 400 × ৳45 and saw no Approve button; a second owner approved it; actual ৳19,824 =
+    ৳1,824 materials + ৳18,000; all checks "matches".
 
 ## 8. M4 — Deliveries, inspection and finished goods [PROPOSED]
 
@@ -229,7 +267,8 @@ Inventory to keep the 12 primary modules.
 Migrations:
 - `20261018100000_manufacturing_foundation` (M-1…M-7);
 - `20261018100100_manufacturing_material_source` (`fromBom`, plan guard);
-- `20261019100000_manufacturing_material_custody` (M2: W-1…W-4, plan guard extended).
+- `20261019100000_manufacturing_material_custody` (M2: W-1…W-4, plan guard extended);
+- `20261020100000_manufacturing_production_costs` (M3: C-1…C-4).
 
 | Invariant | Rule |
 |---|---|

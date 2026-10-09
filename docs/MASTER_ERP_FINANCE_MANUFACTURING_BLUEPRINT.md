@@ -485,8 +485,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E1 4C cutover | **done** 2026-10-09 (`29e6ad1`) | `FINANCE_PHASE_4C.md`; live run = B-1 |
 | E2 4D purchasing | **done** 2026-10-09 (`1802514`) | `FINANCE_PHASE_4D.md` |
 | M1 manufacturing foundation | **done** 2026-10-09 (`01c4ffc`) | `MANUFACTURING.md` §2–§5 |
-| M2 materials custody & WIP | **done** 2026-10-09 | `MANUFACTURING.md` §6 |
-| M3–M5 manufacturing | **next: M3** | `MANUFACTURING.md` §7–§9 |
+| M2 materials custody & WIP | **done** 2026-10-09 (`7c5223e`) | `MANUFACTURING.md` §6 |
+| M3 production costs | **done** 2026-10-09 | `MANUFACTURING.md` §7 |
+| M4–M5 manufacturing | **next: M4** | `MANUFACTURING.md` §8–§9 |
 | E3–E14 | not started | |
 
 ---
@@ -499,7 +500,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E1 | `29e6ad1` | migration `20261016100000_finance_phase4c_cutover`; `schema.prisma`; `domain/finance/inventory-cutover.service.ts` (+ test); `reconciliation.service.ts` (`inventory.valuation_vs_ledger`); `inventory.service.ts` (recordSale race fix); `products/product.service.ts` (history deletion guard); `finance.routes.ts`; shared `schemas/finance-purchasing.ts`; web `finance/inventory-cutover/page.tsx`, `lib/api/finance.ts`, `lib/admin/navigation.ts`; tests updated: authorization matrix, finance.integration, historical-snapshots, product-duplicate; `test-fixtures.ts`; docs `FINANCE_PHASE_4C.md`, `FINANCE_PHASE_4.md` |
 | E2 | `1802514` | migration `20261017100000_finance_phase4d_purchasing`; `schema.prisma`; `domain/finance/{purchase-orders,goods-receipts,purchase-returns}.service.ts`, `purchasing-posting-rules.ts`, `purchasing-setup.service.ts` (settings), `costing.service.ts` (DOCUMENT basis/owner), `reconciliation.service.ts` (`purchasing.grni`), `events.service.ts`; `inventory.service.ts` (`recordDocumentMovements`); `purchasing.routes.ts`; shared schemas; web `finance/{purchase-orders,purchase-orders/[id],goods-receipts,supplier-returns}`, `components/admin/purchasing/*`, `lib/api/purchasing.ts`, navigation; tests: `finance-purchasing-documents.integration.test.ts` + auth matrix, writer guard, finance.integration, store-identity guard; docs `FINANCE_PHASE_4D.md` |
 | M1 | `01c4ffc` | migrations `20261018100000_manufacturing_foundation`, `20261018100100_manufacturing_material_source`; `schema.prisma`; `domain/manufacturing/{requirements,manufacturing-setup.service,materials.service,boms.service,production-orders.service}.ts` + tests + guard; `modules/manufacturing/manufacturing.routes.ts`, `app.ts`; `products/product.service.ts` (catalog excludes materials); shared `permissions.ts`, `finance/accounts.ts` (1630/2116/5220), `schemas/manufacturing.ts`; web `manufacturing/{production-orders,production-orders/[id],boms,materials}`, `components/admin/manufacturing/*`, `lib/api/manufacturing.ts`, navigation (Inventory grouping) + test, capabilities; auth matrix; docs `MANUFACTURING.md` |
-| M2 | (M2 commit, see git log) | migration `20261019100000_manufacturing_material_custody`; `schema.prisma` (reasons, `ProductionMaterialMove`); `domain/manufacturing/material-custody.service.ts` + test; `production-orders.service.ts` (WIP in DTO); `domain/finance/manufacturing-posting-rules.ts`, `events.service.ts`, `reconciliation.service.ts` (`manufacturing.wip`; ignored events no longer counted as unposted); `inventory.service.ts` (reasons); routes; shared schemas; web order page custody + `custody-modals.tsx`, `lib/api/manufacturing.ts`; auth matrix 481; finance.integration count 18; docs |
+| M2 | `7c5223e` | migration `20261019100000_manufacturing_material_custody`; `schema.prisma` (reasons, `ProductionMaterialMove`); `domain/manufacturing/material-custody.service.ts` + test; `production-orders.service.ts` (WIP in DTO); `domain/finance/manufacturing-posting-rules.ts`, `events.service.ts`, `reconciliation.service.ts` (`manufacturing.wip`; ignored events no longer counted as unposted); `inventory.service.ts` (reasons); routes; shared schemas; web order page custody + `custody-modals.tsx`, `lib/api/manufacturing.ts`; auth matrix 481; finance.integration count 18; docs |
+| M3 | (M3 commit, see git log) | migration `20261020100000_manufacturing_production_costs`; `schema.prisma` (`ProductionCostEntry`); `domain/manufacturing/production-costs.service.ts`; `production-orders.service.ts` (costs, planned vs actual, WIP total); `domain/finance/manufacturing-posting-rules.ts` (`cost_accrued`), `reconciliation.service.ts` (`manufacturing.wip` + costs, `manufacturing.production_accrual`); routes; shared schemas; web `components/admin/manufacturing/production-costs.tsx`, order page; tests: custody suite +3, auth matrix 486, finance.integration check count now derived from the registry; docs |
 
 ---
 
@@ -514,6 +516,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
 | 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | M3: `npx vitest run` (apps/api) | 1280 tests: 1279 passed + finance.integration (count now derived from the check registry; re-run 24/24) |
+| 2026-10-09 | M3 browser QA (`finance_qa`) | owner enters 400 × 45 (no Approve shown); approver@ approves; actual ৳19,824; wip / accrual / valuation / ledger checks match |
 | 2026-10-09 | M2: `npx vitest run` (apps/api) | 1277 tests: 1276 passed + finance.integration after its check count 17→18 (re-run 24/24) |
 | 2026-10-09 | M2 browser QA (`finance_qa`) | PO/GRN 20,000 cm @ 0.12; issue 15,600; usage 14,800/400; return 400; WIP ৳1,824; 7 checks match; 375 px OK |
 | 2026-10-09 | M1 browser QA (`finance_qa`) 1440 + 375 px | set-up → material → BOM v1 approved → MO 400 units approved; requirement 15,600 cm; incomplete planned cost shown as "Not known yet" |
@@ -534,13 +538,14 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 ## 27. Next eligible task and acceptance criteria
 
-**M3 — Production costs** (`docs/MANUFACTURING.md` §7). `ProductionCostEntry` (category, payee supplier, reference,
-qty × rate or amount, evidence, status DRAFT → APPROVED → VOID; INVOICED/PAID later via AP), approval by a different
-admin (`manufacturing.approve`, approver ≠ enterer), event `manufacturing.cost_accrued` (Dr 1630 / Cr 2116, order party;
-void = superseding revision), duplicate guard unique (supplier, reference, category), planned vs actual by category in the
-order DTO, `manufacturing.wip` extended with accrued costs, check `manufacturing.production_accrual` (2116 = Σ approved,
-not-invoiced entries), routes + UI (Costs section on the order: add, approve, void). Acceptance: integration tests incl.
-separation of duties, idempotent approval, void reverses, checks MATCHED; browser QA.
+**M4 — Deliveries, quality inspection and finished goods** (`docs/MANUFACTURING.md` §8). `ProductionReceipt` (+ lines per
+order variant line: delivered, accepted, rejected, rework; CHECK delivered = accepted + rejected + rework), DRAFT → POSTED
+(idempotent; over-receipt beyond planned needs approval), stock reason `PRODUCTION_RECEIPT`, accepted units into finished
+stock via `recordDocumentMovements` at the provisional unit cost (D-M5: (WIP to date + approved planned remainder) ÷
+expected accepted units; ESTIMATED), event `manufacturing.goods_received` (Dr 1610 / Cr 1630, order party), derived
+delivered/accepted/rejected quantities on order lines, PARTIALLY_RECEIVED / RECEIVED status, rework re-inspection,
+`manufacturing.wip` extended with transfers out. Acceptance: no unit enters stock twice (retry), rejected never saleable,
+checks MATCHED (valuation_vs_ledger incl. finished goods), browser QA.
 
 ## 28. Changelog
 
@@ -551,3 +556,4 @@ separation of duties, idempotent approval, void reverses, checks MATCHED; browse
 | 2026-10-09 | v3 — E2 (4D purchasing documents) done; next M1 manufacturing foundation |
 | 2026-10-09 | v4 — M1 manufacturing foundation done; manufacturing nested under Inventory (12-module cap); next M2 |
 | 2026-10-09 | v5 — M2 materials custody & WIP done; next M3 production costs |
+| 2026-10-09 | v6 — M3 production costs done; next M4 receipts / QC / finished goods |

@@ -89,8 +89,30 @@ export interface ProductionOrder {
   materials: ProductionMaterial[];
   plannedCosts: Array<{ id: string; category: { id: string; code: string; name: string; group: CostGroup }; amount: number | null; basis: string | null }>;
   planned: { materialCost: number; materialsWithoutCost: number; otherCost: number; totalCost: number; costPerUnit: number | null } | null;
-  wip: { materials: number } | null;
+  wip: { materials: number; costs: number; total: number } | null;
+  costs: CostEntry[];
+  comparison: {
+    materials: { planned: number; actual: number; variance: number; plannedIncomplete: boolean };
+    categories: Array<{ category: { id: string; code: string; name: string; group: CostGroup }; planned: number; actual: number; variance: number }>;
+    total: { planned: number; actual: number; variance: number };
+    pendingApproval: number;
+  } | null;
   replayed?: boolean;
+}
+export interface CostEntry {
+  id: string;
+  status: "DRAFT" | "APPROVED" | "VOID";
+  category: { id: string; code: string; name: string; group: CostGroup };
+  supplier: { id: string; code: string; displayName: string } | null;
+  reference: string | null;
+  description: string;
+  costDate: string;
+  quantity: string | null;
+  unitRate: string | null;
+  amount: number;
+  evidence: string | null;
+  createdByAdminId: string | null;
+  voidReason: string | null;
 }
 export interface MaterialMove { id: string; kind: "ISSUE" | "RETURN"; quantity: number; value: number; valuationStatus: string; sku: string; name: string; stockUnit: string | null; overIssueReason: string | null; note: string | null; createdAt: string }
 export interface ProducibleProduct { id: string; name: string; variants: Array<{ id: string; sku: string; size: string; color: string; stock: number }> }
@@ -142,3 +164,10 @@ export const returnMaterials = (id: string, body: { lines: Array<{ materialLineI
   apiFetch<ProductionOrder>(`${BASE}/production-orders/${id}/return`, { method: "POST", body, idempotencyKey });
 export const declareMaterialUsage = (id: string, lines: Array<{ materialLineId: string; consumedQty: number; scrappedQty: number }>) =>
   apiFetch<ProductionOrder>(`${BASE}/production-orders/${id}/material-usage`, { method: "PUT", body: { lines } });
+
+// ── M3: production costs ──────────────────────────────────────────────────────────────────────────────────────────────
+export const createCostEntry = (orderId: string, body: Record<string, unknown>) => apiFetch<CostEntry>(`${BASE}/production-orders/${orderId}/costs`, { method: "POST", body });
+export const updateCostEntry = (id: string, body: Record<string, unknown>) => apiFetch<CostEntry>(`${BASE}/production-costs/${id}`, { method: "PATCH", body });
+export const deleteCostEntry = (id: string) => apiFetch<void>(`${BASE}/production-costs/${id}`, { method: "DELETE" });
+export const approveCostEntry = (id: string) => apiFetch<CostEntry>(`${BASE}/production-costs/${id}/approve`, { method: "POST", body: {} });
+export const voidCostEntry = (id: string, reason: string) => apiFetch<CostEntry>(`${BASE}/production-costs/${id}/void`, { method: "POST", body: { reason } });
