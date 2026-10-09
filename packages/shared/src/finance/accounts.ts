@@ -71,6 +71,10 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.freight_in",
   "expense.purchases_other",
   "income.purchase_discounts",
+  // Manufacturing (docs/MANUFACTURING.md) — work in progress, production costs accrued, abnormal production losses
+  "asset.wip",
+  "liability.production_accrual",
+  "cogs.production_losses",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -114,6 +118,12 @@ export const PURCHASING_MAPPING_KEYS: readonly AccountMappingKey[] = [
   "expense.non_recoverable_tax", "expense.freight_in", "expense.purchases_other", "income.purchase_discounts",
 ];
 
+/** Every key manufacturing posts to: materials issued into work in progress, production costs accrued until invoiced,
+ * finished goods out of WIP into inventory, the close's true-up (5150) and approved abnormal losses. */
+export const MANUFACTURING_MAPPING_KEYS: readonly AccountMappingKey[] = [
+  "asset.inventory", "asset.wip", "liability.production_accrual", "cogs.production_losses", "cogs.cost_adjustments",
+];
+
 /**
  * Mapping keys whose ledger figure is reconciled against an existing authoritative business figure (the metrics registry,
  * docs/METRICS_REGISTRY.md). Revenue: the dashboard's realised net sales = merchandise sales − merchandise refunds, both
@@ -153,6 +163,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "1520", name: "Employee advances", type: "ASSET", parent: "1500" },
   { code: "1600", name: "Inventory", type: "ASSET", parent: "1000", group: true },
   { code: "1610", name: "Merchandise inventory", type: "ASSET", parent: "1600", mapping: "asset.inventory" },
+  { code: "1630", name: "Work in progress (production)", type: "ASSET", parent: "1600", mapping: "asset.wip" },
   { code: "1700", name: "Other current assets", type: "ASSET", parent: "1000", group: true },
   { code: "1710", name: "VAT input recoverable", type: "ASSET", parent: "1700", mapping: "asset.vat_input" },
   { code: "1720", name: "Prepaid expenses", type: "ASSET", parent: "1700" },
@@ -167,6 +178,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "2100", name: "Payables", type: "LIABILITY", parent: "2000", group: true },
   { code: "2110", name: "Trade payables (suppliers)", type: "LIABILITY", parent: "2100", mapping: "liability.payable_trade" },
   { code: "2115", name: "Goods received not invoiced", type: "LIABILITY", parent: "2100", mapping: "liability.grni", aliases: ["liability.supplier_returns"] },
+  { code: "2116", name: "Production costs accrued, not invoiced", type: "LIABILITY", parent: "2100", mapping: "liability.production_accrual" },
   { code: "2120", name: "Owner paid on behalf of business", type: "LIABILITY", parent: "2100" },
   { code: "2200", name: "Customer liabilities", type: "LIABILITY", parent: "2000", group: true },
   { code: "2210", name: "Customer deposits", type: "LIABILITY", parent: "2200", mapping: "liability.customer_deposits" },
@@ -204,6 +216,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "5150", name: "Inventory cost adjustments", type: "COGS", parent: "5000", mapping: "cogs.cost_adjustments", aliases: ["cogs.purchase_price_differences"] },
   { code: "5200", name: "Inventory shrinkage & write-offs", type: "COGS", parent: "5000", mapping: "cogs.inventory_shrinkage" },
   { code: "5210", name: "Inventory count adjustments", type: "COGS", parent: "5000", mapping: "cogs.count_adjustments" },
+  { code: "5220", name: "Production losses & abnormal waste", type: "COGS", parent: "5000", mapping: "cogs.production_losses" },
 
   { code: "6000", name: "Operating expenses", type: "EXPENSE", group: true },
   { code: "6100", name: "Rent", type: "EXPENSE", parent: "6000" },

@@ -48,6 +48,7 @@ import { checkoutV1Router } from "./modules/checkout/checkout.routes";
 import { storefrontReadModelRouter } from "./modules/storefront/read-model.routes";
 import { financeRouter } from "./modules/finance/finance.routes";
 import { purchasingRouter } from "./modules/purchasing/purchasing.routes";
+import { manufacturingRouter } from "./modules/manufacturing/manufacturing.routes";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
@@ -135,6 +136,7 @@ app.use("/api/v1/outbox", outboxRouter);
 app.use("/api/v1/finance", financeRouter);
 // Financial Core Phase 4 (docs/FINANCE_PHASE_4.md): purchasing, suppliers / AP and inventory costing.
 app.use("/api/v1/purchasing", purchasingRouter);
+app.use("/api/v1/manufacturing", manufacturingRouter);
 // Phase 11: counts-only attention signals — an admin with ops.read, or an external monitor with OPS_MONITOR_TOKEN.
 // Mounted before the ops router (whose router-level requireAdmin would otherwise run first).
 app.get(

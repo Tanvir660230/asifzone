@@ -209,6 +209,14 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/v1/purchasing/purchase-orders/:id/close",
   "POST /api/v1/purchasing/goods-receipts/:id/reverse",
   "POST /api/v1/purchasing/returns/:id/approve",
+  // Manufacturing M1 (docs/MANUFACTURING.md): STAFF plans production; approvals, cost categories and set-up stay with approvers.
+  "POST /api/v1/manufacturing/setup",
+  "POST /api/v1/manufacturing/cost-categories",
+  "PATCH /api/v1/manufacturing/cost-categories/:id",
+  "POST /api/v1/manufacturing/boms/:id/approve",
+  "POST /api/v1/manufacturing/boms/:id/archive",
+  "POST /api/v1/manufacturing/production-orders/:id/approve",
+  "POST /api/v1/manufacturing/production-orders/:id/reopen",
   // Financial Core Phase 3 (docs/FINANCE_PHASE_3.md §7): commerce accounting, exceptions, settlements — no STAFF access.
   "GET /api/v1/finance/commerce/status",
   "POST /api/v1/finance/commerce/setup",
@@ -322,11 +330,11 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 452 admin routes, each with exactly one permission (or explicit self-service)", () => {
+  it("covers all 477 admin routes, each with exactly one permission (or explicit self-service)", () => {
     // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore
     // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7); +17: Phase 3 (docs/FINANCE_PHASE_3.md §7)
-    // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md)
-    expect(routes).toHaveLength(452);
+    // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md); +25: manufacturing M1 (docs/MANUFACTURING.md)
+    expect(routes).toHaveLength(477);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

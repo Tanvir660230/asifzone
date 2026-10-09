@@ -156,7 +156,9 @@ describe("navigation manifest — derivation", () => {
   it("section tabs: grouping page → its pages, a page → its siblings, a lone module → none", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(10);
     expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
-    expect(sectionTabsFor("/admin/inventory", access("OWNER"))).toEqual([]);
+    // Inventory groups stock and production (docs/MANUFACTURING.md); a lone module still shows none (Customers).
+    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/inventory", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
+    expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
 
   it("create commands and palette entries respect capabilities; the product route is the Product Builder", () => {

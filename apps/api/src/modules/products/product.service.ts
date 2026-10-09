@@ -461,6 +461,8 @@ async function logSearch(query: string, resultCount: number, suggestion?: string
 export async function listProducts(query: ProductListQuery) {
   const where = {
     deletedAt: query.trashed ? { not: null } : null,
+    // Production materials (kind MATERIAL) live in Manufacturing → Materials, never in the product catalog or order pickers.
+    kind: "FINISHED" as const,
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
     ...(query.status ? { status: query.status } : {}),
     ...(query.typeId ? { typeId: query.typeId } : {}),

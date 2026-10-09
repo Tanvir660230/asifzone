@@ -51,6 +51,11 @@ export const CAPABILITIES = {
   "ap.manage": { permission: "ap.manage" },
   "costing.view": { permission: "costing.read" },
   "costing.adjust": { permission: "costing.adjust" },
+  // manufacturing (docs/MANUFACTURING.md)
+  "manufacturing.view": { permission: "manufacturing.read" },
+  "manufacturing.manage": { permission: "manufacturing.manage" },
+  "manufacturing.approve": { permission: "manufacturing.approve" },
+  "manufacturing.move_stock": { permission: "manufacturing.move_stock" },
   // catalog & stock
   "catalog.view": { permission: "catalog.read" },
   "catalog.manage": { permission: "catalog.manage" },

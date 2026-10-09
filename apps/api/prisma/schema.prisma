@@ -30,6 +30,11 @@ enum ProductType {
 
 /// Where a product is in its life. Only PUBLISHED products are on the storefront; `Product.isActive` is kept
 /// equal to `status === PUBLISHED` (one service function writes both) because dozens of existing queries filter on it.
+enum ProductKind {
+  FINISHED
+  MATERIAL
+}
+
 enum ProductStatus {
   DRAFT
   READY
@@ -434,6 +439,11 @@ model Product {
   costPrice         Decimal?                @db.Decimal(10, 2)
   taxRate           Decimal?                @db.Decimal(5, 2)
   trackInventory    Boolean                 @default(true)
+  /// Manufacturing (docs/MANUFACTURING.md): FINISHED goods are sold; MATERIAL items (fabric, thread, labels, packaging) are
+  /// stock-tracked inputs that are never sold — the database keeps them unpublished and inactive.
+  kind              ProductKind             @default(FINISHED)
+  /// The unit every stock quantity of a material is counted in (cm, g, pcs, …) — stock stays a whole number of it.
+  stockUnit         String?
   /// Ships free: the canonical quote waives shipping when EVERY line of the cart is a free-delivery product (one normal
   /// product → the zone fee applies). Read only when pricing; each order line snapshots it (OrderItem.freeDeliverySnapshot)
   /// so changing it never touches an existing order (docs/ORDER_ADJUSTMENTS.md §2).
@@ -469,6 +479,8 @@ model Product {
   relations         ProductRelation[]       @relation("ProductRelations")
   relatedTo         ProductRelation[]       @relation("RelatedToProducts")
   deletedAt         DateTime?
+  billsOfMaterials  BillOfMaterials[]
+  productionOrders  ProductionOrder[]
   variants          ProductVariant[]
   images            ProductImage[]
   flashSaleItems    FlashSaleItem[]
@@ -621,44 +633,49 @@ model StockAlert {
 }
 
 model ProductVariant {
-  id                  String                    @id @default(cuid())
-  productId           String
-  product             Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sku                 String                    @unique
-  barcode             String?
-  size                String
-  sizeLabel           String?
-  color               String
-  colorHex            String?
-  price               Decimal?                  @db.Decimal(10, 2)
+  id                      String                    @id @default(cuid())
+  productId               String
+  product                 Product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku                     String                    @unique
+  barcode                 String?
+  size                    String
+  sizeLabel               String?
+  color                   String
+  colorHex                String?
+  price                   Decimal?                  @db.Decimal(10, 2)
   /// "Was" price for this variant (shown struck through when above its selling price).
-  compareAtPrice      Decimal?                  @db.Decimal(10, 2)
-  costPrice           Decimal?                  @db.Decimal(10, 2)
-  stock               Int                       @default(0)
-  weight              Decimal?                  @db.Decimal(6, 2)
+  compareAtPrice          Decimal?                  @db.Decimal(10, 2)
+  costPrice               Decimal?                  @db.Decimal(10, 2)
+  stock                   Int                       @default(0)
+  weight                  Decimal?                  @db.Decimal(6, 2)
   /// An inactive variant is hidden from the storefront and refused at checkout, but keeps its order and stock history.
-  isActive            Boolean                   @default(true)
+  isActive                Boolean                   @default(true)
   /// The variant's primary image (swatch / cart thumbnail) — always the first of its `images` when it has any.
-  imageId             String?
-  image               ProductImage?             @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
+  imageId                 String?
+  image                   ProductImage?             @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)
   /// The variant's own gallery, in display order.
-  images              VariantImage[]
-  sortOrder           Int                       @default(0)
-  attributeValues     VariantAttributeValue[]
-  stockMovements      StockMovement[]
+  images                  VariantImage[]
+  sortOrder               Int                       @default(0)
+  attributeValues         VariantAttributeValue[]
+  stockMovements          StockMovement[]
   /// Phase 4C valuation cutover lines (a posted line protects the variant from deletion — line guard trigger).
-  cutoverLines        InventoryCutoverLine[]
+  cutoverLines            InventoryCutoverLine[]
   /// Phase 4D purchasing documents — Restrict: a variant that was bought keeps its history.
-  purchaseOrderLines  PurchaseOrderLine[]
-  goodsReceiptLines   GoodsReceiptLine[]
-  purchaseReturnLines PurchaseReturnLine[]
+  purchaseOrderLines      PurchaseOrderLine[]
+  goodsReceiptLines       GoodsReceiptLine[]
+  purchaseReturnLines     PurchaseReturnLine[]
+  /// Manufacturing — Restrict: a variant used in a BOM or a production order keeps its history.
+  bomMaterialLines        BillOfMaterialsLine[]     @relation("BomMaterial")
+  bomFinishedLines        BillOfMaterialsLine[]     @relation("BomFinishedVariant")
+  productionLines         ProductionOrderLine[]
+  productionMaterialLines ProductionMaterialLine[]
   /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
-  valuationEntries    InventoryValuationEntry[]
-  costState           InventoryCostState?
-  cartItems           CartItem[]
-  stockAlerts         StockAlert[]
-  createdAt           DateTime                  @default(now())
-  updatedAt           DateTime                  @updatedAt
+  valuationEntries        InventoryValuationEntry[]
+  costState               InventoryCostState?
+  cartItems               CartItem[]
+  stockAlerts             StockAlert[]
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
 
   @@unique([productId, size, color])
   @@index([imageId])
@@ -2646,6 +2663,9 @@ model FinanceBusiness {
   purchaseOrders              PurchaseOrder[]
   goodsReceipts               GoodsReceipt[]
   purchaseReturns             PurchaseReturn[]
+  billsOfMaterials            BillOfMaterials[]
+  productionOrders            ProductionOrder[]
+  productionCostCategories    ProductionCostCategory[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2665,6 +2685,7 @@ model FinanceBrand {
   purchaseOrders   PurchaseOrder[]
   goodsReceipts    GoodsReceipt[]
   purchaseReturns  PurchaseReturn[]
+  productionOrders ProductionOrder[]
 
   @@unique([businessId, key])
   @@unique([businessId, installId])
@@ -3437,9 +3458,9 @@ enum SupplierStatus {
 }
 
 model Supplier {
-  id                      String           @id @default(cuid())
+  id                      String            @id @default(cuid())
   businessId              String
-  business                FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business                FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
   /// Stable, immutable code (SUP-0001 by default) — the merge key across installations.
   code                    String
   legalName               String
@@ -3452,25 +3473,26 @@ model Supplier {
   taxId                   String?
   vatRegistrationNo       String?
   /// Default document currency (ISO 4217).
-  currency                String           @db.VarChar(3)
-  paymentTermsDays        Int              @default(0)
+  currency                String            @db.VarChar(3)
+  paymentTermsDays        Int               @default(0)
   paymentTermsNote        String?
   /// A warning threshold, never a block.
-  creditLimit             Decimal?         @db.Decimal(18, 2)
+  creditLimit             Decimal?          @db.Decimal(18, 2)
   defaultTaxCodeId        String?
-  defaultTaxCode          TaxCode?         @relation(fields: [defaultTaxCodeId], references: [id], onDelete: Restrict)
+  defaultTaxCode          TaxCode?          @relation(fields: [defaultTaxCodeId], references: [id], onDelete: Restrict)
   defaultExpenseAccountId String?
-  defaultExpenseAccount   LedgerAccount?   @relation("SupplierDefaultExpense", fields: [defaultExpenseAccountId], references: [id], onDelete: Restrict)
-  status                  SupplierStatus   @default(ACTIVE)
+  defaultExpenseAccount   LedgerAccount?    @relation("SupplierDefaultExpense", fields: [defaultExpenseAccountId], references: [id], onDelete: Restrict)
+  status                  SupplierStatus    @default(ACTIVE)
   statusReason            String?
   notes                   String?
   /// References to documents held elsewhere (trade licence, agreement) — evidence, not a file store.
   evidence                String?
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
   purchaseOrders          PurchaseOrder[]
   goodsReceipts           GoodsReceipt[]
   purchaseReturns         PurchaseReturn[]
+  productionOrders        ProductionOrder[]
 
   @@unique([businessId, code])
   @@index([businessId, status])
@@ -3857,4 +3879,206 @@ model PurchaseReturnLine {
   updatedAt          DateTime          @updatedAt
 
   @@unique([purchaseReturnId, lineNo])
+}
+
+// ── Manufacturing (docs/MANUFACTURING.md) ─────────────────────────────────────────────────────────────────────────────
+
+enum BomStatus {
+  DRAFT
+  APPROVED
+  ARCHIVED
+}
+
+/// Who provides a material: the business (issued from its stock, valued) or the producer (part of the producer's price —
+/// never the business's inventory).
+enum MaterialSupplier {
+  BUSINESS
+  PRODUCER
+}
+
+/// A finished product's bill of materials, versioned: an APPROVED version is frozen (a change is a new version). Lines may
+/// apply to every variant of the product or to one variant (a size that takes more fabric).
+model BillOfMaterials {
+  id                String                @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  productId         String
+  product           Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  version           Int
+  status            BomStatus             @default(DRAFT)
+  name              String?
+  notes             String?
+  createdByAdminId  String?
+  approvedByAdminId String?
+  approvedAt        DateTime?
+  archivedAt        DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  lines             BillOfMaterialsLine[]
+  productionOrders  ProductionOrder[]
+
+  @@unique([productId, version])
+  @@index([businessId, status])
+}
+
+model BillOfMaterialsLine {
+  id                String           @id @default(cuid())
+  bomId             String
+  bom               BillOfMaterials  @relation(fields: [bomId], references: [id], onDelete: Restrict)
+  lineNo            Int
+  materialVariantId String
+  materialVariant   ProductVariant   @relation("BomMaterial", fields: [materialVariantId], references: [id], onDelete: Restrict)
+  /// Null = every variant of the product; set = only that finished variant.
+  finishedVariantId String?
+  finishedVariant   ProductVariant?  @relation("BomFinishedVariant", fields: [finishedVariantId], references: [id], onDelete: Restrict)
+  /// Material stock units per finished unit (6 dp — e.g. 37.5 cm of fabric per cap).
+  qtyPerUnit        Decimal          @db.Decimal(18, 6)
+  /// Expected wastage on top of the net requirement (percent).
+  wastagePct        Decimal          @default(0) @db.Decimal(5, 2)
+  suppliedBy        MaterialSupplier @default(BUSINESS)
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([bomId, lineNo])
+}
+
+enum ProductionOrderStatus {
+  DRAFT
+  APPROVED
+  IN_PRODUCTION
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
+/// A production order: a finished product made by a producer (a Supplier) or in-house, planned per variant (size ×
+/// colour), with its material requirements computed from the BOM. Totals are derived from the lines — never stored.
+model ProductionOrder {
+  id                 String                   @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness          @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId            String
+  brand              FinanceBrand             @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "production_order" — shown as MO-000001.
+  number             Int
+  status             ProductionOrderStatus    @default(DRAFT)
+  productId          String
+  product            Product                  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  /// The approved BOM version the requirements were planned from (null = materials planned by hand).
+  bomId              String?
+  bom                BillOfMaterials?         @relation(fields: [bomId], references: [id], onDelete: Restrict)
+  /// The factory / contractor; null = made in-house.
+  producerSupplierId String?
+  producer           Supplier?                @relation(fields: [producerSupplierId], references: [id], onDelete: Restrict)
+  orderDate          DateTime                 @db.Date
+  expectedDate       DateTime?                @db.Date
+  /// Agreed rate, delivery and payment terms as written with the producer.
+  terms              String?
+  notes              String?
+  createdByAdminId   String?
+  approvedByAdminId  String?
+  approvedAt         DateTime?
+  startedAt          DateTime?
+  closedAt           DateTime?
+  closedReason       String?
+  cancelledReason    String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  lines              ProductionOrderLine[]
+  materials          ProductionMaterialLine[]
+  plannedCosts       ProductionPlannedCost[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status])
+  @@index([productId])
+}
+
+model ProductionOrderLine {
+  id                String          @id @default(cuid())
+  productionOrderId String
+  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  lineNo            Int
+  variantId         String
+  variant           ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  plannedQty        Int
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([productionOrderId, lineNo])
+  @@unique([productionOrderId, variantId])
+}
+
+/// A material the order needs. Planned from the BOM (or by hand); M2 adds custody: issued = consumed + returned + scrapped
+/// + still at the producer (CHECK). Producer-supplied materials are planned for information and never issued.
+model ProductionMaterialLine {
+  id                String           @id @default(cuid())
+  productionOrderId String
+  productionOrder   ProductionOrder  @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  lineNo            Int
+  materialVariantId String
+  materialVariant   ProductVariant   @relation(fields: [materialVariantId], references: [id], onDelete: Restrict)
+  suppliedBy        MaterialSupplier
+  /// Planned from the BOM (true) or added by hand (false) — re-planning replaces only the BOM's.
+  fromBom           Boolean          @default(false)
+  /// Snapshots of the single BOM line the requirement came from (null when planned by hand or combined from several lines).
+  bomLineId         String?
+  qtyPerUnit        Decimal?         @db.Decimal(18, 6)
+  wastagePct        Decimal?         @db.Decimal(5, 2)
+  /// Whole stock units: ⌈Σ planned finished units × qty per unit × (1 + wastage)⌉.
+  plannedQty        Int
+  /// The material's average unit cost when the order was approved (10⁻⁶ major units) — the planned cost basis; null when
+  /// no cost was known.
+  plannedUnitCost   Decimal?         @db.Decimal(18, 6)
+  issuedQty         Int              @default(0)
+  returnedQty       Int              @default(0)
+  consumedQty       Int              @default(0)
+  scrappedQty       Int              @default(0)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([productionOrderId, lineNo])
+}
+
+enum ProductionCostGroup {
+  MATERIAL
+  LABOUR
+  EXTERNAL_SERVICE
+  OVERHEAD
+  OTHER
+}
+
+/// Configurable production cost categories (cutting, sewing, embroidery, freight, samples, …). Seeded once per business;
+/// the owner adds and deactivates — never deletes — categories.
+model ProductionCostCategory {
+  id           String                  @id @default(cuid())
+  businessId   String
+  business     FinanceBusiness         @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  code         String
+  name         String
+  group        ProductionCostGroup
+  isActive     Boolean                 @default(true)
+  sortOrder    Int                     @default(0)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  plannedCosts ProductionPlannedCost[]
+
+  @@unique([businessId, code])
+}
+
+/// The planned (budgeted) non-material costs of an order, per category — compared with actual costs (M3/M5).
+model ProductionPlannedCost {
+  id                String                 @id @default(cuid())
+  productionOrderId String
+  productionOrder   ProductionOrder        @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  categoryId        String
+  category          ProductionCostCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amount            Decimal                @db.Decimal(18, 2)
+  /// How it was estimated (e.g. "1,000 pcs × ৳45 sewing rate").
+  basis             String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@unique([productionOrderId, categoryId])
 }

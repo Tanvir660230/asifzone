@@ -117,8 +117,8 @@ FINANCE_VIEWER; server-side `requirePermission`.
 | Supplier invoices, matching, GRNI → AP (4E) | **missing** |
 | Supplier payments & allocations (4F) | **missing** |
 | Purchasing / AP / valuation reports (4G) | **missing** |
-| Manufacturing (BOM, production orders, materials, costs, QC, FG receipt) | **missing entirely** — no model, no code (repository search: no `manufactur*`, `BOM`, `production order`) |
-| Raw-material inventory | **missing** — `Material` model is a catalog fabric attribute, not stock |
+| Manufacturing (BOM, production orders, materials, costs, QC, FG receipt) | **M1 done** (materials, BOMs, production orders, planning — `MANUFACTURING.md`); M2–M5 next |
+| Raw-material inventory | **done** (M1: `Product.kind = MATERIAL`, stock units) |
 | Ledger UI: chart, journals, trial balance, periods, opening balances | **missing** (API exists, Phase 1 §11 deferred the UI) |
 | Financial statements (IS / BS / CF) | **missing** (trial balance API only) |
 | Expenses & recurring commitments, payroll, fixed assets, loans, partner capital, budgets, tax engine | **missing** |
@@ -483,8 +483,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 |---|---|---|
 | E0 Audit + blueprint | **done** 2026-10-09 | this file |
 | E1 4C cutover | **done** 2026-10-09 (`29e6ad1`) | `FINANCE_PHASE_4C.md`; live run = B-1 |
-| E2 4D purchasing | **done** 2026-10-09 | `FINANCE_PHASE_4D.md` |
-| M1–M5 manufacturing | **next: M1** | |
+| E2 4D purchasing | **done** 2026-10-09 (`1802514`) | `FINANCE_PHASE_4D.md` |
+| M1 manufacturing foundation | **done** 2026-10-09 | `MANUFACTURING.md` §2–§5 |
+| M2–M5 manufacturing | **next: M2** | `MANUFACTURING.md` §6–§9 |
 | E3–E14 | not started | |
 
 ---
@@ -495,7 +496,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 |---|---|---|
 | E0 | `c97602f` | `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` |
 | E1 | `29e6ad1` | migration `20261016100000_finance_phase4c_cutover`; `schema.prisma`; `domain/finance/inventory-cutover.service.ts` (+ test); `reconciliation.service.ts` (`inventory.valuation_vs_ledger`); `inventory.service.ts` (recordSale race fix); `products/product.service.ts` (history deletion guard); `finance.routes.ts`; shared `schemas/finance-purchasing.ts`; web `finance/inventory-cutover/page.tsx`, `lib/api/finance.ts`, `lib/admin/navigation.ts`; tests updated: authorization matrix, finance.integration, historical-snapshots, product-duplicate; `test-fixtures.ts`; docs `FINANCE_PHASE_4C.md`, `FINANCE_PHASE_4.md` |
-| E2 | (E2 commit, see git log) | migration `20261017100000_finance_phase4d_purchasing`; `schema.prisma`; `domain/finance/{purchase-orders,goods-receipts,purchase-returns}.service.ts`, `purchasing-posting-rules.ts`, `purchasing-setup.service.ts` (settings), `costing.service.ts` (DOCUMENT basis/owner), `reconciliation.service.ts` (`purchasing.grni`), `events.service.ts`; `inventory.service.ts` (`recordDocumentMovements`); `purchasing.routes.ts`; shared schemas; web `finance/{purchase-orders,purchase-orders/[id],goods-receipts,supplier-returns}`, `components/admin/purchasing/*`, `lib/api/purchasing.ts`, navigation; tests: `finance-purchasing-documents.integration.test.ts` + auth matrix, writer guard, finance.integration, store-identity guard; docs `FINANCE_PHASE_4D.md` |
+| E2 | `1802514` | migration `20261017100000_finance_phase4d_purchasing`; `schema.prisma`; `domain/finance/{purchase-orders,goods-receipts,purchase-returns}.service.ts`, `purchasing-posting-rules.ts`, `purchasing-setup.service.ts` (settings), `costing.service.ts` (DOCUMENT basis/owner), `reconciliation.service.ts` (`purchasing.grni`), `events.service.ts`; `inventory.service.ts` (`recordDocumentMovements`); `purchasing.routes.ts`; shared schemas; web `finance/{purchase-orders,purchase-orders/[id],goods-receipts,supplier-returns}`, `components/admin/purchasing/*`, `lib/api/purchasing.ts`, navigation; tests: `finance-purchasing-documents.integration.test.ts` + auth matrix, writer guard, finance.integration, store-identity guard; docs `FINANCE_PHASE_4D.md` |
+| M1 | (M1 commit, see git log) | migrations `20261018100000_manufacturing_foundation`, `20261018100100_manufacturing_material_source`; `schema.prisma`; `domain/manufacturing/{requirements,manufacturing-setup.service,materials.service,boms.service,production-orders.service}.ts` + tests + guard; `modules/manufacturing/manufacturing.routes.ts`, `app.ts`; `products/product.service.ts` (catalog excludes materials); shared `permissions.ts`, `finance/accounts.ts` (1630/2116/5220), `schemas/manufacturing.ts`; web `manufacturing/{production-orders,production-orders/[id],boms,materials}`, `components/admin/manufacturing/*`, `lib/api/manufacturing.ts`, navigation (Inventory grouping) + test, capabilities; auth matrix; docs `MANUFACTURING.md` |
 
 ---
 
@@ -508,6 +510,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | E2: `npx vitest run` (apps/api) | 105 files, 1258 passed |
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
+| 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | M1 browser QA (`finance_qa`) 1440 + 375 px | set-up → material → BOM v1 approved → MO 400 units approved; requirement 15,600 cm; incomplete planned cost shown as "Not known yet" |
 | 2026-10-09 | E2 browser QA (`finance_qa`) 1440 + 375 px | PO → submit → approve → receive 18/2 → partly received; return 3 → ship ৳2,649.06; 6 checks match |
 | 2026-10-09 | E1 browser QA (`finance_qa`, API :4390 `INSTALL_ID=qa WEB_ORIGIN=http://localhost:3390`, web :3390), 1440 + 375 px | draft → KNOWN cost → approve → post; true-up ৳700 as computed; 5 inventory/ledger checks match |
 
@@ -525,18 +530,15 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 ## 27. Next eligible task and acceptance criteria
 
-**M1 — Manufacturing foundation** (spec to write: `docs/MANUFACTURING.md`). Data: `Product.kind` (FINISHED default /
-MATERIAL, CHECK material ⇒ never active/published), `ProductionCostCategory` (configurable, seeded groups),
-`BillOfMaterials` + `BillOfMaterialsLine` (versioned; approved versions frozen; per product, optional per-variant lines;
-qty per unit as decimal with fixed scale, expected wastage %, supplied by BUSINESS/PRODUCER), `ProductionOrder`
-(producer = Supplier or INTERNAL, BOM version snapshot, lifecycle DRAFT → APPROVED → IN_PRODUCTION → PARTIALLY_RECEIVED →
-RECEIVED → CLOSED / CANCELLED, trigger-enforced) + `ProductionOrderLine` (finished variant, planned qty; total derived) +
-`ProductionMaterialLine` (planned from BOM; issued/returned/consumed/scrapped columns for M2). Accounts: 1630 WIP
-(`asset.wip`), 2116 accrued production costs (`liability.production_accrual`), 5220 production losses
-(`cogs.production_losses`) via `manufacturing/setup`. Permissions `manufacturing.read/manage/approve/move_stock`. API
-`/api/v1/manufacturing`. UI: Manufacturing nav group — orders list/create (size × colour grid), order detail (Plan tab:
-variants, material requirements), BOMs, materials. Acceptance: requirement maths unit-tested (decimal-safe); illegal
-transitions refused by DB; material products never purchasable (checkout test); auth matrix; browser QA.
+**M2 — Materials custody & WIP** (`docs/MANUFACTURING.md` §6). Add stock reasons `PRODUCTION_ISSUE` /
+`PRODUCTION_RETURN` (enum + `DocumentStockReason`), `ProductionMaterialMove` document rows (issue/return, qty, value,
+movement id, idempotency), consumption & scrap declarations on material lines, event `manufacturing.material_moved`
+(Dr 1630 / Cr 1610 and reverse) with posting rule, IN_PRODUCTION on first issue, check `manufacturing.wip`, routes
+(`manufacturing.move_stock`), UI (Materials tab on the order: issue / return / declare consumption & scrap, custody
+columns). Acceptance: custody CHECK holds; WIP check MATCHED with valuation_vs_ledger; issue beyond stock refused;
+producer-supplied never issued; idempotent retries; browser QA.
+
+Then **M3** costs → **M4** receipts/QC/finished goods → **M5** close/variance/reports, then **E3** (4E invoices/AP).
 
 ## 28. Changelog
 
@@ -545,3 +547,4 @@ transitions refused by DB; material products never purchasable (checkout test); 
 | 2026-10-09 | v1 — audit of `4b68828`, target architecture, manufacturing design, decisions D-P1/D-M1–M6/D-C1, roadmap E1–E14 + M1–M5 |
 | 2026-10-09 | v2 — E1 (4C valuation cutover) done; bridge formula and decision-4 deletion guard recorded; next E2 |
 | 2026-10-09 | v3 — E2 (4D purchasing documents) done; next M1 manufacturing foundation |
+| 2026-10-09 | v4 — M1 manufacturing foundation done; manufacturing nested under Inventory (12-module cap); next M2 |
