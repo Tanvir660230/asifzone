@@ -130,12 +130,12 @@ describe("category / brand / product snapshots (G2–G4)", () => {
     expect([keyOf(legacy.order.id, "brand"), keyOf(legacy.order.id, "category")]).toEqual(["not_recorded", "not_recorded"]);
   });
 
-  it("permanently deleting the product erases no attribution or cost", async () => {
+  it("a sold product can't be permanently deleted (locked decision 4) — archived in Trash, it keeps its attribution and cost", async () => {
     const cat = await category("P6 Deleted");
     const { product, order } = await deliveredSale({ categoryId: cat.id, brand: "Gone Brand", cost: 400 });
     await deleteProduct(product.id); // to Trash first
-    await permanentlyDeleteProduct(product.id);
-    expect(await prisma.product.findUnique({ where: { id: product.id } })).toBeNull();
+    await expect(permanentlyDeleteProduct(product.id)).rejects.toMatchObject({ statusCode: 409 });
+    expect(await prisma.product.findUnique({ where: { id: product.id } })).toMatchObject({ deletedAt: expect.any(Date) });
     const [f] = await loadOrderFacts([order.id], "BDT");
     expect(f!.lines[0]).toMatchObject({ productId: product.id, categoryId: cat.id, categoryName: "P6 Deleted", brand: "Gone Brand", unitCostSnapshot: T(400), attributionRecorded: true });
     expect(sum("cogs", [f!])).toBe(T(400));

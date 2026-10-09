@@ -139,7 +139,7 @@ export async function purgeFinanceTables() {
   await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SET LOCAL finance.maintenance_purge = 'on'`);
     await tx.$executeRawUnsafe(
-      `TRUNCATE "InventoryCostState", "InventoryValuationEntry", "Supplier", "TaxCode", "ClearingSettlementLine", "ClearingSettlement", "FinanceException", "FinanceSyncState", "BankTransactionMatch", "BankTransaction", "StatementImport", "BankReconciliation", "TreasuryMovement", "ReconciliationRun", "OpeningInventoryItem", "OpeningBalanceLine", "OpeningBalanceBatch", "JournalLine", "JournalEntry", "FinancialEvent", "FinanceAuditEntry", "FinanceSequence", "FinancialPeriod", "FinancialAccount", "AccountMapping", "LedgerAccount", "FinanceBrand", "FinanceBusiness"`,
+      `TRUNCATE "InventoryCutoverLine", "InventoryCutoverBatch", "InventoryCostState", "InventoryValuationEntry", "Supplier", "TaxCode", "ClearingSettlementLine", "ClearingSettlement", "FinanceException", "FinanceSyncState", "BankTransactionMatch", "BankTransaction", "StatementImport", "BankReconciliation", "TreasuryMovement", "ReconciliationRun", "OpeningInventoryItem", "OpeningBalanceLine", "OpeningBalanceBatch", "JournalLine", "JournalEntry", "FinancialEvent", "FinanceAuditEntry", "FinanceSequence", "FinancialPeriod", "FinancialAccount", "AccountMapping", "LedgerAccount", "FinanceBrand", "FinanceBusiness"`,
     );
     await tx.$executeRawUnsafe(`DELETE FROM "OutboxEvent" WHERE consumer = 'finance-event-post'`);
   });

@@ -112,7 +112,7 @@ FINANCE_VIEWER; server-side `requirePermission`.
 
 | Item | State |
 |---|---|
-| Valuation cutover (4C): cutover batch, approval, activation, full deletion guard | **missing** — `activateInventoryCostingInTx` exists, no production caller |
+| Valuation cutover (4C): cutover batch, approval, activation, full deletion guard | **done** (E1, `FINANCE_PHASE_4C.md`) — not run on live data (B-1) |
 | Purchase orders, goods receipts, supplier returns (4D) | **missing** (stock reasons reserved) |
 | Supplier invoices, matching, GRNI → AP (4E) | **missing** |
 | Supplier payments & allocations (4F) | **missing** |
@@ -482,8 +482,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | Phase | Status | Notes |
 |---|---|---|
 | E0 Audit + blueprint | **done** 2026-10-09 | this file |
-| E1 4C cutover | **in progress** | next: schema + service + tests |
-| E2 4D purchasing | not started | |
+| E1 4C cutover | **done** 2026-10-09 | `FINANCE_PHASE_4C.md`; live run = B-1 |
+| E2 4D purchasing | **next** | |
 | M1–M5 manufacturing | not started | |
 | E3–E14 | not started | |
 
@@ -493,7 +493,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 | Phase | Commit | Files |
 |---|---|---|
-| E0 | (see §28) | `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` |
+| E0 | `c97602f` | `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` |
+| E1 | (E1 commit, see git log) | migration `20261016100000_finance_phase4c_cutover`; `schema.prisma`; `domain/finance/inventory-cutover.service.ts` (+ test); `reconciliation.service.ts` (`inventory.valuation_vs_ledger`); `inventory.service.ts` (recordSale race fix); `products/product.service.ts` (history deletion guard); `finance.routes.ts`; shared `schemas/finance-purchasing.ts`; web `finance/inventory-cutover/page.tsx`, `lib/api/finance.ts`, `lib/admin/navigation.ts`; tests updated: authorization matrix, finance.integration, historical-snapshots, product-duplicate; `test-fixtures.ts`; docs `FINANCE_PHASE_4C.md`, `FINANCE_PHASE_4.md` |
 
 ---
 
@@ -502,6 +503,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | Date | Command | Result |
 |---|---|---|
 | 2026-10-09 | `npx vitest run` (apps/api) at `4b68828` | 103 files, 1238 passed |
+| 2026-10-09 | E1: `npx vitest run` (apps/api) | 104 files, 1249 passed |
+| 2026-10-09 | E1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | E1 browser QA (`finance_qa`, API :4390 `INSTALL_ID=qa WEB_ORIGIN=http://localhost:3390`, web :3390), 1440 + 375 px | draft → KNOWN cost → approve → post; true-up ৳700 as computed; 5 inventory/ledger checks match |
 
 ---
 
@@ -517,15 +521,19 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 ## 27. Next eligible task and acceptance criteria
 
-**E1.1 — Cutover schema & service.** Migration `20261016100000_finance_phase4c_cutover`: `InventoryCutoverBatch`,
-`InventoryCutoverLine`, guards (POSTED immutable, one batch per business, audit required, no truncate). Service
-`domain/finance/inventory-cutover.service.ts`: `draftCutover`, `updateCutoverLine`, `approveCutover`, `postCutover`
-(atomic, idempotent). Acceptance: integration tests listed in §22 E1 pass; full regression green.
+**E2.1 — Purchase orders (Finance 4D).** Migration `…_finance_phase4d_purchasing`: `PurchaseOrder` + lines (STOCK /
+NON_STOCK), derived received/invoiced quantities, lifecycle DRAFT → SUBMITTED → APPROVED → (PARTIALLY_)RECEIVED / CLOSED
+/ CANCELLED (trigger-enforced), approval threshold (approver ≠ creator), FinanceSequence `PO` numbers, audit. Then
+**E2.2 GRN** (`inventory.recordPurchaseReceipt`, LedgerOwner DOCUMENT, event `purchasing.goods_received` Dr 1610 / Cr
+2115, idempotent post, direct receipts with approval, D-P1 costing-active gate) and **E2.3 supplier returns**, the
+`purchasing.grni` check, UI (Purchasing → Purchase orders / Goods receipts / Supplier returns). Acceptance: as §22 E2.
 
----
+QA environment note: the QA API must run with `INSTALL_ID=qa` (a different install id registers a second brand and
+re-posts every order) and `WEB_ORIGIN=http://localhost:3390` (CORS).
 
 ## 28. Changelog
 
 | Date | Change |
 |---|---|
 | 2026-10-09 | v1 — audit of `4b68828`, target architecture, manufacturing design, decisions D-P1/D-M1–M6/D-C1, roadmap E1–E14 + M1–M5 |
+| 2026-10-09 | v2 — E1 (4C valuation cutover) done; bridge formula and decision-4 deletion guard recorded; next E2 |

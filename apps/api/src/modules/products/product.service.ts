@@ -1621,22 +1621,17 @@ export async function updateProduct(
 
         if (toDelete.length) {
           const deletableIds = toDelete.map((v) => v.id);
-          const referenced = await tx.orderItem.findMany({
-            where: { variantId: { in: deletableIds } },
-            select: { variantId: true },
-            distinct: ["variantId"],
-          });
-          const referencedIds = new Set(referenced.map((r) => r.variantId));
+          const referencedIds = await variantsWithHistory(tx, deletableIds);
           const safeToDelete = deletableIds.filter((vid) => !referencedIds.has(vid));
           const mustKeep = deletableIds.filter((vid) => referencedIds.has(vid));
 
           if (safeToDelete.length) {
             await tx.productVariant.deleteMany({ where: { id: { in: safeToDelete } } });
           }
-          // A variant with real order history can't be hard-deleted — StockMovement cascades on
-          // variant delete, and OrderItem.variantId has no FK to fall back on, so deleting it would
-          // silently erase that order's stock audit trail. Zero its stock instead: it drops out of
-          // checkout the same as a delete would, without destroying history.
+          // A variant with order, stock or valuation history can't be hard-deleted (locked decision 4,
+          // docs/FINANCE_PHASE_4.md §2) — StockMovement cascades on variant delete, and OrderItem.variantId
+          // has no FK to fall back on, so deleting it would silently erase that history. Zero its stock
+          // instead: it drops out of checkout the same as a delete would, without destroying history.
           if (mustKeep.length) {
             await zeroVariantStock(tx, mustKeep, { adminId, note: "Variant removed from product — had order history, stock zeroed instead of deleted" });
           }
@@ -1759,10 +1754,28 @@ async function removeImageFilesIfUnused(urls: string[]) {
   }
 }
 
-/** Irreversible — only meaningful for a product already in Trash. */
+/** Variants (of `ids`) that carry history — order lines, stock movements or valuation entries. Locked decision 4
+ * (docs/FINANCE_PHASE_4.md §2): such a variant, and its product, is archived, never hard-deleted. */
+async function variantsWithHistory(db: Prisma.TransactionClient | typeof prisma, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await db.$queryRaw<Array<{ id: string }>>`
+    SELECT v.id FROM "ProductVariant" v
+    WHERE v.id IN (${Prisma.join(ids)}) AND (
+      EXISTS (SELECT 1 FROM "OrderItem" i WHERE i."variantId" = v.id)
+      OR EXISTS (SELECT 1 FROM "StockMovement" m WHERE m."variantId" = v.id)
+      OR EXISTS (SELECT 1 FROM "InventoryValuationEntry" e WHERE e."variantId" = v.id))`;
+  return new Set(rows.map((r) => r.id));
+}
+
+/** Irreversible — only meaningful for a product already in Trash, and only for one with no history: a product whose
+ * variants were sold, stocked or valued stays archived in Trash (locked decision 4). */
 export async function permanentlyDeleteProduct(id: string) {
   const product = await getProductById(id);
   if (!product.deletedAt) throw AppError.badRequest("Move the product to Trash before deleting it permanently");
+  const withHistory = await variantsWithHistory(prisma, product.variants.map((v) => v.id));
+  if (withHistory.size) {
+    throw AppError.conflict("This product has sales, stock or cost history, so it can't be deleted permanently — it stays archived in Trash, hidden from the shop.");
+  }
   await prisma.product.delete({ where: { id } });
   await removeImageFilesIfUnused(product.images.map((img) => img.url));
   // The row is gone by now — pass the slug directly (this is the one call site resolveSlugs() can't help).

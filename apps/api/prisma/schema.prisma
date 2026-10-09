@@ -646,6 +646,8 @@ model ProductVariant {
   sortOrder        Int                       @default(0)
   attributeValues  VariantAttributeValue[]
   stockMovements   StockMovement[]
+  /// Phase 4C valuation cutover lines (a posted line protects the variant from deletion — line guard trigger).
+  cutoverLines     InventoryCutoverLine[]
   /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
   valuationEntries InventoryValuationEntry[]
   costState        InventoryCostState?
@@ -2539,6 +2541,8 @@ enum JournalEntryKind {
   REVERSAL
   CORRECTION
   TREASURY
+  /// A system adjustment that is its own document (Phase 4C valuation cutover).
+  ADJUSTMENT
 }
 
 enum FinancialEventStatus {
@@ -2629,6 +2633,7 @@ model FinanceBusiness {
   taxCodes                    TaxCode[]
   valuationEntries            InventoryValuationEntry[]
   costStates                  InventoryCostState[]
+  cutoverBatch                InventoryCutoverBatch?
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2644,6 +2649,7 @@ model FinanceBrand {
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   valuationEntries InventoryValuationEntry[]
+  cutoverBatches   InventoryCutoverBatch[]
 
   @@unique([businessId, key])
   @@unique([businessId, installId])
@@ -2769,52 +2775,53 @@ model FinanceSequence {
 }
 
 model JournalEntry {
-  id                 String               @id @default(cuid())
+  id                 String                 @id @default(cuid())
   businessId         String
-  business           FinanceBusiness      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  business           FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
   brandId            String?
   /// Gapless per business, assigned when posted. Null while DRAFT.
   number             Int?
   /// Accounting date (business date).
-  entryDate          DateTime             @db.Date
+  entryDate          DateTime               @db.Date
   periodId           String
-  period             FinancialPeriod      @relation(fields: [periodId], references: [id], onDelete: Restrict)
-  status             JournalEntryStatus   @default(DRAFT)
+  period             FinancialPeriod        @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  status             JournalEntryStatus     @default(DRAFT)
   kind               JournalEntryKind
   description        String
   reference          String?
-  currency           String               @db.VarChar(3)
-  totalDebit         Decimal              @default(0) @db.Decimal(18, 2)
-  totalCredit        Decimal              @default(0) @db.Decimal(18, 2)
+  currency           String                 @db.VarChar(3)
+  totalDebit         Decimal                @default(0) @db.Decimal(18, 2)
+  totalCredit        Decimal                @default(0) @db.Decimal(18, 2)
   /// What produced it: "MANUAL", "OPENING_BALANCE", or the source entity of an event ("Order", …).
   sourceType         String?
   sourceId           String?
-  financialEventId   String?              @unique
-  financialEvent     FinancialEvent?      @relation(fields: [financialEventId], references: [id], onDelete: Restrict)
+  financialEventId   String?                @unique
+  financialEvent     FinancialEvent?        @relation(fields: [financialEventId], references: [id], onDelete: Restrict)
   /// Unique per business: a repeated request / event / reversal returns the entry it already made.
   idempotencyKey     String?
   /// Content fingerprint stored with the key, to refuse a DIFFERENT request reusing the same key.
   fingerprint        String?
   /// The entry this one reverses (at most one reversal per entry).
-  reversesEntryId    String?              @unique
-  reversesEntry      JournalEntry?        @relation("JournalReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
-  reversedBy         JournalEntry?        @relation("JournalReversal")
+  reversesEntryId    String?                @unique
+  reversesEntry      JournalEntry?          @relation("JournalReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversedBy         JournalEntry?          @relation("JournalReversal")
   /// The entry this one corrects (posted together with that entry's reversal; at most one correction per entry).
-  correctsEntryId    String?              @unique
-  correctsEntry      JournalEntry?        @relation("JournalCorrection", fields: [correctsEntryId], references: [id], onDelete: Restrict)
-  correctedBy        JournalEntry?        @relation("JournalCorrection")
+  correctsEntryId    String?                @unique
+  correctsEntry      JournalEntry?          @relation("JournalCorrection", fields: [correctsEntryId], references: [id], onDelete: Restrict)
+  correctedBy        JournalEntry?          @relation("JournalCorrection")
   reason             String?
   createdByAdminId   String?
   postedByAdminId    String?
   postedAt           DateTime?
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
   lines              JournalLine[]
   openingBatch       OpeningBalanceBatch?
-  treasuryMovement   TreasuryMovement?    @relation("TreasuryJournal")
-  treasuryReversal   TreasuryMovement?    @relation("TreasuryReversalJournal")
-  settlement         ClearingSettlement?  @relation("SettlementJournal")
-  settlementReversal ClearingSettlement?  @relation("SettlementReversalJournal")
+  cutoverBatch       InventoryCutoverBatch?
+  treasuryMovement   TreasuryMovement?      @relation("TreasuryJournal")
+  treasuryReversal   TreasuryMovement?      @relation("TreasuryReversalJournal")
+  settlement         ClearingSettlement?    @relation("SettlementJournal")
+  settlementReversal ClearingSettlement?    @relation("SettlementReversalJournal")
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, number])
@@ -3553,4 +3560,71 @@ model InventoryCostState {
   lastEntryId   String                  @unique
   lastEntry     InventoryValuationEntry @relation(fields: [lastEntryId], references: [id], onDelete: Restrict)
   updatedAt     DateTime                @updatedAt
+}
+
+/// Phase 4C (docs/FINANCE_PHASE_4C.md): the one-time, owner-approved valuation cutover. It gives every stock-tracked
+/// variant its first valuation (physical stock at post × the approved unit cost), trues the inventory account up to the
+/// valuation through ONE journal, and activates costing — all in one transaction. One batch per business; POSTED is final.
+enum InventoryCutoverStatus {
+  DRAFT
+  APPROVED
+  POSTED
+}
+
+model InventoryCutoverBatch {
+  id                  String                 @id @default(cuid())
+  businessId          String                 @unique
+  business            FinanceBusiness        @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  brandId             String
+  brand               FinanceBrand           @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  status              InventoryCutoverStatus @default(DRAFT)
+  /// The financial date of the cutover entries and journal (business timezone).
+  cutoverDate         DateTime               @db.Date
+  notes               String?
+  /// Of the ledger true-up, the part the owner attributes to a proven opening-balance error (→ 3900, signed: positive =
+  /// inventory was understated at opening). The rest goes to 5150. A non-zero amount needs a reason.
+  openingErrorAmount  Decimal                @default(0) @db.Decimal(18, 2)
+  openingErrorReason  String?
+  /// Fingerprint of the lines when approved; posting refuses lines changed since.
+  approvedFingerprint String?
+  createdByAdminId    String?
+  approvedByAdminId   String?
+  approvedAt          DateTime?
+  postedByAdminId     String?
+  postedAt            DateTime?
+  journalEntryId      String?                @unique
+  journalEntry        JournalEntry?          @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  /// Frozen at post: ledger balance before, valuation total, in-transit bridge, adjustment split, line counts.
+  summary             Json?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  lines               InventoryCutoverLine[]
+}
+
+model InventoryCutoverLine {
+  id               String                 @id @default(cuid())
+  batchId          String
+  batch            InventoryCutoverBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  variantId        String
+  /// Cascade while the batch is a draft (a variant with no history may still be removed — re-approval is then needed);
+  /// once POSTED the line guard refuses the delete, so a cut-over variant can never be hard-deleted.
+  variant          ProductVariant         @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  sku              String
+  name             String
+  /// Approved unit cost (major units); null = no trustworthy cost (MISSING — the units are held unvalued, never at zero).
+  unitCost         Decimal?               @db.Decimal(18, 2)
+  valuationStatus  FinanceValuationStatus
+  /// OPENING_COUNT, CATALOG_VARIANT, CATALOG_PRODUCT, OWNER, SUPPLIER_INVOICE, NONE, ADDED_AT_POST
+  costSource       String
+  evidence         String?
+  /// Physical stock when the draft was built (information); the cutover uses the stock at post.
+  draftQuantity    Int
+  postedQuantity   Int?
+  postedValue      Decimal?               @db.Decimal(18, 2)
+  valuationEntryId String?                @unique
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@unique([batchId, variantId])
+  @@index([batchId, valuationStatus])
 }

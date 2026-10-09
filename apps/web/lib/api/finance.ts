@@ -376,3 +376,52 @@ export const runChecks = (checks?: string[]) => apiFetch<{ ok: boolean; results:
 
 export const CLEARING_KINDS = new Set<FinancialAccountKind>(["COURIER", "PAYMENT_GATEWAY", "OTHER"]);
 export const listCheckRuns = (q: { checkKey?: string; page?: number; pageSize?: number } = {}) => apiFetch<{ total: number; runs: CheckResult[] }>(`${BASE}/reconciliation/runs${qs(q)}`);
+
+// ── Phase 4C: the valuation cutover (docs/FINANCE_PHASE_4C.md) ────────────────────────────────────────────────────────
+export type CutoverStatus = "DRAFT" | "APPROVED" | "POSTED";
+export type CutoverValuationStatus = "KNOWN" | "ESTIMATED" | "MISSING";
+export type CutoverCostSource = "OPENING_COUNT" | "CATALOG_VARIANT" | "CATALOG_PRODUCT" | "OWNER" | "SUPPLIER_INVOICE" | "NONE" | "ADDED_AT_POST";
+export interface CutoverBatch {
+  id: string;
+  status: CutoverStatus;
+  cutoverDate: string;
+  notes: string | null;
+  openingErrorAmount: number;
+  openingErrorReason: string | null;
+  approvedAt: string | null;
+  postedAt: string | null;
+  journalEntryId: string | null;
+  summary: null | { variants: number; addedAtPost: number; known: number; estimated: number; missing: number; unvaluedUnits: number; ledgerBefore: number; valuation: number; inTransit: number; adjustment: number; toOpeningBalanceEquity: number; toCostAdjustments: number; activatedAt: string };
+}
+export interface CutoverSummary { lines: number; known: number; estimated: number; missing: number; missingUnits: number; draftValuation: number }
+export interface CutoverOverview {
+  batch: CutoverBatch | null;
+  summary: CutoverSummary | null;
+  preview: { ledger: number; valuation: number; inTransit: number; inTransitOrders: number; adjustment: number } | null;
+  prerequisites: { openingDateSet: boolean; openingBalancesPosted: boolean; costingActive: boolean };
+  costingActivatedAt: string | null;
+}
+export interface CutoverLine {
+  id: string;
+  variantId: string;
+  sku: string;
+  name: string;
+  unitCost: number | null;
+  valuationStatus: CutoverValuationStatus;
+  costSource: CutoverCostSource;
+  evidence: string | null;
+  draftQuantity: number;
+  postedQuantity: number | null;
+  postedValue: number | null;
+}
+export interface CutoverLineInput { variantId: string; unitCost: number | null; valuationStatus: CutoverValuationStatus; costSource: Exclude<CutoverCostSource, "ADDED_AT_POST">; evidence?: string | null }
+
+export const getCutover = () => apiFetch<CutoverOverview>(`${BASE}/inventory-cutover`);
+export const listCutoverLines = (q: { status?: CutoverValuationStatus; search?: string; page?: number; pageSize?: number }) =>
+  apiFetch<{ total: number; page: number; pageSize: number; lines: CutoverLine[] }>(`${BASE}/inventory-cutover/lines${qs(q)}`);
+export const draftCutover = (notes?: string | null) => apiFetch<{ batch: CutoverBatch; summary: CutoverSummary }>(`${BASE}/inventory-cutover`, { method: "POST", body: notes === undefined ? {} : { notes } });
+export const updateCutoverSettings = (body: { notes?: string | null; openingErrorAmount?: number; openingErrorReason?: string | null }) => apiFetch<CutoverBatch>(`${BASE}/inventory-cutover`, { method: "PATCH", body });
+export const updateCutoverLines = (lines: CutoverLineInput[]) => apiFetch<{ updated: number; summary: CutoverSummary }>(`${BASE}/inventory-cutover/lines`, { method: "PATCH", body: { lines } });
+export const approveCutover = (acknowledgeMissing: boolean) => apiFetch<{ batch: CutoverBatch; summary: CutoverSummary }>(`${BASE}/inventory-cutover/approve`, { method: "POST", body: { acknowledgeMissing } });
+export const reopenCutover = (reason: string) => apiFetch<CutoverBatch>(`${BASE}/inventory-cutover/reopen`, { method: "POST", body: { reason } });
+export const postCutover = () => apiFetch<{ batch: CutoverBatch; replayed: boolean }>(`${BASE}/inventory-cutover/post`, { method: "POST", body: {} });

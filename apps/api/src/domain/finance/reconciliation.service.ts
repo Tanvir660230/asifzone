@@ -23,6 +23,7 @@ import { postingRuleKeys } from "./events.service";
 import { dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
 import { clearingBreakdown } from "./settlements.service";
+import { inventoryLedgerBridge } from "./inventory-cutover.service";
 
 export interface ReconciliationRange {
   from?: string;
@@ -480,6 +481,30 @@ export const RECONCILIATION_CHECKS = {
         .map((r) => ({ entryId: r.entryId, adjustment: toMinor(r.adjustment, cur), eventStatus: r.eventStatus, posted: r.payloadAdjustment }))
         .filter((r) => r.eventStatus !== "POSTED" || r.posted !== r.adjustment);
       return { status: problems.length ? "DIFFERENCE" : "MATCHED", details: { entriesWithPostings: rows.length, problems: problems.slice(0, 50) } };
+    },
+  },
+
+  // ── Phase 4C: the valuation cutover set the inventory account equal to valuation + in-transit ──────────────────────
+  "inventory.valuation_vs_ledger": {
+    label: "Inventory account = valuation",
+    description: "The inventory account's balance equals the valuation ledger's total value, plus the cost of units already out to orders whose cost of sales is not booked yet (in transit), less inventory booked at approved estimates since the cutover (units the valuation never held a cost for).",
+    async run(ctx) {
+      const active = await prisma.financeBusiness.findUnique({ where: { id: ctx.business.id }, select: { inventoryCostingActivatedAt: true } });
+      if (!active?.inventoryCostingActivatedAt) return { status: "NOT_APPLICABLE", details: { reason: "inventory costing is not active (activated by the 4C valuation cutover)" } };
+      const cur = ctx.business.baseCurrency;
+      const b = await inventoryLedgerBridge(prisma, ctx.business, { estimatedSince: active.inventoryCostingActivatedAt });
+      const expected = b.valuationMinor + b.inTransitMinor - b.estimatedSinceMinor;
+      return {
+        status: expected === b.ledgerMinor ? "MATCHED" : "DIFFERENCE",
+        expected,
+        actual: b.ledgerMinor,
+        details: {
+          valuation: toMajorNumber(b.valuationMinor, cur),
+          inTransit: toMajorNumber(b.inTransitMinor, cur),
+          inTransitOrders: b.inTransit.orders,
+          estimatedSinceCutover: toMajorNumber(b.estimatedSinceMinor, cur),
+        },
+      };
     },
   },
 } satisfies Record<string, ReconciliationCheck>;

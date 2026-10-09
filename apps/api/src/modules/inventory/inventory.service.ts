@@ -99,7 +99,7 @@ export async function recordSale(
 ): Promise<SaleResult> {
   // Whether costing is active needs no lock: read it before the decrement, so the row lock covers only the stock change and
   // the cost determination that depends on it.
-  const scope = await activeCostingInTx(tx);
+  let scope = await activeCostingInTx(tx);
   const oversold: string[] = [];
   const stockAfter = new Map<string, number>();
   // Distinct variant rows are independent — run the guarded decrements concurrently (checkout latency).
@@ -115,6 +115,10 @@ export async function recordSale(
     }
     stockAfter.set(item.variantId, after);
   }
+  // Phase 4C: the valuation cutover activates costing while holding every tracked variant's lock. A sale that read "off"
+  // above and then waited on that lock must see the switch now (read after the lock, so it is current) — otherwise it would
+  // write an unvalued exit for a variant just cut over. Costs one read per sale, and only while costing is off.
+  if (!scope) scope = await activeCostingInTx(tx);
   if (!scope) {
     await tx.stockMovement.createMany({ data: items.map((item) => movement(item.variantId, -item.quantity, "ORDER", opts, orderId)) });
     return { oversold, stockAfter };

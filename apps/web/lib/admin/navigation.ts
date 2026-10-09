@@ -379,6 +379,8 @@ export const NAV_NODES: readonly NavNode[] = [
   // Financial Core Phase 4 (docs/FINANCE_PHASE_4.md §23): purchasing — suppliers and purchase tax codes (4A).
   { id: "finance.suppliers", label: "Suppliers", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/suppliers", capability: "suppliers.view", order: 9, keywords: ["vendor", "purchasing", "payables", "supplier"] },
   { id: "finance.tax-codes", label: "Purchase tax codes", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/tax-codes", capability: "purchasing.view", order: 10, keywords: ["vat", "input tax", "tax rate"] },
+  // Financial Core Phase 4C (docs/FINANCE_PHASE_4C.md): the one-time valuation cutover that switches inventory costing on.
+  { id: "finance.inventory-cutover", label: "Valuation cutover", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/inventory-cutover", capability: "costing.view", order: 11, keywords: ["inventory valuation", "costing", "average cost", "opening stock value"] },
 
   {
     id: "analytics",

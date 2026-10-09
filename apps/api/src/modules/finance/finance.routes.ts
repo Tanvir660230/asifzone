@@ -47,6 +47,12 @@ import {
   openingInventoryItemsSchema,
   periodActionSchema,
   reconciliationRunSchema,
+  cutoverApproveSchema,
+  cutoverDraftSchema,
+  cutoverLineQuerySchema,
+  cutoverLinesSchema,
+  cutoverReopenSchema,
+  cutoverSettingsSchema,
 } from "@clothing-brand/shared";
 import { z } from "zod";
 import { prisma } from "../../config/prisma";
@@ -71,6 +77,7 @@ import * as bankRecon from "../../domain/finance/bank-reconciliation.service";
 import * as commerce from "../../domain/finance/commerce-accounting.service";
 import * as settlements from "../../domain/finance/settlements.service";
 import * as exceptions from "../../domain/finance/finance-exceptions.service";
+import * as cutover from "../../domain/finance/inventory-cutover.service";
 import { ensureCommerceAccounting } from "../../domain/finance/commerce-setup.service";
 import type { FinanceViewer } from "../../domain/finance/finance-values";
 
@@ -270,3 +277,13 @@ financeRouter.delete("/settlements/:id", requirePermission("finance.transact"), 
   res.status(204).end();
 }));
 financeRouter.get("/clearing/:id", requirePermission("finance.read"), asyncHandler(async (req, res) => res.json(await settlements.clearingPosition(id(req)))));
+
+// ── Phase 4C: the valuation cutover (docs/FINANCE_PHASE_4C.md) — reading needs costing.read; every change, costing.adjust (OWNER) ──
+financeRouter.get("/inventory-cutover", requirePermission("costing.read"), asyncHandler(async (_req, res) => res.json(await cutover.getCutover())));
+financeRouter.get("/inventory-cutover/lines", requirePermission("costing.read"), validate(cutoverLineQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await cutover.listCutoverLines(req.query as never))));
+financeRouter.post("/inventory-cutover", requirePermission("costing.adjust"), validate(cutoverDraftSchema), asyncHandler(async (req, res) => res.json(await cutover.draftCutover(req.body, await actorOf(req)))));
+financeRouter.patch("/inventory-cutover", requirePermission("costing.adjust"), validate(cutoverSettingsSchema), asyncHandler(async (req, res) => res.json(await cutover.updateCutoverSettings(req.body, await actorOf(req)))));
+financeRouter.patch("/inventory-cutover/lines", requirePermission("costing.adjust"), validate(cutoverLinesSchema), asyncHandler(async (req, res) => res.json(await cutover.updateCutoverLines(req.body.lines, await actorOf(req)))));
+financeRouter.post("/inventory-cutover/approve", requirePermission("costing.adjust"), validate(cutoverApproveSchema), asyncHandler(async (req, res) => res.json(await cutover.approveCutover(req.body, await actorOf(req)))));
+financeRouter.post("/inventory-cutover/reopen", requirePermission("costing.adjust"), validate(cutoverReopenSchema), asyncHandler(async (req, res) => res.json(await cutover.reopenCutover(req.body, await actorOf(req)))));
+financeRouter.post("/inventory-cutover/post", requirePermission("costing.adjust"), asyncHandler(async (req, res) => res.json(await cutover.postCutover(await actorOf(req)))));
