@@ -31,10 +31,12 @@ const RATE = /^\d{1,12}(\.\d{1,6})?$/;
 export function ProductionCosts({ order, can, adminId, onChanged }: { order: ProductionOrder; can: (c: "manufacturing.manage" | "manufacturing.approve" | "costing.view") => boolean; adminId: string | null; onChanged: () => void }) {
   const [editing, setEditing] = useState<CostEntry | "new" | null>(null);
   const [voiding, setVoiding] = useState<CostEntry | null>(null);
-  const open = ["APPROVED", "IN_PRODUCTION", "PARTIALLY_RECEIVED", "RECEIVED"].includes(order.status);
+  // A closed order still takes late costs: approving (or voiding) one moves it straight on to the finished goods.
+  const open = ["APPROVED", "IN_PRODUCTION", "PARTIALLY_RECEIVED", "RECEIVED", "CLOSED"].includes(order.status);
+  const closed = order.status === "CLOSED";
   const act = useMutation({
     mutationFn: async ({ id, action }: { id: string; action: "approve" | "delete" }): Promise<void> => { if (action === "approve") await mfg.approveCostEntry(id); else await mfg.deleteCostEntry(id); },
-    onSuccess: (_r, v) => { onChanged(); toast.success(v.action === "approve" ? "Cost approved — accrued to work in progress" : "Draft deleted"); },
+    onSuccess: (_r, v) => { onChanged(); toast.success(v.action === "approve" ? (closed ? "Late cost approved — added to the finished goods' cost" : "Cost approved — accrued to work in progress") : "Draft deleted"); },
     onError: (err) => toast.error(getErrorMessage(err, "That didn't work")),
   });
   const voidIt = useMutation({
@@ -47,7 +49,7 @@ export function ProductionCosts({ order, can, adminId, onChanged }: { order: Pro
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-ink-900">Production costs</h2>
-        {can("manufacturing.manage") && open && <Button size="sm" variant="outline" onClick={() => setEditing("new")} data-testid="add-cost"><Plus className="h-4 w-4" /> Add cost</Button>}
+        {can("manufacturing.manage") && open && <Button size="sm" variant="outline" onClick={() => setEditing("new")} data-testid="add-cost"><Plus className="h-4 w-4" /> {closed ? "Add late cost" : "Add cost"}</Button>}
       </div>
       {cmp && cmp.pendingApproval > 0 && <Alert variant="info" title={`${formatPrice(cmp.pendingApproval)} awaiting approval`}>Costs count once someone other than who entered them approves them.</Alert>}
       {order.costs.length ? (
@@ -117,7 +119,7 @@ export function ProductionCosts({ order, can, adminId, onChanged }: { order: Pro
       )}
 
       {editing && <CostModal order={order} entry={editing === "new" ? null : editing} onClose={() => setEditing(null)} onDone={() => { onChanged(); setEditing(null); }} />}
-      {voiding && <ReasonModal title="Void this cost" hint={voiding.status === "APPROVED" ? "Its accrual in work in progress is reversed." : undefined} loading={voidIt.isPending} onClose={() => setVoiding(null)} onConfirm={(reason) => voidIt.mutate({ id: voiding.id, reason })} />}
+      {voiding && <ReasonModal title="Void this cost" hint={voiding.status === "APPROVED" ? (closed ? "Its accrual is reversed and the finished goods' cost comes down by the same amount." : "Its accrual in work in progress is reversed.") : undefined} loading={voidIt.isPending} onClose={() => setVoiding(null)} onConfirm={(reason) => voidIt.mutate({ id: voiding.id, reason })} />}
     </section>
   );
 }

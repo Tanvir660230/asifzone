@@ -15,6 +15,7 @@ import {
   productionCostUpdateSchema,
   productionCostVoidSchema,
   productionOrderCreateSchema,
+  productionOrderCloseSchema,
   productionOrderListQuerySchema,
   productionOrderReasonSchema,
   productionOrderUpdateSchema,
@@ -33,6 +34,8 @@ import * as orders from "../../domain/manufacturing/production-orders.service";
 import * as custody from "../../domain/manufacturing/material-custody.service";
 import * as costs from "../../domain/manufacturing/production-costs.service";
 import * as receipts from "../../domain/manufacturing/production-receipts.service";
+import * as closing from "../../domain/manufacturing/production-close.service";
+import * as reports from "../../domain/manufacturing/production-reports.service";
 import { idempotencyKeyOf } from "../orders/order.controller";
 
 /**
@@ -113,3 +116,5 @@ manufacturingRouter.delete("/production-receipts/:id", requirePermission("manufa
 }));
 manufacturingRouter.post("/production-receipts/:id/post", requirePermission("manufacturing.move_stock"), validate(productionReceiptPostSchema), asyncHandler(async (req, res) => res.json(await receipts.postProductionReceipt(id(req), req.body, await actorOf(req), costView(req)))));
 manufacturingRouter.post("/production-receipts/:id/reverse", requirePermission("manufacturing.approve"), validate(productionCostVoidSchema), asyncHandler(async (req, res) => res.json(await receipts.reverseProductionReceipt(id(req), reason(req), await actorOf(req), costView(req)))));
+manufacturingRouter.post("/production-orders/:id/close", requirePermission("manufacturing.approve"), validate(productionOrderCloseSchema), asyncHandler(async (req, res) => res.json(await closing.closeProductionOrder(id(req), req.body, await actorOf(req), costView(req)))));
+manufacturingRouter.get("/overview", requirePermission("manufacturing.read"), asyncHandler(async (req, res) => res.json(await reports.manufacturingOverview(costView(req)))));

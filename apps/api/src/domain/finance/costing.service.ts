@@ -639,6 +639,59 @@ async function postValuation(tx: AppTransactionClient, scope: CostingScope, m: M
 }
 
 /**
+ * A value change for units a document brought in earlier (a production order's final cost at close; later, a supplier
+ * invoice's price difference or landed cost) — locked decision 11, no history rewritten. For each variant, REVALUE: the
+ * share still held revalues the stock (and its average); the share already sold becomes a cost adjustment, posted HERE as
+ * an `inventory.valued` event (inventory against 5150). The document books `deltaMinor` itself (Dr/Cr inventory against
+ * its own account), so the inventory account ends equal to the valuation. One valuation entry per variant, in the caller's
+ * transaction (variants locked in id order).
+ */
+export async function revalueForDocumentInTx(
+  tx: AppTransactionClient,
+  input: {
+    scope: CostingScope;
+    sourceType: string;
+    sourceId: string;
+    financialDate: string;
+    note?: string | null;
+    items: Array<{ variantId: string; deltaMinor: number; qty: number }>;
+  },
+): Promise<Array<{ variantId: string; entryId: string; heldShareMinor: number; soldShareMinor: number }>> {
+  const items = input.items.filter((i) => i.deltaMinor !== 0).sort((a, b) => (a.variantId < b.variantId ? -1 : 1));
+  if (!items.length) return [];
+  const results = await recordValuationsInTx(tx, items.map((i) => ({
+    business: { id: input.scope.business.id, baseCurrency: input.scope.business.baseCurrency },
+    brandId: input.scope.brand.id,
+    variantId: i.variantId,
+    stockMovementId: null,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    financialDate: input.financialDate,
+    note: input.note ?? null,
+    op: { type: "REVALUE" as const, deltaMinor: i.deltaMinor, qty: i.qty },
+  })));
+  const out = [];
+  for (const [k, r] of results.entries()) {
+    const adjustment = Number(r.figures.costAdjustment);
+    if (adjustment !== 0) {
+      await recordFinancialEvent(tx, {
+        contract: "finance.event",
+        contractVersion: 1,
+        businessKey: input.scope.business.key,
+        brandKey: input.scope.brand.key,
+        source: { installId, system: "inventory", entityType: "InventoryValuationEntry", entityId: r.entryId },
+        event: { type: INVENTORY_VALUED_EVENT, version: 1, key: `valuation:${r.entryId}`, occurredAt: new Date().toISOString() },
+        financialDate: input.financialDate,
+        currency: input.scope.business.baseCurrency,
+        payload: { entryId: r.entryId, movementId: `${input.sourceType}:${input.sourceId}`, variantId: items[k]!.variantId, reason: "REVALUATION", orderId: null, bookMinor: 0, counterKey: null, costAdjustmentMinor: adjustment, status: r.figures.valuationStatus },
+      });
+    }
+    out.push({ variantId: items[k]!.variantId, entryId: r.entryId, heldShareMinor: Number(r.figures.valueChange), soldShareMinor: -adjustment });
+  }
+  return out;
+}
+
+/**
  * Activates inventory costing for this installation's books from `at` — a one-way switch (database trigger). Phase 4C's
  * approved valuation cutover is the only production caller; 4B uses it in tests and the benchmark. Audited.
  */

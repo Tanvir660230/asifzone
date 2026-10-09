@@ -260,10 +260,11 @@ export const NAV_NODES: readonly NavNode[] = [
   // are the stock that is made rather than bought — kept within the 12 primary modules.
   { id: "inventory", label: term("inventory"), kind: "module", index: "/admin/inventory", activeFor: ["/admin/manufacturing"], domain: "operate", icon: "inventory", capability: "inventory.view", order: 30, mobile: "primary", goKey: "i", keywords: ["stock", "production", "manufacturing"] },
   { id: "inventory.stock", label: "Stock", kind: "page", parent: "inventory", domain: "operate", route: "/admin/inventory", capability: "inventory.view", order: 0, keywords: ["stock", "adjust", "movements"] },
-  { id: "inventory.production-orders", label: "Production orders", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
-  { id: "inventory.production-order-detail", label: "Production order", kind: "detail", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 2, visibility: "hidden" },
-  { id: "inventory.boms", label: "Bills of materials", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 3, keywords: ["bom", "recipe", "materials per unit"] },
-  { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 4, keywords: ["raw materials", "fabric", "trims", "packaging"] },
+  { id: "inventory.production", label: "Production", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
+  { id: "inventory.production-orders", label: "Production orders", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 2, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
+  { id: "inventory.production-order-detail", label: "Production order", kind: "detail", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
+  { id: "inventory.boms", label: "Bills of materials", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 4, keywords: ["bom", "recipe", "materials per unit"] },
+  { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 5, keywords: ["raw materials", "fabric", "trims", "packaging"] },
 
   {
     id: "customers",

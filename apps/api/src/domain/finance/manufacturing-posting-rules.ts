@@ -9,6 +9,9 @@
  *                                 a void revision (#r1) supersedes it — the accrual is reversed
  *   manufacturing.goods_received  Dr asset.inventory / Cr asset.wip  (accepted finished goods out of WIP into stock)
  *                                 a void revision (#r1) supersedes it — the receipt reversed
+ *   manufacturing.order_settled   the order's remaining WIP out (close, late cost): Dr/Cr asset.inventory vs asset.wip for
+ *                                 the transfer to finished goods, Dr cogs.production_losses / Cr asset.wip for an approved
+ *                                 abnormal loss — the costing engine moves the share already sold on to 5150
  *
  * Valuation differences (none for issues within stock) are posted by the costing engine, so inventory = valuation.
  */
@@ -19,6 +22,7 @@ export const MANUFACTURING_EVENT_TYPES = {
   materialMoved: "manufacturing.material_moved",
   costAccrued: "manufacturing.cost_accrued",
   goodsReceived: "manufacturing.goods_received",
+  orderSettled: "manufacturing.order_settled",
 } as const;
 
 export const orderParty = (productionOrderId: string) => ({ partyType: "ProductionOrder", partyId: productionOrderId });
@@ -105,5 +109,41 @@ registerPostingRule(MANUFACTURING_EVENT_TYPES.goodsReceived, 1, {
       ],
       reverses,
     };
+  },
+});
+
+const orderSettledPayload = z.object({
+  settlementId: z.string(),
+  productionOrderId: z.string(),
+  orderNumber: z.string(),
+  kind: z.enum(["CLOSE", "LATE_COST"]),
+  /** To finished goods, signed (negative = their cost comes down). */
+  transferMinor: z.number().int(),
+  lossMinor: z.number().int().nonnegative(),
+});
+export type OrderSettledPayload = z.infer<typeof orderSettledPayload>;
+
+registerPostingRule(MANUFACTURING_EVENT_TYPES.orderSettled, 1, {
+  payload: orderSettledPayload,
+  build: (p) => {
+    const party = orderParty(p.productionOrderId);
+    const what = p.kind === "CLOSE" ? "Order closed" : "Late cost";
+    const lines: PostingRuleLine[] = [];
+    if (p.transferMinor !== 0) {
+      const up = p.transferMinor > 0;
+      const a = Math.abs(p.transferMinor);
+      lines.push(
+        { account: "asset.inventory", debit: up ? a : 0, credit: up ? 0 : a, valuationStatus: "KNOWN", memo: `Final cost true-up — ${p.orderNumber}`, ...party },
+        { account: "asset.wip", debit: up ? 0 : a, credit: up ? a : 0, valuationStatus: "KNOWN", memo: `${what} — ${p.orderNumber}`, ...party },
+      );
+    }
+    if (p.lossMinor > 0) {
+      lines.push(
+        { account: "cogs.production_losses", debit: p.lossMinor, credit: 0, memo: `Abnormal production loss — ${p.orderNumber}`, ...party },
+        { account: "asset.wip", debit: 0, credit: p.lossMinor, valuationStatus: "KNOWN", memo: `Written off — ${p.orderNumber}`, ...party },
+      );
+    }
+    if (!lines.length) return { ignore: "nothing left in work in progress" };
+    return { description: `${what} — ${p.orderNumber}`, reference: p.orderNumber, lines };
   },
 });

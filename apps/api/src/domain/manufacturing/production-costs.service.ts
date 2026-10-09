@@ -9,6 +9,9 @@
  *
  * A supplier reference is captured once per category while live (unique index), so the same bill can't be costed twice;
  * the supplier's invoice clears the accrual in Phase 4E rather than adding a second cost.
+ *
+ * Late costs: a cost entered on a CLOSED order is approved (or an approved one voided) the same way, and its effect leaves
+ * work in progress at once — the finished goods are revalued, the sold share goes to 5150 (production-close.service).
  */
 import type { Prisma, ProductionCostEntry } from "@prisma/client";
 import { minorDigits } from "@clothing-brand/shared";
@@ -23,6 +26,7 @@ import { divRound } from "../finance/costing.service";
 import { MANUFACTURING_EVENT_TYPES, type CostAccruedPayload } from "../finance/manufacturing-posting-rules";
 import { moNumber } from "./production-orders.service";
 import { scaleDecimal } from "./requirements";
+import { settleLateCostInTx } from "./production-close.service";
 
 const OPEN = ["APPROVED", "IN_PRODUCTION", "PARTIALLY_RECEIVED", "RECEIVED"];
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
@@ -84,6 +88,12 @@ async function lockEntry(tx: AppTransactionClient, businessId: string, id: strin
   return tx.productionCostEntry.findUniqueOrThrow({ where: { id }, include: COST_INCLUDE });
 }
 
+/** Locks the cost's order and reads its status now — so a close and an approval / void of its costs never interleave. */
+async function lockedOrderStatus(tx: AppTransactionClient, orderId: string) {
+  const [o] = await tx.$queryRaw<Array<{ status: string }>>`SELECT status::text AS status FROM "ProductionOrder" WHERE id = ${orderId} FOR UPDATE`;
+  return o!.status;
+}
+
 async function validated(tx: AppTransactionClient, businessId: string, cur: string, input: CostEntryInput) {
   const category = await tx.productionCostCategory.findFirst({ where: { id: input.categoryId, businessId } });
   if (!category) throw financeError(400, "COST_CATEGORY_NOT_FOUND", "Cost category not found");
@@ -119,7 +129,7 @@ export async function createCostEntry(orderId: string, input: CostEntryInput, ac
   return financeTransaction(async (tx) => {
     const o = await tx.productionOrder.findFirst({ where: { id: orderId, businessId: business.id }, select: { id: true, number: true, status: true } });
     if (!o) throw financeError(404, "PRODUCTION_ORDER_NOT_FOUND", "Production order not found");
-    if (!OPEN.includes(o.status)) throw financeError(409, "MO_NOT_OPEN", `Costs are entered on an approved, open order (this one is ${o.status.toLowerCase().replace("_", " ")})`);
+    if (![...OPEN, "CLOSED"].includes(o.status)) throw financeError(409, "MO_NOT_OPEN", `Costs are entered on an approved order (this one is ${o.status.toLowerCase().replace("_", " ")})`);
     const { amountMinor, hasRate } = await validated(tx, business.id, cur, input);
     const created = await tx.productionCostEntry
       .create({
@@ -202,9 +212,11 @@ export async function approveCostEntry(id: string, actor: FinanceActor) {
     if (c.status !== "DRAFT") throw financeError(409, "COST_STATUS", "A void cost can't be approved");
     if (!actorCan(actor, "manufacturing.approve")) throw financeError(403, "FORBIDDEN", "Approving production costs needs manufacturing.approve");
     if (adminOf(actor) && adminOf(actor) === c.createdByAdminId) throw financeError(409, "COST_SELF_APPROVAL", "A production cost is approved by someone other than who entered it");
-    if (!OPEN.includes(c.productionOrder.status)) throw financeError(409, "MO_NOT_OPEN", "The order is no longer open — late costs are handled at close");
+    const orderStatus = await lockedOrderStatus(tx, c.productionOrderId);
+    if (![...OPEN, "CLOSED"].includes(orderStatus)) throw financeError(409, "MO_NOT_OPEN", "The order was cancelled — its costs can't be approved");
     await recordFinancialEvent(tx, event(business, brand.key, c, { amountMinor: toMinor(c.amount, cur), void: false, supersedes: null }, 0));
     const after = await tx.productionCostEntry.update({ where: { id }, data: { status: "APPROVED", approvedAt: new Date(), approvedByAdminId: adminOf(actor) }, include: COST_INCLUDE });
+    if (orderStatus === "CLOSED") await settleLateCostInTx(tx, business, brand.key, c.productionOrderId, c.id, actor);
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "production_cost.approve", entityType: "ProductionCostEntry", entityId: id, before: { status: c.status }, after: { status: after.status, amount: costEntryDto(after, cur).amount } });
     return costEntryDto(after, cur);
   });
@@ -218,12 +230,13 @@ export async function voidCostEntry(id: string, reason: string, actor: FinanceAc
     const c = await lockEntry(tx, business.id, id);
     if (c.status === "VOID") return costEntryDto(c, cur);
     if (!actorCan(actor, "manufacturing.approve")) throw financeError(403, "FORBIDDEN", "Voiding production costs needs manufacturing.approve");
+    const orderStatus = await lockedOrderStatus(tx, c.productionOrderId);
     if (c.status === "APPROVED") {
-      if (!OPEN.includes(c.productionOrder.status)) throw financeError(409, "MO_NOT_OPEN", "The order is no longer open — corrections are handled at close");
       const original = await tx.financialEvent.findUnique({ where: { sourceInstallId_eventKey: { sourceInstallId: installId, eventKey: `mfg-cost:${c.id}#r0` } } });
       await recordFinancialEvent(tx, event(business, brand.key, c, { amountMinor: 0, void: true, supersedes: original?.id ?? null }, 1));
     }
     const after = await tx.productionCostEntry.update({ where: { id }, data: { status: "VOID", voidedAt: new Date(), voidedByAdminId: adminOf(actor), voidReason: reason }, include: COST_INCLUDE });
+    if (c.status === "APPROVED" && orderStatus === "CLOSED") await settleLateCostInTx(tx, business, brand.key, c.productionOrderId, c.id, actor);
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "production_cost.void", entityType: "ProductionCostEntry", entityId: id, reason, before: { status: c.status }, after: { status: "VOID" } });
     return costEntryDto(after, cur);
   });

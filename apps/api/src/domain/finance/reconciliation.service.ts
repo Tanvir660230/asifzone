@@ -406,7 +406,7 @@ export const RECONCILIATION_CHECKS = {
 
   "cost.completeness": {
     label: "Cost data completeness",
-    description: "Financial records whose amount depends on a product cost that is estimated or missing: opening inventory items and posted journal lines. Missing costs are never invented — they are listed here.",
+    description: "Financial records whose amount depends on a product cost that is estimated or missing: opening inventory items and posted journal lines. Missing costs are never invented — they are listed here. A closed production order's provisional postings count as finalised (its close booked the final cost).",
     async run(ctx) {
       const cur = ctx.business.baseCurrency;
       const [inventory, lines] = await Promise.all([
@@ -415,13 +415,18 @@ export const RECONCILIATION_CHECKS = {
       ]);
       const inv = Object.fromEntries(inventory.map((g) => [g.valuationStatus, { items: g._count._all, quantity: g._sum.quantity ?? 0, value: toMajorNumber(toMinor(g._sum.valuationAmount, cur), cur) }]));
       const jl = Object.fromEntries(lines.map((g) => [g.valuationStatus!, { lines: g._count._all }]));
+      // A production order's provisional (ESTIMATED) receipt postings are finalised when it closes — its KNOWN true-up
+      // carries the final cost — so they stay in history as ESTIMATED but are no longer open estimates.
+      const [finalised] = await prisma.$queryRaw<Array<{ n: number }>>`
+        SELECT COUNT(*)::int AS n FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId" JOIN "ProductionOrder" o ON o.id = l."partyId"
+        WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."valuationStatus" = 'ESTIMATED' AND l."partyType" = 'ProductionOrder' AND o.status = 'CLOSED'`;
       const missing = (inv.MISSING?.items ?? 0) + (jl.MISSING?.lines ?? 0);
-      const estimated = (inv.ESTIMATED?.items ?? 0) + (jl.ESTIMATED?.lines ?? 0);
+      const estimated = (inv.ESTIMATED?.items ?? 0) + (jl.ESTIMATED?.lines ?? 0) - finalised!.n;
       return {
         status: missing === 0 && estimated === 0 ? "MATCHED" : "DIFFERENCE",
         expected: null,
         actual: null,
-        details: { openingInventory: inv, journalLines: jl, missingRecords: missing, estimatedRecords: estimated },
+        details: { openingInventory: inv, journalLines: jl, missingRecords: missing, estimatedRecords: estimated, finalisedAtProductionClose: finalised!.n },
       };
     },
   },
@@ -522,7 +527,7 @@ export const RECONCILIATION_CHECKS = {
   // ── Manufacturing: work in progress (docs/MANUFACTURING.md §6) ──────────────────────────────────────────────────────
   "manufacturing.wip": {
     label: "Work in progress = production documents",
-    description: "The work-in-progress account equals the material issued to production orders less what was returned, plus approved production costs, less the value of finished goods received out of it — in total and for each order, which every WIP posting names as its party. Unposted manufacturing events are listed.",
+    description: "The work-in-progress account equals the material issued to production orders less what was returned, plus approved production costs, less the value of finished goods received out of it and what each close / late cost swept out (so a closed order holds zero) — in total and for each order, which every WIP posting names as its party. Unposted manufacturing events are listed.",
     async run(ctx) {
       const cur = ctx.business.baseCurrency;
       const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "asset.wip" } } });
@@ -538,6 +543,9 @@ export const RECONCILIATION_CHECKS = {
           SELECT r."productionOrderId", -rl.value
           FROM "ProductionReceiptLine" rl JOIN "ProductionReceipt" r ON r.id = rl."receiptId" JOIN "ProductionOrder" o ON o.id = r."productionOrderId"
           WHERE o."businessId" = ${ctx.business.id} AND r.status = 'POSTED' AND rl.value IS NOT NULL
+          UNION ALL
+          SELECT s."productionOrderId", -s.residual
+          FROM "ProductionSettlement" s JOIN "ProductionOrder" o ON o.id = s."productionOrderId" WHERE o."businessId" = ${ctx.business.id}
         ) x GROUP BY x."orderId"`;
       const books = await prisma.$queryRaw<Array<{ orderId: string | null; v: P.Decimal }>>`
         SELECT l."partyId" AS "orderId", SUM(l.debit - l.credit) AS v

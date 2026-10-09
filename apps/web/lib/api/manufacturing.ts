@@ -91,7 +91,19 @@ export interface ProductionOrder {
   materials: ProductionMaterial[];
   plannedCosts: Array<{ id: string; category: { id: string; code: string; name: string; group: CostGroup }; amount: number | null; basis: string | null }>;
   planned: { materialCost: number; materialsWithoutCost: number; otherCost: number; totalCost: number; costPerUnit: number | null } | null;
-  wip: { materials: number; costs: number; transferred: number; total: number } | null;
+  wip: { materials: number; costs: number; transferred: number; settled: number; total: number } | null;
+  closedAt: string | null;
+  closeChecklist: { materialsAtProducer: Array<{ sku: string; atProducer: number }>; draftCosts: number; draftReceipts: number };
+  performance: { yieldPct: number | null; rejectionPct: number | null; reworkPct: number | null; fulfilmentPct: number | null; materialWastagePct: number | null; onTime: boolean | null };
+  finalCost: {
+    total: number;
+    abnormalLoss: number;
+    goods: number;
+    perAcceptedUnit: number | null;
+    perDeliveredUnit: number | null;
+    materialWastage: number;
+    settlements: ProductionSettlement[];
+  } | null;
   costs: CostEntry[];
   comparison: {
     materials: { planned: number; actual: number; variance: number; plannedIncomplete: boolean };
@@ -100,6 +112,18 @@ export interface ProductionOrder {
     pendingApproval: number;
   } | null;
   replayed?: boolean;
+}
+export interface ProductionSettlement {
+  id: string;
+  kind: "CLOSE" | "LATE_COST";
+  createdAt: string;
+  costEntryId: string | null;
+  abnormalLossReason: string | null;
+  residual: number;
+  transfer: number;
+  abnormalLoss: number;
+  heldShare: number;
+  soldShare: number;
 }
 export interface ProductionReceiptSummary {
   id: string;
@@ -140,6 +164,7 @@ export const manufacturingKeys = {
   orders: (q: object) => ["manufacturing", "orders", q] as const,
   order: (id: string) => ["manufacturing", "orders", "detail", id] as const,
   moves: (id: string) => ["manufacturing", "orders", "moves", id] as const,
+  overview: () => ["manufacturing", "overview"] as const,
   boms: (q: object) => ["manufacturing", "boms", q] as const,
   materials: (q: object) => ["manufacturing", "materials", q] as const,
   categories: () => ["manufacturing", "cost-categories"] as const,
@@ -196,3 +221,19 @@ export const createProductionReceipt = (orderId: string, body: { receiptDate?: s
 export const postProductionReceipt = (id: string, overReceiptReason?: string | null) => apiFetch<{ receipt: ProductionReceiptSummary; replayed: boolean }>(`${BASE}/production-receipts/${id}/post`, { method: "POST", body: overReceiptReason ? { overReceiptReason } : {} });
 export const reverseProductionReceipt = (id: string, reason: string) => apiFetch<{ receipt: ProductionReceiptSummary }>(`${BASE}/production-receipts/${id}/reverse`, { method: "POST", body: { reason } });
 export const deleteProductionReceipt = (id: string) => apiFetch<void>(`${BASE}/production-receipts/${id}`, { method: "DELETE" });
+
+// ── M5: close, final cost, production overview ────────────────────────────────────────────────────────────────────────
+export const closeProductionOrder = (id: string, body: { abnormalLoss?: number | null; abnormalLossReason?: string | null; note?: string | null }) =>
+  apiFetch<ProductionOrder>(`${BASE}/production-orders/${id}/close`, { method: "POST", body });
+
+export interface ManufacturingOverview {
+  asOf: string;
+  canSeeCost: boolean;
+  byStatus: Partial<Record<ProductionOrderStatus, number>>;
+  openOrders: number;
+  openWip: number | null;
+  open: Array<{ id: string; number: string; status: ProductionOrderStatus; product: { id: string; name: string }; producer: { id: string; displayName: string } | null; expectedDate: string | null; overdue: boolean; planned: number; accepted: number; outstanding: number; wip: number | null; readyToClose: boolean }>;
+  producers: Array<{ producer: { id: string; code: string; displayName: string } | null; orders: number; delivered: number; accepted: number; yieldPct: number | null; rejectionPct: number | null; reworkPct: number | null; onTimePct: number | null; closedOrders: number; finalUnitCost: number | null }>;
+  closed: Array<{ id: string; number: string; product: { id: string; name: string }; producer: { id: string; displayName: string } | null; closedAt: string | null; accepted: number; yieldPct: number | null; rejectionPct: number | null; plannedPerUnit: number | null; finalPerUnit: number | null; plannedTotal: number | null; finalTotal: number | null; abnormalLoss: number | null }>;
+}
+export const manufacturingOverview = () => apiFetch<ManufacturingOverview>(`${BASE}/overview`);

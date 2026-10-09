@@ -22,6 +22,8 @@ import { declareMaterialUsage, issueMaterials, listMaterialMoves, returnMaterial
 import { approveCostEntry, createCostEntry, updateCostEntry, voidCostEntry } from "./production-costs.service";
 import { approveProductionOrder as approveMo, createProductionOrder as createMo, getProductionOrder } from "./production-orders.service";
 import { createProductionReceipt, postProductionReceipt, reverseProductionReceipt } from "./production-receipts.service";
+import { allocate, closeProductionOrder } from "./production-close.service";
+import { adjustVariantStock } from "../../modules/inventory/inventory.service";
 
 // Manufacturing M2 (docs/MANUFACTURING.md §6): material issued to and returned from a production order, after a real
 // valuation cutover and a real purchase — so the checks prove WIP and inventory against the documents and the valuation.
@@ -274,5 +276,71 @@ describe("deliveries and finished goods", () => {
     const r = await createProductionReceipt(bare.id, { lines: [{ orderLineId: bare.lines[0]!.id, delivered: 50, accepted: 50 }] }, STAFF, SEE);
     await expect(postProductionReceipt(r.id, {}, STAFF, SEE)).rejects.toMatchObject({ statusCode: 409 });
     expect(await stock(capVariant)).toBe(400);
+  });
+});
+
+describe("close, final cost and late costs", () => {
+  const APPROVER = (): FinanceActor => ({ type: "ADMIN", adminId: approverId, label: "approver@test", permissions: [...PERMISSIONS] });
+  const capValue = async () => Number((await prisma.inventoryCostState.findUniqueOrThrow({ where: { variantId: capVariant } })).value);
+
+  it("allocates exactly by weight (largest remainder)", () => {
+    expect(allocate(1000, [1, 1, 1])).toEqual([334, 333, 333]);
+    expect(allocate(-1000, [2, 1])).toEqual([-667, -333]);
+    expect(allocate(5, [0, 0])).toEqual([0, 0]);
+  });
+
+  it("the checklist holds the close: draft costs, an oversized or unexplained loss, no approver", async () => {
+    const cmt = (await prisma.productionCostCategory.findFirstOrThrow({ where: { code: "CMT" } })).id;
+    const draft = await createCostEntry(moId, { categoryId: cmt, description: "Buttons sewing (unconfirmed)", amount: 300 }, STAFF);
+    await expect(closeProductionOrder(moId, {}, STAFF, SEE)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(closeProductionOrder(moId, {}, OWNER, SEE)).rejects.toMatchObject({ details: { code: "CLOSE_DRAFT_COSTS" } });
+    for (const c of await prisma.productionCostEntry.findMany({ where: { productionOrderId: moId, status: "DRAFT" } })) await voidCostEntry(c.id, "Not part of this order", APPROVER());
+    expect((await prisma.productionCostEntry.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe("VOID");
+    await expect(closeProductionOrder(moId, { abnormalLoss: 500 }, OWNER, SEE)).rejects.toMatchObject({ details: { code: "ABNORMAL_LOSS_REASON" } });
+    await expect(closeProductionOrder(moId, { abnormalLoss: 1_000_000, abnormalLossReason: "fire" }, OWNER, SEE)).rejects.toMatchObject({ details: { code: "ABNORMAL_LOSS_TOO_LARGE" } });
+    expect((await getProductionOrder(moId, SEE)).status).toBe("PARTIALLY_RECEIVED");
+  });
+
+  it("closing revalues the units still held, sends the sold share to 5150, writes off the abnormal loss, and empties WIP", async () => {
+    // 100 of the 400 finished caps leave first (at the provisional 49.05) — they carry their share of the true-up to 5150.
+    await adjustVariantStock(capVariant, -100, "DAMAGED", approverId, "water damage");
+    await postPending();
+    expect(await capValue()).toBe(14_715);
+    const before = await getProductionOrder(moId, SEE);
+    expect(before.wip!.total).toBe(29_430); // 49,050 actual − 19,620 transferred
+    const wipBefore = await wipBalance();
+    const closed = await closeProductionOrder(moId, { abnormalLoss: 430, abnormalLossReason: "Bundle lost in transit", note: "All deliveries in" }, OWNER, SEE);
+    expect(closed.status).toBe("CLOSED");
+    expect(closed.wip!.total).toBe(0);
+    // transfer 29,000 over 400 accepted: 300 still held → 21,750 revalues stock, 100 gone → 7,250 to 5150
+    expect(closed.finalCost).toMatchObject({ total: 49_050, abnormalLoss: 430, goods: 48_620, perAcceptedUnit: 121.55 });
+    expect(closed.finalCost!.settlements[0]).toMatchObject({ kind: "CLOSE", residual: 29_430, transfer: 29_000, abnormalLoss: 430, heldShare: 21_750, soldShare: 7_250 });
+    expect(await capValue()).toBe(36_465);
+    expect(closed.performance).toMatchObject({ yieldPct: 96.39, rejectionPct: 2.41 });
+    allMatched(await checks());
+    expect(await wipBalance()).toBe(Math.round((wipBefore - 29_430) * 100) / 100);
+    // replay; a closed order takes no deliveries or materials and is final
+    expect((await closeProductionOrder(moId, {}, OWNER, SEE)).status).toBe("CLOSED");
+    await expect(createProductionReceipt(moId, { lines: [{ orderLineId: closed.lines[0]!.id, delivered: 1, accepted: 1 }] }, STAFF, SEE)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(issueMaterials(moId, { lines: [{ materialLineId: twillLine, quantity: 1 }] }, OWNER, SEE)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(prisma.productionSettlement.updateMany({ where: { productionOrderId: moId }, data: { abnormalLossReason: "x" } })).rejects.toThrow(/append-only/);
+  });
+
+  it("a late cost after close (and its void) flows to the finished goods the same way — WIP stays zero, no history rewritten", async () => {
+    const freight = (await prisma.productionCostCategory.findFirstOrThrow({ where: { code: "CMT" } })).id;
+    const late = await createCostEntry(moId, { categoryId: freight, description: "Courier bill for the last delivery", amount: 800 }, STAFF);
+    await approveCostEntry(late.id, APPROVER());
+    let o = await getProductionOrder(moId, SEE);
+    expect(o.wip!.total).toBe(0);
+    expect(o.finalCost!.total).toBe(49_850);
+    expect(o.finalCost!.settlements.at(-1)).toMatchObject({ kind: "LATE_COST", transfer: 800, heldShare: 600, soldShare: 200 });
+    expect(await capValue()).toBe(37_065);
+    allMatched(await checks());
+    await voidCostEntry(late.id, "Billed to the customer instead", APPROVER());
+    o = await getProductionOrder(moId, SEE);
+    expect(o.wip!.total).toBe(0);
+    expect(o.finalCost!.settlements.at(-1)).toMatchObject({ kind: "LATE_COST", transfer: -800, heldShare: -600, soldShare: -200 });
+    expect(await capValue()).toBe(36_465);
+    allMatched(await checks());
   });
 });

@@ -20,6 +20,7 @@ import { nextFinanceSequence } from "../finance/suppliers.service";
 import { divRound } from "../finance/costing.service";
 import { computeRequirements, scaleDecimal } from "./requirements";
 import { costEntryDto } from "./production-costs.service";
+import { closeChecklist } from "./production-close.service";
 
 export const moNumber = (n: number) => `MO-${String(n).padStart(6, "0")}`;
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
@@ -47,6 +48,7 @@ const MO_INCLUDE = {
   plannedCosts: { include: { category: { select: { id: true, code: true, name: true, group: true } } } },
   costEntries: { orderBy: { createdAt: "asc" }, include: { category: { select: { id: true, code: true, name: true, group: true } }, supplier: { select: { id: true, code: true, displayName: true } } } },
   receipts: { orderBy: { number: "asc" }, include: { lines: { select: { orderLineId: true, delivered: true, accepted: true, rejected: true, rework: true, value: true } } } },
+  settlements: { orderBy: { createdAt: "asc" }, include: { lines: { select: { variantId: true, qty: true, delta: true, heldShare: true, soldShare: true } } } },
 } satisfies Prisma.ProductionOrderInclude;
 type MoRow = Prisma.ProductionOrderGetPayload<{ include: typeof MO_INCLUDE }>;
 
@@ -78,6 +80,20 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
   const posted = o.receipts.filter((r) => r.status === "POSTED");
   const transferredMinor = posted.reduce((s, r) => s + r.lines.reduce((t, l) => t + (l.value === null ? 0 : toMinor(l.value, cur)), 0), 0);
   const sum = (k: "deliveredQty" | "acceptedQty" | "rejectedQty" | "reworkQty") => o.lines.reduce((n, l) => n + l[k], 0);
+  const settledMinor = o.settlements.reduce((s, x) => s + toMinor(x.residual, cur), 0);
+  const lossMinor = o.settlements.reduce((s, x) => s + toMinor(x.abnormalLoss, cur), 0);
+  const finalMinor = wipMinor + approvedMinor;
+  const accepted = sum("acceptedQty");
+  const delivered = sum("deliveredQty");
+  const pct = (n: number, d: number) => (d ? Math.round((n / d) * 10_000) / 100 : null);
+  // Material wastage: scrapped ÷ (consumed + scrapped), valued at each line's net issued value per unit used.
+  const used = o.materials.filter((m) => m.suppliedBy === "BUSINESS" && m.consumedQty + m.scrappedQty > 0);
+  const usedValue = (m: MoRow["materials"][number], q: number) => {
+    const net = m.issuedQty - m.returnedQty;
+    return net > 0 ? Math.round(((moveValue(m, "ISSUE") - moveValue(m, "RETURN")) * q) / net) : 0;
+  };
+  const scrapMinor = used.reduce((s, m) => s + usedValue(m, m.scrappedQty), 0);
+  const usedMinor = used.reduce((s, m) => s + usedValue(m, m.consumedQty + m.scrappedQty), 0);
   // Planned vs actual per category: materials (plan snapshot vs net issued value) and each cost category.
   const categories = new Map<string, { category: { id: string; code: string; name: string; group: string }; plannedMinor: number; actualMinor: number }>();
   for (const pc of o.plannedCosts) categories.set(pc.categoryId, { category: pc.category, plannedMinor: toMinor(pc.amount, cur), actualMinor: 0 });
@@ -141,9 +157,37 @@ export function productionOrderDto(o: MoRow, cur: string, opts: { canSeeCost: bo
     })),
     /** Value now in work in progress for this order: material issued − returned + approved production costs. */
     wip: opts.canSeeCost
-      ? { materials: toMajorNumber(wipMinor, cur), costs: toMajorNumber(approvedMinor, cur), transferred: toMajorNumber(transferredMinor, cur), total: toMajorNumber(wipMinor + approvedMinor - transferredMinor, cur) }
+      ? { materials: toMajorNumber(wipMinor, cur), costs: toMajorNumber(approvedMinor, cur), transferred: toMajorNumber(transferredMinor, cur), settled: toMajorNumber(settledMinor, cur), total: toMajorNumber(wipMinor + approvedMinor - transferredMinor - settledMinor, cur) }
       : null,
     costs: o.costEntries.map((c) => costEntryDto(c, cur)),
+    /** What still stands between the order and its close (custody, draft costs, draft deliveries). */
+    closeChecklist: closeChecklist(o),
+    /** Yield and quality, from posted deliveries (no cost — visible to every reader). */
+    performance: {
+      yieldPct: pct(accepted, delivered),
+      rejectionPct: pct(sum("rejectedQty"), delivered),
+      reworkPct: pct(sum("reworkQty"), delivered),
+      fulfilmentPct: pct(accepted, plannedUnits),
+      materialWastagePct: opts.canSeeCost ? pct(scrapMinor, usedMinor) : null,
+      /** The last posted delivery against the expected date (null until something is delivered or with no date). */
+      onTime: o.expectedDate && posted.length ? posted.map((r) => businessDateOf(r.receiptDate)).sort().at(-1)! <= businessDateOf(o.expectedDate) : null,
+    },
+    /** The final cost (actual: net material + approved costs) and its unit costs; final once CLOSED (late costs included). */
+    finalCost: opts.canSeeCost
+      ? {
+          total: toMajorNumber(finalMinor, cur),
+          abnormalLoss: toMajorNumber(lossMinor, cur),
+          goods: toMajorNumber(finalMinor - lossMinor, cur),
+          perAcceptedUnit: accepted ? toMajorNumber(Math.round((finalMinor - lossMinor) / accepted), cur) : null,
+          perDeliveredUnit: delivered ? toMajorNumber(Math.round(finalMinor / delivered), cur) : null,
+          materialWastage: toMajorNumber(scrapMinor, cur),
+          settlements: o.settlements.map((x) => ({
+            id: x.id, kind: x.kind, createdAt: x.createdAt, costEntryId: x.costEntryId, abnormalLossReason: x.abnormalLossReason,
+            residual: toMajorNumber(toMinor(x.residual, cur), cur), transfer: toMajorNumber(toMinor(x.transfer, cur), cur), abnormalLoss: toMajorNumber(toMinor(x.abnormalLoss, cur), cur),
+            heldShare: toMajorNumber(x.lines.reduce((t, l) => t + toMinor(l.heldShare, cur), 0), cur), soldShare: toMajorNumber(x.lines.reduce((t, l) => t + toMinor(l.soldShare, cur), 0), cur),
+          })),
+        }
+      : null,
     /** Planned vs actual: actual = net material issued + approved costs; variance = actual − planned (positive = over plan). */
     comparison: opts.canSeeCost
       ? {
@@ -403,4 +447,10 @@ export async function searchProducibleProducts(q: { q?: string; take: number }) 
     take: q.take,
   });
   return { products: rows };
+}
+
+/** Every order not cancelled, as DTOs, newest first — the production dashboard's input (orders are few: hundreds). */
+export async function productionOrdersForReport(businessId: string, cur: string, opts: { canSeeCost: boolean }) {
+  const rows = await prisma.productionOrder.findMany({ where: { businessId, status: { not: "CANCELLED" } }, include: MO_INCLUDE, orderBy: { number: "desc" }, take: 2000 });
+  return rows.map((o) => ({ ...productionOrderDto(o, cur, opts), producerSupplierId: o.producerSupplierId }));
 }

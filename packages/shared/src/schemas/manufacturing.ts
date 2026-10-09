@@ -131,3 +131,8 @@ export const productionReceiptCreateSchema = z.object({
     .refine((ls) => new Set(ls.map((l) => l.orderLineId)).size === ls.length, "Each variant once"),
 });
 export const productionReceiptPostSchema = z.object({ overReceiptReason: optionalText(500) });
+
+// ── M5: close, final cost, abnormal loss (docs/MANUFACTURING.md §9) ─────────────────────────────────────────────────────
+export const productionOrderCloseSchema = z
+  .object({ abnormalLoss: financeAmountSchema.optional().nullable(), abnormalLossReason: optionalText(500), note: optionalText(500) })
+  .refine((v) => !v.abnormalLoss || Boolean(v.abnormalLossReason), { message: "Say why the loss is abnormal", path: ["abnormalLossReason"] });

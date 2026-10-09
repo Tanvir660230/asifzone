@@ -1,6 +1,6 @@
 # Manufacturing — production orders, materials, costs and finished goods
 
-Status: **M1–M4 implemented and verified (2026-10-09)** — foundation, materials custody & WIP, production costs, and deliveries / inspection / finished goods. M5 (close, variance, late costs, reports) is designed here and built next. The roadmap
+Status: **M1–M5 implemented and verified (2026-10-09)** — foundation, materials custody & WIP, production costs, deliveries / inspection / finished goods, and close / final cost / late costs / reports. The roadmap
 and decisions are in `docs/MASTER_ERP_FINANCE_MANUFACTURING_BLUEPRINT.md` §10–§12, §21 (D-M1…D-M6) and §22.
 
 Example: Asif Zone orders 1,000 caps from a factory. The system tracks:
@@ -261,21 +261,53 @@ business-supplied material's moving-average cost (`plannedUnitCost`), which beco
   - Browser QA: 300 accepted / 5 rejected / 3 rework at ৳49.56 = ৳14,868; partly received; all seven checks "matches";
     375 px.
 
-## 9. M5 — Close, variance, late costs, reports [PROPOSED]
+## 9. M5 — Close, final cost, late costs, reports (implemented)
 
-- **Close checklist:**
-  - custody resolved (at producer = 0);
-  - every cost approved, voided or explicitly excluded;
-  - no draft receipts.
-- **Final cost and true-up:**
-  - final cost = WIP total; final unit cost = final cost ÷ accepted units (D-M4: normal rejects and wastage are absorbed;
-    abnormal loss is an approved write-off to 5220);
-  - the difference between final and provisionally transferred value is booked as a REVALUE of the units still held plus
-    5150 for the share already sold (locked decision 11 — no COGS is rewritten);
-  - WIP returns to 0.
-- **Late costs after close:** the same REVALUE / 5150 path.
-- **Reports:** planned vs actual by category, cost per accepted unit, cost per produced unit, wastage rate, yield,
-  rejection rate, supplier performance (on time, rejects), open WIP.
+- **Close checklist** (`closeChecklist`, shown on the order and enforced by the close):
+  - no business-owned material left with the producer (issued − returned − consumed − scrapped = 0 on every line);
+  - no draft cost — an unapproved cost is excluded only by voiding it (explicit, audited);
+  - no draft delivery.
+- **Close** (`POST /production-orders/:id/close`, `manufacturing.approve`; idempotent; from in production, partly
+  received or received):
+  - final cost = material issued − returned + approved costs;
+  - the order's WIP residual = final cost − value already transferred by its receipts;
+  - an optional **abnormal loss** (≤ residual, with its reason) goes to 5220 production losses;
+  - the rest — the **transfer** — is spread over the finished variants by accepted units (largest remainder, exact) and
+    booked through costing **REVALUE** (`costing.service.revalueForDocumentInTx`, D-M5 / locked decision 11): the share
+    of units still held revalues the stock and its average; the share already sold goes to 5150 as an
+    `inventory.valued` cost adjustment. No cost of goods sold is rewritten;
+  - event `manufacturing.order_settled`: Dr/Cr 1610 vs 1630 for the transfer, Dr 5220 / Cr 1630 for the loss (the
+    order as party), so the order's WIP becomes **zero**;
+  - status CLOSED (final), `closedAt`, `closedByAdminId`, an optional note.
+  - Nothing accepted and something left → only an abnormal loss can take it (`CLOSE_NOTHING_ACCEPTED`).
+- **`ProductionSettlement`** (+ lines per variant: qty, delta = held share + sold share, valuation entry) records every
+  sweep. Append-only; one CLOSE per order; residual = transfer + loss (CHECK); written only for a closed order (deferred
+  trigger); audited at commit.
+- **Late costs:** a cost can be entered on a CLOSED order ("Add late cost"). Approving it (or voiding an approved one)
+  settles at once in the same transaction — a LATE_COST settlement by the same REVALUE / 5150 path — so a closed
+  order's WIP is always zero and the goods carry every approved cost. Approve / void lock the order first, so a close and
+  a cost decision never interleave. (An order with no accepted goods takes a late cost as an abnormal loss; a late
+  credit on such an order is refused.)
+- **Metrics on the order:** final cost, abnormal loss, cost of the goods, per accepted unit (vs a complete plan), per
+  delivered unit, material scrapped; yield (accepted ÷ delivered), rejection, rework, fulfilment (accepted ÷ planned),
+  material wastage (scrapped ÷ used, by value), delivered on time (last posted delivery ≤ expected date).
+- **Production overview** (`GET /manufacturing/overview`, `manufacturing.read`; Inventory → Production): open orders,
+  open WIP, late orders, ready to close, orders by status; open orders table; producer performance (orders, delivered,
+  yield, rejects, on time, final unit cost of closed orders); recently closed orders planned vs final per unit. Costs only
+  with `costing.read`.
+- **Checks:** `manufacturing.wip` subtracts settlements (a closed order holds zero); `costs.completeness` counts a closed
+  order's provisional receipt postings as finalised (`finalisedAtProductionClose`) — they stay ESTIMATED in history.
+- **Verified:**
+  - `manufacturing-custody.integration.test.ts` +4 (15 tests): exact allocation; checklist (draft cost, loss reason,
+    oversized loss, no approver); close after 100 of 400 caps left — residual ৳29,430, loss ৳430, transfer ৳29,000 =
+    ৳21,750 revalued (300 held) + ৳7,250 to 5150 (100 gone), stock value ৳14,715 → ৳36,465, ৳121.55 per accepted unit,
+    WIP for the order 0, replay, closed order refuses deliveries / issues, settlement append-only; late cost ৳800 →
+    ৳600 held + ৳200 sold, then its void reverses both; every check MATCHED after each step.
+  - Full API regression 109 files, 1288 / 1288; web tsc, eslint, vitest 35.
+  - Browser QA (`finance_qa`): close MO-000001 with a ৳56 abnormal loss → ৳4,900 to the goods, final ৳19,824, ৳65.89
+    per accepted unit, yield 97.4%, wastage 2.63%; all inventory / WIP / accrual / ledger checks match; 1440 and 375 px.
+- **Limitations:** the held share is the variant's units on hand at the time, capped at the order's accepted units
+  (moving average — units aren't traced to their order). Supplier invoices clearing 2116 come with E3 (4E).
 
 ## 10. Permissions
 
@@ -288,7 +320,7 @@ business-supplied material's moving-average cost (`plannedUnitCost`), which beco
 
 Set-up needs `finance.configure`. Costs are shown only with `costing.read`.
 
-## 11. API (`/api/v1/manufacturing`) — M1
+## 11. API (`/api/v1/manufacturing`)
 
 | Route | Permission |
 |---|---|
@@ -297,7 +329,7 @@ Set-up needs `finance.configure`. Costs are shown only with `costing.read`.
 | `POST /cost-categories`, `PATCH /cost-categories/:id`, `POST /boms/:id/approve`, `/boms/:id/archive`, `/production-orders/:id/approve`, `/production-orders/:id/reopen` | `manufacturing.approve` |
 | `POST /setup` | `finance.configure` |
 
-There are 25 routes, giving 477 admin routes in total. M2 adds four: `GET /production-orders/:id/moves`, `POST …/issue` and `POST …/return` (`manufacturing.move_stock`), and `PUT …/material-usage` (`manufacturing.manage`), for 481 in total.
+There are 25 routes, giving 477 admin routes in total. M2 adds four: `GET /production-orders/:id/moves`, `POST …/issue` and `POST …/return` (`manufacturing.move_stock`), and `PUT …/material-usage` (`manufacturing.manage`), for 481 in total. M3 and M4 bring it to 490; M5 adds `POST /production-orders/:id/close` (`manufacturing.approve`) and `GET /overview` (`manufacturing.read`), for 492 in total.
 
 **UI:** Inventory → Stock · Production orders (list, create with a size × colour grid, detail with plan, materials vs
 stock, planned costs) · Bills of materials (versions per product, approve, copy) · Materials. Manufacturing sits inside
@@ -310,7 +342,8 @@ Migrations:
 - `20261018100100_manufacturing_material_source` (`fromBom`, plan guard);
 - `20261019100000_manufacturing_material_custody` (M2: W-1…W-4, plan guard extended);
 - `20261020100000_manufacturing_production_costs` (M3: C-1…C-4);
-- `20261021100000_manufacturing_receipts` (M4: R-1…R-4, plan guard extended).
+- `20261021100000_manufacturing_receipts` (M4: R-1…R-4, plan guard extended);
+- `20261022100000_manufacturing_close` (M5: S-1…S-4, late costs on closed orders, `closedByAdminId`).
 
 | Invariant | Rule |
 |---|---|

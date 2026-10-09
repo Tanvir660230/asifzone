@@ -675,6 +675,7 @@ model ProductVariant {
   productionLines         ProductionOrderLine[]
   productionMaterialLines ProductionMaterialLine[]
   productionReceiptLines  ProductionReceiptLine[]
+  productionSettlementLines ProductionSettlementLine[]
   /// Phase 4 inventory costing — Restrict: a variant with valuation history can't be hard-deleted (§27).
   valuationEntries        InventoryValuationEntry[]
   costState               InventoryCostState?
@@ -3990,6 +3991,7 @@ model ProductionOrder {
   startedAt          DateTime?
   closedAt           DateTime?
   closedReason       String?
+  closedByAdminId    String?
   cancelledReason    String?
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
@@ -3999,6 +4001,7 @@ model ProductionOrder {
   materialMoves      ProductionMaterialMove[]
   costEntries        ProductionCostEntry[]
   receipts           ProductionReceipt[]
+  settlements        ProductionSettlement[]
 
   @@unique([businessId, number])
   @@index([businessId, status])
@@ -4170,6 +4173,7 @@ model ProductionCostEntry {
   voidReason        String?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
+  settlements       ProductionSettlement[]
 
   @@index([productionOrderId, status])
   @@index([supplierId])
@@ -4234,4 +4238,55 @@ model ProductionReceiptLine {
   updatedAt          DateTime            @updatedAt
 
   @@unique([receiptId, orderLineId])
+}
+
+enum ProductionSettlementKind {
+  CLOSE
+  LATE_COST
+}
+
+/// A production order's work in progress swept out (docs/MANUFACTURING.md §9): at CLOSE the remaining WIP (final cost −
+/// value transferred provisionally) goes to the finished goods — revalued through costing (REVALUE: the units still held,
+/// 5150 for the share already sold) — less an approved abnormal loss to 5220; a LATE_COST after close takes the same path.
+/// Append-only; transfer + abnormal loss = the residual swept, and WIP for the order returns to zero.
+model ProductionSettlement {
+  id                 String                     @id @default(cuid())
+  productionOrderId  String
+  productionOrder    ProductionOrder            @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  kind               ProductionSettlementKind
+  /// The late cost (or its void) that caused a LATE_COST settlement.
+  costEntryId        String?
+  costEntry          ProductionCostEntry?       @relation(fields: [costEntryId], references: [id], onDelete: Restrict)
+  /// The order's WIP swept (signed) = transfer + abnormalLoss.
+  residual           Decimal                    @db.Decimal(18, 2)
+  /// To finished goods (signed: a negative transfer lowers their cost).
+  transfer           Decimal                    @db.Decimal(18, 2)
+  /// Approved write-off to production losses (5220), never negative.
+  abnormalLoss       Decimal                    @db.Decimal(18, 2)
+  abnormalLossReason String?
+  financialDate      DateTime                   @db.Date
+  createdByAdminId   String?
+  createdAt          DateTime                   @default(now())
+  lines              ProductionSettlementLine[]
+
+  @@index([productionOrderId])
+  @@index([costEntryId])
+}
+
+/// The transfer per finished variant, by accepted share: delta = heldShare (revalued stock) + soldShare (5150).
+model ProductionSettlementLine {
+  id               String               @id @default(cuid())
+  settlementId     String
+  settlement       ProductionSettlement @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  variantId        String
+  variant          ProductVariant       @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  /// The accepted units of the order the delta is spread over.
+  qty              Int
+  delta            Decimal              @db.Decimal(18, 2)
+  heldShare        Decimal              @db.Decimal(18, 2)
+  soldShare        Decimal              @db.Decimal(18, 2)
+  valuationEntryId String?
+
+  @@unique([settlementId, variantId])
+  @@index([variantId])
 }

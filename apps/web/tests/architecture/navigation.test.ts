@@ -157,7 +157,7 @@ describe("navigation manifest — derivation", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(10);
     expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
     // Inventory groups stock and production (docs/MANUFACTURING.md); a lone module still shows none (Customers).
-    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/inventory", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
+    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/inventory", "/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
     expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
 
