@@ -22,6 +22,7 @@ import { createFinancialAccount } from "./financial-accounts.service";
 import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
+import { assetRegister, createAsset, disposeAsset, monthlyCharge, reverseLatestRun, runDepreciation, updateAsset } from "./fixed-assets.service";
 import { costAdjustments, grniAgeing, inventoryValuation, paymentsRegister, priceVariance, purchaseRegister } from "./purchasing-reports.service";
 import { rejectMovement, reverseMovement } from "./treasury.service";
 import type { FinanceActor } from "./finance-audit";
@@ -388,5 +389,64 @@ describe("expenses and recurring commitments (E7)", () => {
     expect((await listCommitments()).commitments.find((x) => x.id === c.id)!.schedule.find((x) => x.periodKey === "2026-09")).toMatchObject({ status: "OVERDUE" });
     const r = await runReconciliation({ checks: ["ledger.integrity", "events.unposted"] }, OWNER);
     expect(r.results.every((x) => x.status === "MATCHED")).toBe(true);
+  });
+});
+
+describe("fixed assets and depreciation (E9)", () => {
+  const FA_CHECKS = ["fixed_assets.register", "ledger.integrity", "events.unposted"];
+  const faChecks = async () => {
+    await postPending();
+    const r = await runReconciliation({ checks: FA_CHECKS }, OWNER);
+    return Object.fromEntries(r.results.map((x) => [x.checkKey, x.status]));
+  };
+
+  it("charges straight-line and declining balance exactly, never below the residual", () => {
+    const sl = { cost: 1_200_000, residual: 0, openingAccumulated: 0, lifeMonths: 12, method: "STRAIGHT_LINE" as const, ratePct: null, start: "2026-01" };
+    expect(monthlyCharge(sl, 0, "2025-12")).toBe(0);
+    expect(monthlyCharge(sl, 0, "2026-01")).toBe(100_000);
+    expect(monthlyCharge(sl, 1_100_001, "2026-12")).toBe(99_999); // the last month takes the rest
+    const db = { cost: 10_000_000, residual: 1_000_000, openingAccumulated: 0, lifeMonths: 60, method: "DECLINING_BALANCE" as const, ratePct: 20, start: "2026-01" };
+    expect(monthlyCharge(db, 0, "2026-01")).toBe(166_667); // 100,000 × 20% ÷ 12
+    expect(monthlyCharge(db, 8_990_000, "2026-06")).toBe(10_000); // 16,833 by rate, capped at the 10,000 left above the residual
+  });
+
+  it("registers an asset billed by a supplier, depreciates it month by month, and disposes of it at a loss", async () => {
+    const { business } = await getFinanceContext();
+    const computers = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "1830" } });
+    const other = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "6900" } });
+    const bankId = (await createFinancialAccount({ kind: "BANK", name: `Asset bank ${Date.now() % 100000}` } as never, OWNER)).id;
+    const bill = await createSupplierInvoice({ kind: "INVOICE", supplierId, supplierRef: "LAPTOP-1", invoiceDate: "2026-08-03", lines: [{ lineType: "EXPENSE", expenseAccountId: computers.id, description: "Laptop", quantity: 1, unitPrice: 60_000 }] } as never, OWNER);
+    await postSupplierInvoice(bill.id, {}, OWNER);
+    const laptop = await createAsset({ name: "Design laptop", category: "Computers", assetAccountId: computers.id, acquisitionDate: "2026-08-03", cost: 60_000, usefulLifeMonths: 24, sourceType: "SUPPLIER_INVOICE", sourceRef: bill.number }, OWNER);
+    expect(laptop).toMatchObject({ number: expect.stringMatching(/^FA-\d{4}$/), depreciationStart: "2026-08", bookValue: 60_000, nextCharge: { periodKey: "2026-08", amount: 2500 }, monthsLeft: 24 });
+    expect(await faChecks()).toEqual({ "fixed_assets.register": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED" });
+
+    expect((await runDepreciation("2026-08", OWNER)).run).toMatchObject({ total: 2500, assets: 1 });
+    await expect(runDepreciation("2026-10", OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    await runDepreciation("2026-09", OWNER);
+    expect((await runDepreciation("2026-09", OWNER)).replayed).toBe(true);
+    await expect(updateAsset(laptop.id, { usefulLifeMonths: 36 }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    expect(await faChecks()).toEqual({ "fixed_assets.register": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED" });
+
+    // an asset first booked to an expense account is moved onto its asset account; it starts after the last run
+    await expect(createAsset({ name: "Shelving", assetAccountId: computers.id, acquisitionDate: "2026-09-10", cost: 12_000, usefulLifeMonths: 60, reclassifyFromAccountId: other.id }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    const shelving = await createAsset({ name: "Shelving", assetAccountId: computers.id, acquisitionDate: "2026-09-10", cost: 12_000, usefulLifeMonths: 60, depreciationStart: "2026-10", reclassifyFromAccountId: other.id }, OWNER);
+    expect(shelving.sourceType).toBe("OTHER");
+    expect(await faChecks()).toEqual({ "fixed_assets.register": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED" });
+
+    await reverseLatestRun("Ran before the laptop's invoice was checked", OWNER);
+    expect((await assetRegister()).assets.find((a) => a.id === laptop.id)).toMatchObject({ accumulatedDepreciation: 2500, lastDepreciatedMonth: "2026-08" });
+    await runDepreciation("2026-09", OWNER);
+    const reg = await assetRegister();
+    expect(reg.totals).toMatchObject({ cost: 72_000, accumulatedDepreciation: 5000, bookValue: 67_000, assets: 2 });
+    expect(reg.nextRun).toBe("2026-10");
+
+    await expect(disposeAsset(laptop.id, { disposalDate: "2099-01-02", proceeds: 50_000, financialAccountId: bankId, reason: "Sold" }, OWNER)).rejects.toMatchObject({ statusCode: 400 }); // not yet happened
+    await expect(disposeAsset(laptop.id, { disposalDate: "2026-10-05", proceeds: 50_000, reason: "Sold" }, OWNER)).rejects.toMatchObject({ statusCode: 400 }); // proceeds need an account
+    const sold = await disposeAsset(laptop.id, { disposalDate: "2026-10-05", proceeds: 50_000, financialAccountId: bankId, reason: "Sold to a staff member" }, OWNER);
+    expect(sold).toMatchObject({ status: "DISPOSED", disposalProceeds: 50_000, disposalGainLoss: -5000, bookValue: 0 }); // book value 55,000 − 50,000
+    expect(await balance("expense.asset_disposal_loss")).toBe(5000);
+    expect(await faChecks()).toEqual({ "fixed_assets.register": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED" });
+    await expect(reverseLatestRun("undo", OWNER)).rejects.toMatchObject({ statusCode: 409 }); // the laptop is gone
   });
 });

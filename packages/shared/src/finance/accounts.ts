@@ -75,6 +75,11 @@ export const ACCOUNT_MAPPING_KEYS = [
   "asset.wip",
   "liability.production_accrual",
   "cogs.production_losses",
+  // Fixed assets (docs/FINANCE_FIXED_ASSETS.md) — accumulated depreciation, the depreciation charge, disposal gain / loss
+  "asset.accumulated_depreciation",
+  "expense.depreciation",
+  "income.asset_disposal_gain",
+  "expense.asset_disposal_loss",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -122,6 +127,11 @@ export const PURCHASING_MAPPING_KEYS: readonly AccountMappingKey[] = [
  * finished goods out of WIP into inventory, the close's true-up (5150) and approved abnormal losses. */
 export const MANUFACTURING_MAPPING_KEYS: readonly AccountMappingKey[] = [
   "asset.inventory", "asset.wip", "liability.production_accrual", "cogs.production_losses", "cogs.cost_adjustments",
+];
+
+/** Every key fixed assets post to: the asset cost, accumulated depreciation, the monthly charge and disposal gain / loss. */
+export const FIXED_ASSET_MAPPING_KEYS: readonly AccountMappingKey[] = [
+  "asset.fixed_assets", "asset.accumulated_depreciation", "expense.depreciation", "income.asset_disposal_gain", "expense.asset_disposal_loss",
 ];
 
 /**
@@ -172,7 +182,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "1820", name: "Furniture & fixtures", type: "ASSET", parent: "1800" },
   { code: "1830", name: "Computers", type: "ASSET", parent: "1800" },
   { code: "1840", name: "Vehicles", type: "ASSET", parent: "1800" },
-  { code: "1890", name: "Accumulated depreciation", type: "ASSET", parent: "1800", normalBalance: "CREDIT" },
+  { code: "1890", name: "Accumulated depreciation", type: "ASSET", parent: "1800", normalBalance: "CREDIT", mapping: "asset.accumulated_depreciation" },
 
   { code: "2000", name: "Liabilities", type: "LIABILITY", group: true },
   { code: "2100", name: "Payables", type: "LIABILITY", parent: "2000", group: true },
@@ -228,7 +238,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "6650", name: "Freight-in & purchase charges", type: "EXPENSE", parent: "6000", mapping: "expense.freight_in" },
   { code: "6700", name: "Payment gateway fees", type: "EXPENSE", parent: "6000", mapping: "expense.gateway_fees" },
   { code: "6800", name: "Packaging", type: "EXPENSE", parent: "6000" },
-  { code: "6850", name: "Depreciation", type: "EXPENSE", parent: "6000" },
+  { code: "6850", name: "Depreciation", type: "EXPENSE", parent: "6000", mapping: "expense.depreciation" },
   { code: "6900", name: "Other operating expenses", type: "EXPENSE", parent: "6000", mapping: "expense.purchases_other" },
   { code: "6950", name: "Settlement adjustments", type: "EXPENSE", parent: "6000", mapping: "expense.settlement_adjustments" },
   { code: "6960", name: "Non-recoverable purchase tax", type: "EXPENSE", parent: "6000", mapping: "expense.non_recoverable_tax" },
@@ -236,11 +246,13 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "7000", name: "Other income", type: "OTHER_INCOME", group: true },
   { code: "7100", name: "Interest income", type: "OTHER_INCOME", parent: "7000" },
   { code: "7200", name: "Purchase discounts received", type: "OTHER_INCOME", parent: "7000", mapping: "income.purchase_discounts" },
+  { code: "7300", name: "Gain on disposal of assets", type: "OTHER_INCOME", parent: "7000", mapping: "income.asset_disposal_gain" },
   { code: "7900", name: "Miscellaneous income", type: "OTHER_INCOME", parent: "7000" },
 
   { code: "8000", name: "Other expenses & finance costs", type: "OTHER_EXPENSE", group: true },
   { code: "8100", name: "Interest expense", type: "OTHER_EXPENSE", parent: "8000" },
   { code: "8200", name: "Bank & financing charges", type: "OTHER_EXPENSE", parent: "8000" },
+  { code: "8300", name: "Loss on disposal of assets", type: "OTHER_EXPENSE", parent: "8000", mapping: "expense.asset_disposal_loss" },
   { code: "8900", name: "Miscellaneous expenses", type: "OTHER_EXPENSE", parent: "8000" },
 ];
 

@@ -628,6 +628,41 @@ export const RECONCILIATION_CHECKS = {
     },
   },
 
+  // ── ERP E9: fixed assets ─────────────────────────────────────────────────────────────────────────────────────────────
+  "fixed_assets.register": {
+    label: "Fixed-asset register = ledger",
+    description: "Each account holding fixed assets equals the cost of the assets in use registered on it, and accumulated depreciation equals their opening depreciation plus the posted depreciation runs — no asset is booked without being registered, or depreciated outside a run.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const assets = await prisma.fixedAsset.findMany({ where: { businessId: ctx.business.id }, select: { status: true, assetAccountId: true, cost: true, openingAccumulatedDepreciation: true, depreciationLines: { where: { run: { status: "POSTED" } }, select: { amount: true } } } });
+      if (!assets.length) return { status: "NOT_APPLICABLE", details: { reason: "no fixed assets registered" } };
+      const accMap = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "asset.accumulated_depreciation" } } });
+      const balance = async (accountId: string) => {
+        const [b] = await prisma.$queryRaw<Array<{ d: P.Decimal; c: P.Decimal }>>`
+          SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+          WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${accountId}`;
+        return toMinor(b!.d, cur) - toMinor(b!.c, cur);
+      };
+      const inUse = assets.filter((a) => a.status === "IN_USE");
+      const byAccount = new Map<string, number>();
+      for (const a of assets) byAccount.set(a.assetAccountId, (byAccount.get(a.assetAccountId) ?? 0) + (a.status === "IN_USE" ? toMinor(a.cost, cur) : 0));
+      const accounts = [];
+      for (const [accountId, register] of byAccount) {
+        const books = await balance(accountId);
+        if (books !== register) accounts.push({ accountId, register: toMajorNumber(register, cur), books: toMajorNumber(books, cur) });
+      }
+      const accRegister = inUse.reduce((s, a) => s + toMinor(a.openingAccumulatedDepreciation, cur) + a.depreciationLines.reduce((t, l) => t + toMinor(l.amount, cur), 0), 0);
+      const accBooks = accMap ? -(await balance(accMap.accountId)) : 0;
+      const expected = [...byAccount.values()].reduce((s, v) => s + v, 0) - accRegister;
+      const actual = expected + accounts.reduce((s, x) => s + Math.round((x.books - x.register) * 100), 0) - (accBooks - accRegister);
+      return {
+        status: !accounts.length && accBooks === accRegister ? "MATCHED" : "DIFFERENCE",
+        expected, actual,
+        details: { accountsWithDifference: accounts, accumulatedDepreciation: { register: toMajorNumber(accRegister, cur), books: toMajorNumber(accBooks, cur) } },
+      };
+    },
+  },
+
   // ── Phase 4C: the valuation cutover set the inventory account equal to valuation + in-transit ──────────────────────
   "inventory.valuation_vs_ledger": {
     label: "Inventory account = valuation",

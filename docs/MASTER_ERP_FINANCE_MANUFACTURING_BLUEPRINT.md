@@ -493,10 +493,11 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E4 4F supplier payments | **done** 2026-10-09 (`46ff888`) | `FINANCE_PHASE_4F.md` |
 | E5 4G reports & checks | **done** 2026-10-09 (`5876081`) | `FINANCE_PHASE_4G.md` |
 | E6 ledger workspace & statements | **done** 2026-10-09 (`a333035`) | `FINANCE_STATEMENTS.md` |
-| E7 expenses & commitments | **done** 2026-10-09 | `FINANCE_EXPENSES.md` |
+| E7 expenses & commitments | **done** 2026-10-09 (`6099411`) | `FINANCE_EXPENSES.md` |
 | E8 payroll | **blocked** (B-3: the owner's payroll rules) | §21 |
-| E9 fixed assets | **next** | §27 |
-| E10–E14 | not started (E11 blocked B-2, E13 blocked B-4) | |
+| E9 fixed assets | **done** 2026-10-09 | `FINANCE_FIXED_ASSETS.md` |
+| E10 loans | **next** | §27 |
+| E11–E14 | not started (E11 blocked B-2, E13 blocked B-4) | |
 
 ---
 
@@ -516,7 +517,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E4 | `46ff888` | migrations `20261024100000_finance_phase4f_payment_kind`, `20261024100100_finance_phase4f_payments`; `schema.prisma` (`SUPPLIER_PAYMENT`, `TreasuryMovement.supplierId`, `SupplierAllocation`); `domain/finance/treasury.service.ts` (supplier payment journal with party, release on reject / reverse), `supplier-payments.service.ts`, `supplier-invoices.service.ts` (settled / outstanding, void refused when allocated, ageing net of advances), `reconciliation.service.ts` (`payables.subledger` − payments); routes; shared schemas; web `finance/payables/[supplierId]`, `components/admin/payables/payment-modal.tsx`, payables / bills pages, finance & purchasing API, navigation; tests: payables suite +4, auth matrix 505; `test-fixtures` purge; docs `FINANCE_PHASE_4F.md` |
 | E5 | `5876081` | `domain/finance/purchasing-reports.service.ts` (purchase register, GRNI ageing, price variance, inventory valuation, cost adjustments by origin, payments register); routes; shared `purchasingReportQuerySchema`; web `finance/reports`, `lib/csv.ts`, purchasing API, navigation; tests: payables suite +1 (tie-outs), auth matrix 511; docs `FINANCE_PHASE_4G.md` |
 | E6 | `a333035` | `domain/finance/statements.service.ts` (income statement with prior period, balance sheet with current earnings, indirect cash flow reconciled to money accounts); finance routes; shared `statementPeriodQuerySchema`, `balanceSheetQuerySchema`; web `finance/statements`, `finance/ledger`, `finance/journals`, finance API (chart, ledger, journals, trial balance, statements), navigation; tests: payables suite +1 (statements tie to the trial balance), auth matrix 514; docs `FINANCE_STATEMENTS.md` |
-| E7 | (E7 commit, see git log) | migration `20261025100000_finance_expenses`; `schema.prisma` (`Expense`, `RecurringCommitment`, `CostBehaviour`, `CommitmentFrequency`); `domain/finance/expenses.service.ts` (expenses as Treasury withdrawals, commitment schedule, summary + break-even); finance routes; shared schemas; web `finance/expenses`, finance API, navigation; tests: payables suite +2, auth matrix 520; `test-fixtures` purge; docs `FINANCE_EXPENSES.md` |
+| E7 | `6099411` | migration `20261025100000_finance_expenses`; `schema.prisma` (`Expense`, `RecurringCommitment`, `CostBehaviour`, `CommitmentFrequency`); `domain/finance/expenses.service.ts` (expenses as Treasury withdrawals, commitment schedule, summary + break-even); finance routes; shared schemas; web `finance/expenses`, finance API, navigation; tests: payables suite +2, auth matrix 520; `test-fixtures` purge; docs `FINANCE_EXPENSES.md` |
+| E9 | (E9 commit, see git log) | migration `20261026100000_finance_fixed_assets`; `schema.prisma` (`FixedAsset`, `DepreciationRun`, `DepreciationLine`); shared `accounts.ts` (keys + 7300 / 8300, `FIXED_ASSET_MAPPING_KEYS`), schemas; `domain/finance/fixed-assets.service.ts`, `reconciliation.service.ts` (`fixed_assets.register`); finance routes; web `finance/fixed-assets`, finance API, navigation; tests: payables suite +2, auth matrix 526; `test-fixtures` purge; docs `FINANCE_FIXED_ASSETS.md` |
 
 ---
 
@@ -531,6 +533,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
 | 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | E9: `npx vitest run` (apps/api) | 110 files, 1305 passed |
+| 2026-10-09 | E9: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
+| 2026-10-09 | E9 browser QA (`finance_qa`) | machine ৳120,000 billed to 1810, registered; Oct run ৳1,800 → NBV ৳118,200; register = ledger check matches; 1440 / 375 px |
 | 2026-10-09 | E7: `npx vitest run` (apps/api) | 110 files, 1303 passed |
 | 2026-10-09 | E7: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
 | 2026-10-09 | E7 browser QA (`finance_qa`) | Shop rent ৳30,000 monthly; Aug/Sep overdue, Oct paid EXP-000001 from City Bank; fixed ৳30,000 / month; 1440 / 375 px |
@@ -574,20 +579,18 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 ## 27. Next eligible task and acceptance criteria
 
-E8 payroll is **blocked on B-3** (salary structures, allowances, deductions, tax / provident-fund rules need the owner's
-decision); salaries can be recurring commitments meanwhile. Next eligible:
+E8 payroll stays **blocked on B-3**. Next eligible:
 
-**E9 — Fixed assets** (`docs/FINANCE_FIXED_ASSETS.md`). Asset register (code, name, category → asset account 18xx,
-acquisition date, cost, residual value, useful life in months, method STRAIGHT_LINE or DECLINING_BALANCE with rate,
-location / custodian, status IN_USE / DISPOSED); capitalisation from a supplier bill line or a paid expense (or opening
-balance); monthly **depreciation run** for a period — one journal (Dr 6850 depreciation / Cr 1890 accumulated
-depreciation), idempotent per period, never beyond cost − residual, respecting closed periods; disposal (sale proceeds
-to a money account or none) posting the gain / loss to other income / other expense and clearing cost and accumulated
-depreciation; register report (cost, accumulated depreciation, net book value = the ledger's 18xx net) and schedule.
-Acceptance: NBV report = the fixed-asset accounts in the trial balance, a period's run posts once, disposal leaves zero
-for the asset, browser QA.
+**E10 — Loans** (`docs/FINANCE_LOANS.md`). Loans received (bank or other lender; partner loans stay under B-2): principal
+drawn into a money account (Treasury DEPOSIT against the loan liability, 2510 / `liability.loans`), terms (annual rate,
+term in months, repayment type: equal instalments (annuity) or equal principal, first due date), a repayment schedule
+(exact, half-even, last instalment absorbs rounding), monthly interest accrual run (Dr 8100 interest expense / Cr accrued
+interest), repayments from a money account splitting interest and principal (Treasury WITHDRAWAL lines), prepayment,
+statement per loan (drawn, repaid, outstanding principal, interest paid / accrued). Check `loans.subledger`: the loan
+liability = Σ outstanding principal; accrued interest = accrued − paid. Acceptance: schedule sums to principal, liability
+ties, closed periods respected, browser QA.
 
-Then **E10** (loans: schedule, interest accrual, repayments).
+Then E12 (budgets / forecast / cash runway), E14 (alerts & hardening); E11 and E13 need the owner (B-2, B-4).
 
 ## 28. Changelog
 
@@ -606,3 +609,4 @@ Then **E10** (loans: schedule, interest accrual, repayments).
 | 2026-10-09 | v11 — E5 (4G) purchasing / payables / inventory reports with tie-outs and CSV done; next E6 (ledger workspace & statements) |
 | 2026-10-09 | v12 — E6 ledger workspace (chart, account ledger, journals with manual entry) and financial statements (income, balance sheet, cash flow, trial balance) done; next E7 (expenses & commitments) |
 | 2026-10-09 | v13 — E7 expenses (Treasury withdrawals) and recurring commitments with schedule and break-even done; E8 payroll blocked (B-3); next E9 (fixed assets) |
+| 2026-10-09 | v14 — E9 fixed assets (register, monthly depreciation runs, disposal, register = ledger check) done; next E10 (loans) |

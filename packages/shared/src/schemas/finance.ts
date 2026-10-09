@@ -172,6 +172,39 @@ export const commitmentCreateSchema = z.object(commitmentFields).refine((v) => !
 export const commitmentUpdateSchema = z.object(commitmentFields).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
 export const commitmentListQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional(), includeInactive: z.coerce.boolean().optional() });
 
+// ERP E9 (docs/FINANCE_FIXED_ASSETS.md): fixed assets and depreciation
+export const DEPRECIATION_METHODS = ["STRAIGHT_LINE", "DECLINING_BALANCE"] as const;
+const monthKeySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM");
+const assetFields = {
+  name: z.string().trim().min(2).max(160),
+  category: optionalText(80),
+  assetAccountId: id,
+  acquisitionDate: businessDate,
+  cost: financeAmountSchema.refine((v) => v > 0, "More than zero"),
+  residualValue: financeAmountSchema.optional(),
+  usefulLifeMonths: z.coerce.number().int().min(1).max(1200),
+  method: z.enum(DEPRECIATION_METHODS).optional(),
+  decliningRatePct: z.coerce.number().positive().max(100).optional().nullable(),
+  depreciationStart: monthKeySchema.optional(),
+  openingAccumulatedDepreciation: financeAmountSchema.optional(),
+  location: optionalText(120),
+  custodian: optionalText(120),
+  serialNumber: optionalText(120),
+  notes: optionalText(1000),
+  sourceType: z.enum(["SUPPLIER_INVOICE", "MONEY_MOVEMENT", "OPENING_BALANCE", "OTHER"]).optional(),
+  sourceRef: optionalText(120),
+  reclassifyFromAccountId: id.optional().nullable(),
+};
+export const fixedAssetCreateSchema = z.object(assetFields).refine((v) => v.method !== "DECLINING_BALANCE" || Boolean(v.decliningRatePct), "Give the yearly rate for declining balance");
+export const fixedAssetUpdateSchema = z
+  .object({ name: assetFields.name, category: assetFields.category, location: assetFields.location, custodian: assetFields.custodian, serialNumber: assetFields.serialNumber, notes: assetFields.notes, residualValue: assetFields.residualValue, usefulLifeMonths: assetFields.usefulLifeMonths })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export const fixedAssetDisposeSchema = z.object({ disposalDate: businessDate, proceeds: financeAmountSchema.optional(), financialAccountId: id.optional().nullable(), reason: z.string().trim().min(3).max(500) });
+export const depreciationRunSchema = z.object({ periodKey: monthKeySchema });
+export const depreciationReverseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+export const fixedAssetListQuerySchema = z.object({ includeDisposed: z.coerce.boolean().optional() });
+
 export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 export const OPENING_BALANCE_CATEGORIES = [

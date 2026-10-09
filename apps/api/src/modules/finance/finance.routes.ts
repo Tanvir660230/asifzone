@@ -45,6 +45,12 @@ import {
   ledgerRangeQuerySchema,
   statementPeriodQuerySchema,
   expenseCreateSchema,
+  fixedAssetCreateSchema,
+  fixedAssetUpdateSchema,
+  fixedAssetDisposeSchema,
+  depreciationRunSchema,
+  depreciationReverseSchema,
+  fixedAssetListQuerySchema,
   expenseListQuerySchema,
   commitmentCreateSchema,
   commitmentUpdateSchema,
@@ -77,6 +83,7 @@ import * as journals from "../../domain/finance/journal.service";
 import * as ledger from "../../domain/finance/ledger.service";
 import * as statements from "../../domain/finance/statements.service";
 import * as expenses from "../../domain/finance/expenses.service";
+import * as fixedAssets from "../../domain/finance/fixed-assets.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -183,6 +190,17 @@ financeRouter.post("/expenses", requirePermission("finance.transact"), validate(
 financeRouter.get("/commitments", requirePermission("finance.read"), validate(commitmentListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await expenses.listCommitments(req.query as never))));
 financeRouter.post("/commitments", requirePermission("finance.transact"), validate(commitmentCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await expenses.createCommitment(req.body, await actorOf(req)))));
 financeRouter.patch("/commitments/:id", requirePermission("finance.transact"), validate(commitmentUpdateSchema), asyncHandler(async (req, res) => res.json(await expenses.updateCommitment(id(req), req.body, await actorOf(req)))));
+
+// ── fixed assets & depreciation (docs/FINANCE_FIXED_ASSETS.md) ──────────────────────────────────────────────────────────
+financeRouter.get("/fixed-assets", requirePermission("finance.read"), validate(fixedAssetListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await fixedAssets.assetRegister(req.query as never))));
+financeRouter.post("/fixed-assets", requirePermission("finance.transact"), validate(fixedAssetCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await fixedAssets.createAsset(req.body, await actorOf(req)))));
+financeRouter.patch("/fixed-assets/:id", requirePermission("finance.transact"), validate(fixedAssetUpdateSchema), asyncHandler(async (req, res) => res.json(await fixedAssets.updateAsset(id(req), req.body, await actorOf(req)))));
+financeRouter.post("/fixed-assets/:id/dispose", requirePermission("finance.post"), validate(fixedAssetDisposeSchema), asyncHandler(async (req, res) => res.json(await fixedAssets.disposeAsset(id(req), req.body, await actorOf(req)))));
+financeRouter.post("/depreciation-runs", requirePermission("finance.post"), validate(depreciationRunSchema), asyncHandler(async (req, res) => {
+  const r = await fixedAssets.runDepreciation(req.body.periodKey, await actorOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.post("/depreciation-runs/reverse-latest", requirePermission("finance.reverse"), validate(depreciationReverseSchema), asyncHandler(async (req, res) => res.json(await fixedAssets.reverseLatestRun(req.body.reason, await actorOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

@@ -2680,6 +2680,8 @@ model FinanceBusiness {
   supplierAllocations         SupplierAllocation[]
   expenses                    Expense[]
   recurringCommitments        RecurringCommitment[]
+  fixedAssets                 FixedAsset[]
+  depreciationRuns            DepreciationRun[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2738,6 +2740,7 @@ model LedgerAccount {
   supplierInvoiceLines     SupplierInvoiceLine[] @relation("SupplierInvoiceExpense")
   expenses                 Expense[]             @relation("ExpenseAccount")
   recurringCommitments     RecurringCommitment[] @relation("CommitmentAccount")
+  fixedAssets              FixedAsset[]          @relation("FixedAssetAccount")
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -2798,6 +2801,7 @@ model FinancialAccount {
   settlementsCleared      ClearingSettlement[]  @relation("SettlementClearing")
   settlementsReceived     ClearingSettlement[]  @relation("SettlementDestination")
   recurringCommitments    RecurringCommitment[]
+  fixedAssetDisposals     FixedAsset[]
 
   @@unique([businessId, name])
 }
@@ -2878,6 +2882,8 @@ model JournalEntry {
   treasuryReversal   TreasuryMovement?      @relation("TreasuryReversalJournal")
   settlement         ClearingSettlement?    @relation("SettlementJournal")
   settlementReversal ClearingSettlement?    @relation("SettlementReversalJournal")
+  depreciationRun    DepreciationRun?       @relation("DepreciationJournal")
+  fixedAssetDisposal FixedAsset?            @relation("DisposalJournal")
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, number])
@@ -4536,4 +4542,103 @@ model Expense {
   @@unique([businessId, number])
   @@index([businessId, expenseDate])
   @@index([commitmentId, periodKey])
+}
+
+// ── Fixed assets (docs/FINANCE_FIXED_ASSETS.md) ─────────────────────────────────
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  DECLINING_BALANCE
+}
+
+enum FixedAssetStatus {
+  IN_USE
+  DISPOSED
+}
+
+/// An asset the business keeps and uses for more than a year: its cost (already on its asset account — from a supplier
+/// bill line, a money movement or the opening balances), how it depreciates, and its disposal. Depreciation runs post
+/// monthly; the register equals the fixed-asset accounts (check fixed_assets.register).
+model FixedAsset {
+  id                             String             @id @default(cuid())
+  businessId                     String
+  business                       FinanceBusiness    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "fixed_asset" — FA-0001.
+  number                         Int
+  name                           String
+  category                       String?
+  assetAccountId                 String
+  assetAccount                   LedgerAccount      @relation("FixedAssetAccount", fields: [assetAccountId], references: [id], onDelete: Restrict)
+  acquisitionDate                DateTime           @db.Date
+  cost                           Decimal            @db.Decimal(18, 2)
+  residualValue                  Decimal            @default(0) @db.Decimal(18, 2)
+  usefulLifeMonths               Int
+  method                         DepreciationMethod @default(STRAIGHT_LINE)
+  /// DECLINING_BALANCE only: the yearly rate (percent of the book value).
+  decliningRatePct               Decimal?           @db.Decimal(7, 4)
+  /// The first month depreciated (YYYY-MM).
+  depreciationStart              String
+  /// Depreciation it carried in from before the books (already in accumulated depreciation's opening balance).
+  openingAccumulatedDepreciation Decimal            @default(0) @db.Decimal(18, 2)
+  location                       String?
+  custodian                      String?
+  serialNumber                   String?
+  notes                          String?
+  /// Where its cost came from: "SUPPLIER_INVOICE", "MONEY_MOVEMENT", "OPENING_BALANCE" or "OTHER" (with a reference).
+  sourceType                     String
+  sourceRef                      String?
+  status                         FixedAssetStatus   @default(IN_USE)
+  disposedAt                     DateTime?          @db.Date
+  disposalProceeds               Decimal?           @db.Decimal(18, 2)
+  disposalFinancialAccountId     String?
+  disposalFinancialAccount       FinancialAccount?  @relation(fields: [disposalFinancialAccountId], references: [id], onDelete: Restrict)
+  disposalGainLoss               Decimal?           @db.Decimal(18, 2)
+  disposalReason                 String?
+  disposalJournalId              String?            @unique
+  disposalJournal                JournalEntry?      @relation("DisposalJournal", fields: [disposalJournalId], references: [id], onDelete: Restrict)
+  createdByAdminId               String?
+  createdAt                      DateTime           @default(now())
+  updatedAt                      DateTime           @updatedAt
+  depreciationLines              DepreciationLine[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status])
+}
+
+enum DepreciationRunStatus {
+  POSTED
+  REVERSED
+}
+
+/// One month's depreciation of every asset in use: one journal (Dr depreciation / Cr accumulated depreciation, each asset
+/// as party), posted once per month (runs go in order; only the latest is reversed).
+model DepreciationRun {
+  id               String                @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness       @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// YYYY-MM
+  periodKey        String
+  status           DepreciationRunStatus @default(POSTED)
+  total            Decimal               @db.Decimal(18, 2)
+  journalEntryId   String?               @unique
+  journalEntry     JournalEntry?         @relation("DepreciationJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  createdByAdminId String?
+  createdAt        DateTime              @default(now())
+  reversedAt       DateTime?
+  reversalReason   String?
+  lines            DepreciationLine[]
+
+  @@index([businessId, periodKey])
+}
+
+model DepreciationLine {
+  id      String          @id @default(cuid())
+  runId   String
+  run     DepreciationRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  assetId String
+  asset   FixedAsset      @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  amount  Decimal         @db.Decimal(18, 2)
+
+  @@unique([runId, assetId])
+  @@index([assetId])
 }

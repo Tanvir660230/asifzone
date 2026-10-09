@@ -515,3 +515,22 @@ export const recordExpense = (body: Record<string, unknown>, idempotencyKey: str
 export const listCommitments = () => apiFetch<CommitmentsOverview>(`${BASE}/commitments`);
 export const createCommitment = (body: Record<string, unknown>) => apiFetch<Commitment>(`${BASE}/commitments`, { method: "POST", body });
 export const updateCommitment = (id: string, body: Record<string, unknown>) => apiFetch<Commitment>(`${BASE}/commitments/${id}`, { method: "PATCH", body });
+
+// ── ERP E9: fixed assets and depreciation (docs/FINANCE_FIXED_ASSETS.md) ─────────────────────────────────────────────────
+export type DepreciationMethod = "STRAIGHT_LINE" | "DECLINING_BALANCE";
+export interface FixedAsset {
+  id: string; number: string; name: string; category: string | null; assetAccount: { id: string; code: string; name: string }; acquisitionDate: string;
+  cost: number; residualValue: number; usefulLifeMonths: number; method: DepreciationMethod; decliningRatePct: number | null; depreciationStart: string;
+  openingAccumulatedDepreciation: number; accumulatedDepreciation: number; bookValue: number; lastDepreciatedMonth: string | null;
+  nextCharge: { periodKey: string; amount: number } | null; monthsLeft: number; fullyDepreciatedBy: string | null;
+  location: string | null; custodian: string | null; serialNumber: string | null; notes: string | null; sourceType: string; sourceRef: string | null;
+  status: "IN_USE" | "DISPOSED"; disposedAt: string | null; disposalProceeds: number | null; disposalGainLoss: number | null; disposalReason: string | null;
+}
+export interface DepreciationRun { id: string; periodKey: string; status: "POSTED" | "REVERSED"; total: number; assets: number; createdAt: string; reversedAt: string | null; reversalReason: string | null }
+export interface AssetRegister { asOf: string; assets: FixedAsset[]; totals: { cost: number; accumulatedDepreciation: number; bookValue: number; assets: number }; nextRun: string | null; nextRunCharge: number; runs: DepreciationRun[] }
+export const assetKeys = { register: (q: object) => ["finance", "fixed-assets", q] as const };
+export const getAssetRegister = (includeDisposed = false) => apiFetch<AssetRegister>(`${BASE}/fixed-assets${includeDisposed ? "?includeDisposed=true" : ""}`);
+export const createAsset = (body: Record<string, unknown>) => apiFetch<FixedAsset>(`${BASE}/fixed-assets`, { method: "POST", body });
+export const disposeAsset = (id: string, body: Record<string, unknown>) => apiFetch<FixedAsset>(`${BASE}/fixed-assets/${id}/dispose`, { method: "POST", body });
+export const runDepreciation = (periodKey: string) => apiFetch<{ run: DepreciationRun; replayed: boolean }>(`${BASE}/depreciation-runs`, { method: "POST", body: { periodKey } });
+export const reverseLatestDepreciation = (reason: string) => apiFetch<DepreciationRun>(`${BASE}/depreciation-runs/reverse-latest`, { method: "POST", body: { reason } });
