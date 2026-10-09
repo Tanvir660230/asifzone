@@ -73,8 +73,9 @@ export function identityOwnerProblems(schema: string): string[] {
   // check reports any drift from Commerce Settings. Phase 4: Supplier.currency is the currency that supplier trades in (a
   // counterparty attribute, held to the books' currency until foreign-currency purchasing exists), not the store's.
   // Phase 4D: PurchaseOrder.currency is the document currency the order was written in (a snapshot, like JournalEntry).
+  // Phase 4E: SupplierInvoice.currency is the currency the supplier billed in (a document snapshot, base currency until 4H).
   const PROJECTIONS: Record<string, string[]> = {
-    currency: ["ProductReadModel", "CustomerCreditEntry", "PaymentLink", "JournalEntry", "FinancialEvent", "FinancialAccount", "TreasuryMovement", "BankTransaction", "Supplier", "PurchaseOrder"],
+    currency: ["ProductReadModel", "CustomerCreditEntry", "PaymentLink", "JournalEntry", "FinancialEvent", "FinancialAccount", "TreasuryMovement", "BankTransaction", "Supplier", "PurchaseOrder", "SupplierInvoice"],
     timezone: ["FinanceBusiness"],
   };
   for (const f of ["currency", "timezone"]) {

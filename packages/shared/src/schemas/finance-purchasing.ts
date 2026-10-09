@@ -215,9 +215,56 @@ export const purchasingSettingsSchema = z
   .object({
     purchaseApprovalThreshold: financeAmountSchema.nullable().optional(),
     overReceiptTolerancePct: z.number().min(0).max(100).refine((v) => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, "At most 2 decimals").optional(),
+    invoicePriceTolerancePct: z.number().min(0).max(100).refine((v) => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, "At most 2 decimals").optional(),
     reason: optionalText(500),
   })
-  .refine((v) => v.purchaseApprovalThreshold !== undefined || v.overReceiptTolerancePct !== undefined, "Nothing to change");
+  .refine((v) => v.purchaseApprovalThreshold !== undefined || v.overReceiptTolerancePct !== undefined || v.invoicePriceTolerancePct !== undefined, "Nothing to change");
+
+// ── Phase 4E: supplier invoices and credit notes (docs/FINANCE_PHASE_4E.md) ────────────────────────────────────────────
+export const SUPPLIER_INVOICE_KINDS = ["INVOICE", "CREDIT_NOTE"] as const;
+export const SUPPLIER_INVOICE_STATUSES = ["DRAFT", "POSTED", "VOID"] as const;
+export const SUPPLIER_INVOICE_LINE_TYPES = ["STOCK", "RETURN", "EXPENSE", "PRODUCTION_COST"] as const;
+
+const supplierInvoiceLineSchema = z
+  .object({
+    lineType: z.enum(SUPPLIER_INVOICE_LINE_TYPES),
+    goodsReceiptLineId: id.optional().nullable(),
+    purchaseReturnLineId: id.optional().nullable(),
+    purchaseOrderLineId: id.optional().nullable(),
+    productionCostEntryId: id.optional().nullable(),
+    expenseAccountId: id.optional().nullable(),
+    description: optionalText(300),
+    quantity: qty.default(1),
+    unitPrice: financeAmountSchema,
+    taxCodeId: id.optional().nullable(),
+  })
+  .refine(
+    (l) =>
+      l.lineType === "STOCK" ? Boolean(l.goodsReceiptLineId)
+      : l.lineType === "RETURN" ? Boolean(l.purchaseReturnLineId)
+      : l.lineType === "PRODUCTION_COST" ? Boolean(l.productionCostEntryId)
+      : Boolean(l.expenseAccountId),
+    "Goods name their receipt line, returns their return line, production costs their cost entry, expenses their account",
+  )
+  .refine((l) => l.lineType !== "EXPENSE" || Boolean(l.description), "Describe an expense line");
+
+export const supplierInvoiceCreateSchema = z.object({
+  kind: z.enum(SUPPLIER_INVOICE_KINDS).default("INVOICE"),
+  supplierId: id,
+  supplierRef: z.string().trim().min(1).max(100),
+  invoiceDate: businessDateSchema.optional(),
+  dueDate: businessDateSchema.optional().nullable(),
+  notes: optionalText(2000),
+  evidence: optionalText(500),
+  lines: z.array(supplierInvoiceLineSchema).min(1).max(200),
+});
+export const supplierInvoiceUpdateSchema = supplierInvoiceCreateSchema.omit({ kind: true, supplierId: true }).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export const supplierInvoicePostSchema = z.object({ varianceReason: optionalText(500) });
+export const supplierInvoiceVoidSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+export const supplierInvoiceListQuerySchema = z.object({ status: z.enum(SUPPLIER_INVOICE_STATUSES).optional(), kind: z.enum(SUPPLIER_INVOICE_KINDS).optional(), supplierId: id.optional(), q: z.string().trim().max(100).optional(), ...page });
+export const supplierOpenItemsQuerySchema = z.object({ supplierId: id });
+export type SupplierInvoiceCreateInput = z.infer<typeof supplierInvoiceCreateSchema>;
+export type SupplierInvoiceUpdateInput = z.infer<typeof supplierInvoiceUpdateSchema>;
 
 export type PurchaseOrderCreateInput = z.infer<typeof purchaseOrderCreateSchema>;
 export type PurchaseOrderUpdateInput = z.infer<typeof purchaseOrderUpdateSchema>;

@@ -488,9 +488,10 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | M2 materials custody & WIP | **done** 2026-10-09 (`7c5223e`) | `MANUFACTURING.md` §6 |
 | M3 production costs | **done** 2026-10-09 (`80f96ae`) | `MANUFACTURING.md` §7 |
 | M4 deliveries, QC, finished goods | **done** 2026-10-09 (`8db9c29`) | `MANUFACTURING.md` §8 |
-| M5 close, final cost, late costs, reports | **done** 2026-10-09 | `MANUFACTURING.md` §9 |
-| E3 4E supplier invoices / AP | **next** | §27 |
-| E4–E14 | not started | |
+| M5 close, final cost, late costs, reports | **done** 2026-10-09 (`c2f16e5`) | `MANUFACTURING.md` §9 |
+| E3 4E supplier invoices / AP | **done** 2026-10-09 | `FINANCE_PHASE_4E.md` |
+| E4 4F supplier payments | **next** | §27 |
+| E5–E14 | not started | |
 
 ---
 
@@ -505,7 +506,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | M2 | `7c5223e` | migration `20261019100000_manufacturing_material_custody`; `schema.prisma` (reasons, `ProductionMaterialMove`); `domain/manufacturing/material-custody.service.ts` + test; `production-orders.service.ts` (WIP in DTO); `domain/finance/manufacturing-posting-rules.ts`, `events.service.ts`, `reconciliation.service.ts` (`manufacturing.wip`; ignored events no longer counted as unposted); `inventory.service.ts` (reasons); routes; shared schemas; web order page custody + `custody-modals.tsx`, `lib/api/manufacturing.ts`; auth matrix 481; finance.integration count 18; docs |
 | M3 | `80f96ae` | migration `20261020100000_manufacturing_production_costs`; `schema.prisma` (`ProductionCostEntry`); `domain/manufacturing/production-costs.service.ts`; `production-orders.service.ts` (costs, planned vs actual, WIP total); `domain/finance/manufacturing-posting-rules.ts` (`cost_accrued`), `reconciliation.service.ts` (`manufacturing.wip` + costs, `manufacturing.production_accrual`); routes; shared schemas; web `components/admin/manufacturing/production-costs.tsx`, order page; tests: custody suite +3, auth matrix 486, finance.integration check count now derived from the registry; docs |
 | M4 | `8db9c29` | migration `20261021100000_manufacturing_receipts`; `schema.prisma` (receipts, derived order-line quantities, `PRODUCTION_RECEIPT`); `domain/manufacturing/production-receipts.service.ts`; `production-orders.service.ts` (progress, receipts, WIP transfer, `plannedCostMinor`); `domain/finance/manufacturing-posting-rules.ts` (`goods_received`), `reconciliation.service.ts` (WIP − transfers), `inventory-cutover.service.ts` (bridge estimates = commerce only); `inventory.service.ts` (reason); routes; shared schemas; web `production-deliveries.tsx`, order page; tests: custody suite +4 (real second admin), auth matrix 490; docs |
-| M5 | (M5 commit, see git log) | migration `20261022100000_manufacturing_close`; `schema.prisma` (`ProductionSettlement` + lines, `closedByAdminId`); `domain/finance/costing.service.ts` (`revalueForDocumentInTx`), `manufacturing-posting-rules.ts` (`order_settled`), `reconciliation.service.ts` (WIP − settlements; completeness: finalised at close); `domain/manufacturing/production-close.service.ts`, `production-reports.service.ts`, `production-costs.service.ts` (late costs, order lock), `production-orders.service.ts` (final cost, performance, checklist); routes (close, overview); shared schema; web `production-close.tsx`, `manufacturing/page.tsx` (overview), order page, costs, navigation (+test); tests: custody suite +4, auth matrix 492; `test-fixtures` purge; docs |
+| M5 | `c2f16e5` | migration `20261022100000_manufacturing_close`; `schema.prisma` (`ProductionSettlement` + lines, `closedByAdminId`); `domain/finance/costing.service.ts` (`revalueForDocumentInTx`), `manufacturing-posting-rules.ts` (`order_settled`), `reconciliation.service.ts` (WIP − settlements; completeness: finalised at close); `domain/manufacturing/production-close.service.ts`, `production-reports.service.ts`, `production-costs.service.ts` (late costs, order lock), `production-orders.service.ts` (final cost, performance, checklist); routes (close, overview); shared schema; web `production-close.tsx`, `manufacturing/page.tsx` (overview), order page, costs, navigation (+test); tests: custody suite +4, auth matrix 492; `test-fixtures` purge; docs |
+| E3 | (E3 commit, see git log) | migration `20261023100000_finance_phase4e_payables`; `schema.prisma` (`SupplierInvoice` + lines, `invoicePriceTolerancePct`); `domain/finance/supplier-invoices.service.ts` (+ integration test), `payables-posting-rules.ts`, `events.service.ts` (rule registration), `reconciliation.service.ts` (`payables.subledger`; GRNI and accrual net of invoices), `goods-receipts.service.ts` (no reversal once billed), `purchasing-setup.service.ts` (tolerance); `domain/manufacturing/production-costs.service.ts` (no void once billed) + custody test; routes; shared schemas; web `finance/supplier-invoices`, `finance/payables`, `components/admin/payables/invoice-modal.tsx`, purchasing API / status, navigation; tests: auth matrix 501, store-identity allowlist; `test-fixtures` purge; docs `FINANCE_PHASE_4E.md` |
 
 ---
 
@@ -520,6 +522,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
 | 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | E3: `npx vitest run` (apps/api) | 110 files, 1294 passed + the store-identity guard after allowlisting `SupplierInvoice.currency` (re-run 5/5) |
+| 2026-10-09 | E3: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
+| 2026-10-09 | E3 browser QA (`finance_qa`) | bill DC-778: twill 20,000 × ৳0.13 (variance approved) + ৳18,000 CMT; GRNI −৳2,400, accrual → 0, payables ৳20,600, inventory +৳48 (held share); all checks match; 1440 / 375 px |
 | 2026-10-09 | M5: `npx vitest run` (apps/api) | 109 files, 1288 passed (after: finance + manufacturing suites re-run 228/228 for the completeness-check refinement) |
 | 2026-10-09 | M5: web `tsc`, `eslint`, `vitest` | clean; 35 passed (navigation test: Production tab) |
 | 2026-10-09 | M5 browser QA (`finance_qa`) | close MO-000001, loss ৳56 → ৳4,900 to goods; final ৳19,824, ৳65.89 / accepted unit; 18 checks match (cost completeness lists only 9 QA opening estimates); overview + order 1440 / 375 px, no overflow |
@@ -548,16 +553,15 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 ## 27. Next eligible task and acceptance criteria
 
-**E3 — Supplier invoices & accounts payable (4E)** (`docs/FINANCE_PHASE_4.md` §1, proposal §10–§12). Supplier invoice
-document (draft → approved → posted, void by reversal) matched to purchase orders / goods receipts: three-way match with
-price and quantity tolerances; posting clears GRNI (2115) at the received value and books AP (2110), with input tax per
-tax code; a price difference against received goods flows through `costing.service.revalueForDocumentInTx` (held share
-revalued, sold share to 5150 — the M5 path); production-cost invoices clear the accrual 2116 for approved
-`ProductionCostEntry` rows (no double cost); supplier ledger / AP ageing; checks `purchasing.grni`, new
-`payables.subledger` (AP account = open invoices), `manufacturing.production_accrual` (2116 = approved − invoiced).
-Acceptance: GRNI and 2116 clear exactly, AP = invoices, ledger = valuation after a price difference, browser QA.
+**E4 — Supplier payments (4F)** (`docs/FINANCE_PHASE_4.md` §1, locked decisions 14–15). A supplier payment through
+Phase 2 Treasury (a new, minimal movement kind from a money account), allocated to one or more posted bills (and credit
+notes set against bills): Dr trade payables (supplier party) / Cr the money account, exactly once; partial payments;
+an unallocated payment is an advance (Dr supplier advances) until allocated; reversal by a superseding revision;
+outstanding per bill = total − allocations, so ageing and `payables.subledger` (AP = bills − credits − payments) stay
+exact; the money movement takes part in bank reconciliation; supplier statement (bills, credits, payments, running
+balance). Acceptance: AP per supplier = statement balance, payments reconciled to the bank, checks MATCHED, browser QA.
 
-Then **E4** (4F supplier payments).
+Then **E5** (4G purchasing / AP / valuation reports and checks).
 
 ## 28. Changelog
 
@@ -571,3 +575,4 @@ Then **E4** (4F supplier payments).
 | 2026-10-09 | v6 — M3 production costs done; next M4 receipts / QC / finished goods |
 | 2026-10-09 | v7 — M4 deliveries / QC / finished goods done; bridge estimate term limited to commerce; next M5 close |
 | 2026-10-09 | v8 — M5 close / final cost / abnormal loss / late costs / production overview done; manufacturing M1–M5 complete; next E3 (4E supplier invoices / AP) |
+| 2026-10-09 | v9 — E3 (4E) supplier invoices / credit notes / AP ageing done; GRNI and 2116 clear exactly; price differences via the revaluation path; next E4 (4F supplier payments) |

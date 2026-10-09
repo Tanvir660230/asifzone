@@ -38,13 +38,14 @@ export async function purchasingReadiness(db: AppTransactionClient | typeof pris
 export async function purchasingStatus() {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
-  const biz = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { purchaseApprovalThreshold: true, overReceiptTolerancePct: true, inventoryCostingActivatedAt: true } });
+  const biz = await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { purchaseApprovalThreshold: true, overReceiptTolerancePct: true, invoicePriceTolerancePct: true, inventoryCostingActivatedAt: true } });
   return {
     readiness: await purchasingReadiness(prisma, business.id),
     currency: cur,
     settings: {
       purchaseApprovalThreshold: biz.purchaseApprovalThreshold === null ? null : toMajorNumber(toMinor(biz.purchaseApprovalThreshold, cur), cur),
       overReceiptTolerancePct: Number(biz.overReceiptTolerancePct),
+      invoicePriceTolerancePct: Number(biz.invoicePriceTolerancePct),
     },
     /** Stock documents (receipts, returns) post only once inventory costing is active (decision D-P1). */
     costingActive: Boolean(biz.inventoryCostingActivatedAt),
@@ -53,21 +54,23 @@ export async function purchasingStatus() {
 
 /** Phase 4D purchasing settings (finance.configure): the approval threshold above which an order's approver must not be its
  * creator (null = no separation), and the over-receipt tolerance. Audited. */
-export async function updatePurchasingSettings(input: { purchaseApprovalThreshold?: number | null; overReceiptTolerancePct?: number; reason?: string | null }, actor: FinanceActor) {
+export async function updatePurchasingSettings(input: { purchaseApprovalThreshold?: number | null; overReceiptTolerancePct?: number; invoicePriceTolerancePct?: number; reason?: string | null }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   if (input.overReceiptTolerancePct !== undefined && (input.overReceiptTolerancePct < 0 || input.overReceiptTolerancePct > 100)) throw financeError(400, "TOLERANCE_RANGE", "The tolerance is 0–100%");
+  if (input.invoicePriceTolerancePct !== undefined && (input.invoicePriceTolerancePct < 0 || input.invoicePriceTolerancePct > 100)) throw financeError(400, "TOLERANCE_RANGE", "The tolerance is 0–100%");
   return financeTransaction(async (tx) => {
-    const before = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { purchaseApprovalThreshold: true, overReceiptTolerancePct: true } });
+    const before = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { purchaseApprovalThreshold: true, overReceiptTolerancePct: true, invoicePriceTolerancePct: true } });
     await tx.financeBusiness.update({
       where: { id: business.id },
       data: {
         ...(input.purchaseApprovalThreshold !== undefined ? { purchaseApprovalThreshold: input.purchaseApprovalThreshold === null ? null : toDecimal(toMinor(input.purchaseApprovalThreshold, cur), cur) } : {}),
         ...(input.overReceiptTolerancePct !== undefined ? { overReceiptTolerancePct: input.overReceiptTolerancePct.toFixed(2) } : {}),
+        ...(input.invoicePriceTolerancePct !== undefined ? { invoicePriceTolerancePct: input.invoicePriceTolerancePct.toFixed(2) } : {}),
       },
     });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "purchasing.settings", entityType: "FinanceBusiness", entityId: business.id, before, after: input, reason: input.reason ?? null });
-    const after = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { purchaseApprovalThreshold: true, overReceiptTolerancePct: true } });
-    return { purchaseApprovalThreshold: after.purchaseApprovalThreshold === null ? null : toMajorNumber(toMinor(after.purchaseApprovalThreshold, cur), cur), overReceiptTolerancePct: Number(after.overReceiptTolerancePct) };
+    const after = await tx.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { purchaseApprovalThreshold: true, overReceiptTolerancePct: true, invoicePriceTolerancePct: true } });
+    return { purchaseApprovalThreshold: after.purchaseApprovalThreshold === null ? null : toMajorNumber(toMinor(after.purchaseApprovalThreshold, cur), cur), overReceiptTolerancePct: Number(after.overReceiptTolerancePct), invoicePriceTolerancePct: Number(after.invoicePriceTolerancePct) };
   });
 }

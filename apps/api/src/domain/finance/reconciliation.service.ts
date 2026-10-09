@@ -492,7 +492,7 @@ export const RECONCILIATION_CHECKS = {
   // ── Phase 4D: goods received not invoiced ──────────────────────────────────────────────────────────────────────────
   "purchasing.grni": {
     label: "Goods received not invoiced",
-    description: "The GRNI account equals the value of posted goods receipts less goods shipped back to suppliers (supplier invoices clear it from Phase 4E). Receipts and returns whose posting is missing are listed.",
+    description: "The GRNI account equals the value of posted goods receipts less what posted supplier invoices cleared, less goods shipped back to suppliers not yet credited by a credit note. Receipts and returns whose posting is missing are listed.",
     async run(ctx) {
       const cur = ctx.business.baseCurrency;
       const maps = await prisma.accountMapping.findMany({ where: { businessId: ctx.business.id, key: { in: ["liability.grni", "liability.supplier_returns"] } } });
@@ -509,17 +509,23 @@ export const RECONCILIATION_CHECKS = {
           WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${accountId}`;
         return toMinor(b!.c, cur) - toMinor(b!.d, cur); // liability: credit balance
       };
+      const [cleared] = await prisma.$queryRaw<Array<{ invoiced: P.Decimal; credited: P.Decimal }>>`
+        SELECT COALESCE(SUM(l."clearedAmount") FILTER (WHERE l."lineType" = 'STOCK'), 0) AS invoiced,
+               COALESCE(SUM(l."clearedAmount") FILTER (WHERE l."lineType" = 'RETURN'), 0) AS credited
+        FROM "SupplierInvoiceLine" l JOIN "SupplierInvoice" i ON i.id = l."invoiceId" WHERE i."businessId" = ${ctx.business.id} AND i.status = 'POSTED'`;
       const receipts = toMinor(rec!.v, cur);
       const returns = toMinor(ret!.v, cur);
-      const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: { startsWith: "purchasing." }, status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
-      const expected = grni === returnsAcc ? receipts - returns : receipts;
+      const invoiced = toMinor(cleared!.invoiced, cur);
+      const credited = toMinor(cleared!.credited, cur);
+      const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, OR: [{ eventType: { startsWith: "purchasing." } }, { eventType: { startsWith: "payables." } }], status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
+      const expected = grni === returnsAcc ? receipts - invoiced - (returns - credited) : receipts - invoiced;
       const actual = await balance(grni);
-      const returnsOk = grni === returnsAcc || (await balance(returnsAcc)) === -returns;
+      const returnsOk = grni === returnsAcc || (await balance(returnsAcc)) === -(returns - credited);
       return {
         status: expected === actual && returnsOk && !unposted.length ? "MATCHED" : "DIFFERENCE",
         expected,
         actual,
-        details: { receipts: toMajorNumber(receipts, cur), returnsShipped: toMajorNumber(returns, cur), invoiced: 0, unpostedEvents: unposted },
+        details: { receipts: toMajorNumber(receipts, cur), invoiced: toMajorNumber(invoiced, cur), returnsShipped: toMajorNumber(returns, cur), returnsCredited: toMajorNumber(credited, cur), unpostedEvents: unposted },
       };
     },
   },
@@ -579,9 +585,42 @@ export const RECONCILIATION_CHECKS = {
       const [book] = await prisma.$queryRaw<Array<{ d: P.Decimal; c: P.Decimal }>>`
         SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
         WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${map.accountId}`;
-      const expected = toMinor(docs!.v, cur);
+      const [inv] = await prisma.$queryRaw<Array<{ v: P.Decimal; n: number }>>`
+        SELECT COALESCE(SUM(l."clearedAmount"), 0) AS v, COUNT(*)::int AS n FROM "SupplierInvoiceLine" l JOIN "SupplierInvoice" i ON i.id = l."invoiceId"
+        WHERE i."businessId" = ${ctx.business.id} AND i.status = 'POSTED' AND l."lineType" = 'PRODUCTION_COST'`;
+      const expected = toMinor(docs!.v, cur) - toMinor(inv!.v, cur);
       const actual = toMinor(book!.c, cur) - toMinor(book!.d, cur);
-      return { status: expected === actual ? "MATCHED" : "DIFFERENCE", expected, actual, details: { approvedCosts: docs!.n, invoiced: 0 } };
+      return { status: expected === actual ? "MATCHED" : "DIFFERENCE", expected, actual, details: { approvedCosts: docs!.n, invoicedCosts: inv!.n, invoiced: toMajorNumber(toMinor(inv!.v, cur), cur) } };
+    },
+  },
+
+  // ── Phase 4E: accounts payable ───────────────────────────────────────────────────────────────────────────────────────
+  "payables.subledger": {
+    label: "Payables = supplier invoices",
+    description: "The trade-payables account equals posted supplier invoices less posted credit notes (less payments from Phase 4F) — in total and for each supplier, which every payables posting names as its party. Unposted payables events are listed.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "liability.payable_trade" } } });
+      if (!map) return { status: "NOT_APPLICABLE", details: { reason: "purchasing is not set up" } };
+      const docs = await prisma.$queryRaw<Array<{ supplierId: string; v: P.Decimal }>>`
+        SELECT "supplierId", SUM(CASE WHEN kind = 'INVOICE' THEN total ELSE -total END) AS v
+        FROM "SupplierInvoice" WHERE "businessId" = ${ctx.business.id} AND status = 'POSTED' GROUP BY "supplierId"`;
+      const books = await prisma.$queryRaw<Array<{ supplierId: string | null; v: P.Decimal }>>`
+        SELECT l."partyId" AS "supplierId", SUM(l.credit - l.debit) AS v
+        FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+        WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${map.accountId}
+        GROUP BY l."partyId"`;
+      const expected = docs.reduce((s, d) => s + toMinor(d.v, cur), 0);
+      const actual = books.reduce((s, b) => s + toMinor(b.v, cur), 0);
+      const bySupplier = new Map<string, { documents: number; books: number }>();
+      for (const d of docs) bySupplier.set(d.supplierId, { documents: toMinor(d.v, cur), books: 0 });
+      for (const b of books) {
+        const key = b.supplierId ?? "(no supplier)";
+        bySupplier.set(key, { documents: bySupplier.get(key)?.documents ?? 0, books: toMinor(b.v, cur) });
+      }
+      const suppliers = [...bySupplier.entries()].filter(([, x]) => x.documents !== x.books).slice(0, 50).map(([supplierId, x]) => ({ supplierId, documents: toMajorNumber(x.documents, cur), books: toMajorNumber(x.books, cur) }));
+      const unposted = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: { startsWith: "payables." }, status: { in: ["RECEIVED", "FAILED"] } }, select: { id: true, eventKey: true, status: true, lastError: true }, take: 20 });
+      return { status: expected === actual && !suppliers.length && !unposted.length ? "MATCHED" : "DIFFERENCE", expected, actual, details: { suppliersWithDifference: suppliers, unpostedEvents: unposted } };
     },
   },
 

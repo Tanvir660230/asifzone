@@ -178,3 +178,71 @@ export const purchaseReturnAction = (id: string, action: "approve" | "reopen" | 
   apiFetch<PurchaseReturn | { purchaseReturn: PurchaseReturn }>(`${BASE}/returns/${id}/${action}`, { method: "POST", body: reason ? { reason } : {} });
 export const updatePurchasingSettings = (body: { purchaseApprovalThreshold?: number | null; overReceiptTolerancePct?: number; reason?: string | null }) =>
   apiFetch<PurchasingSettings>(`${BASE}/settings`, { method: "PATCH", body });
+
+// ── Phase 4E: supplier invoices, credit notes and payables (docs/FINANCE_PHASE_4E.md) ───────────────────────────────────
+export type SupplierInvoiceKind = "INVOICE" | "CREDIT_NOTE";
+export type SupplierInvoiceStatus = "DRAFT" | "POSTED" | "VOID";
+export type SupplierInvoiceLineType = "STOCK" | "RETURN" | "EXPENSE" | "PRODUCTION_COST";
+export interface SupplierInvoice {
+  id: string;
+  number: string;
+  kind: SupplierInvoiceKind;
+  status: SupplierInvoiceStatus;
+  supplier: { id: string; code: string; displayName: string };
+  supplierRef: string;
+  invoiceDate: string;
+  dueDate: string;
+  overdue: boolean;
+  notes: string | null;
+  varianceReason: string | null;
+  net: number;
+  tax: number;
+  total: number;
+  postedAt: string | null;
+  voidReason: string | null;
+  lines: Array<{
+    id: string;
+    lineNo: number;
+    lineType: SupplierInvoiceLineType;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    taxCode: { id: string; code: string } | null;
+    net: number;
+    tax: number;
+    recoverableTax: number;
+    cleared: number | null;
+    priceDifference: number | null;
+    sku: string | null;
+    goodsReceipt: { id: string; number: string } | null;
+    purchaseReturn: { id: string; number: string } | null;
+    productionOrder: { id: string; number: string } | null;
+  }>;
+}
+export interface SupplierOpenItems {
+  supplier: { id: string; displayName: string; paymentTermsDays: number; defaultTaxCodeId: string | null };
+  goods: Array<{ goodsReceiptLineId: string; goodsReceipt: { id: string; number: string; date: string }; sku: string; name: string; open: number; receiptUnitCost: number; orderedUnitPrice: number | null; taxCodeId: string | null }>;
+  returns: Array<{ purchaseReturnLineId: string; purchaseReturn: { id: string; number: string }; sku: string; open: number; returnedUnitValue: number | null }>;
+  productionCosts: Array<{ productionCostEntryId: string; productionOrder: { id: string; number: string }; category: string; description: string; reference: string | null; amount: number }>;
+  services: Array<{ purchaseOrderLineId: string; purchaseOrder: { id: string; number: string }; description: string; expenseAccountId: string | null; open: number; unitPrice: number; taxCodeId: string | null }>;
+}
+export interface PayablesAgeing {
+  asOf: string;
+  suppliers: Array<{ supplier: { id: string; code: string; displayName: string }; invoices: number; current: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; credits: number; balance: number; overdue: number }>;
+  totals: { current: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; credits: number; balance: number; overdue: number };
+}
+export const payablesKeys = {
+  all: ["purchasing", "payables"] as const,
+  invoices: (q: object) => ["purchasing", "payables", "invoices", q] as const,
+  openItems: (supplierId: string) => ["purchasing", "payables", "open-items", supplierId] as const,
+  ageing: () => ["purchasing", "payables", "ageing"] as const,
+};
+export const listSupplierInvoices = (q: { status?: string; kind?: string; supplierId?: string; q?: string; pageSize?: number } = {}) =>
+  apiFetch<{ total: number; invoices: SupplierInvoice[] }>(`${BASE}/supplier-invoices${qs(q)}`);
+export const supplierOpenItems = (supplierId: string) => apiFetch<SupplierOpenItems>(`${BASE}/supplier-invoices/open-items${qs({ supplierId })}`);
+export const createSupplierInvoice = (body: Record<string, unknown>) => apiFetch<SupplierInvoice>(`${BASE}/supplier-invoices`, { method: "POST", body });
+export const deleteSupplierInvoice = (id: string) => apiFetch<void>(`${BASE}/supplier-invoices/${id}`, { method: "DELETE" });
+export const postSupplierInvoice = (id: string, varianceReason?: string | null) =>
+  apiFetch<{ invoice: SupplierInvoice; replayed: boolean }>(`${BASE}/supplier-invoices/${id}/post`, { method: "POST", body: varianceReason ? { varianceReason } : {} });
+export const voidSupplierInvoice = (id: string, reason: string) => apiFetch<SupplierInvoice>(`${BASE}/supplier-invoices/${id}/void`, { method: "POST", body: { reason } });
+export const payablesAgeing = () => apiFetch<PayablesAgeing>(`${BASE}/payables/ageing`);

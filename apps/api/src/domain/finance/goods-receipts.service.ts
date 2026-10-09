@@ -219,6 +219,8 @@ export async function reverseGoodsReceipt(id: string, reason: string, actor: Fin
     if (r.status !== "POSTED") throw financeError(409, "RECEIPT_NOT_POSTED", "Only a posted receipt can be reversed — delete a draft");
     const returned = await tx.purchaseReturnLine.count({ where: { goodsReceiptLineId: { in: r.lines.map((l) => l.id) }, purchaseReturn: { status: { in: ["APPROVED", "SHIPPED"] } } } });
     if (returned) throw financeError(409, "RECEIPT_HAS_RETURNS", "Units of this receipt are on a supplier return — it can't be reversed");
+    const invoiced = await tx.supplierInvoiceLine.count({ where: { goodsReceiptLineId: { in: r.lines.map((l) => l.id) }, invoice: { status: { in: ["DRAFT", "POSTED"] } } } });
+    if (invoiced) throw financeError(409, "RECEIPT_INVOICED", "This receipt is on a supplier invoice — void (or delete the draft of) the invoice first");
     if (r.purchaseOrderId) await lockPurchaseOrder(tx, business.id, r.purchaseOrderId);
     const accepted = r.lines.filter((l) => l.qtyAccepted > 0);
     if (accepted.length) {

@@ -11,6 +11,12 @@ import {
   purchaseReturnListQuerySchema,
   purchasingSettingsSchema,
   supplierCreateSchema,
+  supplierInvoiceCreateSchema,
+  supplierInvoiceListQuerySchema,
+  supplierInvoicePostSchema,
+  supplierInvoiceUpdateSchema,
+  supplierInvoiceVoidSchema,
+  supplierOpenItemsQuerySchema,
   supplierListQuerySchema,
   supplierStatusSchema,
   supplierUpdateSchema,
@@ -28,6 +34,7 @@ import { ensurePurchasingAccounting, purchasingStatus, updatePurchasingSettings 
 import * as orders from "../../domain/finance/purchase-orders.service";
 import * as receipts from "../../domain/finance/goods-receipts.service";
 import * as returns from "../../domain/finance/purchase-returns.service";
+import * as invoices from "../../domain/finance/supplier-invoices.service";
 
 /**
  * Purchasing, suppliers / AP and inventory costing (Financial Core Phase 4, docs/FINANCE_PHASE_4.md §23). 4A: set-up,
@@ -97,3 +104,17 @@ purchasingRouter.post("/returns/:id/approve", requirePermission("purchasing.appr
 purchasingRouter.post("/returns/:id/reopen", requirePermission("purchasing.manage"), asyncHandler(async (req, res) => res.json(await returns.reopenPurchaseReturn(id(req), await actorOf(req)))));
 purchasingRouter.post("/returns/:id/cancel", requirePermission("purchasing.manage"), validate(purchaseOrderReasonSchema), asyncHandler(async (req, res) => res.json(await returns.cancelPurchaseReturn(id(req), reason(req), await actorOf(req)))));
 purchasingRouter.post("/returns/:id/ship", requirePermission("purchasing.receive"), asyncHandler(async (req, res) => res.json(await returns.shipPurchaseReturn(id(req), await actorOf(req)))));
+
+// ── Phase 4E: supplier invoices, credit notes and payables (docs/FINANCE_PHASE_4E.md) ───────────────────────────────────
+purchasingRouter.get("/supplier-invoices", requirePermission("ap.read"), validate(supplierInvoiceListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await invoices.listSupplierInvoices(req.query as never))));
+purchasingRouter.get("/supplier-invoices/open-items", requirePermission("ap.read"), validate(supplierOpenItemsQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await invoices.supplierOpenItems((req.query as { supplierId: string }).supplierId))));
+purchasingRouter.get("/supplier-invoices/:id", requirePermission("ap.read"), asyncHandler(async (req, res) => res.json(await invoices.getSupplierInvoice(id(req)))));
+purchasingRouter.post("/supplier-invoices", requirePermission("ap.manage"), validate(supplierInvoiceCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await invoices.createSupplierInvoice(req.body, await actorOf(req)))));
+purchasingRouter.patch("/supplier-invoices/:id", requirePermission("ap.manage"), validate(supplierInvoiceUpdateSchema), asyncHandler(async (req, res) => res.json(await invoices.updateSupplierInvoice(id(req), req.body, await actorOf(req)))));
+purchasingRouter.delete("/supplier-invoices/:id", requirePermission("ap.manage"), asyncHandler(async (req, res) => {
+  await invoices.deleteDraftSupplierInvoice(id(req), await actorOf(req));
+  res.status(204).end();
+}));
+purchasingRouter.post("/supplier-invoices/:id/post", requirePermission("ap.manage"), validate(supplierInvoicePostSchema), asyncHandler(async (req, res) => res.json(await invoices.postSupplierInvoice(id(req), req.body, await actorOf(req)))));
+purchasingRouter.post("/supplier-invoices/:id/void", requirePermission("ap.manage"), validate(supplierInvoiceVoidSchema), asyncHandler(async (req, res) => res.json(await invoices.voidSupplierInvoice(id(req), reason(req), await actorOf(req)))));
+purchasingRouter.get("/payables/ageing", requirePermission("ap.read"), asyncHandler(async (_req, res) => res.json(await invoices.payablesAgeing())));

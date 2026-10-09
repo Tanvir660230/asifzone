@@ -24,6 +24,7 @@ import { approveProductionOrder as approveMo, createProductionOrder as createMo,
 import { createProductionReceipt, postProductionReceipt, reverseProductionReceipt } from "./production-receipts.service";
 import { allocate, closeProductionOrder } from "./production-close.service";
 import { adjustVariantStock } from "../../modules/inventory/inventory.service";
+import { createSupplierInvoice, postSupplierInvoice, supplierOpenItems, voidSupplierInvoice } from "../finance/supplier-invoices.service";
 
 // Manufacturing M2 (docs/MANUFACTURING.md §6): material issued to and returned from a production order, after a real
 // valuation cutover and a real purchase — so the checks prove WIP and inventory against the documents and the valuation.
@@ -341,6 +342,30 @@ describe("close, final cost and late costs", () => {
     expect(o.wip!.total).toBe(0);
     expect(o.finalCost!.settlements.at(-1)).toMatchObject({ kind: "LATE_COST", transfer: -800, heldShare: -600, soldShare: -200 });
     expect(await capValue()).toBe(36_465);
+    allMatched(await checks());
+  });
+});
+
+describe("the producer's invoice (Phase 4E)", () => {
+  const APPROVER = (): FinanceActor => ({ type: "ADMIN", adminId: approverId, label: "approver@test", permissions: [...PERMISSIONS] });
+
+  it("bills an approved production cost at exactly its amount and clears its accrual — the cost is never booked twice", async () => {
+    const supplierId = (await prisma.supplier.findFirstOrThrow({ where: { legalName: "Vitest Textiles" } })).id;
+    const open = await supplierOpenItems(supplierId);
+    const cmt = open.productionCosts.find((c) => c.reference === "CH-101")!;
+    expect(cmt).toMatchObject({ amount: 44_000 });
+    await expect(createSupplierInvoice({ kind: "INVOICE", supplierId, supplierRef: "VT-INV-9", lines: [{ lineType: "PRODUCTION_COST", productionCostEntryId: cmt.productionCostEntryId, quantity: 1, unitPrice: 45_000 }] } as never, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    const bill = await createSupplierInvoice({ kind: "INVOICE", supplierId, supplierRef: "VT-INV-9", lines: [{ lineType: "PRODUCTION_COST", productionCostEntryId: cmt.productionCostEntryId, quantity: 1, unitPrice: 44_000 }] } as never, OWNER);
+    await postSupplierInvoice(bill.id, {}, OWNER);
+    const r = await runReconciliation({ checks: ["manufacturing.production_accrual", "payables.subledger", "manufacturing.wip", "ledger.integrity"] }, OWNER);
+    await postPending();
+    const again = await runReconciliation({ checks: ["manufacturing.production_accrual", "payables.subledger", "manufacturing.wip", "ledger.integrity", "events.unposted"] }, OWNER);
+    expect(r.results.length).toBe(4);
+    expect(Object.fromEntries(again.results.map((x) => [x.checkKey, x.status]))).toEqual({ "manufacturing.production_accrual": "MATCHED", "payables.subledger": "MATCHED", "manufacturing.wip": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED" });
+    expect((await supplierOpenItems(supplierId)).productionCosts.find((c) => c.reference === "CH-101")).toBeUndefined();
+    // an invoiced cost can't be voided; void the bill first
+    await expect(voidCostEntry(cmt.productionCostEntryId, "duplicate", APPROVER())).rejects.toMatchObject({ statusCode: 409 });
+    await voidSupplierInvoice(bill.id, "Wrong supplier reference", OWNER);
     allMatched(await checks());
   });
 });

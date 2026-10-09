@@ -48,6 +48,7 @@ import "./inventory-posting-rules";
 import "./purchasing-posting-rules";
 // Manufacturing: production documents.
 import "./manufacturing-posting-rules";
+import "./payables-posting-rules";
 
 // ── recording ──────────────────────────────────────────────────────────────────────────────────────────────────────
 

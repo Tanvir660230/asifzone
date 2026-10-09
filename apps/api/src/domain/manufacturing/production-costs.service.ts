@@ -232,6 +232,8 @@ export async function voidCostEntry(id: string, reason: string, actor: FinanceAc
     if (!actorCan(actor, "manufacturing.approve")) throw financeError(403, "FORBIDDEN", "Voiding production costs needs manufacturing.approve");
     const orderStatus = await lockedOrderStatus(tx, c.productionOrderId);
     if (c.status === "APPROVED") {
+      const invoiced = await tx.supplierInvoiceLine.count({ where: { productionCostEntryId: c.id, invoice: { status: { in: ["DRAFT", "POSTED"] } } } });
+      if (invoiced) throw financeError(409, "COST_INVOICED", "This cost is on a supplier invoice — void (or delete the draft of) the invoice first");
       const original = await tx.financialEvent.findUnique({ where: { sourceInstallId_eventKey: { sourceInstallId: installId, eventKey: `mfg-cost:${c.id}#r0` } } });
       await recordFinancialEvent(tx, event(business, brand.key, c, { amountMinor: 0, void: true, supersedes: original?.id ?? null }, 1));
     }
