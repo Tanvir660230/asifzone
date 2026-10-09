@@ -337,7 +337,7 @@ New reconciliation checks, each NOT_APPLICABLE while costing is off:
 The remaining same-SKU tail comes from the costing writes and the safety triggers executing while orders for one SKU
 queue on the existing stock lock. The owner accepted it. With costing off, the new code performs like 4A.
 
-### 9.8 Known pre-existing defect (not 4B)
+### 9.8 Pre-existing defect (not 4B) — fixed 2026-10-10
 
 **Pre-existing commerce concurrency defect — separate follow-up required.**
 
@@ -345,6 +345,23 @@ When the **same customer**'s checkout races a store-credit item return, they dea
 `cf4a1b2` without costing: 26 deadlocks in 40 operations. The likely cause is a lock-order inversion — checkout locks the
 customer before the stock, the return locks the stock before the customer. Different customers don't reproduce it, with
 costing off or on. It was not modified in 4B.
+
+**Fixed (2026-10-10).** The Postgres deadlock log showed the real cycle. It was not a stock / customer order inversion
+in commerce's own locks:
+
+- **The item return** has restocked (it holds the variant row). It then reverses the order's reward points with
+  `SELECT … FROM "Customer" … FOR UPDATE` (`reverseDeliveryPoints`).
+- **The checkout** has inserted its order, whose customer foreign-key check holds KEY SHARE on that customer. It then
+  waits for the variant row.
+- **The conflict:** FOR UPDATE conflicts with KEY SHARE, so each waits on the other.
+
+The store-credit balance lock had already moved to FOR NO KEY UPDATE for the same reason (ORDER_ADJUSTMENTS). The three
+loyalty locks in `customer.service.ts` (award, reverse, manual adjust) now take FOR NO KEY UPDATE too. They only change
+`rewardPoints`, a non-key column, and they still serialise every points and balance writer.
+
+**Proof:** `modules/orders/same-customer-race.integration.test.ts` races 4 store-credit returns against 4 checkouts
+of ONE customer, 5 rounds. Before the fix it deadlocked repeatedly (`40P01`, 24 in one run). After it, there were 0
+across 4 runs, with stock exact. Full regression: 111 files, 1315 passed.
 
 ### 9.9 Tests (4B)
 

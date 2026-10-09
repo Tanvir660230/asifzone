@@ -232,9 +232,8 @@ describe("contention and rollback", () => {
   });
 
   it("returns racing new orders on one SKU stay exact (each return at its own line's cost)", async () => {
-    // Distinct customers: two flows of ONE customer racing each other deadlock in commerce itself (checkout locks the customer
-    // before the stock, a store-credit return the stock before the customer) — reproduced on cf4a1b2 without costing, and
-    // reported separately; this test isolates what costing adds to stock contention.
+    // Distinct customers: this test isolates what costing adds to stock contention. One customer's checkout racing their own
+    // store-credit return is covered by modules/orders/same-customer-race.integration.test.ts (FINANCE_PHASE_4 §9.8, fixed).
     const R = pool.R!.id;
     let phone = 0;
     const own = async (quantity: number) => {

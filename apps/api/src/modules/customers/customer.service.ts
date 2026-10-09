@@ -1118,7 +1118,7 @@ export async function awardDeliveryPoints(tx: LoyaltyTx, customerId: string, ord
   const rate = Number(settings.rewardPointsPerCurrency);
   if (rate <= 0) return;
 
-  await tx.$queryRaw`SELECT id FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+  await tx.$queryRaw`SELECT id FROM "Customer" WHERE id = ${customerId} FOR NO KEY UPDATE`; // see lockCustomerBalance: NO KEY, so an order insert's FK KEY SHARE never deadlocks it
   const already = await tx.rewardPointsEntry.findFirst({ where: { orderId, reason: "order_delivered" } });
   if (already) return;
 
@@ -1136,7 +1136,7 @@ export async function awardDeliveryPoints(tx: LoyaltyTx, customerId: string, ord
 export async function reverseDeliveryPoints(tx: LoyaltyTx, customerId: string, orderId: string, fraction: number) {
   const f = Math.min(1, Math.max(0, fraction));
   if (f <= 0) return;
-  const [customer] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+  const [customer] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR NO KEY UPDATE`; // NO KEY: a FOR UPDATE here deadlocked a same-customer checkout (FINANCE_PHASE_4 §9.8)
   if (!customer) return;
   const entries = await tx.rewardPointsEntry.findMany({ where: { orderId, reason: { in: ["order_delivered", "order_reversed"] } } });
   const earned = entries.filter((e) => e.reason === "order_delivered").reduce((a, e) => a + e.points, 0);
@@ -1180,7 +1180,7 @@ export async function adjustRewardPoints(customerId: string, points: number, rea
   // Phase 9 (D-6): the balance check and the write happen under the customer row lock, so two concurrent deductions can't
   // both pass the check and take the balance below zero.
   await prisma.$transaction(async (tx) => {
-    const [row] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR UPDATE`;
+    const [row] = await tx.$queryRaw<Array<{ rewardPoints: number }>>`SELECT "rewardPoints" FROM "Customer" WHERE id = ${customerId} FOR NO KEY UPDATE`;
     if (!row) throw AppError.notFound("Customer not found");
     if (row.rewardPoints + points < 0) throw AppError.badRequest(`Customer only has ${row.rewardPoints} points`);
     await tx.rewardPointsEntry.create({ data: { customerId, points, reason: reason || "Manual adjustment" } });

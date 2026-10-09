@@ -122,7 +122,7 @@ FINANCE_VIEWER; server-side `requirePermission`.
 | Ledger UI: chart, journals, trial balance, periods, opening balances | **missing** (API exists, Phase 1 §11 deferred the UI) |
 | Financial statements (IS / BS / CF) | **missing** (trial balance API only) |
 | Expenses & recurring commitments, payroll, fixed assets, loans, partner capital, budgets, tax engine | **missing** |
-| Pre-existing same-customer deadlock (checkout vs store-credit return) | **[DEFECT]** documented in FINANCE_PHASE_4 §9.8, commerce follow-up, not in this programme's critical path |
+| Pre-existing same-customer deadlock (checkout vs store-credit return) | **fixed** 2026-10-10: loyalty locks take FOR NO KEY UPDATE (FINANCE_PHASE_4 §9.8) |
 | Branch divergence: `finance/phase-1-foundation` is based on `p1/foundations`; `main` / release branches carry other work (orders workspace, courier notes, admin-v2) | integration risk, see §21 R-1 |
 
 No duplicated engines were found: one inventory writer, one costing engine, one posting engine.
@@ -594,7 +594,6 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 - No location/warehouse model (custody is per production order only).
 - No lots/serials/FIFO; AVCO only.
-- Pre-existing same-customer deadlock (FINANCE_PHASE_4 §9.8).
 - `next build` on the Windows dev machine fails only at the standalone symlink copy (EPERM); Docker build is the check.
 - Finance branch not yet integrated with `main` (R-1).
 
@@ -643,5 +642,6 @@ What the owner provides next, and what each unlocks:
 | 2026-10-09 | v15 — E10 loans (drawdown, actual/365 accrual of ended months, interest-first repayments, plan, subledger check) done; next E12 (budgets / forecast / runway) |
 | 2026-10-09 | v16 — E12 budgets (from last year ± %), budget vs actual, 13-week cash forecast and runway done; next E14 (alerts & hardening) |
 | 2026-10-10 | v17 — E14 alerts feed (Finance badge), month-end close checklist with close / reopen, permission review, business-date test fix; no eligible task remains — E8 / E11 / E13 await the owner (B-3 / B-2 / B-4) |
+| 2026-10-10 | v20 — the pre-existing same-customer deadlock (checkout vs store-credit return) fixed at its root: the reward-points locks took FOR UPDATE against an order insert's KEY SHARE; now FOR NO KEY UPDATE; race test added |
 | 2026-10-10 | v19 — E11 foundation (partner register, own capital / current accounts, balances from the ledger, equity = balance sheet) done; no eligible task remains (checked against §21) |
 | 2026-10-10 | v18 — correction to v17: §21 allows the configurable parts of blocked phases. E8 payroll done as a configurable structure (components, employees, monthly runs as one journal, payments, remittances, subledger check, forecast / alerts / month-end); next E11 foundation |

@@ -132,7 +132,8 @@ currency/key; the only update is linking a reserved spend to the order/payment i
 
 **Locking.** Every spend takes the Customer row lock with `SELECT … FOR NO KEY UPDATE` and re-sums. (`FOR UPDATE`
 deadlocks against the KEY SHARE lock that an order insert's customer FK check takes — found by the concurrency test.)
-Lock order is always Order → Customer.
+Lock order is always Order → Customer. The reward-points writers (award on delivery, reversal on return, manual
+adjustment) take the same FOR NO KEY UPDATE; their FOR UPDATE deadlocked a same-customer checkout (FINANCE_PHASE_4 §9.8).
 
 **Policy (D13, owner-requested defaults):** store-use only — no cash withdrawal, no transfer between customers, no
 expiry. Usable on any order the account holder places (storefront, or a staff-entered order for that customer), for
