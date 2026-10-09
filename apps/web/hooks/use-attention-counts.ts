@@ -8,6 +8,7 @@ import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as adminReviewsApi from "@/lib/api/admin-reviews";
 import * as adminFeedbackApi from "@/lib/api/admin-feedback";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
+import { alertKeys as financeAlertKeys, getFinanceAlerts } from "@/lib/api/finance";
 
 const POLL_MS = 60_000;
 
@@ -45,14 +46,22 @@ export function useAttentionCounts() {
     enabled: can("content.manage"),
     refetchInterval: POLL_MS * 2,
   });
+  // finance alerts (docs/FINANCE_ALERTS.md): critical and warning ones count toward the Finance badge
+  const financeAlerts = useQuery({
+    queryKey: financeAlertKeys.all,
+    queryFn: getFinanceAlerts,
+    enabled: can("finance.view"),
+    refetchInterval: POLL_MS * 2,
+  });
 
   return {
     orderStats: orderStats.data,
+    financeAlerts: financeAlerts.data ? financeAlerts.data.counts.critical + financeAlerts.data.counts.warning : undefined,
     payments: payments.data,
     pendingReviews: pendingReviews.data?.total,
     unreadFeedback: unreadFeedback.data?.total,
     /** True until every query this admin is allowed to run has answered once — lets callers show a skeleton instead
      * of a premature "all clear". (v5 `isLoading` is false for a disabled query, so a gated-off one never blocks.) */
-    loading: !ready || orderStats.isLoading || payments.isLoading || pendingReviews.isLoading || unreadFeedback.isLoading,
+    loading: !ready || orderStats.isLoading || payments.isLoading || pendingReviews.isLoading || unreadFeedback.isLoading || financeAlerts.isLoading,
   };
 }

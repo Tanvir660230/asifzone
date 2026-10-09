@@ -32,7 +32,7 @@ export type NavIconName =
   | "settings"
   | "administration";
 /** Work-queue counts a node may show — resolved by the shell from the dashboard's attention counts. */
-export type NavBadgeSource = "orders" | "messages";
+export type NavBadgeSource = "orders" | "messages" | "finance";
 
 export interface NavCommand {
   id: string;
@@ -351,8 +351,10 @@ export const NAV_NODES: readonly NavNode[] = [
     capability: "payments.view",
     order: 80,
     goKey: "f",
+    badge: "finance",
     keywords: ["payments", "refund", "gateway"],
   },
+  { id: "finance.attention", label: "Needs attention", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/attention", capability: "finance.view", order: -1, keywords: ["alerts", "to do", "overdue", "month end", "close the month", "checklist", "period close"] },
   { id: "finance.payments", label: term("payment"), kind: "page", parent: "finance", domain: "manage", route: "/admin/payments/overview", capability: "payments.view", order: 0, keywords: ["refund", "gateway"] },
   // Financial Core Phase 2 (docs/FINANCE_PHASE_2.md §10): money accounts and bank reconciliation — OWNER-only (finance.read).
   {

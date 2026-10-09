@@ -574,3 +574,18 @@ export const getBudget = (id: string) => apiFetch<BudgetVsActual>(`${BASE}/budge
 export const createBudget = (body: Record<string, unknown>) => apiFetch<{ id: string; name: string; lines: number }>(`${BASE}/budgets`, { method: "POST", body });
 export const setBudgetLines = (id: string, lines: Array<{ accountId: string; periodKey: string; amount: number }>) => apiFetch<{ id: string }>(`${BASE}/budgets/${id}/lines`, { method: "PUT", body: { lines } });
 export const getCashForecast = (weeks = 13) => apiFetch<CashForecast>(`${BASE}/cash-forecast?weeks=${weeks}`);
+
+// ── alerts & month-end close (docs/FINANCE_ALERTS.md) ───────────────────────────────────────────────────────────────────
+export type AlertSeverity = "critical" | "warning" | "info";
+export interface FinanceAlert { key: string; severity: AlertSeverity; title: string; detail: string; count: number; amount: number | null; href: string; action: string }
+export interface FinanceAlerts { asOf: string; alerts: FinanceAlert[]; counts: Record<AlertSeverity, number> }
+export interface ChecklistStep { key: string; label: string; status: "DONE" | "TODO" | "NOT_APPLICABLE"; detail: string; href: string }
+export interface MonthEndChecklist {
+  month: string; from: string; to: string; asOf: string; ended: boolean;
+  period: { id: string; status: "OPEN" | "SOFT_CLOSED" | "CLOSED"; closedAt: string | null } | null;
+  steps: ChecklistStep[]; open: number; ready: boolean;
+}
+export const alertKeys = { all: ["finance", "alerts"] as const, monthEnd: (month: string) => ["finance", "month-end", month] as const };
+export const getFinanceAlerts = () => apiFetch<FinanceAlerts>(`${BASE}/alerts`);
+export const getMonthEnd = (month?: string) => apiFetch<MonthEndChecklist>(`${BASE}/month-end${month ? `?month=${month}` : ""}`);
+export const changePeriod = (id: string, transition: "close" | "reopen", reason: string) => apiFetch<unknown>(`${BASE}/periods/${id}/${transition}`, { method: "POST", body: { reason } });

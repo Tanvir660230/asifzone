@@ -237,6 +237,8 @@ export const budgetCreateSchema = z.object({
 });
 export const budgetLinesSchema = z.object({ lines: z.array(z.object({ accountId: id, periodKey: budgetMonth, amount: financeAmountSchema })).min(1).max(5000) });
 export const budgetQuerySchema = z.object({ through: budgetMonth.optional() });
+// ERP E14 (docs/FINANCE_ALERTS.md): month-end close checklist
+export const monthEndQuerySchema = z.object({ month: budgetMonth.optional() });
 export const cashForecastQuerySchema = z.object({ weeks: z.coerce.number().int().min(1).max(52).optional() });
 
 export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500) });

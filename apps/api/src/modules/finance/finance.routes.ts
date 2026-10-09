@@ -49,6 +49,7 @@ import {
   budgetLinesSchema,
   budgetQuerySchema,
   cashForecastQuerySchema,
+  monthEndQuerySchema,
   loanCreateSchema,
   loanRepaymentSchema,
   loanAccrualSchema,
@@ -94,6 +95,7 @@ import * as expenses from "../../domain/finance/expenses.service";
 import * as fixedAssets from "../../domain/finance/fixed-assets.service";
 import * as loans from "../../domain/finance/loans.service";
 import * as budgets from "../../domain/finance/budgets.service";
+import * as alerts from "../../domain/finance/finance-alerts.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -238,6 +240,10 @@ financeRouter.delete("/budgets/:id", requirePermission("finance.transact"), asyn
   res.status(204).end();
 }));
 financeRouter.get("/cash-forecast", requirePermission("finance.read"), validate(cashForecastQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await budgets.cashForecast(req.query as never))));
+
+// ── alerts & month-end close (docs/FINANCE_ALERTS.md) ───────────────────────────────────────────────────────────────────
+financeRouter.get("/alerts", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await alerts.financeAlerts())));
+financeRouter.get("/month-end", requirePermission("finance.read"), validate(monthEndQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await alerts.monthEndChecklist(req.query as never))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

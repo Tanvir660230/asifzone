@@ -7,7 +7,7 @@ import { ensureCommerceAccounting } from "./commerce-setup.service";
 import { ensurePurchasingAccounting } from "./purchasing-setup.service";
 import { updateBusinessSettings } from "./chart.service";
 import { postOpeningBalances, saveOpeningInventory } from "./opening-balances.service";
-import { getFinanceContext } from "./finance-context";
+import { businessToday, getFinanceContext } from "./finance-context";
 import { processFinancialEvent } from "./events.service";
 import { runReconciliation } from "./reconciliation.service";
 import { createSupplier } from "./suppliers.service";
@@ -22,6 +22,8 @@ import { createFinancialAccount } from "./financial-accounts.service";
 import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
+import { financeAlerts, monthEndChecklist } from "./finance-alerts.service";
+import { changePeriodStatus } from "./periods.service";
 import { budgetVsActual, cashForecast, createBudget, setBudgetLines } from "./budgets.service";
 import { moneyBalanceAt } from "./ledger.service";
 import { drawLoan, interestFor, listLoans, plannedSchedule, repayLoan, reverseLatestAccrual, runInterestAccrual } from "./loans.service";
@@ -331,7 +333,7 @@ describe("reports (Phase 4G) — every total ties to its account", () => {
 describe("financial statements (E6) — tie to the trial balance", () => {
   it("balance sheet balances, the income statement equals the P&L accounts, cash flow explains the money accounts", async () => {
     await postPending();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = businessToday((await getFinanceContext()).business); // the business date, not UTC (they differ after midnight in Dhaka)
     const bs = await balanceSheet({ asOf: today });
     expect(bs.balanced).toBe(true);
     const tb = await getTrialBalance({ to: today });
@@ -547,5 +549,63 @@ describe("budgets, cash forecast and runway (E12)", () => {
     const flow = f.lines.filter((l) => l.week <= 13).reduce((s, l) => s + Math.round(l.amount * 100), 0);
     expect(Math.round(f.closing * 100)).toBe(Math.round(f.opening * 100) + flow);
     expect(f.lowest.balance).toBeLessThanOrEqual(f.opening);
+  });
+});
+
+describe("alerts and month-end close (E14)", () => {
+  it("every alert links to its fix, is ordered by severity, and clears once its cause is fixed", async () => {
+    const order = { critical: 0, warning: 1, info: 2 } as const;
+    const before = await financeAlerts();
+    for (const a of before.alerts) expect(a).toMatchObject({ href: expect.stringMatching(/^\/admin\//), count: expect.any(Number), action: expect.any(String) });
+    expect(before.alerts.every((a) => a.count > 0)).toBe(true);
+    expect(before.alerts.map((a) => order[a.severity])).toEqual([...before.alerts.map((a) => order[a.severity])].sort((x, y) => x - y));
+    expect(before.counts.critical + before.counts.warning + before.counts.info).toBe(before.alerts.length);
+    const approvalsBefore = before.alerts.find((a) => a.key === "treasury.approvals")?.count ?? 0;
+
+    // a payment waiting for approval raises the alert; rejecting it clears it
+    const { business } = await getFinanceContext();
+    const cash = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: business.id, kind: "CASH", isActive: true } });
+    const CLERK: FinanceActor = { type: "ADMIN", adminId: OWNER.type === "ADMIN" ? OWNER.adminId : "", label: "clerk@test", permissions: PERMISSIONS.filter((x) => x !== "finance.post" && x !== "purchasing.approve") };
+    const pending = await paySupplier({ supplierId, fromFinancialAccountId: cash.id, amount: 25, allocations: [] }, CLERK, "alert-pending");
+    expect(pending.payment.status).toBe("PENDING_APPROVAL");
+    expect((await financeAlerts()).alerts.find((a) => a.key === "treasury.approvals")).toMatchObject({ severity: "warning", count: approvalsBefore + 1, href: "/admin/finance/accounts" });
+    await rejectMovement(pending.payment.id, "Raised by mistake", OWNER);
+    expect((await financeAlerts()).alerts.find((a) => a.key === "treasury.approvals")?.count ?? 0).toBe(approvalsBefore);
+
+    // money figures agree with the cash forecast
+    const f = await cashForecast({ weeks: 13 });
+    const overdueBills = f.lines.filter((l) => l.source === "SUPPLIER_BILL" && l.date < f.asOf);
+    const alert = (await financeAlerts()).alerts.find((a) => a.key === "payables.overdue");
+    expect(alert?.count ?? 0).toBe(overdueBills.length);
+    if (alert) expect(alert.amount).toBe(Math.round(-overdueBills.reduce((t, l) => t + l.amount, 0) * 100) / 100);
+  });
+
+  it("the month-end checklist reflects the books; closing the month clears its alert; reopening restores it", async () => {
+    await postPending();
+    await runReconciliation({}, OWNER);
+    const c = await monthEndChecklist({ month: "2026-09" });
+    expect(c).toMatchObject({ month: "2026-09", from: "2026-09-01", to: "2026-09-30", ended: true, period: { status: "OPEN" } });
+    expect(c.steps.map((x) => x.key)).toEqual(["events", "approvals", "expenses", "bills", "bank", "depreciation", "interest", "exceptions", "checks"]);
+    const step = (k: string) => c.steps.find((x) => x.key === k)!;
+    expect(step("events").status).toBe("DONE");
+    expect(step("depreciation").status).toBe("DONE"); // September was run
+    expect(step("interest").status).toBe("DONE"); // and accrued
+    const latest = await prisma.$queryRaw<Array<{ status: string }>>`SELECT DISTINCT ON ("checkKey") "status"::text AS status FROM "ReconciliationRun" ORDER BY "checkKey", "createdAt" DESC`;
+    expect(step("checks").status).toBe(latest.some((r) => r.status === "DIFFERENCE" || r.status === "ERROR") ? "TODO" : "DONE");
+    const unpaidSep = (await listCommitments({ from: "2026-09-01", to: "2026-09-30" })).commitments.flatMap((x) => x.schedule).filter((x) => x.periodKey === "2026-09" && (x.status === "OVERDUE" || x.status === "DUE"));
+    expect(step("expenses").status).toBe(unpaidSep.length ? "TODO" : "DONE");
+    expect(c.open).toBe(c.steps.filter((x) => x.status === "TODO").length);
+    expect(c.ready).toBe(c.open === 0);
+    for (const x of c.steps) expect(x.href).toMatch(/^\/admin\//);
+    expect((await monthEndChecklist({ month: "2026-10" })).ended).toBe(false);
+
+    const openMonths = async () => (await financeAlerts()).alerts.find((a) => a.key === "periods.open")?.count ?? 0;
+    const before = await openMonths();
+    expect(before).toBeGreaterThan(0);
+    await changePeriodStatus(c.period!.id, "close", "September books reviewed", OWNER);
+    expect((await monthEndChecklist({ month: "2026-09" })).period).toMatchObject({ status: "CLOSED" });
+    expect(await openMonths()).toBe(before - 1);
+    await changePeriodStatus(c.period!.id, "reopen", "Test complete", OWNER);
+    expect(await openMonths()).toBe(before);
   });
 });
