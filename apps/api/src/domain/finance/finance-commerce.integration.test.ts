@@ -114,7 +114,7 @@ describe("set-up", () => {
     expect(fas.map((f) => [f.name, f.kind]).sort()).toEqual(
       [["COD collections (courier clearing)", "COURIER"], ["EPS clearing", "PAYMENT_GATEWAY"], ["Manual receipts clearing", "OTHER"], ["SSLCommerz clearing", "PAYMENT_GATEWAY"]].sort(),
     );
-    expect((await prisma.ledgerAccount.findMany({ where: { businessId: ctx.business.id, isSensitive: true } })).map((a) => a.code).sort()).toEqual(["2410", "2520", "3100", "3200", "3300", "6200"]);
+    expect((await prisma.ledgerAccount.findMany({ where: { businessId: ctx.business.id, isSensitive: true } })).map((a) => a.code).sort()).toEqual(["2410", "2420", "2520", "3100", "3200", "3300", "6200", "6210"]);
     const again = await syncCommerce();
     expect(again.skipped).toBeUndefined();
     expect(await prisma.financialAccount.count({ where: { businessId: ctx.business.id } })).toBe(4);

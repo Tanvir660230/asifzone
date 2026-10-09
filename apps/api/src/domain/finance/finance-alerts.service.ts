@@ -11,6 +11,7 @@ import { assetRegister } from "./fixed-assets.service";
 import { listLoans } from "./loans.service";
 import { listReconciliationChecks } from "./reconciliation.service";
 import { dueDates } from "./expenses.service";
+import { payrollOverview } from "./payroll.service";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 export interface FinanceAlert {
@@ -89,7 +90,12 @@ export async function financeAlerts() {
     add({ key: "cash.below_zero", severity: "critical", title: "Cash is forecast to go below zero", detail: `Lowest point in week ${forecast.lowest.week} (by ${forecast.lowest.date}).`, count: 1, amount: forecast.lowest.balance, href: "/admin/finance/budgets", action: "Open forecast" });
   }
 
-  const [assets, loans] = await Promise.all([assetRegister(), listLoans()]);
+  const [assets, loans, payroll] = await Promise.all([assetRegister(), listLoans(), payrollOverview()]);
+  if (payroll.nextRunMonth && payroll.nextRunMonth < today.slice(0, 7)) {
+    add({ key: "payroll.not_run", severity: "warning", title: "Payroll not run", detail: `No posted pay run for ${payroll.nextRunMonth}.`, count: monthIndex(today.slice(0, 7)) - monthIndex(payroll.nextRunMonth), href: "/admin/finance/payroll", action: "Run payroll" });
+  }
+  const unpaidRuns = payroll.runs.filter((r) => r.status === "POSTED" && r.unpaid.count > 0 && r.payDate < today);
+  add({ key: "payroll.unpaid", severity: "warning", title: "Salaries due and not paid", detail: unpaidRuns.map((r) => `${r.number} ${r.periodKey}`).join(" · "), count: unpaidRuns.reduce((s, r) => s + r.unpaid.count, 0), amount: major(unpaidRuns.reduce((s, r) => s + toMinor(r.unpaid.amount, cur), 0)), href: unpaidRuns.length === 1 ? `/admin/finance/payroll?run=${unpaidRuns[0]!.id}` : "/admin/finance/payroll", action: "Pay salaries" });
   if (assets.nextRun && assets.nextRun < today.slice(0, 7)) {
     add({ key: "assets.depreciation_due", severity: "warning", title: "Depreciation not run", detail: `Next month to run: ${assets.nextRun}.`, count: monthIndex(today.slice(0, 7)) - monthIndex(assets.nextRun), amount: assets.nextRunCharge, href: "/admin/finance/fixed-assets", action: "Run depreciation" });
   }
@@ -147,6 +153,10 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     prisma.recurringCommitment.findMany({ where: { businessId: business.id, isActive: true }, include: { expenses: { select: { periodKey: true, movement: { select: { status: true } } } } } }),
     latestCheckRuns(business.id),
   ]);
+  const [payRun, payees] = await Promise.all([
+    prisma.payRun.findFirst({ where: { businessId: business.id, periodKey: month, status: { not: "REVERSED" } }, select: { number: true, status: true } }),
+    prisma.employee.count({ where: { businessId: business.id, joinDate: { lte: day(to) }, OR: [{ leaveDate: null }, { leaveDate: { gte: day(from) } }], payItems: { some: {} } } }),
+  ]);
 
   step({ key: "events", label: "Every financial event is posted", status: events ? "TODO" : "DONE", detail: events ? `${plural(events, "event")} failed or still waiting.` : "Sales, receipts and stock movements are all in the books.", href: "/admin/finance/sales" });
   step({ key: "approvals", label: "Money movements approved or rejected", status: approvals ? "TODO" : "DONE", detail: approvals ? `${plural(approvals, "movement")} dated this month waiting for approval.` : "Nothing waiting.", href: "/admin/finance/accounts" });
@@ -158,6 +168,7 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     }
   }
   step({ key: "expenses", label: "Recurring costs recorded", status: !commitments.length ? "NOT_APPLICABLE" : unpaid.length ? "TODO" : "DONE", detail: !commitments.length ? "No recurring costs are set up." : unpaid.length ? `Not recorded: ${unpaid.join(", ")}.` : "Every cost due this month is recorded.", href: "/admin/finance/expenses" });
+  step({ key: "payroll", label: "Payroll posted", status: !payees ? "NOT_APPLICABLE" : payRun?.status === "POSTED" ? "DONE" : "TODO", detail: !payees ? "Nobody on the payroll this month." : payRun?.status === "POSTED" ? `Pay run PR-${String(payRun.number).padStart(3, "0")} posted.` : payRun ? "The pay run is still a draft." : `No pay run for ${month}.`, href: "/admin/finance/payroll" });
   step({ key: "bills", label: "Supplier bills entered and posted", status: drafts ? "TODO" : "DONE", detail: drafts ? `${plural(drafts, "draft bill")} dated this month.` : "No draft bills dated this month.", href: "/admin/finance/supplier-invoices" });
 
   const reconciled = new Set(recs.map((r) => r.financialAccountId));

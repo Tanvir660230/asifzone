@@ -26,7 +26,7 @@ import type { BudgetRow, CashForecast } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 
 type View = "forecast" | "budget";
-const SOURCE_LABEL: Record<CashForecast["lines"][number]["source"], string> = { CLEARING: "in transit", SUPPLIER_BILL: "supplier bill", COMMITMENT: "recurring cost", LOAN: "loan", PURCHASE_ORDER: "purchase order" };
+const SOURCE_LABEL: Record<CashForecast["lines"][number]["source"], string> = { CLEARING: "in transit", SUPPLIER_BILL: "supplier bill", COMMITMENT: "recurring cost", LOAN: "loan", PURCHASE_ORDER: "purchase order", PAYROLL: "payroll" };
 
 /** Budgets and cash (docs/FINANCE_BUDGETS.md): what cash will look like over the coming weeks from what is already known,
  * how long it lasts at the recent pace, and how the year is going against plan. */

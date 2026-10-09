@@ -563,7 +563,7 @@ export interface BudgetRow {
 export interface BudgetVsActual { budget: { id: string; name: string; startMonth: string; months: number; notes: string | null }; months: string[]; through: string; rows: BudgetRow[]; totals: { netProfit: { budgetYear: number; budgetYtd: number; actualYtd: number; variance: number } } }
 export interface CashForecast {
   asOf: string; weeks: number; opening: number; money: Array<{ name: string; kind: string; balance: number }>;
-  lines: Array<{ date: string; week: number; source: "CLEARING" | "SUPPLIER_BILL" | "COMMITMENT" | "LOAN" | "PURCHASE_ORDER"; label: string; amount: number; ref: string | null }>;
+  lines: Array<{ date: string; week: number; source: "CLEARING" | "SUPPLIER_BILL" | "COMMITMENT" | "LOAN" | "PURCHASE_ORDER" | "PAYROLL"; label: string; amount: number; ref: string | null }>;
   byWeek: Array<{ week: number; from: string; to: string; inflow: number; outflow: number; closing: number }>;
   closing: number; lowest: { balance: number; week: number; date: string };
   runway: { averageMonthlyChange: number; months: number | null; basis: string };
@@ -589,3 +589,47 @@ export const alertKeys = { all: ["finance", "alerts"] as const, monthEnd: (month
 export const getFinanceAlerts = () => apiFetch<FinanceAlerts>(`${BASE}/alerts`);
 export const getMonthEnd = (month?: string) => apiFetch<MonthEndChecklist>(`${BASE}/month-end${month ? `?month=${month}` : ""}`);
 export const changePeriod = (id: string, transition: "close" | "reopen", reason: string) => apiFetch<unknown>(`${BASE}/periods/${id}/${transition}`, { method: "POST", body: { reason } });
+
+// ── payroll (docs/FINANCE_PAYROLL.md) ───────────────────────────────────────────────────────────────────────────────────
+export type PayComponentKind = "EARNING" | "DEDUCTION" | "EMPLOYER_CONTRIBUTION";
+export type PayCalculation = "FIXED" | "PERCENT_OF_BASIC";
+type AccountRef = { id: string; code: string; name: string } | null;
+export interface PayComponent { id: string; name: string; kind: PayComponentKind; calculation: PayCalculation; isBasic: boolean; ratePct: number | null; expenseAccount: AccountRef; liabilityAccount: AccountRef; isActive: boolean; sortOrder: number }
+export interface PayTotals { gross: number; deductions: number; net: number; employerCost: number }
+export interface Employee {
+  id: string; number: string; name: string; designation: string | null; department: string | null; phone: string | null; payoutDetails: string | null;
+  joinDate: string; leaveDate: string | null; notes: string | null; status: "ACTIVE" | "LEFT";
+  payItems: Array<{ componentId: string; name: string; kind: PayComponentKind; calculation: PayCalculation; isBasic: boolean; amount: number | null; ratePct: number | null }>;
+  standard: PayTotals;
+}
+export interface Payslip extends PayTotals {
+  id: string; employee: { id: string; number: string; name: string; designation: string | null; payoutDetails: string | null }; daysPayable: number; daysInPeriod: number;
+  lines: Array<{ componentId: string; name: string; kind: PayComponentKind; amount: number }>;
+  payment: { status: "UNPAID" | "AWAITING_APPROVAL" | "PAID"; movement: { id: string; status: string; date: string; from: string | null } | null };
+}
+export interface PayRun extends PayTotals {
+  id: string; number: string; periodKey: string; payDate: string; status: "DRAFT" | "POSTED" | "REVERSED"; notes: string | null; journalEntryId: string | null;
+  postedAt: string | null; reversedAt: string | null; reversalReason: string | null; payslips: Payslip[]; unpaid: { count: number; amount: number };
+}
+export interface PayrollOverview {
+  asOf: string; runs: PayRun[]; nextRunMonth: string | null; unpaidNet: number;
+  withheld: Array<{ account: { id: string; code: string; name: string }; owed: number }>;
+  remittances: Array<{ id: string; account: { code: string; name: string }; amount: number; periodKey: string | null; reference: string | null; status: string; date: string; from: string | null }>;
+}
+export const payrollKeys = { overview: () => ["finance", "payroll"] as const, components: () => ["finance", "payroll", "components"] as const, employees: () => ["finance", "payroll", "employees"] as const, run: (id: string) => ["finance", "payroll", "run", id] as const };
+export const getPayroll = () => apiFetch<PayrollOverview>(`${BASE}/payroll`);
+export const listPayComponents = () => apiFetch<{ components: PayComponent[] }>(`${BASE}/payroll/components`);
+export const savePayComponent = (id: string | null, body: Record<string, unknown>) => apiFetch<PayComponent>(id ? `${BASE}/payroll/components/${id}` : `${BASE}/payroll/components`, { method: id ? "PATCH" : "POST", body });
+export const listEmployees = () => apiFetch<{ asOf: string; employees: Employee[]; totals: { active: number; monthlyGross: number; monthlyNet: number; monthlyEmployerCost: number } }>(`${BASE}/payroll/employees`);
+export const saveEmployee = (id: string | null, body: Record<string, unknown>) => apiFetch<Employee>(id ? `${BASE}/payroll/employees/${id}` : `${BASE}/payroll/employees`, { method: id ? "PATCH" : "POST", body });
+export const createPayRun = (body: { periodKey: string; payDate?: string | null; notes?: string | null }) => apiFetch<PayRun>(`${BASE}/payroll/runs`, { method: "POST", body });
+export const getPayRun = (id: string) => apiFetch<PayRun>(`${BASE}/payroll/runs/${id}`);
+export const deletePayRun = (id: string) => apiFetch<void>(`${BASE}/payroll/runs/${id}`, { method: "DELETE" });
+export const updatePayslip = (runId: string, payslipId: string, body: { daysPayable?: number; lines?: Array<{ componentId: string; amount: number }> }) => apiFetch<PayRun>(`${BASE}/payroll/runs/${runId}/payslips/${payslipId}`, { method: "PATCH", body });
+export const setPayslipPresence = (runId: string, employeeId: string, present: boolean) => apiFetch<PayRun>(`${BASE}/payroll/runs/${runId}/employees/${employeeId}`, { method: present ? "POST" : "DELETE" });
+export const postPayRun = (id: string) => apiFetch<PayRun>(`${BASE}/payroll/runs/${id}/post`, { method: "POST" });
+export const reversePayRun = (id: string, reason: string) => apiFetch<PayRun>(`${BASE}/payroll/runs/${id}/reverse`, { method: "POST", body: { reason } });
+export const payPayslips = (id: string, body: { payslipIds?: string[]; fromFinancialAccountId: string; paymentDate?: string; reference?: string | null }, idempotencyKey: string) =>
+  apiFetch<{ run: PayRun; movementId: string; replayed: boolean }>(`${BASE}/payroll/runs/${id}/pay`, { method: "POST", body, idempotencyKey });
+export const remitPayroll = (body: { liabilityAccountId: string; amount: number; fromFinancialAccountId: string; paymentDate?: string; periodKey?: string | null; reference?: string | null }, idempotencyKey: string) =>
+  apiFetch<{ remittanceId: string; replayed: boolean }>(`${BASE}/payroll/remittances`, { method: "POST", body, idempotencyKey });

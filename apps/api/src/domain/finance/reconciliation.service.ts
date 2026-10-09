@@ -703,6 +703,31 @@ export const RECONCILIATION_CHECKS = {
     },
   },
 
+  "payroll.subledger": {
+    label: "Salaries payable = unpaid payslips",
+    description: "Salaries payable equals the net pay of payslips on posted pay runs less the payments whose money movement is posted — no salary money moves outside its pay run.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const slips = await prisma.payslip.findMany({ where: { run: { businessId: ctx.business.id, status: "POSTED" } }, select: { net: true, payments: { select: { amount: true, movement: { select: { status: true } } } } } });
+      const map = await prisma.accountMapping.findFirst({ where: { businessId: ctx.business.id, key: "liability.salaries_payable" } });
+      if (!slips.length && !map) return { status: "NOT_APPLICABLE", details: { reason: "no payroll posted" } };
+      let expected = 0;
+      for (const s of slips) {
+        expected += toMinor(s.net, cur);
+        for (const p of s.payments) if (p.movement.status === "POSTED") expected -= toMinor(p.amount, cur);
+      }
+      let actual = 0;
+      if (map) {
+        const [b] = await prisma.$queryRaw<Array<{ d: P.Decimal; c: P.Decimal }>>`
+          SELECT COALESCE(SUM(l.debit), 0) AS d, COALESCE(SUM(l.credit), 0) AS c FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+          WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${map.accountId}`;
+        actual = toMinor(b!.c, cur) - toMinor(b!.d, cur);
+      }
+      if (!slips.length && actual === 0) return { status: "NOT_APPLICABLE", details: { reason: "no payroll posted" } };
+      return { status: expected === actual ? "MATCHED" : "DIFFERENCE", expected, actual, details: { documents: toMajorNumber(expected, cur), books: toMajorNumber(actual, cur), payslips: slips.length } };
+    },
+  },
+
   // ── Phase 4C: the valuation cutover set the inventory account equal to valuation + in-transit ──────────────────────
   "inventory.valuation_vs_ledger": {
     label: "Inventory account = valuation",

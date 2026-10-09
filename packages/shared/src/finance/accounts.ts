@@ -83,6 +83,11 @@ export const ACCOUNT_MAPPING_KEYS = [
   // Loans (docs/FINANCE_LOANS.md) — interest accrued on loans, the interest charge
   "liability.accrued_interest",
   "expense.interest",
+  // Payroll (docs/FINANCE_PAYROLL.md) — net pay owed, the salary cost, deductions withheld, employer contributions
+  "liability.salaries_payable",
+  "expense.salaries",
+  "liability.payroll_deductions",
+  "expense.employer_contributions",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -139,6 +144,9 @@ export const FIXED_ASSET_MAPPING_KEYS: readonly AccountMappingKey[] = [
 
 /** Every key loans post to: the principal owed, interest accrued and not yet paid, and the interest charge. */
 export const LOAN_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.loans", "liability.accrued_interest", "expense.interest"];
+
+/** Every key payroll posts to by default (each pay component can name its own accounts). */
+export const PAYROLL_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.salaries_payable", "expense.salaries", "liability.payroll_deductions", "expense.employer_contributions"];
 
 /**
  * Mapping keys whose ledger figure is reconciled against an existing authoritative business figure (the metrics registry,
@@ -205,7 +213,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "2310", name: "VAT output payable", type: "LIABILITY", parent: "2300", mapping: "liability.vat_output" },
   { code: "2320", name: "Withholding tax payable (TDS/VDS)", type: "LIABILITY", parent: "2300" },
   { code: "2400", name: "Payroll liabilities", type: "LIABILITY", parent: "2000", group: true },
-  { code: "2410", name: "Salaries payable", type: "LIABILITY", parent: "2400", sensitive: true },
+  { code: "2410", name: "Salaries payable", type: "LIABILITY", parent: "2400", sensitive: true, mapping: "liability.salaries_payable" },
+  { code: "2420", name: "Payroll deductions & contributions payable", type: "LIABILITY", parent: "2400", sensitive: true, mapping: "liability.payroll_deductions" },
   { code: "2500", name: "Loans", type: "LIABILITY", parent: "2000", group: true },
   { code: "2510", name: "Bank loans", type: "LIABILITY", parent: "2500", mapping: "liability.loans" },
   { code: "2520", name: "Partner loans", type: "LIABILITY", parent: "2500", sensitive: true },
@@ -237,7 +246,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
 
   { code: "6000", name: "Operating expenses", type: "EXPENSE", group: true },
   { code: "6100", name: "Rent", type: "EXPENSE", parent: "6000" },
-  { code: "6200", name: "Salaries & wages", type: "EXPENSE", parent: "6000", sensitive: true },
+  { code: "6200", name: "Salaries & wages", type: "EXPENSE", parent: "6000", sensitive: true, mapping: "expense.salaries" },
+  { code: "6210", name: "Employer payroll contributions", type: "EXPENSE", parent: "6000", sensitive: true, mapping: "expense.employer_contributions" },
   { code: "6300", name: "Utilities", type: "EXPENSE", parent: "6000" },
   { code: "6400", name: "Internet, software & hosting", type: "EXPENSE", parent: "6000" },
   { code: "6500", name: "Marketing & advertising", type: "EXPENSE", parent: "6000" },

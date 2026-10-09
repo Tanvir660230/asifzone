@@ -237,6 +237,44 @@ export const budgetCreateSchema = z.object({
 });
 export const budgetLinesSchema = z.object({ lines: z.array(z.object({ accountId: id, periodKey: budgetMonth, amount: financeAmountSchema })).min(1).max(5000) });
 export const budgetQuerySchema = z.object({ through: budgetMonth.optional() });
+// ERP E8 (docs/FINANCE_PAYROLL.md): payroll — a configurable structure (no statutory rule built in)
+const payMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM");
+const pct = z.coerce.number().min(0).max(100);
+const payComponentBase = {
+  name: z.string().trim().min(2).max(80),
+  kind: z.enum(["EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION"]),
+  calculation: z.enum(["FIXED", "PERCENT_OF_BASIC"]).optional(),
+  isBasic: z.boolean().optional(),
+  ratePct: pct.optional().nullable(),
+  expenseAccountId: id.optional().nullable(),
+  liabilityAccountId: id.optional().nullable(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().min(0).max(1000).optional(),
+};
+export const payComponentCreateSchema = z.object(payComponentBase);
+export const payComponentUpdateSchema = z.object(payComponentBase).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
+const payItem = z.object({ componentId: id, amount: financeAmountSchema.optional().nullable(), ratePct: pct.optional().nullable() });
+const employeeBase = {
+  name: z.string().trim().min(2).max(120),
+  designation: optionalText(80),
+  department: optionalText(80),
+  phone: optionalText(30),
+  payoutDetails: optionalText(200),
+  joinDate: businessDate,
+  leaveDate: businessDate.optional().nullable(),
+  notes: optionalText(1000),
+  payItems: z.array(payItem).max(40).optional(),
+};
+export const employeeCreateSchema = z.object(employeeBase);
+export const employeeUpdateSchema = z.object(employeeBase).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export const payRunCreateSchema = z.object({ periodKey: payMonth, payDate: businessDate.optional().nullable(), notes: optionalText(500) });
+export const payslipUpdateSchema = z
+  .object({ daysPayable: z.coerce.number().int().min(0).max(31).optional(), lines: z.array(z.object({ componentId: id, amount: financeAmountSchema })).max(40).optional() })
+  .refine((v) => v.daysPayable !== undefined || v.lines !== undefined, "Nothing to change");
+export const payrollPaySchema = z.object({ payslipIds: z.array(id).max(500).optional(), fromFinancialAccountId: id, paymentDate: businessDate.optional(), reference: optionalText(120) });
+export const payrollRemitSchema = z.object({ liabilityAccountId: id, amount: financeAmountSchema.refine((v) => v > 0, "More than zero"), fromFinancialAccountId: id, paymentDate: businessDate.optional(), periodKey: payMonth.optional().nullable(), reference: optionalText(120) });
+export const payRunReverseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+
 // ERP E14 (docs/FINANCE_ALERTS.md): month-end close checklist
 export const monthEndQuerySchema = z.object({ month: budgetMonth.optional() });
 export const cashForecastQuerySchema = z.object({ weeks: z.coerce.number().int().min(1).max(52).optional() });

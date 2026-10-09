@@ -50,6 +50,15 @@ import {
   budgetQuerySchema,
   cashForecastQuerySchema,
   monthEndQuerySchema,
+  payComponentCreateSchema,
+  payComponentUpdateSchema,
+  employeeCreateSchema,
+  employeeUpdateSchema,
+  payRunCreateSchema,
+  payslipUpdateSchema,
+  payrollPaySchema,
+  payrollRemitSchema,
+  payRunReverseSchema,
   loanCreateSchema,
   loanRepaymentSchema,
   loanAccrualSchema,
@@ -96,6 +105,7 @@ import * as fixedAssets from "../../domain/finance/fixed-assets.service";
 import * as loans from "../../domain/finance/loans.service";
 import * as budgets from "../../domain/finance/budgets.service";
 import * as alerts from "../../domain/finance/finance-alerts.service";
+import * as payroll from "../../domain/finance/payroll.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -244,6 +254,35 @@ financeRouter.get("/cash-forecast", requirePermission("finance.read"), validate(
 // ── alerts & month-end close (docs/FINANCE_ALERTS.md) ───────────────────────────────────────────────────────────────────
 financeRouter.get("/alerts", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await alerts.financeAlerts())));
 financeRouter.get("/month-end", requirePermission("finance.read"), validate(monthEndQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await alerts.monthEndChecklist(req.query as never))));
+
+// ── payroll (docs/FINANCE_PAYROLL.md) — salaries are sensitive: reading and drafting need finance.sensitive ──────────────
+const SENSITIVE = requirePermission("finance.sensitive");
+financeRouter.get("/payroll", SENSITIVE, asyncHandler(async (_req, res) => res.json(await payroll.payrollOverview())));
+financeRouter.get("/payroll/components", SENSITIVE, asyncHandler(async (_req, res) => res.json(await payroll.listComponents())));
+financeRouter.post("/payroll/components", SENSITIVE, validate(payComponentCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await payroll.createComponent(req.body, await actorOf(req)))));
+financeRouter.patch("/payroll/components/:id", SENSITIVE, validate(payComponentUpdateSchema), asyncHandler(async (req, res) => res.json(await payroll.updateComponent(id(req), req.body, await actorOf(req)))));
+financeRouter.get("/payroll/employees", SENSITIVE, asyncHandler(async (_req, res) => res.json(await payroll.listEmployees())));
+financeRouter.post("/payroll/employees", SENSITIVE, validate(employeeCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await payroll.createEmployee(req.body, await actorOf(req)))));
+financeRouter.patch("/payroll/employees/:id", SENSITIVE, validate(employeeUpdateSchema), asyncHandler(async (req, res) => res.json(await payroll.updateEmployee(id(req), req.body, await actorOf(req)))));
+financeRouter.post("/payroll/runs", SENSITIVE, validate(payRunCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await payroll.createPayRun(req.body, await actorOf(req)))));
+financeRouter.get("/payroll/runs/:id", SENSITIVE, asyncHandler(async (req, res) => res.json(await payroll.getPayRun(id(req)))));
+financeRouter.delete("/payroll/runs/:id", SENSITIVE, asyncHandler(async (req, res) => {
+  await payroll.deleteDraftPayRun(id(req), await actorOf(req));
+  res.status(204).end();
+}));
+financeRouter.patch("/payroll/runs/:id/payslips/:payslipId", SENSITIVE, validate(payslipUpdateSchema), asyncHandler(async (req, res) => res.json(await payroll.updatePayslip(id(req), req.params.payslipId!, req.body, await actorOf(req)))));
+financeRouter.post("/payroll/runs/:id/employees/:employeeId", SENSITIVE, asyncHandler(async (req, res) => res.json(await payroll.setPayslipPresence(id(req), req.params.employeeId!, true, await actorOf(req)))));
+financeRouter.delete("/payroll/runs/:id/employees/:employeeId", SENSITIVE, asyncHandler(async (req, res) => res.json(await payroll.setPayslipPresence(id(req), req.params.employeeId!, false, await actorOf(req)))));
+financeRouter.post("/payroll/runs/:id/post", requirePermission("finance.post"), asyncHandler(async (req, res) => res.json(await payroll.postPayRun(id(req), await actorOf(req)))));
+financeRouter.post("/payroll/runs/:id/reverse", requirePermission("finance.reverse"), validate(payRunReverseSchema), asyncHandler(async (req, res) => res.json(await payroll.reversePayRun(id(req), req.body.reason, await actorOf(req)))));
+financeRouter.post("/payroll/runs/:id/pay", requirePermission("finance.transact"), validate(payrollPaySchema), asyncHandler(async (req, res) => {
+  const r = await payroll.payPayslips(id(req), req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.post("/payroll/remittances", requirePermission("finance.transact"), validate(payrollRemitSchema), asyncHandler(async (req, res) => {
+  const r = await payroll.remitDeductions(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

@@ -41,6 +41,7 @@ export const CAPABILITIES = {
   "finance.configure": { permission: "finance.configure" },
   "finance.reconcile": { permission: "finance.reconcile" },
   "finance.period_close": { permission: "finance.period_close" },
+  "finance.sensitive": { permission: "finance.sensitive" },
   // purchasing, suppliers / AP and inventory costing (docs/FINANCE_PHASE_4.md §23)
   "suppliers.view": { permission: "suppliers.read" },
   "suppliers.manage": { permission: "suppliers.manage" },

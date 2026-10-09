@@ -24,6 +24,7 @@ import { moneyBalanceAt } from "./ledger.service";
 import { settlementOf } from "./supplier-payments.service";
 import { dueDates } from "./expenses.service";
 import { plannedSchedule } from "./loans.service";
+import { payrollCashOutlook } from "./payroll.service";
 
 const PL_TYPES: LedgerAccountType[] = ["REVENUE", "COGS", "EXPENSE", "OTHER_INCOME", "OTHER_EXPENSE"];
 const INCOME = new Set<LedgerAccountType>(["REVENUE", "OTHER_INCOME"]);
@@ -175,7 +176,7 @@ export async function deleteBudget(id: string, actor: FinanceActor) {
 
 // ── cash forecast & runway ────────────────────────────────────────────────────────────────────────────────────────────
 
-type ForecastLine = { date: string; week: number; source: "CLEARING" | "SUPPLIER_BILL" | "COMMITMENT" | "LOAN" | "PURCHASE_ORDER"; label: string; amount: number; ref: string | null };
+type ForecastLine = { date: string; week: number; source: "CLEARING" | "SUPPLIER_BILL" | "COMMITMENT" | "LOAN" | "PURCHASE_ORDER" | "PAYROLL"; label: string; amount: number; ref: string | null };
 
 /** Week-by-week cash forecast from what is already known, and the runway at the recent burn rate. */
 export async function cashForecast(q: { weeks?: number } = {}) {
@@ -219,6 +220,17 @@ export async function cashForecast(q: { weeks?: number } = {}) {
     for (const s of plannedSchedule({ principal: toMinor(l.principal, cur), ratePct: Number(l.annualRatePct), termMonths: l.termMonths, type: l.repaymentType, firstDueDate: businessDateOf(l.firstDueDate) })) {
       if (s.dueDate < today || s.dueDate > end) continue;
       lines.push({ date: s.dueDate, week: weekOf(s.dueDate), source: "LOAN", label: `Loan instalment — ${l.lender}`, amount: -s.payment, ref: l.id });
+    }
+  }
+  // payroll: net pay of runs not yet paid (at their pay date), then the standard monthly net of current staff at each
+  // month end the window reaches that has no run yet (an estimate, labelled so)
+  const payroll = await payrollCashOutlook(business.id, cur, today);
+  for (const r of payroll.unpaid) lines.push({ date: r.payDate, week: weekOf(r.payDate), source: "PAYROLL", label: `Salaries ${r.periodKey} (${r.number}${r.status === "DRAFT" ? ", draft" : ""})`, amount: -r.amount, ref: null });
+  if (payroll.monthlyNet > 0) {
+    for (let i = monthIndex(today.slice(0, 7)); lastDay(monthKey(i)) <= end; i++) {
+      const key = monthKey(i);
+      if (payroll.coveredMonths.has(key)) continue;
+      lines.push({ date: lastDay(key), week: weekOf(lastDay(key)), source: "PAYROLL", label: `Salaries ${key} (estimate)`, amount: -payroll.monthlyNet, ref: null });
     }
   }
   // open purchase orders: what is ordered and not yet received, at the expected date (or in two weeks)

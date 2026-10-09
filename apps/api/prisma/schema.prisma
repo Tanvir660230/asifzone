@@ -2685,6 +2685,10 @@ model FinanceBusiness {
   loans                       Loan[]
   loanAccrualRuns             LoanAccrualRun[]
   budgets                     Budget[]
+  employees                   Employee[]
+  payComponents               PayComponent[]
+  payRuns                     PayRun[]
+  payrollRemittances          PayrollRemittance[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2745,6 +2749,9 @@ model LedgerAccount {
   recurringCommitments     RecurringCommitment[] @relation("CommitmentAccount")
   fixedAssets              FixedAsset[]          @relation("FixedAssetAccount")
   budgetLines              BudgetLine[]          @relation("BudgetAccount")
+  payComponentExpenses     PayComponent[]        @relation("PayComponentExpense")
+  payComponentLiabilities  PayComponent[]        @relation("PayComponentLiability")
+  payrollRemittances       PayrollRemittance[]   @relation("PayrollRemittanceAccount")
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -2890,6 +2897,7 @@ model JournalEntry {
   depreciationRun    DepreciationRun?       @relation("DepreciationJournal")
   fixedAssetDisposal FixedAsset?            @relation("DisposalJournal")
   loanAccrualRun     LoanAccrualRun?        @relation("LoanAccrualJournal")
+  payRun             PayRun?                @relation("PayRunJournal")
 
   @@unique([businessId, idempotencyKey])
   @@unique([businessId, number])
@@ -3177,6 +3185,8 @@ model TreasuryMovement {
   loanDrawdown           Loan?                  @relation("LoanDrawdown")
   loanRepaymentPrincipal LoanRepayment?         @relation("RepaymentPrincipal")
   loanRepaymentInterest  LoanRepayment?         @relation("RepaymentInterest")
+  payslipPayments        PayslipPayment[]       @relation("PayslipPaymentMovement")
+  payrollRemittance      PayrollRemittance?     @relation("PayrollRemittanceMovement")
 
   @@unique([businessId, idempotencyKey])
   @@index([fromFinancialAccountId, movementDate])
@@ -4782,4 +4792,187 @@ model BudgetLine {
 
   @@unique([budgetId, accountId, periodKey])
   @@index([accountId])
+}
+
+// ── ERP E8 — payroll (docs/FINANCE_PAYROLL.md) ─────────────────────────────────────────────────────────────────────────
+// A configurable structure: the owner defines the components (B-3 — no statutory rule is built in).
+
+enum PayComponentKind {
+  EARNING
+  DEDUCTION
+  EMPLOYER_CONTRIBUTION
+}
+
+enum PayCalculation {
+  FIXED
+  PERCENT_OF_BASIC
+}
+
+enum PayRunStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+/// Someone the business pays a salary to. Never deleted: a leaver gets a leaving date.
+model Employee {
+  id               String            @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "employee" — shown as EMP-001.
+  number           Int
+  name             String
+  designation      String?
+  department       String?
+  phone            String?
+  /// Where the salary goes (bank account, bKash number) — free text.
+  payoutDetails    String?
+  joinDate         DateTime          @db.Date
+  leaveDate        DateTime?         @db.Date
+  notes            String?
+  createdByAdminId String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  payItems         EmployeePayItem[]
+  payslips         Payslip[]
+
+  @@unique([businessId, number])
+}
+
+/// A line of pay the owner defines: an earning (basic, allowances, bonus), a deduction withheld from pay (tax, provident
+/// fund, advance recovery) or an employer contribution (cost on top of pay). Fixed, or a percentage of basic.
+model PayComponent {
+  id                 String            @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  name               String
+  kind               PayComponentKind
+  calculation        PayCalculation    @default(FIXED)
+  /// The basic salary — what PERCENT_OF_BASIC components are a percentage of (one per business).
+  isBasic            Boolean           @default(false)
+  ratePct            Decimal?          @db.Decimal(7, 4)
+  /// Earnings and employer contributions: the expense they post to.
+  expenseAccountId   String?
+  expenseAccount     LedgerAccount?    @relation("PayComponentExpense", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  /// Deductions and employer contributions: the liability they are owed on until remitted.
+  liabilityAccountId String?
+  liabilityAccount   LedgerAccount?    @relation("PayComponentLiability", fields: [liabilityAccountId], references: [id], onDelete: Restrict)
+  isActive           Boolean           @default(true)
+  sortOrder          Int               @default(0)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  payItems           EmployeePayItem[]
+  payslipLines       PayslipLine[]
+
+  @@unique([businessId, name])
+}
+
+/// A component an employee is paid: a fixed amount, or (percentage components) an optional own rate.
+model EmployeePayItem {
+  id          String       @id @default(cuid())
+  employeeId  String
+  employee    Employee     @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  componentId String
+  component   PayComponent @relation(fields: [componentId], references: [id], onDelete: Restrict)
+  amount      Decimal?     @db.Decimal(18, 2)
+  ratePct     Decimal?     @db.Decimal(7, 4)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([employeeId, componentId])
+}
+
+/// One month's payroll: drafted from the pay structure, edited, then posted as ONE journal (Dr expense / Cr salaries
+/// payable, deductions and contributions payable). One live run per month; reversed only while nothing is paid.
+model PayRun {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// FinanceSequence "pay_run" — shown as PR-001.
+  number           Int
+  periodKey        String
+  payDate          DateTime        @db.Date
+  status           PayRunStatus    @default(DRAFT)
+  gross            Decimal         @default(0) @db.Decimal(18, 2)
+  deductions       Decimal         @default(0) @db.Decimal(18, 2)
+  net              Decimal         @default(0) @db.Decimal(18, 2)
+  employerCost     Decimal         @default(0) @db.Decimal(18, 2)
+  journalEntryId   String?         @unique
+  journalEntry     JournalEntry?   @relation("PayRunJournal", fields: [journalEntryId], references: [id], onDelete: Restrict)
+  notes            String?
+  createdByAdminId String?
+  postedByAdminId  String?
+  postedAt         DateTime?
+  reversedAt       DateTime?
+  reversalReason   String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  payslips         Payslip[]
+
+  @@unique([businessId, number])
+  @@index([businessId, periodKey])
+}
+
+model Payslip {
+  id           String           @id @default(cuid())
+  runId        String
+  run          PayRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  /// Days paid of the days in the month (joiners and leavers are prorated by default; editable in the draft).
+  daysPayable  Int
+  daysInPeriod Int
+  gross        Decimal          @default(0) @db.Decimal(18, 2)
+  deductions   Decimal          @default(0) @db.Decimal(18, 2)
+  net          Decimal          @default(0) @db.Decimal(18, 2)
+  employerCost Decimal          @default(0) @db.Decimal(18, 2)
+  lines        PayslipLine[]
+  payments     PayslipPayment[]
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+}
+
+model PayslipLine {
+  id          String           @id @default(cuid())
+  payslipId   String
+  payslip     Payslip          @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  componentId String
+  component   PayComponent     @relation(fields: [componentId], references: [id], onDelete: Restrict)
+  kind        PayComponentKind
+  amount      Decimal          @db.Decimal(18, 2)
+
+  @@unique([payslipId, componentId])
+}
+
+/// A payslip paid (in full) by a money movement — one movement can pay many payslips. Counts while the movement is live.
+model PayslipPayment {
+  id         String           @id @default(cuid())
+  payslipId  String
+  payslip    Payslip          @relation(fields: [payslipId], references: [id], onDelete: Restrict)
+  movementId String
+  movement   TreasuryMovement @relation("PayslipPaymentMovement", fields: [movementId], references: [id], onDelete: Restrict)
+  amount     Decimal          @db.Decimal(18, 2)
+  createdAt  DateTime         @default(now())
+
+  @@unique([payslipId, movementId])
+  @@index([movementId])
+}
+
+/// Deductions or contributions withheld and paid over (tax to the revenue authority, provident fund to the trustees).
+model PayrollRemittance {
+  id                 String           @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  liabilityAccountId String
+  liabilityAccount   LedgerAccount    @relation("PayrollRemittanceAccount", fields: [liabilityAccountId], references: [id], onDelete: Restrict)
+  movementId         String           @unique
+  movement           TreasuryMovement @relation("PayrollRemittanceMovement", fields: [movementId], references: [id], onDelete: Restrict)
+  amount             Decimal          @db.Decimal(18, 2)
+  periodKey          String?
+  reference          String?
+  createdByAdminId   String?
+  createdAt          DateTime         @default(now())
+
+  @@index([businessId, liabilityAccountId])
 }

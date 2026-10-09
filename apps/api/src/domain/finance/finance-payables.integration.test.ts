@@ -23,6 +23,7 @@ import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
 import { financeAlerts, monthEndChecklist } from "./finance-alerts.service";
+import { createComponent, createEmployee, createPayRun, deleteDraftPayRun, payPayslips, payrollOverview, postPayRun, remitDeductions, reversePayRun, standardLines, updateComponent, updatePayslip } from "./payroll.service";
 import { changePeriodStatus } from "./periods.service";
 import { budgetVsActual, cashForecast, createBudget, setBudgetLines } from "./budgets.service";
 import { moneyBalanceAt } from "./ledger.service";
@@ -585,7 +586,7 @@ describe("alerts and month-end close (E14)", () => {
     await runReconciliation({}, OWNER);
     const c = await monthEndChecklist({ month: "2026-09" });
     expect(c).toMatchObject({ month: "2026-09", from: "2026-09-01", to: "2026-09-30", ended: true, period: { status: "OPEN" } });
-    expect(c.steps.map((x) => x.key)).toEqual(["events", "approvals", "expenses", "bills", "bank", "depreciation", "interest", "exceptions", "checks"]);
+    expect(c.steps.map((x) => x.key)).toEqual(["events", "approvals", "expenses", "payroll", "bills", "bank", "depreciation", "interest", "exceptions", "checks"]);
     const step = (k: string) => c.steps.find((x) => x.key === k)!;
     expect(step("events").status).toBe("DONE");
     expect(step("depreciation").status).toBe("DONE"); // September was run
@@ -607,5 +608,102 @@ describe("alerts and month-end close (E14)", () => {
     expect(await openMonths()).toBe(before - 1);
     await changePeriodStatus(c.period!.id, "reopen", "Test complete", OWNER);
     expect(await openMonths()).toBe(before);
+  });
+});
+
+describe("payroll (E8) — a configurable structure, posted as one journal, paid through treasury", () => {
+  it("prorates fixed amounts by days and takes percentages of the (prorated) basic, half-even", () => {
+    const comp = (id: string, kind: "EARNING" | "DEDUCTION" | "EMPLOYER_CONTRIBUTION", calculation: "FIXED" | "PERCENT_OF_BASIC", isBasic = false, ratePct: number | null = null) => ({ id, name: id, kind, calculation, isBasic, ratePct, isActive: true });
+    const items = [
+      { amount: 3_000_000, ratePct: null, component: comp("basic", "EARNING", "FIXED", true) },
+      { amount: null, ratePct: null, component: comp("rent", "EARNING", "PERCENT_OF_BASIC", false, 50) },
+      { amount: null, ratePct: 12.5, component: comp("pf", "DEDUCTION", "PERCENT_OF_BASIC", false, 10) },
+    ];
+    expect(standardLines(items, 30, 30).map((l) => [l.componentId, l.amount])).toEqual([["basic", 3_000_000], ["rent", 1_500_000], ["pf", 375_000]]);
+    expect(standardLines(items, 15, 30).map((l) => [l.componentId, l.amount])).toEqual([["basic", 1_500_000], ["rent", 750_000], ["pf", 187_500]]);
+    expect(standardLines(items, 0, 31)).toEqual([]);
+  });
+
+  it("drafts, edits, posts, pays, remits and reverses; salaries payable always equals the unpaid payslips", async () => {
+    const { business } = await getFinanceContext();
+    const basic = await createComponent({ name: "Basic salary", kind: "EARNING", isBasic: true }, OWNER);
+    const rent = await createComponent({ name: "House rent", kind: "EARNING", calculation: "PERCENT_OF_BASIC", ratePct: 50 }, OWNER);
+    const tax = await createComponent({ name: "Income tax withheld", kind: "DEDUCTION" }, OWNER);
+    const pf = await createComponent({ name: "Provident fund (employee)", kind: "DEDUCTION", calculation: "PERCENT_OF_BASIC", ratePct: 10 }, OWNER);
+    const pfEr = await createComponent({ name: "Provident fund (employer)", kind: "EMPLOYER_CONTRIBUTION", calculation: "PERCENT_OF_BASIC", ratePct: 10 }, OWNER);
+    const bonus = await createComponent({ name: "Festival bonus", kind: "EARNING" }, OWNER);
+    expect(basic.expenseAccount?.code).toBe("6200");
+    expect(tax.liabilityAccount?.code).toBe("2420");
+    expect(pfEr).toMatchObject({ expenseAccount: { code: "6210" }, liabilityAccount: { code: "2420" } });
+    await expect(createComponent({ name: "Overtime", kind: "EARNING", calculation: "PERCENT_OF_BASIC" }, OWNER)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(createComponent({ name: "Second basic", kind: "EARNING", isBasic: true }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+
+    const a = await createEmployee({ name: "Rahima Akter", designation: "Tailor", joinDate: "2026-01-01", payItems: [{ componentId: basic.id, amount: 20_000 }, { componentId: rent.id }, { componentId: tax.id, amount: 500 }, { componentId: pf.id }, { componentId: pfEr.id }] }, OWNER);
+    const b = await createEmployee({ name: "Karim Uddin", designation: "Store manager", joinDate: "2026-09-16", payItems: [{ componentId: basic.id, amount: 30_000 }, { componentId: rent.id }, { componentId: pf.id }, { componentId: pfEr.id }] }, OWNER);
+    expect(a).toMatchObject({ number: "EMP-001", standard: { gross: 30_000, deductions: 2_500, net: 27_500, employerCost: 2_000 } });
+    await expect(createEmployee({ name: "No amount", joinDate: "2026-01-01", payItems: [{ componentId: basic.id }] }, OWNER)).rejects.toMatchObject({ statusCode: 400 });
+
+    // September: Rahima a full month; Karim joined on the 16th — 15 of 30 days
+    let run = await createPayRun({ periodKey: "2026-09" }, OWNER);
+    expect(run).toMatchObject({ number: "PR-001", status: "DRAFT", payDate: "2026-09-30", gross: 52_500, deductions: 4_000, net: 48_500, employerCost: 3_500 });
+    const slipB = run.payslips.find((x) => x.employee.id === b.id)!;
+    expect(slipB).toMatchObject({ daysPayable: 15, daysInPeriod: 30, gross: 22_500, deductions: 1_500, net: 21_000, employerCost: 1_500 });
+    await expect(createPayRun({ periodKey: "2026-09" }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+
+    // a one-off festival bonus on Rahima's payslip; deductions above earnings are refused
+    const slipA = run.payslips.find((x) => x.employee.id === a.id)!;
+    const linesA = slipA.lines.map((l) => ({ componentId: l.componentId, amount: l.amount }));
+    run = await updatePayslip(run.id, slipA.id, { lines: [...linesA, { componentId: bonus.id, amount: 5_000 }] }, OWNER);
+    expect(run).toMatchObject({ gross: 57_500, net: 53_500 });
+    await expect(updatePayslip(run.id, slipA.id, { lines: [{ componentId: tax.id, amount: 99_999 }] }, OWNER)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(updateComponent(bonus.id, { kind: "DEDUCTION" }, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // on a payslip
+
+    // posting: ONE journal at the month end
+    run = await postPayRun(run.id, OWNER);
+    expect(run.status).toBe("POSTED");
+    const lines = await prisma.journalLine.findMany({ where: { entryId: run.journalEntryId! }, include: { account: { select: { code: true } } } });
+    const net = (code: string) => lines.filter((l) => l.account.code === code).reduce((t, l) => t + Number(l.debit) - Number(l.credit), 0);
+    expect([net("6200"), net("6210"), net("2420"), net("2410")]).toEqual([57_500, 3_500, -7_500, -53_500]);
+    expect(lines.filter((l) => l.account.code === "2410").map((l) => l.partyType)).toEqual(["Employee", "Employee"]);
+    expect((await prisma.journalEntry.findUniqueOrThrow({ where: { id: run.journalEntryId! } })).entryDate.toISOString().slice(0, 10)).toBe("2026-09-30");
+    await expect(prisma.payslip.update({ where: { id: slipA.id }, data: { daysPayable: 1 } })).rejects.toThrow(/FINANCE_INVARIANT/);
+    const sub = async () => (await runReconciliation({ checks: ["payroll.subledger"] }, OWNER)).results[0]!;
+    expect(await sub()).toMatchObject({ status: "MATCHED", expected: 53_500 });
+
+    // pay Rahima, then a replay; a paid run can't be reversed; then pay the rest
+    const cash = await prisma.financialAccount.findUniqueOrThrow({ where: { id: (await createFinancialAccount({ kind: "BANK", name: `Payroll bank ${Date.now() % 100000}` } as never, OWNER)).id } }); // a bank may run an overdraft; a cash box may not
+    const paidA = await payPayslips(run.id, { payslipIds: [slipA.id], fromFinancialAccountId: cash.id, paymentDate: "2026-10-01" }, OWNER, "salary-sep-a");
+    expect(paidA.run.payslips.find((x) => x.id === slipA.id)!.payment.status).toBe("PAID");
+    expect((await payPayslips(run.id, { payslipIds: [slipA.id], fromFinancialAccountId: cash.id }, OWNER, "salary-sep-a")).replayed).toBe(true);
+    await expect(payPayslips(run.id, { payslipIds: [slipA.id], fromFinancialAccountId: cash.id }, OWNER, "salary-sep-a2")).rejects.toMatchObject({ statusCode: 409 });
+    await expect(reversePayRun(run.id, "Wrong month", OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    expect(await sub()).toMatchObject({ status: "MATCHED", expected: 21_000 });
+    const rest = await payPayslips(run.id, { fromFinancialAccountId: cash.id, paymentDate: "2026-10-02" }, OWNER, "salary-sep-rest");
+    expect(rest.run.unpaid).toEqual({ count: 0, amount: 0 });
+    expect(await sub()).toMatchObject({ status: "MATCHED", expected: 0 });
+
+    // deductions and contributions withheld (2420: 7,500) are remitted — never more than is owed
+    const l2420 = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "2420" } });
+    await expect(remitDeductions({ liabilityAccountId: l2420.id, amount: 8_000, fromFinancialAccountId: cash.id }, OWNER, "remit-1")).rejects.toMatchObject({ statusCode: 409 });
+    const cashGl = await prisma.ledgerAccount.findFirstOrThrow({ where: { id: cash.ledgerAccountId } });
+    await expect(remitDeductions({ liabilityAccountId: cashGl.id, amount: 1, fromFinancialAccountId: cash.id }, OWNER, "remit-x")).rejects.toMatchObject({ statusCode: 400 });
+    await remitDeductions({ liabilityAccountId: l2420.id, amount: 7_500, fromFinancialAccountId: cash.id, periodKey: "2026-09", paymentDate: "2026-10-05" }, OWNER, "remit-1");
+    const overview = await payrollOverview();
+    expect(overview.withheld.find((w) => w.account.code === "2420")!.owed).toBe(0);
+    expect(overview.remittances[0]).toMatchObject({ amount: 7_500, periodKey: "2026-09", status: "POSTED" });
+
+    // October: drafted, posted, reversed while unpaid; a fresh draft is then possible (and deleted)
+    const oct = await postPayRun((await createPayRun({ periodKey: "2026-10", payDate: "2026-10-31" }, OWNER)).id, OWNER);
+    expect(oct.net).toBe(27_500 + 42_000);
+    const f = await cashForecast({ weeks: 13 });
+    expect(f.lines.filter((l) => l.source === "PAYROLL" && l.label.startsWith("Salaries 2026-10"))).toEqual([expect.objectContaining({ amount: -69_500, date: "2026-10-31" })]);
+    expect(f.lines.filter((l) => l.source === "PAYROLL" && l.label.endsWith("(estimate)")).every((l) => l.amount === -69_500)).toBe(true);
+    const reversed = await reversePayRun(oct.id, "Posted early", OWNER);
+    expect(reversed.status).toBe("REVERSED");
+    const redo = await createPayRun({ periodKey: "2026-10" }, OWNER);
+    await deleteDraftPayRun(redo.id, OWNER);
+    expect(await sub()).toMatchObject({ status: "MATCHED", expected: 0 });
+    expect((await monthEndChecklist({ month: "2026-09" })).steps.find((x) => x.key === "payroll")).toMatchObject({ status: "DONE" });
+    allMatched(await checks());
   });
 });
