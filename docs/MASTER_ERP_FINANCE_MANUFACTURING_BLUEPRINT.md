@@ -496,11 +496,11 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E7 expenses & commitments | **done** 2026-10-09 (`6099411`) | `FINANCE_EXPENSES.md` |
 | E8 payroll | **blocked** (B-3: the owner's payroll rules) | §21 |
 | E9 fixed assets | **done** 2026-10-09 (`e2a1bc2`) | `FINANCE_FIXED_ASSETS.md` |
-| E10 loans | **done** 2026-10-09 | `FINANCE_LOANS.md` |
+| E10 loans | **done** 2026-10-09 (`1904afe`) | `FINANCE_LOANS.md` |
 | E11 partners & equity | **blocked** (B-2) | §21 |
-| E12 budgets, forecast, runway | **next** | §27 |
+| E12 budgets, forecast, runway | **done** 2026-10-09 | `FINANCE_BUDGETS.md` |
 | E13 tax / VAT | **blocked** (B-4) | §21 |
-| E14 alerts & hardening | not started | |
+| E14 alerts & hardening | **next** | §27 |
 
 ---
 
@@ -522,7 +522,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | E6 | `a333035` | `domain/finance/statements.service.ts` (income statement with prior period, balance sheet with current earnings, indirect cash flow reconciled to money accounts); finance routes; shared `statementPeriodQuerySchema`, `balanceSheetQuerySchema`; web `finance/statements`, `finance/ledger`, `finance/journals`, finance API (chart, ledger, journals, trial balance, statements), navigation; tests: payables suite +1 (statements tie to the trial balance), auth matrix 514; docs `FINANCE_STATEMENTS.md` |
 | E7 | `6099411` | migration `20261025100000_finance_expenses`; `schema.prisma` (`Expense`, `RecurringCommitment`, `CostBehaviour`, `CommitmentFrequency`); `domain/finance/expenses.service.ts` (expenses as Treasury withdrawals, commitment schedule, summary + break-even); finance routes; shared schemas; web `finance/expenses`, finance API, navigation; tests: payables suite +2, auth matrix 520; `test-fixtures` purge; docs `FINANCE_EXPENSES.md` |
 | E9 | `e2a1bc2` | migration `20261026100000_finance_fixed_assets`; `schema.prisma` (`FixedAsset`, `DepreciationRun`, `DepreciationLine`); shared `accounts.ts` (keys + 7300 / 8300, `FIXED_ASSET_MAPPING_KEYS`), schemas; `domain/finance/fixed-assets.service.ts`, `reconciliation.service.ts` (`fixed_assets.register`); finance routes; web `finance/fixed-assets`, finance API, navigation; tests: payables suite +2, auth matrix 526; `test-fixtures` purge; docs `FINANCE_FIXED_ASSETS.md` |
-| E10 | (E10 commit, see git log) | migration `20261027100000_finance_loans`; `schema.prisma` (`Loan`, `LoanRepayment`, `LoanAccrualRun`, `LoanAccrualLine`); shared `accounts.ts` (2530, keys, `LOAN_MAPPING_KEYS`), schemas; `domain/finance/loans.service.ts`, `reconciliation.service.ts` (`loans.subledger`); finance routes; web `finance/loans`, finance API, navigation; tests: payables suite +2, auth matrix 531; `test-fixtures` purge; docs `FINANCE_LOANS.md` |
+| E10 | `1904afe` | migration `20261027100000_finance_loans`; `schema.prisma` (`Loan`, `LoanRepayment`, `LoanAccrualRun`, `LoanAccrualLine`); shared `accounts.ts` (2530, keys, `LOAN_MAPPING_KEYS`), schemas; `domain/finance/loans.service.ts`, `reconciliation.service.ts` (`loans.subledger`); finance routes; web `finance/loans`, finance API, navigation; tests: payables suite +2, auth matrix 531; `test-fixtures` purge; docs `FINANCE_LOANS.md` |
+| E12 | (E12 commit, see git log) | migration `20261028100000_finance_budgets`; `schema.prisma` (`Budget`, `BudgetLine`); `domain/finance/budgets.service.ts` (budgets, budget vs actual, cash forecast, runway); finance routes; shared schemas; web `finance/budgets`, finance API, navigation; tests: payables suite +2, auth matrix 537; `test-fixtures` purge; docs `FINANCE_BUDGETS.md` |
 
 ---
 
@@ -537,6 +538,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
 | 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | E12: `npx vitest run` (apps/api) | 110 files, 1309 passed |
+| 2026-10-09 | E12: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
+| 2026-10-09 | E12 browser QA (`finance_qa`) | forecast: cash ৳530,000, overdue rent in week 1, bills / loan / PO lines, lowest ৳182,788.24; budget FY 2026-27 rent plan ৳360,000 vs actual ৳31,000 favourable; actual profit = income statement; 375 px |
 | 2026-10-09 | E10: `npx vitest run` (apps/api) | 110 files, 1307 passed (an earlier run collided with a second vitest process on the same test DB — re-run alone: clean) |
 | 2026-10-09 | E10: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
 | 2026-10-09 | E10 browser QA (`finance_qa`) | LN-001 ৳500,000 @ 11% / 24 m; repayment ৳25,000 = ৳1,356.16 interest + ৳23,643.84 principal; loans check matches; 375 px; found & fixed: accrual limited to ended months |
@@ -588,16 +592,15 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 E8 payroll (B-3), E11 partners & equity (B-2) and E13 tax / VAT (B-4) need the owner's decisions. Next eligible:
 
-**E12 — Budgets, forecast and cash runway** (`docs/FINANCE_BUDGETS.md`). Monthly budgets per income-statement account
-(or account group) for a fiscal year, entered or copied from last year's actuals ± %; budget vs actual by month and
-year-to-date from the same sums as the income statement, with variance and % (favourable / adverse by account nature); a
-13-week / 6-month **cash forecast** from today's money balance + expected inflows (receivables / COD clearing in transit)
-− committed outflows (supplier bills by due date, recurring commitments, planned loan instalments, open purchase orders)
-with the lowest point and **runway** (months of cash at the average net burn of the last 3 months). Acceptance: actuals
-column equals the income statement for the period, forecast opening equals the money accounts, every forecast line names
-its source, browser QA.
-
-Then **E14** (alerts & hardening).
+**E14 — Alerts and hardening** (`docs/FINANCE_ALERTS.md`). A finance alerts feed computed from what the system already
+knows: reconciliation checks in DIFFERENCE, failed / waiting financial events, money movements awaiting approval, supplier
+bills overdue or due within 7 days, recurring costs overdue, depreciation / interest months not yet run, a forecast that
+goes below zero, inventory items with missing cost, open finance exceptions, production orders ready to close — each with
+severity, a count, a link to where it is fixed; shown on the Finance landing area and as a badge. Hardening: a permission
+review of every finance route (matrix test already covers 537), an end-to-end test of the full chain (purchase →
+manufacture → sell → pay → close the month → statements tie), and a final docs pass (operator runbook: month-end close
+checklist). Acceptance: every alert links to its fix and clears when fixed; the month-end checklist is runnable; full
+regression green; browser QA.
 
 ## 28. Changelog
 
@@ -618,3 +621,4 @@ Then **E14** (alerts & hardening).
 | 2026-10-09 | v13 — E7 expenses (Treasury withdrawals) and recurring commitments with schedule and break-even done; E8 payroll blocked (B-3); next E9 (fixed assets) |
 | 2026-10-09 | v14 — E9 fixed assets (register, monthly depreciation runs, disposal, register = ledger check) done; next E10 (loans) |
 | 2026-10-09 | v15 — E10 loans (drawdown, actual/365 accrual of ended months, interest-first repayments, plan, subledger check) done; next E12 (budgets / forecast / runway) |
+| 2026-10-09 | v16 — E12 budgets (from last year ± %), budget vs actual, 13-week cash forecast and runway done; next E14 (alerts & hardening) |

@@ -45,6 +45,10 @@ import {
   ledgerRangeQuerySchema,
   statementPeriodQuerySchema,
   expenseCreateSchema,
+  budgetCreateSchema,
+  budgetLinesSchema,
+  budgetQuerySchema,
+  cashForecastQuerySchema,
   loanCreateSchema,
   loanRepaymentSchema,
   loanAccrualSchema,
@@ -89,6 +93,7 @@ import * as statements from "../../domain/finance/statements.service";
 import * as expenses from "../../domain/finance/expenses.service";
 import * as fixedAssets from "../../domain/finance/fixed-assets.service";
 import * as loans from "../../domain/finance/loans.service";
+import * as budgets from "../../domain/finance/budgets.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -222,6 +227,17 @@ financeRouter.post("/loan-accruals", requirePermission("finance.post"), validate
   res.status(r.replayed ? 200 : 201).json(r);
 }));
 financeRouter.post("/loan-accruals/reverse-latest", requirePermission("finance.reverse"), validate(loanAccrualReverseSchema), asyncHandler(async (req, res) => res.json(await loans.reverseLatestAccrual(req.body.reason, await actorOf(req)))));
+
+// ── budgets, cash forecast & runway (docs/FINANCE_BUDGETS.md) ───────────────────────────────────────────────────────────
+financeRouter.get("/budgets", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await budgets.listBudgets())));
+financeRouter.post("/budgets", requirePermission("finance.transact"), validate(budgetCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await budgets.createBudget(req.body, await actorOf(req)))));
+financeRouter.get("/budgets/:id", requirePermission("finance.read"), validate(budgetQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await budgets.budgetVsActual(id(req), req.query as never))));
+financeRouter.put("/budgets/:id/lines", requirePermission("finance.transact"), validate(budgetLinesSchema), asyncHandler(async (req, res) => res.json(await budgets.setBudgetLines(id(req), req.body.lines, await actorOf(req)))));
+financeRouter.delete("/budgets/:id", requirePermission("finance.transact"), asyncHandler(async (req, res) => {
+  await budgets.deleteBudget(id(req), await actorOf(req));
+  res.status(204).end();
+}));
+financeRouter.get("/cash-forecast", requirePermission("finance.read"), validate(cashForecastQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await budgets.cashForecast(req.query as never))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

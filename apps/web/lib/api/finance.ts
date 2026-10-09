@@ -552,3 +552,25 @@ export const drawLoan = (body: Record<string, unknown>, idempotencyKey: string) 
 export const repayLoan = (id: string, body: Record<string, unknown>, idempotencyKey: string) => apiFetch<{ loan: Loan; replayed: boolean }>(`${BASE}/loans/${id}/repayments`, { method: "POST", body, idempotencyKey });
 export const runLoanAccrual = (periodKey: string) => apiFetch<{ run: { periodKey: string; total: number } }>(`${BASE}/loan-accruals`, { method: "POST", body: { periodKey } });
 export const reverseLoanAccrual = (reason: string) => apiFetch<{ periodKey: string }>(`${BASE}/loan-accruals/reverse-latest`, { method: "POST", body: { reason } });
+
+// ── ERP E12: budgets, cash forecast & runway (docs/FINANCE_BUDGETS.md) ───────────────────────────────────────────────────
+export interface BudgetSummary { id: string; name: string; startMonth: string; months: number; endMonth: string; notes: string | null; lines: number; updatedAt: string }
+export interface BudgetRow {
+  account: { id: string; code: string; name: string; type: LedgerAccountType };
+  months: Array<{ periodKey: string; budget: number; actual: number }>;
+  budgetYear: number; budgetYtd: number; actualYtd: number; variance: number; variancePct: number | null; favourable: boolean | null;
+}
+export interface BudgetVsActual { budget: { id: string; name: string; startMonth: string; months: number; notes: string | null }; months: string[]; through: string; rows: BudgetRow[]; totals: { netProfit: { budgetYear: number; budgetYtd: number; actualYtd: number; variance: number } } }
+export interface CashForecast {
+  asOf: string; weeks: number; opening: number; money: Array<{ name: string; kind: string; balance: number }>;
+  lines: Array<{ date: string; week: number; source: "CLEARING" | "SUPPLIER_BILL" | "COMMITMENT" | "LOAN" | "PURCHASE_ORDER"; label: string; amount: number; ref: string | null }>;
+  byWeek: Array<{ week: number; from: string; to: string; inflow: number; outflow: number; closing: number }>;
+  closing: number; lowest: { balance: number; week: number; date: string };
+  runway: { averageMonthlyChange: number; months: number | null; basis: string };
+}
+export const budgetKeys = { list: () => ["finance", "budgets"] as const, one: (id: string) => ["finance", "budgets", id] as const, forecast: (weeks: number) => ["finance", "cash-forecast", weeks] as const };
+export const listBudgets = () => apiFetch<{ budgets: BudgetSummary[] }>(`${BASE}/budgets`);
+export const getBudget = (id: string) => apiFetch<BudgetVsActual>(`${BASE}/budgets/${id}`);
+export const createBudget = (body: Record<string, unknown>) => apiFetch<{ id: string; name: string; lines: number }>(`${BASE}/budgets`, { method: "POST", body });
+export const setBudgetLines = (id: string, lines: Array<{ accountId: string; periodKey: string; amount: number }>) => apiFetch<{ id: string }>(`${BASE}/budgets/${id}/lines`, { method: "PUT", body: { lines } });
+export const getCashForecast = (weeks = 13) => apiFetch<CashForecast>(`${BASE}/cash-forecast?weeks=${weeks}`);

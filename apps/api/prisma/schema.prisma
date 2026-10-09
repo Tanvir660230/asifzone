@@ -2684,6 +2684,7 @@ model FinanceBusiness {
   depreciationRuns            DepreciationRun[]
   loans                       Loan[]
   loanAccrualRuns             LoanAccrualRun[]
+  budgets                     Budget[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -2743,6 +2744,7 @@ model LedgerAccount {
   expenses                 Expense[]             @relation("ExpenseAccount")
   recurringCommitments     RecurringCommitment[] @relation("CommitmentAccount")
   fixedAssets              FixedAsset[]          @relation("FixedAssetAccount")
+  budgetLines              BudgetLine[]          @relation("BudgetAccount")
 
   @@unique([businessId, code])
   @@index([businessId, type])
@@ -4745,4 +4747,39 @@ model LoanAccrualLine {
 
   @@unique([runId, loanId])
   @@index([loanId])
+}
+
+// ── Budgets (docs/FINANCE_BUDGETS.md) ───────────────────────────────────────────
+
+/// A plan for income-statement accounts, month by month, compared with the books (budget vs actual). A plan, not a
+/// financial record: editable, audited, never posted.
+model Budget {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  name             String
+  /// The first month it covers (YYYY-MM) and how many months.
+  startMonth       String
+  months           Int             @default(12)
+  notes            String?
+  createdByAdminId String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  lines            BudgetLine[]
+
+  @@unique([businessId, name])
+}
+
+model BudgetLine {
+  id        String        @id @default(cuid())
+  budgetId  String
+  budget    Budget        @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  accountId String
+  account   LedgerAccount @relation("BudgetAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  periodKey String
+  /// In the account's natural direction: revenue earned, costs spent (never negative).
+  amount    Decimal       @db.Decimal(18, 2)
+
+  @@unique([budgetId, accountId, periodKey])
+  @@index([accountId])
 }

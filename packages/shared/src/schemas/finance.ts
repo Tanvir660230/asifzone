@@ -225,6 +225,20 @@ export const loanRepaymentSchema = z.object({ paymentDate: businessDate.optional
 export const loanAccrualSchema = z.object({ periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM") });
 export const loanAccrualReverseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
+// ERP E12 (docs/FINANCE_BUDGETS.md): budgets, cash forecast
+const budgetMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "YYYY-MM");
+export const budgetCreateSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  startMonth: budgetMonth,
+  months: z.coerce.number().int().min(1).max(60).optional(),
+  copyFrom: z.enum(["LAST_YEAR"]).optional().nullable(),
+  adjustPct: z.coerce.number().min(-100).max(1000).optional(),
+  notes: optionalText(1000),
+});
+export const budgetLinesSchema = z.object({ lines: z.array(z.object({ accountId: id, periodKey: budgetMonth, amount: financeAmountSchema })).min(1).max(5000) });
+export const budgetQuerySchema = z.object({ through: budgetMonth.optional() });
+export const cashForecastQuerySchema = z.object({ weeks: z.coerce.number().int().min(1).max(52).optional() });
+
 export const periodActionSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 export const OPENING_BALANCE_CATEGORIES = [

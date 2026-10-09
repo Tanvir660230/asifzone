@@ -22,6 +22,8 @@ import { createFinancialAccount } from "./financial-accounts.service";
 import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
+import { budgetVsActual, cashForecast, createBudget, setBudgetLines } from "./budgets.service";
+import { moneyBalanceAt } from "./ledger.service";
 import { drawLoan, interestFor, listLoans, plannedSchedule, repayLoan, reverseLatestAccrual, runInterestAccrual } from "./loans.service";
 import { assetRegister, createAsset, disposeAsset, monthlyCharge, reverseLatestRun, runDepreciation, updateAsset } from "./fixed-assets.service";
 import { costAdjustments, grniAgeing, inventoryValuation, paymentsRegister, priceVariance, purchaseRegister } from "./purchasing-reports.service";
@@ -502,5 +504,48 @@ describe("loans (E10)", () => {
     expect((await listLoans()).loans[0]).toMatchObject({ interestAccrued: 1223.01, lastAccruedMonth: "2026-08" });
     await runInterestAccrual("2026-09", OWNER);
     await allLoanMatched();
+  });
+});
+
+describe("budgets, cash forecast and runway (E12)", () => {
+  it("budget vs actual uses the books' own figures; a budget copies last year's actuals ± a percentage", async () => {
+    const { business } = await getFinanceContext();
+    const rent = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "6100" } });
+    const cash = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "1610" } });
+    const b = await createBudget({ name: "FY 2026-27", startMonth: "2026-08" }, OWNER);
+    await setBudgetLines(b.id, ["2026-08", "2026-09", "2026-10"].map((periodKey) => ({ accountId: rent.id, periodKey, amount: 1500 })), OWNER);
+    await expect(setBudgetLines(b.id, [{ accountId: cash.id, periodKey: "2026-08", amount: 1 }], OWNER)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(setBudgetLines(b.id, [{ accountId: rent.id, periodKey: "2028-01", amount: 1 }], OWNER)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(createBudget({ name: "FY 2026-27", startMonth: "2026-08" }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+
+    await postPending();
+    const v = await budgetVsActual(b.id, { through: "2026-10" });
+    const row = v.rows.find((r) => r.account.id === rent.id)!;
+    const ledger = await prisma.journalLine.aggregate({ where: { accountId: rent.id, entry: { status: "POSTED", entryDate: { gte: new Date("2026-08-01T00:00:00Z"), lte: new Date("2026-10-31T00:00:00Z") } } }, _sum: { debit: true, credit: true } });
+    expect(row.actualYtd).toBe(Math.round((Number(ledger._sum.debit ?? 0) - Number(ledger._sum.credit ?? 0)) * 100) / 100);
+    expect(row).toMatchObject({ budgetYtd: 4500, budgetYear: 4500, favourable: row.actualYtd < 4500 });
+    const is = await incomeStatement({ from: "2026-08-01", to: "2026-10-31" });
+    expect(v.totals.netProfit.actualYtd).toBe(is.current.netProfit);
+
+    const next = await createBudget({ name: "FY 2027-28", startMonth: "2027-08", copyFrom: "LAST_YEAR", adjustPct: 10 }, OWNER);
+    const nv = await budgetVsActual(next.id);
+    const rentAug = nv.rows.find((r) => r.account.id === rent.id)?.months.find((m) => m.periodKey === "2027-10")?.budget ?? 0;
+    const octActual = row.months.find((m) => m.periodKey === "2026-10")!.actual;
+    expect(rentAug).toBe(Math.max(0, Math.round(octActual * 1.1 * 100) / 100));
+  });
+
+  it("the cash forecast starts from cash, bank and wallets, names every line's source and adds up", async () => {
+    const { business } = await getFinanceContext();
+    const f = await cashForecast({ weeks: 13 });
+    const paying = await prisma.financialAccount.findMany({ where: { businessId: business.id, isActive: true, kind: { in: ["CASH", "BANK", "MOBILE_WALLET"] } } });
+    let opening = 0;
+    for (const a of paying) opening += await moneyBalanceAt(prisma, business.id, a.ledgerAccountId, business.baseCurrency, f.asOf);
+    expect(Math.round(f.opening * 100)).toBe(opening);
+    expect(f.byWeek).toHaveLength(13);
+    expect(f.lines.some((l) => l.source === "COMMITMENT")).toBe(true); // the shop rent
+    expect(f.lines.some((l) => l.source === "LOAN")).toBe(true); // the loan's planned instalments
+    const flow = f.lines.filter((l) => l.week <= 13).reduce((s, l) => s + Math.round(l.amount * 100), 0);
+    expect(Math.round(f.closing * 100)).toBe(Math.round(f.opening * 100) + flow);
+    expect(f.lowest.balance).toBeLessThanOrEqual(f.opening);
   });
 });
