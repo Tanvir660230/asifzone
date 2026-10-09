@@ -9,6 +9,7 @@ import {
   purchaseOrderUpdateSchema,
   purchaseReturnCreateSchema,
   purchaseReturnListQuerySchema,
+  purchasingReportQuerySchema,
   purchasingSettingsSchema,
   supplierAccountQuerySchema,
   supplierAllocationCreateSchema,
@@ -40,6 +41,7 @@ import * as receipts from "../../domain/finance/goods-receipts.service";
 import * as returns from "../../domain/finance/purchase-returns.service";
 import * as invoices from "../../domain/finance/supplier-invoices.service";
 import * as payments from "../../domain/finance/supplier-payments.service";
+import * as reports from "../../domain/finance/purchasing-reports.service";
 import { idempotencyKeyOf } from "../orders/order.controller";
 
 /**
@@ -133,3 +135,12 @@ purchasingRouter.post("/supplier-payments", requirePermission("ap.manage"), vali
 purchasingRouter.post("/supplier-allocations", requirePermission("ap.manage"), validate(supplierAllocationCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await payments.allocateToBill(req.body, await actorOf(req)))));
 purchasingRouter.post("/supplier-allocations/:id/release", requirePermission("ap.manage"), validate(supplierAllocationReleaseSchema), asyncHandler(async (req, res) => res.json(await payments.releaseAllocation(id(req), reason(req), await actorOf(req)))));
 purchasingRouter.get("/suppliers/:id/account", requirePermission("ap.read"), validate(supplierAccountQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await payments.supplierAccount(id(req), req.query as never))));
+
+// ── Phase 4G: reports (docs/FINANCE_PHASE_4G.md) — read-only, each total ties to its account or check ───────────────────
+const reportQuery = validate(purchasingReportQuerySchema, "query");
+purchasingRouter.get("/reports/purchase-register", requirePermission("purchasing.read"), reportQuery, asyncHandler(async (req, res) => res.json(await reports.purchaseRegister(req.query as never))));
+purchasingRouter.get("/reports/grni-ageing", requirePermission("purchasing.read"), asyncHandler(async (_req, res) => res.json(await reports.grniAgeing())));
+purchasingRouter.get("/reports/price-variance", requirePermission("purchasing.read"), reportQuery, asyncHandler(async (req, res) => res.json(await reports.priceVariance(req.query as never))));
+purchasingRouter.get("/reports/inventory-valuation", requirePermission("costing.read"), reportQuery, asyncHandler(async (req, res) => res.json(await reports.inventoryValuation(req.query as never))));
+purchasingRouter.get("/reports/cost-adjustments", requirePermission("costing.read"), reportQuery, asyncHandler(async (req, res) => res.json(await reports.costAdjustments(req.query as never))));
+purchasingRouter.get("/reports/supplier-payments", requirePermission("ap.read"), reportQuery, asyncHandler(async (req, res) => res.json(await reports.paymentsRegister(req.query as never))));

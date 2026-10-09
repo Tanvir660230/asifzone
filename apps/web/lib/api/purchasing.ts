@@ -266,3 +266,7 @@ export const paySupplier = (body: { supplierId: string; fromFinancialAccountId: 
   apiFetch<{ payment: { id: string; status: "PENDING_APPROVAL" | "POSTED"; amount: number }; replayed: boolean }>(`${BASE}/supplier-payments`, { method: "POST", body, idempotencyKey });
 export const allocateToBill = (body: { invoiceId: string; amount: number; paymentMovementId?: string | null; creditNoteId?: string | null }) =>
   apiFetch<{ id: string; amount: number }>(`${BASE}/supplier-allocations`, { method: "POST", body });
+
+// ── Phase 4G: reports (docs/FINANCE_PHASE_4G.md) ───────────────────────────────────────────────────────────────────────
+export type ReportId = "purchase-register" | "grni-ageing" | "price-variance" | "inventory-valuation" | "cost-adjustments" | "supplier-payments";
+export const getPurchasingReport = (id: ReportId, q: { from?: string; to?: string; q?: string } = {}) => apiFetch<Record<string, unknown>>(`${BASE}/reports/${id}${qs(q)}`);

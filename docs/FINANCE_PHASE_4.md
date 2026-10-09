@@ -24,7 +24,7 @@ posting engine (`journal.service.ts`).
 | 4D Purchasing | purchase orders, goods receipts (including approved no-PO receipts), supplier returns — see `FINANCE_PHASE_4D.md` | **implemented** |
 | 4E Invoices / AP | supplier invoices and credit notes, 3-way / 2-way matching, GRNI → AP — see `FINANCE_PHASE_4E.md` | **implemented** |
 | 4F Supplier payments | Treasury movement kind, allocation, reconciliation — see `FINANCE_PHASE_4F.md` | **implemented** |
-| 4G Reports / reconciliation | purchasing, AP, valuation, costing reports and checks | — |
+| 4G Reports / reconciliation | purchasing, AP, valuation, costing reports and checks — see `FINANCE_PHASE_4G.md` | **implemented** |
 | 4H Foreign currency (optional) | document currency, rates, realised FX | — |
 
 ## 2. Locked owner decisions

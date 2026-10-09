@@ -283,6 +283,11 @@ export const supplierAllocationCreateSchema = z
 export const supplierAllocationReleaseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 export const supplierAccountQuerySchema = z.object({ from: businessDateSchema.optional(), to: businessDateSchema.optional() });
 
+// ── Phase 4G: reports (docs/FINANCE_PHASE_4G.md) ──────────────────────────────────────────────────────────────────────
+export const purchasingReportQuerySchema = z
+  .object({ from: businessDateSchema.optional(), to: businessDateSchema.optional(), supplierId: id.optional(), q: z.string().trim().max(100).optional() })
+  .refine((v) => !v.from || !v.to || v.from <= v.to, "The period starts before it ends");
+
 export type SupplierInvoiceCreateInput = z.infer<typeof supplierInvoiceCreateSchema>;
 export type SupplierInvoiceUpdateInput = z.infer<typeof supplierInvoiceUpdateSchema>;
 

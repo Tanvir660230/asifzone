@@ -490,9 +490,10 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | M4 deliveries, QC, finished goods | **done** 2026-10-09 (`8db9c29`) | `MANUFACTURING.md` §8 |
 | M5 close, final cost, late costs, reports | **done** 2026-10-09 (`c2f16e5`) | `MANUFACTURING.md` §9 |
 | E3 4E supplier invoices / AP | **done** 2026-10-09 (`34de17c`) | `FINANCE_PHASE_4E.md` |
-| E4 4F supplier payments | **done** 2026-10-09 | `FINANCE_PHASE_4F.md` |
-| E5 4G reports & checks | **next** | §27 |
-| E6–E14 | not started | |
+| E4 4F supplier payments | **done** 2026-10-09 (`46ff888`) | `FINANCE_PHASE_4F.md` |
+| E5 4G reports & checks | **done** 2026-10-09 | `FINANCE_PHASE_4G.md` |
+| E6 ledger workspace & statements | **next** | §27 |
+| E7–E14 | not started | |
 
 ---
 
@@ -509,7 +510,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | M4 | `8db9c29` | migration `20261021100000_manufacturing_receipts`; `schema.prisma` (receipts, derived order-line quantities, `PRODUCTION_RECEIPT`); `domain/manufacturing/production-receipts.service.ts`; `production-orders.service.ts` (progress, receipts, WIP transfer, `plannedCostMinor`); `domain/finance/manufacturing-posting-rules.ts` (`goods_received`), `reconciliation.service.ts` (WIP − transfers), `inventory-cutover.service.ts` (bridge estimates = commerce only); `inventory.service.ts` (reason); routes; shared schemas; web `production-deliveries.tsx`, order page; tests: custody suite +4 (real second admin), auth matrix 490; docs |
 | M5 | `c2f16e5` | migration `20261022100000_manufacturing_close`; `schema.prisma` (`ProductionSettlement` + lines, `closedByAdminId`); `domain/finance/costing.service.ts` (`revalueForDocumentInTx`), `manufacturing-posting-rules.ts` (`order_settled`), `reconciliation.service.ts` (WIP − settlements; completeness: finalised at close); `domain/manufacturing/production-close.service.ts`, `production-reports.service.ts`, `production-costs.service.ts` (late costs, order lock), `production-orders.service.ts` (final cost, performance, checklist); routes (close, overview); shared schema; web `production-close.tsx`, `manufacturing/page.tsx` (overview), order page, costs, navigation (+test); tests: custody suite +4, auth matrix 492; `test-fixtures` purge; docs |
 | E3 | `34de17c` | migration `20261023100000_finance_phase4e_payables`; `schema.prisma` (`SupplierInvoice` + lines, `invoicePriceTolerancePct`); `domain/finance/supplier-invoices.service.ts` (+ integration test), `payables-posting-rules.ts`, `events.service.ts` (rule registration), `reconciliation.service.ts` (`payables.subledger`; GRNI and accrual net of invoices), `goods-receipts.service.ts` (no reversal once billed), `purchasing-setup.service.ts` (tolerance); `domain/manufacturing/production-costs.service.ts` (no void once billed) + custody test; routes; shared schemas; web `finance/supplier-invoices`, `finance/payables`, `components/admin/payables/invoice-modal.tsx`, purchasing API / status, navigation; tests: auth matrix 501, store-identity allowlist; `test-fixtures` purge; docs `FINANCE_PHASE_4E.md` |
-| E4 | (E4 commit, see git log) | migrations `20261024100000_finance_phase4f_payment_kind`, `20261024100100_finance_phase4f_payments`; `schema.prisma` (`SUPPLIER_PAYMENT`, `TreasuryMovement.supplierId`, `SupplierAllocation`); `domain/finance/treasury.service.ts` (supplier payment journal with party, release on reject / reverse), `supplier-payments.service.ts`, `supplier-invoices.service.ts` (settled / outstanding, void refused when allocated, ageing net of advances), `reconciliation.service.ts` (`payables.subledger` − payments); routes; shared schemas; web `finance/payables/[supplierId]`, `components/admin/payables/payment-modal.tsx`, payables / bills pages, finance & purchasing API, navigation; tests: payables suite +4, auth matrix 505; `test-fixtures` purge; docs `FINANCE_PHASE_4F.md` |
+| E4 | `46ff888` | migrations `20261024100000_finance_phase4f_payment_kind`, `20261024100100_finance_phase4f_payments`; `schema.prisma` (`SUPPLIER_PAYMENT`, `TreasuryMovement.supplierId`, `SupplierAllocation`); `domain/finance/treasury.service.ts` (supplier payment journal with party, release on reject / reverse), `supplier-payments.service.ts`, `supplier-invoices.service.ts` (settled / outstanding, void refused when allocated, ageing net of advances), `reconciliation.service.ts` (`payables.subledger` − payments); routes; shared schemas; web `finance/payables/[supplierId]`, `components/admin/payables/payment-modal.tsx`, payables / bills pages, finance & purchasing API, navigation; tests: payables suite +4, auth matrix 505; `test-fixtures` purge; docs `FINANCE_PHASE_4F.md` |
+| E5 | (E5 commit, see git log) | `domain/finance/purchasing-reports.service.ts` (purchase register, GRNI ageing, price variance, inventory valuation, cost adjustments by origin, payments register); routes; shared `purchasingReportQuerySchema`; web `finance/reports`, `lib/csv.ts`, purchasing API, navigation; tests: payables suite +1 (tie-outs), auth matrix 511; docs `FINANCE_PHASE_4G.md` |
 
 ---
 
@@ -524,6 +526,9 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
 | 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-09 | E5: `npx vitest run` (apps/api) | 110 files, 1300 passed |
+| 2026-10-09 | E5: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
+| 2026-10-09 | E5 browser QA (`finance_qa`) | 6 reports; GRNI ৳12,650.94 and inventory ৳302,742.94 equal their checks; payments ৳15,000; 1440 / 375 px |
 | 2026-10-09 | E4: `npx vitest run` (apps/api) | 110 files, 1299 passed; after the paying-account rule: treasury + finance + payables 62/62 |
 | 2026-10-09 | E4: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
 | 2026-10-09 | E4 browser QA (`finance_qa`) | City Bank ৳100,000; paid Dhaka Caps ৳15,000 of ৳20,600 → ৳5,600 owed; statement, payables / money / ledger checks match; 1440 / 375 px |
@@ -558,15 +563,19 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 
 ## 27. Next eligible task and acceptance criteria
 
-**E5 — Purchasing, payables and inventory reports (4G)** (`docs/FINANCE_PHASE_4.md` §1). Read-only reports from the
-existing documents and the ledger, each reconciled to a check: purchase register (receipts and bills by supplier /
-period, ordered vs received vs billed), GRNI ageing (received-not-billed by age), supplier spend and price variance
-(billed vs ordered, by supplier and SKU), inventory valuation report (per variant: quantity, value, average, status —
-equals `inventory.valuation_vs_ledger`), cost-adjustment (5150) analysis by source (sales deficit, price differences,
-production true-ups, late costs), and AP payments register. CSV export for each; Finance → Reports page; permission
-`costing.read` for values. Acceptance: every report total ties to its ledger account / check, browser QA.
+**E6 — Ledger workspace and financial statements.** The Phase 1 API already serves the chart, journals (draft / post /
+reverse / correct, idempotent), periods, the trial balance and account ledgers; the admin has no pages for them. Build:
+(1) Finance → **Ledger**: chart of accounts with balances (sensitive accounts folded for non-owners, as the API does),
+account ledger drill-down with running balance; (2) **Journals**: list / filters, detail with source link, manual journal
+entry (balanced lines, draft → post with `finance.post`, reverse / correct with a reason); (3) **Trial balance** for a
+period with brand filter; (4) **Financial statements** — new `statements.service.ts` from the trial balance by account
+type: income statement (revenue − COGS = gross profit − expenses + other = net profit, by period, comparison to the
+prior period), balance sheet (assets = liabilities + equity incl. current-year profit, as at a date), cash-flow (indirect:
+net profit ± working-capital changes per account group, = the change in money accounts); brand filter; CSV. Acceptance:
+statements tie to the trial balance (balance sheet balances, cash-flow change = money accounts' change), period locks
+respected, permissions as the API, browser QA.
 
-Then **E6** (ledger workspace and financial statements).
+Then **E7** (expenses & approvals).
 
 ## 28. Changelog
 
@@ -582,3 +591,4 @@ Then **E6** (ledger workspace and financial statements).
 | 2026-10-09 | v8 — M5 close / final cost / abnormal loss / late costs / production overview done; manufacturing M1–M5 complete; next E3 (4E supplier invoices / AP) |
 | 2026-10-09 | v9 — E3 (4E) supplier invoices / credit notes / AP ageing done; GRNI and 2116 clear exactly; price differences via the revaluation path; next E4 (4F supplier payments) |
 | 2026-10-09 | v10 — E4 (4F) supplier payments (Treasury kind), allocations, advances, supplier account / statement done; next E5 (4G reports) |
+| 2026-10-09 | v11 — E5 (4G) purchasing / payables / inventory reports with tie-outs and CSV done; next E6 (ledger workspace & statements) |

@@ -19,6 +19,7 @@ import { approvePurchaseReturn, createPurchaseReturn, shipPurchaseReturn } from 
 import { createSupplierInvoice, deleteDraftSupplierInvoice, payablesAgeing, postSupplierInvoice, supplierOpenItems, taxOf, updateSupplierInvoice, voidSupplierInvoice } from "./supplier-invoices.service";
 import { allocateToBill, paySupplier, releaseAllocation, supplierAccount } from "./supplier-payments.service";
 import { createFinancialAccount } from "./financial-accounts.service";
+import { costAdjustments, grniAgeing, inventoryValuation, paymentsRegister, priceVariance, purchaseRegister } from "./purchasing-reports.service";
 import { rejectMovement, reverseMovement } from "./treasury.service";
 import type { FinanceActor } from "./finance-audit";
 
@@ -288,5 +289,34 @@ describe("supplier payments (Phase 4F)", () => {
     expect(acct.openBills.map((b) => [b.id, b.outstanding])).toEqual([[bill1, 1000], [bill2, 400]]);
     expect(acct.balance).toBe(1500 - 100 - 500);
     allMatched(await checks());
+  });
+});
+
+describe("reports (Phase 4G) — every total ties to its account", () => {
+  it("GRNI ageing, valuation, cost adjustments, payments and the purchase register agree with the books", async () => {
+    await postPending();
+    const g = await grniAgeing();
+    expect(g.grni).toBe(-(await balance("liability.grni")));
+    expect(g.receivedNotBilled).toBe(2616);
+    expect(g.open).toEqual([expect.objectContaining({ unbilledQty: 20, unbilled: 2616 })]);
+
+    const v = await inventoryValuation();
+    const states = await prisma.inventoryCostState.aggregate({ _sum: { value: true } });
+    expect(v.totals.value).toBe(Math.round(Number(states._sum.value) * 100) / 100);
+    expect(v.items.find((i) => i.variantId === A)).toMatchObject({ valuedQty: 2 });
+
+    const c = await costAdjustments({});
+    expect(c.totals.net).toBe(await balance("cogs.cost_adjustments"));
+    expect(c.rows.map((r) => r.origin).sort()).toEqual(["CREDIT", "PRICE"]); // reversals count under what they reverse
+
+    const pay = await paymentsRegister({ supplierId });
+    const posted = await prisma.treasuryMovement.aggregate({ where: { kind: "SUPPLIER_PAYMENT", status: "POSTED", supplierId }, _sum: { amount: true } });
+    expect(pay.totals.paid).toBe(Number(posted._sum.amount));
+    expect(pay.items.map((i) => i.status).sort()).toEqual(["POSTED", "REJECTED", "REVERSED"]);
+
+    const reg = await purchaseRegister({ supplierId });
+    expect(reg.totals).toMatchObject({ received: 2616, billed: 1500, credited: 100 });
+    const pv = await priceVariance({});
+    expect(pv.totals.booked).toBe(0); // the only priced bill was voided
   });
 });

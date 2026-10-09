@@ -396,6 +396,7 @@ export const NAV_NODES: readonly NavNode[] = [
   { id: "finance.supplier-returns", label: "Supplier returns", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/supplier-returns", capability: "purchasing.view", order: 15, keywords: ["return to vendor", "rtv", "send back"] },
   { id: "finance.supplier-invoices", label: "Supplier bills", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/supplier-invoices", capability: "ap.view", order: 16, keywords: ["supplier invoice", "bill", "credit note", "accounts payable", "ap"] },
   { id: "finance.payables", label: "Payables", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/payables", capability: "ap.view", order: 17, keywords: ["accounts payable", "ageing", "aging", "owed to suppliers", "creditors", "pay supplier", "supplier payment", "supplier statement"] },
+  { id: "finance.reports", label: "Purchasing reports", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/reports", capability: "purchasing.view", order: 19, keywords: ["report", "purchase register", "grni", "price variance", "inventory valuation", "stock value", "cost adjustments", "supplier payments", "csv"] },
   { id: "finance.supplier-account", label: "Supplier account", kind: "detail", parent: "finance", domain: "manage", route: "/admin/finance/payables/[supplierId]", capability: "ap.view", order: 18, visibility: "hidden" },
 
   {
