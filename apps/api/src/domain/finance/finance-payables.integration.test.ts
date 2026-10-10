@@ -21,6 +21,7 @@ import { allocateToBill, paySupplier, releaseAllocation, supplierAccount } from 
 import { createFinancialAccount } from "./financial-accounts.service";
 import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
+import { createDraftJournal, postDraftJournal } from "./journal.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
 import { financeAlerts, monthEndChecklist } from "./finance-alerts.service";
 import { createPartner, equityOverview, updatePartner } from "./equity.service";
@@ -338,6 +339,10 @@ describe("financial statements (E6) — tie to the trial balance", () => {
   it("balance sheet balances, the income statement equals the P&L accounts, cash flow explains the money accounts", async () => {
     await postPending();
     const today = businessToday((await getFinanceContext()).business); // the business date, not UTC (they differ after midnight in Dhaka)
+    // a cost in the PRIOR fiscal year (July start: May 2026 is in 2025-26), no money involved
+    const ids = async (code: string) => (await prisma.ledgerAccount.findFirstOrThrow({ where: { code } })).id;
+    const prior = await createDraftJournal({ entryDate: "2026-05-15", description: "Packaging owed (prior year)", lines: [{ accountId: await ids("6800"), debit: 1000, credit: 0 }, { accountId: await ids("2900"), debit: 0, credit: 1000 }] }, OWNER, "prior-year-cost");
+    await postDraftJournal(prior.journal.id, OWNER);
     const bs = await balanceSheet({ asOf: today });
     expect(bs.balanced).toBe(true);
     const tb = await getTrialBalance({ to: today });
@@ -349,7 +354,18 @@ describe("financial statements (E6) — tie to the trial balance", () => {
     expect(Math.round(is.current.netProfit * 100)).toBe(pl);
     expect(is.prior.to < is.period.from).toBe(true);
     // the profit not yet closed appears in equity
-    expect(bs.sections.find((x) => x.key === "equity")!.lines.some((l) => l.group === "Current earnings")).toBe(pl !== 0);
+    // profit not posted to retained earnings is split by fiscal year: earlier years as retained earnings, this year apart
+    const { business } = await getFinanceContext();
+    const startMonth = business.fiscalYearStartMonth;
+    const fyYear = Number(today.slice(5, 7)) >= startMonth ? Number(today.slice(0, 4)) : Number(today.slice(0, 4)) - 1;
+    const fyStart = `${fyYear}-${String(startMonth).padStart(2, "0")}-01`;
+    const equityLines = bs.sections.find((x) => x.key === "equity")!.lines;
+    const currentYear = equityLines.find((l) => l.group === "Current earnings")?.amount ?? 0;
+    const priorYears = equityLines.find((l) => l.group === "Retained earnings" && l.accountId === null)?.amount ?? 0;
+    expect(Math.round(currentYear * 100)).toBe(Math.round((await incomeStatement({ from: fyStart, to: today })).current.netProfit * 100));
+    expect(Math.round(currentYear * 100) + Math.round(priorYears * 100)).toBe(pl);
+    expect(Math.round(priorYears * 100)).toBe(Math.round((await incomeStatement({ from: "2026-01-01", to: "2026-06-30" })).current.netProfit * 100));
+    expect(priorYears).toBeLessThanOrEqual(-1000); // the prior-year cost is there, not in this year's profit
 
     const cf = await cashFlow({ from: "2026-10-01", to: today });
     expect(cf.reconciles).toBe(true);

@@ -68,7 +68,6 @@ Permission: `finance.read`. These are 3 routes, 514 admin routes in total.
 
 ## 4. Limitations / next
 
-- **No year-end close.** Profit accumulates in "Current earnings" until a closing entry moves it to retained earnings.
-  Periods can be soft-closed or closed through the existing periods API; there is no closing-entry wizard yet.
+- **Year-end:** done (2026-10-10) without a closing journal. The balance sheet splits profit not posted to retained earnings by fiscal year (start month from the business settings): earlier years show as *Retained earnings — profit of fiscal years before …*, this year as *Profit for the fiscal year from …*. Income and expense period totals stay intact, so every statement, budget and check keeps reading them directly.
 - **Brand selector:** done (2026-10-10). With more than one active brand, the income statement, balance sheet and cash flow can be read for one brand; the trial balance is the whole business.
 - **Corrections in the UI:** done (2026-10-10). A posted manual journal has *Correct*: its lines are prefilled and a reason is required; saving reverses the original and posts the corrected entry (kind CORRECTION) in one step.

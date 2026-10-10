@@ -137,7 +137,18 @@ export async function balanceSheet(q: { asOf?: string; brandId?: string }, viewe
   ], amounts, ctx, viewer, cur);
   const equity = secs.find((s) => s.key === "equity")!;
   if (unclosed !== 0) {
-    equity.lines.push({ accountId: null, code: "—", name: "Profit not yet closed to retained earnings", group: "Current earnings", amount: toMajorNumber(unclosed, cur) });
+    // profit never posted to retained earnings, split by fiscal year: earlier years' profit IS retained earnings; this
+    // fiscal year's is current earnings (no closing journal, so period totals of income and expense stay intact)
+    const startMonth = business.fiscalYearStartMonth;
+    const fyYear = Number(asOf.slice(5, 7)) >= startMonth ? Number(asOf.slice(0, 4)) : Number(asOf.slice(0, 4)) - 1;
+    const fyStart = `${fyYear}-${String(startMonth).padStart(2, "0")}-01`;
+    let priorYears = 0;
+    for (const s of (await load({ to: addDays(fyStart, -1), brandId: q.brandId })).sums) {
+      if (PL_TYPES.includes(ctx.byId.get(s.accountId)!.type)) priorYears += toMinor(s.periodCredit, cur) - toMinor(s.periodDebit, cur);
+    }
+    const currentYear = unclosed - priorYears;
+    if (priorYears !== 0) equity.lines.push({ accountId: null, code: "—", name: `Retained earnings — profit of fiscal years before ${fyStart}`, group: "Retained earnings", amount: toMajorNumber(priorYears, cur) });
+    if (currentYear !== 0) equity.lines.push({ accountId: null, code: "—", name: `Profit for the fiscal year from ${fyStart}`, group: "Current earnings", amount: toMajorNumber(currentYear, cur) });
     equity.total = toMajorNumber(Math.round(equity.total * 100) + unclosed, cur);
   }
   const t = (k: string) => Math.round(secs.find((s) => s.key === k)!.total * 100);
