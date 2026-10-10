@@ -84,4 +84,4 @@ Migration `20261027100000_finance_loans`:
 
 - **One rate.** No variable rates or rate changes over a loan's life.
 - **No fees.** Processing and loan fees are not modelled; record them as expenses.
-- **No overdue tracking.** Overdue instalments are not tracked against the plan.
+- **Overdue tracking:** done (2026-10-10). Each loan shows what is overdue against the plan (instalments due by today less everything repaid, oldest first) and since when; a *Loan instalments overdue* alert links to Loans.

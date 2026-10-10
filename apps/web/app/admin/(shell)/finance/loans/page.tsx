@@ -111,6 +111,11 @@ export default function LoansPage() {
                     <Mini label="Repaid" value={formatPrice(l.principalRepaid)} hint={`+ ${formatPrice(l.interestPaid)} interest`} />
                     <Mini label="Next instalment" value={l.nextInstalment ? formatPrice(l.nextInstalment.payment) : "—"} hint={l.nextInstalment?.dueDate} />
                   </dl>
+                  {l.overdue.instalments > 0 && (
+                    <p className="text-sm text-danger-700" data-testid="loan-overdue">
+                      {formatPrice(l.overdue.amount)} overdue against the plan — {l.overdue.instalments} instalment{l.overdue.instalments === 1 ? "" : "s"} since {l.overdue.since}
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {l.status === "ACTIVE" && can("finance.transact") && <Button size="sm" onClick={() => setRepaying(l)} data-testid="repay-loan">Record repayment</Button>}
                     <Button size="sm" variant="ghost" onClick={() => setPlanFor(l)}>Planned schedule</Button>

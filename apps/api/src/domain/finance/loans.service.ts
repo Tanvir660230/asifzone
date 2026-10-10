@@ -121,6 +121,17 @@ export function loanDto(l: LoanRow, cur: string, today: string) {
   const schedule = plannedSchedule({ principal: toMinor(l.principal, cur), ratePct: Number(l.annualRatePct), termMonths: l.termMonths, type: l.repaymentType, firstDueDate: businessDateOf(l.firstDueDate) });
   const status = l.drawdownMovement.status === "PENDING_APPROVAL" ? "AWAITING_APPROVAL" : l.drawdownMovement.status !== "POSTED" ? "CANCELLED" : outstanding <= 0 && accrued - posted.interest <= 0 ? "REPAID" : "ACTIVE";
   const next = schedule.find((s) => s.dueDate >= today);
+  // overdue against the plan: the instalments due by today less everything repaid (posted), oldest first
+  const repaid = posted.principal + posted.interest;
+  let cumulative = 0;
+  let since: string | null = null;
+  let late = 0;
+  if (status === "ACTIVE") {
+    for (const x of schedule.filter((x) => x.dueDate <= today)) {
+      cumulative += x.payment;
+      if (cumulative > repaid) { since ??= x.dueDate; late += 1; }
+    }
+  }
   return {
     id: l.id, number: loanNumber(l.number), lender: l.lender, reference: l.reference, principal: m(toMinor(l.principal, cur)), annualRatePct: Number(l.annualRatePct),
     termMonths: l.termMonths, repaymentType: l.repaymentType, drawdownDate: businessDateOf(l.drawdownDate), firstDueDate: businessDateOf(l.firstDueDate),
@@ -128,6 +139,7 @@ export function loanDto(l: LoanRow, cur: string, today: string) {
     drawn: m(drawn), principalRepaid: m(posted.principal), outstanding: m(outstanding), interestAccrued: m(accrued), interestPaid: m(posted.interest), interestDue: m(accrued - posted.interest),
     lastAccruedMonth: l.accrualLines.map((x) => x.run.periodKey).sort().at(-1) ?? null,
     nextInstalment: next ? { dueDate: next.dueDate, payment: m(next.payment) } : null,
+    overdue: { amount: m(Math.max(0, cumulative - repaid)), since, instalments: late },
     schedule: schedule.map((s) => ({ ...s, payment: m(s.payment), interest: m(s.interest), principal: m(s.principal), balance: m(s.balance) })),
     repayments: l.repayments.map((r) => ({ id: r.id, paymentDate: businessDateOf(r.paymentDate), interestPart: m(toMinor(r.interestPart, cur)), principalPart: m(toMinor(r.principalPart, cur)), reference: r.reference, status: r.principalMovement?.status ?? r.interestMovement?.status ?? "POSTED" })),
   };

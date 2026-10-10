@@ -545,6 +545,7 @@ export interface Loan {
   drawdownDate: string; firstDueDate: string; financialAccount: { id: string; name: string }; status: "AWAITING_APPROVAL" | "ACTIVE" | "REPAID" | "CANCELLED"; notes: string | null;
   drawn: number; principalRepaid: number; outstanding: number; interestAccrued: number; interestPaid: number; interestDue: number; lastAccruedMonth: string | null;
   nextInstalment: { dueDate: string; payment: number } | null;
+  overdue: { amount: number; since: string | null; instalments: number };
   schedule: Array<{ n: number; dueDate: string; payment: number; interest: number; principal: number; balance: number }>;
   repayments: Array<{ id: string; paymentDate: string; interestPart: number; principalPart: number; reference: string | null; status: string }>;
 }

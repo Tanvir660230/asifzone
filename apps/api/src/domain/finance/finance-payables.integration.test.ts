@@ -510,6 +510,23 @@ describe("loans (E10)", () => {
     expect((await listLoans()).loans[0]).toMatchObject({ interestAccrued: 1223.01, lastAccruedMonth: "2026-08" });
     await runInterestAccrual("2026-09", OWNER);
     await allLoanMatched();
+
+    // overdue against the plan: what the plan expected by today less what was repaid (posted)
+    const { business } = await getFinanceContext();
+    const today = businessToday(business);
+    const plan = plannedSchedule({ principal: 12_000_000, ratePct: 12, termMonths: 12, type: "ANNUITY", firstDueDate: "2026-09-01" });
+    let cumulative = 0;
+    let since: string | null = null;
+    let instalments = 0;
+    for (const x of plan.filter((x) => x.dueDate <= today)) {
+      cumulative += x.payment;
+      if (cumulative > 1_100_000) { since ??= x.dueDate; instalments += 1; }
+    }
+    const listed = (await listLoans()).loans.find((l) => l.id === loan.id)!;
+    expect(listed.overdue).toEqual({ amount: Math.max(0, cumulative - 1_100_000) / 100, since, instalments });
+    const alert = (await financeAlerts()).alerts.find((a) => a.key === "loans.overdue");
+    if (instalments) expect(alert).toMatchObject({ severity: "warning", count: instalments, href: "/admin/finance/loans" });
+    else expect(alert).toBeUndefined();
   });
 });
 

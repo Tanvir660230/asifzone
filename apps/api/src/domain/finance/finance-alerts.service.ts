@@ -99,6 +99,8 @@ export async function financeAlerts() {
   if (assets.nextRun && assets.nextRun < today.slice(0, 7)) {
     add({ key: "assets.depreciation_due", severity: "warning", title: "Depreciation not run", detail: `Next month to run: ${assets.nextRun}.`, count: monthIndex(today.slice(0, 7)) - monthIndex(assets.nextRun), amount: assets.nextRunCharge, href: "/admin/finance/fixed-assets", action: "Run depreciation" });
   }
+  const lateLoans = loans.loans.filter((l) => l.overdue.instalments > 0);
+  add({ key: "loans.overdue", severity: "warning", title: "Loan instalments overdue", detail: lateLoans.map((l) => `${l.number} ${l.lender} since ${l.overdue.since}`).join(" · "), count: lateLoans.reduce((s, l) => s + l.overdue.instalments, 0), amount: major(lateLoans.reduce((s, l) => s + toMinor(l.overdue.amount, cur), 0)), href: "/admin/finance/loans", action: "Record repayments" });
   if (loans.nextAccrual) {
     add({ key: "loans.interest_due", severity: "warning", title: "Loan interest not accrued", detail: `Next month to accrue: ${loans.nextAccrual}.`, count: monthIndex(today.slice(0, 7)) - monthIndex(loans.nextAccrual), href: "/admin/finance/loans", action: "Accrue interest" });
   }
