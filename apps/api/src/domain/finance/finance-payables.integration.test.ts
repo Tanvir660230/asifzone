@@ -24,7 +24,7 @@ import { getTrialBalance } from "./ledger.service";
 import { createCommitment, dueDates, expenseSummary, listCommitments, recordExpense } from "./expenses.service";
 import { financeAlerts, monthEndChecklist } from "./finance-alerts.service";
 import { createPartner, equityOverview, updatePartner } from "./equity.service";
-import { createComponent, createEmployee, createPayRun, deleteDraftPayRun, payPayslips, payrollOverview, postPayRun, remitDeductions, reversePayRun, standardLines, updateComponent, updatePayslip } from "./payroll.service";
+import { createComponent, createEmployee, createPayRun, deleteDraftPayRun, payPayslips, payrollOverview, postPayRun, remitDeductions, reversePayRun, setPayslipPresence, standardLines, updateComponent, updatePayslip } from "./payroll.service";
 import { changePeriodStatus } from "./periods.service";
 import { budgetVsActual, cashForecast, createBudget, setBudgetLines } from "./budgets.service";
 import { moneyBalanceAt } from "./ledger.service";
@@ -644,12 +644,18 @@ describe("payroll (E8) — a configurable structure, posted as one journal, paid
     expect(a).toMatchObject({ number: "EMP-001", standard: { gross: 30_000, deductions: 2_500, net: 27_500, employerCost: 2_000 } });
     await expect(createEmployee({ name: "No amount", joinDate: "2026-01-01", payItems: [{ componentId: basic.id }] }, OWNER)).rejects.toMatchObject({ statusCode: 400 });
 
+    // payroll starts when the owner adopts it: with no run yet, the next month to run is last month, not every month back to
+    // the opening of the books (Rahima joined in January)
+    const lastMonth = (() => { const t = businessToday(business); const i = Number(t.slice(0, 4)) * 12 + Number(t.slice(5, 7)) - 2; return `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`; })();
+    expect((await payrollOverview()).nextRunMonth).toBe(lastMonth);
+
     // September: Rahima a full month; Karim joined on the 16th — 15 of 30 days
     let run = await createPayRun({ periodKey: "2026-09" }, OWNER);
     expect(run).toMatchObject({ number: "PR-001", status: "DRAFT", payDate: "2026-09-30", gross: 52_500, deductions: 4_000, net: 48_500, employerCost: 3_500 });
     const slipB = run.payslips.find((x) => x.employee.id === b.id)!;
     expect(slipB).toMatchObject({ daysPayable: 15, daysInPeriod: 30, gross: 22_500, deductions: 1_500, net: 21_000, employerCost: 1_500 });
     await expect(createPayRun({ periodKey: "2026-09" }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(createPayRun({ periodKey: "2099-01" }, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // a month that hasn't started
 
     // a one-off festival bonus on Rahima's payslip; deductions above earnings are refused
     const slipA = run.payslips.find((x) => x.employee.id === a.id)!;
@@ -702,9 +708,14 @@ describe("payroll (E8) — a configurable structure, posted as one journal, paid
     const reversed = await reversePayRun(oct.id, "Posted early", OWNER);
     expect(reversed.status).toBe("REVERSED");
     const redo = await createPayRun({ periodKey: "2026-10" }, OWNER);
+    const unpaidStaff = await createEmployee({ name: "No pay yet", joinDate: "2026-01-01" }, OWNER);
+    const leaver = await createEmployee({ name: "Left in August", joinDate: "2026-01-01", leaveDate: "2026-08-31", payItems: [{ componentId: basic.id, amount: 10_000 }] }, OWNER);
+    await expect(setPayslipPresence(redo.id, unpaidStaff.id, true, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // no pay structure
+    await expect(setPayslipPresence(redo.id, leaver.id, true, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // not employed in October
     await deleteDraftPayRun(redo.id, OWNER);
     expect(await sub()).toMatchObject({ status: "MATCHED", expected: 0 });
     expect((await monthEndChecklist({ month: "2026-09" })).steps.find((x) => x.key === "payroll")).toMatchObject({ status: "DONE" });
+    expect((await monthEndChecklist({ month: "2026-08" })).steps.find((x) => x.key === "payroll")).toMatchObject({ status: "NOT_APPLICABLE" }); // before payroll started
     allMatched(await checks());
   });
 });

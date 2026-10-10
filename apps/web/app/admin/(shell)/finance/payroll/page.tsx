@@ -224,7 +224,9 @@ function RunDrawer({ id, employees, onClose }: { id: string; employees: Employee
     onError: (err) => toast.error(getErrorMessage(err, "That didn't work")),
   });
   const r = q.data;
-  const missing = r ? employees.filter((e) => e.payItems.length && !r.payslips.some((p) => p.employee.id === e.id)) : [];
+  // employed in the run's month (ISO dates compare as strings) and not on it yet
+  const employedIn = (e: Employee, key: string) => e.joinDate.slice(0, 7) <= key && (!e.leaveDate || e.leaveDate.slice(0, 7) >= key);
+  const missing = r ? employees.filter((e) => e.payItems.length && employedIn(e, r.periodKey) && !r.payslips.some((p) => p.employee.id === e.id)) : [];
   const anyPaid = r?.payslips.some((p) => p.payment.status !== "UNPAID") ?? false;
   return (
     <Drawer open onClose={onClose} title={r ? `${r.number} · ${monthLabel(r.periodKey)}` : "Pay run"} widthClassName="max-w-2xl">

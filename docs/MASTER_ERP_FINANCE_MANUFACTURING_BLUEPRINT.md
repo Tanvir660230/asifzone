@@ -595,7 +595,7 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 - No location/warehouse model (custody is per production order only).
 - No lots/serials/FIFO; AVCO only.
 - `next build` on the Windows dev machine fails only at the standalone symlink copy (EPERM); Docker build is the check.
-- Finance branch not yet integrated with `main` (R-1).
+- R-1: the finance branch contains `origin/main` (032603b, 0 behind on 2026-10-10). Work still on other branches (admin-v2, orders workspace, courier notes) integrates when it lands on `main`.
 
 ---
 
@@ -642,6 +642,7 @@ What the owner provides next, and what each unlocks:
 | 2026-10-09 | v15 — E10 loans (drawdown, actual/365 accrual of ended months, interest-first repayments, plan, subledger check) done; next E12 (budgets / forecast / runway) |
 | 2026-10-09 | v16 — E12 budgets (from last year ± %), budget vs actual, 13-week cash forecast and runway done; next E14 (alerts & hardening) |
 | 2026-10-10 | v17 — E14 alerts feed (Finance badge), month-end close checklist with close / reopen, permission review, business-date test fix; no eligible task remains — E8 / E11 / E13 await the owner (B-3 / B-2 / B-4) |
+| 2026-10-10 | v21 — review fixes: payroll starts at its first run (no alerts for months before adoption), future-month runs and empty payslips refused; R-1 checked (branch contains origin/main) |
 | 2026-10-10 | v20 — the pre-existing same-customer deadlock (checkout vs store-credit return) fixed at its root: the reward-points locks took FOR UPDATE against an order insert's KEY SHARE; now FOR NO KEY UPDATE; race test added |
 | 2026-10-10 | v19 — E11 foundation (partner register, own capital / current accounts, balances from the ledger, equity = balance sheet) done; no eligible task remains (checked against §21) |
 | 2026-10-10 | v18 — correction to v17: §21 allows the configurable parts of blocked phases. E8 payroll done as a configurable structure (components, employees, monthly runs as one journal, payments, remittances, subledger check, forecast / alerts / month-end); next E11 foundation |

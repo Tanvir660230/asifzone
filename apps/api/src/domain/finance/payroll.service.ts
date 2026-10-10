@@ -359,6 +359,7 @@ export async function createPayRun(input: { periodKey: string; payDate?: string 
   const cur = business.baseCurrency;
   if (!PERIOD.test(input.periodKey)) throw financeError(400, "PERIOD_KEY", "A month is YYYY-MM");
   if (business.openingDate && lastDay(input.periodKey) < business.openingDate) throw financeError(400, "BEFORE_OPENING_DATE", `The books start on ${business.openingDate}`);
+  if (input.periodKey > businessToday(business).slice(0, 7)) throw financeError(409, "MONTH_NOT_STARTED", `${input.periodKey} hasn't started — run payroll in or after the month`);
   const payDate = input.payDate ?? lastDay(input.periodKey);
   if (payDate < `${input.periodKey}-01`) throw financeError(400, "PAY_DATE", "Salaries are paid in or after the month");
   return financeTransaction(async (tx) => {
@@ -423,8 +424,10 @@ export async function setPayslipPresence(runId: string, employeeId: string, pres
     if (present && !slip) {
       const e = await tx.employee.findFirst({ where: { id: employeeId, businessId: business.id }, include: EMPLOYEE_INCLUDE });
       if (!e) throw financeError(404, "EMPLOYEE_NOT_FOUND", "Employee not found");
+      if (!e.payItems.length) throw financeError(409, "NO_PAY_STRUCTURE", `${e.name} has no pay set up — add their pay first`);
       const days = daysIn(run.periodKey);
       const payable = daysEmployed(e, run.periodKey);
+      if (!payable) throw financeError(409, "NOT_EMPLOYED_IN_MONTH", `${e.name} wasn't employed in ${run.periodKey}`);
       await writeSlip(tx, run.id, e.id, payable, days, standardLines(itemsOf(e, cur), payable, days), cur);
     } else if (!present && slip) {
       await tx.payslip.delete({ where: { id: slip.id } });
@@ -616,12 +619,12 @@ export async function payrollOverview() {
   const live = new Set(dtos.filter((r) => r.status !== "REVERSED").map((r) => r.periodKey));
   const thisMonth = today.slice(0, 7);
   const employees = await prisma.employee.findMany({ where: { businessId: business.id }, select: { joinDate: true, leaveDate: true, payItems: { select: { id: true } } } });
-  // the earliest month someone with a pay structure was employed in, from which no live run exists (up to this month)
+  // the first month from the start of payroll in which someone with a pay structure was employed and no live run exists
   const paidMonths = employees.filter((e) => e.payItems.length).map((e) => businessDateOf(e.joinDate).slice(0, 7)).sort();
   let next: string | null = null;
   if (paidMonths.length) {
-    const opening = business.openingDate?.slice(0, 7) ?? "";
-    const startKey = paidMonths[0]! > opening ? paidMonths[0]! : opening;
+    const start = await payrollStartMonth(business.id, business.openingDate, today);
+    const startKey = paidMonths[0]! > start ? paidMonths[0]! : start;
     for (let k = startKey; k <= thisMonth; k = addMonth(k)) {
       if (!live.has(k) && employees.some((e) => e.payItems.length && daysEmployed(e, k) > 0)) { next = k; break; }
     }
@@ -633,6 +636,17 @@ export async function payrollOverview() {
     withheld,
     remittances: remittances.map((r) => ({ id: r.id, account: r.liabilityAccount, amount: toMajorNumber(toMinor(r.amount, cur), cur), periodKey: r.periodKey, reference: r.reference, status: r.movement.status, date: businessDateOf(r.movement.movementDate), from: r.movement.fromAccount?.name ?? null })),
   };
+}
+
+/** When payroll began here: the first pay run's month; before any run, last month (or the books' opening month, if later)
+ * — months before the owner adopted payroll were paid outside it and are not asked for. */
+export async function payrollStartMonth(businessId: string, openingDate: string | null, today: string) {
+  const first = await prisma.payRun.findFirst({ where: { businessId }, orderBy: { periodKey: "asc" }, select: { periodKey: true } });
+  if (first) return first.periodKey;
+  const i = Number(today.slice(0, 4)) * 12 + Number(today.slice(5, 7)) - 2;
+  const lastMonth = `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
+  const opening = openingDate?.slice(0, 7) ?? "";
+  return lastMonth > opening ? lastMonth : opening;
 }
 
 const addMonth = (key: string) => {

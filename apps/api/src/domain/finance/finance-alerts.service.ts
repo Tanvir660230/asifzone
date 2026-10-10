@@ -11,7 +11,7 @@ import { assetRegister } from "./fixed-assets.service";
 import { listLoans } from "./loans.service";
 import { listReconciliationChecks } from "./reconciliation.service";
 import { dueDates } from "./expenses.service";
-import { payrollOverview } from "./payroll.service";
+import { payrollOverview, payrollStartMonth } from "./payroll.service";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 export interface FinanceAlert {
@@ -153,9 +153,10 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     prisma.recurringCommitment.findMany({ where: { businessId: business.id, isActive: true }, include: { expenses: { select: { periodKey: true, movement: { select: { status: true } } } } } }),
     latestCheckRuns(business.id),
   ]);
-  const [payRun, payees] = await Promise.all([
+  const [payRun, payees, payrollStart] = await Promise.all([
     prisma.payRun.findFirst({ where: { businessId: business.id, periodKey: month, status: { not: "REVERSED" } }, select: { number: true, status: true } }),
     prisma.employee.count({ where: { businessId: business.id, joinDate: { lte: day(to) }, OR: [{ leaveDate: null }, { leaveDate: { gte: day(from) } }], payItems: { some: {} } } }),
+    payrollStartMonth(business.id, business.openingDate, today),
   ]);
 
   step({ key: "events", label: "Every financial event is posted", status: events ? "TODO" : "DONE", detail: events ? `${plural(events, "event")} failed or still waiting.` : "Sales, receipts and stock movements are all in the books.", href: "/admin/finance/sales" });
@@ -168,7 +169,7 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     }
   }
   step({ key: "expenses", label: "Recurring costs recorded", status: !commitments.length ? "NOT_APPLICABLE" : unpaid.length ? "TODO" : "DONE", detail: !commitments.length ? "No recurring costs are set up." : unpaid.length ? `Not recorded: ${unpaid.join(", ")}.` : "Every cost due this month is recorded.", href: "/admin/finance/expenses" });
-  step({ key: "payroll", label: "Payroll posted", status: !payees ? "NOT_APPLICABLE" : payRun?.status === "POSTED" ? "DONE" : "TODO", detail: !payees ? "Nobody on the payroll this month." : payRun?.status === "POSTED" ? `Pay run PR-${String(payRun.number).padStart(3, "0")} posted.` : payRun ? "The pay run is still a draft." : `No pay run for ${month}.`, href: "/admin/finance/payroll" });
+  step({ key: "payroll", label: "Payroll posted", status: !payees || month < payrollStart ? "NOT_APPLICABLE" : payRun?.status === "POSTED" ? "DONE" : "TODO", detail: month < payrollStart ? `Before payroll started (${payrollStart}).` : !payees ? "Nobody on the payroll this month." : payRun?.status === "POSTED" ? `Pay run PR-${String(payRun.number).padStart(3, "0")} posted.` : payRun ? "The pay run is still a draft." : `No pay run for ${month}.`, href: "/admin/finance/payroll" });
   step({ key: "bills", label: "Supplier bills entered and posted", status: drafts ? "TODO" : "DONE", detail: drafts ? `${plural(drafts, "draft bill")} dated this month.` : "No draft bills dated this month.", href: "/admin/finance/supplier-invoices" });
 
   const reconciled = new Set(recs.map((r) => r.financialAccountId));

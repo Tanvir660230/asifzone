@@ -46,7 +46,8 @@ a joining date and, once they leave, a leaving date. Employees are never deleted
 ## 3. The monthly pay run
 
 1. **Draft** (`POST /payroll/runs {periodKey, payDate?}`):
-   - One live run per month (a database unique index; a reversed run frees the month).
+   - One live run per month (a database unique index; a reversed run frees the month). A month that hasn't started is
+     refused.
    - A payslip is drafted for everyone employed in the month who has a pay structure.
    - **Proration:** joiners and leavers are prorated by calendar days (days employed ÷ days in the month). The default
      prorates every fixed amount; percentages follow the prorated basic. Half-even rounding to minor units.
@@ -54,7 +55,8 @@ a joining date and, once they leave, a leaving date. Employees are never deleted
 2. **Edit the draft:**
    - Change the days paid, which recalculates the payslip from the employee's pay.
    - Or set the lines themselves: add a one-off festival bonus or overtime, adjust a recovery.
-   - Add or remove a payslip. Deductions above earnings are refused (net pay ≥ 0).
+   - Add or remove a payslip. Only someone with a pay structure who was employed that month can be added. Deductions
+     above earnings are refused (net pay ≥ 0).
 3. **Post** (`finance.post`): **one journal**, dated the month's last day (kind ADJUSTMENT, source `PayRun`):
    - Dr each earning's expense account, and each employer contribution's expense account.
    - Cr each deduction's and contribution's liability account.
@@ -89,10 +91,13 @@ and a reference (challan or receipt number).
   - net pay of runs not yet paid, at their pay date (drafts labelled);
   - then, for each month end in the window without a run, the current staff's standard monthly net, labelled
     *estimate*.
+- **When payroll starts:** the first pay run's month. Before any run, it is last month, or the books' opening month if
+  later. Earlier months were paid outside payroll (as expenses) and are not asked for.
 - **Alerts:**
-  - *Payroll not run* (warning): a month with people on the payroll and no posted run.
+  - *Payroll not run* (warning): a month since payroll started with people on the payroll and no posted run.
   - *Salaries due and not paid* (warning): posted runs past their pay date.
-- **Month-end checklist:** a **Payroll posted** step. It is not needed when nobody was on the payroll that month.
+- **Month-end checklist:** a **Payroll posted** step. It is not needed when nobody was on the payroll that month, or
+  the month is before payroll started.
 
 ## 6. API and permissions (`/api/v1/finance/payroll…`)
 
