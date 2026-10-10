@@ -541,6 +541,8 @@ budgets, forecasts, cash runway; tax/VAT configuration (B-4); alerts, permission
 | 2026-10-09 | E2: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
 | 2026-10-09 | M1: `npx vitest run` (apps/api) | 108 files, 1273 tests: 1272 passed + the config-SSOT guard after removing a currency symbol from UI copy (re-run: pass) |
 | 2026-10-09 | M1: web `tsc --noEmit`, `eslint` (changed files), `vitest run` | clean; 35 passed |
+| 2026-10-10 | Back-office e2e: `E2E_BASE_URL=http://localhost:3390 E2E_API_URL=http://localhost:4390 npx playwright test e2e/admin-finance-back-office.spec.ts --project=desktop` (QA) | 5 passed: alerts link to their fixes, month-end 10 steps, forecast, payroll set-up + printable payslips, partner accounts + equity = balance sheet, staff refused payroll |
+| 2026-10-10 | Same-customer race: `npx vitest run src/modules/orders/same-customer-race.integration.test.ts` | passes 4/4 runs, 0 deadlocks (24 before the fix) |
 | 2026-10-10 | E11 foundation: `npx vitest run` (apps/api) | 110 files, 1314 passed |
 | 2026-10-10 | E11 foundation: web `tsc`, `eslint`, `vitest` | clean; 35 passed |
 | 2026-10-10 | E11 browser QA (`finance_qa`) | two partners (60 / 40 % unconfirmed), capital ৳200,000 + ৳120,000 and a ৳15,000 drawing; equity ৳640,335.84 = balance sheet (balanced); ledger deep link; 1440 and 375 px |
@@ -642,6 +644,7 @@ What the owner provides next, and what each unlocks:
 | 2026-10-09 | v15 — E10 loans (drawdown, actual/365 accrual of ended months, interest-first repayments, plan, subledger check) done; next E12 (budgets / forecast / runway) |
 | 2026-10-09 | v16 — E12 budgets (from last year ± %), budget vs actual, 13-week cash forecast and runway done; next E14 (alerts & hardening) |
 | 2026-10-10 | v17 — E14 alerts feed (Finance badge), month-end close checklist with close / reopen, permission review, business-date test fix; no eligible task remains — E8 / E11 / E13 await the owner (B-3 / B-2 / B-4) |
+| 2026-10-10 | v22 — advance recovery through a payroll deduction (1520), printable payslips, back-office e2e spec |
 | 2026-10-10 | v21 — review fixes: payroll starts at its first run (no alerts for months before adoption), future-month runs and empty payslips refused; R-1 checked (branch contains origin/main) |
 | 2026-10-10 | v20 — the pre-existing same-customer deadlock (checkout vs store-credit return) fixed at its root: the reward-points locks took FOR UPDATE against an order insert's KEY SHARE; now FOR NO KEY UPDATE; race test added |
 | 2026-10-10 | v19 — E11 foundation (partner register, own capital / current accounts, balances from the ledger, equity = balance sheet) done; no eligible task remains (checked against §21) |
