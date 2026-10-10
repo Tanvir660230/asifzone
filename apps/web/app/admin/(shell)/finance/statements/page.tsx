@@ -10,6 +10,7 @@ import { Field } from "@/components/ui/field";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -41,11 +42,17 @@ export default function StatementsPage() {
   const [view, setView] = useState<View>("income");
   const [from, setFrom] = useState(monthStart);
   const [to, setTo] = useState(today);
+  const [brandId, setBrandId] = useState("");
+  // brands report into the business: with more than one, each statement can be read for one brand (the trial balance is
+  // the whole business — it has no brand filter)
+  const business = useQuery({ queryKey: ["finance", "business"], queryFn: financeApi.getBusiness, enabled: allowed });
+  const brands = (business.data?.brands ?? []).filter((b) => b.isActive);
   const badRange = Boolean(from && to && from > to);
+  const brand = brandId || undefined;
   const period = { from: from || undefined, to: to || undefined };
-  const income = useQuery({ queryKey: financeApi.ledgerKeys.statement("income", period), queryFn: () => financeApi.getIncomeStatement(period), enabled: allowed && view === "income" && !badRange });
-  const balance = useQuery({ queryKey: financeApi.ledgerKeys.statement("balance", { to }), queryFn: () => financeApi.getBalanceSheet({ asOf: to || undefined }), enabled: allowed && view === "balance" });
-  const cash = useQuery({ queryKey: financeApi.ledgerKeys.statement("cash", period), queryFn: () => financeApi.getCashFlow(period), enabled: allowed && view === "cash" && !badRange });
+  const income = useQuery({ queryKey: financeApi.ledgerKeys.statement("income", { ...period, brand }), queryFn: () => financeApi.getIncomeStatement({ ...period, brandId: brand }), enabled: allowed && view === "income" && !badRange });
+  const balance = useQuery({ queryKey: financeApi.ledgerKeys.statement("balance", { to, brand }), queryFn: () => financeApi.getBalanceSheet({ asOf: to || undefined, brandId: brand }), enabled: allowed && view === "balance" });
+  const cash = useQuery({ queryKey: financeApi.ledgerKeys.statement("cash", { ...period, brand }), queryFn: () => financeApi.getCashFlow({ ...period, brandId: brand }), enabled: allowed && view === "cash" && !badRange });
   const trial = useQuery({ queryKey: financeApi.ledgerKeys.trialBalance(period), queryFn: () => financeApi.getTrialBalance(period), enabled: allowed && view === "trial" && !badRange });
   const active = { income, balance, cash, trial }[view];
 
@@ -64,6 +71,14 @@ export default function StatementsPage() {
       <div className="flex flex-wrap items-end gap-3">
         <SegmentedControl aria-label="Statement" options={VIEWS} value={view} onChange={setView} className="w-full overflow-x-auto sm:w-auto" />
         {view !== "balance" && <Field htmlFor="st-from" label="From" className="w-[calc(50%-6px)] sm:w-40"><Input id="st-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>}
+        {brands.length > 1 && view !== "trial" && (
+          <Field htmlFor="st-brand" label="Brand" className="w-full sm:w-48">
+            <Select id="st-brand" value={brandId} onChange={(e) => setBrandId(e.target.value)} data-testid="statement-brand">
+              <option value="">Whole business</option>
+              {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </Select>
+          </Field>
+        )}
         <Field htmlFor="st-to" label={view === "balance" ? "As at" : "To"} className="w-[calc(50%-6px)] sm:w-40" error={view !== "balance" && badRange ? "Before From" : undefined}><Input id="st-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       </div>
       {active.isLoading && <Skeleton className="h-64 w-full" />}

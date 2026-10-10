@@ -359,7 +359,7 @@ export const listExceptions = (q: { status?: string; kind?: string; page?: numbe
   apiFetch<{ total: number; openByKind: Record<string, number>; exceptions: FinanceException[] }>(`${BASE}/exceptions${qs(q)}`);
 export const acknowledgeException = (id: string, note: string) => apiFetch<FinanceException>(`${BASE}/exceptions/${id}/acknowledge`, { method: "POST", body: { note } });
 export const approveEstimate = (id: string, unitCost: number, note: string) => apiFetch<{ outcomes: Record<string, string> }>(`${BASE}/exceptions/${id}/approve-estimate`, { method: "POST", body: { unitCost, note } });
-export const getBusiness = () => apiFetch<{ costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES"; business: { openingDate: string | null } }>(`${BASE}/business`);
+export const getBusiness = () => apiFetch<{ costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES"; business: { openingDate: string | null }; brands: Array<{ id: string; key: string; name: string; isActive: boolean }> }>(`${BASE}/business`);
 export const setCostPolicy = (costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES", reason: string) => apiFetch(`${BASE}/business/cost-policy`, { method: "PUT", body: { costPolicy, reason } });
 
 export const listSettlements = (q: { status?: string; page?: number; pageSize?: number } = {}) => apiFetch<{ total: number; settlements: Settlement[] }>(`${BASE}/settlements${qs(q)}`);
@@ -480,9 +480,9 @@ export const reverseJournal = (id: string, reason: string) => apiFetch<unknown>(
 export const correctJournal = (id: string, body: { reason: string; entryDate?: string; description?: string; lines: Array<{ accountId: string; debit: number; credit: number; memo?: string | null }> }) =>
   apiFetch<{ reversal: JournalEntry; correction: JournalEntry; replayed: boolean }>(`${BASE}/journals/${id}/correct`, { method: "POST", body });
 export const getTrialBalance = (q: { from?: string; to?: string } = {}) => apiFetch<TrialBalance>(`${BASE}/trial-balance${range(q)}`);
-export const getIncomeStatement = (q: { from?: string; to?: string } = {}) => apiFetch<IncomeStatement>(`${BASE}/statements/income${range(q)}`);
-export const getBalanceSheet = (q: { asOf?: string } = {}) => apiFetch<BalanceSheet>(`${BASE}/statements/balance-sheet${range(q)}`);
-export const getCashFlow = (q: { from?: string; to?: string } = {}) => apiFetch<CashFlow>(`${BASE}/statements/cash-flow${range(q)}`);
+export const getIncomeStatement = (q: { from?: string; to?: string; brandId?: string } = {}) => apiFetch<IncomeStatement>(`${BASE}/statements/income${range(q)}`);
+export const getBalanceSheet = (q: { asOf?: string; brandId?: string } = {}) => apiFetch<BalanceSheet>(`${BASE}/statements/balance-sheet${range(q)}`);
+export const getCashFlow = (q: { from?: string; to?: string; brandId?: string } = {}) => apiFetch<CashFlow>(`${BASE}/statements/cash-flow${range(q)}`);
 
 // ── ERP E7: expenses and recurring commitments (docs/FINANCE_EXPENSES.md) ────────────────────────────────────────────────
 export type CostBehaviour = "FIXED" | "VARIABLE";
