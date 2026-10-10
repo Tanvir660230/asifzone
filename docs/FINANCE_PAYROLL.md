@@ -187,6 +187,7 @@ Migration `20261029100000_finance_payroll`:
 - **No statutory calculators:** income-tax slabs, a provident-fund ceiling, and bonus eligibility by service length are
   entered as amounts or percentages by the owner.
 - **No attendance or leave:** days paid are calendar days or entered by hand.
-- **No payslip PDF or employee self-service.**
+- **Printable payslips:** `/admin/finance/payroll/runs/:id/payslips` (all, or `?slip=<id>`), one per page, with the store
+  name from settings; a draft is marked *not final*. Print to PDF from the browser. **No employee self-service** yet.
 - **No advances register:** an advance is paid as a Money accounts withdrawal against 1520 Employee advances and recovered
   by a deduction component crediting 1520 (§1). There is no per-employee advance balance yet; the ledger of 1520 shows it.

@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Users, Wallet } from "lucide-react";
+import Link from "next/link";
+import { Plus, Printer, Users, Wallet } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Drawer } from "@/components/ui/drawer";
@@ -250,6 +251,7 @@ function RunDrawer({ id, employees, onClose }: { id: string; employees: Employee
               {r.status === "DRAFT" && <Button size="sm" variant="ghost" loading={act.isPending && act.variables?.kind === "delete"} onClick={() => act.mutate({ kind: "delete" })}>Delete draft</Button>}
               {r.status === "POSTED" && r.unpaid.count > 0 && can("finance.transact") && <Button size="sm" onClick={() => setPaying(true)} data-testid="pay-salaries">Pay {formatPrice(r.unpaid.amount)}</Button>}
               {r.status === "POSTED" && !anyPaid && can("finance.reverse") && <Button size="sm" variant="ghost" onClick={() => setReversing(true)}>Reverse</Button>}
+              {r.payslips.length > 0 && <Link href={`/admin/finance/payroll/runs/${r.id}/payslips`} className={buttonVariants({ variant: "ghost", size: "sm" })} data-testid="print-run"><Printer className="h-4 w-4" /> Payslips</Link>}
             </div>
             {r.status === "DRAFT" && <p className="text-sm text-ink-600">Posting books the month&apos;s salary cost and what is owed in one journal dated the last day of {monthLabel(r.periodKey)}. Payslips can&apos;t change after that — reverse the run instead.</p>}
 
@@ -261,7 +263,10 @@ function RunDrawer({ id, employees, onClose }: { id: string; employees: Employee
                       <p className="font-medium text-ink-900"><span className="font-mono text-xs text-ink-500">{p.employee.number}</span> {p.employee.name}</p>
                       <p className="text-xs text-ink-500">{p.employee.designation ?? "—"} · {p.daysPayable === p.daysInPeriod ? "full month" : `${p.daysPayable} of ${p.daysInPeriod} days`}{p.employee.payoutDetails ? ` · ${p.employee.payoutDetails}` : ""}</p>
                     </div>
-                    {r.status === "POSTED" ? <Badge variant={PAY_STATUS[p.payment.status].variant}>{PAY_STATUS[p.payment.status].label}</Badge> : null}
+                    <div className="flex items-center gap-2">
+                      {r.status === "POSTED" ? <Badge variant={PAY_STATUS[p.payment.status].variant}>{PAY_STATUS[p.payment.status].label}</Badge> : null}
+                      <Link href={`/admin/finance/payroll/runs/${r.id}/payslips?slip=${p.id}`} className="text-ink-500 hover:text-ink-900" aria-label={`Print ${p.employee.name}'s payslip`}><Printer className="h-4 w-4" /></Link>
+                    </div>
                   </div>
                   <ul className="mt-2 space-y-0.5 text-sm">
                     {p.lines.filter((l) => l.kind !== "EMPLOYER_CONTRIBUTION").map((l) => (
