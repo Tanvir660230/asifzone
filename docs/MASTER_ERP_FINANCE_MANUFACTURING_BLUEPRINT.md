@@ -644,6 +644,7 @@ What the owner provides next, and what each unlocks:
 | 2026-10-09 | v15 — E10 loans (drawdown, actual/365 accrual of ended months, interest-first repayments, plan, subledger check) done; next E12 (budgets / forecast / runway) |
 | 2026-10-09 | v16 — E12 budgets (from last year ± %), budget vs actual, 13-week cash forecast and runway done; next E14 (alerts & hardening) |
 | 2026-10-10 | v17 — E14 alerts feed (Finance badge), month-end close checklist with close / reopen, permission review, business-date test fix; no eligible task remains — E8 / E11 / E13 await the owner (B-3 / B-2 / B-4) |
+| 2026-10-10 | v23 — leftovers closed: release supplier allocations in the UI, correct a posted journal in the UI, statements brand filter, overdue loan instalments (+ alert), balance-sheet earnings split by fiscal year (no closing journal), asset-disposal proceeds through Treasury (1530), supplier refunds (SUPPLIER_REFUND) |
 | 2026-10-10 | v22 — advance recovery through a payroll deduction (1520), printable payslips, back-office e2e spec |
 | 2026-10-10 | v21 — review fixes: payroll starts at its first run (no alerts for months before adoption), future-month runs and empty payslips refused; R-1 checked (branch contains origin/main) |
 | 2026-10-10 | v20 — the pre-existing same-customer deadlock (checkout vs store-credit return) fixed at its root: the reward-points locks took FOR UPDATE against an order insert's KEY SHARE; now FOR NO KEY UPDATE; race test added |
