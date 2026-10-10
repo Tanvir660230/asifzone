@@ -26,6 +26,7 @@ import { financeTransaction } from "./finance-tx";
 import { nextFinanceSequence } from "./suppliers.service";
 import { chartState, provisionTemplateAccountsInTx } from "./chart-provisioning";
 import { resolveMappedAccount } from "./chart.service";
+import { requestMovementInTx } from "./treasury.service";
 import { postJournalInTx, reverseJournalInTx, type JournalLineSpec } from "./journal.service";
 import { divRound } from "./costing.service";
 import { randomUUID } from "node:crypto";
@@ -326,7 +327,8 @@ export async function disposeAsset(id: string, input: { disposalDate: string; pr
     const lines: JournalLineSpec[] = [
       { accountId: a.assetAccountId, debit: 0, credit: cost, memo: `${assetNumber(a.number)} disposed at cost`, ...party },
       ...(acc ? [{ accountId: accumulated.id, debit: acc, credit: 0, memo: `${assetNumber(a.number)} accumulated depreciation cleared`, ...party }] : []),
-      ...(proceeds ? [{ accountId: money!.ledgerAccountId, debit: proceeds, credit: 0, memo: `Proceeds — ${assetNumber(a.number)} ${a.name}` }] : []),
+      // the proceeds are owed by the buyer until the Treasury deposit below brings them in (money never skips Treasury)
+      ...(proceeds ? [{ accountId: (await resolveMappedAccount(tx, business.id, "asset.disposal_receivable")).id, debit: proceeds, credit: 0, memo: `Proceeds due — ${assetNumber(a.number)} ${a.name}`, ...party }] : []),
       ...(gain > 0 ? [{ accountId: (await resolveMappedAccount(tx, business.id, "income.asset_disposal_gain")).id, debit: 0, credit: gain, memo: `Gain on ${assetNumber(a.number)}` }] : []),
       ...(gain < 0 ? [{ accountId: (await resolveMappedAccount(tx, business.id, "expense.asset_disposal_loss")).id, debit: -gain, credit: 0, memo: `Loss on ${assetNumber(a.number)}` }] : []),
     ];
@@ -334,9 +336,13 @@ export async function disposeAsset(id: string, input: { disposalDate: string; pr
       entryDate: input.disposalDate, description: `Disposal of ${assetNumber(a.number)} ${a.name}`, kind: "ADJUSTMENT", sourceType: "FixedAsset", sourceId: a.id,
       idempotencyKey: `fixed-asset:dispose:${a.id}`, reason: input.reason, lines,
     }, actor);
+    const deposit = proceeds ? (await requestMovementInTx(tx, business, {
+      kind: "DEPOSIT", movementDate: input.disposalDate, amount: toMajorNumber(proceeds, cur), toFinancialAccountId: money!.id,
+      counterAccountId: (await resolveMappedAccount(tx, business.id, "asset.disposal_receivable")).id, description: `Sale of ${assetNumber(a.number)} ${a.name}`.slice(0, 300),
+    }, actor, `fixed-asset:proceeds:${a.id}`)).movement : null;
     const after = await tx.fixedAsset.update({
       where: { id },
-      data: { status: "DISPOSED", disposedAt: dateColumn(input.disposalDate), disposalProceeds: toDecimal(proceeds, cur), disposalFinancialAccountId: money?.id ?? null, disposalGainLoss: toDecimal(gain, cur), disposalReason: input.reason, disposalJournalId: entry.id },
+      data: { status: "DISPOSED", disposedAt: dateColumn(input.disposalDate), disposalProceeds: toDecimal(proceeds, cur), disposalFinancialAccountId: money?.id ?? null, disposalGainLoss: toDecimal(gain, cur), disposalReason: input.reason, disposalJournalId: entry.id, disposalMovementId: deposit?.id ?? null },
       include: INCLUDE,
     });
     const today = businessToday(business);

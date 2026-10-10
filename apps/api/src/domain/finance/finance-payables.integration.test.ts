@@ -471,6 +471,14 @@ describe("fixed assets and depreciation (E9)", () => {
     const sold = await disposeAsset(laptop.id, { disposalDate: "2026-10-05", proceeds: 50_000, financialAccountId: bankId, reason: "Sold to a staff member" }, OWNER);
     expect(sold).toMatchObject({ status: "DISPOSED", disposalProceeds: 50_000, disposalGainLoss: -5000, bookValue: 0 }); // book value 55,000 − 50,000
     expect(await balance("expense.asset_disposal_loss")).toBe(5000);
+    // the proceeds come in through Treasury (a deposit against the sale receivable), never straight onto the bank's ledger
+    const asset = await prisma.fixedAsset.findUniqueOrThrow({ where: { id: laptop.id }, include: { disposalMovement: true } });
+    expect(asset.disposalMovement).toMatchObject({ kind: "DEPOSIT", status: "POSTED", toFinancialAccountId: bankId });
+    expect(Number(asset.disposalMovement!.amount)).toBe(50_000);
+    expect(await balance("asset.disposal_receivable")).toBe(0);
+    const bankLedger = (await prisma.financialAccount.findUniqueOrThrow({ where: { id: bankId } })).ledgerAccountId;
+    expect(await prisma.journalLine.count({ where: { entryId: asset.disposalJournalId!, accountId: bankLedger } })).toBe(0);
+    expect((await runReconciliation({ checks: ["treasury.integrity"] }, OWNER)).results[0]!.status).toBe("MATCHED");
     expect(await faChecks()).toEqual({ "fixed_assets.register": "MATCHED", "ledger.integrity": "MATCHED", "events.unposted": "MATCHED" });
     await expect(reverseLatestRun("undo", OWNER)).rejects.toMatchObject({ statusCode: 409 }); // the laptop is gone
   });

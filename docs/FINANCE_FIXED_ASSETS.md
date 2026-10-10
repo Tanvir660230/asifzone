@@ -129,5 +129,4 @@ Migration `20261026100000_finance_fixed_assets`:
 
 - **Full months only.** Depreciation is by whole months, with no part-month convention.
 - **No revaluation or impairment.** Neither is supported yet.
-- **Proceeds skip Treasury.** Disposal proceeds post directly to the money account's ledger account, not through a
-  Treasury movement. They are still matched in bank reconciliation.
+- **Proceeds through Treasury:** done (2026-10-10). The disposal journal debits 1530 *Asset sale proceeds receivable*; a Treasury deposit into the chosen money account (against 1530, idempotent, approval thresholds apply) brings the money in and is linked to the asset. While a deposit awaits approval, the buyer still owes it on 1530.

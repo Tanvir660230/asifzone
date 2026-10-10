@@ -3190,6 +3190,7 @@ model TreasuryMovement {
   loanRepaymentInterest  LoanRepayment?         @relation("RepaymentInterest")
   payslipPayments        PayslipPayment[]       @relation("PayslipPaymentMovement")
   payrollRemittance      PayrollRemittance?     @relation("PayrollRemittanceMovement")
+  fixedAssetDisposal     FixedAsset?            @relation("FixedAssetDisposalProceeds")
 
   @@unique([businessId, idempotencyKey])
   @@index([fromFinancialAccountId, movementDate])
@@ -4617,6 +4618,9 @@ model FixedAsset {
   disposalGainLoss               Decimal?           @db.Decimal(18, 2)
   disposalReason                 String?
   disposalJournalId              String?            @unique
+  /// The Treasury deposit that brought the sale proceeds in (against asset.disposal_receivable).
+  disposalMovementId             String?            @unique
+  disposalMovement               TreasuryMovement?  @relation("FixedAssetDisposalProceeds", fields: [disposalMovementId], references: [id], onDelete: Restrict)
   disposalJournal                JournalEntry?      @relation("DisposalJournal", fields: [disposalJournalId], references: [id], onDelete: Restrict)
   createdByAdminId               String?
   createdAt                      DateTime           @default(now())

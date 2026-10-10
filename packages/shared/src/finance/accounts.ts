@@ -80,6 +80,8 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.depreciation",
   "income.asset_disposal_gain",
   "expense.asset_disposal_loss",
+  // the proceeds of a sold asset, owed until the Treasury deposit brings them in
+  "asset.disposal_receivable",
   // Loans (docs/FINANCE_LOANS.md) — interest accrued on loans, the interest charge
   "liability.accrued_interest",
   "expense.interest",
@@ -139,7 +141,7 @@ export const MANUFACTURING_MAPPING_KEYS: readonly AccountMappingKey[] = [
 
 /** Every key fixed assets post to: the asset cost, accumulated depreciation, the monthly charge and disposal gain / loss. */
 export const FIXED_ASSET_MAPPING_KEYS: readonly AccountMappingKey[] = [
-  "asset.fixed_assets", "asset.accumulated_depreciation", "expense.depreciation", "income.asset_disposal_gain", "expense.asset_disposal_loss",
+  "asset.fixed_assets", "asset.accumulated_depreciation", "expense.depreciation", "income.asset_disposal_gain", "expense.asset_disposal_loss", "asset.disposal_receivable",
 ];
 
 /** Every key loans post to: the principal owed, interest accrued and not yet paid, and the interest charge. */
@@ -185,6 +187,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "1500", name: "Receivables", type: "ASSET", parent: "1000", group: true },
   { code: "1510", name: "Trade receivables", type: "ASSET", parent: "1500", mapping: "asset.receivable_trade" },
   { code: "1520", name: "Employee advances", type: "ASSET", parent: "1500" },
+  { code: "1530", name: "Asset sale proceeds receivable", type: "ASSET", parent: "1500", mapping: "asset.disposal_receivable" },
   { code: "1600", name: "Inventory", type: "ASSET", parent: "1000", group: true },
   { code: "1610", name: "Merchandise inventory", type: "ASSET", parent: "1600", mapping: "asset.inventory" },
   { code: "1630", name: "Work in progress (production)", type: "ASSET", parent: "1600", mapping: "asset.wip" },
