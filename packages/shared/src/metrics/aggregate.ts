@@ -140,6 +140,15 @@ const P = {
     ),
 } satisfies Record<string, Producer>;
 
+/** The engine's own producers for ONE order, for consumers that must post exactly what a metric counts (the Financial
+ * Core, docs/FINANCE_PHASE_3.md §2) — never a second definition. Contributions carry the instant and signed amount the
+ * metric uses (realised-basis producers include the cancellation reversal). */
+export const ORDER_PRODUCERS = ["realisedMerch", "merchRefunds", "cogsSold", "cogsReturned"] as const;
+export type OrderProducer = (typeof ORDER_PRODUCERS)[number];
+export function orderContributions(o: OrderFact, producer: OrderProducer): Contribution[] {
+  return P[producer](o);
+}
+
 function atRealised(o: OrderFact, amount: number): Contribution[] {
   return realised(o, (at) => [one(at, amount, o)]);
 }

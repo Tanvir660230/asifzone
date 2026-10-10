@@ -439,31 +439,18 @@ export async function applyPlan(
 ): Promise<string[]> {
   const currency = await getCurrency();
   const actor = { adminId: ctx.adminId ?? null, note: `Order modified (#${ctx.sequence})` };
-  // Stock: secure the new units first (guarded — throws 409 and rolls everything back), then put removed units back.
-  if (plan.reserve.length) {
-    try {
-      await recordSale(tx, order.id, plan.reserve, { ...actor, untrackedVariantIds: new Set(plan.untrackedVariantIds) });
-    } catch (err) {
-      if (err instanceof AppError && err.statusCode === 409) {
-        throw new AppError(409, "An item you added has just sold out — please review your changes", { code: "INSUFFICIENT_STOCK" });
-      }
-      throw err;
-    }
-  }
-  const replenished = await releaseModifiedUnits(tx, order.id, plan.release, actor);
+  // Released units come back at the recorded cost of the lines they leave (several lines of one variant may differ) — read
+  // before the new lines exist.
+  const rows = await tx.orderItem.findMany({ where: { orderId: order.id }, select: { id: true, variantId: true, quantity: true, unitCostSnapshot: true }, orderBy: { id: "asc" } });
+  const keptQty = new Map(plan.keep.map((k) => [k.orderItemId, k.quantity]));
 
-  // Lines: removed rows go (the modification's `before` keeps them), kept rows take their new quantity/allocation, new rows
-  // are written with the same historical snapshots order creation writes.
-  if (plan.remove.length) await tx.orderItem.deleteMany({ where: { id: { in: plan.remove }, orderId: order.id } });
-  for (const k of plan.keep) {
-    await tx.orderItem.update({
-      where: { id: k.orderItemId },
-      data: { quantity: k.quantity, bundleDiscountAllocated: k.bundleDiscountAllocated, couponDiscountAllocated: k.couponDiscountAllocated },
-    });
-  }
+  // New rows are written first, with the same historical snapshots order creation writes, so the stock exit below can cost
+  // exactly them (Phase 4B: for a costed variant the exit replaces the catalog cost with the moving average determined under
+  // its stock row lock, in this transaction).
+  let added: Array<{ id: string; variantId: string }> = [];
   if (plan.add.length) {
     const snapshots = await captureLineSnapshots(tx, plan.add.map((a) => a.variantId), currency);
-    await tx.orderItem.createMany({
+    added = await tx.orderItem.createManyAndReturn({
       data: plan.add.map((s) => ({
         orderId: order.id,
         variantId: s.variantId,
@@ -481,10 +468,49 @@ export async function applyPlan(
         freeDeliverySnapshot: s.freeDeliverySnapshot ?? null,
         ...lineSnapshotData(snapshots, s.variantId),
       })),
+      select: { id: true, variantId: true },
     });
-    // D4: flash-priced new units re-checked under the flash item lock, with this order's new lines counted.
-    await claimFlashUnits(tx, plan.add);
   }
+
+  // Stock: secure the new units first (guarded — throws 409 and rolls everything back), then put removed units back.
+  if (plan.reserve.length) {
+    try {
+      await recordSale(
+        tx,
+        order.id,
+        plan.reserve.map((r) => ({ ...r, orderItemIds: added.filter((l) => l.variantId === r.variantId).map((l) => l.id) })),
+        { ...actor, untrackedVariantIds: new Set(plan.untrackedVariantIds) },
+      );
+    } catch (err) {
+      if (err instanceof AppError && err.statusCode === 409) {
+        throw new AppError(409, "An item you added has just sold out — please review your changes", { code: "INSUFFICIENT_STOCK" });
+      }
+      throw err;
+    }
+  }
+  const replenished = await releaseModifiedUnits(
+    tx,
+    order.id,
+    plan.release.map((r) => ({
+      ...r,
+      lines: rows
+        .filter((row) => row.variantId === r.variantId)
+        .map((row) => ({ quantity: row.quantity - (keptQty.get(row.id) ?? 0), unitCostMinor: row.unitCostSnapshot }))
+        .filter((l) => l.quantity > 0),
+    })),
+    actor,
+  );
+
+  // Lines: removed rows go (the modification's `before` keeps them), kept rows take their new quantity/allocation.
+  if (plan.remove.length) await tx.orderItem.deleteMany({ where: { id: { in: plan.remove }, orderId: order.id } });
+  for (const k of plan.keep) {
+    await tx.orderItem.update({
+      where: { id: k.orderItemId },
+      data: { quantity: k.quantity, bundleDiscountAllocated: k.bundleDiscountAllocated, couponDiscountAllocated: k.couponDiscountAllocated },
+    });
+  }
+  // D4: flash-priced new units re-checked under the flash item lock, with this order's new lines counted.
+  if (plan.add.length) await claimFlashUnits(tx, plan.add);
 
   // D7: a coupon the changed order no longer qualifies for gives its use back, once; it is not restored later.
   const releaseCoupon = plan.couponDropped && order.couponId !== null && order.couponReleasedAt === null;

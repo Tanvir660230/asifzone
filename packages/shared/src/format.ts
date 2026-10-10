@@ -8,13 +8,15 @@
  * future work), so it is declared once here instead of in every formatter. */
 export const DISPLAY_LOCALE = "en-BD";
 
-/** "৳1,500" / "$1,500.25": the currency's own narrow symbol, up to 2 decimals, no forced trailing zeros. */
+/** "৳1,500" / "$1,500.25" / "৳179,120.50": the currency's own narrow symbol; whole amounts without decimals, any fraction
+ * with both (never "৳179,120.5"). */
 export function formatMoney(amountMajor: number, currency: string): string {
+  const whole = Number.isInteger(Math.round(amountMajor * 100) / 100);
   return new Intl.NumberFormat(DISPLAY_LOCALE, {
     style: "currency",
     currency,
     currencyDisplay: "narrowSymbol",
-    minimumFractionDigits: 0,
+    minimumFractionDigits: whole ? 0 : 2,
     maximumFractionDigits: 2,
   }).format(amountMajor);
 }

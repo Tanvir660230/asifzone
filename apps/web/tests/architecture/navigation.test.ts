@@ -132,6 +132,15 @@ describe("navigation manifest — derivation", () => {
     expect(resolveNavNode("/admin/products/p1/edit")?.id).toBe("products.edit");
     expect(resolveNavNode("/admin/payments/overview")?.id).toBe("finance.overview");
     expect(resolveNavNode("/admin/payments/refunds")?.id).toBe("finance.refunds");
+    expect(resolveNavNode("/admin/finance/accounts")?.id).toBe("finance.accounts");
+    expect(resolveNavNode("/admin/finance/accounts/fa1")?.id).toBe("finance.account-detail");
+    expect(resolveNavNode("/admin/finance/reconciliation/r1")?.id).toBe("finance.reconciliation-detail");
+    expect(resolveNavNode("/admin/finance/sales")?.id).toBe("finance.sales");
+    expect(resolveNavNode("/admin/finance/settlements")?.id).toBe("finance.settlements");
+    expect(resolveNavNode("/admin/finance/exceptions")?.id).toBe("finance.exceptions");
+    expect(resolveNavNode("/admin/finance/checks")?.id).toBe("finance.checks");
+    expect(resolveNavNode("/admin/finance/suppliers")?.id).toBe("finance.suppliers");
+    expect(resolveNavNode("/admin/finance/tax-codes")?.id).toBe("finance.tax-codes");
     expect(resolveNavNode("/admin/nowhere")).toBeUndefined();
   });
 
@@ -164,7 +173,9 @@ describe("navigation manifest — derivation", () => {
   it("section tabs: grouping page → its pages, a page → its siblings, a lone module → none", () => {
     expect(sectionTabsFor("/admin/catalog/types", access("OWNER")).map((t) => t.href)).toHaveLength(10);
     expect(sectionTabsFor("/admin/return-requests", access("OWNER")).map((t) => t.href)).toEqual(["/admin/orders", "/admin/return-requests"]);
-    expect(sectionTabsFor("/admin/inventory", access("OWNER"))).toEqual([]);
+    // Inventory groups stock and production (docs/MANUFACTURING.md); a lone module still shows none (Customers).
+    expect(sectionTabsFor("/admin/inventory", access("OWNER")).map((t) => t.href)).toEqual(["/admin/inventory", "/admin/manufacturing", "/admin/manufacturing/production-orders", "/admin/manufacturing/boms", "/admin/manufacturing/materials"]);
+    expect(sectionTabsFor("/admin/customers", access("OWNER"))).toEqual([]);
   });
 
   it("section bar: the module's pages with the current one, on every page in them, never on create or detail views", () => {
@@ -179,7 +190,9 @@ describe("navigation manifest — derivation", () => {
     expect(sectionBarFor("/admin/orders/new", access("OWNER"))).toBeNull();
     expect(sectionBarFor("/admin/orders/abc123", access("OWNER"))).toBeNull();
     expect(sectionBarFor("/admin/products/abc123/edit", access("OWNER"))).toBeNull();
-    expect(sectionBarFor("/admin/inventory", access("OWNER"))).toBeNull();
+    // Inventory holds Stock and Manufacturing (docs/MANUFACTURING.md), so it has a section bar of its own
+    expect(sectionBarFor("/admin/inventory", access("OWNER"))?.tabs.map((t) => t.href)).toEqual(expect.arrayContaining(["/admin/inventory", "/admin/manufacturing", "/admin/manufacturing/materials"]));
+    expect(sectionBarFor("/admin/manufacturing/production-orders/po1", access("OWNER"))).toBeNull(); // a detail view
   });
 
   it("create commands and palette entries respect capabilities; the product route is the Product Builder", () => {

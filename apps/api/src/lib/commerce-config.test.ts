@@ -18,7 +18,7 @@ describe("configuration-derived formatting", () => {
   it("money uses the given currency's own symbol — nothing is BDT-specific", () => {
     expect(formatMoney(1500, "BDT")).toBe("৳1,500");
     expect(formatMoney(1500.25, "USD")).toBe("$1,500.25");
-    expect(formatMoney(99.9, "EUR")).toBe("€99.9");
+    expect(formatMoney(99.9, "EUR")).toBe("€99.90");
     expect(formatMoney(1500, "JPY")).toBe("¥1,500");
     expect([currencySymbol("BDT"), currencySymbol("USD")]).toEqual(["৳", "$"]);
     expect(DISPLAY_LOCALE).toBe("en-BD"); // the one declared display locale

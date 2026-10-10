@@ -32,7 +32,7 @@ export type NavIconName =
   | "settings"
   | "administration";
 /** Work-queue counts a node may show — resolved by the shell from the dashboard's attention counts. */
-export type NavBadgeSource = "orders" | "messages";
+export type NavBadgeSource = "orders" | "messages" | "finance";
 
 export interface NavCommand {
   id: string;
@@ -255,7 +255,15 @@ export const NAV_NODES: readonly NavNode[] = [
     deprecatedRoutes: ["/admin/products/wizard/[id]/edit"],
   },
 
-  { id: "inventory", label: term("inventory"), kind: "module", route: "/admin/inventory", domain: "operate", icon: "inventory", capability: "inventory.view", order: 30, mobile: "primary", goKey: "i", keywords: ["stock"] },
+  // Inventory groups stock with production (docs/MANUFACTURING.md): materials, bills of materials and production orders
+  // are the stock that is made rather than bought — kept within the 12 primary modules.
+  { id: "inventory", label: term("inventory"), kind: "module", index: "/admin/inventory", activeFor: ["/admin/manufacturing"], domain: "operate", icon: "inventory", capability: "inventory.view", order: 30, mobile: "primary", goKey: "i", keywords: ["stock", "production", "manufacturing"] },
+  { id: "inventory.stock", label: "Stock", kind: "page", parent: "inventory", domain: "operate", route: "/admin/inventory", capability: "inventory.view", order: 0, keywords: ["stock", "adjust", "movements"] },
+  { id: "inventory.production", label: "Production", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing", capability: "manufacturing.view", order: 1, keywords: ["manufacturing", "wip", "work in progress", "producer performance", "yield"] },
+  { id: "inventory.production-orders", label: "Production orders", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders", capability: "manufacturing.view", order: 2, keywords: ["manufacturing", "factory", "mo", "make", "produce"] },
+  { id: "inventory.production-order-detail", label: "Production order", kind: "detail", parent: "inventory", domain: "operate", route: "/admin/manufacturing/production-orders/[id]", capability: "manufacturing.view", order: 3, visibility: "hidden" },
+  { id: "inventory.boms", label: "Bills of materials", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/boms", capability: "manufacturing.view", order: 4, keywords: ["bom", "recipe", "materials per unit"] },
+  { id: "inventory.materials", label: "Materials", kind: "page", parent: "inventory", domain: "operate", route: "/admin/manufacturing/materials", capability: "manufacturing.view", order: 5, keywords: ["raw materials", "fabric", "trims", "packaging"] },
 
   {
     id: "customers",
@@ -337,11 +345,12 @@ export const NAV_NODES: readonly NavNode[] = [
     kind: "module",
     domain: "manage",
     index: "/admin/payments/overview",
-    activeFor: ["/admin/payments"],
+    activeFor: ["/admin/payments", "/admin/finance"],
     icon: "finance",
     capability: "payments.view",
     order: 80,
     goKey: "f",
+    badge: "finance",
     keywords: ["payments", "refund", "gateway"],
   },
   { id: "finance.overview", label: "Overview", title: term("payment"), kind: "page", parent: "finance", domain: "manage", route: "/admin/payments/overview", capability: "payments.view", order: 0 },
@@ -368,6 +377,67 @@ export const NAV_NODES: readonly NavNode[] = [
     order: 3,
     keywords: ["payment session", "failed payment", "sslcommerz", "eps", "paid but no order", "gateway"],
   },
+  // Finance groups (Admin V2 IA): the books' pages as four groups beside Payments — each an inner list beside the page on
+  // wide screens (like Catalog setup), tabs on phones. A group's capability matches its first page, so it never links a
+  // role to a page it can't open.
+  { id: "finance.money", label: "Money", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/accounts", capability: "finance.view", order: 10, innerList: true, keywords: ["cash", "bank", "bkash", "expenses", "loans", "settlements"] },
+  { id: "finance.purchasing", label: "Purchasing", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/suppliers", capability: "suppliers.view", order: 11, innerList: true, keywords: ["suppliers", "purchase orders", "bills", "payables"] },
+  { id: "finance.books", label: "Books", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/statements", capability: "finance.view", order: 12, innerList: true, keywords: ["accounts", "statements", "ledger", "journals", "profit", "balance sheet"] },
+  { id: "finance.people", label: "Payroll & partners", kind: "page", parent: "finance", domain: "manage", index: "/admin/finance/payroll", capability: "finance.sensitive", order: 13, innerList: true, keywords: ["salary", "payroll", "partners", "equity"] },
+  { id: "finance.attention", label: "Needs attention", kind: "page", parent: "finance", domain: "manage", route: "/admin/finance/attention", capability: "finance.view", order: -1, keywords: ["alerts", "to do", "overdue", "month end", "close the month", "checklist", "period close"] },
+  // Financial Core Phase 2 (docs/FINANCE_PHASE_2.md §10): money accounts and bank reconciliation — OWNER-only (finance.read).
+  {
+    id: "finance.accounts",
+    label: "Money accounts",
+    kind: "page",
+    parent: "finance.money",
+    domain: "manage",
+    route: "/admin/finance/accounts",
+    capability: "finance.view",
+    order: 0,
+    keywords: ["cash", "bank", "bkash", "nagad", "wallet", "transfer", "deposit", "withdrawal"],
+  },
+  {
+    id: "finance.reconciliation",
+    label: "Bank reconciliation",
+    kind: "page",
+    parent: "finance.money",
+    domain: "manage",
+    route: "/admin/finance/reconciliation",
+    capability: "finance.view",
+    order: 2,
+    keywords: ["statement", "reconcile", "csv import"],
+  },
+  { id: "finance.account-detail", label: "Money account", kind: "detail", parent: "finance.money", domain: "manage", route: "/admin/finance/accounts/[id]", capability: "finance.view", order: 1, visibility: "hidden" },
+  { id: "finance.reconciliation-detail", label: "Reconciliation", kind: "detail", parent: "finance.money", domain: "manage", route: "/admin/finance/reconciliation/[id]", capability: "finance.view", order: 3, visibility: "hidden" },
+  // Financial Core Phase 3 (docs/FINANCE_PHASE_3.md §10): commerce accounting, settlements, exceptions and checks.
+  { id: "finance.sales", label: "Sales accounting", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/sales", capability: "finance.view", order: 4, keywords: ["revenue", "cogs", "journal", "accounting events", "sync"] },
+  { id: "finance.settlements", label: "Settlements", kind: "page", parent: "finance.money", domain: "manage", route: "/admin/finance/settlements", capability: "finance.view", order: 4, keywords: ["cod", "courier", "gateway", "clearing", "payout", "fees"] },
+  { id: "finance.exceptions", label: "Finance exceptions", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/exceptions", capability: "finance.view", order: 7, keywords: ["missing cost", "estimate", "unmatched"] },
+  { id: "finance.expenses", label: "Expenses", kind: "page", parent: "finance.money", domain: "manage", route: "/admin/finance/expenses", capability: "finance.view", order: 5, keywords: ["expense", "rent", "salary", "subscription", "recurring", "fixed costs", "break-even"] },
+  { id: "finance.fixed-assets", label: "Fixed assets", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/fixed-assets", capability: "finance.view", order: 5, keywords: ["asset register", "depreciation", "equipment", "machine", "vehicle", "disposal", "book value"] },
+  { id: "finance.payroll", label: "Payroll", kind: "page", parent: "finance.people", domain: "manage", route: "/admin/finance/payroll", capability: "finance.sensitive", order: 0, keywords: ["salary", "salaries", "wages", "payslip", "employees", "staff", "provident fund", "pf", "bonus", "tax withheld"] },
+  { id: "finance.equity", label: "Partners & equity", kind: "page", parent: "finance.people", domain: "manage", route: "/admin/finance/equity", capability: "finance.sensitive", order: 1, keywords: ["partner", "capital", "owner", "drawings", "equity", "investment", "share", "current account"] },
+  { id: "finance.loans", label: "Loans", kind: "page", parent: "finance.money", domain: "manage", route: "/admin/finance/loans", capability: "finance.view", order: 6, keywords: ["loan", "borrowing", "interest", "emi", "instalment", "repayment"] },
+  { id: "finance.budgets", label: "Budgets & cash", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/budgets", capability: "finance.view", order: 1, keywords: ["budget", "forecast", "cash flow forecast", "runway", "plan", "variance", "burn"] },
+  { id: "finance.statements", label: "Financial statements", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/statements", capability: "finance.view", order: 0, keywords: ["profit and loss", "p&l", "income statement", "balance sheet", "cash flow", "trial balance"] },
+  { id: "finance.ledger", label: "Ledger", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/ledger", capability: "finance.view", order: 2, keywords: ["chart of accounts", "general ledger", "account balance"] },
+  { id: "finance.journals", label: "Journals", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/journals", capability: "finance.view", order: 3, keywords: ["journal entry", "manual journal", "reverse", "double entry"] },
+  { id: "finance.checks", label: "Finance checks", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/checks", capability: "finance.view", order: 6, keywords: ["reconciliation", "revenue check", "cogs check"] },
+  // Financial Core Phase 4 (docs/FINANCE_PHASE_4.md §23): purchasing — suppliers and purchase tax codes (4A).
+  { id: "finance.suppliers", label: "Suppliers", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/suppliers", capability: "suppliers.view", order: 0, keywords: ["vendor", "purchasing", "payables", "supplier"] },
+  { id: "finance.tax-codes", label: "Purchase tax codes", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/tax-codes", capability: "purchasing.view", order: 9, keywords: ["vat", "input tax", "tax rate"] },
+  // Financial Core Phase 4C (docs/FINANCE_PHASE_4C.md): the one-time valuation cutover that switches inventory costing on.
+  { id: "finance.inventory-cutover", label: "Valuation cutover", kind: "page", parent: "finance.books", domain: "manage", route: "/admin/finance/inventory-cutover", capability: "costing.view", order: 8, keywords: ["inventory valuation", "costing", "average cost", "opening stock value"] },
+  // Financial Core Phase 4D (docs/FINANCE_PHASE_4D.md): purchasing documents.
+  { id: "finance.purchase-orders", label: "Purchase orders", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/purchase-orders", capability: "purchasing.view", order: 1, keywords: ["po", "buy", "order stock", "procurement"] },
+  { id: "finance.purchase-order-detail", label: "Purchase order", kind: "detail", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/purchase-orders/[id]", capability: "purchasing.view", order: 2, visibility: "hidden" },
+  { id: "finance.goods-receipts", label: "Goods receipts", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/goods-receipts", capability: "purchasing.view", order: 3, keywords: ["grn", "receive", "delivery", "restock"] },
+  { id: "finance.supplier-returns", label: "Supplier returns", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/supplier-returns", capability: "purchasing.view", order: 4, keywords: ["return to vendor", "rtv", "send back"] },
+  { id: "finance.supplier-invoices", label: "Supplier bills", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/supplier-invoices", capability: "ap.view", order: 5, keywords: ["supplier invoice", "bill", "credit note", "accounts payable", "ap"] },
+  { id: "finance.payables", label: "Payables", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/payables", capability: "ap.view", order: 6, keywords: ["accounts payable", "ageing", "aging", "owed to suppliers", "creditors", "pay supplier", "supplier payment", "supplier statement"] },
+  { id: "finance.reports", label: "Purchasing reports", kind: "page", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/reports", capability: "purchasing.view", order: 8, keywords: ["report", "purchase register", "grni", "price variance", "inventory valuation", "stock value", "cost adjustments", "supplier payments", "csv"] },
+  { id: "finance.supplier-account", label: "Supplier account", kind: "detail", parent: "finance.purchasing", domain: "manage", route: "/admin/finance/payables/[supplierId]", capability: "ap.view", order: 7, visibility: "hidden" },
 
   {
     id: "analytics",

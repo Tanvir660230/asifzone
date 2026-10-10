@@ -102,7 +102,7 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const listAdmins = asyncHandler(async (_req: Request, res: Response) => {
-  res.json({ admins: await authService.listAdmins() });
+  res.json({ admins: await authService.listAdmins(), roles: authService.roleCatalog() });
 });
 
 export const setAdminActive = asyncHandler(async (req: Request, res: Response) => {

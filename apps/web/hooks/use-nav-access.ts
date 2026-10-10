@@ -18,5 +18,6 @@ export function useNavBadges(): Record<NavBadgeSource, number> {
   return {
     orders: (attention.orderStats?.pending ?? 0) + (attention.orderStats?.returnRequestsPending ?? 0),
     messages: (attention.pendingReviews ?? 0) + (attention.unreadFeedback ?? 0),
+    finance: attention.financeAlerts ?? 0,
   };
 }

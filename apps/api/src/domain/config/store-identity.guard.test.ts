@@ -47,6 +47,9 @@ export function identityOffenders(sources: Source[]): string[] {
 /** Store-only identity fields (Address.addressLine is the customer's own address — a different concept — so only fields
  * no other model may legitimately carry are checked). */
 const STORE_ONLY_FIELDS = ["legalName", "legalJurisdiction", "supportHours", "addressCountry", "addressPostalCode", "addressRegion", "addressCity"];
+/** Counterparty records name ANOTHER business, not the store: a supplier's own legal name (Financial Core Phase 4,
+ * docs/FINANCE_PHASE_4.md §6). Only `legalName` is allowed for them — every other store-only field is still checked. */
+const COUNTERPARTY_LEGAL_NAME = new Set(["Supplier"]);
 
 export function identityOwnerProblems(schema: string): string[] {
   const problems: string[] = [];
@@ -54,14 +57,27 @@ export function identityOwnerProblems(schema: string): string[] {
   for (const m of models) {
     if (/^(Store(Profile|Identity|Info|Brand)|BusinessProfile|Brand(Settings|Profile))$/.test(m.name)) problems.push(`second identity owner: model ${m.name}`);
     if (m.name === "StoreSetting") continue;
-    for (const f of STORE_ONLY_FIELDS) if (new RegExp(`^\\s+${f}\\s`, "m").test(m.body)) problems.push(`${m.name}.${f} duplicates StoreSetting identity`);
+    for (const f of STORE_ONLY_FIELDS) {
+      if (f === "legalName" && COUNTERPARTY_LEGAL_NAME.has(m.name)) continue;
+      if (new RegExp(`^\\s+${f}\\s`, "m").test(m.body)) problems.push(`${m.name}.${f} duplicates StoreSetting identity`);
+    }
   }
   const store = models.find((m) => m.name === "StoreSetting")!;
   for (const f of ["legalName", "addressLine", ...STORE_ONLY_FIELDS]) if (!new RegExp(`^\\s+${f}\\s+String\\?`, "m").test(store.body)) problems.push(`StoreSetting.${f} missing or not optional`);
   // Commerce Settings boundaries (Phase 7) stay where they are — identity must not grow its own currency/timezone/tax.
   // ProductReadModel.currency is the Phase 3 read-model projection written from getCurrency(), not an owner; store-credit
   // entries and payment links snapshot the currency their amount was issued in (order adjustments), like order snapshots.
-  const PROJECTIONS: Record<string, string[]> = { currency: ["ProductReadModel", "CustomerCreditEntry", "PaymentLink"], timezone: [] };
+  // Financial Core (docs/FINANCE_PHASE_1.md §2, FINANCE_PHASE_2.md §3–4): journals, events, money accounts, movements and
+  // statement lines snapshot the currency of their amounts; FinanceBusiness.timezone is the business day of the books,
+  // copied from Commerce Settings when the books are created and not editable — the settings.consistency reconciliation
+  // check reports any drift from Commerce Settings. Phase 4: Supplier.currency is the currency that supplier trades in (a
+  // counterparty attribute, held to the books' currency until foreign-currency purchasing exists), not the store's.
+  // Phase 4D: PurchaseOrder.currency is the document currency the order was written in (a snapshot, like JournalEntry).
+  // Phase 4E: SupplierInvoice.currency is the currency the supplier billed in (a document snapshot, base currency until 4H).
+  const PROJECTIONS: Record<string, string[]> = {
+    currency: ["ProductReadModel", "CustomerCreditEntry", "PaymentLink", "JournalEntry", "FinancialEvent", "FinancialAccount", "TreasuryMovement", "BankTransaction", "Supplier", "PurchaseOrder", "SupplierInvoice"],
+    timezone: ["FinanceBusiness"],
+  };
   for (const f of ["currency", "timezone"]) {
     const holders = models.filter((m) => new RegExp(`^\\s+${f}\\s+String`, "m").test(m.body)).map((m) => m.name);
     if (holders.some((n) => n !== "StoreSetting" && !PROJECTIONS[f]!.includes(n))) problems.push(`${f} has an owner other than StoreSetting`);

@@ -6,6 +6,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { orderKeys } from "@/components/admin/orders/order-domain";
 import { attentionKeys, paymentKeys } from "@/lib/query-keys";
 import * as adminHomeApi from "@/lib/api/admin-home";
+import { alertKeys as financeAlertKeys, getFinanceAlerts } from "@/lib/api/finance";
 
 const POLL_MS = 60_000;
 
@@ -18,7 +19,7 @@ const POLL_MS = 60_000;
  * Orders and Payments pages open on fresh numbers instead of firing a duplicate request.
  */
 export function useAttentionCounts() {
-  const { ready } = useCapabilities();
+  const { can, ready } = useCapabilities();
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: attentionKeys.all,
@@ -27,6 +28,9 @@ export function useAttentionCounts() {
     refetchInterval: POLL_MS,
   });
   const data = query.data;
+  // Finance alerts (docs/FINANCE_ALERTS.md) stay out of the composite: they compute the cash forecast and payroll, too heavy
+  // for a one-minute poll of every admin. Owners with finance.view poll them every five minutes; critical + warning count.
+  const finance = useQuery({ queryKey: financeAlertKeys.all, queryFn: getFinanceAlerts, enabled: ready && can("finance.view"), refetchInterval: POLL_MS * 5 });
 
   useEffect(() => {
     if (data?.orders) queryClient.setQueryData(orderKeys.stats, data.orders);
@@ -39,6 +43,7 @@ export function useAttentionCounts() {
     pendingReviews: data?.pendingReviews ?? undefined,
     unreadFeedback: data?.unreadFeedback ?? undefined,
     unreadNotifications: data?.unreadNotifications ?? 0,
+    financeAlerts: finance.data ? finance.data.counts.critical + finance.data.counts.warning : undefined,
     /** True until the first answer — lets callers show a skeleton instead of a premature "all clear". */
     loading: !ready || query.isLoading,
   };

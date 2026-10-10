@@ -102,7 +102,7 @@ describe("Phase 11 — identity, sessions, observability guards", () => {
   });
 
   it("no destructive migration after the two early ones; the Phase 11 migration is additive with the partial index", () => {
-    const destructive = /DROP\s+(TABLE|COLUMN)|ALTER\s+COLUMN\s+\S+\s+(TYPE|SET NOT NULL)|DROP\s+TYPE|RENAME\s+(COLUMN|TO)|DELETE\s+FROM|TRUNCATE/i;
+    const destructive = /DROP\s+(TABLE|COLUMN)|ALTER\s+COLUMN\s+\S+\s+(TYPE|SET NOT NULL)|DROP\s+TYPE|RENAME\s+(COLUMN|TO)|DELETE\s+FROM|TRUNCATE\s+(TABLE\s+)?(ONLY\s+)?"/i; // a TRUNCATE statement — not a BEFORE TRUNCATE guard trigger
     const allowedEarly = new Set(["20260805063035_add_social_links", "20260805112438_zone_based_shipping"]);
     const offenders = readdirSync(MIGRATIONS)
       .filter((d) => statSync(join(MIGRATIONS, d)).isDirectory() && !allowedEarly.has(d))

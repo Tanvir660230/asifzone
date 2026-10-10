@@ -7,7 +7,9 @@
  * PD-10.2 kept refunds, manual payments, price and loyalty adjustments, SMS, exports and financial analytics with STAFF.
  * Any further change is an owner decision and a change to this map only.
  */
-export const ADMIN_ROLES = ["OWNER", "STAFF"] as const;
+/** OWNER and STAFF run the store; FINANCE_ADMIN, ACCOUNTANT and FINANCE_VIEWER (Financial Core Phase 3,
+ * docs/FINANCE_PHASE_3.md §11) work in the books only — they hold no commerce permission. */
+export const ADMIN_ROLES = ["OWNER", "STAFF", "FINANCE_ADMIN", "ACCOUNTANT", "FINANCE_VIEWER"] as const;
 export type AdminRoleName = (typeof ADMIN_ROLES)[number];
 
 export const PERMISSIONS = [
@@ -54,6 +56,32 @@ export const PERMISSIONS = [
   "inventory.adjust",
   "ops.read", // outbox status, reliability report, drift reports
   "ops.repair", // outbox retry, payment-ledger repair, read-model rebuild
+  // financial core (docs/FINANCE_PHASE_1.md §7) — OWNER-only until the owner decides on a finance role (F0-5)
+  "finance.read", // ledger, journals, trial balance, financial accounts, finance audit trail
+  "finance.transact", // draft journals, opening-balance drafts
+  "finance.post", // post journals and opening balances
+  "finance.reverse", // reverse / correct posted journals
+  "finance.configure", // business settings & opening date, chart of accounts, mappings, financial accounts
+  "finance.period_close", // soft-close / close / reopen periods; post into soft-closed periods
+  "finance.reconcile", // run reconciliation checks, retry financial events
+  "finance.approve_high_value", // approve a money movement at or above an account's approval threshold (Phase 3)
+  "finance.sensitive", // ownership, partner and payroll balances (Phase 3) — OWNER only
+  // purchasing, suppliers / AP and inventory costing (docs/FINANCE_PHASE_4.md §23)
+  "suppliers.read",
+  "suppliers.manage", // create / edit / hold suppliers
+  "purchasing.read", // purchase orders, goods receipts, supplier returns
+  "purchasing.manage", // draft / submit purchase orders and returns
+  "purchasing.approve", // approve POs and returns, over-receipts, receipts without a PO
+  "purchasing.receive", // post goods receipts, ship supplier returns (moves stock)
+  "ap.read", // supplier invoices, payables, aging, statements
+  "ap.manage", // draft invoices / credit notes, allocate payments
+  "costing.read", // inventory valuation, average costs, cost movements
+  "costing.adjust", // manual revaluation, valuation cutover
+  // manufacturing (docs/MANUFACTURING.md)
+  "manufacturing.read", // production orders, BOMs, materials, production costs and reports
+  "manufacturing.manage", // draft production orders and BOMs, materials, cost entries, deliveries and inspections
+  "manufacturing.approve", // approve orders, BOM versions, production costs, write-offs, over-receipts; close orders
+  "manufacturing.move_stock", // issue / return materials, post production receipts (moves stock)
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -71,13 +99,46 @@ export const OWNER_ONLY_PERMISSIONS = [
   "storefront.configure",
   "settings.manage",
   "ops.repair",
+  "finance.read",
+  "finance.transact",
+  "finance.post",
+  "finance.reverse",
+  "finance.configure",
+  "finance.period_close",
+  "finance.reconcile",
+  "finance.approve_high_value",
+  "finance.sensitive",
+  // Phase 4: STAFF runs purchasing and receiving but never approves, sees payables or the valuation ledger.
+  "purchasing.approve",
+  "ap.read",
+  "ap.manage",
+  "costing.read",
+  "costing.adjust",
+  // Manufacturing: STAFF runs production (orders, materials, receiving) but never approves costs, write-offs or closes.
+  "manufacturing.approve",
 ] as const satisfies readonly Permission[];
 
 const ownerOnly = new Set<Permission>(OWNER_ONLY_PERMISSIONS);
 
+/** Finance roles: the books only (and, from Phase 4, the purchasing documents the books rest on — never receiving stock). Configuration, period closing, high-value approvals and sensitive (ownership, partner,
+ * payroll) data stay with OWNER. ACCOUNTANT records and reconciles but can't post — what they record waits for approval. */
+const FINANCE_ADMIN_PERMISSIONS = [
+  "finance.read", "finance.transact", "finance.post", "finance.reverse", "finance.reconcile",
+  "suppliers.read", "suppliers.manage", "purchasing.read", "purchasing.manage", "purchasing.approve", "ap.read", "ap.manage", "costing.read",
+  "manufacturing.read", "manufacturing.manage", "manufacturing.approve",
+] as const satisfies readonly Permission[];
+const ACCOUNTANT_PERMISSIONS = [
+  "finance.read", "finance.transact", "finance.reconcile",
+  "suppliers.read", "suppliers.manage", "purchasing.read", "ap.read", "ap.manage", "costing.read", "manufacturing.read",
+] as const satisfies readonly Permission[];
+const FINANCE_VIEWER_PERMISSIONS = ["finance.read", "suppliers.read", "purchasing.read", "ap.read", "costing.read", "manufacturing.read"] as const satisfies readonly Permission[];
+
 export const ROLE_PERMISSIONS: Readonly<Record<AdminRoleName, readonly Permission[]>> = Object.freeze({
   OWNER: Object.freeze([...PERMISSIONS]),
   STAFF: Object.freeze(PERMISSIONS.filter((p) => !ownerOnly.has(p))),
+  FINANCE_ADMIN: Object.freeze([...FINANCE_ADMIN_PERMISSIONS]),
+  ACCOUNTANT: Object.freeze([...ACCOUNTANT_PERMISSIONS]),
+  FINANCE_VIEWER: Object.freeze([...FINANCE_VIEWER_PERMISSIONS]),
 });
 
 export function permissionsForRole(role: AdminRoleName): readonly Permission[] {

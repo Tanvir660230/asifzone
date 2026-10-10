@@ -48,7 +48,7 @@ export function SegmentedControl<T extends string | number>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className={cn("inline-flex shrink-0 items-center gap-0.5 rounded-full border border-line-subtle bg-ink-900/[0.035] p-1", className)}
+      className={cn("flex w-fit max-w-full shrink-0 items-center gap-0.5 rounded-full border border-line-subtle bg-ink-900/[0.035] p-1", className)}
     >
       {options.map((option, index) => {
         const active = option.value === value;

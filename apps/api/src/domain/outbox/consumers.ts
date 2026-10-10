@@ -11,6 +11,7 @@ import { processMetaPurchase } from "../../lib/meta/purchase";
 import { getProviders } from "../../providers/registry";
 import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
 import { deliverConversationReply } from "../../lib/conversation-reply";
+import { processFinancialEvent } from "../finance/events.service";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
 
@@ -102,6 +103,19 @@ export const OUTBOX_CONSUMERS = {
     // The shopper's IP / user agent / click ids are only needed for the send.
     scrub: ({ orderId }) => ({ orderId }),
   } satisfies OutboxConsumer<{ orderId: string; context: Record<string, unknown> }>,
+
+  // Financial Core (docs/FINANCE_PHASE_1.md §5): posts a recorded FinancialEvent to the ledger. Not an external side effect,
+  // but the same durable, retried, FAILED-surfacing delivery is exactly what event posting needs.
+  "finance-event-post": {
+    eventTypes: ["finance.event_recorded.v1"],
+    payload: z.object({ financialEventId: z.string().min(1) }),
+    idempotency:
+      "The event row is locked while it posts, a POSTED event is final (database trigger), and the journal's idempotency key is the event identity — a repeat delivery finds the journal and posts nothing.",
+    async handle({ financialEventId }) {
+      const outcome = await processFinancialEvent(financialEventId);
+      return outcome === "posted" ? "sent" : "skipped";
+    },
+  } satisfies OutboxConsumer<{ financialEventId: string }>,
 } as const;
 
 export type OutboxConsumerName = keyof typeof OUTBOX_CONSUMERS;

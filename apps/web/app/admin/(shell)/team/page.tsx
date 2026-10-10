@@ -60,6 +60,9 @@ function InviteForm({ onSubmit, onCancel }: { onSubmit: (values: CreateAdminInvi
         <Select id="role" {...register("role")}>
           <option value="STAFF">Staff</option>
           <option value="OWNER">Owner (super admin)</option>
+          <option value="FINANCE_ADMIN">Finance admin (books only)</option>
+          <option value="ACCOUNTANT">Accountant (books only — records, can&apos;t post)</option>
+          <option value="FINANCE_VIEWER">Finance viewer (books only — read-only)</option>
         </Select>
         <div className="mt-2">
           <RoleSummary role={watch("role") ?? "STAFF"} />
@@ -116,6 +119,9 @@ function EditAdminForm({
         <Select id="edit-role" {...register("role")}>
           <option value="STAFF">Staff</option>
           <option value="OWNER">Owner (super admin)</option>
+          <option value="FINANCE_ADMIN">Finance admin (books only)</option>
+          <option value="ACCOUNTANT">Accountant (books only — records, can&apos;t post)</option>
+          <option value="FINANCE_VIEWER">Finance viewer (books only — read-only)</option>
         </Select>
         <div className="mt-2">
           <RoleSummary role={watch("role") ?? "STAFF"} />
@@ -165,6 +171,15 @@ function SetPasswordForm({
     </form>
   );
 }
+
+/** Display names of the roles (the role map itself lives in @clothing-brand/shared permissions.ts). */
+const ROLE_LABEL: Record<string, string> = {
+  OWNER: "Super admin",
+  STAFF: "Staff",
+  FINANCE_ADMIN: "Finance admin",
+  ACCOUNTANT: "Accountant",
+  FINANCE_VIEWER: "Finance viewer",
+};
 
 export default function AdminTeamPage() {
   const queryClient = useQueryClient();
@@ -279,7 +294,7 @@ export default function AdminTeamPage() {
                   <td className="px-4 py-3 text-ink-500">{admin.email}</td>
                   <td className="px-4 py-3">
                     <Badge className={admin.role === "OWNER" ? "bg-brass-100 text-brass-700" : ""}>
-                      {admin.role === "OWNER" ? "Owner" : "Staff"}
+                      {ROLE_LABEL[admin.role] ?? admin.role}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
@@ -346,7 +361,7 @@ export default function AdminTeamPage() {
                     <tr key={invite.id} className="border-t border-ink-100">
                       <td className="px-4 py-3">{invite.name}</td>
                       <td className="px-4 py-3 text-ink-500">{invite.email}</td>
-                      <td className="px-4 py-3">{invite.role === "OWNER" ? "Owner" : "Staff"}</td>
+                      <td className="px-4 py-3">{ROLE_LABEL[invite.role] ?? invite.role}</td>
                       <td className="px-4 py-3 text-ink-500">{formatDateShort(new Date(invite.expiresAt))}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end">

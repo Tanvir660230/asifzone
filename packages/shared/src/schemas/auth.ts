@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { ADMIN_ROLES } from "../permissions";
 
 export const adminLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
 });
 
-export const adminRoleSchema = z.enum(["OWNER", "STAFF"]);
+export const adminRoleSchema = z.enum(ADMIN_ROLES);
 
 export const createAdminInviteSchema = z.object({
   name: z.string().min(1).max(200),

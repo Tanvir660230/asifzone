@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
-import { permissionsForRole, type AdminLoginInput, type CreateAdminInviteInput, type UpdateAdminInput } from "@clothing-brand/shared";
+import { ADMIN_ROLES, permissionsForRole, type AdminLoginInput, type AdminRoleName, type CreateAdminInviteInput, type UpdateAdminInput } from "@clothing-brand/shared";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
@@ -24,7 +24,7 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync("no-account-has-this-password", 10);
 
 /** What the admin console learns about the signed-in admin: its role and the permissions that role resolves to (Phase
  * 10) — the web decides visibility from `permissions`, never by comparing role strings. */
-function sessionAdmin(admin: { id: string; name: string; email: string; role: "OWNER" | "STAFF" }) {
+function sessionAdmin(admin: { id: string; name: string; email: string; role: AdminRoleName }) {
   return { id: admin.id, name: admin.name, email: admin.email, role: admin.role, permissions: permissionsForRole(admin.role) };
 }
 
@@ -180,6 +180,18 @@ export async function getAdminById(adminId: string) {
 }
 
 // --- admin management (no public registration — accounts only exist via an OWNER's invite) ---
+
+/** What each role can do, for the invite / edit forms (Blueprint V2 security): ALL = every permission; STORE = runs the
+ * store, with what it lacks; FINANCE = a books-only role, with what it holds. The web only labels these — the role map is
+ * read here, never re-derived in the browser. */
+export function roleCatalog() {
+  const all = permissionsForRole("OWNER");
+  return ADMIN_ROLES.map((role) => {
+    const permissions = [...permissionsForRole(role)];
+    const kind = permissions.length === all.length ? ("ALL" as const) : permissions.includes("orders.read") ? ("STORE" as const) : ("FINANCE" as const);
+    return { role, kind, permissions, lacks: all.filter((p) => !permissions.includes(p)) };
+  });
+}
 
 export async function listAdmins() {
   return prisma.adminUser.findMany({
