@@ -44,6 +44,8 @@ export function useAttentionCounts() {
     unreadFeedback: data?.unreadFeedback ?? undefined,
     unreadNotifications: data?.unreadNotifications ?? 0,
     financeAlerts: finance.data ? finance.data.counts.critical + finance.data.counts.warning : undefined,
+    /** Finance alerts by severity, for Home's Action Center (undefined without finance.view). */
+    financeAlertCounts: finance.data?.counts,
     /** True until the first answer — lets callers show a skeleton instead of a premature "all clear". */
     loading: !ready || query.isLoading,
   };

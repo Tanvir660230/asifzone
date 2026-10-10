@@ -19,6 +19,7 @@ import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { ChartAccount, JournalEntry } from "@/lib/api/finance";
@@ -37,6 +38,7 @@ export default function JournalsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [creating, setCreating] = useState(false);
+  useCreateParam("journal", () => setCreating(true));
   const [reversing, setReversing] = useState<JournalEntry | null>(null);
   const [correcting, setCorrecting] = useState<JournalEntry | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);

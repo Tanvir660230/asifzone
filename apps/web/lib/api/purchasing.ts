@@ -274,3 +274,23 @@ export const releaseAllocation = (id: string, reason: string) => apiFetch<{ id: 
 // ── Phase 4G: reports (docs/FINANCE_PHASE_4G.md) ───────────────────────────────────────────────────────────────────────
 export type ReportId = "purchase-register" | "grni-ageing" | "price-variance" | "inventory-valuation" | "cost-adjustments" | "supplier-payments";
 export const getPurchasingReport = (id: ReportId, q: { from?: string; to?: string; q?: string } = {}) => apiFetch<Record<string, unknown>>(`${BASE}/reports/${id}${qs(q)}`);
+
+/** One variant's cost position (GET /purchasing/reports/inventory-valuation; costing.view). */
+export interface InventoryValuationItem {
+  variantId: string;
+  sku: string;
+  name: string;
+  stock: number;
+  valuedQty: number;
+  unvaluedQty: number;
+  deficitQty: number;
+  value: number;
+  avgUnitCost: number | null;
+  status: "KNOWN" | "INCOMPLETE";
+}
+export interface InventoryValuation {
+  asOf: string;
+  items: InventoryValuationItem[];
+  totals: { value: number; variants: number; incomplete: number; finishedGoods: number; materials: number };
+}
+export const getInventoryValuation = () => apiFetch<InventoryValuation>(`${BASE}/reports/inventory-valuation`);

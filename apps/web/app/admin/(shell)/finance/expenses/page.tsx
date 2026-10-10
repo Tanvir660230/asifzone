@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour } from "@/lib/api/finance";
@@ -40,6 +41,7 @@ export default function ExpensesPage() {
   const [to, setTo] = useState(today);
   const [recording, setRecording] = useState<{ commitment?: Commitment; period?: CommitmentPeriod } | null>(null);
   const [newCommitment, setNewCommitment] = useState(false);
+  useCreateParam("expense", () => setRecording({}));
   const period = { from: from || undefined, to: to || undefined };
   const summary = useQuery({ queryKey: financeApi.expenseKeys.summary(period), queryFn: () => financeApi.getExpenseSummary(period), enabled: allowed && !(from && to && from > to) });
   const list = useQuery({ queryKey: financeApi.expenseKeys.list({ ...period, pageSize: 100 }), queryFn: () => financeApi.listExpenses({ ...period, pageSize: 100 }), enabled: allowed && !(from && to && from > to) });

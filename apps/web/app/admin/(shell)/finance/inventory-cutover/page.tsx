@@ -28,7 +28,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { CutoverCostSource, CutoverLine, CutoverValuationStatus } from "@/lib/api/finance";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDateTime } from "@/lib/format";
 
 const KEY = [...financeApi.financeKeys.all, "inventory-cutover"] as const;
 const STATUS_BADGE = { KNOWN: "success", ESTIMATED: "warning", MISSING: "danger" } as const;
@@ -255,7 +255,7 @@ function PostedSummary({ summary: s }: { summary: NonNullable<financeApi.Cutover
       <Figure label="Variants valued" value={String(s.variants)} hint={`${s.known} known · ${s.estimated} estimated · ${s.missing} without cost`} />
       <Figure label="Valuation" value={formatPrice(s.valuation)} hint={s.unvaluedUnits ? `${s.unvaluedUnits} unit(s) held unvalued` : undefined} />
       <Figure label="True-up" value={formatPrice(s.adjustment)} hint={`${formatPrice(s.toCostAdjustments)} to cost adjustments${s.toOpeningBalanceEquity ? ` · ${formatPrice(s.toOpeningBalanceEquity)} to opening equity` : ""}`} />
-      <Figure label="Costing active since" value={new Date(s.activatedAt).toLocaleString()} />
+      <Figure label="Costing active since" value={formatStoreDateTime(s.activatedAt)} />
     </dl>
   );
 }

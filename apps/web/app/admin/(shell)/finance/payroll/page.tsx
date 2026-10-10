@@ -25,6 +25,7 @@ import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
 import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { Employee, PayComponent, PayComponentKind, PayRun, Payslip } from "@/lib/api/finance";
@@ -91,6 +92,7 @@ function Runs({ initialRun, onSetup }: { initialRun: string | null; onSetup: (v:
   const employees = useQuery({ queryKey: financeApi.payrollKeys.employees(), queryFn: financeApi.listEmployees });
   const [openRun, setOpenRun] = useState<string | null>(initialRun);
   const [starting, setStarting] = useState(false);
+  useCreateParam("pay-run", () => setStarting(true));
   const [remitting, setRemitting] = useState<{ id: string; code: string; name: string; owed: number } | null>(null);
   if (q.isLoading || employees.isLoading) return <Skeleton className="h-64 w-full" />;
   if (q.isError || !q.data) return <LoadError what="Payroll" error={q.error} retry={() => q.refetch()} />;

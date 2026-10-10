@@ -352,6 +352,13 @@ export const NAV_NODES: readonly NavNode[] = [
     goKey: "f",
     badge: "finance",
     keywords: ["payments", "refund", "gateway"],
+    commands: [
+      { id: "create.expense", kind: "create", label: "Record expense", hint: term("finance"), route: "/admin/finance/expenses?new=expense", capability: "finance.transact" },
+      { id: "create.money-in", kind: "create", label: "Money in (deposit)", hint: term("finance"), route: "/admin/finance/accounts?new=deposit", capability: "finance.transact" },
+      { id: "create.money-out", kind: "create", label: "Money out (withdrawal)", hint: term("finance"), route: "/admin/finance/accounts?new=withdrawal", capability: "finance.transact" },
+      { id: "create.purchase-order", kind: "create", label: "New purchase order", hint: "Purchasing", route: "/admin/finance/purchase-orders?new=purchase-order", capability: "purchasing.manage" },
+      { id: "create.supplier-bill", kind: "create", label: "New supplier bill", hint: "Purchasing", route: "/admin/finance/supplier-invoices?new=bill", capability: "ap.manage" },
+    ],
   },
   { id: "finance.overview", label: "Overview", title: term("payment"), kind: "page", parent: "finance", domain: "manage", route: "/admin/payments/overview", capability: "payments.view", order: 0 },
   {

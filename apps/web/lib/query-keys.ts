@@ -34,5 +34,5 @@ export const savedViewKeys = {
 /** The command palette's record search (components/admin/command-palette.tsx). */
 export const paletteKeys = {
   all: ["palette"] as const,
-  search: (entity: "orders" | "customers" | "products", query: string) => ["palette", entity, query] as const,
+  search: (entity: "orders" | "customers" | "products" | "suppliers" | "purchase-orders" | "supplier-bills", query: string) => ["palette", entity, query] as const,
 };

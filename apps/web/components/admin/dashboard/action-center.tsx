@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   AlertOctagon,
+  BookOpen,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -48,12 +49,14 @@ interface ActionCenterProps {
   pendingReviews?: number;
   unreadFeedback?: number;
   lowStockCount?: number;
+  /** Finance alerts (docs/FINANCE_ALERTS.md) by severity — only for roles that read the books. */
+  financeAlerts?: { critical: number; warning: number };
   loading: boolean;
 }
 
 /** Everything waiting on an admin, as a to-do list: only non-zero items show, most urgent first, each one a link straight
  * to the filtered list where it gets done. An empty list is the goal — it renders as an explicit "all clear". */
-export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, loading }: ActionCenterProps) {
+export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, loading }: ActionCenterProps) {
   const q = orderStats?.queueCounts;
   // The overview's failure list reaches back weeks; only the last day's are still worth chasing.
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -148,6 +151,24 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
       href: "/admin/reviews",
       severity: "info",
       icon: Star,
+    },
+    {
+      key: "finance-critical",
+      label: "Finance problems",
+      hint: "Postings that failed, checks that differ or cash forecast below zero",
+      count: financeAlerts?.critical ?? 0,
+      href: "/admin/finance/attention",
+      severity: "critical",
+      icon: BookOpen,
+    },
+    {
+      key: "finance-todo",
+      label: "Finance to-dos",
+      hint: "Approvals, bills and costs due, months to close",
+      count: financeAlerts?.warning ?? 0,
+      href: "/admin/finance/attention",
+      severity: "warning",
+      icon: BookOpen,
     },
     {
       key: "feedback",

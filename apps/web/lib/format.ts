@@ -104,6 +104,14 @@ export function formatBusinessDate(date: string, options: Intl.DateTimeFormatOpt
   return new Date(Date.UTC(y, m - 1, d || 1)).toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
 }
 
+/** A books date ("2026-10-01" — a financial / business date, or an ISO instant's date part) as "1 Oct 2026", the same
+ * day-month-year style as formatStoreDateTime. Never shifted through a timezone. */
+export function formatBookDate(date: string): string {
+  const [y, m, d] = date.slice(0, 10).split("-").map(Number);
+  if (!y || !m) return date;
+  return new Date(Date.UTC(y, m - 1, d || 1)).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
 /** "Aug 20" style — for a delivery-date estimate range, where the year is implied and two of
  * these get shown side by side ("Aug 6 – Aug 7"). */
 export function formatDateShort(date: Date): string {

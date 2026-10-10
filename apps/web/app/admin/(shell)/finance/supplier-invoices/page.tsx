@@ -19,6 +19,7 @@ import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { INVOICE_LINE_LABEL, INVOICE_STATUS_BADGE, INVOICE_STATUS_LABEL } from "@/components/admin/purchasing/status";
 import { SupplierInvoiceModal } from "@/components/admin/payables/invoice-modal";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useCreateParam } from "@/hooks/use-create-param";
 import { ApiError, getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { SupplierInvoice, SupplierInvoiceKind } from "@/lib/api/purchasing";
@@ -36,6 +37,7 @@ export default function SupplierInvoicesPage() {
   const [kind, setKind] = useState("");
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState<SupplierInvoiceKind | null>(null);
+  useCreateParam("bill", () => setCreating("INVOICE"));
   const [voiding, setVoiding] = useState<SupplierInvoice | null>(null);
   const [variance, setVariance] = useState<{ invoice: SupplierInvoice; message: string } | null>(null);
   const query = { status: status || undefined, kind: kind || undefined, q: q.trim() || undefined, pageSize: 100 };

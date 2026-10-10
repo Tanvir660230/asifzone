@@ -197,7 +197,17 @@ describe("navigation manifest — derivation", () => {
 
   it("create commands and palette entries respect capabilities; the product route is the Product Builder", () => {
     const owner = createCommands(access("OWNER"));
-    expect(owner.map((c) => c.id)).toEqual(["create.order", "create.product", "create.customer", "create.coupon", "create.flash-sale", "create.banner"]);
+    expect(owner.map((c) => c.id)).toEqual([
+      "create.order", "create.product", "create.customer", "create.coupon", "create.flash-sale", "create.banner",
+      // the everyday finance actions (deep links into the page with its dialog open)
+      "create.expense", "create.money-in", "create.money-out", "create.purchase-order", "create.supplier-bill",
+    ]);
+    expect(owner.find((c) => c.id === "create.expense")?.route).toBe("/admin/finance/expenses?new=expense");
+    // owner-only books stay out of Staff's Create menu; purchasing (a Staff job) stays in
+    const staff = createCommands(access("STAFF")).map((c) => c.id);
+    expect(staff).not.toContain("create.expense");
+    expect(staff).not.toContain("create.supplier-bill");
+    expect(staff).toContain("create.purchase-order");
     expect(owner.find((c) => c.id === "create.product")?.route).toBe("/admin/products/new");
     const staffPages = searchableNodes(access("STAFF")).map((e) => e.href);
     expect(staffPages).not.toContain("/admin/team");

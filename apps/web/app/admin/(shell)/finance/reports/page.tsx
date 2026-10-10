@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Download } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
@@ -102,8 +103,10 @@ const show = (v: unknown, f: Format) => {
 export default function FinanceReportsPage() {
   const { can, ready } = useCapabilities();
   const available = (Object.keys(REPORTS) as ReportId[]).filter((id) => can(REPORTS[id].capability));
-  const [chosen, setChosen] = useState<ReportId | "">("");
-  const id = chosen || available[0];
+  // ?report=<id> opens a report directly (Inventory › Stock levels links its stock value to the valuation)
+  const requested = useSearchParams().get("report");
+  const [chosen, setChosen] = useState<ReportId | "">(requested && requested in REPORTS ? (requested as ReportId) : "");
+  const id = chosen && available.includes(chosen) ? chosen : available[0];
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");

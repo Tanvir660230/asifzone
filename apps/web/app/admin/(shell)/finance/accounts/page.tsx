@@ -18,9 +18,10 @@ import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { AccountDialog } from "@/components/admin/finance/account-dialog";
 import { MoneyMovementDialog, type MovementDialogKind } from "@/components/admin/finance/money-movement-dialog";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
-import { formatPrice } from "@/lib/format";
+import { formatBookDate, formatPrice } from "@/lib/format";
 
 /** Money accounts (docs/FINANCE_PHASE_2.md §10): cash, banks, wallets and gateways with their ledger balances, the money
  * movements between them, and the movements waiting for approval. */
@@ -31,6 +32,9 @@ export default function FinanceAccountsPage() {
   const accounts = useQuery({ queryKey: financeApi.financeKeys.accounts(), queryFn: financeApi.listFinancialAccounts, enabled: allowed });
   const pending = useQuery({ queryKey: [...financeApi.financeKeys.all, "movements", "pending"], queryFn: () => financeApi.listMovements({ status: "PENDING_APPROVAL", pageSize: 50 }), enabled: allowed });
   const [dialog, setDialog] = useState<MovementDialogKind | "ACCOUNT" | null>(null);
+  useCreateParam("deposit", () => setDialog("DEPOSIT"));
+  useCreateParam("withdrawal", () => setDialog("WITHDRAWAL"));
+  useCreateParam("transfer", () => setDialog("TRANSFER"));
 
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) => {
@@ -103,7 +107,7 @@ export default function FinanceAccountsPage() {
                 <TableHeaderCell>Reference</TableHeaderCell>
                 <TableHeaderCell align="right">Opening</TableHeaderCell>
                 <TableHeaderCell align="right">Balance</TableHeaderCell>
-                <TableHeaderCell>Reconciled to</TableHeaderCell>
+                <TableHeaderCell className="whitespace-nowrap">Reconciled to</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
               </tr>
             </TableHead>
@@ -117,11 +121,11 @@ export default function FinanceAccountsPage() {
                     </Link>
                     {a.provider && <span className="ml-2 text-xs text-ink-500">{a.provider}</span>}
                   </TableCell>
-                  <TableCell>{financeApi.ACCOUNT_KIND_LABEL[a.kind]}</TableCell>
+                  <TableCell className="whitespace-nowrap">{financeApi.ACCOUNT_KIND_LABEL[a.kind]}</TableCell>
                   <TableCell className="text-ink-500">{a.accountReference ?? (a.accountNumberLast4 ? `••••${a.accountNumberLast4}` : "—")}</TableCell>
                   <TableCell align="right" className="tabular-nums text-ink-500">{formatPrice(a.openingBalance)}</TableCell>
                   <TableCell align="right" className={a.currentBalance < 0 ? "font-semibold tabular-nums text-danger-700" : "font-semibold tabular-nums"}>{formatPrice(a.currentBalance)}</TableCell>
-                  <TableCell className="text-ink-500">{a.lastReconciledThrough ?? "never"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-ink-500">{a.lastReconciledThrough ? formatBookDate(a.lastReconciledThrough) : "never"}</TableCell>
                   <TableCell>
                     <Badge variant={a.isActive ? "success" : "neutral"}>{a.isActive ? "Active" : "Inactive"}</Badge>
                     {a.pendingMovements > 0 && <Badge variant="warning" className="ml-1">{a.pendingMovements} pending</Badge>}

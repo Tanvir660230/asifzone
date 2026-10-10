@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ClipboardList, CornerDownLeft, FileText, Plus, Search, Settings, Shirt, User, type LucideIcon } from "lucide-react";
+import { BarChart3, ClipboardList, CornerDownLeft, FileText, Plus, Receipt, Search, Settings, Shirt, Truck, User, type LucideIcon } from "lucide-react";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -12,6 +12,7 @@ import { useShortcut } from "@/hooks/use-shortcut";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 import * as productsApi from "@/lib/api/products";
+import * as purchasingApi from "@/lib/api/purchasing";
 import { productEditHref } from "@/lib/admin-routes";
 import { createCommands, moduleOf, searchableNodes, type NavCommand, type NavNode, type PaletteGroup } from "@/lib/admin/navigation";
 import { paletteKeys } from "@/lib/query-keys";
@@ -108,7 +109,26 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     enabled: open && searching && can("catalog.view"),
     staleTime: 30_000,
   });
-  const loading = searching && (orders.isFetching || customers.isFetching || products.isFetching);
+  // Purchasing (docs/FINANCE_PHASE_4.md): suppliers, purchase orders and supplier bills are findable like orders are
+  const suppliers = useQuery({
+    queryKey: paletteKeys.search("suppliers", debounced),
+    queryFn: () => purchasingApi.listSuppliers({ q: debounced, pageSize: SEARCH_LIMIT }),
+    enabled: open && searching && can("suppliers.view"),
+    staleTime: 30_000,
+  });
+  const purchaseOrders = useQuery({
+    queryKey: paletteKeys.search("purchase-orders", debounced),
+    queryFn: () => purchasingApi.listPurchaseOrders({ q: debounced, pageSize: SEARCH_LIMIT }),
+    enabled: open && searching && can("purchasing.view"),
+    staleTime: 30_000,
+  });
+  const bills = useQuery({
+    queryKey: paletteKeys.search("supplier-bills", debounced),
+    queryFn: () => purchasingApi.listSupplierInvoices({ q: debounced, pageSize: SEARCH_LIMIT }),
+    enabled: open && searching && can("ap.view"),
+    staleTime: 30_000,
+  });
+  const loading = searching && (orders.isFetching || customers.isFetching || products.isFetching || suppliers.isFetching || purchaseOrders.isFetching || bills.isFetching);
 
   const entries = useMemo<{ pages: Entry[]; create: Entry[] }>(() => {
     const pages = searchableNodes(access).map(({ node, href, group }) => ({
@@ -153,6 +173,17 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       for (const p of products.data?.items ?? []) {
         out.push({ id: `pr-${p.id}`, group: "Products", label: p.name, meta: p.status?.toLowerCase(), href: productEditHref(p.id), icon: Shirt });
       }
+      // a supplier opens their account (bills, payments, statement) when the role sees payables; otherwise the list
+      const supplierHref = (id: string) => (can("ap.view") ? `/admin/finance/payables/${id}` : "/admin/finance/suppliers");
+      for (const sp of suppliers.data?.suppliers ?? []) {
+        out.push({ id: `sp-${sp.id}`, group: "Suppliers", label: sp.displayName, meta: sp.code, href: supplierHref(sp.id), icon: Truck });
+      }
+      for (const po of purchaseOrders.data?.purchaseOrders ?? []) {
+        out.push({ id: `po-${po.id}`, group: "Purchase orders", label: `${po.number} · ${po.supplier.displayName}`, meta: po.status.toLowerCase().replace(/_/g, " "), href: `/admin/finance/purchase-orders/${po.id}`, icon: ClipboardList });
+      }
+      for (const b of bills.data?.invoices ?? []) {
+        out.push({ id: `bl-${b.id}`, group: "Supplier bills", label: `${b.number} · ${b.supplier.displayName}`, meta: `${b.supplierRef} · ${formatPrice(b.total)}`, href: `/admin/finance/payables/${b.supplier.id}`, icon: Receipt });
+      }
     }
 
     const toRow = (e: Entry, group: string): ResultRow => ({ id: e.id, group, label: e.label, meta: e.hint, href: e.href, icon: e.icon });
@@ -168,7 +199,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     }
     for (const e of entries.create.filter((c) => matches(c, q))) out.push(toRow(e, "Create"));
     return out;
-  }, [query, searching, orders.data, customers.data, products.data, entries]);
+  }, [query, searching, orders.data, customers.data, products.data, suppliers.data, purchaseOrders.data, bills.data, can, entries]);
 
   useEffect(() => setActive(0), [query]);
   useEffect(() => {

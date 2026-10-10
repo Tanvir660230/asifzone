@@ -169,6 +169,7 @@ export default function DashboardPage() {
         pendingReviews={attention.pendingReviews}
         unreadFeedback={attention.unreadFeedback}
         lowStockCount={summary?.lowStockCount}
+        financeAlerts={attention.financeAlertCounts}
         loading={attention.loading}
       />
 

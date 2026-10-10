@@ -19,6 +19,7 @@ import { FollowUpSection } from "@/components/admin/orders/detail/follow-up-sect
 import { ActivityTimeline } from "@/components/admin/orders/detail/activity-timeline";
 import { AttentionPanel, NotesSection, ReturnsSection } from "@/components/admin/orders/detail/notes-returns";
 import { ChangesSection } from "@/components/admin/orders/detail/changes-section";
+import { AccountingSection } from "@/components/admin/orders/detail/accounting-section";
 import { ModifyOrderDialog } from "@/components/admin/orders/detail/modify-order-dialog";
 import { ItemReturnDialog } from "@/components/admin/orders/detail/item-return-dialog";
 
@@ -87,6 +88,7 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
     notes: <NotesSection order={order} detail={detail} perms={perms} />,
     returns: <ReturnsSection order={order} perms={perms} />,
     changes: <ChangesSection order={order} perms={perms} onModify={() => setDialog("modify")} onReturn={() => setDialog("return")} />,
+    accounting: <AccountingSection order={order} />,
   };
 
   return (
@@ -106,6 +108,7 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
           <aside className="min-w-0 space-y-5" aria-label="Customer, follow-up and notes">
             {sections.customer}
             {sections.followUp}
+            {sections.accounting}
             {sections.notes}
             {sections.returns}
           </aside>
@@ -119,6 +122,7 @@ export function OrderDetailPanel({ orderId, onClose, variant = "page" }: OrderDe
           {sections.payments}
           {sections.delivery}
           {sections.timeline}
+          {sections.accounting}
           {sections.notes}
           {sections.returns}
         </div>

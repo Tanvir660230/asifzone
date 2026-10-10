@@ -88,7 +88,7 @@ test("sales accounting: Sync now brings the delivered orders into the books; syn
   await toast(owner, /0 event\(s\) recorded/);
   expect(await committedEvents(owner)).toBe(events);
 
-  await owner.getByLabel("Order id").fill(fx.cod.id);
+  await owner.getByLabel("Order number").fill(fx.cod.number);
   await owner.getByRole("button", { name: "Show", exact: true }).click();
   await expect(owner.getByTestId("order-trail")).toContainText(`order:${fx.cod.id}:recognition`);
   await shot(owner, "p3-sales-accounting");

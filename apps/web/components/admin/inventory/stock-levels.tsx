@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { History, Package, SlidersHorizontal } from "lucide-react";
@@ -11,9 +11,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { SearchInput } from "@/components/ui/search-input";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
+import { useCapabilities } from "@/hooks/use-capability";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as inventoryApi from "@/lib/api/inventory";
-import { formatCount } from "@/lib/format";
+import * as purchasingApi from "@/lib/api/purchasing";
+import { formatCount, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { AdjustStockPrefill } from "@/components/admin/adjust-stock-modal";
 import { Thumbnail } from "@/components/admin/thumbnail";
@@ -41,7 +43,8 @@ const TAB_BASE = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-
  * Inventory › Stock levels (Blueprint V2 §O): one row per variant with what can still be sold (Available), what unshipped
  * orders hold (Reserved) and what is physically in the warehouse (On hand), the product's low-stock point and days of
  * cover. Numbers come from GET /api/inventory/levels; changing stock always goes through the adjust dialog (a reason is
- * recorded in the ledger).
+ * recorded in the ledger). Roles that see costs also get each variant's average cost and stock value from the costing
+ * engine (the same figures as Finance › Reports › Inventory valuation), with the store total above the table.
  */
 export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: AdjustStockPrefill) => void; canAdjust: boolean }) {
   const [state, setState] = useState<State | "">("");
@@ -57,6 +60,17 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
   });
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
   const filtered = Boolean(search || state);
+
+  const { can } = useCapabilities();
+  const showCost = can("costing.view");
+  const valuation = useQuery({
+    queryKey: ["purchasing", "reports", "inventory-valuation", "stock-levels"],
+    queryFn: purchasingApi.getInventoryValuation,
+    enabled: showCost,
+    staleTime: 60_000,
+  });
+  const costByVariant = useMemo(() => new Map((valuation.data?.items ?? []).map((i) => [i.variantId, i])), [valuation.data]);
+  const cols = showCost ? 9 : 8;
 
   return (
     <div className="space-y-3">
@@ -91,6 +105,18 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
             );
           })}
         </div>
+        {showCost && (
+          <Link
+            href="/admin/finance/reports?report=inventory-valuation"
+            className="ml-auto flex items-baseline gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[13px] text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg"
+            title="Inventory valuation report"
+          >
+            Stock value
+            <span className="font-semibold tabular-nums text-fg">
+              {valuation.isError ? "unavailable" : valuation.data ? formatPrice(valuation.data.totals.value) : "…"}
+            </span>
+          </Link>
+        )}
       </div>
 
       <TableContainer>
@@ -101,8 +127,13 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
               <TableHeaderCell align="right">Available</TableHeaderCell>
               <TableHeaderCell align="right">Reserved</TableHeaderCell>
               <TableHeaderCell align="right" className="whitespace-nowrap">On hand</TableHeaderCell>
-              <TableHeaderCell align="right" className="whitespace-nowrap">Low-stock point</TableHeaderCell>
-              <TableHeaderCell align="right" className="whitespace-nowrap">Days of cover</TableHeaderCell>
+              <TableHeaderCell align="right" className="whitespace-nowrap" title="Low-stock point">Low at</TableHeaderCell>
+              <TableHeaderCell align="right" className="whitespace-nowrap" title="Days of cover at the current sales pace">Cover</TableHeaderCell>
+              {showCost && (
+                <TableHeaderCell align="right" className="whitespace-nowrap" title="Value at average cost, with the cost of one unit">
+                  Stock value
+                </TableHeaderCell>
+              )}
               <TableHeaderCell>State</TableHeaderCell>
               <TableHeaderCell align="right">
                 <span className="sr-only">Actions</span>
@@ -110,9 +141,9 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
             </tr>
           </TableHead>
           <tbody>
-            {isLoading && !data && <TableSkeleton rows={8} cols={8} />}
+            {isLoading && !data && <TableSkeleton rows={8} cols={cols} />}
             {data && data.items.length === 0 && (
-              <TableMessageRow colSpan={8}>
+              <TableMessageRow colSpan={cols}>
                 <EmptyState
                   icon={Package}
                   title={filtered ? "No variants match" : "No products yet"}
@@ -123,6 +154,7 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
             {data?.items.map((r) => {
               const label = formatVariantLabel(r.size, r.color);
               const badge = STATE_BADGE[r.state];
+              const cost = costByVariant.get(r.variantId);
               return (
                 <TableRow key={r.variantId} className={cn(!r.active && "opacity-60")}>
                   <TableCell>
@@ -135,10 +167,10 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
                         )}
                       </span>
                       <span className="min-w-0">
-                        <Link href={`/admin/products/${r.productId}/edit`} className="block max-w-[260px] truncate text-fg hover:text-accent hover:underline">
+                        <Link href={`/admin/products/${r.productId}/edit`} className="block max-w-[200px] truncate text-fg hover:text-accent hover:underline">
                           {r.productName}
                         </Link>
-                        <span className="block max-w-[260px] truncate text-xs text-fg-subtle">
+                        <span className="block max-w-[200px] truncate text-xs text-fg-subtle">
                           {[label, r.sku].filter(Boolean).join(" · ")}
                           {!r.active && " · inactive"}
                         </span>
@@ -163,6 +195,19 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
                   <TableCell align="right" className="text-fg-muted" title="Available ÷ average daily units ordered over the last 30 days">
                     {r.daysOfCover === null || r.available <= 0 ? "—" : `${r.daysOfCover} d`}
                   </TableCell>
+                  {showCost && (
+                    <TableCell
+                      align="right"
+                      className="whitespace-nowrap tabular-nums"
+                      title={cost?.status === "INCOMPLETE" ? "Some units have no known cost yet — the value covers only the costed units" : undefined}
+                    >
+                      <span className="block text-fg">
+                        {cost ? formatPrice(cost.value) : "—"}
+                        {cost?.status === "INCOMPLETE" && <span className="ml-1 text-warning-700" aria-label="incomplete cost">*</span>}
+                      </span>
+                      {cost?.avgUnitCost != null && <span className="block text-xs text-fg-subtle">{formatPrice(cost.avgUnitCost)} each</span>}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Badge variant={badge.variant} dot>
                       {badge.label}
@@ -179,8 +224,9 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
                         href={`/admin/inventory?tab=movements&variantId=${r.variantId}`}
                         className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-sm text-fg-muted hover:bg-ink-900/[0.05] hover:text-fg"
                         title="Stock movements of this variant"
+                        aria-label="History"
                       >
-                        <History size={14} aria-hidden /> History
+                        <History size={14} aria-hidden /> <span className="hidden 2xl:inline">History</span>
                       </Link>
                     </span>
                   </TableCell>

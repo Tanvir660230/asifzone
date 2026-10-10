@@ -473,6 +473,7 @@ export const listJournals = (q: { status?: string; kind?: string; from?: string;
   apiFetch<{ total: number; journals: JournalEntry[] }>(`${BASE}/journals${range(Object.fromEntries(Object.entries(q).map(([k, v]) => [k, v === undefined ? undefined : String(v)])))}`);
 export const createJournal = (body: { entryDate: string; description: string; reference?: string | null; lines: Array<{ accountId: string; debit: number; credit: number; memo?: string | null }> }, idempotencyKey: string) =>
   apiFetch<{ journal: JournalEntry; replayed: boolean }>(`${BASE}/journals`, { method: "POST", body, idempotencyKey });
+export const getJournal = (id: string) => apiFetch<JournalEntry>(`${BASE}/journals/${id}`);
 export const postJournal = (id: string) => apiFetch<{ journal: JournalEntry }>(`${BASE}/journals/${id}/post`, { method: "POST", body: {} });
 export const deleteJournal = (id: string) => apiFetch<void>(`${BASE}/journals/${id}`, { method: "DELETE" });
 export const reverseJournal = (id: string, reason: string) => apiFetch<unknown>(`${BASE}/journals/${id}/reverse`, { method: "POST", body: { reason } });

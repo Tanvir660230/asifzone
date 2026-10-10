@@ -96,7 +96,7 @@ export default function SuppliersPage() {
                     {s.displayName !== s.legalName && <span className="block text-xs text-ink-500">{s.legalName}</span>}
                   </TableCell>
                   <TableCell className="text-sm">{[s.contactName, s.phone].filter(Boolean).join(" · ") || "—"}</TableCell>
-                  <TableCell align="right" className="tabular-nums">{s.paymentTermsDays ? `${s.paymentTermsDays} days` : "on receipt"}</TableCell>
+                  <TableCell align="right" className="whitespace-nowrap tabular-nums">{s.paymentTermsDays ? `${s.paymentTermsDays} days` : "on receipt"}</TableCell>
                   <TableCell align="right" className="tabular-nums">{s.creditLimit === null ? "—" : formatPrice(s.creditLimit)}</TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE[s.status]}>{STATUS_LABEL[s.status]}</Badge>

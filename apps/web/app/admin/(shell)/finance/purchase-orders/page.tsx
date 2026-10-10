@@ -25,6 +25,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { VariantPicker } from "@/components/admin/purchasing/variant-picker";
 import { PO_STATUS_BADGE, PO_STATUS_LABEL } from "@/components/admin/purchasing/status";
 import { useCapabilities } from "@/hooks/use-capability";
+import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as purchasingApi from "@/lib/api/purchasing";
@@ -40,6 +41,7 @@ export default function PurchaseOrdersPage() {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
+  useCreateParam("purchase-order", () => setCreating(true));
   const query = { status: status || undefined, q: q.trim() || undefined, pageSize: 100 };
   const list = useQuery({ queryKey: purchasingApi.purchasingDocKeys.orders(query), queryFn: () => purchasingApi.listPurchaseOrders(query), enabled: allowed });
 
