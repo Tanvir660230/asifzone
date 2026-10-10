@@ -551,7 +551,7 @@ function Components() {
                 <p className="font-medium text-ink-900">{c.name} {c.isBasic && <Badge variant="info">Basic</Badge>} {!c.isActive && <Badge variant="neutral">Inactive</Badge>}</p>
                 <p className="text-sm text-ink-600">
                   {KIND_LABEL[c.kind]} · {c.calculation === "FIXED" ? "fixed amount" : `${c.ratePct}% of basic`}
-                  {c.expenseAccount && ` · cost ${c.expenseAccount.code}`}{c.liabilityAccount && ` · owed on ${c.liabilityAccount.code}`}
+                  {c.expenseAccount && ` · cost ${c.expenseAccount.code}`}{c.liabilityAccount && (c.liabilityAccount.type === "ASSET" ? ` · recovers ${c.liabilityAccount.code}` : ` · owed on ${c.liabilityAccount.code}`)}
                 </p>
               </div>
               <Button size="sm" variant="ghost" className="self-start sm:self-auto" onClick={() => setEditing(c)}>Edit</Button>
@@ -576,7 +576,11 @@ function ComponentModal({ component, hasBasic, onClose }: { component: PayCompon
   });
   const accounts = useMemo(() => (chart.data?.accounts ?? []).filter((a) => a.isPostable && a.isActive), [chart.data]);
   const expenseOptions = accounts.filter((a) => ["EXPENSE", "COGS", "OTHER_EXPENSE"].includes(a.type));
-  const liabilityOptions = accounts.filter((a) => a.type === "LIABILITY");
+  const money = useQuery({ queryKey: ["finance", "financial-accounts"], queryFn: financeApi.listFinancialAccounts });
+  const moneyLedgers = new Set((money.data?.financialAccounts ?? []).map((f) => f.ledgerAccount.id));
+  // a deduction may also recover a receivable (1520 Employee advances); money accounts never — they move through Treasury
+  const receivablesGroup = (chart.data?.accounts ?? []).find((a) => a.code === "1500")?.id;
+  const liabilityOptions = accounts.filter((a) => (a.type === "LIABILITY" || (form.kind === "DEDUCTION" && a.type === "ASSET" && a.parentId === receivablesGroup)) && !moneyLedgers.has(a.id));
   const percent = form.calculation === "PERCENT_OF_BASIC";
   const basicAllowed = form.kind === "EARNING" && !percent && !hasBasic;
   const valid = form.name.trim().length >= 2 && (!percent || (form.ratePct !== "" && Number(form.ratePct) >= 0 && Number(form.ratePct) <= 100));
@@ -620,7 +624,7 @@ function ComponentModal({ component, hasBasic, onClose }: { component: PayCompon
           </Field>
         )}
         {form.kind !== "EARNING" && (
-          <Field htmlFor="pc-lia" label="Owed on account" hint="Where it waits until paid over">
+          <Field htmlFor="pc-lia" label={form.kind === "DEDUCTION" ? "Withheld to / recovers" : "Owed on account"} hint={form.kind === "DEDUCTION" ? "A liability waits until paid over; an asset such as Employee advances is recovered" : "Where it waits until paid over"}>
             <Select id="pc-lia" value={form.liabilityAccountId} onChange={(e) => setForm({ ...form, liabilityAccountId: e.target.value })}>
               <option value="">Default</option>
               {liabilityOptions.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}

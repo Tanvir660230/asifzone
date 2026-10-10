@@ -62,7 +62,7 @@ export interface ComponentInput {
   sortOrder?: number;
 }
 
-const COMPONENT_INCLUDE = { expenseAccount: { select: { id: true, code: true, name: true } }, liabilityAccount: { select: { id: true, code: true, name: true } } } satisfies Prisma.PayComponentInclude;
+const COMPONENT_INCLUDE = { expenseAccount: { select: { id: true, code: true, name: true } }, liabilityAccount: { select: { id: true, code: true, name: true, type: true } } } satisfies Prisma.PayComponentInclude;
 type ComponentRow = Prisma.PayComponentGetPayload<{ include: typeof COMPONENT_INCLUDE }>;
 const componentDto = (c: ComponentRow) => ({
   id: c.id, name: c.name, kind: c.kind, calculation: c.calculation, isBasic: c.isBasic, ratePct: rateOf(c.ratePct),
@@ -70,11 +70,18 @@ const componentDto = (c: ComponentRow) => ({
 });
 
 async function postableAccount(tx: AppTransactionClient, businessId: string, id: string, types: string[], what: string) {
-  const a = await tx.ledgerAccount.findFirst({ where: { id, businessId } });
+  const a = await tx.ledgerAccount.findFirst({ where: { id, businessId }, include: { financialAccount: { select: { id: true } }, parent: { select: { code: true } } } });
   if (!a) throw financeError(404, "ACCOUNT_NOT_FOUND", `The ${what} account was not found`);
   if (!a.isPostable || !a.isActive || !types.includes(a.type)) throw financeError(400, "PAYROLL_ACCOUNT", `${a.code} ${a.name} can't be the ${what} account (a postable, active ${types.join(" / ").toLowerCase()} account)`);
+  // money moves only through Treasury: a cash / bank / wallet / clearing account is never a payroll account
+  if (a.financialAccount) throw financeError(400, "PAYROLL_ACCOUNT", `${a.code} ${a.name} is a money account — pay or recover through Money accounts`);
+  // an asset is only ever a receivable the deduction recovers (under 1500 Receivables, e.g. 1520 Employee advances)
+  if (a.type === "ASSET" && a.parent?.code !== RECEIVABLES_GROUP) throw financeError(400, "PAYROLL_ACCOUNT", `${a.code} ${a.name} isn't a receivable — a deduction recovers from an account under ${RECEIVABLES_GROUP} Receivables`);
   return a;
 }
+/** A deduction credits a liability (tax, provident fund withheld) or a receivable it recovers (1520 Employee advances). */
+const DEDUCTION_TYPES = ["LIABILITY", "ASSET"];
+const RECEIVABLES_GROUP = "1500";
 
 /** Fills the default accounts for a kind and checks the shape (the database checks it again). */
 async function componentAccounts(tx: AppTransactionClient, businessId: string, kind: PayComponentKind, input: { expenseAccountId?: string | null; liabilityAccountId?: string | null }) {
@@ -83,7 +90,7 @@ async function componentAccounts(tx: AppTransactionClient, businessId: string, k
   const expenseId = wantsExpense ? input.expenseAccountId ?? (await resolveMappedAccount(tx, businessId, kind === "EARNING" ? "expense.salaries" : "expense.employer_contributions")).id : null;
   const liabilityId = wantsLiability ? input.liabilityAccountId ?? (await resolveMappedAccount(tx, businessId, "liability.payroll_deductions")).id : null;
   if (expenseId) await postableAccount(tx, businessId, expenseId, ["EXPENSE", "COGS", "OTHER_EXPENSE"], "expense");
-  if (liabilityId) await postableAccount(tx, businessId, liabilityId, ["LIABILITY"], "liability");
+  if (liabilityId) await postableAccount(tx, businessId, liabilityId, kind === "DEDUCTION" ? DEDUCTION_TYPES : ["LIABILITY"], kind === "DEDUCTION" ? "deduction" : "liability");
   return { expenseAccountId: expenseId, liabilityAccountId: liabilityId };
 }
 
@@ -472,7 +479,7 @@ export async function postPayRun(id: string, actor: FinanceActor) {
       }
     }
     for (const accountId of [...debit.keys()]) await postableAccount(tx, business.id, accountId, ["EXPENSE", "COGS", "OTHER_EXPENSE"], "expense");
-    for (const accountId of [...credit.keys()]) await postableAccount(tx, business.id, accountId, ["LIABILITY"], "liability");
+    for (const accountId of [...credit.keys()]) await postableAccount(tx, business.id, accountId, DEDUCTION_TYPES, "deduction / liability");
     const payable = await resolveMappedAccount(tx, business.id, "liability.salaries_payable");
     const label = `Payroll ${run.periodKey} (${payRunNumber(run.number)})`;
     const lines: JournalLineSpec[] = [
@@ -563,7 +570,8 @@ async function payrollLiabilityAccounts(tx: AppTransactionClient | typeof prisma
   const ids = new Set(comps.map((c) => c.liabilityAccountId!));
   const map = await tx.accountMapping.findFirst({ where: { businessId, key: "liability.payroll_deductions" } });
   if (map) ids.add(map.accountId);
-  return tx.ledgerAccount.findMany({ where: { id: { in: [...ids] } }, select: { id: true, code: true, name: true }, orderBy: { code: "asc" } });
+  // only liabilities are paid over; a recovery account (an asset such as 1520) is settled by the deduction itself
+  return tx.ledgerAccount.findMany({ where: { id: { in: [...ids] }, type: "LIABILITY" }, select: { id: true, code: true, name: true }, orderBy: { code: "asc" } });
 }
 
 /** Pays withheld deductions / contributions over (tax authority, provident fund). Never more than is owed. Idempotent. */

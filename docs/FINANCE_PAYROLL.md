@@ -27,6 +27,10 @@ A component is one line of pay.
 - The **basic salary** is the one fixed earning that percentages are of (at most one per business).
 - Each component can name its own accounts: any postable expense, cost-of-sales or other-expense account, and any
   postable liability account. For example, tax withheld could go to 2320 Withholding tax payable.
+- **Recovering an advance:** a deduction may instead credit a receivable it recovers, an account under 1500 Receivables
+  such as 1520 Employee advances. The advance itself is paid as an ordinary withdrawal against 1520. Such a deduction is
+  settled by the payslip and is never "paid over".
+- Money accounts (cash, bank, wallet, clearing) are never payroll accounts; money moves only through Treasury.
 - Once a component is on a payslip, its kind, calculation and basic flag can't change; create a new component instead.
   Its name, rate, accounts and active flag can still change.
 
@@ -184,6 +188,5 @@ Migration `20261029100000_finance_payroll`:
   entered as amounts or percentages by the owner.
 - **No attendance or leave:** days paid are calendar days or entered by hand.
 - **No payslip PDF or employee self-service.**
-- **No advances register:** an advance is paid as an expense or transfer to 1520 Employee advances, then recovered with a
-  deduction component posting to 1520. The deduction's liability account must be a liability, so a recovery against an
-  asset account needs a manual journal for now.
+- **No advances register:** an advance is paid as a Money accounts withdrawal against 1520 Employee advances and recovered
+  by a deduction component crediting 1520 (§1). There is no per-employee advance balance yet; the ledger of 1520 shows it.

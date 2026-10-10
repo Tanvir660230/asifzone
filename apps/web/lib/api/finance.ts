@@ -594,7 +594,7 @@ export const changePeriod = (id: string, transition: "close" | "reopen", reason:
 export type PayComponentKind = "EARNING" | "DEDUCTION" | "EMPLOYER_CONTRIBUTION";
 export type PayCalculation = "FIXED" | "PERCENT_OF_BASIC";
 type AccountRef = { id: string; code: string; name: string } | null;
-export interface PayComponent { id: string; name: string; kind: PayComponentKind; calculation: PayCalculation; isBasic: boolean; ratePct: number | null; expenseAccount: AccountRef; liabilityAccount: AccountRef; isActive: boolean; sortOrder: number }
+export interface PayComponent { id: string; name: string; kind: PayComponentKind; calculation: PayCalculation; isBasic: boolean; ratePct: number | null; expenseAccount: AccountRef; liabilityAccount: (AccountRef & { type: string }) | null; isActive: boolean; sortOrder: number }
 export interface PayTotals { gross: number; deductions: number; net: number; employerCost: number }
 export interface Employee {
   id: string; number: string; name: string; designation: string | null; department: string | null; phone: string | null; payoutDetails: string | null;

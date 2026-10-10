@@ -720,6 +720,33 @@ describe("payroll (E8) — a configurable structure, posted as one journal, paid
   });
 });
 
+describe("payroll — recovering an employee advance (E8)", () => {
+  it("a deduction can recover an advance from 1520 Employee advances; money accounts and remittance are refused", async () => {
+    const { business } = await getFinanceContext();
+    const advances = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "1520" } });
+    const cash = await prisma.financialAccount.findFirstOrThrow({ where: { businessId: business.id, kind: "CASH", isActive: true } });
+    await expect(createComponent({ name: "Into the till", kind: "DEDUCTION", liabilityAccountId: cash.ledgerAccountId }, OWNER)).rejects.toMatchObject({ statusCode: 400 });
+    const inventory = await prisma.ledgerAccount.findFirstOrThrow({ where: { businessId: business.id, code: "1610" } });
+    await expect(createComponent({ name: "Into stock", kind: "DEDUCTION", liabilityAccountId: inventory.id }, OWNER)).rejects.toMatchObject({ statusCode: 400 }); // not a receivable
+    const recovery = await createComponent({ name: "Advance recovery", kind: "DEDUCTION", liabilityAccountId: advances.id }, OWNER);
+    expect(recovery.liabilityAccount?.code).toBe("1520");
+    const basic = (await prisma.payComponent.findFirstOrThrow({ where: { businessId: business.id, isBasic: true } })).id;
+    const e = await createEmployee({ name: "Advance taker", joinDate: "2026-01-01", payItems: [{ componentId: basic, amount: 10_000 }, { componentId: recovery.id, amount: 2_000 }] }, OWNER);
+    // the advance itself: an ordinary withdrawal against 1520
+    const bank = (await createFinancialAccount({ kind: "BANK", name: `Advance bank ${Date.now() % 100000}` } as never, OWNER)).id;
+    await requestMovement({ kind: "WITHDRAWAL", movementDate: "2026-10-02", amount: 6_000, fromFinancialAccountId: bank, counterAccountId: advances.id, description: "Salary advance — Advance taker" }, OWNER, "advance-1");
+    const run = await postPayRun((await createPayRun({ periodKey: "2026-10" }, OWNER)).id, OWNER);
+    const slip = run.payslips.find((x) => x.employee.id === e.id)!;
+    expect(slip).toMatchObject({ gross: 10_000, deductions: 2_000, net: 8_000 });
+    const lines = await prisma.journalLine.findMany({ where: { entryId: run.journalEntryId!, accountId: advances.id } });
+    expect(lines.reduce((t, l) => t + Number(l.credit) - Number(l.debit), 0)).toBe(2_000); // the advance owed falls by 2,000
+    await expect(remitDeductions({ liabilityAccountId: advances.id, amount: 1, fromFinancialAccountId: bank }, OWNER, "remit-advance")).rejects.toMatchObject({ statusCode: 400 });
+    expect((await payrollOverview()).withheld.some((w) => w.account.code === "1520")).toBe(false);
+    await reversePayRun(run.id, "Test complete", OWNER);
+    allMatched(await checks());
+  });
+});
+
 describe("partners & equity, foundation (E11) — balances come from the ledger; the summary is the balance sheet's", () => {
   it("creates each partner's capital and current accounts, reads their balances, and agrees with the balance sheet", async () => {
     const { business } = await getFinanceContext();
