@@ -71,5 +71,4 @@ Permission: `finance.read`. These are 3 routes, 514 admin routes in total.
 - **No year-end close.** Profit accumulates in "Current earnings" until a closing entry moves it to retained earnings.
   Periods can be soft-closed or closed through the existing periods API; there is no closing-entry wizard yet.
 - **No brand selector in the pages.** The brand filter is in the API.
-- **Corrections in the UI.** Correcting a posted journal (reverse and re-post in one step) is in the API, not yet in the
-  UI.
+- **Corrections in the UI:** done (2026-10-10). A posted manual journal has *Correct*: its lines are prefilled and a reason is required; saving reverses the original and posts the corrected entry (kind CORRECTION) in one step.

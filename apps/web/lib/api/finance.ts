@@ -476,6 +476,9 @@ export const createJournal = (body: { entryDate: string; description: string; re
 export const postJournal = (id: string) => apiFetch<{ journal: JournalEntry }>(`${BASE}/journals/${id}/post`, { method: "POST", body: {} });
 export const deleteJournal = (id: string) => apiFetch<void>(`${BASE}/journals/${id}`, { method: "DELETE" });
 export const reverseJournal = (id: string, reason: string) => apiFetch<unknown>(`${BASE}/journals/${id}/reverse`, { method: "POST", body: { reason } });
+/** Reverses a posted journal and posts its corrected version, in one step (kind CORRECTION). */
+export const correctJournal = (id: string, body: { reason: string; entryDate?: string; description?: string; lines: Array<{ accountId: string; debit: number; credit: number; memo?: string | null }> }) =>
+  apiFetch<{ reversal: JournalEntry; correction: JournalEntry; replayed: boolean }>(`${BASE}/journals/${id}/correct`, { method: "POST", body });
 export const getTrialBalance = (q: { from?: string; to?: string } = {}) => apiFetch<TrialBalance>(`${BASE}/trial-balance${range(q)}`);
 export const getIncomeStatement = (q: { from?: string; to?: string } = {}) => apiFetch<IncomeStatement>(`${BASE}/statements/income${range(q)}`);
 export const getBalanceSheet = (q: { asOf?: string } = {}) => apiFetch<BalanceSheet>(`${BASE}/statements/balance-sheet${range(q)}`);

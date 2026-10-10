@@ -38,6 +38,7 @@ export default function JournalsPage() {
   const [to, setTo] = useState("");
   const [creating, setCreating] = useState(false);
   const [reversing, setReversing] = useState<JournalEntry | null>(null);
+  const [correcting, setCorrecting] = useState<JournalEntry | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const query = { status: status || undefined, kind: kind || undefined, from: from || undefined, to: to || undefined, pageSize: 100 };
   const list = useQuery({ queryKey: financeApi.ledgerKeys.journals(query), queryFn: () => financeApi.listJournals(query), enabled: allowed });
@@ -115,6 +116,7 @@ export default function JournalsPage() {
                     {j.status === "DRAFT" && can("finance.post") && <Button size="sm" loading={post.isPending} onClick={() => post.mutate(j.id)}>Post</Button>}
                     {j.status === "DRAFT" && can("finance.transact") && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate(j.id)}>Delete draft</Button>}
                     {j.status === "POSTED" && j.kind === "MANUAL" && !j.reversedBy && can("finance.reverse") && <Button size="sm" variant="outline" onClick={() => setReversing(j)}>Reverse</Button>}
+                    {j.status === "POSTED" && j.kind === "MANUAL" && !j.reversedBy && can("finance.reverse") && !j.lines.some((l) => l.debit === null || l.credit === null) && <Button size="sm" variant="outline" onClick={() => setCorrecting(j)} data-testid="correct-journal">Correct</Button>}
                   </div>
                 </div>
               )}
@@ -123,6 +125,7 @@ export default function JournalsPage() {
         })}
       </div>
       {creating && <JournalModal accounts={chart.data?.accounts ?? []} canPost={can("finance.post")} onClose={() => setCreating(false)} onDone={() => { setCreating(false); refresh(); }} />}
+      {correcting && <JournalModal accounts={chart.data?.accounts ?? []} canPost correcting={correcting} onClose={() => setCorrecting(null)} onDone={() => { setCorrecting(null); refresh(); }} />}
       {reversing && <ReasonModal title={`Reverse journal #${reversing.number}`} hint="A mirror entry is posted; the original stays in the books." loading={reverse.isPending} onClose={() => setReversing(null)} onConfirm={(reason) => reverse.mutate({ id: reversing.id, reason })} />}
     </div>
   );
@@ -132,31 +135,44 @@ interface Row { key: number; accountId: string; debit: string; credit: string; m
 let seq = 0;
 const cents = (v: string) => (v.trim() ? Math.round(Number(v) * 100) : 0);
 
-function JournalModal({ accounts, canPost, onClose, onDone }: { accounts: ChartAccount[]; canPost: boolean; onClose: () => void; onDone: () => void }) {
+/** A new manual journal, or — with `correcting` — the corrected version of a posted one: its lines prefilled, a reason
+ * required; saving reverses the original and posts the correction in one step. */
+function JournalModal({ accounts, canPost, correcting, onClose, onDone }: { accounts: ChartAccount[]; canPost: boolean; correcting?: JournalEntry; onClose: () => void; onDone: () => void }) {
   const postable = accounts.filter((a) => a.isPostable && a.isActive && !a.restricted);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [description, setDescription] = useState("");
-  const [reference, setReference] = useState("");
-  const [rows, setRows] = useState<Row[]>([{ key: ++seq, accountId: "", debit: "", credit: "", memo: "" }, { key: ++seq, accountId: "", debit: "", credit: "", memo: "" }]);
+  const [date, setDate] = useState(() => correcting?.entryDate ?? new Date().toISOString().slice(0, 10));
+  const [description, setDescription] = useState(() => (correcting ? `Correction of #${correcting.number}: ${correcting.description}`.slice(0, 300) : ""));
+  const [reference, setReference] = useState(() => correcting?.reference ?? "");
+  const [reason, setReason] = useState("");
+  const [rows, setRows] = useState<Row[]>(() => correcting
+    ? correcting.lines.map((l) => ({ key: ++seq, accountId: l.accountId, debit: l.debit ? String(l.debit) : "", credit: l.credit ? String(l.credit) : "", memo: l.memo ?? "" }))
+    : [{ key: ++seq, accountId: "", debit: "", credit: "", memo: "" }, { key: ++seq, accountId: "", debit: "", credit: "", memo: "" }]);
   const [key] = useState(() => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `jr-${Date.now()}`));
   const set = (k: number, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const dr = rows.reduce((s, r) => s + cents(r.debit), 0);
   const cr = rows.reduce((s, r) => s + cents(r.credit), 0);
   const rowsOk = rows.every((r) => r.accountId && (cents(r.debit) > 0) !== (cents(r.credit) > 0) && cents(r.debit) >= 0 && cents(r.credit) >= 0);
-  const valid = description.trim().length > 0 && rows.length >= 2 && rowsOk && dr === cr && dr > 0;
+  const valid = description.trim().length > 0 && rows.length >= 2 && rowsOk && dr === cr && dr > 0 && (!correcting || reason.trim().length >= 3);
   const save = useMutation({
     mutationFn: async (andPost: boolean) => {
+      if (correcting) {
+        await financeApi.correctJournal(correcting.id, { reason: reason.trim(), entryDate: date, description: description.trim(), lines: rows.map((x) => ({ accountId: x.accountId, debit: cents(x.debit) / 100, credit: cents(x.credit) / 100, memo: x.memo.trim() || null })) });
+        return true;
+      }
       const r = await financeApi.createJournal({ entryDate: date, description: description.trim(), reference: reference.trim() || null, lines: rows.map((x) => ({ accountId: x.accountId, debit: cents(x.debit) / 100, credit: cents(x.credit) / 100, memo: x.memo.trim() || null })) }, key);
       if (andPost) await financeApi.postJournal(r.journal.id);
       return andPost;
     },
-    onSuccess: (posted) => { toast.success(posted ? "Journal posted" : "Draft saved"); onDone(); },
+    onSuccess: (posted) => { toast.success(correcting ? `Journal #${correcting.number} corrected` : posted ? "Journal posted" : "Draft saved"); onDone(); },
     onError: (err) => toast.error(getErrorMessage(err, "The journal couldn't be saved")),
   });
   return (
-    <Modal open onClose={onClose} title="Manual journal" description="Debits must equal credits. A draft can be checked by someone else before posting." widthClassName="max-w-3xl"
-      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button variant="outline" loading={save.isPending} disabled={!valid} onClick={() => save.mutate(false)}>Save draft</Button>{canPost && <Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate(true)} data-testid="journal-post">Post</Button>}</>}>
+    <Modal open onClose={onClose} title={correcting ? `Correct journal #${correcting.number}` : "Manual journal"} widthClassName="max-w-3xl"
+      description={correcting ? "The original is reversed and this corrected entry is posted, both on the date below. Both stay in the books." : "Debits must equal credits. A draft can be checked by someone else before posting."}
+      footer={correcting
+        ? <><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate(true)} data-testid="journal-correct">Reverse and post correction</Button></>
+        : <><Button variant="outline" onClick={onClose}>Cancel</Button><Button variant="outline" loading={save.isPending} disabled={!valid} onClick={() => save.mutate(false)}>Save draft</Button>{canPost && <Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate(true)} data-testid="journal-post">Post</Button>}</>}>
       <div className="space-y-4">
+        {correcting && <Field htmlFor="jr-reason" label="Reason for the correction" required><Input id="jr-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="Booked to the wrong expense account" /></Field>}
         <div className="grid gap-3 sm:grid-cols-3">
           <Field htmlFor="jr-date" label="Date" required><Input id="jr-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
           <Field htmlFor="jr-desc" label="Description" required className="sm:col-span-2"><Input id="jr-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} /></Field>
