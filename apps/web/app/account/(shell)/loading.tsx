@@ -1,5 +1,5 @@
-import { BrandLoader } from "@/components/storefront/brand-loader";
+import { AccountHomeSkeleton } from "@/components/account/account-skeleton";
 
 export default function Loading() {
-  return <BrandLoader label="Loading" />;
+  return <AccountHomeSkeleton />;
 }

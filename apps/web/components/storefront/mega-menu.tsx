@@ -8,7 +8,7 @@ import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { cn } from "@/lib/utils";
 
 const NAV_LINK_CLASS =
-  "group/navlink relative flex items-center gap-1 whitespace-nowrap py-2 text-sm ui-caps text-ink-800 transition-colors duration-200 ease-smooth hover:text-brass-500";
+  "group/navlink relative flex items-center gap-1 whitespace-nowrap py-2 text-sm ui-caps text-ink-800 transition-colors duration-200 ease-smooth hover:text-[color:var(--nav-hover)]";
 // Fully opaque, not the shared `.glass` (75% opacity) — this floats over whatever's on the page below it, including the
 // hero photo, and translucency let the image visibly show through behind the menu text. A functional nav menu needs to
 // read cleanly regardless of what's behind it; the header's translucency (deliberate, sits over plain scrolling content)
@@ -88,17 +88,21 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
 
   return (
     <nav ref={containerRef} aria-label="Categories" className={cn("relative flex min-w-0 flex-1", !measured && "[overflow-x:clip]")}>
-      {/* Measuring row: the same typography, laid out but invisible and unreachable. First child is the "More" probe. */}
-      <div ref={measureRef} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex gap-8">
-        <span className={NAV_LINK_CLASS}>
-          More
-          <ChevronDown size={14} />
-        </span>
-        {categories.map((cat) => (
-          <span key={cat.id} className={NAV_LINK_CLASS}>
-            {cat.name}
+      {/* Measuring row: the same typography, laid out but invisible and unreachable. First child is the "More" probe.
+          Inside a zero-height clipping box: once the nav stops clipping (so dropdowns can hang out), a long row must not
+          widen the page and give every storefront page a horizontal scroll. */}
+      <div aria-hidden="true" className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden">
+        <div ref={measureRef} className="flex w-max gap-8">
+          <span className={NAV_LINK_CLASS}>
+            More
+            <ChevronDown size={14} />
           </span>
-        ))}
+          {categories.map((cat) => (
+            <span key={cat.id} className={NAV_LINK_CLASS}>
+              {cat.name}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* `mx-auto` centres the row while it fits and starts it at the left (never clipped on both sides) while it doesn't. */}
@@ -120,7 +124,7 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
               className={NAV_LINK_CLASS}
             >
               {cat.name}
-              <span className="absolute inset-x-0 -bottom-0.5 h-px origin-center scale-x-0 bg-brass-500 transition-transform duration-200 ease-smooth group-hover/navlink:scale-x-100" />
+              <span className="absolute inset-x-0 -bottom-0.5 h-px origin-center scale-x-0 bg-[color:var(--nav-underline)] transition-transform duration-200 ease-smooth group-hover/navlink:scale-x-100" />
             </Link>
 
             {cat.children.length > 0 && openId === cat.id && (

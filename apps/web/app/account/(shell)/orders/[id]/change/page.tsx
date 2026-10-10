@@ -6,10 +6,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
 import { customerCancelBlocker, orderModificationBlocker, type Order } from "@clothing-brand/shared";
 import { BackLink } from "@/components/ui/back-link";
-import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { AccountPageHeader } from "@/components/account/account-page-header";
+import { AccountTitle } from "@/components/account/account-ui";
 import { ChangeOrderForm } from "@/components/orders/adjustments/change-order-form";
 import { useModificationFlow } from "@/components/orders/adjustments/use-modification-flow";
 import { applyMyOrderChange, getMyOrder, previewMyOrderChange } from "@/lib/api/customers";
@@ -62,10 +61,11 @@ function ChangeOrder({ order }: { order: Order }) {
   return (
     <div className="space-y-6">
       <div>
-        <Breadcrumb items={[{ label: "Account", href: "/account" }, { label: "Orders", href: "/account/orders" }, { label: order.orderNumber, href: back }, { label: "Change" }]} />
-        <BackLink href={back} label="Back to order" />
+        <BackLink href={back} label={`Order ${order.orderNumber}`} />
+        <div className="mt-4">
+          <AccountTitle title="Change your order" description="Add or remove items, change sizes or quantities, or update where it's delivered." />
+        </div>
       </div>
-      <AccountPageHeader title={`Change order ${order.orderNumber}`} description="Add or remove items, change sizes or quantities, or update where it's delivered." />
       {blocker ? (
         <div className="flex flex-col items-start gap-3 rounded-2xl border border-line-subtle bg-surface p-5" data-testid="change-not-allowed">
           <p className="flex items-start gap-2 text-sm text-ink-700">

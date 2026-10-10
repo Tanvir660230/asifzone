@@ -28,7 +28,7 @@ import {
   getSiteSettings,
   listStorefrontProducts,
 } from "@/lib/api/storefront";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 
 // Below-the-fold sections — split out of the main bundle since they're not needed for first paint.
 const BrandStory = nextDynamic(() => import("@/components/storefront/brand-story").then((m) => m.BrandStory));
@@ -44,14 +44,19 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const { settings } = await getSiteSettings();
   const url = getSiteUrl();
+  // The store's own search title/description for the homepage (Admin → Settings → Search engines), else name and tagline.
+  const title = settings.seoTitle || settings.storeName;
+  const description = settings.seoDescription || settings.tagline || undefined;
   return {
+    ...(settings.seoTitle ? { title: { absolute: settings.seoTitle } } : {}),
+    ...(settings.seoDescription ? { description: settings.seoDescription } : {}),
     alternates: { canonical: url },
     ...buildOpenGraph({
-      title: settings.storeName,
-      description: settings.tagline ?? undefined,
+      title,
+      description,
       url,
       siteName: settings.storeName,
-      images: settings.logoUrl ? [settings.logoUrl] : undefined,
+      images: storeShareImages(settings),
     }),
   };
 }
@@ -115,6 +120,7 @@ export default async function HomePage() {
                 tagline={settings.tagline}
                 headline={config.headline}
                 subtext={config.subtext}
+                bodyText={config.bodyText}
                 ctaLabel={config.ctaLabel}
                 ctaHref={config.ctaHref}
                 secondaryCtaLabel={config.secondaryCtaLabel}
@@ -154,7 +160,7 @@ export default async function HomePage() {
             return flashSale ? <FlashSaleSection key={section.id} flashSale={flashSale} /> : null;
           case "CATEGORY_GRID": {
             const config = section.config as unknown as CategoryGridConfig;
-            return <CategoryGrid key={section.id} categories={tree} heading={config.heading} />;
+            return <CategoryGrid key={section.id} categories={tree} heading={config.heading} subtitle={config.subtitle} />;
           }
           case "BRAND_STORY": {
             const config = section.config as unknown as BrandStoryConfig;

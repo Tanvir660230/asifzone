@@ -28,6 +28,7 @@ import {
   formatMoney,
 } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
+import { firstImageByVariant } from "./account-summary.service";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { mapWithConcurrency } from "../../lib/concurrency";
@@ -1168,13 +1169,20 @@ export async function loyaltyDrift(limit = 100) {
     LIMIT ${limit}`;
 }
 
+/** The customer's own orders, newest first. Trashed orders are left out (their detail page is a 404 for the customer), and
+ * each order carries its first line's product photo as `previewImageUrl` for the order list. */
 export async function listCustomerOrders(customerId: string, query: PaginationQuery) {
-  const where = { customerId };
-  return paginate(
+  const where = { customerId, deletedAt: null };
+  const result = await paginate(
     query,
-    (p) => prisma.order.findMany({ where, include: { items: true }, orderBy: { createdAt: "desc" }, ...p }),
+    (p) => prisma.order.findMany({ where, include: { items: { orderBy: { id: "asc" } } }, orderBy: { createdAt: "desc" }, ...p }),
     () => prisma.order.count({ where }),
   );
+  const images = await firstImageByVariant(result.items.flatMap((o) => (o.items[0] ? [o.items[0].variantId] : [])));
+  return {
+    ...result,
+    items: result.items.map((o) => ({ ...o, previewImageUrl: o.items[0] ? (images.get(o.items[0].variantId) ?? null) : null })),
+  };
 }
 
 export async function listMyPointsLedger(customerId: string, query: PaginationQuery) {

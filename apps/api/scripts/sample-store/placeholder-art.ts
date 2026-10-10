@@ -67,12 +67,3 @@ export async function renderPlaceholder(kind: ArtKind, tone: string, width: numb
   </svg>`;
   return sharp(Buffer.from(svg)).webp({ quality: 88 }).toBuffer();
 }
-
-/** A transparent PNG wordmark that says what it is: the store's name plus "placeholder logo". */
-export async function renderPlaceholderLogo(wordmark: string): Promise<Buffer> {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180">
-    <text x="360" y="104" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="92" font-weight="600" letter-spacing="-2" fill="#1b1a18">${wordmark}</text>
-    <text x="360" y="160" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="26" letter-spacing="8" fill="#8a857c">PLACEHOLDER LOGO</text>
-  </svg>`;
-  return sharp(Buffer.from(svg)).png().toBuffer();
-}

@@ -18,8 +18,18 @@ export const nasihamart: SampleStore = {
     handlingDaysMin: 1,
     handlingDaysMax: 2,
     codEnabled: true,
+    seoTitle: "Nasihamart — Islamic lifestyle essentials",
+    seoDescription: "Modest fashion, Islamic books, attar, prayer essentials and thoughtful gifts.",
+    newsletterHeading: "Stay close to Nasihamart",
+    newsletterText: "Occasional notes on new arrivals and seasonal collections. Unsubscribe any time.",
   },
-  logo: { wordmark: "nasihamart" },
+  // The brand assets themselves (docs/brand/nasihamart) — uploaded exactly as the owner would upload them in the admin.
+  brand: {
+    logo: "docs/brand/nasihamart/png/nasihamart-logo.png",
+    logoOnDark: "docs/brand/nasihamart/png/nasihamart-logo-on-dark.png",
+    favicon: "docs/brand/nasihamart/png/nasihamart-favicon-512.png",
+    socialImage: "docs/brand/nasihamart/png/nasihamart-og-image-1200x630.png",
+  },
   categories: [
     { key: "panjabi", name: "Panjabi", art: "panjabi", tone: "#d9d2c5" },
     { key: "kufi", name: "Kufi & Caps", art: "kufi", tone: "#ddd6cb" },
@@ -208,44 +218,56 @@ export const nasihamart: SampleStore = {
       variants: { sizes: ["৳1,000", "৳2,500", "৳5,000"], colors: [], stock: 100 },
     },
   ],
-  hero: {
-    art: "panjabi",
-    tone: "#ddd5c8",
-    config: {
-      subtext: "Eid collection",
-      headline: "Made for the moments that matter",
-      ctaLabel: "Shop the collection",
-      ctaHref: "/category/panjabi",
-      secondaryCtaLabel: "Explore gifts",
-      secondaryCtaHref: "/category/gifts",
-      imageAltText: "Sample image — panjabi on a warm neutral background",
+  // The homepage brief, in order. Copy is design placeholder — editable in Admin → Homepage; nothing here claims a
+  // promotion, a date or a guarantee. Trust items state only what the sample store's settings support (Cash on Delivery,
+  // nationwide courier delivery).
+  homepage: [
+    {
+      type: "HERO",
+      config: {
+        subtext: "Eid collection",
+        headline: "Thoughtfully chosen. Meaningfully yours.",
+        bodyText: "Modest fashion, meaningful essentials and thoughtful gifts for every moment.",
+        ctaLabel: "Shop the collection",
+        ctaHref: "/category/panjabi",
+        secondaryCtaLabel: "Explore gifts",
+        secondaryCtaHref: "/category/gifts",
+        imageAltText: "Sample image — a panjabi on a warm ivory background",
+      },
+      images: { imageUrl: { art: "panjabi", tone: "#e3dccf", width: 1600, height: 2000 } },
     },
-  },
-  brandStory: {
-    art: "tasbih",
-    tone: "#d9d1c4",
-    config: {
-      eyebrow: "Our story",
-      heading: "Chosen with care, made to be used every day",
-      bodyText: "Every piece is selected for quality, comfort and honest materials — essentials that fit naturally into daily life.",
-      ctaLabel: "About us",
-      ctaHref: "/contact",
+    { type: "CATEGORY_GRID", config: { heading: "Shop by category", subtitle: "Explore our curated collections" } },
+    { type: "PRODUCT_CAROUSEL", config: { heading: "Featured collection", subtitle: "Pieces we keep coming back to", source: "featured", category: null, itemCount: 4 } },
+    {
+      type: "PROMO_BANNER",
+      config: { heading: "Essentials for everyday worship", bodyText: "Prayer mats · Tasbih · Attar · Islamic books", ctaLabel: "Explore essentials", linkUrl: "/category/prayer" },
     },
-  },
-  promoBanner: {
-    art: "gift",
-    tone: "#d6cdbf",
-    config: { heading: "Gifts they will keep", bodyText: "Curated sets, ready to give.", ctaLabel: "Shop gifts", linkUrl: "/category/gifts" },
-  },
-  // One trust & service section rather than a values grid and a separate trust strip saying the same things.
-  valuesGrid: {
-    eyebrow: "Why Nasihamart",
-    heading: "Small things, done properly",
-    items: [
-      { icon: "ShieldCheck", title: "Authentic", description: "Genuine products from makers we know and trust." },
-      { icon: "Gem", title: "Quality checked", description: "Every order is inspected before it leaves us." },
-      { icon: "Truck", title: "Fast delivery", description: "Nationwide, with Cash on Delivery and secure online payment." },
-      { icon: "Headphones", title: "Real support", description: "Friendly help before and after you order." },
-    ],
-  },
+    { type: "PRODUCT_CAROUSEL", config: { heading: "Islamic Books", subtitle: "Knowledge worth keeping", source: "category", category: "books", itemCount: 4 } },
+    { type: "PRODUCT_CAROUSEL", config: { heading: "Attar & Fragrance", subtitle: "Quiet, lasting scents", source: "category", category: "attar", itemCount: 4 } },
+    { type: "PRODUCT_CAROUSEL", config: { heading: "Prayer Essentials", subtitle: "For the everyday", source: "category", category: "prayer", itemCount: 4 } },
+    {
+      type: "BRAND_STORY",
+      config: {
+        eyebrow: "Our story",
+        heading: "Chosen with care, made to be used every day",
+        bodyText: "Sample copy — the store's own story goes here (Admin → Homepage → Brand story).",
+        ctaLabel: "Get in touch",
+        ctaHref: "/contact",
+      },
+      images: { imageUrl: { art: "tasbih", tone: "#dfd7ca", width: 2400, height: 1000 } },
+    },
+    {
+      type: "VALUES_GRID",
+      config: {
+        eyebrow: "Why Nasihamart",
+        heading: "Small things, done properly",
+        items: [
+          { icon: "Sparkles", title: "Carefully selected", description: "Products we believe in." },
+          { icon: "ShieldCheck", title: "Checked before dispatch", description: "Every order is looked over before it leaves." },
+          { icon: "Banknote", title: "Cash on Delivery", description: "Pay when your order arrives." },
+          { icon: "Truck", title: "Delivery across Bangladesh", description: "Nationwide, by courier." },
+        ],
+      },
+    },
+  ],
 };

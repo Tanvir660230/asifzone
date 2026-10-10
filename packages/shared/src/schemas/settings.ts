@@ -33,6 +33,14 @@ export const updateSettingsSchema = z.object({
   logoUrl: nullableMediaUrl(),
   logoOnDarkUrl: nullableMediaUrl(),
   faviconUrl: nullableMediaUrl(),
+  /** Default image for link previews (Open Graph / social) — pages without their own image use it; else the logo. */
+  ogImageUrl: nullableMediaUrl(),
+  /** Homepage search title and description; empty → the store name and tagline. */
+  seoTitle: nullableString(70),
+  seoDescription: nullableString(300),
+  /** The newsletter block's heading and supporting line; empty → the built-in wording. */
+  newsletterHeading: nullableString(80),
+  newsletterText: nullableString(300),
   // ISO 4217 code the money engine represents exactly (SUPPORTED_CURRENCIES). Locked once orders exist (Phase 6, P6-4);
   // validity is enforced here so an unsupported code can never become the implied currency of every amount (Phase 7 D-8).
   currency: z

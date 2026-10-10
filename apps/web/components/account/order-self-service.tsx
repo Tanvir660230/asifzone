@@ -112,7 +112,9 @@ export function OrderSelfService({ order }: { order: Order }) {
             <Lock size={15} className="mt-0.5 shrink-0 text-ink-400" aria-hidden="true" />
             <span>
               {editBlocker}
-              {!cancellable && " Need help? Contact us."}
+              {/[.!?]$/.test(editBlocker) ? "" : "."}
+              {/* The shared blocker messages already say "please contact us" — don't say it twice. */}
+              {!cancellable && !/contact us/i.test(editBlocker) && " Need help? Contact us."}
             </span>
           </p>
         ) : (

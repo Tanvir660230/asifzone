@@ -55,6 +55,8 @@ export const brandStoryConfigSchema = z.object({
 export const heroConfigSchema = z.object({
   headline: nullableString(200),
   subtext: nullableString(300),
+  /** Optional supporting line under the headline. */
+  bodyText: nullableString(300),
   ctaLabel: nullableString(60),
   ctaHref: nullableString(300),
   /** Optional second, quieter action next to the primary one. */
@@ -77,6 +79,8 @@ export const smartRecommendationsConfigSchema = z.object({
 
 export const categoryGridConfigSchema = z.object({
   heading: nullableString(200),
+  /** Optional supporting line under the heading. */
+  subtitle: nullableString(300),
 });
 
 export const productCarouselSourceEnum = z.enum(["featured", "new", "category"]);
@@ -97,14 +101,20 @@ export const productCarouselConfigSchema = z
     path: ["category"],
   });
 
-export const promoBannerConfigSchema = z.object({
-  heading: nullableString(200),
-  bodyText: nullableString(500),
-  imageUrl: mediaUrlSchema,
-  mobileImageUrl: nullableMediaUrl(),
-  linkUrl: nullableString(500),
-  ctaLabel: nullableString(60),
-});
+export const promoBannerConfigSchema = z
+  .object({
+    heading: nullableString(200),
+    bodyText: nullableString(500),
+    /** Without an image the banner is a typographic band in the theme's dark section color (an editorial callout). */
+    imageUrl: nullableMediaUrl(),
+    mobileImageUrl: nullableMediaUrl(),
+    linkUrl: nullableString(500),
+    ctaLabel: nullableString(60),
+  })
+  .refine((data) => !!data.imageUrl || !!data.heading, {
+    message: "Add an image, or a heading for a text-only banner",
+    path: ["imageUrl"],
+  });
 
 /** The `config` JSON column's shape depends on `type` — this is the lookup both the admin forms
  * and the backend service validate against, since a real discriminated union doesn't fit a flat

@@ -4,7 +4,7 @@ import tokens from "@clothing-brand/ui-tokens";
 // Brand themes (packages/ui-tokens): one component tree, many stores — a theme may only re-value tokens.
 
 /** Tokens deliberately left undefined at :root (the property inherits, as before they existed); a theme may set them. */
-const OPT_IN_TOKENS = new Set(["--font-display-weight", "--font-display-tracking", "--eyebrow-weight", "--hero-cta-text"]);
+const OPT_IN_TOKENS = new Set(["--font-display-weight", "--font-display-tracking", "--eyebrow-weight", "--hero-cta-text", "--band-accent"]);
 
 function channels(value: string): [number, number, number] {
   const parts = value.split(" ").map(Number);
@@ -25,33 +25,50 @@ function contrast(a: [number, number, number], b: [number, number, number]) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** A palette step's channels as a theme renders it: the theme's override, else the base value. */
-function step(theme: string, name: string, scope: "root" | "band" = "root"): [number, number, number] {
+/** A palette step's channels as a theme renders it: inside a light band / a dark band, else at the root, else the base. */
+function step(theme: string, name: string, scope: "root" | "band" | "dark" = "root"): [number, number, number] {
   const t = tokens.themes[theme]!;
-  const value = (scope === "band" ? t.bandVariables[`--color-${name}`] : undefined) ?? t.cssVariables[`--color-${name}`] ?? tokens.cssVariables[`--color-${name}`];
+  const scoped = scope === "band" ? t.bandVariables : scope === "dark" ? t.darkBandVariables : {};
+  const value = scoped[`--color-${name}`] ?? t.cssVariables[`--color-${name}`] ?? tokens.cssVariables[`--color-${name}`];
   return channels(value!);
 }
+
+const hex = (h: string): [number, number, number] => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
 describe("brand themes", () => {
   it("keeps the default theme exactly the base tokens", () => {
     expect(tokens.DEFAULT_THEME).toBe("default");
     expect(tokens.themes.default!.cssVariables).toEqual({});
     expect(tokens.themes.default!.bandVariables).toEqual({});
+    expect(tokens.themes.default!.darkBandVariables).toEqual({});
   });
 
   it("only re-values tokens that exist (or are documented opt-ins) — a theme never invents styling", () => {
     for (const [id, theme] of Object.entries(tokens.themes)) {
-      for (const name of [...Object.keys(theme.cssVariables), ...Object.keys(theme.bandVariables)]) {
+      for (const name of [...Object.keys(theme.cssVariables), ...Object.keys(theme.bandVariables), ...Object.keys(theme.darkBandVariables)]) {
         expect(name in tokens.cssVariables || OPT_IN_TOKENS.has(name), `${id}: ${name}`).toBe(true);
       }
     }
   });
 
-  it("gives Nasihamart a sans title face and its own palette", () => {
+  it("gives Nasihamart its own identity: navy / ivory palette, editorial serif titles over a grotesk, square controls", () => {
     const n = tokens.themes.nasihamart!.cssVariables;
-    expect(n["--font-display-family"]).toBe("var(--font-sans)");
-    expect(n["--caps-transform"]).toBe("none");
-    expect(n["--color-cream-100"]).not.toBe(tokens.cssVariables["--color-cream-100"]);
+    expect(n["--color-ink-900"]).toBe("11 31 51"); // navy #0B1F33
+    expect(n["--color-cream-100"]).toBe("248 246 241"); // ivory #F8F6F1
+    expect(n["--font-display-family"]).toBe("var(--font-editorial)");
+    expect(n["--font-body-family"]).toBe("var(--font-grotesk)");
+    expect(n["--control-radius"]).not.toBe(tokens.cssVariables["--control-radius"]);
+    // The hero and brand story are light; the footer, flash sale and editorial banner stay navy.
+    expect(tokens.themes.nasihamart!.lightBandRoles).toEqual(["hero", "story"]);
+  });
+
+  it("keeps Nasihamart's text legible (WCAG AA 4.5:1) on navy: the dark sections' text steps and the warm-stone accent", () => {
+    const navy = step("nasihamart", "ink-950", "dark");
+    for (const text of ["cream-50", "cream-200", "ink-300", "ink-400", "ink-500"]) {
+      expect(contrast(step("nasihamart", text, "dark"), navy), `navy section ${text}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(hex("#D6C1A2"), navy), "warm stone on navy").toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hex("#123B73"), step("nasihamart", "cream-100")), "secondary blue on ivory").toBeGreaterThanOrEqual(4.5);
   });
 
   it("keeps Nasihamart's text legible (WCAG AA 4.5:1) on its surfaces, inside the light band too", () => {

@@ -43,18 +43,40 @@ production and remote databases, and its content and images are placeholders.
 
 | What | Where |
 |---|---|
-| Store name, tagline, logo (light + dark backgrounds), favicon | Settings → Store & Branding |
-| Search engines (verification), contact email/phone, business identity, support hours | Settings → Store & Branding / Contact & Support |
+| Store name, tagline, logo (light + dark backgrounds), favicon | Settings → Store & Branding (files: `docs/brand/nasihamart/png`) |
+| Homepage search title and description, social sharing image (1200×630), Search Console verification | Settings → Store & Branding → Search engines |
+| Newsletter heading and supporting line | Settings → Store & Branding → Newsletter |
+| Contact email/phone, business identity, address, support hours | Settings → Contact & Support |
 | Return window, return conditions, dispatch time | Settings → Shipping, Tax & Rewards → Store policy |
 | Shipping fees, tax, Cash on Delivery / online payment | Settings → Shipping, Tax & Rewards |
 | Social links, payment-method logos | Social Links, Payment Methods |
 | Categories (names, order, images, SEO) — they are the navigation | Categories |
 | Product types, attributes, products, images, variants, size guides | Product Builder |
-| Hero, category grid, best sellers / new arrivals (product carousels), brand story, values, trust, promotional banners | Homepage |
+| Hero (eyebrow, headline, supporting line, two actions, image), category grid (heading, supporting line), product carousels (featured / new / by category), editorial banner (a promo banner without an image renders as a navy band), brand story, values / trust | Homepage |
 | Shipping & Returns wording (if it should differ from the policy-generated text) | Product sections → Shipping & returns |
 
 Every image goes through the normal upload pipeline (`/uploads/<key>`, resolved against `MEDIA_BASE_URL`). Replacing an
 image is uploading a new one in the same field. No image URL is written in code.
+
+**Brand.** The identity (navy `#0B1F33`, ivory `#F8F6F1`, secondary blue `#123B73`, warm stone `#D6C1A2`, Newsreader +
+Instrument Sans) is the `nasihamart` theme; the logo set, favicon and social image are in `docs/brand/nasihamart` (see its
+README). Recommended homepage, in order: Hero → Category grid → Featured collection → editorial banner (text-only promo
+banner) → Islamic Books / Attar & Fragrance / Prayer Essentials (category carousels) → Brand story → Values (trust) — the
+newsletter is in the footer. The local sample store (`apps/api/scripts/sample-store`) shows exactly this composition.
+
+**CONTENT REQUIRED before launch** — none of this may be invented; the sample store's values (`hello@example.com`, the
+7-day return window, 1–2 day dispatch, COD on, the sample copy) never go to production:
+
+| Content | Where it goes |
+|---|---|
+| Official store / legal name, support email, phone, WhatsApp number, address, support hours | Settings → Contact & Support; Social Links (WhatsApp) |
+| Return, exchange, refund, cancellation and shipping policy; delivery timeline; COD availability | Settings → Store policy and Shipping; Terms / Privacy / Shipping & Returns pages |
+| Privacy policy and Terms & Conditions wording | Legal pages |
+| Social links (only real profiles) | Social Links |
+| Homepage search title and description; category SEO titles and descriptions; product SEO | Settings → Search engines; Categories; Product Builder |
+| Photography: hero, category images, editorial banner (optional image), brand story, product and variant images | Homepage, Categories, Product Builder |
+| Brand story text, trust/value statements (only claims the store can stand behind) | Homepage |
+| The catalog: categories, products, prices, compare-at prices, SKUs, stock, variants (colour, size), material, care, size guides | Categories, Product Builder |
 
 ## 4. Before launch
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { buildFaqJsonLd } from "@/lib/structured-data";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
@@ -29,7 +29,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/faq`,
-      images: settings.logoUrl ? [settings.logoUrl] : undefined,
+      images: storeShareImages(settings),
     }),
   };
 }

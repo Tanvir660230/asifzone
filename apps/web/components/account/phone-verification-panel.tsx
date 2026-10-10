@@ -43,7 +43,7 @@ export function PhoneVerificationPanel({ initialPhone, onVerified, onCancel }: {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-ink-100 p-4">
+    <div className="space-y-3 rounded-xl bg-surface-muted p-4 ring-1 ring-inset ring-line-subtle">
       {step === "phone" ? (
         <div>
           <Label htmlFor="verify-phone">Phone number to verify</Label>
@@ -58,11 +58,11 @@ export function PhoneVerificationPanel({ initialPhone, onVerified, onCancel }: {
       {error && <p className="text-sm text-danger-600">{error}</p>}
       <div className="flex gap-2">
         {step === "phone" ? (
-          <Button type="button" variant="brass" disabled={busy || !phone} onClick={sendCode}>
+          <Button type="button" disabled={busy || !phone} onClick={sendCode}>
             {busy ? "Sending…" : "Send code"}
           </Button>
         ) : (
-          <Button type="button" variant="brass" disabled={busy || code.length !== 6} onClick={confirm}>
+          <Button type="button" disabled={busy || code.length !== 6} onClick={confirm}>
             {busy ? "Verifying…" : "Verify"}
           </Button>
         )}

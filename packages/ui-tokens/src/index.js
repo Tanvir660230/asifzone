@@ -310,6 +310,42 @@ const componentTokens = {
   "--section-heading-leading": "2rem",
   "--section-heading-size-sm": "1.5rem",
   "--section-heading-leading-sm": "2rem",
+  // Eyebrows may differ from small labels: their own case and letter-spacing multiplier (default: the same as `.ui-caps`).
+  "--eyebrow-transform": "var(--caps-transform)",
+  "--eyebrow-spread": "var(--caps-spread)",
+  // Corner radius of buttons and call-to-action links (a pill in the base design).
+  "--control-radius": "9999px",
+  // Hover fill of primary actions.
+  "--accent-hover": "rgb(var(--color-ink-800))",
+  // Primary navigation link: hover color and the hover underline.
+  "--nav-hover": "rgb(var(--color-brass-500))",
+  "--nav-underline": "rgb(var(--color-brass-500))",
+  // Icon stroke (lucide icons drawn at the default width only — icons given another width keep it).
+  "--icon-stroke": "2",
+  // Hero: alignment, and from 1024px either the stacked composition (`block`) or copy beside the image (`grid`).
+  "--hero-align": "center",
+  "--hero-layout-lg": "block",
+  "--hero-media-aspect-lg": "21 / 9",
+  // From 1024px: the composition's maximum width, the copy's side padding, and the image's offset below the copy.
+  "--hero-content-max-w-lg": "none",
+  "--hero-copy-pad-lg": "1rem",
+  "--hero-media-offset-lg": "3.5rem",
+  // The secondary hero action: an outline ring around it (transparent = a plain text link), and the space between the
+  // two actions (on the secondary's left by default; a left-aligned theme puts it after the primary, so a wrapped
+  // secondary action lines up under the first).
+  "--hero-secondary-ring": "transparent",
+  "--hero-primary-mr": "0px",
+  "--hero-secondary-ml": "0.5rem",
+  // Category tiles: the caption sits over the image (`absolute`) or below it (`static`), and its padding.
+  "--tile-caption-position": "absolute",
+  "--tile-caption-padding": "1rem",
+  // The photograph's own corner radius (0: the tile's rounded clip shapes it, as in the base design).
+  "--tile-media-radius": "0px",
+  // Product page title face (the title face by default; a theme may set product data in the UI face).
+  "--product-title-family": "var(--font-display-family), var(--font-bn), ui-serif, Georgia, serif",
+  // Brand story image: its maximum width, and its height from 640px.
+  "--story-media-max-w": "28rem",
+  "--story-media-h-sm": "18rem",
 };
 Object.assign(cssVariables, componentTokens);
 
@@ -324,95 +360,134 @@ Object.assign(cssVariables, componentTokens);
  */
 const themeDefinitions = {
   default: { label: "Default (neutral editorial)" },
-  // Nasihamart — calm, product-first, sans throughout. Warm off-white canvas, warm near-black text,
-  // softer and slightly larger radii. Still exactly one promotional accent (`sale`).
+  // Nasihamart — premium Islamic lifestyle, editorial. Deep navy (#0B1F33) for text, actions and the dark sections, soft
+  // ivory (#F8F6F1) canvas with white surfaces, secondary blue (#123B73) for hover and interaction (--accent-hover,
+  // --nav-hover), warm stone (#D6C1A2) as a restrained accent on navy only (1.6:1 on ivory — never text there). Editorial
+  // serif titles (Newsreader) over a refined grotesk (Instrument Sans); near-square controls and cards instead of pills;
+  // hairline warm borders.
   nasihamart: {
-    label: "Nasihamart (warm minimal)",
+    label: "Nasihamart (navy · ivory · warm stone)",
     palette: {
       ink: {
-        50: "#faf9f7",
-        100: "#f3f2ef",
-        200: "#e7e5e0",
-        300: "#d5d2cb",
-        400: "#736e66", // tertiary text (struck-through prices, hints) — 4.7:1 on the canvas, AA for small text
-        500: "#68645c", // secondary text — 5.4:1 on the canvas
-        600: "#4e4a44",
-        700: "#35322e",
-        800: "#24221f",
-        900: "#1b1a18",
-        950: "#0f0e0d",
+        50: "#f4f1eb", // subtle fills
+        100: "#ece7de", // subtle hairlines
+        200: "#e5e0d7", // warm border (lines, card outlines, inputs)
+        300: "#d3ccbf", // strong line
+        400: "#646976", // tertiary text (struck-through prices, hints) — 5.1:1 on ivory
+        500: "#565c69", // secondary text — 6.2:1 on ivory
+        600: "#3e4452",
+        700: "#1a1f2e", // ink: body text — 15.2:1
+        800: "#13223a", // deep navy-ink (secondary blue #123B73 is a token: --accent-hover, --nav-hover)
+        900: "#0b1f33", // navy: headings, primary actions, focus — 15.5:1
+        950: "#0b1f33", // navy: the dark sections and footer
       },
-      cream: { 50: "#ffffff", 100: "#f7f6f3", 200: "#efede8", 300: "#e3e0d9" },
-      // The one promotional accent, a step deeper so white 10px badge text clears AA (5.0:1).
+      cream: { 50: "#ffffff", 100: "#f8f6f1", 200: "#f1ede5", 300: "#e5e0d7" },
+      // The one promotional accent, deep enough that white 10px badge text clears AA (5.0:1).
       sale: { 50: "#fdecea", 500: "#d32f2f", 600: "#b71c1c" },
     },
-    radii: { sm: "6px", DEFAULT: "10px", md: "12px", lg: "18px", xl: "24px", "2xl": "28px", "3xl": "36px" },
-    // Sans titles: semibold, tightly tracked, sentence-case labels.
+    radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "10px", "2xl": "12px", "3xl": "16px" },
     fontVariables: {
-      "--font-display-family": "var(--font-sans)",
-      "--font-display-weight": "600",
-      "--font-display-tracking": "-0.022em",
-      "--eyebrow-weight": "500",
+      "--font-body-family": "var(--font-grotesk)",
+      "--font-display-family": "var(--font-editorial)",
+      "--font-display-weight": "400",
+      "--font-display-tracking": "-0.012em",
+      "--eyebrow-weight": "600",
     },
     components: {
+      // Sentence-case labels; eyebrows stay uppercase with open tracking.
       "--caps-transform": "none",
       "--caps-spread": "0",
+      "--eyebrow-transform": "uppercase",
+      "--eyebrow-spread": "0.6",
       "--gloss": "0",
-      "--glass-alpha": "0.86",
-      "--header-shadow": "none",
-      // Image-first cards: no frame, no lift, the gentlest zoom.
-      "--badge-note-bg": "rgb(var(--color-surface) / 0.92)",
+      "--glass-alpha": "0.94",
+      "--header-shadow": "0 1px 0 0 rgb(var(--color-ink-200))",
+      "--control-radius": "var(--radius-default)",
+      // Secondary blue (#123B73, 10.2:1 on ivory): hover and interactive states.
+      "--accent-hover": "rgb(18 59 115)",
+      // The same blue as the `accent-hover` role, which the Button primitive's hover reads.
+      "--color-accent-hover": "18 59 115",
+      "--nav-hover": "rgb(18 59 115)",
+      "--nav-underline": "rgb(214 193 162)",
+      "--icon-stroke": "1.5",
+      // On navy (footer, editorial banner, flash sale) eyebrows and link hovers take the warm stone; the light sections
+      // redeclare it (band components) because stone is unreadable on ivory.
+      "--band-accent": "rgb(214 193 162)",
+      "--badge-note-bg": "rgb(var(--color-surface) / 0.94)",
       "--badge-note-fg": "rgb(var(--color-ink-900))",
-      "--tile-scrim": "rgb(var(--color-cream-50) / 0.6)",
-      "--media-scrim": "rgb(var(--color-ink-950) / 0.22)",
+      "--media-scrim": "rgb(var(--color-ink-950) / 0.4)",
+      // Category tiles: the name below the photograph in navy, no scrim.
+      "--tile-scrim": "transparent",
       "--tile-label": "rgb(var(--color-ink-900))",
+      "--tile-caption-position": "static",
+      "--tile-caption-padding": "0.875rem 0.125rem 0.125rem",
+      "--tile-media-radius": "var(--radius-default)",
       "--line-item-radius": "var(--radius-md)",
-      "--stepper-radius": "9999px",
+      "--stepper-radius": "var(--radius-default)",
+      // White cards with a warm hairline and no lift; a soft navy shadow on hover.
       "--card-lift": "0",
-      "--card-frame-border": "transparent",
+      "--card-frame-border": "rgb(var(--color-ink-200))",
       "--card-frame-shadow": "none",
-      "--card-frame-shadow-hover": "none",
-      "--card-image-zoom": "1.03",
+      "--card-frame-shadow-hover": "0 12px 28px -18px rgb(11 31 51 / 0.35)",
+      "--card-image-zoom": "1.04",
       "--card-tier-display": "none",
       "--product-tier-display": "none",
-      "--card-title-tracking": "-0.005em",
-      "--panel-border": "transparent",
+      "--card-title-tracking": "0",
+      "--panel-border": "rgb(var(--color-ink-200))",
       "--panel-shadow": "none",
-      "--product-title-size": "clamp(1.875rem, 1.35rem + 1.4vw, 2.5rem)",
-      "--product-title-leading": "1.12",
-      "--product-title-weight": "600",
-      "--product-title-tracking": "-0.025em",
-      "--section-title-size": "1.5rem",
+      // Product data is set in the UI face; the serif is for editorial headings.
+      "--product-title-family": "var(--font-body-family), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
+      "--product-title-size": "clamp(1.75rem, 1.4rem + 1vw, 2.25rem)",
+      "--product-title-leading": "1.15",
+      "--product-title-weight": "500",
+      "--product-title-tracking": "-0.018em",
+      "--section-title-size": "1.625rem",
       "--section-title-leading": "1.2",
-      "--section-title-size-sm": "1.75rem",
+      "--section-title-size-sm": "2rem",
       "--section-title-leading-sm": "1.15",
-      "--section-rhythm": "1.3",
-      "--page-title-size": "1.875rem",
+      "--section-rhythm": "1.35",
+      "--page-title-size": "2rem",
       "--page-title-leading": "1.15",
-      "--page-title-size-sm": "2.25rem",
+      "--page-title-size-sm": "2.5rem",
       "--page-title-leading-sm": "1.1",
-      "--section-heading-size": "1.75rem",
-      "--section-heading-leading": "1.2",
-      "--section-heading-size-sm": "2.25rem",
-      "--section-heading-leading-sm": "1.1",
+      "--section-heading-size": "1.875rem",
+      "--section-heading-leading": "1.15",
+      "--section-heading-size-sm": "2.75rem",
+      "--section-heading-leading-sm": "1.08",
+      // Editorial hero: left-aligned copy beside a tall photograph from 1024px.
+      "--hero-align": "left",
+      "--hero-layout-lg": "grid",
+      "--hero-media-aspect-lg": "4 / 5",
+      "--hero-content-max-w-lg": "80rem",
+      "--hero-copy-pad-lg": "2rem",
+      "--hero-media-offset-lg": "0",
+      "--hero-secondary-ring": "currentColor",
+      "--hero-primary-mr": "0.75rem",
+      "--hero-secondary-ml": "0px",
+      "--story-media-max-w": "64rem",
+      "--story-media-h-sm": "26rem",
     },
-    // Sections designed on the dark palette (`.ui-band-inverse`: footer, brand story, hero band) render light.
-    band: "light",
-    // Component tokens whose colors must resolve against the band's palette, so they are declared inside it.
+    // The hero and the brand story render on ivory; the footer, flash sale and editorial banner stay navy.
+    lightBands: ["hero", "story"],
+    bandSurface: "cream-100",
+    // Inside the light sections: the filled primary action (cream-50 / ink-950 are navy / ivory there) and a blue accent.
     bandComponents: {
-      // A filled primary button on the hero (cream-50 / ink-950 are dark / light inside a light band).
       "--hero-cta-fill": "rgb(var(--color-cream-50))",
       "--hero-cta-text": "rgb(var(--color-ink-950))",
+      "--band-accent": "rgb(18 59 115)",
     },
+    // Inside the navy sections: the mid tones the dark palette uses for text, re-valued light enough for navy.
+    darkBandPalette: { ink: { 300: "#dcd6cb", 400: "#d6c1a2", 500: "#a3a9b4" } },
   },
 };
 
 /**
- * `.ui-band-inverse` marks a section designed on the dark palette (light text on ink-950). A theme
- * with `band: "light"` renders those sections light by mirroring the palette inside them: each ink
- * step takes its opposite (ink-950 ↔ the light canvas, ink-300 ↔ ink-700 …) and the cream (light)
- * steps take dark inks, so every pairing keeps its contrast relationship. The variables that are
- * references (brass alias, semantic roles) are re-declared in the scope so they follow.
+ * `.ui-band-inverse` marks a section designed on the dark palette (light text on ink-950); its `data-band` attribute names
+ * the section (hero, story, footer, flash, promo). A theme renders some or all of them light by mirroring the palette
+ * inside them: each ink step takes its opposite (ink-950 ↔ the light surface, ink-300 ↔ ink-700 …) and the cream (light)
+ * steps take dark inks, so every pairing keeps its contrast relationship. `band: "light"` mirrors every band;
+ * `lightBands: [names]` only those sections. The variables that are references (brass alias, semantic roles) are
+ * re-declared in the scope so they follow.
  */
 function lightBand(definition) {
   const ink = { ...palette.ink, ...(definition.palette?.ink ?? {}) };
@@ -420,20 +495,38 @@ function lightBand(definition) {
   const mirror = { 50: 950, 100: 900, 200: 800, 300: 700, 400: 600, 500: 500, 600: 400, 700: 300, 800: 200, 900: 100 };
   const variables = {};
   for (const [step, opposite] of Object.entries(mirror)) variables[`--color-ink-${step}`] = hexToRgbChannels(ink[opposite]);
-  // The band's own surface: the theme's soft secondary background rather than pure white.
-  variables["--color-ink-950"] = hexToRgbChannels(cream[200]);
+  // The band's own surface: the theme's choice (`bandSurface`), else its soft secondary background rather than pure white.
+  const [surfaceScale, surfaceStep] = (definition.bandSurface ?? "cream-200").split("-");
+  variables["--color-ink-950"] = hexToRgbChannels({ ink, cream }[surfaceScale][surfaceStep]);
   Object.assign(variables, {
     "--color-cream-50": hexToRgbChannels(ink[900]),
     "--color-cream-100": hexToRgbChannels(ink[800]),
     "--color-cream-200": hexToRgbChannels(ink[700]),
     "--color-cream-300": hexToRgbChannels(ink[600]),
   });
-  for (const [name, value] of Object.entries(cssVariables)) {
-    if (value.startsWith("var(--color-")) variables[name] = value;
-  }
+  Object.assign(variables, referenceVariables());
   variables["--band-dark-art"] = "none";
   variables["--band-light-art"] = "contents";
   return variables;
+}
+
+/** The variables that are references to palette steps — re-declared in a scope that re-values those steps. */
+function referenceVariables() {
+  const variables = {};
+  for (const [name, value] of Object.entries(cssVariables)) {
+    if (value.startsWith("var(--color-")) variables[name] = value;
+  }
+  return variables;
+}
+
+/** Palette steps a theme re-values inside the sections that stay dark (`darkBandPalette`). */
+function darkBand(definition) {
+  if (!definition.darkBandPalette) return {};
+  const variables = {};
+  for (const [scale, steps] of Object.entries(definition.darkBandPalette)) {
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  return { ...variables, ...referenceVariables() };
 }
 
 const themes = {};
@@ -444,7 +537,16 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
   }
   for (const [step, value] of Object.entries(definition.radii ?? {})) variables[radiusVariable(step)] = value;
   Object.assign(variables, definition.fontVariables, definition.components);
-  themes[id] = { label: definition.label, cssVariables: variables, bandVariables: { ...(definition.band === "light" ? lightBand(definition) : {}), ...definition.bandComponents } };
+  const hasLightBands = definition.band === "light" || (definition.lightBands?.length ?? 0) > 0;
+  themes[id] = {
+    label: definition.label,
+    cssVariables: variables,
+    // Inside the light sections: every band (`lightBandRoles: null`) or the named ones.
+    bandVariables: { ...(hasLightBands ? lightBand(definition) : {}), ...definition.bandComponents },
+    lightBandRoles: definition.band === "light" ? null : (definition.lightBands ?? []),
+    // Inside the bands that stay dark.
+    darkBandVariables: darkBand(definition),
+  };
 }
 const DEFAULT_THEME = "default";
 

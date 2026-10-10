@@ -84,7 +84,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           </span>
           {product.brand ?? ""}
         </p>
-        <h1 className="ui-product-title mt-1 font-display text-ink-900">{product.name}</h1>
+        <h1 className="ui-product-title mt-1 text-ink-900">{product.name}</h1>
         {product.reviewCount > 0 && (
           <a href="#reviews" className="mt-2 flex items-center gap-2 text-sm text-ink-500 hover:text-brass-600">
             <StarRating value={product.avgRating} />

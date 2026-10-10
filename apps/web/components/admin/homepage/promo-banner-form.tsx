@@ -40,11 +40,11 @@ export function PromoBannerForm({ initialConfig, onSubmit, onCancel, onValuesCha
       <input type="hidden" {...register("mobileImageUrl")} />
       <div>
         <ImageUploadField
-          label="Image"
+          label="Image (optional)"
           upload={uploadHomepageSectionImage}
           value={imageUrl}
           onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
-          hint="Recommended size: 2400×800px (3:1). This section crops to 16:9 on mobile and 3:1 on desktop — keep important content centered so it isn’t cut off at either width."
+          hint="Recommended size: 2400×800px (3:1). This section crops to 16:9 on mobile and 3:1 on desktop — keep important content centered so it isn’t cut off at either width. Leave it empty for a text-only editorial band (it then needs a heading)."
         />
         {errors.imageUrl && <p className="ui-field-error">{errors.imageUrl.message}</p>}
       </div>
@@ -77,7 +77,7 @@ export function PromoBannerForm({ initialConfig, onSubmit, onCancel, onValuesCha
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" variant="brass" disabled={isSubmitting || !imageUrl}>
+        <Button type="submit" variant="brass" disabled={isSubmitting || (!imageUrl && !watch("heading"))}>
           {isSubmitting ? "Saving…" : "Save"}
         </Button>
       </div>

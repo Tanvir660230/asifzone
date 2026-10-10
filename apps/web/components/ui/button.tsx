@@ -6,7 +6,7 @@ import { Spinner } from "./spinner";
 /** The single button recipe. Also applied to links via `buttonVariants(...)` (e.g. storefront
  * pagination), so a link-styled-as-button never drifts from a real button. */
 export const buttonVariants = cva(
-  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium tracking-wide transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-smooth active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 aria-busy:cursor-progress",
+  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-[var(--control-radius)] text-sm font-medium tracking-wide transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-smooth active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 aria-busy:cursor-progress",
   {
     variants: {
       variant: {

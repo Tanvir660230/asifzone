@@ -38,26 +38,44 @@ export function AccountSecurity({ hasEmail }: { hasEmail: boolean }) {
     router.replace("/account/login");
   }
 
+  const tooShort = newPassword.length > 0 && newPassword.length < 8;
+
   return (
-    <div className="max-w-md space-y-4">
+    <div className="space-y-6">
       {hasEmail && (
-        <form onSubmit={onChangePassword} className="space-y-3">
+        <form onSubmit={onChangePassword} className="space-y-4">
           <div>
-            <Label htmlFor="current-password">Current password (leave empty if you haven&rsquo;t set one)</Label>
-            <PasswordInput id="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+            <Label htmlFor="current-password">Current password</Label>
+            <PasswordInput id="current-password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+            <p className="ui-field-hint">Leave empty if you signed up with Google or a phone code.</p>
           </div>
           <div>
             <Label htmlFor="new-password">New password</Label>
-            <PasswordInput id="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            <PasswordInput
+              id="new-password"
+              autoComplete="new-password"
+              aria-describedby="new-password-hint"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+            <p id="new-password-hint" className={tooShort ? "ui-field-error" : "ui-field-hint"}>
+              {tooShort ? `${8 - newPassword.length} more characters needed` : "At least 8 characters."}
+            </p>
           </div>
-          {error && <p className="text-sm text-danger-600">{error}</p>}
-          <Button type="submit" variant="brass" disabled={busy || newPassword.length < 8}>
-            {busy ? "Saving…" : "Update password"}
+          {error && (
+            <p role="alert" className="text-sm text-danger-600">
+              {error}
+            </p>
+          )}
+          <Button type="submit" loading={busy} disabled={newPassword.length < 8}>
+            Update password
           </Button>
         </form>
       )}
-      <div>
-        <Button type="button" variant="outline" onClick={onLogoutEverywhere}>
+      <div className={hasEmail ? "border-t border-line-subtle pt-5" : undefined}>
+        <p className="text-sm font-medium text-fg">Signed in somewhere you don&rsquo;t recognise?</p>
+        <p className="mt-0.5 text-sm text-fg-muted">This signs you out on every device, including this one.</p>
+        <Button type="button" variant="outline" className="mt-3" onClick={onLogoutEverywhere}>
           Sign out of all devices
         </Button>
       </div>

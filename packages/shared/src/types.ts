@@ -580,6 +580,8 @@ export interface PublicPaymentLinkView {
 
 export interface Order {
   id: string;
+  /** Customer order list only: the first line's product photo. */
+  previewImageUrl?: string | null;
   orderNumber: string;
   customerId: string | null;
   status:
@@ -821,6 +823,39 @@ export interface Address {
   createdAt: string;
 }
 
+/** One order as the account home shows it — a compact card, not the full order (GET /customers/me/summary). */
+export interface AccountOrderCard {
+  id: string;
+  orderNumber: string;
+  status: Order["status"];
+  createdAt: string;
+  total: number;
+  /** Units across all lines. */
+  itemCount: number;
+  lineCount: number;
+  firstItemName: string | null;
+  /** First line's product photo, when the product still exists. */
+  imageUrl: string | null;
+  courierTrackingLink: string | null;
+}
+
+/** Everything the account home needs, in one request (docs/ACCOUNT_HOME.md). */
+export interface AccountSummary {
+  currency: string;
+  orderCount: number;
+  /** The newest order still on its way (pending → shipped), or null. */
+  activeOrder: AccountOrderCard | null;
+  /** Up to three other recent orders, newest first. */
+  recentOrders: AccountOrderCard[];
+  storeBalance: number;
+  rewardPoints: number;
+  couponCount: number;
+  wishlistCount: number;
+  pendingReturns: number;
+  defaultAddress: Address | null;
+  memberSince: string;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -954,6 +989,11 @@ export interface StoreSettings {
   logoUrl: string | null;
   logoOnDarkUrl: string | null;
   faviconUrl: string | null;
+  ogImageUrl: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  newsletterHeading: string | null;
+  newsletterText: string | null;
   currency: string;
   /** IANA timezone of the store's business day (Phase 5/7). */
   timezone: string;

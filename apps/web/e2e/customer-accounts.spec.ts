@@ -57,8 +57,9 @@ test.describe("customer account journey", () => {
     await page.getByLabel("Password", { exact: true }).fill(originalPassword);
     await page.getByRole("button", { name: /create account/i }).click();
     await expect(page).toHaveURL(/\/account$/);
-    // AccountOverview shows the full name next to an avatar, not a "Hi, {firstName}" greeting.
-    await expect(page.getByText("Playwright User", { exact: true })).toBeVisible();
+    // The home greets by first name; the member card carries the full name.
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Playwright.");
+    await expect(page.getByTestId("member-card").getByText("Playwright User", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: /log out/i }).click();
     await expect(page).toHaveURL(/\/account\/login/);
@@ -81,7 +82,9 @@ test.describe("customer account journey", () => {
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/account$/);
 
-    await page.getByRole("link", { name: /addresses/i }).click();
+    // Addresses live under Settings (docs/ACCOUNT_HOME.md).
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page.getByRole("link", { name: "Addresses", exact: true }).click();
     // .first() — with no addresses yet, both the page header's button and the empty-state's own
     // "Add address" button are on screen; either opens the same modal.
     await page.getByRole("button", { name: /add address/i }).first().click();
@@ -95,9 +98,8 @@ test.describe("customer account journey", () => {
     await page.getByRole("button", { name: /save address/i }).click();
     await expect(page.getByText("House 1, Road 2, Gulshan, Dhaka")).toBeVisible();
 
-    // exact: true — AccountOverview's "N orders" stat chip is also a link and also matches /orders/i,
-    // unlike the nav item whose accessible name is exactly "Orders".
-    await page.getByRole("link", { name: "Orders", exact: true }).click();
+    // exact: true — "All orders" links elsewhere in the account also match /orders/i.
+    await page.getByRole("link", { name: "Orders", exact: true }).first().click();
     await expect(page.getByText(/no orders yet/i)).toBeVisible();
 
     await page.goto("/");
@@ -108,7 +110,10 @@ test.describe("customer account journey", () => {
     // main product's own button, which always renders above those carousels in DOM order.
     await page.getByRole("button", { name: /add to wishlist/i }).first().click();
 
+    // A signed-in customer's wishlist lives in the account.
     await page.goto("/wishlist");
+    await expect(page).toHaveURL(/\/account\/saved$/);
+    await expect(page.getByRole("heading", { name: "Saved for later" })).toBeVisible();
     await expect(page.getByText(/nothing saved yet/i)).not.toBeVisible();
 
     await page.goto("/account");

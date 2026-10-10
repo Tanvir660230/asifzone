@@ -8,7 +8,7 @@ export function FlashSaleSection({ flashSale }: { flashSale: FlashSale }) {
   if (products.length === 0) return null;
 
   return (
-    <section className="ui-band-inverse bg-ink-950 py-[calc(4rem*var(--section-rhythm))] text-cream-50">
+    <section data-band="flash" className="ui-band-inverse bg-ink-950 py-[calc(4rem*var(--section-rhythm))] text-cream-50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
           <div>

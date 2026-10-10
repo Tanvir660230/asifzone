@@ -10,13 +10,15 @@
  * replaces the homepage sections and hero banners. Re-running is idempotent: existing sample rows are updated.
  */
 import "../../src/config/env";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { configSchemaByType } from "@clothing-brand/shared";
 import { prisma } from "../../src/config/prisma";
 import { cacheDelByPrefix, redis } from "../../src/config/redis";
 import { isDemoDatabase, isLoopbackHost, parseDatabaseTarget } from "../../src/config/database-guard";
-import { processLogoImage, processProductImage } from "../../src/modules/uploads/upload.service";
+import { processFaviconImage, processLogoImage, processProductImage, processSocialImage } from "../../src/modules/uploads/upload.service";
 import { rebuildAllReadModels } from "../../src/domain/storefront/read-model.service";
-import { renderPlaceholder, renderPlaceholderLogo, type ArtKind } from "./placeholder-art";
+import { renderPlaceholder, type ArtKind } from "./placeholder-art";
 import { nasihamart } from "./nasihamart.fixture";
 import type { SampleStore } from "./types";
 
@@ -56,12 +58,19 @@ async function main() {
   }
   const replace = flags.includes("--replace");
 
-  // Store identity — the placeholder logo is a normal uploaded image, replaced in Admin → Settings.
-  const logoUrl = await processLogoImage(await renderPlaceholderLogo(store.logo.wordmark));
+  // Store identity — the brand files go through the same processing as Admin → Settings uploads (logo, dark-background
+  // logo, favicon, social image), so each is an ordinary uploaded image the owner can replace.
+  const brandFile = (file: string) => readFile(path.resolve(__dirname, "../../../..", file));
+  const brand = {
+    logoUrl: await processLogoImage(await brandFile(store.brand.logo)),
+    logoOnDarkUrl: await processLogoImage(await brandFile(store.brand.logoOnDark)),
+    faviconUrl: await processFaviconImage(await brandFile(store.brand.favicon)),
+    ogImageUrl: await processSocialImage(await brandFile(store.brand.socialImage)),
+  };
   await prisma.storeSetting.upsert({
     where: { id: "singleton" },
-    create: { id: "singleton", ...store.settings, logoUrl },
-    update: { ...store.settings, logoUrl },
+    create: { id: "singleton", ...store.settings, ...brand },
+    update: { ...store.settings, ...brand },
   });
 
   // Categories.
@@ -131,20 +140,16 @@ async function main() {
     console.log(`[sample-store] --replace: deactivated ${products.count} product(s) and ${categories.count} categor(ies) outside the sample`);
   }
 
-  // Homepage — built only from the existing section types, in the order the storefront shows them.
-  const heroImage = await upload(store.hero.art, store.hero.tone, 2400, 1350, "hero.webp");
-  const storyImage = await upload(store.brandStory.art, store.brandStory.tone, 1600, 1200, "brand-story.webp");
-  const promoImage = await upload(store.promoBanner.art, store.promoBanner.tone, 2400, 800, "promo.webp");
-  const promoMobile = await upload(store.promoBanner.art, store.promoBanner.tone, 1200, 675, "promo-mobile.webp");
-  const sections = [
-    { type: "HERO" as const, config: { ...store.hero.config, imageUrl: heroImage } },
-    { type: "CATEGORY_GRID" as const, config: { heading: "Shop by category" } },
-    { type: "PRODUCT_CAROUSEL" as const, config: { heading: "Best sellers", subtitle: null, source: "featured", category: null, itemCount: 4 } },
-    { type: "BRAND_STORY" as const, config: { ...store.brandStory.config, imageUrl: storyImage } },
-    { type: "PRODUCT_CAROUSEL" as const, config: { heading: "New arrivals", subtitle: null, source: "new", category: null, itemCount: 4 } },
-    { type: "PROMO_BANNER" as const, config: { ...store.promoBanner.config, imageUrl: promoImage, mobileImageUrl: promoMobile } },
-    { type: "VALUES_GRID" as const, config: store.valuesGrid },
-  ];
+  // Homepage — the store's own composition (existing section types only), in order. Image fields are generated and
+  // uploaded through the normal pipeline.
+  const sections = [];
+  for (const [index, section] of store.homepage.entries()) {
+    const config = { ...section.config };
+    for (const [field, image] of Object.entries(section.images ?? {})) {
+      config[field] = await upload(image.art, image.tone, image.width, image.height, `${section.type.toLowerCase()}-${index}-${field}.webp`);
+    }
+    sections.push({ type: section.type, config });
+  }
   await prisma.$transaction([
     prisma.homepageSection.deleteMany({}),
     prisma.homepageSection.createMany({

@@ -58,21 +58,28 @@ async function uploadPng(page: Page, path: string, field = "image"): Promise<{ s
   );
 }
 
-/** Re-uploads the image at `url` through an admin upload endpoint and returns the new reference. Settings delete a replaced
- * logo/favicon file, so the original can't be restored by URL — only by uploading the same image again. */
-async function reupload(page: Page, url: string, path: string): Promise<string> {
+/** An image's bytes, read now — settings delete a replaced logo/favicon file, so the original must be captured before it
+ * is replaced and restored by uploading the same image again (never by URL). */
+async function capture(page: Page, url: string): Promise<{ base64: string; type: string }> {
+  const res = await page.request.get(url);
+  expect(res.status(), `capture ${url}`).toBe(200);
+  return { base64: (await res.body()).toString("base64"), type: res.headers()["content-type"] ?? "image/png" };
+}
+
+/** Uploads captured image bytes through an admin upload endpoint and returns the new reference. */
+async function reupload(page: Page, image: { base64: string; type: string }, path: string): Promise<string> {
   const res = await page.evaluate(
-    async ({ api, url, path }) => {
-      const blob = await (await fetch(url)).blob();
+    async ({ api, image, path }) => {
+      const bytes = Uint8Array.from(atob(image.base64), (c) => c.charCodeAt(0));
       const form = new FormData();
-      form.append("image", new File([blob], "restore", { type: blob.type }));
+      form.append("image", new File([bytes], "restore", { type: image.type }));
       const csrf = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)?.[1] ?? "";
       const r = await fetch(`${api}${path}`, { method: "POST", credentials: "include", headers: { "X-CSRF-Token": csrf }, body: form });
       return { status: r.status, json: await r.json() };
     },
-    { api: API, url, path },
+    { api: API, image, path },
   );
-  expect(res.status, `restore ${url}`).toBe(201);
+  expect(res.status, `restore via ${path}`).toBe(201);
   return res.json.url as string;
 }
 
@@ -180,11 +187,14 @@ test.describe("store-owned configuration", () => {
     try {
       // Logo and favicon (settings): the stored value is the domain-free /uploads reference the upload returned.
       const { settings } = await (await page.request.get(`${API}/api/settings`)).json();
-      const before = { logoUrl: settings.logoUrl as string | null, faviconUrl: settings.faviconUrl as string | null };
+      const before = {
+        logo: settings.logoUrl ? await capture(page, settings.logoUrl as string) : null,
+        favicon: settings.faviconUrl ? await capture(page, settings.faviconUrl as string) : null,
+      };
       restore.push(async () => {
         const back = {
-          logoUrl: before.logoUrl && (await reupload(page, before.logoUrl, "/api/settings/upload-logo")),
-          faviconUrl: before.faviconUrl && (await reupload(page, before.faviconUrl, "/api/settings/upload-favicon")),
+          logoUrl: before.logo && (await reupload(page, before.logo, "/api/settings/upload-logo")),
+          faviconUrl: before.favicon && (await reupload(page, before.favicon, "/api/settings/upload-favicon")),
         };
         expect((await adminApi(page, "PATCH", "/api/settings", back)).status).toBe(200);
       });

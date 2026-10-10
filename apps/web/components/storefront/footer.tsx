@@ -57,7 +57,7 @@ function FooterLinkGroup({ title, children }: FooterLinkGroupProps) {
   );
 }
 
-const FOOTER_LINK_CLASS = "text-ink-300 transition-colors duration-200 ease-smooth hover:text-brass-400";
+const FOOTER_LINK_CLASS = "text-ink-300 transition-colors duration-200 ease-smooth hover:text-[color:var(--band-accent,rgb(var(--color-brass-400)))]";
 
 export function Footer({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
   const address = shortAddress(settings);
@@ -86,7 +86,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
     // A hard cut into solid black, not a gradient melt — the page content ends and the footer
     // simply starts, like distinct sections stacked on a page rather than one blending into the
     // next. Visual interest inside the footer instead comes from the bounded link cards below.
-    <footer className="ui-band-inverse mt-24 bg-ink-950 text-cream-200">
+    <footer data-band="footer" className="ui-band-inverse mt-24 bg-ink-950 text-cream-200">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         {/* Four content categories: who we are (+ how to reach us), what we sell, how to get
             help, and company/legal — each a clearly labeled, visually bounded group rather than
@@ -221,10 +221,10 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
             to breathe. Payment logos live in the bottom bar as a trust badge, not paired here —
             a newsletter signup and "we accept" iconography are different concerns. */}
         <div className="mt-14 border-t border-cream-50/10 pt-12 text-center sm:mt-16 sm:pt-14">
-          <p className="mb-2 text-xs ui-eyebrow text-brass-400">Newsletter</p>
-          <h3 className="font-display text-2xl text-cream-50 sm:text-3xl">Get in Touch</h3>
+          <p className="mb-2 text-xs ui-eyebrow text-[color:var(--band-accent,rgb(var(--color-brass-400)))]">Newsletter</p>
+          <h3 className="font-display text-2xl text-cream-50 sm:text-3xl">{settings.newsletterHeading || "Get in Touch"}</h3>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-ink-300">
-            New arrivals, offers and news — no spam, unsubscribe any time.
+            {settings.newsletterText || "New arrivals, offers and news — no spam, unsubscribe any time."}
           </p>
           <div className="mt-6 flex justify-center">
             <NewsletterForm variant="dark" className="w-full max-w-sm" />

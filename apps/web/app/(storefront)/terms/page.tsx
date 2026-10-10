@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { governingLawSentence } from "@/lib/store-identity";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { MobileTocSelect } from "@/components/storefront/mobile-toc-select";
@@ -28,7 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/terms`,
-      images: settings.logoUrl ? [settings.logoUrl] : undefined,
+      images: storeShareImages(settings),
     }),
   };
 }
