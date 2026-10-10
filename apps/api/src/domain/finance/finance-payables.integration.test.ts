@@ -271,7 +271,9 @@ describe("supplier payments (Phase 4F)", () => {
     await expect(allocateToBill({ invoiceId: bill1, amount: 1, paymentMovementId: adv.payment.id }, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // bill1 is settled
     await expect(voidSupplierInvoice(bill2, "wrong", OWNER)).rejects.toMatchObject({ statusCode: 409 });
     await expect(prisma.supplierAllocation.update({ where: { id: a.id }, data: { amount: 1 } })).rejects.toThrow(/immutable/);
+    expect((await supplierAccount(supplierId)).allocations).toEqual(expect.arrayContaining([expect.objectContaining({ id: a.id, source: "PAYMENT", amount: a.amount })]));
     await releaseAllocation(a.id, "Allocated to the wrong bill", OWNER);
+    expect((await supplierAccount(supplierId)).allocations.some((x) => x.id === a.id)).toBe(false); // listed while active only
     expect((await supplierAccount(supplierId)).openBills).toEqual([expect.objectContaining({ id: bill2, outstanding: 300 })]);
     allMatched(await checks());
   });

@@ -215,5 +215,19 @@ export async function supplierAccount(supplierId: string, q: { from?: string; to
     const left = await unallocated(prisma, { creditNoteId: c.id }, toMinor(c.total!, cur), cur);
     if (left > 0) unappliedCredits.push({ creditNoteId: c.id, number: invoiceNumber(c.kind, c.number), supplierRef: c.supplierRef, date: businessDateOf(c.invoiceDate), total: toMajorNumber(toMinor(c.total!, cur), cur), unallocated: toMajorNumber(left, cur) });
   }
-  return { supplier, asOf: today, opening: toMajorNumber(opening, cur), balance: toMajorNumber(running, cur), statement, openBills, advances, unappliedCredits };
+  // active allocations (what settles which bill) — each can be released, reopening the bill by its amount
+  const active = await prisma.supplierAllocation.findMany({
+    where: { supplierId, businessId: business.id, status: "ACTIVE" },
+    include: { invoice: { select: { kind: true, number: true, supplierRef: true } }, paymentMovement: { select: { movementDate: true, reference: true, status: true } }, creditNote: { select: { kind: true, number: true, supplierRef: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  const allocations = active
+    .filter((a) => !a.paymentMovement || a.paymentMovement.status === "POSTED" || a.paymentMovement.status === "PENDING_APPROVAL")
+    .map((a) => ({
+      id: a.id, amount: toMajorNumber(toMinor(a.amount, cur), cur), date: businessDateOf(a.createdAt),
+      bill: { id: a.invoiceId, number: invoiceNumber(a.invoice.kind, a.invoice.number), supplierRef: a.invoice.supplierRef },
+      source: a.paymentMovementId ? ("PAYMENT" as const) : ("CREDIT_NOTE" as const),
+      sourceLabel: a.paymentMovement ? `Payment ${businessDateOf(a.paymentMovement.movementDate)}${a.paymentMovement.reference ? ` · ${a.paymentMovement.reference}` : ""}${a.paymentMovement.status === "PENDING_APPROVAL" ? " (awaiting approval)" : ""}` : a.creditNote ? `${invoiceNumber(a.creditNote.kind, a.creditNote.number)} · ${a.creditNote.supplierRef}` : "—",
+    }));
+  return { supplier, asOf: today, opening: toMajorNumber(opening, cur), balance: toMajorNumber(running, cur), statement, openBills, advances, unappliedCredits, allocations };
 }

@@ -259,6 +259,7 @@ export interface SupplierAccount {
   openBills: Array<{ id: string; number: string; supplierRef: string; invoiceDate: string; dueDate: string; overdue: boolean; total: number; settled: number; awaitingApproval: number; outstanding: number; allocatable: number }>;
   advances: Array<{ paymentMovementId: string; date: string; reference: string | null; from: string | null; amount: number; unallocated: number }>;
   unappliedCredits: Array<{ creditNoteId: string; number: string; supplierRef: string; date: string; total: number; unallocated: number }>;
+  allocations: Array<{ id: string; amount: number; date: string; bill: { id: string; number: string; supplierRef: string }; source: "PAYMENT" | "CREDIT_NOTE"; sourceLabel: string }>;
 }
 export const supplierAccountKey = (id: string) => ["purchasing", "payables", "account", id] as const;
 export const getSupplierAccount = (id: string) => apiFetch<SupplierAccount>(`${BASE}/suppliers/${id}/account`);
@@ -266,6 +267,7 @@ export const paySupplier = (body: { supplierId: string; fromFinancialAccountId: 
   apiFetch<{ payment: { id: string; status: "PENDING_APPROVAL" | "POSTED"; amount: number }; replayed: boolean }>(`${BASE}/supplier-payments`, { method: "POST", body, idempotencyKey });
 export const allocateToBill = (body: { invoiceId: string; amount: number; paymentMovementId?: string | null; creditNoteId?: string | null }) =>
   apiFetch<{ id: string; amount: number }>(`${BASE}/supplier-allocations`, { method: "POST", body });
+export const releaseAllocation = (id: string, reason: string) => apiFetch<{ id: string; status: "RELEASED" }>(`${BASE}/supplier-allocations/${id}/release`, { method: "POST", body: { reason } });
 
 // ── Phase 4G: reports (docs/FINANCE_PHASE_4G.md) ───────────────────────────────────────────────────────────────────────
 export type ReportId = "purchase-register" | "grni-ageing" | "price-variance" | "inventory-valuation" | "cost-adjustments" | "supplier-payments";

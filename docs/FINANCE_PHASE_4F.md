@@ -127,4 +127,4 @@ The migrations are split in two, because Postgres can't use an enum value in the
 - **Cheque lifecycle.** A cheque is a payment on the date it is recorded; there is no post-dated cheque register yet.
 - **Supplier refunds of an advance** (money in from a supplier) are not a movement kind yet. Today they are a deposit
   against payables, which would need the party set — a later refinement.
-- **Releasing allocations in the UI.** The supplier page doesn't offer it yet; the API does.
+- **Releasing allocations in the UI:** done (2026-10-10). The supplier page lists what is set against which bill, with *Release* (and a reason).

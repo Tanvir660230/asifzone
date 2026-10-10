@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
+import { ReasonModal } from "@/components/admin/purchasing/reason-modal";
 import { SupplierPaymentModal } from "@/components/admin/payables/payment-modal";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -37,6 +38,12 @@ export default function SupplierAccountPage() {
   const q = useQuery({ queryKey: purchasingApi.supplierAccountKey(supplierId), queryFn: () => purchasingApi.getSupplierAccount(supplierId), enabled: allowed });
   const [paying, setPaying] = useState(false);
   const [allocating, setAllocating] = useState<Source | null>(null);
+  const [releasing, setReleasing] = useState<SupplierAccount["allocations"][number] | null>(null);
+  const release = useMutation({
+    mutationFn: (reason: string) => purchasingApi.releaseAllocation(releasing!.id, reason),
+    onSuccess: () => { toast.success(`${releasing?.bill.number} reopened by ${formatPrice(releasing?.amount ?? 0)}`); setReleasing(null); refresh(); },
+    onError: (err) => toast.error(getErrorMessage(err, "The allocation couldn't be released")),
+  });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: purchasingApi.purchasingKeys.all });
 
   if (ready && !allowed) return <EmptyState icon={Wallet} title="Payables aren't available to your role" />;
@@ -98,6 +105,21 @@ export default function SupplierAccountPage() {
         </section>
       )}
 
+      {a.allocations.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold text-ink-900">Set against bills</h2>
+          <p className="text-sm text-ink-600">Which payments and credit notes settle which bill. Releasing one reopens the bill by its amount and frees the payment or credit to set against another bill — no money moves.</p>
+          <Card className="divide-y divide-line p-0 text-sm" data-testid="allocations">
+            {a.allocations.map((x) => (
+              <div key={x.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" data-testid="allocation-row">
+                <span className="min-w-0"><span className="font-mono text-ink-900">{x.bill.number}</span> <span className="text-ink-600">· {x.bill.supplierRef} ← {x.sourceLabel}</span></span>
+                <span className="flex items-center gap-3"><span className="tabular-nums">{formatPrice(x.amount)}</span>{can("ap.manage") && <Button size="sm" variant="ghost" onClick={() => setReleasing(x)} data-testid="release-allocation">Release</Button>}</span>
+              </div>
+            ))}
+          </Card>
+        </section>
+      )}
+
       <section className="space-y-2">
         <h2 className="text-lg font-semibold text-ink-900">Statement</h2>
         {a.statement.length ? (
@@ -133,6 +155,7 @@ export default function SupplierAccountPage() {
       </section>
 
       {paying && <SupplierPaymentModal account={a} onClose={() => setPaying(false)} onDone={() => { setPaying(false); refresh(); }} />}
+      {releasing && <ReasonModal title={`Release ${formatPrice(releasing.amount)} from ${releasing.bill.number}`} hint={`${releasing.bill.number} owes this amount again; ${releasing.source === "PAYMENT" ? "the payment" : "the credit note"} can be set against another bill.`} loading={release.isPending} onClose={() => setReleasing(null)} onConfirm={(reason) => release.mutate(reason)} />}
       {allocating && <AllocateModal account={a} source={allocating} onClose={() => setAllocating(null)} onDone={() => { setAllocating(null); refresh(); }} />}
     </div>
   );
