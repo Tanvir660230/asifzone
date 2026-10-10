@@ -24,6 +24,7 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as purchasingApi from "@/lib/api/purchasing";
 import type { SupplierAccount } from "@/lib/api/purchasing";
 import { formatPrice } from "@/lib/format";
+import { listFinancialAccounts } from "@/lib/api/finance";
 
 type Source = { kind: "payment"; id: string; label: string; left: number } | { kind: "credit"; id: string; label: string; left: number };
 
@@ -39,6 +40,7 @@ export default function SupplierAccountPage() {
   const [paying, setPaying] = useState(false);
   const [allocating, setAllocating] = useState<Source | null>(null);
   const [releasing, setReleasing] = useState<SupplierAccount["allocations"][number] | null>(null);
+  const [refunding, setRefunding] = useState<Source | null>(null);
   const release = useMutation({
     mutationFn: (reason: string) => purchasingApi.releaseAllocation(releasing!.id, reason),
     onSuccess: () => { toast.success(`${releasing?.bill.number} reopened by ${formatPrice(releasing?.amount ?? 0)}`); setReleasing(null); refresh(); },
@@ -98,7 +100,7 @@ export default function SupplierAccountPage() {
             {sources.map((s) => (
               <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <span>{s.kind === "payment" ? "Advance" : "Credit note"} · {s.label}</span>
-                <span className="flex items-center gap-3"><span className="tabular-nums">{formatPrice(s.left)}</span>{can("ap.manage") && a.openBills.some((b) => b.allocatable > 0) && <Button size="sm" variant="outline" onClick={() => setAllocating(s)}>Set against a bill</Button>}</span>
+                <span className="flex items-center gap-3"><span className="tabular-nums">{formatPrice(s.left)}</span>{can("ap.manage") && a.openBills.some((b) => b.allocatable > 0) && <Button size="sm" variant="outline" onClick={() => setAllocating(s)}>Set against a bill</Button>}{can("ap.manage") && <Button size="sm" variant="ghost" onClick={() => setRefunding(s)} data-testid="record-refund">Refund received</Button>}</span>
               </div>
             ))}
           </Card>
@@ -156,8 +158,43 @@ export default function SupplierAccountPage() {
 
       {paying && <SupplierPaymentModal account={a} onClose={() => setPaying(false)} onDone={() => { setPaying(false); refresh(); }} />}
       {releasing && <ReasonModal title={`Release ${formatPrice(releasing.amount)} from ${releasing.bill.number}`} hint={`${releasing.bill.number} owes this amount again; ${releasing.source === "PAYMENT" ? "the payment" : "the credit note"} can be set against another bill.`} loading={release.isPending} onClose={() => setReleasing(null)} onConfirm={(reason) => release.mutate(reason)} />}
+      {refunding && <RefundModal supplierId={a.supplier.id} source={refunding} onClose={() => setRefunding(null)} onDone={() => { setRefunding(null); refresh(); }} />}
       {allocating && <AllocateModal account={a} source={allocating} onClose={() => setAllocating(null)} onDone={() => { setAllocating(null); refresh(); }} />}
     </div>
+  );
+}
+
+/** Money the supplier paid back from an advance or a credit: into cash, a bank or a wallet, never more than is left. */
+function RefundModal({ supplierId, source, onClose, onDone }: { supplierId: string; source: Source; onClose: () => void; onDone: () => void }) {
+  const money = useQuery({ queryKey: ["finance", "financial-accounts"], queryFn: listFinancialAccounts });
+  const accounts = (money.data?.financialAccounts ?? []).filter((x) => x.isActive && ["CASH", "BANK", "MOBILE_WALLET"].includes(x.kind));
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState(String(source.left));
+  const [date, setDate] = useState("");
+  const [reference, setReference] = useState("");
+  const [key] = useState(() => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `rf-${Date.now()}`));
+  const value = Number(amount);
+  const valid = Boolean(to) && value > 0 && value <= source.left;
+  const save = useMutation({
+    mutationFn: () => purchasingApi.refundFromSupplier({ supplierId, toFinancialAccountId: to, amount: value, movementDate: date || undefined, reference: reference.trim() || null, ...(source.kind === "payment" ? { paymentMovementId: source.id } : { creditNoteId: source.id }) }, key),
+    onSuccess: (r) => { toast.success(r.refund.status === "POSTED" ? `${formatPrice(value)} refund recorded` : "Refund recorded — awaiting approval"); onDone(); },
+    onError: (err) => toast.error(getErrorMessage(err, "The refund couldn't be recorded")),
+  });
+  return (
+    <Modal open onClose={onClose} title="Refund received from the supplier" description={`From ${source.kind === "payment" ? "the advance" : "the credit note"} ${source.label} — ${formatPrice(source.left)} left.`} widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={save.isPending} disabled={!valid} onClick={() => save.mutate()} data-testid="confirm-refund">Record refund</Button></>}>
+      <div className="space-y-3">
+        <Field htmlFor="rf-amount" label="Amount" required error={value > source.left ? `At most ${formatPrice(source.left)}` : undefined}><Input id="rf-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field htmlFor="rf-to" label="Received into" required>
+          <Select id="rf-to" value={to} onChange={(e) => setTo(e.target.value)}>
+            <option value="">Choose…</option>
+            {accounts.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </Select>
+        </Field>
+        <Field htmlFor="rf-date" label="Date" hint="Defaults to today"><Input id="rf-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field htmlFor="rf-ref" label="Reference"><Input id="rf-ref" value={reference} onChange={(e) => setReference(e.target.value)} maxLength={120} /></Field>
+      </div>
+    </Modal>
   );
 }
 

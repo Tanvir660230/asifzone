@@ -46,7 +46,7 @@ export interface LedgerAccountSummary {
   isActive: boolean;
 }
 
-export type MovementKind = "DEPOSIT" | "WITHDRAWAL" | "TRANSFER" | "ADJUSTMENT" | "OPENING_FUNDING" | "SUPPLIER_PAYMENT";
+export type MovementKind = "DEPOSIT" | "WITHDRAWAL" | "TRANSFER" | "ADJUSTMENT" | "OPENING_FUNDING" | "SUPPLIER_PAYMENT" | "SUPPLIER_REFUND";
 export type MovementStatus = "PENDING_APPROVAL" | "POSTED" | "REJECTED" | "REVERSED";
 
 export interface Movement {
@@ -239,8 +239,8 @@ export const updateFinancialAccount = (id: string, body: Record<string, unknown>
 export const listLedgerAccounts = () => apiFetch<{ accounts: LedgerAccountSummary[] }>(`${BASE}/accounts`);
 
 // ── movements ───────────────────────────────────────────────────────────────────────────────────────────────────────
-export const MOVEMENT_PATH: Record<Exclude<MovementKind, "OPENING_FUNDING" | "SUPPLIER_PAYMENT">, string> = { DEPOSIT: "deposit", WITHDRAWAL: "withdrawal", TRANSFER: "transfer", ADJUSTMENT: "adjustment" };
-export const requestMovement = (kind: Exclude<MovementKind, "OPENING_FUNDING" | "SUPPLIER_PAYMENT">, body: Record<string, unknown>, idempotencyKey: string) =>
+export const MOVEMENT_PATH: Record<Exclude<MovementKind, "OPENING_FUNDING" | "SUPPLIER_PAYMENT" | "SUPPLIER_REFUND">, string> = { DEPOSIT: "deposit", WITHDRAWAL: "withdrawal", TRANSFER: "transfer", ADJUSTMENT: "adjustment" };
+export const requestMovement = (kind: Exclude<MovementKind, "OPENING_FUNDING" | "SUPPLIER_PAYMENT" | "SUPPLIER_REFUND">, body: Record<string, unknown>, idempotencyKey: string) =>
   apiFetch<{ movement: Movement; replayed: boolean }>(`${BASE}/movements/${MOVEMENT_PATH[kind]}`, { method: "POST", body, idempotencyKey });
 export const listMovements = (q: { financialAccountId?: string; status?: MovementStatus; page?: number; pageSize?: number }) =>
   apiFetch<{ total: number; movements: Movement[] }>(`${BASE}/movements${qs(q)}`);

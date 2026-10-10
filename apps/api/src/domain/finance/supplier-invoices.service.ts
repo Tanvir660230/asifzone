@@ -540,8 +540,10 @@ export async function payablesAgeing() {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const today = businessToday(business);
-  const rows = await prisma.supplierInvoice.findMany({ where: { businessId: business.id, status: "POSTED" }, select: { id: true, kind: true, dueDate: true, total: true, supplier: { select: { id: true, code: true, displayName: true } }, allocations: INCLUDE.allocations, creditAllocations: INCLUDE.creditAllocations } });
-  const payments = await prisma.treasuryMovement.findMany({ where: { businessId: business.id, kind: "SUPPLIER_PAYMENT", status: "POSTED" }, select: { amount: true, supplier: { select: { id: true, code: true, displayName: true } }, supplierAllocations: { where: { status: "ACTIVE" }, select: { amount: true } } } });
+  // posted refunds (money the supplier paid back) reduce the advance or credit they came from
+  const postedRefunds = { where: { kind: "SUPPLIER_REFUND" as const, status: "POSTED" as const }, select: { amount: true } };
+  const rows = await prisma.supplierInvoice.findMany({ where: { businessId: business.id, status: "POSTED" }, select: { id: true, kind: true, dueDate: true, total: true, supplier: { select: { id: true, code: true, displayName: true } }, allocations: INCLUDE.allocations, creditAllocations: INCLUDE.creditAllocations, refunds: postedRefunds } });
+  const payments = await prisma.treasuryMovement.findMany({ where: { businessId: business.id, kind: "SUPPLIER_PAYMENT", status: "POSTED" }, select: { amount: true, supplier: { select: { id: true, code: true, displayName: true } }, supplierAllocations: { where: { status: "ACTIVE" }, select: { amount: true } }, refunds: postedRefunds } });
   const BUCKETS = ["current", "d1_30", "d31_60", "d61_90", "d90_plus"] as const;
   type Row = { supplier: { id: string; code: string; displayName: string }; buckets: Record<(typeof BUCKETS)[number], number>; credits: number; advances: number; invoices: number };
   const by = new Map<string, Row>();
@@ -550,7 +552,7 @@ export async function payablesAgeing() {
   for (const r of rows) {
     const row = rowOf(r.supplier);
     const total = toMinor(r.total!, cur);
-    if (r.kind === "CREDIT_NOTE") row.credits += total - sum(r.creditAllocations);
+    if (r.kind === "CREDIT_NOTE") row.credits += total - sum(r.creditAllocations) - sum(r.refunds);
     else {
       const open = total - sum(r.allocations.filter((a) => a.creditNoteId || a.paymentMovement?.status === "POSTED"));
       if (open > 0) row.invoices += 1;
@@ -562,7 +564,7 @@ export async function payablesAgeing() {
   }
   for (const p of payments) {
     const row = rowOf(p.supplier!);
-    row.advances += toMinor(p.amount, cur) - sum(p.supplierAllocations);
+    row.advances += toMinor(p.amount, cur) - sum(p.supplierAllocations) - sum(p.refunds);
     by.set(p.supplier!.id, row);
   }
   const major = (n: number) => toMajorNumber(n, cur);

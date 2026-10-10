@@ -18,7 +18,7 @@ import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { businessToday, getFinanceContext } from "./finance-context";
 import { businessDateOf, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
-import { movementDto, requestMovementInTx } from "./treasury.service";
+import { MOVEMENT_INCLUDE, movementDto, requestMovementInTx } from "./treasury.service";
 import { resolveMappedAccount } from "./chart.service";
 import { adminOf } from "./purchase-orders.service";
 import { invoiceNumber } from "./supplier-invoices.service";
@@ -47,9 +47,16 @@ export async function settlementOf(db: Db, invoiceIds: string[], cur: string) {
 }
 
 /** What a payment or credit note has left to allocate (minor). */
+/** What is left of a payment or credit note: less its active allocations and its live refunds (awaiting approval or posted). */
 async function unallocated(db: Db, source: { paymentMovementId?: string; creditNoteId?: string }, capMinor: number, cur: string) {
-  const used = await db.supplierAllocation.aggregate({ where: { ...source, status: "ACTIVE" }, _sum: { amount: true } });
-  return capMinor - (used._sum.amount ? toMinor(used._sum.amount, cur) : 0);
+  const [used, refunded] = await Promise.all([
+    db.supplierAllocation.aggregate({ where: { ...source, status: "ACTIVE" }, _sum: { amount: true } }),
+    db.treasuryMovement.aggregate({
+      where: { kind: "SUPPLIER_REFUND", status: { in: ["PENDING_APPROVAL", "POSTED"] }, ...(source.paymentMovementId ? { refundOfPaymentId: source.paymentMovementId } : { refundOfCreditNoteId: source.creditNoteId }) },
+      _sum: { amount: true },
+    }),
+  ]);
+  return capMinor - (used._sum.amount ? toMinor(used._sum.amount, cur) : 0) - (refunded._sum.amount ? toMinor(refunded._sum.amount, cur) : 0);
 }
 
 async function lockBills(tx: AppTransactionClient, businessId: string, supplierId: string, ids: string[]) {
@@ -115,6 +122,55 @@ export async function paySupplier(input: SupplierPaymentInput, actor: FinanceAct
       await recordFinanceAudit(tx, { businessId: business.id, actor, action: "supplier_allocation.create", entityType: "SupplierAllocation", entityId: row.id, after: { invoiceId: a.invoiceId, paymentMovementId: movement.id, amountMinor: a.amountMinor } });
     }
     return { payment: movementDto(movement), replayed: false };
+  });
+}
+
+/** Money a supplier pays back from an advance (an unallocated payment) or an unapplied credit note: a SUPPLIER_REFUND into
+ * cash, a bank or a wallet against payables. Never more than is left of the source; idempotent by the request's key. */
+export async function refundFromSupplier(input: { supplierId: string; toFinancialAccountId: string; amount: number; movementDate?: string; reference?: string | null; paymentMovementId?: string | null; creditNoteId?: string | null }, actor: FinanceActor, idempotencyKey: string | null) {
+  if (!idempotencyKey) throw financeError(400, "IDEMPOTENCY_KEY_REQUIRED", "Send an Idempotency-Key header with every refund");
+  if (Boolean(input.paymentMovementId) === Boolean(input.creditNoteId)) throw financeError(400, "REFUND_SOURCE", "Refund against a payment or a credit note");
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const movementDate = input.movementDate ?? businessToday(business);
+  if (business.openingDate && movementDate < business.openingDate) throw financeError(400, "BEFORE_OPENING_DATE", `The books start on ${business.openingDate}`);
+  return financeTransaction(async (tx) => {
+    const key = `supplier-refund:${idempotencyKey}`;
+    const prior = await tx.treasuryMovement.findFirst({ where: { businessId: business.id, idempotencyKey: key }, include: MOVEMENT_INCLUDE });
+    if (prior) {
+      if (prior.kind !== "SUPPLIER_REFUND") throw financeError(409, "IDEMPOTENCY_KEY_REUSED", "This key was used for another money movement");
+      return { refund: movementDto(prior), replayed: true };
+    }
+    const supplier = await tx.supplier.findFirst({ where: { id: input.supplierId, businessId: business.id } });
+    if (!supplier) throw financeError(404, "SUPPLIER_NOT_FOUND", "Supplier not found");
+    const into = await tx.financialAccount.findFirst({ where: { id: input.toFinancialAccountId, businessId: business.id }, select: { kind: true, name: true } });
+    if (into && !PAYING_KINDS.has(into.kind)) throw financeError(400, "REFUND_ACCOUNT_KIND", `${into.name} is a clearing account — a refund comes into cash, a bank or a wallet`);
+    let capMinor: number;
+    let label: string;
+    if (input.paymentMovementId) {
+      const [m] = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "TreasuryMovement" WHERE id = ${input.paymentMovementId} AND "businessId" = ${business.id} FOR UPDATE`;
+      if (!m) throw financeError(404, "MOVEMENT_NOT_FOUND", "Payment not found");
+      const pay = await tx.treasuryMovement.findUniqueOrThrow({ where: { id: m.id } });
+      if (pay.kind !== "SUPPLIER_PAYMENT" || pay.status !== "POSTED" || pay.supplierId !== supplier.id) throw financeError(409, "PAYMENT_NOT_POSTED", "Only a posted payment to this supplier is refunded");
+      capMinor = await unallocated(tx, { paymentMovementId: pay.id }, toMinor(pay.amount, cur), cur);
+      label = `advance of ${businessDateOf(pay.movementDate)}`;
+    } else {
+      const [c] = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "SupplierInvoice" WHERE id = ${input.creditNoteId!} AND "businessId" = ${business.id} FOR UPDATE`;
+      if (!c) throw financeError(404, "SUPPLIER_INVOICE_NOT_FOUND", "Credit note not found");
+      const cn = await tx.supplierInvoice.findUniqueOrThrow({ where: { id: c.id } });
+      if (cn.kind !== "CREDIT_NOTE" || cn.status !== "POSTED" || cn.supplierId !== supplier.id) throw financeError(409, "CREDIT_NOT_POSTED", "Only a posted credit note of this supplier is refunded");
+      capMinor = await unallocated(tx, { creditNoteId: cn.id }, toMinor(cn.total!, cur), cur);
+      label = invoiceNumber(cn.kind, cn.number);
+    }
+    const amountMinor = toMinor(input.amount, cur);
+    if (amountMinor <= 0) throw financeError(400, "REFUND_AMOUNT", "A refund is more than zero");
+    if (amountMinor > capMinor) throw financeError(409, "REFUND_EXCEEDS_SOURCE", `Only ${toMajorNumber(capMinor, cur)} is left to refund`);
+    const { movement } = await requestMovementInTx(tx, business, {
+      kind: "SUPPLIER_REFUND", movementDate, amount: input.amount, toFinancialAccountId: input.toFinancialAccountId, supplierId: supplier.id,
+      refundOfPaymentId: input.paymentMovementId ?? null, refundOfCreditNoteId: input.creditNoteId ?? null,
+      reference: input.reference ?? null, description: `Refund from ${supplier.displayName} — ${label}`.slice(0, 300),
+    }, actor, key);
+    return { refund: movementDto(movement), replayed: false };
   });
 }
 

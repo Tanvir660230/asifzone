@@ -8,6 +8,7 @@
  *   WITHDRAWAL / ADJUSTMENT OUT                 Dr the counter        Cr the account
  *   TRANSFER                                    Dr the destination    Cr the source        (no revenue, no expense)
  *   SUPPLIER_PAYMENT (Phase 4F)                 Dr trade payables (the supplier as party)  Cr the account
+ *   SUPPLIER_REFUND                             Dr the account        Cr trade payables (the supplier as party)
  *
  * Rules: counter accounts are never revenue or COGS (sales and their cost arrive as commerce events, Phase 3) and never a
  * money account (that is a transfer); transfers never cross brands; cash and mobile-wallet balances never go negative
@@ -40,15 +41,18 @@ export interface MovementRequest {
   counterAccountId?: string | null;
   bankTransactionId?: string | null;
   reconciliationId?: string | null;
-  /** SUPPLIER_PAYMENT only (supplier-payments.service): the supplier paid, party of the payables line. */
+  /** SUPPLIER_PAYMENT / SUPPLIER_REFUND only (supplier-payments.service): the supplier, party of the payables line. */
   supplierId?: string | null;
+  /** SUPPLIER_REFUND only — exactly one: the advance payment or the credit note refunded. */
+  refundOfPaymentId?: string | null;
+  refundOfCreditNoteId?: string | null;
 }
 
 /** Kinds of money account whose balance can't go below zero (an overdraft exists only at a bank or a gateway). */
 const NO_OVERDRAFT = new Set(["CASH", "MOBILE_WALLET"]);
 const FORBIDDEN_COUNTER_TYPES = new Set(["REVENUE", "COGS"]);
 
-const MOVEMENT_INCLUDE = {
+export const MOVEMENT_INCLUDE = {
   fromAccount: { select: { id: true, name: true, kind: true, brandId: true } },
   toAccount: { select: { id: true, name: true, kind: true, brandId: true } },
   counterAccount: { select: { id: true, code: true, name: true } },
@@ -97,6 +101,7 @@ function fingerprintOf(r: MovementRequest, currency: string): string {
   return JSON.stringify([
     r.kind, r.direction ?? null, r.movementDate, toMinor(r.amount, currency), r.fromFinancialAccountId ?? null, r.toFinancialAccountId ?? null,
     r.counterAccountId ?? null, r.reference ?? null, r.description, r.bankTransactionId ?? null, ...(r.supplierId ? [r.supplierId] : []),
+    ...(r.kind === "SUPPLIER_REFUND" ? [r.refundOfPaymentId ?? null, r.refundOfCreditNoteId ?? null] : []),
   ]);
 }
 
@@ -157,6 +162,9 @@ async function resolve(tx: AppTransactionClient, business: FinanceBusinessInfo, 
   } else if (r.kind === "SUPPLIER_PAYMENT") {
     if (!from || !r.supplierId) throw financeError(400, "SUPPLIER_PAYMENT_SHAPE", "A supplier payment leaves a money account for a supplier");
     counter = await resolveMappedAccount(tx, business.id, "liability.payable_trade");
+  } else if (r.kind === "SUPPLIER_REFUND") {
+    if (!to || !r.supplierId || (!r.refundOfPaymentId === !r.refundOfCreditNoteId)) throw financeError(400, "SUPPLIER_REFUND_SHAPE", "A supplier refund comes into a money account from a supplier, against one payment or credit note");
+    counter = await resolveMappedAccount(tx, business.id, "liability.payable_trade");
   } else if (r.kind !== "TRANSFER") {
     if (!r.counterAccountId) throw financeError(400, "COUNTER_ACCOUNT_REQUIRED", "Choose the account on the other side");
     counter = await loadCounterAccount(tx, business, r.counterAccountId);
@@ -167,11 +175,11 @@ async function resolve(tx: AppTransactionClient, business: FinanceBusinessInfo, 
 function journalLines(m: TreasuryMovement, x: Resolved, currency: string): JournalLineSpec[] {
   const amount = toMinor(m.amount, currency);
   const memo = m.reference ?? null;
+  const party = m.supplierId ? { partyType: "Supplier", partyId: m.supplierId } : {};
   const into = (fa: MoneyAccount, counterId: string): JournalLineSpec[] => [
     { accountId: fa.ledgerAccountId, debit: amount, credit: 0, brandId: fa.brandId, memo },
-    { accountId: counterId, debit: 0, credit: amount, brandId: fa.brandId, memo },
+    { accountId: counterId, debit: 0, credit: amount, brandId: fa.brandId, memo, ...party },
   ];
-  const party = m.supplierId ? { partyType: "Supplier", partyId: m.supplierId } : {};
   const outOf = (fa: MoneyAccount, counterId: string): JournalLineSpec[] => [
     { accountId: counterId, debit: amount, credit: 0, brandId: fa.brandId, memo, ...party },
     { accountId: fa.ledgerAccountId, debit: 0, credit: amount, brandId: fa.brandId, memo },
@@ -179,6 +187,7 @@ function journalLines(m: TreasuryMovement, x: Resolved, currency: string): Journ
   switch (m.kind) {
     case "DEPOSIT":
     case "OPENING_FUNDING":
+    case "SUPPLIER_REFUND":
       return into(x.to!, x.counter!.id);
     case "WITHDRAWAL":
     case "SUPPLIER_PAYMENT":
@@ -217,6 +226,7 @@ const DESCRIPTION: Record<TreasuryMovementKind, string> = {
   ADJUSTMENT: "Adjustment",
   OPENING_FUNDING: "Opening balance",
   SUPPLIER_PAYMENT: "Supplier payment",
+  SUPPLIER_REFUND: "Supplier refund",
 };
 
 async function postMovement(tx: AppTransactionClient, business: FinanceBusinessInfo, m: TreasuryMovement, x: Resolved, actor: FinanceActor, approval: boolean) {
@@ -299,7 +309,9 @@ export async function requestMovementInTx(tx: AppTransactionClient, business: Fi
       fingerprint,
       bankTransactionId: r.bankTransactionId ?? null,
       reconciliationId: r.reconciliationId ?? null,
-      supplierId: r.kind === "SUPPLIER_PAYMENT" ? r.supplierId ?? null : null,
+      supplierId: r.kind === "SUPPLIER_PAYMENT" || r.kind === "SUPPLIER_REFUND" ? r.supplierId ?? null : null,
+      refundOfPaymentId: r.kind === "SUPPLIER_REFUND" ? r.refundOfPaymentId ?? null : null,
+      refundOfCreditNoteId: r.kind === "SUPPLIER_REFUND" ? r.refundOfCreditNoteId ?? null : null,
       requestedByAdminId: adminId(actor),
     },
     include: MOVEMENT_INCLUDE,

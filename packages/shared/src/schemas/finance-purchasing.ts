@@ -281,6 +281,9 @@ export const supplierAllocationCreateSchema = z
   .object({ invoiceId: id, amount: positiveAmount, paymentMovementId: id.optional().nullable(), creditNoteId: id.optional().nullable() })
   .refine((a) => Boolean(a.paymentMovementId) !== Boolean(a.creditNoteId), "Allocate from a payment or a credit note");
 export const supplierAllocationReleaseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
+export const supplierRefundSchema = z
+  .object({ supplierId: id, toFinancialAccountId: id, amount: positiveAmount, movementDate: businessDateSchema.optional(), reference: z.string().trim().max(120).optional().nullable(), paymentMovementId: id.optional().nullable(), creditNoteId: id.optional().nullable() })
+  .refine((a) => Boolean(a.paymentMovementId) !== Boolean(a.creditNoteId), "Refund against a payment or a credit note");
 export const supplierAccountQuerySchema = z.object({ from: businessDateSchema.optional(), to: businessDateSchema.optional() });
 
 // ── Phase 4G: reports (docs/FINANCE_PHASE_4G.md) ──────────────────────────────────────────────────────────────────────

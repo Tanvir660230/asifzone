@@ -3093,6 +3093,8 @@ enum TreasuryMovementKind {
   OPENING_FUNDING
   /// Phase 4F: money paid to a supplier — Dr trade payables (the supplier) / Cr the money account.
   SUPPLIER_PAYMENT
+  /// Money a supplier pays back from an advance or a credit note — Dr the money account / Cr trade payables (the supplier).
+  SUPPLIER_REFUND
 }
 
 enum TreasuryMovementStatus {
@@ -3154,9 +3156,15 @@ model TreasuryMovement {
   /// Deposits, withdrawals, adjustments, opening funding: the other side of the journal (capital, drawings, a loan, …).
   counterAccountId       String?
   counterAccount         LedgerAccount?         @relation("TreasuryCounterAccount", fields: [counterAccountId], references: [id], onDelete: Restrict)
-  /// SUPPLIER_PAYMENT only: the supplier paid (the party of its payables line).
+  /// SUPPLIER_PAYMENT / SUPPLIER_REFUND only: the supplier paid or refunding (the party of its payables line).
   supplierId             String?
   supplier               Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  /// SUPPLIER_REFUND only — exactly one: the advance payment, or the credit note, the money refunds.
+  refundOfPaymentId      String?
+  refundOfPayment        TreasuryMovement?      @relation("SupplierRefundOfPayment", fields: [refundOfPaymentId], references: [id], onDelete: Restrict)
+  refunds                TreasuryMovement[]     @relation("SupplierRefundOfPayment")
+  refundOfCreditNoteId   String?
+  refundOfCreditNote     SupplierInvoice?       @relation("SupplierRefundOfCredit", fields: [refundOfCreditNoteId], references: [id], onDelete: Restrict)
   reference              String?
   description            String
   reason                 String?
@@ -3197,6 +3205,8 @@ model TreasuryMovement {
   @@index([toFinancialAccountId, movementDate])
   @@index([businessId, status])
   @@index([bankTransactionId])
+  @@index([refundOfPaymentId])
+  @@index([refundOfCreditNoteId])
 }
 
 /// One line of a bank / wallet / gateway statement (entered by hand or imported). Evidence of what the institution
@@ -4410,6 +4420,7 @@ model SupplierInvoice {
   lines             SupplierInvoiceLine[]
   allocations       SupplierAllocation[]  @relation("AllocationBill")
   creditAllocations SupplierAllocation[]  @relation("AllocationCredit")
+  refunds           TreasuryMovement[]    @relation("SupplierRefundOfCredit")
 
   @@unique([businessId, number])
   @@index([businessId, status])

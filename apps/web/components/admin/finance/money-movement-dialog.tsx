@@ -16,7 +16,7 @@ import type { FinancialAccount, MovementKind } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 
-export type MovementDialogKind = Exclude<MovementKind, "OPENING_FUNDING" | "SUPPLIER_PAYMENT">;
+export type MovementDialogKind = Exclude<MovementKind, "OPENING_FUNDING" | "SUPPLIER_PAYMENT" | "SUPPLIER_REFUND">;
 
 const TITLES: Record<MovementDialogKind, { title: string; description: string }> = {
   DEPOSIT: { title: "Deposit", description: "Money coming into an account from outside it — the owner's capital, a loan, a refund received. Sales arrive from orders, not here." },

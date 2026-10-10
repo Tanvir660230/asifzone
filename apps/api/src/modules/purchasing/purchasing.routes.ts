@@ -14,6 +14,7 @@ import {
   supplierAccountQuerySchema,
   supplierAllocationCreateSchema,
   supplierAllocationReleaseSchema,
+  supplierRefundSchema,
   supplierCreateSchema,
   supplierPaymentCreateSchema,
   supplierInvoiceCreateSchema,
@@ -133,6 +134,10 @@ purchasingRouter.post("/supplier-payments", requirePermission("ap.manage"), vali
   res.status(r.replayed ? 200 : 201).json(r);
 }));
 purchasingRouter.post("/supplier-allocations", requirePermission("ap.manage"), validate(supplierAllocationCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await payments.allocateToBill(req.body, await actorOf(req)))));
+purchasingRouter.post("/supplier-refunds", requirePermission("ap.manage"), validate(supplierRefundSchema), asyncHandler(async (req, res) => {
+  const r = await payments.refundFromSupplier(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
 purchasingRouter.post("/supplier-allocations/:id/release", requirePermission("ap.manage"), validate(supplierAllocationReleaseSchema), asyncHandler(async (req, res) => res.json(await payments.releaseAllocation(id(req), reason(req), await actorOf(req)))));
 purchasingRouter.get("/suppliers/:id/account", requirePermission("ap.read"), validate(supplierAccountQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await payments.supplierAccount(id(req), req.query as never))));
 

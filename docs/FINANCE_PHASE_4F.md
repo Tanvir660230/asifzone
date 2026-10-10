@@ -125,6 +125,12 @@ The migrations are split in two, because Postgres can't use an enum value in the
 ## 8. Limitations / next
 
 - **Cheque lifecycle.** A cheque is a payment on the date it is recorded; there is no post-dated cheque register yet.
-- **Supplier refunds of an advance** (money in from a supplier) are not a movement kind yet. Today they are a deposit
-  against payables, which would need the party set — a later refinement.
+- **Supplier refunds:** done (2026-10-10). A new movement kind `SUPPLIER_REFUND` brings money a supplier pays back into
+  cash, a bank or a wallet: Dr the account / Cr trade payables, with the supplier as party.
+  - **Source:** exactly one advance payment or unapplied credit note. A live refund reduces what is left of that source,
+    like an allocation does; reversal restores it.
+  - **Rules:** never more than is left; idempotent; approval thresholds apply.
+  - **Database:** checks the shape, and that the source belongs to the same supplier.
+  - **Reports:** `payables.subledger` and the ageing count posted refunds.
+  - **UI:** the supplier page has *Refund received* (`POST /purchasing/supplier-refunds`, `ap.manage`).
 - **Releasing allocations in the UI:** done (2026-10-10). The supplier page lists what is set against which bill, with *Release* (and a reason).

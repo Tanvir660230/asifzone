@@ -267,6 +267,8 @@ export const paySupplier = (body: { supplierId: string; fromFinancialAccountId: 
   apiFetch<{ payment: { id: string; status: "PENDING_APPROVAL" | "POSTED"; amount: number }; replayed: boolean }>(`${BASE}/supplier-payments`, { method: "POST", body, idempotencyKey });
 export const allocateToBill = (body: { invoiceId: string; amount: number; paymentMovementId?: string | null; creditNoteId?: string | null }) =>
   apiFetch<{ id: string; amount: number }>(`${BASE}/supplier-allocations`, { method: "POST", body });
+export const refundFromSupplier = (body: { supplierId: string; toFinancialAccountId: string; amount: number; movementDate?: string; reference?: string | null; paymentMovementId?: string | null; creditNoteId?: string | null }, idempotencyKey: string) =>
+  apiFetch<{ refund: { id: string; status: "PENDING_APPROVAL" | "POSTED"; amount: number }; replayed: boolean }>(`${BASE}/supplier-refunds`, { method: "POST", body, idempotencyKey });
 export const releaseAllocation = (id: string, reason: string) => apiFetch<{ id: string; status: "RELEASED" }>(`${BASE}/supplier-allocations/${id}/release`, { method: "POST", body: { reason } });
 
 // ── Phase 4G: reports (docs/FINANCE_PHASE_4G.md) ───────────────────────────────────────────────────────────────────────

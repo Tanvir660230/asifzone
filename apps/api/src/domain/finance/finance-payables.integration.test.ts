@@ -17,7 +17,7 @@ import { approvePurchaseOrder, createPurchaseOrder, submitPurchaseOrder } from "
 import { createGoodsReceipt, postGoodsReceipt, reverseGoodsReceipt } from "./goods-receipts.service";
 import { approvePurchaseReturn, createPurchaseReturn, shipPurchaseReturn } from "./purchase-returns.service";
 import { createSupplierInvoice, deleteDraftSupplierInvoice, payablesAgeing, postSupplierInvoice, supplierOpenItems, taxOf, updateSupplierInvoice, voidSupplierInvoice } from "./supplier-invoices.service";
-import { allocateToBill, paySupplier, releaseAllocation, supplierAccount } from "./supplier-payments.service";
+import { allocateToBill, paySupplier, refundFromSupplier, releaseAllocation, supplierAccount } from "./supplier-payments.service";
 import { createFinancialAccount } from "./financial-accounts.service";
 import { balanceSheet, cashFlow, incomeStatement } from "./statements.service";
 import { getTrialBalance } from "./ledger.service";
@@ -269,6 +269,23 @@ describe("supplier payments (Phase 4F)", () => {
     acct = await supplierAccount(supplierId);
     expect(acct.openBills).toEqual([]);
     expect(acct.advances[0]).toMatchObject({ unallocated: 200 });
+
+    // the supplier refunds part of the advance: money IN against payables (the supplier as party), never more than is left
+    const owedBefore = acct.balance;
+    await expect(refundFromSupplier({ supplierId, toFinancialAccountId: cashId, amount: 201, paymentMovementId: adv.payment.id }, OWNER, "refund-too-much")).rejects.toMatchObject({ statusCode: 409 });
+    const refund = await refundFromSupplier({ supplierId, toFinancialAccountId: cashId, amount: 50, paymentMovementId: adv.payment.id, reference: "Refund chq 77" }, OWNER, "refund-1");
+    expect(refund.refund).toMatchObject({ kind: "SUPPLIER_REFUND", status: "POSTED", amount: 50 });
+    expect((await refundFromSupplier({ supplierId, toFinancialAccountId: cashId, amount: 50, paymentMovementId: adv.payment.id }, OWNER, "refund-1")).replayed).toBe(true);
+    acct = await supplierAccount(supplierId);
+    expect(acct.advances[0]).toMatchObject({ unallocated: 150 });
+    expect(acct.balance).toBe(owedBefore + 50); // less in the supplier's favour
+    await expect(allocateToBill({ invoiceId: bill1, amount: 151, paymentMovementId: adv.payment.id }, OWNER)).rejects.toMatchObject({ statusCode: 409 });
+    allMatched(await checks()); // payables.subledger counts the refund
+    await reverseMovement(refund.refund.id, { reason: "Refund cheque bounced" }, OWNER);
+    acct = await supplierAccount(supplierId);
+    expect(acct.advances[0]).toMatchObject({ unallocated: 200 });
+    expect(acct.balance).toBe(owedBefore);
+    allMatched(await checks());
     await expect(allocateToBill({ invoiceId: bill1, amount: 1, paymentMovementId: adv.payment.id }, OWNER)).rejects.toMatchObject({ statusCode: 409 }); // bill1 is settled
     await expect(voidSupplierInvoice(bill2, "wrong", OWNER)).rejects.toMatchObject({ statusCode: 409 });
     await expect(prisma.supplierAllocation.update({ where: { id: a.id }, data: { amount: 1 } })).rejects.toThrow(/immutable/);
