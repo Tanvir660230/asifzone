@@ -15,9 +15,12 @@ export const TAX_SETTING_ID = "singleton";
 export const LEGACY_ZONE_KEYS = { insideDhaka: "dhaka-district", outside: "default" } as const;
 
 export async function loadTaxConfig(db: Db = prisma): Promise<TaxConfig> {
-  const row =
-    (await db.taxSetting.findUnique({ where: { id: TAX_SETTING_ID } })) ??
-    (await db.taxSetting.create({ data: { id: TAX_SETTING_ID } }));
+  let row = await db.taxSetting.findUnique({ where: { id: TAX_SETTING_ID } });
+  if (!row) {
+    // ON CONFLICT DO NOTHING: a concurrent first read (possibly inside a checkout transaction) must not abort on the key.
+    await db.taxSetting.createMany({ data: [{ id: TAX_SETTING_ID }], skipDuplicates: true });
+    row = await db.taxSetting.findUniqueOrThrow({ where: { id: TAX_SETTING_ID } });
+  }
   return {
     enabled: row.enabled,
     mode: row.mode,
