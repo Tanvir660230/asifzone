@@ -24,10 +24,22 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Production runs with Redis (order/payment locks, cache, queues); without it the concurrency tests lose their locks.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/clothing_brand?schema=public
+      # Prisma's default pool is cores×2+1 = 5 on a 2-core runner — too few for the race tests' parallel transactions
+      # (P2028 "Unable to start a transaction"). Locally it is ~33; 20 keeps CI close to that.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/clothing_brand?schema=public&connection_limit=20
       REDIS_URL: redis://localhost:6379
       JWT_ACCESS_SECRET: ci-access-secret
       JWT_CUSTOMER_ACCESS_SECRET: ci-customer-access-secret
