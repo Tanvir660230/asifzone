@@ -19,7 +19,9 @@ export async function getSmsSettings() {
 async function fetchOrCreate() {
   const existing = await prisma.smsNotificationSetting.findUnique({ where: { id: SINGLETON_ID } });
   if (existing) return existing;
-  return prisma.smsNotificationSetting.create({ data: { id: SINGLETON_ID } });
+  // ON CONFLICT DO NOTHING, like the store settings: concurrent first reads never fail on the primary key.
+  await prisma.smsNotificationSetting.createMany({ data: [{ id: SINGLETON_ID }], skipDuplicates: true });
+  return prisma.smsNotificationSetting.findUniqueOrThrow({ where: { id: SINGLETON_ID } });
 }
 
 export async function updateSmsSettings(input: UpdateSmsSettingsInput) {
