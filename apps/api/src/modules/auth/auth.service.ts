@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import { OAuth2Client } from "google-auth-library";
+import { googleOAuthClient } from "../../lib/google-oauth";
 import { ADMIN_ROLES, permissionsForRole, type AdminLoginInput, type AdminRoleName, type CreateAdminInviteInput, type UpdateAdminInput } from "@clothing-brand/shared";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
@@ -11,7 +11,6 @@ import { hashToken } from "../../lib/token-hash";
 import { env } from "../../config/env";
 import { getProviders } from "../../providers/registry";
 
-const googleClient = env.google.clientId ? new OAuth2Client(env.google.clientId) : null;
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -67,8 +66,9 @@ export async function loginAdmin(input: AdminLoginInput, userAgent?: string) {
  * invite-only, so Google can only sign in someone who already has an active, invited account with a
  * matching email. First successful Google login links `googleId` for faster lookups next time. */
 export async function loginAdminWithGoogle(idToken: string, userAgent?: string) {
+  const googleClient = googleOAuthClient();
   if (!googleClient) {
-    throw new AppError(503, "Google sign-in isn't configured — set GOOGLE_CLIENT_ID on the API to enable it.");
+    throw new AppError(503, "Google sign-in isn't configured — add a Google OAuth client ID in Settings › Integrations to enable it.");
   }
 
   let payload;

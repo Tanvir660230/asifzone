@@ -19,7 +19,15 @@ const devMailDir = path.join(process.cwd(), ".devmail");
 /** Inside the outbox lease (Phase 9 D-5). The SDK takes no signal, so the send is raced against a timer: a late delivery of
  * the abandoned attempt is deduplicated by the provider's idempotency key on the retry. */
 export const MAIL_TIMEOUT_MS = 20_000;
-const resend = !env.resend.apiKey || !liveProvidersEnabled() ? null : new Resend(env.resend.apiKey);
+let client: { apiKey: string; resend: Resend } | null = null;
+
+/** Rebuilt when the API key changes (Settings › Integrations); null = dev mode (no key, or live providers off). */
+function resendClient(): Resend | null {
+  const apiKey = env.resend.apiKey;
+  if (!apiKey || !liveProvidersEnabled()) return null;
+  if (client?.apiKey !== apiKey) client = { apiKey, resend: new Resend(apiKey) };
+  return client.resend;
+}
 
 function writeDevMail({ to, subject, html }: MailInput) {
   logger.info(`[mailer] (dev mode, not actually sent) To: ${to} | Subject: ${subject}`);
@@ -36,6 +44,7 @@ function writeDevMail({ to, subject, html }: MailInput) {
 // No RESEND_API_KEY configured yet: fall back to writing each email to disk and logging it, so
 // reset links stay reachable during local dev/CI without a real provider account.
 export async function sendMail({ to, subject, html, idempotencyKey }: MailInput): Promise<void> {
+  const resend = resendClient();
   if (!resend) {
     writeDevMail({ to, subject, html });
     return;

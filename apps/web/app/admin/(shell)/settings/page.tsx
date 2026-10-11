@@ -25,7 +25,7 @@ import * as socialLinksApi from "@/lib/api/admin-social-links";
 import { ApiError } from "@/lib/api-client";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { storeCurrencyCode } from "@/lib/format";
-import { ProviderStatusPanel } from "@/components/admin/provider-status-panel";
+import { IntegrationsPane } from "@/components/admin/integrations-pane";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 /** wa.me and api.whatsapp.com/send?phone= are the two URL shapes admins tend to paste (or that this
@@ -121,10 +121,24 @@ function WhatsAppQuickConfig() {
   );
 }
 
+/** Shown under a payment gateway whose credentials aren't set yet. */
+function IntegrationsHint() {
+  return (
+    <p className="mt-1 text-xs text-warning-600">
+      Not connected yet —{" "}
+      <Link href="/admin/settings?pane=integrations" className="underline underline-offset-2">
+        add its keys in Integrations
+      </Link>
+      .
+    </p>
+  );
+}
+
 const TABS = [
   { value: "branding", label: "Store & branding" },
   { value: "contact", label: "Contact & support" },
   { value: "shipping", label: "Checkout, tax & rewards" },
+  { value: "integrations", label: "Integrations" },
 ] as const;
 type SettingsTab = (typeof TABS)[number]["value"];
 
@@ -660,15 +674,15 @@ export default function SettingsPage() {
               <div>
                 <p className="text-sm font-medium text-ink-900">Online Payment (SSLCommerz)</p>
                 <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via SSLCommerz.</p>
-                {gateways.loaded && !gateways.payments.SSLCOMMERZ && <p className="mt-1 text-xs text-warning-600">Not configured on this server — see Integrations below.</p>}
+                {gateways.loaded && !gateways.payments.SSLCOMMERZ && <IntegrationsHint />}
               </div>
               <Checkbox {...register("onlinePaymentEnabled")} disabled={(onlinePaymentEnabled && isLastPaymentMethodEnabled) || (!onlinePaymentEnabled && !gateways.payments.SSLCOMMERZ)} />
             </label>
             <label className="flex items-center justify-between rounded-lg border border-ink-100 p-4">
               <div>
                 <p className="text-sm font-medium text-ink-900">Online Payment (EPS-PG)</p>
-                <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via EPS. Requires EPS_* env vars to be set.</p>
-                {gateways.loaded && !gateways.payments.EPS_PG && <p className="mt-1 text-xs text-warning-600">Not configured on this server — see Integrations below.</p>}
+                <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via EPS.</p>
+                {gateways.loaded && !gateways.payments.EPS_PG && <IntegrationsHint />}
               </div>
               <Checkbox {...register("epsPaymentEnabled")} disabled={(epsPaymentEnabled && isLastPaymentMethodEnabled) || (!epsPaymentEnabled && !gateways.payments.EPS_PG)} />
             </label>
@@ -678,11 +692,12 @@ export default function SettingsPage() {
           </div>
           {sectionSave("payments")}
         </FormSection>
-        <ProviderStatusPanel />
         </>
         )}
 
       </form>
+      {/* Its own forms per integration — outside the settings form (forms can't nest). */}
+      {tab === "integrations" && <IntegrationsPane />}
     </div>
   );
 }

@@ -1,8 +1,10 @@
 import {
   installationNamespace,
+  mergePublicIntegrationIds,
   readPublicRuntimeConfig,
   readServerRuntimeConfig,
   resolveMediaUrl,
+  type PublicIntegrationIds,
   type PublicRuntimeConfig,
   type ServerRuntimeConfig,
 } from "@clothing-brand/shared";
@@ -19,6 +21,8 @@ export const RUNTIME_CONFIG_ELEMENT_ID = "__runtime_config";
 const isServer = typeof window === "undefined";
 let serverConfig: ServerRuntimeConfig | null = null;
 let browserConfig: PublicRuntimeConfig | null = null;
+/** Pixel / sign-in / push ids saved in Settings › Integrations — they win over this installation's environment. */
+let integrationIds: Partial<PublicIntegrationIds> | null = null;
 
 /** Server only. The process environment is passed as a whole (never `process.env.X`), so `next build` cannot inline it. */
 export function serverRuntimeConfig(): ServerRuntimeConfig {
@@ -33,6 +37,13 @@ export function serverRuntimeConfig(): ServerRuntimeConfig {
   return serverConfig;
 }
 
+/** Server only. Called by the root layout with the ids from the store settings it fetched, before anything renders with
+ * them; the whole process serves one installation, so they are process-wide. An absent value (the settings fetch failed)
+ * keeps the last known ids. */
+export function setIntegrationIds(ids: Partial<PublicIntegrationIds> | undefined): void {
+  if (isServer && ids) integrationIds = ids;
+}
+
 /** Called by <RuntimeConfig> while it renders, before any child reads a value. */
 export function setPublicRuntimeConfig(value: PublicRuntimeConfig): void {
   if (!isServer) browserConfig = value;
@@ -40,7 +51,7 @@ export function setPublicRuntimeConfig(value: PublicRuntimeConfig): void {
 
 /** The public configuration — on the server straight from the environment, in the browser as the layout handed it over. */
 export function publicRuntimeConfig(): PublicRuntimeConfig {
-  if (isServer) return serverRuntimeConfig().public;
+  if (isServer) return mergePublicIntegrationIds(serverRuntimeConfig().public, integrationIds);
   if (browserConfig) return browserConfig;
   const element = document.getElementById(RUNTIME_CONFIG_ELEMENT_ID);
   if (element?.textContent) {

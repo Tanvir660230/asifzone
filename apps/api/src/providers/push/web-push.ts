@@ -2,15 +2,8 @@ import webpush from "web-push";
 import { env } from "../../config/env";
 import { logger } from "../../lib/observability/logger";
 
-const vapidConfigured = Boolean(env.webPush.publicKey && env.webPush.privateKey);
-
-if (vapidConfigured) {
-  webpush.setVapidDetails(
-    `mailto:${env.webPush.contactEmail}`,
-    env.webPush.publicKey,
-    env.webPush.privateKey,
-  );
-}
+// Read per send (Settings › Integrations can change the keys without a restart) and passed per call, never set globally.
+const vapidConfigured = () => Boolean(env.webPush.publicKey && env.webPush.privateKey);
 
 /** Phase 12 W6 (contract P-3): a push send is bounded. web-push's own `timeout` option is only a socket-idle timeout, so the
  * total is bounded with the same Promise.race pattern providers/email/resend.ts uses. Push is best-effort marketing, so
@@ -33,7 +26,7 @@ export interface PushInput {
 // No WEB_PUSH_* VAPID keys configured yet (generate with `npx web-push generate-vapid-keys`):
 // log instead of sending, same fallback spirit as providers/email/resend.ts and providers/sms/bulksmsbd.ts.
 export async function sendPush({ subscription, title, body, url }: PushInput): Promise<void> {
-  if (!vapidConfigured) {
+  if (!vapidConfigured()) {
     logger.info(`[push] (dev mode, not actually sent) To: ${subscription.endpoint} | ${title}`);
     return;
   }
@@ -53,8 +46,16 @@ export async function sendPush({ subscription, title, body, url }: PushInput): P
         keys: { p256dh: subscription.p256dh, auth: subscription.auth },
       },
       JSON.stringify({ title, body, url }),
-      { timeout: PUSH_TIMEOUT_MS },
+      {
+        timeout: PUSH_TIMEOUT_MS,
+        vapidDetails: { subject: `mailto:${env.webPush.contactEmail}`, publicKey: env.webPush.publicKey, privateKey: env.webPush.privateKey },
+      },
     ),
     timeout,
   ]).finally(() => clearTimeout(timer));
+}
+
+/** A fresh VAPID key pair (Settings › Integrations › Web push). */
+export function generateVapidKeys(): { publicKey: string; privateKey: string } {
+  return webpush.generateVAPIDKeys();
 }

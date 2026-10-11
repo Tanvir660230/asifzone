@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
-import { OAuth2Client } from "google-auth-library";
+import { googleOAuthClient } from "../../lib/google-oauth";
 import {
   clampNonNegative,
   fromMajor,
@@ -70,7 +70,6 @@ const CLAIM_TTL_MS = 60 * 60 * 1000;
  * applied to customer login. */
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("no-account-has-this-password", 10);
 
-const googleClient = env.google.clientId ? new OAuth2Client(env.google.clientId) : null;
 
 const publicSelect = {
   id: true,
@@ -495,8 +494,9 @@ export async function verifyEmail(token: string) {
 // --- google sign-in ---
 
 export async function loginWithGoogle(idToken: string) {
+  const googleClient = googleOAuthClient();
   if (!googleClient) {
-    throw new AppError(503, "Google sign-in isn't configured — set GOOGLE_CLIENT_ID on the API to enable it.");
+    throw new AppError(503, "Google sign-in isn't configured — add a Google OAuth client ID in Settings › Integrations to enable it.");
   }
 
   let payload;

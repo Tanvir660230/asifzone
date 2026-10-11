@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { env } from "../../config/env";
+import { overrideIntegrationsForTests } from "../../config/integration-overrides";
 import { getSteadfastFraudCheck } from "./steadfast";
 
 // Real response bodies captured 2026-10-03 (phone redacted).
@@ -27,14 +27,12 @@ function mockFetch(body: unknown, status = 200) {
 }
 
 describe("getSteadfastFraudCheck", () => {
-  const saved = { ...env.steadfast };
+  let restore: () => void = () => {};
   beforeEach(() => {
-    env.steadfast.apiKey = "key";
-    env.steadfast.secretKey = "secret";
-    env.steadfast.baseUrl = "https://steadfast.test/api/v1";
+    restore = overrideIntegrationsForTests({ STEADFAST_API_KEY: "key", STEADFAST_SECRET_KEY: "secret", STEADFAST_BASE_URL: "https://steadfast.test/api/v1" });
   });
   afterEach(() => {
-    Object.assign(env.steadfast, saved);
+    restore();
     vi.unstubAllGlobals();
   });
 
@@ -73,15 +71,13 @@ describe("getSteadfastFraudCheck", () => {
 });
 
 describe("getSteadfastFraudCheck rate limiting", () => {
-  const saved = { ...env.steadfast };
+  let restore: () => void = () => {};
   beforeEach(() => {
-    env.steadfast.apiKey = "key";
-    env.steadfast.secretKey = "secret";
-    env.steadfast.baseUrl = "https://steadfast.test/api/v1";
+    restore = overrideIntegrationsForTests({ STEADFAST_API_KEY: "key", STEADFAST_SECRET_KEY: "secret", STEADFAST_BASE_URL: "https://steadfast.test/api/v1" });
     vi.useFakeTimers();
   });
   afterEach(() => {
-    Object.assign(env.steadfast, saved);
+    restore();
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });

@@ -19,10 +19,22 @@ import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard"
 import { logger } from "./lib/observability/logger";
 import { captureError } from "./lib/observability/error-capture";
 import { validateProviderConfig } from "./providers/registry";
+import { loadIntegrationOverrides, startIntegrationRefresh } from "./modules/settings/integrations.service";
 
 let shuttingDown = false;
 
 async function main() {
+  await prisma.$connect();
+  // Demo mirror guard (docs/DEMO_DATA.md §5): refuses a half-built or mislabeled demo database.
+  const database = await verifyDatabaseRole(prisma, env.nodeEnv);
+  if (database.role === "demo") {
+    logger.info(`[database] DEMO database ${database.database} (independent copy imported ${database.importedAt ?? "?"}) — production is never touched`);
+  }
+  // Credentials saved in Settings › Integrations override the environment — loaded before the provider check below, which
+  // must see them (an explicitly selected provider may have its credentials only in the dashboard).
+  await loadIntegrationOverrides();
+  startIntegrationRefresh();
+
   // Phase 12 W5: refuse to start on an invalid provider selection (unknown name, or an explicitly selected provider
   // without its credentials in production). The error names variables only. Failing here keeps /health/ready red, so
   // docker/deploy.sh stops before the proxy switch.
@@ -35,12 +47,6 @@ async function main() {
     paymentGateways: providers.paymentGateways.join(",") || "none",
   });
 
-  await prisma.$connect();
-  // Demo mirror guard (docs/DEMO_DATA.md §5): refuses a half-built or mislabeled demo database.
-  const database = await verifyDatabaseRole(prisma, env.nodeEnv);
-  if (database.role === "demo") {
-    logger.info(`[database] DEMO database ${database.database} (independent copy imported ${database.importedAt ?? "?"}) — production is never touched`);
-  }
   await redis.connect().catch((err) => logger.warn("[redis] not connected yet:", { detail: err.message }));
 
   await syncFlashSaleActivation().catch((err) => captureError(err, { msg: "[flash-sale-cron] initial sync failed:" }));

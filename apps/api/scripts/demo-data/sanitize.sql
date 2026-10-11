@@ -65,6 +65,11 @@ DELETE FROM "EmailVerificationToken";
 DELETE FROM "CustomerClaim";
 DELETE FROM "PhoneOtp";
 DELETE FROM "PushSubscription";
+-- Store integration credentials (Settings › Integrations). Sealed with production's key and unreadable here anyway — removed
+-- so a demo can never hold production's gateway, courier or SMS keys in any form. Guarded: older dumps predate the table.
+DO $$ BEGIN
+  IF to_regclass('"IntegrationSetting"') IS NOT NULL THEN DELETE FROM "IntegrationSetting"; END IF;
+END $$;
 
 -- Operational queues/inboxes: payloads carry customer details and a pending row would be re-sent by a worker.
 DELETE FROM "OutboxEvent";

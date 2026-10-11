@@ -33,16 +33,17 @@ test.describe("provider actions follow provider availability (D-4)", () => {
     expect(body.capabilities).toEqual({ sms: false, email: false, push: false, courier: false, payments: { SSLCOMMERZ: false, EPS_PG: false } });
   });
 
-  test("OWNER: the Integrations panel shows each provider's status and the missing variables by name", async ({ page }) => {
+  test("OWNER: Settings › Integrations shows each provider's status, and a gateway without keys points there", async ({ page }) => {
     await login(page, OWNER);
-    await page.goto("/admin/settings");
+    await page.goto("/admin/settings?pane=integrations");
+    const steadfast = page.locator("li", { hasText: "Steadfast" });
+    await expect(steadfast).toContainText("Not set up");
+    await steadfast.getByRole("button", { name: "Set up" }).click();
+    await expect(steadfast.getByLabel("API key")).toBeVisible();
+    await expect(steadfast.getByRole("button", { name: "Save" })).toBeDisabled();
+    // A gateway that can't work can't be switched on, and says where to fix it.
     await page.getByRole("button", { name: "Checkout, tax & rewards" }).click();
-    const panel = page.locator("li", { hasText: "Courier" });
-    await expect(panel).toContainText("steadfast");
-    await expect(panel).toContainText("Missing credentials");
-    await expect(panel).toContainText("STEADFAST_API_KEY, STEADFAST_SECRET_KEY");
-    // A gateway that can't work can't be switched on, and says why.
-    await expect(page.getByText("Not configured on this server — see Integrations below.").first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "add its keys in Integrations" }).first()).toBeVisible();
   });
 
   test("courier and SMS actions are not offered; campaign channels without a provider can't be chosen", async ({ page }) => {

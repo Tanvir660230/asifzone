@@ -48,6 +48,8 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_CUSTOMER_ACCESS_SECRET: ${JWT_CUSTOMER_ACCESS_SECRET}
       JWT_CUSTOMER_REFRESH_SECRET: ${JWT_CUSTOMER_REFRESH_SECRET}
+      # Optional key for the integration credentials saved in Settings › Integrations (else derived from JWT_ACCESS_SECRET).
+      INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       # The api container reaches the web container over the compose network by service name, not
       # through the public domain (WEB_ORIGIN) — a request from api to its own public URL would

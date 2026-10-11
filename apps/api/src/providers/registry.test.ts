@@ -19,14 +19,14 @@ vi.mock("./payment/eps", () => ({
   verifyEpsTransaction: vi.fn(async () => ({ merchantTransactionId: "M", epsTransactionId: "E", amount: 1, status: "Success" })),
 }));
 
-import { env } from "../config/env";
+import { overrideIntegrationsForTests } from "../config/integration-overrides";
 import * as bulksmsbd from "./sms/bulksmsbd";
 import * as steadfast from "./courier/steadfast";
 import * as sslcommerz from "./payment/sslcommerz";
 import * as eps from "./payment/eps";
 import { gatewayIdForPaymentMethod } from "./capabilities";
 import { ProviderNotConfiguredError } from "./errors";
-import { buildProviders, capabilities, getProviders, providerStatus, setProviderSelectionForTests } from "./registry";
+import { buildProviders, capabilities, credentialsNewlyMissing, getProviders, providerStatus, setProviderSelectionForTests } from "./registry";
 import { resolveProviderSelection, type RawProviderSelection } from "./selection";
 
 const UNSET: RawProviderSelection = { paymentGateways: "", sms: "", email: "", courier: "", push: "" };
@@ -109,8 +109,7 @@ describe("provider registry — explicit 'none' never fakes success", () => {
 describe("provider status — booleans only", () => {
   it("reports provider names and presence flags, never a credential value", () => {
     const sentinel = { apiKey: "SENTINEL-SMS-KEY-9f8e7d", senderId: "SENTINEL-SENDER" };
-    const before = { ...env.bulkSmsBd };
-    Object.assign(env.bulkSmsBd, sentinel);
+    const restore = overrideIntegrationsForTests({ BULKSMSBD_API_KEY: sentinel.apiKey, BULKSMSBD_SENDER_ID: sentinel.senderId });
     try {
       setProviderSelectionForTests(sel({ sms: "bulksmsbd", courier: "none" }));
       const status = providerStatus();
@@ -121,41 +120,42 @@ describe("provider status — booleans only", () => {
       expect(status.find((s) => s.capability === "courier")).toEqual({ capability: "courier", provider: "none", enabled: false, credentialsPresent: false, available: false, missingCredentials: [] });
       for (const entry of status) expect(Object.keys(entry).sort()).toEqual(["available", "capability", "credentialsPresent", "enabled", "missingCredentials", "provider"]);
     } finally {
-      Object.assign(env.bulkSmsBd, before);
+      restore();
     }
   });
 });
 
 describe("provider availability (D-4) — what the UI may offer", () => {
   it("a selected provider with missing credentials is unavailable, and the status names the missing variables (never values)", () => {
-    const before = { ...env.steadfast };
-    Object.assign(env.steadfast, { apiKey: "SENTINEL-COURIER-KEY-31f", secretKey: "" });
+    let restore = overrideIntegrationsForTests({ STEADFAST_API_KEY: "SENTINEL-COURIER-KEY-31f", STEADFAST_SECRET_KEY: "" });
     try {
       setProviderSelectionForTests(sel({ courier: "steadfast" }));
       expect(capabilities().courier).toBe(false);
       const courier = providerStatus().find((s) => s.capability === "courier")!;
       expect(courier).toMatchObject({ provider: "steadfast", enabled: true, credentialsPresent: false, available: false, missingCredentials: ["STEADFAST_SECRET_KEY"] });
       expect(JSON.stringify(providerStatus())).not.toContain("SENTINEL-COURIER-KEY-31f");
-      Object.assign(env.steadfast, { secretKey: "SENTINEL-COURIER-SECRET-9" });
+      const restoreFirst = restore;
+      const restoreSecond = overrideIntegrationsForTests({ STEADFAST_SECRET_KEY: "SENTINEL-COURIER-SECRET-9" });
+      restore = () => {
+        restoreSecond();
+        restoreFirst();
+      };
       expect(capabilities().courier).toBe(true);
       expect(JSON.stringify({ c: capabilities(), s: providerStatus() })).not.toMatch(/SENTINEL/);
     } finally {
-      Object.assign(env.steadfast, before);
+      restore();
     }
   });
 
   it("an explicitly disabled capability or a gateway left out of PAYMENT_GATEWAYS is unavailable even with credentials", () => {
-    const before = { sms: { ...env.bulkSmsBd }, ssl: { ...env.sslcommerz } };
-    Object.assign(env.bulkSmsBd, { apiKey: "k", senderId: "s" });
-    Object.assign(env.sslcommerz, { storeId: "id", storePassword: "pw" });
+    const restore = overrideIntegrationsForTests({ BULKSMSBD_API_KEY: "k", BULKSMSBD_SENDER_ID: "s", SSLCOMMERZ_STORE_ID: "id", SSLCOMMERZ_STORE_PASSWORD: "pw" });
     try {
       setProviderSelectionForTests(sel({ sms: "none", paymentGateways: "eps" }));
       expect(capabilities()).toMatchObject({ sms: false, payments: { SSLCOMMERZ: false } });
       setProviderSelectionForTests(sel({}));
       expect(capabilities()).toMatchObject({ sms: true, payments: { SSLCOMMERZ: true } });
     } finally {
-      Object.assign(env.bulkSmsBd, before.sms);
-      Object.assign(env.sslcommerz, before.ssl);
+      restore();
     }
   });
 
@@ -163,5 +163,22 @@ describe("provider availability (D-4) — what the UI may offer", () => {
     const c = capabilities();
     expect(Object.keys(c).sort()).toEqual(["courier", "email", "payments", "push", "sms"]);
     for (const v of [c.sms, c.email, c.push, c.courier, c.payments.SSLCOMMERZ, c.payments.EPS_PG]) expect(typeof v).toBe("boolean");
+  });
+});
+
+describe("dashboard credential changes (Settings › Integrations)", () => {
+  const raw = { paymentGateways: "", sms: "bulksmsbd", email: "", courier: "", push: "" };
+  const has = (present: string[]) => (envVar: string) => present.includes(envVar);
+
+  it("refuses, in production, to remove a credential an explicitly selected provider needs", () => {
+    const before = has(["BULKSMSBD_API_KEY", "BULKSMSBD_SENDER_ID"]);
+    expect(credentialsNewlyMissing(before, has(["BULKSMSBD_SENDER_ID"]), raw, "production")).toEqual(["BULKSMSBD_API_KEY"]);
+    // Default (implicit) selections keep their dev fallbacks: removing is allowed. So is anything outside production.
+    expect(credentialsNewlyMissing(has(["RESEND_API_KEY"]), has([]), raw, "production")).toEqual([]);
+    expect(credentialsNewlyMissing(before, has([]), raw, "development")).toEqual([]);
+  });
+
+  it("does not blame a change for a credential that was already missing", () => {
+    expect(credentialsNewlyMissing(has(["BULKSMSBD_SENDER_ID"]), has([]), raw, "production")).toEqual(["BULKSMSBD_SENDER_ID"]);
   });
 });

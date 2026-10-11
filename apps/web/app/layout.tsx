@@ -7,7 +7,7 @@ import { getSiteSettingsSafe } from "@/lib/api/storefront";
 import { StoreConfig } from "@/components/store-config";
 import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-data";
-import { RUNTIME_CONFIG_ELEMENT_ID, publicRuntimeConfig } from "@/lib/runtime-config";
+import { RUNTIME_CONFIG_ELEMENT_ID, publicRuntimeConfig, setIntegrationIds } from "@/lib/runtime-config";
 import { RuntimeConfig } from "@/components/runtime-config";
 import { resolveThemeId } from "@/lib/theme";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
@@ -97,6 +97,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   await headers();
   const { settings } = await getSiteSettingsSafe();
   const siteUrl = getSiteUrl();
+  setIntegrationIds(settings.integrationIds);
   const runtime = publicRuntimeConfig();
   const organizationJsonLd = buildOrganizationJsonLd(settings, siteUrl);
   const websiteJsonLd = buildWebsiteJsonLd(settings, siteUrl);

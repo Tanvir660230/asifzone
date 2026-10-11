@@ -117,6 +117,10 @@ const OWNER_ONLY_ROUTES = [
   "POST /api/settings/upload-favicon",
   "POST /api/settings/upload-payment-methods-image",
   "POST /api/settings/upload-social-image",
+  // Settings › Integrations: third-party credentials (settings.manage, OWNER-only).
+  "GET /api/settings/integrations",
+  "PATCH /api/settings/integrations",
+  "POST /api/settings/integrations/webpush/generate-keys",
   "GET /api/sms-settings/",
   "PATCH /api/sms-settings/",
   "POST /api/ai/generate",
@@ -416,7 +420,7 @@ describe("the role matrix — every admin route, every identity", () => {
     // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7); +17: Phase 3 (docs/FINANCE_PHASE_3.md §7)
     // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md); +25: manufacturing M1 (docs/MANUFACTURING.md); +4: M2 custody; +5: M3 costs; +4: M4 receipts
     // = 347 on the 2026-10-09 production release + 234 (Financial Core / ERP / manufacturing)
-    expect(routes).toHaveLength(581);
+    expect(routes).toHaveLength(584);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

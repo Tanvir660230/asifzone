@@ -11,7 +11,7 @@ const MAX_TOKENS = 1024;
 // indefinitely — aiRateLimit caps how often that can happen, but not how long any single one lasts.
 const AI_REQUEST_TIMEOUT_MS = 30_000;
 
-let client: Anthropic | null = null;
+let client: { apiKey: string; anthropic: Anthropic } | null = null;
 
 export function isAiConfigured(): boolean {
   return env.anthropic.apiKey.length > 0;
@@ -19,12 +19,13 @@ export function isAiConfigured(): boolean {
 
 function getClient(): Anthropic {
   if (!isAiConfigured()) {
-    throw new AppError(503, "AI features aren't configured — set ANTHROPIC_API_KEY on the API to enable them.");
+    throw new AppError(503, "AI features aren't configured — add a Claude API key in Settings › Integrations to enable them.");
   }
   // Lazily constructed so a missing key never throws at server startup, only when a route
   // actually needs the client — the rest of the store works with zero Anthropic setup.
-  client ??= new Anthropic({ apiKey: env.anthropic.apiKey });
-  return client;
+  // Rebuilt when the key changes in Settings › Integrations.
+  if (client?.apiKey !== env.anthropic.apiKey) client = { apiKey: env.anthropic.apiKey, anthropic: new Anthropic({ apiKey: env.anthropic.apiKey }) };
+  return client.anthropic;
 }
 
 /** One prompt per content type — this is the only thing that differs between the seven

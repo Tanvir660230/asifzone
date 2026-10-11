@@ -1,4 +1,5 @@
 import type { ProductAvailability } from "./engines/availability";
+import type { PublicIntegrationIds } from "./integrations";
 // Shapes returned by the API (JSON-serialized: Decimal/Date become strings).
 
 // CustomerTag is exported from schemas/customer.ts (derived from customerTagEnum) — imported here
@@ -1037,6 +1038,9 @@ export interface StoreSettings {
   /** Phase 12 D-4 (derived, read-only): which online gateways this deployment can actually use. Checkout offers a gateway
    * only when the store's own toggle is on AND this is true. Absent on old API responses → treated as available. */
   onlineGateways?: { SSLCOMMERZ: boolean; EPS_PG: boolean };
+  /** Pixel / sign-in / push ids saved in Settings › Integrations (blank = not set there). The web app overlays them on its
+   * own environment with mergePublicIntegrationIds. Absent on old API responses. */
+  integrationIds?: PublicIntegrationIds;
   updatedAt: string;
 }
 

@@ -1,4 +1,4 @@
-import type { CreateShippingZoneInput, ShippingZoneRow, StoreSettings, UpdateSettingsInput, UpdateShippingZoneInput } from "@clothing-brand/shared";
+import type { CreateShippingZoneInput, IntegrationsView, ShippingZoneRow, StoreSettings, UpdateSettingsInput, UpdateShippingZoneInput } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export function getSettings() {
@@ -93,4 +93,18 @@ export interface ProviderCapabilities {
 
 export function getProviderCapabilities() {
   return apiFetch<{ capabilities: ProviderCapabilities }>("/api/v1/ops/capabilities");
+}
+
+/** Settings › Integrations — third-party credentials (OWNER). Secrets come back only as a source + last-4 hint. */
+export function getIntegrations() {
+  return apiFetch<IntegrationsView>("/api/settings/integrations");
+}
+
+/** `null` removes the dashboard value (the server's environment value, if any, applies again). */
+export function updateIntegrations(values: Record<string, string | null>) {
+  return apiFetch<IntegrationsView>("/api/settings/integrations", { method: "PATCH", body: { values } });
+}
+
+export function generateWebPushKeys() {
+  return apiFetch<IntegrationsView>("/api/settings/integrations/webpush/generate-keys", { method: "POST" });
 }

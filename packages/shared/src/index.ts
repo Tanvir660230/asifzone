@@ -71,6 +71,7 @@ export * from "./format";
 export * from "./installation";
 export * from "./media";
 export * from "./runtime-config";
+export * from "./integrations";
 
 export * from "./types";
 export * from "./permissions";

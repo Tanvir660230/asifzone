@@ -5227,3 +5227,14 @@ model Partner {
 
   @@unique([businessId, number])
 }
+
+/// Integration credentials and ids an OWNER manages from Settings › Integrations (catalog: packages/shared integrations.ts).
+/// `key` is the environment variable name the value overrides; `value` is always sealed (lib/secret-box.ts
+/// sealIntegrationValue) — read and written only by modules/settings/integrations.service.ts. No row = the environment
+/// variable (if any) applies.
+model IntegrationSetting {
+  key         String   @id
+  value       String
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+}

@@ -3,6 +3,7 @@ import https from "node:https";
 import request from "supertest";
 import { app } from "../../app";
 import { env } from "../../config/env";
+import { overrideIntegrationsForTests } from "../../config/integration-overrides";
 import { prisma } from "../../config/prisma";
 import { asOwner, cleanupFixtures, createStockedProduct, ownerId, placeOrder, stockOf, trackOrder } from "../../test-fixtures";
 import { LiveProviderBlockedError, liveProvidersEnabled, networkGuardInstalled } from "../../lib/provider-guard";
@@ -23,17 +24,17 @@ import { checkout } from "../../test-fixtures";
 let admin: string;
 const ROUNDS = 5;
 const realFetch = globalThis.fetch;
-const savedSteadfast = { ...env.steadfast };
+let restoreSteadfast: () => void = () => {};
 
 beforeAll(async () => {
   admin = await ownerId();
   // The courier adapter requires configured keys; tests use placeholders and stub every Steadfast response.
-  Object.assign(env.steadfast, { apiKey: "test-key", secretKey: "test-secret", baseUrl: "https://steadfast.invalid/api/v1" });
+  restoreSteadfast = overrideIntegrationsForTests({ STEADFAST_API_KEY: "test-key", STEADFAST_SECRET_KEY: "test-secret", STEADFAST_BASE_URL: "https://steadfast.invalid/api/v1" });
 });
 
 afterAll(async () => {
   globalThis.fetch = realFetch;
-  Object.assign(env.steadfast, savedSteadfast);
+  restoreSteadfast();
   await cleanupFixtures();
   await prisma.$disconnect();
 });
@@ -84,18 +85,18 @@ describe("provider isolation (D-8)", () => {
   });
 
   it("the SMS adapter never dials out when live providers are off, even with a key configured", async () => {
-    const saved = env.bulkSmsBd.apiKey;
+    let restoreSms: () => void = () => {};
     let called = false;
     globalThis.fetch = (async () => {
       called = true;
       throw new Error("should not be called");
     }) as typeof fetch;
     try {
-      env.bulkSmsBd.apiKey = "a-real-looking-key";
+      restoreSms = overrideIntegrationsForTests({ BULKSMSBD_API_KEY: "a-real-looking-key" });
       await sendSms({ to: "01700000000", body: "test" });
       expect(called).toBe(false);
     } finally {
-      env.bulkSmsBd.apiKey = saved;
+      restoreSms();
       globalThis.fetch = realFetch;
     }
   });

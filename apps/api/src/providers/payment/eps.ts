@@ -6,7 +6,8 @@ import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
 import { BD_COUNTRY_CODE, BD_DEFAULT_GATEWAY_CITY } from "@clothing-brand/shared";
 
-const BASE_URL = env.eps.sandbox ? "https://sandboxpgapi.eps.com.bd/v1" : "https://pgapi.eps.com.bd/v1";
+// Read per call: the mode can change from Settings › Integrations without a restart.
+const baseUrl = () => (env.eps.sandbox ? "https://sandboxpgapi.eps.com.bd/v1" : "https://pgapi.eps.com.bd/v1");
 
 function signHash(value: string): string {
   return crypto.createHmac("sha512", Buffer.from(env.eps.hashKey, "utf8")).update(value, "utf8").digest("base64");
@@ -133,7 +134,7 @@ async function getEpsToken(): Promise<string> {
   let data: EpsTokenResponse;
   try {
     data = await fetchEpsJson<EpsTokenResponse>(async () => ({
-      url: `${BASE_URL}/Auth/GetToken`,
+      url: `${baseUrl()}/Auth/GetToken`,
       init: {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-hash": signHash(env.eps.username) },
@@ -248,7 +249,7 @@ export async function initEpsSession(params: InitEpsSessionParams): Promise<{ ga
   try {
     data = await fetchEpsJson<EpsInitResponse>(
       async () => ({
-        url: `${BASE_URL}/EPSEngine/InitializeEPS`,
+        url: `${baseUrl()}/EPSEngine/InitializeEPS`,
         init: {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-hash": hash, Authorization: `Bearer ${token}` },
@@ -302,7 +303,7 @@ export async function verifyEpsTransaction(merchantTransactionId: string): Promi
   try {
     data = await fetchEpsJson<EpsVerifyResponse>(
       async () => ({
-        url: `${BASE_URL}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`,
+        url: `${baseUrl()}/EPSEngine/CheckMerchantTransactionStatus?${query.toString()}`,
         init: { headers: { "x-hash": hash, Authorization: `Bearer ${token}` } },
       }),
       async () => {
