@@ -7,6 +7,7 @@ import { LogOut } from "lucide-react";
 import { useCurrentCustomer } from "@/hooks/use-current-customer";
 import { ACCOUNT_SECTIONS, resolveAccountLocation } from "@/lib/account";
 import { logoutCustomer } from "@/lib/customer-auth";
+import { suspendAccountPrefetch } from "./account-prefetch";
 import { transitions } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
  * customer goes with it: cached data, and the router's prefetched pages — one of which is "signed in, so /account/login
  * redirects to /account", which a soft navigation would replay and land the shopper back in the account. */
 async function signOut() {
+  suspendAccountPrefetch();
   await logoutCustomer().catch(() => undefined);
   window.location.replace("/account/login");
 }

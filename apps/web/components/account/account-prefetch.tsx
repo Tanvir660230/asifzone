@@ -10,6 +10,15 @@ import { listMyReturnRequests } from "@/lib/api/return-requests";
 /** The orders list's first page — the same key, fetcher and page size as app/account/(shell)/orders/page.tsx. */
 export const MY_ORDERS_PAGE_SIZE = 20;
 
+// Set by sign-out: a prefetch that would start while the session is being ended only earns 401s (and a refresh attempt
+// each). Never reset — sign-out finishes with a full page load, which starts a fresh module.
+let suspended = false;
+
+/** Called first thing on sign-out, so the idle-time prefetch below doesn't start against a session that is going away. */
+export function suspendAccountPrefetch() {
+  suspended = true;
+}
+
 /**
  * Loads every account section's data once the account opens (while the browser is idle), under the same query keys the
  * pages read — so moving between the tabs shows each section straight away instead of a loading state. Data a page has
@@ -20,6 +29,7 @@ export function AccountPrefetch() {
 
   useEffect(() => {
     const run = () => {
+      if (suspended) return;
       const quiet = (p: Promise<unknown>) => p.catch(() => undefined);
       quiet(queryClient.prefetchQuery({ queryKey: ACCOUNT_SUMMARY_KEY, queryFn: getMyAccountSummary }));
       quiet(
