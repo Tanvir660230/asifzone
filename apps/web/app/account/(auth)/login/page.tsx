@@ -19,7 +19,7 @@ import { AuthModeToggle } from "@/components/account/auth-mode-toggle";
 import { loginCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
-import { env } from "@/lib/env";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 
 export default function AccountLoginPage() {
   return (
@@ -81,12 +81,12 @@ function LoginForm() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Sign in</h1>
+      <h1 className="mb-1 font-display ui-page-title text-ink-900">Sign in</h1>
       <p className="mb-6 text-sm text-ink-500">
         {cameFromRedirect ? "Sign in to continue." : "Access your orders, addresses, and wishlist."}
       </p>
 
-      {env.googleClientId && (
+      {publicRuntimeConfig().googleClientId && (
         <>
           <GoogleButton onCredential={onGoogleCredential} onError={setServerError} />
           <OrDivider />

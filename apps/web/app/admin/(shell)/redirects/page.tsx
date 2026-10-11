@@ -16,7 +16,7 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as redirectsApi from "@/lib/api/admin-redirects";
@@ -47,12 +47,12 @@ function RedirectForm({
       <div>
         <Label htmlFor="fromPath">From path</Label>
         <Input id="fromPath" placeholder="/old-product-slug" {...register("fromPath")} />
-        {errors.fromPath && <p className="mt-1 text-xs text-danger-600">{errors.fromPath.message}</p>}
+        {errors.fromPath && <p className="ui-field-error">{errors.fromPath.message}</p>}
       </div>
       <div>
         <Label htmlFor="toPath">To path</Label>
         <Input id="toPath" placeholder="/product/new-product-slug" {...register("toPath")} />
-        {errors.toPath && <p className="mt-1 text-xs text-danger-600">{errors.toPath.message}</p>}
+        {errors.toPath && <p className="ui-field-error">{errors.toPath.message}</p>}
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -131,15 +131,15 @@ export default function AdminRedirectsPage() {
           </Button>
         }
       />
-      <SettingsSubNav />
+      <ModuleTabs />
       <p className="mb-4 -mt-2 text-sm text-ink-500">
         Old URLs (e.g. after a product or category slug change) that should send visitors and search engines to a new location.
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">From</th>
                 <th className="px-4 py-3">To</th>

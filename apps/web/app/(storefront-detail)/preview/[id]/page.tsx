@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import type { Product } from "@clothing-brand/shared";
 import { ProductPageView } from "@/components/storefront/product-page-view";
-import { env } from "@/lib/env";
+import { apiBaseUrl } from "@/lib/runtime-config";
 
 // A draft can change between two looks, and the page is only ever meant for the admin who asked for it.
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function ProductPreviewPage({ params }: Props) {
   const accessToken = (await cookies()).get("access_token")?.value;
   if (!accessToken) redirect("/admin/login");
 
-  const res = await fetch(`${env.apiUrl}/api/products/${encodeURIComponent(id)}/preview`, {
+  const res = await fetch(`${apiBaseUrl()}/api/products/${encodeURIComponent(id)}/preview`, {
     headers: { cookie: `access_token=${accessToken}` },
     cache: "no-store",
   });

@@ -36,7 +36,7 @@ export default function TrackOrderPage() {
         <span className="glossy mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-brass-100 text-brass-600">
           <PackageSearch size={20} />
         </span>
-        <h1 className="mb-2 font-display text-2xl text-ink-900">Track your order</h1>
+        <h1 className="mb-2 font-display ui-page-title text-ink-900">Track your order</h1>
         <p className="mb-6 text-sm text-ink-500">Enter your order number and phone to check its status.</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

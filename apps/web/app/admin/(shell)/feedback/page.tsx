@@ -1,188 +1,412 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Search, Trash2 } from "lucide-react";
-import type { FeedbackStatusFilter } from "@clothing-brand/shared";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { AlertCircle, ArrowLeft, Check, Inbox, Loader2, MessageCircle, Phone, RotateCcw, Trash2, UserCheck, UserRound } from "lucide-react";
+import { isBdMobileLocal, normalizeBdPhone, toBdInternationalDigits, type ConversationDetail, type ConversationMessageRow } from "@clothing-brand/shared";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState, ErrorState } from "@/components/ui/empty-state";
+import { SearchInput } from "@/components/ui/search-input";
+import { SegmentedControl } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { SupportSubNav } from "@/components/admin/support-subnav";
-import { TableSkeleton } from "@/components/admin/table-skeleton";
-import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
-import { PageSizeSelect } from "@/components/admin/page-size-select";
-import { Pagination } from "@/components/admin/pagination";
-import * as adminFeedbackApi from "@/lib/api/admin-feedback";
+import { ModuleTabs } from "@/components/admin/module-tabs";
+import { Pagination } from "@/components/ui/pagination";
+import * as inboxApi from "@/lib/api/inbox";
+import { useCapability } from "@/hooks/use-capability";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { describeApiError } from "@/lib/api-client";
+import { attentionKeys } from "@/lib/query-keys";
+import { formatCount, formatStoreDateTime, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ApiError } from "@/lib/api-client";
 
-const PAGE_SIZE = 20;
-
-const STATUS_TABS: { value: FeedbackStatusFilter; label: string }[] = [
+const PAGE_SIZE = 30;
+type StatusFilter = "open" | "handled" | "all";
+const STATUS: Array<{ value: StatusFilter; label: string }> = [
+  { value: "open", label: "New" },
+  { value: "handled", label: "Handled" },
   { value: "all", label: "All" },
-  { value: "unread", label: "Unread" },
-  { value: "read", label: "Read" },
 ];
+const SMS_MAX = 600;
+const inboxKeys = {
+  list: ["inbox"] as const,
+  thread: (id: string) => ["inbox", "thread", id] as const,
+};
 
-export default function AdminFeedbackPage() {
+function DeliveryState({ message }: { message: ConversationMessageRow }) {
+  if (message.delivery === "sent")
+    return (
+      <span className="flex items-center gap-1 text-success-700">
+        <Check size={13} aria-hidden="true" /> Sent
+      </span>
+    );
+  if (message.delivery === "failed")
+    return (
+      <span className="flex items-center gap-1 text-danger-600" title={message.deliveryError ?? undefined}>
+        <AlertCircle size={13} aria-hidden="true" /> Not delivered{message.deliveryError ? ` — ${message.deliveryError}` : ""}
+      </span>
+    );
+  return (
+    <span className="flex items-center gap-1 text-fg-subtle">
+      <Loader2 size={13} className="animate-spin" aria-hidden="true" /> Sending…
+    </span>
+  );
+}
+
+function MessageBlock({ message, contactName }: { message: ConversationMessageRow; contactName: string }) {
+  const out = message.direction === "OUT";
+  return (
+    <li className={cn("rounded-2xl px-4 py-3", out ? "ml-6 bg-accent/[0.06] sm:ml-16" : "mr-6 bg-ink-900/[0.03] sm:mr-16")}>
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[12px]">
+        <span className="font-medium text-fg">
+          {out ? `${message.by ?? "Staff"} · by ${message.channel === "SMS" ? "SMS" : "email"}` : contactName}
+        </span>
+        <span className="text-fg-subtle">{formatStoreDateTime(message.createdAt)}</span>
+      </div>
+      <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-fg">{message.body}</p>
+      {out && (
+        <div className="mt-2 text-[12px]">
+          <DeliveryState message={message} />
+        </div>
+      )}
+    </li>
+  );
+}
+
+function Composer({ thread }: { thread: ConversationDetail }) {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<FeedbackStatusFilter>("all");
+  const canEmail = useCapability("inbox.replyEmail") && Boolean(thread.email);
+  const canSms = useCapability("inbox.replySms") && Boolean(thread.phone);
+  const [channel, setChannel] = useState<"EMAIL" | "SMS">(canEmail || !canSms ? "EMAIL" : "SMS");
+  const [body, setBody] = useState("");
+  const send = useMutation({
+    mutationFn: () => inboxApi.replyToConversation(thread.id, { channel, body: body.trim() }),
+    onSuccess: () => {
+      setBody("");
+      toast.success(channel === "SMS" ? "Reply queued by SMS" : "Reply queued by email");
+      queryClient.invalidateQueries({ queryKey: inboxKeys.list });
+      queryClient.invalidateQueries({ queryKey: attentionKeys.all });
+    },
+    onError: (err) => toast.error(describeApiError(err, "Couldn't send the reply")),
+  });
+
+  if (!canEmail && !canSms) {
+    return (
+      <p className="border-t border-line-subtle px-6 py-4 text-[13px] text-fg-muted">
+        {!thread.email && !thread.phone ? (
+          "This customer left no email or phone number."
+        ) : (
+          <>
+            Email and SMS aren&apos;t set up on this store yet —{" "}
+            <Link href="/admin/settings" className="text-accent hover:underline">
+              Settings
+            </Link>
+            .
+          </>
+        )}
+      </p>
+    );
+  }
+  const active = channel === "EMAIL" ? canEmail : canSms;
+  const tooLong = channel === "SMS" && body.trim().length > SMS_MAX;
+  const ready = active && body.trim().length > 0 && !tooLong && !send.isPending;
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && ready) {
+      e.preventDefault();
+      send.mutate();
+    }
+  };
+
+  return (
+    <form
+      className="space-y-2 border-t border-line-subtle px-6 py-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (ready) send.mutate();
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[13px] text-fg-muted">Reply by</span>
+        <SegmentedControl
+          aria-label="Reply by"
+          value={channel}
+          onChange={(v) => setChannel(v)}
+          options={[
+            ...(canEmail ? [{ value: "EMAIL" as const, label: "Email" }] : []),
+            ...(canSms ? [{ value: "SMS" as const, label: "SMS" }] : []),
+          ]}
+        />
+      </div>
+      <label htmlFor="inbox-reply" className="sr-only">
+        Your reply
+      </label>
+      <Textarea id="inbox-reply" rows={4} value={body} onChange={(e) => setBody(e.target.value)} onKeyDown={onKeyDown} placeholder={`Write to ${thread.contactName.split(" ")[0]}…`} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className={cn("text-[12px]", tooLong ? "text-danger-600" : "text-fg-subtle")}>
+          {channel === "SMS" ? `${formatCount(body.trim().length)}/${SMS_MAX} · to ${thread.phone}, signed with the store name` : `To ${thread.email}, with the store's email design`}
+        </p>
+        <Button type="submit" size="sm" disabled={!ready}>
+          {send.isPending ? "Sending…" : "Send reply"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function Thread({ id, onBack }: { id: string; onBack: () => void }) {
+  const queryClient = useQueryClient();
+  const { data: currentAdmin } = useCurrentAdmin();
+  const { confirm, dialog } = useConfirmDialog();
+  const { data: thread, isLoading, isError, refetch } = useQuery({
+    queryKey: inboxKeys.thread(id),
+    queryFn: () => inboxApi.getConversation(id),
+    // Poll while a reply is on its way, so "Sending…" turns into Sent or Not delivered by itself.
+    refetchInterval: (q) => (q.state.data?.messages.some((m) => m.delivery === "sending") ? 4000 : false),
+  });
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: inboxKeys.list });
+    queryClient.invalidateQueries({ queryKey: attentionKeys.all });
+  };
+  const status = useMutation({
+    mutationFn: (next: "OPEN" | "HANDLED") => inboxApi.updateConversation(id, { status: next }),
+    onSuccess: (_d, next) => {
+      refresh();
+      toast.success(next === "HANDLED" ? "Marked as handled" : "Moved back to New");
+    },
+    onError: (err) => toast.error(describeApiError(err, "Couldn't update the conversation")),
+  });
+  const assign = useMutation({
+    mutationFn: (toMe: boolean) => inboxApi.updateConversation(id, { assignedToMe: toMe }),
+    onSuccess: (_d, toMe) => {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: inboxKeys.thread(id) });
+      toast.success(toMe ? "Assigned to you" : "Unassigned");
+    },
+    onError: (err) => toast.error(describeApiError(err, "Couldn't update the conversation")),
+  });
+  const remove = useMutation({
+    mutationFn: () => inboxApi.deleteConversation(id),
+    onSuccess: () => {
+      refresh();
+      toast.success("Conversation deleted");
+      onBack();
+    },
+    onError: (err) => toast.error(describeApiError(err, "Couldn't delete the conversation")),
+  });
+
+  if (isError && !thread) return <ErrorState onRetry={() => refetch()} />;
+  if (isLoading || !thread) return <div className="m-6 h-40 animate-pulse rounded-2xl bg-ink-900/[0.04]" aria-busy="true" aria-label="Loading" />;
+
+  const me = currentAdmin?.admin.id;
+  const mobile = thread.phone && isBdMobileLocal(normalizeBdPhone(thread.phone)) ? toBdInternationalDigits(thread.phone) : null;
+  const handled = thread.status === "HANDLED";
+
+  return (
+    <article className="flex h-full min-h-0 flex-col">
+      <header className="border-b border-line-subtle px-6 py-4">
+        <button type="button" onClick={onBack} className="mb-3 flex items-center gap-1 text-[13px] font-medium text-accent lg:hidden">
+          <ArrowLeft size={14} aria-hidden="true" /> Inbox
+        </button>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold tracking-tight text-fg">{thread.subject}</h2>
+            <p className="mt-1 text-[13px] text-fg-muted">
+              <span className="font-medium text-fg">{thread.contactName}</span>
+              {[thread.email, thread.phone].filter(Boolean).length > 0 && <> · {[thread.email, thread.phone].filter(Boolean).join(" · ")}</>}
+            </p>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-fg-muted">
+              <UserCheck size={13} aria-hidden="true" />
+              {thread.assignedTo ? <>Handled by {thread.assignedTo.id === me ? "you" : thread.assignedTo.name}</> : "Not assigned"}
+              {thread.assignedTo?.id === me ? (
+                <button type="button" className="font-medium text-accent hover:underline" disabled={assign.isPending} onClick={() => assign.mutate(false)}>
+                  Unassign
+                </button>
+              ) : (
+                <button type="button" className="font-medium text-accent hover:underline" disabled={assign.isPending} onClick={() => assign.mutate(true)}>
+                  Assign to me
+                </button>
+              )}
+            </p>
+            {thread.customer && (
+              <Link href={`/admin/customers/${thread.customer.id}`} className="mt-1 inline-flex items-center gap-1 text-[13px] text-accent hover:underline">
+                <UserRound size={13} aria-hidden="true" /> Customer with this number: {thread.customer.name}
+              </Link>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {mobile && (
+              <a href={`https://wa.me/${mobile}`} target="_blank" rel="noreferrer" aria-label="Open WhatsApp" title="WhatsApp" className="rounded-full p-2 text-fg-muted transition-colors hover:bg-ink-900/[0.05] hover:text-fg">
+                <MessageCircle size={17} aria-hidden="true" />
+              </a>
+            )}
+            {thread.phone && (
+              <a href={`tel:${thread.phone}`} aria-label="Call" title="Call" className="rounded-full p-2 text-fg-muted transition-colors hover:bg-ink-900/[0.05] hover:text-fg">
+                <Phone size={17} aria-hidden="true" />
+              </a>
+            )}
+            <Button size="sm" variant="outline" disabled={status.isPending} onClick={() => status.mutate(handled ? "OPEN" : "HANDLED")}>
+              {handled ? (
+                <>
+                  <RotateCcw size={14} aria-hidden="true" /> Move to New
+                </>
+              ) : (
+                "Mark as handled"
+              )}
+            </Button>
+            <button
+              type="button"
+              aria-label="Delete conversation"
+              title="Delete conversation"
+              onClick={async () => {
+                if (await confirm(`Delete the conversation "${thread.subject}"? This can't be undone.`)) remove.mutate();
+              }}
+              className="rounded-full p-2 text-fg-subtle transition-colors hover:bg-danger-50 hover:text-danger-600"
+            >
+              <Trash2 size={16} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </header>
+      <ol className="flex-1 space-y-3 overflow-y-auto px-6 py-5" aria-label="Messages">
+        {thread.messages.map((m) => (
+          <MessageBlock key={m.id} message={m} contactName={thread.contactName} />
+        ))}
+      </ol>
+      <Composer key={thread.id} thread={thread} />
+      {dialog}
+    </article>
+  );
+}
+
+/** Messages › Inbox (Blueprint V2 R2): conversations with customers, Mail-style — a list and a thread. Staff reply by
+ * email or SMS from here (DR-4, owner 2026-10-08); each reply shows whether it was delivered. */
+export default function InboxPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const status = STATUS.find((s) => s.value === searchParams.get("status"))?.value ?? "open";
+  const openId = searchParams.get("open");
+  const mine = searchParams.get("mine") === "true";
+  const { data: currentAdmin } = useCurrentAdmin();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const { confirm, dialog: confirmDialog } = useConfirmDialog();
-  const debouncedSearch = useDebouncedValue(search, 350);
+  const debounced = useDebouncedValue(search, 350);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-feedback", { page, pageSize, status, search: debouncedSearch }],
-    queryFn: () => adminFeedbackApi.listFeedback({ page, pageSize, status, search: debouncedSearch || undefined }),
+  const setParam = (patch: Record<string, string | null>) => {
+    const q = new URLSearchParams(searchParams.toString());
+    for (const [k, v] of Object.entries(patch)) if (v === null) q.delete(k);
+    else q.set(k, v);
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: [...inboxKeys.list, { page, status, mine, search: debounced }],
+    queryFn: ({ signal }) => inboxApi.listConversations({ page, pageSize: PAGE_SIZE, status, mine: mine ? "true" : undefined, search: debounced || undefined }, { signal }),
+    placeholderData: (prev) => prev,
+    refetchInterval: 60_000,
   });
-
-  const markReadMutation = useMutation({
-    mutationFn: adminFeedbackApi.markFeedbackRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-feedback"] }),
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to update feedback"),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: adminFeedbackApi.deleteFeedback,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-feedback"] });
-      toast.success("Feedback deleted");
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to delete feedback"),
-  });
-
-  async function handleDelete(id: string, subject: string) {
-    if (!(await confirm(`Delete the feedback "${subject}"? This can't be undone.`))) return;
-    deleteMutation.mutate(id);
-  }
-
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
+  const items = data?.items ?? [];
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
     <div>
-      <PageHeader title="Feedback" description="Messages submitted from the storefront contact widget." />
-
-      <SupportSubNav />
-
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 rounded-full border border-ink-200 p-1">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => {
-                  setStatus(tab.value);
+      <PageHeader title="Inbox" description="Conversations with customers. Reply by email or SMS — every reply shows whether it arrived." />
+      <ModuleTabs />
+      <div className="grid overflow-hidden rounded-2xl border border-line bg-surface shadow-xs lg:h-[calc(100dvh-15rem)] lg:min-h-[520px] lg:grid-cols-[380px_1fr]">
+        <section aria-label="Conversations" className={cn("flex min-h-0 flex-col border-line-subtle lg:border-r", openId && "hidden lg:flex")}>
+          <div className="space-y-2 border-b border-line-subtle p-3">
+            <SegmentedControl
+              aria-label="Show"
+              value={status}
+              onChange={(value) => {
+                setPage(1);
+                setParam({ status: value === "open" ? null : value, open: null });
+              }}
+              options={STATUS.map((s) => ({ value: s.value, label: s.label }))}
+            />
+            <label className="flex items-center gap-2 text-[13px] text-fg-muted">
+              <Checkbox
+                checked={mine}
+                onChange={(e) => {
                   setPage(1);
+                  setParam({ mine: e.target.checked ? "true" : null, open: null });
                 }}
-                className={cn(
-                  "rounded-full px-3 py-1 text-sm transition-colors duration-150 ease-smooth",
-                  status === tab.value ? "bg-ink-900 text-cream-50" : "text-ink-600 hover:bg-ink-50",
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <Search size={16} className="shrink-0 text-ink-400" aria-hidden="true" />
-            <label htmlFor="feedback-search" className="sr-only">
-              Search feedback
+              />
+              Assigned to me
             </label>
-            <Input
-              id="feedback-search"
-              placeholder="Search name, email, subject…"
+            <SearchInput
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
+              onChange={(v) => {
+                setSearch(v);
                 setPage(1);
               }}
-              className="w-full sm:w-64"
+              placeholder="Search name, phone, message…"
+              aria-label="Search conversations"
             />
           </div>
-        </div>
-        <PageSizeSelect
-          value={pageSize}
-          onChange={(size) => {
-            setPageSize(size);
-            setPage(1);
-          }}
-        />
+          <ul className="min-h-0 flex-1 divide-y divide-line-subtle overflow-y-auto">
+            {isLoading && !data && Array.from({ length: 6 }).map((_, i) => <li key={i} className="m-3 h-14 animate-pulse rounded-lg bg-ink-900/[0.04]" />)}
+            {isError && !data && (
+              <li>
+                <ErrorState onRetry={() => refetch()} />
+              </li>
+            )}
+            {data && items.length === 0 && (
+              <li>
+                <EmptyState icon={Inbox} title={status === "open" ? "No new messages" : "No conversations"} description={status === "open" ? "You're all caught up." : undefined} />
+              </li>
+            )}
+            {items.map((c) => {
+              const selected = c.id === openId;
+              const isNew = c.status === "OPEN";
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => setParam({ open: c.id })}
+                    aria-current={selected ? "true" : undefined}
+                    className={cn("flex w-full gap-2.5 px-4 py-3 text-left transition-colors duration-fast", selected ? "bg-accent/[0.08]" : "hover:bg-ink-900/[0.02]")}
+                  >
+                    <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", isNew ? "bg-accent" : "bg-transparent")} aria-label={isNew ? "New" : undefined} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className={cn("truncate text-[14px] text-fg", isNew && "font-semibold")}>{c.contactName}</span>
+                        <span className="shrink-0 text-[12px] text-fg-subtle">{timeAgo(c.lastMessageAt)}</span>
+                      </span>
+                      <span className={cn("flex items-center gap-1.5 truncate text-[13px]", isNew ? "font-medium text-fg" : "text-fg-muted")}>
+                        <span className="truncate">{c.subject}</span>
+                        {c.messageCount > 1 && <span className="shrink-0 rounded-full bg-ink-900/[0.06] px-1.5 text-[11px] font-medium tabular-nums text-fg-muted">{c.messageCount}</span>}
+                      </span>
+                      <span className="block truncate text-[13px] text-fg-subtle">{c.preview}</span>
+                      {c.assignedTo && <span className="mt-0.5 block truncate text-[12px] text-fg-subtle">Handled by {c.assignedTo.id === currentAdmin?.admin.id ? "you" : c.assignedTo.name}</span>}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {data && data.total > data.pageSize && (
+            <div className="flex items-center justify-between gap-2 border-t border-line-subtle px-3 py-2 text-xs text-fg-muted">
+              <span className="tabular-nums">{formatCount(data.total)}</span>
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} className="mt-0" />
+            </div>
+          )}
+        </section>
+        <section aria-label="Conversation" className={cn("min-h-0", !openId && "hidden lg:block")}>
+          {openId ? (
+            <Thread key={openId} id={openId} onBack={() => setParam({ open: null })} />
+          ) : (
+            <div className="hidden h-full items-center justify-center text-[13px] text-fg-subtle lg:flex">Select a conversation to read it</div>
+          )}
+        </section>
       </div>
-
-      <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
-              <tr>
-                <th className="px-4 py-3">From</th>
-                <th className="px-4 py-3">Subject</th>
-                <th className="px-4 py-3">Message</th>
-                <th className="px-4 py-3">Received</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && <TableSkeleton rows={6} cols={6} />}
-              {!isLoading && data?.items.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-6 text-center text-ink-400">
-                    No feedback yet.
-                  </td>
-                </tr>
-              )}
-              {data?.items.map((f) => (
-                <tr key={f.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                  <td className="px-4 py-3 font-medium">
-                    {f.name}
-                    {(f.email || f.phone) && (
-                      <div className="text-xs font-normal text-ink-400">{[f.email, f.phone].filter(Boolean).join(" · ")}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-ink-700">{f.subject}</td>
-                  <td className="max-w-xs truncate px-4 py-3 text-ink-500" title={f.message}>
-                    {f.message}
-                  </td>
-                  <td className="px-4 py-3 text-ink-500">{new Date(f.createdAt).toLocaleDateString()}</td>
-                  <td className="px-4 py-3">
-                    <Badge className={f.readAt ? "" : "bg-sale-50 text-sale-600"}>{f.readAt ? "Read" : "Unread"}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-3">
-                      {!f.readAt && (
-                        <button
-                          onClick={() => markReadMutation.mutate(f.id)}
-                          className="text-ink-400 hover:text-ink-900"
-                          aria-label="Mark as read"
-                          title="Mark as read"
-                        >
-                          <Check size={16} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(f.id, f.subject)}
-                        className="text-ink-400 hover:text-danger-600"
-                        aria-label="Delete"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </HScrollShadow>
-      </div>
-
-      <Pagination page={page} totalPages={totalPages} onChange={setPage} />
-      {confirmDialog}
     </div>
   );
 }

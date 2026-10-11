@@ -16,9 +16,18 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Render the template with this store's values (same substitution the nginx image performs)
+        env:
+          SERVER_NAME: ${{ vars.SERVER_NAME }}
+          SERVER_ALIASES: ${{ vars.SERVER_ALIASES }}
+          CERT_NAME: ${{ vars.CERT_NAME }}
+        run: |
+          for v in SERVER_NAME SERVER_ALIASES CERT_NAME; do [ -n "${!v}" ] || { echo "::error::repository variable $v is not set"; exit 1; }; done
+          envsubst '${SERVER_NAME} ${SERVER_ALIASES} ${CERT_NAME}' < docker/nginx/nginx.conf.template > nginx.conf.rendered
+
       - name: Syntax-check the new config in a throwaway container (doesn't touch the live one)
         run: |
-          scp -i ~/.ssh/deploy_key docker/nginx/nginx.conf root@${{ secrets.VPS_HOST }}:/tmp/nginx.conf.candidate
+          scp -i ~/.ssh/deploy_key nginx.conf.rendered root@${{ secrets.VPS_HOST }}:/tmp/nginx.conf.candidate
           ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} '
             docker run --rm \
               --volumes-from docker-nginx-1:ro \

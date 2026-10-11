@@ -10,13 +10,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { BackLink } from "@/components/ui/back-link";
 import { PageHeader } from "@/components/admin/page-header";
-import { ProductsSubNav } from "@/components/admin/products-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FormSection } from "@/components/admin/form-section";
 import { toast } from "@/components/ui/toast";
 import * as productsApi from "@/lib/api/products";
 import * as catalogApi from "@/lib/api/catalog";
 import { ApiError, describeApiError } from "@/lib/api-client";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const SHOW_ISSUES = 100;
@@ -31,7 +32,7 @@ const Tile = ({ label, value, tone = "default" }: { label: string; value: number
 export default function ProductImportPage() {
   const queryClient = useQueryClient();
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const mayImport = adminCan(currentAdmin?.admin, "products.import");
   const { data: typesData } = useQuery({ queryKey: ["catalog-types", "all"], queryFn: () => catalogApi.listTypes(true) });
   const types = typesData?.types ?? [];
 
@@ -98,12 +99,12 @@ export default function ProductImportPage() {
   const willWrite = report ? report.summary.create + report.summary.update : 0;
   const hasErrors = (report?.errors.length ?? 0) > 0;
   const fileLevel = report?.errors.some((e) => e.product === null) ?? false;
-  const canImport = isOwner && report !== null && willWrite > 0 && (!hasErrors || (skipInvalid && !fileLevel)) && !result && busy === null;
+  const canImport = mayImport && report !== null && willWrite > 0 && (!hasErrors || (skipInvalid && !fileLevel)) && !result && busy === null;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="space-y-6">
       <PageHeader title="Import & export products" action={<BackLink href="/admin/products" label="Back to Products" />} />
-      <ProductsSubNav />
+      <ModuleTabs />
 
       <FormSection title="Get a file" description="One row per variant. Export what you have to edit it in a spreadsheet, or start from an empty template for one product type.">
         <div className="flex flex-wrap items-end gap-3">
@@ -161,7 +162,7 @@ export default function ProductImportPage() {
       </FormSection>
 
       <FormSection title="Import" description="Check the file first: nothing is written until you press Import.">
-        {!isOwner ? (
+        {!mayImport ? (
           <p className="text-sm text-ink-500">Only the store owner can import products, because an import can change prices across the whole catalog.</p>
         ) : (
           <div className="space-y-4">
@@ -288,7 +289,7 @@ export default function ProductImportPage() {
             </section>
           )}
 
-          {isOwner && !result && (
+          {mayImport && !result && (
             <div className="flex flex-wrap items-center gap-4 border-t border-ink-100 pt-4">
               {hasErrors && !fileLevel && willWrite > 0 && (
                 <label className="flex items-center gap-2 text-sm text-ink-700">

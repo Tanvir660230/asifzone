@@ -1,5 +1,5 @@
 import type { CreateHomepageSectionInput, HomepageSectionType, UpdateHomepageSectionInput } from "@clothing-brand/shared";
-import { configSchemaByType, REPEATABLE_SECTION_TYPES } from "@clothing-brand/shared";
+import { configSchemaByType, DEFAULT_TRUST_STRIP_ITEMS, DEFAULT_VALUES_GRID_ITEMS, REPEATABLE_SECTION_TYPES } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
@@ -19,7 +19,8 @@ function isSingleton(type: HomepageSectionType) {
 // Deterministic ids on the seed rows make `ensureSeeded` safe under a concurrent first request —
 // two racing calls both attempt the same 9 ids, and `skipDuplicates` turns the loser into a no-op
 // instead of a duplicate homepage. Order/config here reproduce the pre-builder hardcoded homepage
-// exactly, so shipping this migration doesn't change anything a visitor sees.
+// exactly, so shipping this migration doesn't change anything a visitor sees. Item content comes from the shared,
+// category-neutral defaults (@clothing-brand/shared homepage-defaults.ts); it only reaches a store with no sections yet.
 const DEFAULT_SECTIONS: { id: string; type: HomepageSectionType; sortOrder: number; config: object }[] = [
   { id: "seed-hero", type: "HERO", sortOrder: 0, config: {} },
   {
@@ -27,12 +28,7 @@ const DEFAULT_SECTIONS: { id: string; type: HomepageSectionType; sortOrder: numb
     type: "TRUST_STRIP",
     sortOrder: 1,
     config: {
-      items: [
-        { icon: "Truck", label: "Nationwide Delivery" },
-        { icon: "RotateCcw", label: "7-Day Easy Returns" },
-        { icon: "ShieldCheck", label: "Authentic Quality" },
-        { icon: "Banknote", label: "Cash on Delivery" },
-      ],
+      items: [...DEFAULT_TRUST_STRIP_ITEMS],
     },
   },
   { id: "seed-personalized-lead", type: "PERSONALIZED_LEAD", sortOrder: 2, config: {} },
@@ -50,29 +46,7 @@ const DEFAULT_SECTIONS: { id: string; type: HomepageSectionType; sortOrder: numb
     type: "VALUES_GRID",
     sortOrder: 7,
     config: {
-      items: [
-        {
-          icon: "Feather",
-          title: "Considered Fabric",
-          description:
-            "Natural fibers and mill-dyed cottons, chosen for how they wear over time — not just how they photograph.",
-        },
-        {
-          icon: "Ruler",
-          title: "Fit & Finish",
-          description: "Pattern-checked silhouettes and clean interior seams — details you feel more than see.",
-        },
-        {
-          icon: "Gem",
-          title: "Timeless Design",
-          description: "Pieces built around a season, not a trend cycle — worth keeping well past this year.",
-        },
-        {
-          icon: "Leaf",
-          title: "Considered Sourcing",
-          description: "Smaller runs, fewer offcuts, and suppliers we can actually stand behind.",
-        },
-      ],
+      items: [...DEFAULT_VALUES_GRID_ITEMS],
     },
   },
   { id: "seed-smart-recommendations", type: "SMART_RECOMMENDATIONS", sortOrder: 8, config: {} },

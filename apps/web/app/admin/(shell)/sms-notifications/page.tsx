@@ -17,11 +17,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { toast } from "@/components/ui/toast";
 import * as smsSettingsApi from "@/lib/api/sms-settings";
 import { ApiError } from "@/lib/api-client";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 
 const CUSTOMER_TOUCHPOINTS = [
   {
@@ -65,7 +66,7 @@ export default function SmsNotificationsPage() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["sms-settings"], queryFn: smsSettingsApi.getSmsSettings });
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canManageSettings = adminCan(currentAdmin?.admin, "settings.manage");
 
   const {
     register,
@@ -109,23 +110,23 @@ export default function SmsNotificationsPage() {
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
-  if (currentAdmin && !isOwner) {
+  if (currentAdmin && !canManageSettings) {
     return (
       <div>
         <PageHeader title="SMS Notifications" />
-        <SettingsSubNav />
+        <ModuleTabs />
         <p className="text-sm text-ink-500">Only store owners can view or change SMS notification settings.</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <PageHeader
         title="SMS Notifications"
         description="Text messages sent automatically over the order lifecycle, via BulkSMSBD."
       />
-      <SettingsSubNav />
+      <ModuleTabs />
 
       <form onSubmit={handleSubmit((values) => updateMutation.mutate(values))} className="space-y-6">
         <FormSection
@@ -146,7 +147,7 @@ export default function SmsNotificationsPage() {
                 {...register("adminAlertPhones")}
               />
               <p className="mt-1 text-xs text-ink-400">Comma-separated if you want more than one phone to receive the alert.</p>
-              {errors.adminAlertPhones && <p className="mt-1 text-xs text-danger-600">{errors.adminAlertPhones.message}</p>}
+              {errors.adminAlertPhones && <p className="ui-field-error">{errors.adminAlertPhones.message}</p>}
             </div>
           </div>
         </FormSection>
@@ -184,7 +185,7 @@ export default function SmsNotificationsPage() {
                   {...register(t.templateField)}
                 />
                 {errors[t.templateField] && (
-                  <p className="mt-1 text-xs text-danger-600">{errors[t.templateField]?.message}</p>
+                  <p className="ui-field-error">{errors[t.templateField]?.message}</p>
                 )}
               </div>
             ))}

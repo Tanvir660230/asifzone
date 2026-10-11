@@ -113,7 +113,13 @@ describe("payment.service", () => {
   });
 
   it("markPaymentSessionFailed and markPaymentSessionCancelled never touch a REFUNDED order", async () => {
-    const order = await makeOrder("REFUNDED");
+    // A real refunded order (Phase 4: the status is derived from ledger rows, so it's built through them).
+    const admin = await prisma.adminUser.findFirst();
+    if (!admin) throw new Error("Seed at least one AdminUser before running payment tests");
+    const order = await makeOrder();
+    const paidSession = await makeActiveSession(order.id);
+    await settlePaymentSession(paidSession.gatewayTransactionRef, "eps-txn-refunded", TOTAL);
+    await refundOrderPayment(order.id, { amount: TOTAL }, admin.id);
     const failSession = await makeActiveSession(order.id, `pay_vitest_refund_fail_${suffix}`);
 
     await markPaymentSessionFailed(failSession.gatewayTransactionRef);

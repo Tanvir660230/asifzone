@@ -1,6 +1,7 @@
 import { cacheDelByPrefix } from "../../config/redis";
 import { env } from "../../config/env";
 import { prisma } from "../../config/prisma";
+import { revalidateStorefrontTags } from "../../lib/storefront-revalidate";
 
 /** Every cached product read (detail by slug, related rails, ...) lives under this prefix. */
 export const PRODUCT_CACHE_PREFIX = "products:";
@@ -58,16 +59,5 @@ export async function triggerStorefrontRevalidation(context: RevalidationContext
 
   const ids = [...(context.productId ? [context.productId] : []), ...(context.productIds ?? [])];
   const slugs = await resolveSlugs(context);
-  const tags = buildRevalidationTags(ids, slugs);
-
-  try {
-    const res = await fetch(`${env.webInternalUrl}/api/revalidate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Revalidate-Secret": env.revalidateSecret },
-      body: JSON.stringify({ tags }),
-    });
-    if (!res.ok) console.error(`[revalidate] storefront responded ${res.status} for tags`, tags);
-  } catch (err) {
-    console.error("[revalidate] storefront trigger failed:", err);
-  }
+  await revalidateStorefrontTags(buildRevalidationTags(ids, slugs));
 }

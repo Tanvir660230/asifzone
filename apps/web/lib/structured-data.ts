@@ -1,47 +1,64 @@
 import type { ReactNode } from "react";
-import { BD_DIVISIONS, type Product, type StoreSettings } from "@clothing-brand/shared";
-import { resolveImageUrl } from "./image-url";
+import {
+  BD_COUNTRY_CODE,
+  BD_DHAKA,
+  BD_DIVISIONS,
+  DHAKA_DELIVERY_DAYS,
+  OUTSIDE_DHAKA_DELIVERY_DAYS,
+  storePolicy,
+  type Product,
+  type StorePolicy,
+  type StoreSettings,
+} from "@clothing-brand/shared";
+import { absoluteMediaUrl } from "./runtime-config";
+import { postalAddressJsonLd } from "./store-identity";
 import { stripHtml } from "./format";
 import { productDisplayPrice } from "./pricing-display";
 import { availabilityOf } from "./availability-display";
 
-const NON_DHAKA_DIVISIONS = BD_DIVISIONS.filter((d) => d !== "Dhaka");
+const NON_DHAKA_DIVISIONS = BD_DIVISIONS.filter((d) => d !== BD_DHAKA);
 
-// Mirrors the 7-day unworn/tags-attached window described on the /shipping-returns page — kept
-// as one literal here since that's the only place the policy is defined; update both together.
-const MERCHANT_RETURN_POLICY = {
-  "@type": "MerchantReturnPolicy",
-  returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow",
-  merchantReturnDays: 7,
-  returnMethod: "https://schema.org/ReturnByMail",
-  returnFees: "https://schema.org/ReturnShippingFeesCustomerResponsibility",
-  applicableCountry: "BD",
-};
+/** The store's return policy (StoreSetting via store-policy.ts) as schema.org — omitted when the store states none. */
+function buildReturnPolicy(policy: StorePolicy) {
+  if (!policy.returns) return undefined;
+  return {
+    "@type": "MerchantReturnPolicy",
+    returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow",
+    merchantReturnDays: policy.returns.days,
+    returnMethod: "https://schema.org/ReturnByMail",
+    returnFees: "https://schema.org/ReturnShippingFeesCustomerResponsibility",
+    applicableCountry: BD_COUNTRY_CODE,
+  };
+}
 
 /** Mirrors packages/shared/src/delivery.ts's estimateDelivery exactly: the fee/ETA split is by
  * division === "Dhaka" vs. the other 7 divisions, not a "Dhaka region + country-wide fallback"
  * approximation — listing the 7 explicitly avoids the two bands overlapping (Dhaka is itself
  * inside "BD", so a country-wide second entry would ambiguously match Dhaka addresses too). */
-function buildShippingDetails(settings: StoreSettings) {
+function buildShippingDetails(settings: StoreSettings, policy: StorePolicy) {
+  // The store's handling time; omitted (not guessed) when it hasn't stated one.
+  const handlingTime = policy.handlingDays
+    ? { handlingTime: { "@type": "QuantitativeValue", minValue: policy.handlingDays[0], maxValue: policy.handlingDays[1], unitCode: "DAY" } }
+    : {};
   return [
     {
       "@type": "OfferShippingDetails",
-      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeDhaka, currency: "BDT" },
-      shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: "Dhaka" },
+      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeDhaka, currency: settings.currency },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: BD_COUNTRY_CODE, addressRegion: BD_DHAKA },
       deliveryTime: {
         "@type": "ShippingDeliveryTime",
-        handlingTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
-        transitTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
+        ...handlingTime,
+        transitTime: { "@type": "QuantitativeValue", minValue: DHAKA_DELIVERY_DAYS[0], maxValue: DHAKA_DELIVERY_DAYS[1], unitCode: "DAY" },
       },
     },
     {
       "@type": "OfferShippingDetails",
-      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeOutsideDhaka, currency: "BDT" },
-      shippingDestination: { "@type": "DefinedRegion", addressCountry: "BD", addressRegion: NON_DHAKA_DIVISIONS },
+      shippingRate: { "@type": "MonetaryAmount", value: settings.shippingFeeOutsideDhaka, currency: settings.currency },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: BD_COUNTRY_CODE, addressRegion: NON_DHAKA_DIVISIONS },
       deliveryTime: {
         "@type": "ShippingDeliveryTime",
-        handlingTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" },
-        transitTime: { "@type": "QuantitativeValue", minValue: 3, maxValue: 5, unitCode: "DAY" },
+        ...handlingTime,
+        transitTime: { "@type": "QuantitativeValue", minValue: OUTSIDE_DHAKA_DELIVERY_DAYS[0], maxValue: OUTSIDE_DHAKA_DELIVERY_DAYS[1], unitCode: "DAY" },
       },
     },
   ];
@@ -51,26 +68,27 @@ export function buildProductJsonLd(product: Product, siteUrl: string, settings: 
   // The offer price is the server-resolved "from" price (canonical pricing engine), not a local calculation.
   const price = productDisplayPrice(product).price;
   const inStock = availabilityOf(product).inStock;
+  const policy = storePolicy(settings);
 
   return {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
     description: product.shortDescription || stripHtml(product.description) || undefined,
-    image: product.images.map((img) => resolveImageUrl(img.url)),
+    image: product.images.map((img) => absoluteMediaUrl(img.url)!),
     brand: { "@type": "Brand", name: settings.storeName },
     sku: product.variants[0]?.sku,
     offers: {
       "@type": "Offer",
       url: `${siteUrl}/product/${product.slug}`,
-      priceCurrency: product.pricing?.currency ?? "BDT",
+      priceCurrency: product.pricing?.currency ?? settings.currency,
       price,
       availability: inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
       // Every product in the catalog is new stock — there's no used/refurbished concept anywhere
       // in the data model, so this is always accurate rather than an assumed default.
       itemCondition: "https://schema.org/NewCondition",
-      hasMerchantReturnPolicy: MERCHANT_RETURN_POLICY,
-      shippingDetails: buildShippingDetails(settings),
+      hasMerchantReturnPolicy: buildReturnPolicy(policy),
+      shippingDetails: buildShippingDetails(settings, policy),
       // Only set when a flash sale gives a real expiry for the current price — the regular base
       // price has no defined validity window, so it's left open-ended rather than guessed.
       ...(product.activeFlashSale ? { priceValidUntil: product.activeFlashSale.endsAt.slice(0, 10) } : {}),
@@ -150,8 +168,10 @@ export function buildOrganizationJsonLd(settings: StoreSettings, siteUrl: string
     "@context": "https://schema.org",
     "@type": "Organization",
     name: settings.storeName,
+    ...(settings.legalName ? { legalName: settings.legalName } : {}),
     url: siteUrl,
-    logo: settings.logoUrl || undefined,
+    logo: absoluteMediaUrl(settings.logoUrl) || undefined,
+    ...(postalAddressJsonLd(settings) ? { address: postalAddressJsonLd(settings) } : {}),
     ...(hasContact
       ? {
           contactPoint: {

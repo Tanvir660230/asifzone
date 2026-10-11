@@ -87,7 +87,7 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
                     <Link
                       href={`/category/${cat.slug}`}
                       onClick={close}
-                      className="text-sm uppercase tracking-wide"
+                      className="text-sm ui-caps"
                     >
                       {cat.name}
                     </Link>

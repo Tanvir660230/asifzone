@@ -16,8 +16,12 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import { AdjustStockModal, type AdjustStockPrefill } from "@/components/admin/adjust-stock-modal";
+import { StockLevels } from "@/components/admin/inventory/stock-levels";
+import { SegmentedControl } from "@/components/ui/tabs";
+import { useCapability } from "@/hooks/use-capability";
 import * as inventoryApi from "@/lib/api/inventory";
 import { cn } from "@/lib/utils";
+import { formatStoreDateTime } from "@/lib/format";
 
 const REASONS = ["ORDER", "CANCELLATION", "RETURN", "RESTOCK", "ADJUSTMENT", "IMPORT", "DAMAGED", "LOST"] as const;
 
@@ -42,6 +46,12 @@ export default function InventoryPage() {
   const [reason, setReason] = useState("");
   const variantId = searchParams.get("variantId") ?? undefined;
   const productId = searchParams.get("productId") ?? undefined;
+  // Stock levels first; the ledger when asked for (?tab=movements), or when a deep link names a variant or product.
+  const tab = searchParams.get("tab") === "movements" || variantId || productId ? "movements" : "levels";
+  const canAdjust = useCapability("inventory.adjust");
+  function setTab(next: "levels" | "movements") {
+    router.push(next === "movements" ? "/admin/inventory?tab=movements" : "/admin/inventory");
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["stock-movements", { page, pageSize, reason, variantId, productId }],
@@ -67,6 +77,7 @@ export default function InventoryPage() {
 
   function invalidateMovements() {
     queryClient.invalidateQueries({ queryKey: ["stock-movements"] });
+    queryClient.invalidateQueries({ queryKey: ["stock-levels"] });
     queryClient.invalidateQueries({ queryKey: ["stock-reconciliation"] });
   }
 
@@ -90,17 +101,33 @@ export default function InventoryPage() {
             >
               <ShieldCheck size={16} /> Check integrity
             </Button>
-            <Button variant="brass" onClick={() => openAdjust(null)}>
+            <Button variant="primary" onClick={() => openAdjust(null)}>
               <Plus size={16} /> Adjust stock
             </Button>
           </div>
         }
       />
 
+      <SegmentedControl
+        aria-label="Inventory view"
+        size="md"
+        className="mb-5"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "levels", label: "Stock levels" },
+          { value: "movements", label: "Movements" },
+        ]}
+      />
+
+      {tab === "levels" && <StockLevels onAdjust={(prefill) => openAdjust(prefill)} canAdjust={canAdjust} />}
+
+      {tab === "movements" && (
+      <>
       {(variantId || productId) && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-brass-300 bg-brass-50/60 px-3 py-2 text-sm text-ink-700">
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-fg-muted">
           <span>Filtered to a specific {variantId ? "variant" : "product"}.</span>
-          <button onClick={() => router.replace("/admin/inventory")} className="text-brass-700 underline">
+          <button onClick={() => router.replace("/admin/inventory?tab=movements")} className="text-accent underline">
             Clear filter
           </button>
         </div>
@@ -135,8 +162,8 @@ export default function InventoryPage() {
           admin list pages. */}
       <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Product</th>
@@ -158,7 +185,7 @@ export default function InventoryPage() {
               )}
               {data?.items.map((m) => (
                 <tr key={m.id} className="border-t border-ink-100 transition-colors duration-150 ease-smooth hover:bg-ink-50/60">
-                  <td className="px-4 py-3 text-ink-500">{new Date(m.createdAt).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-ink-500">{formatStoreDateTime(m.createdAt)}</td>
                   <td className="px-4 py-3">
                     {m.variant ? (
                       <>
@@ -228,7 +255,7 @@ export default function InventoryPage() {
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge className={REASON_BADGE[m.reason]}>{m.reason}</Badge>
-                <span>{new Date(m.createdAt).toLocaleString()}</span>
+                <span>{formatStoreDateTime(m.createdAt)}</span>
               </div>
               {m.orderId && (
                 <Link href={`/admin/orders/${m.orderId}`} className="text-brass-600 hover:underline">
@@ -248,6 +275,8 @@ export default function InventoryPage() {
 
       {data && data.total > data.pageSize && (
         <Pagination page={page} totalPages={Math.ceil(data.total / data.pageSize)} onChange={setPage} />
+      )}
+      </>
       )}
 
       <AdjustStockModal

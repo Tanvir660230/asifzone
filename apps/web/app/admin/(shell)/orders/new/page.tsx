@@ -9,11 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Search, User, MapPin, Package, X, CheckCircle2 } from "lucide-react";
 import {
   adminCreateOrderSchema,
-  BD_ALL_DISTRICTS,
   BD_DIVISION_BY_DISTRICT,
-  BD_AREAS_BY_DISTRICT,
-  BD_ALL_AREA_OPTIONS,
-  parseAreaDistrictOption,
   type AdminCreateOrderInput,
   type QuoteRequestInput,
   type Product,
@@ -23,10 +19,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { DistrictAreaFields } from "@/components/admin/district-area-fields";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
+import { Alert } from "@/components/ui/alert";
+import { useOrderPermissions } from "@/components/admin/orders/order-domain";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
 import * as productsApi from "@/lib/api/products";
@@ -37,8 +35,9 @@ import { productDisplayPrice, variantDisplayPrice } from "@/lib/pricing-display"
 import { formatPrice } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 
-const formSchema = adminCreateOrderSchema.omit({ items: true, couponCode: true, customerId: true, markPaid: true });
+const formSchema = adminCreateOrderSchema.omit({ items: true, couponCode: true, customerId: true, markPaid: true, confirmNow: true });
 type FormValues = ReturnType<typeof formSchema.parse>;
 
 /** What staff picked — ids and quantities only. Every amount comes from the server quote (PRICING_INVARIANTS §7). */
@@ -54,6 +53,7 @@ interface CartLine {
 
 export default function NewOrderPage() {
   const router = useRouter();
+  const perms = useOrderPermissions();
 
   // --- link to an existing customer (optional) — clearing it falls back to the same phone/email
   // guest-matching the storefront checkout uses, so a repeat customer still gets recognized even
@@ -78,6 +78,8 @@ export default function NewOrderPage() {
   const [couponChecking, setCouponChecking] = useState(false);
 
   const [markPaid, setMarkPaid] = useState(false);
+  // D24: a phone order is confirmed on the call — on by default, untick to leave it Pending.
+  const [confirmNow, setConfirmNow] = useState(true);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const {
@@ -98,33 +100,11 @@ export default function NewOrderPage() {
 
   const shippingDistrict = watch("shippingDistrict");
   const shippingArea = watch("shippingArea");
-  // Until a district is chosen, offer every area/thana in the country (as "Area — District") so
-  // staff can find a customer's thana directly without knowing which district it's in.
-  const areaOptions: readonly string[] = shippingDistrict
-    ? (BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [])
-    : BD_ALL_AREA_OPTIONS;
-
-  function handleAreaChange(value: string) {
-    const parsed = parseAreaDistrictOption(value);
-    if (parsed) {
-      setValue("shippingDistrict", parsed.district, { shouldValidate: true });
-      setValue("shippingArea", parsed.area, { shouldValidate: true });
-    } else {
-      setValue("shippingArea", value, { shouldValidate: true });
-    }
-  }
 
   // Division is derived from the chosen district rather than picked separately; the server quote resolves the
   // shipping zone from the address, exactly as for the storefront checkout.
   useEffect(() => {
     setValue("shippingDivision", (BD_DIVISION_BY_DISTRICT[shippingDistrict] ?? "") as FormValues["shippingDivision"]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shippingDistrict]);
-  // Only relevant once a district is actually picked: with no district, areaOptions is the
-  // country-wide combo list, which a plain area value would never match.
-  useEffect(() => {
-    if (!shippingDistrict) return;
-    if (shippingArea && !areaOptions.includes(shippingArea)) setValue("shippingArea", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shippingDistrict]);
 
@@ -260,12 +240,15 @@ export default function NewOrderPage() {
       customerId: customerId ?? undefined,
       couponCode: quote?.coupon?.code,
       markPaid,
+      confirmNow,
       items: baseRequest.items,
       // The quote staff are looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
       quoteToken: quote?.token,
     };
     try {
-      const { order } = await adminOrdersApi.createManualOrder(payload);
+      // Same payload again (double click, retry after a timeout) = same Idempotency-Key = the same order (Phase 9).
+      const { order } = await adminOrdersApi.createManualOrder(payload, idempotencyKeyFor("manual-order", payload));
+      settleIdempotencyKey("manual-order");
       router.push(`/admin/orders/${order.id}`);
     } catch (err) {
       // 409 QUOTE_CHANGED: prices moved since this quote — refresh it so staff confirm the new total before resubmitting.
@@ -288,6 +271,12 @@ export default function NewOrderPage() {
         }
       />
 
+      {perms.ready && !perms.manage && (
+        <Alert variant="warning" title="You can't create orders" className="mb-5">
+          Creating orders needs the orders.manage permission — ask an owner to grant it.
+        </Alert>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] lg:gap-8">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 lg:order-1">
           {/* Customer */}
@@ -302,7 +291,12 @@ export default function NewOrderPage() {
                 <span className="flex items-center gap-1.5 text-success-700">
                   <CheckCircle2 size={14} /> Linked to existing customer — {linkedCustomerName}
                 </span>
-                <button type="button" onClick={unlinkCustomer} className="text-ink-400 hover:text-ink-700">
+                <button
+                  type="button"
+                  onClick={unlinkCustomer}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-400 hover:bg-ink-900/[0.05] hover:text-ink-700"
+                  aria-label="Unlink customer"
+                >
                   <X size={14} />
                 </button>
               </div>
@@ -347,7 +341,7 @@ export default function NewOrderPage() {
                   aria-invalid={!!errors.customerName}
                   {...register("customerName")}
                 />
-                {errors.customerName && <p className="mt-1 text-xs text-danger-600">{errors.customerName.message}</p>}
+                {errors.customerName && <p className="ui-field-error">{errors.customerName.message}</p>}
               </div>
               <div>
                 <Label htmlFor="customerPhone">Phone</Label>
@@ -357,7 +351,7 @@ export default function NewOrderPage() {
                   aria-invalid={!!errors.customerPhone}
                   {...register("customerPhone")}
                 />
-                {errors.customerPhone && <p className="mt-1 text-xs text-danger-600">{errors.customerPhone.message}</p>}
+                {errors.customerPhone && <p className="ui-field-error">{errors.customerPhone.message}</p>}
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="customerEmail">Email (optional)</Label>
@@ -373,32 +367,15 @@ export default function NewOrderPage() {
               <h2 className="font-display text-lg text-ink-900">Delivery address</h2>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="shippingDistrict">District</Label>
-                <SearchableSelect
-                  id="shippingDistrict"
-                  aria-invalid={!!errors.shippingDistrict}
-                  value={shippingDistrict}
-                  onChange={(v) => setValue("shippingDistrict", v, { shouldValidate: true })}
-                  options={BD_ALL_DISTRICTS}
-                  placeholder="Search district..."
-                />
-                {errors.shippingDistrict && (
-                  <p className="mt-1 text-xs text-danger-600">{errors.shippingDistrict.message}</p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="shippingArea">Area / Thana</Label>
-                <SearchableSelect
-                  id="shippingArea"
-                  aria-invalid={!!errors.shippingArea}
-                  value={shippingArea}
-                  onChange={handleAreaChange}
-                  options={areaOptions}
-                  placeholder={shippingDistrict ? "Search area/thana..." : "Search area/thana (any district)..."}
-                />
-                {errors.shippingArea && <p className="mt-1 text-xs text-danger-600">{errors.shippingArea.message}</p>}
-              </div>
+              <DistrictAreaFields
+                idPrefix="shipping"
+                value={{ district: shippingDistrict, area: shippingArea }}
+                onChange={(next) => {
+                  setValue("shippingDistrict", next.district, { shouldValidate: true });
+                  setValue("shippingArea", next.area, { shouldValidate: true });
+                }}
+                errors={{ district: errors.shippingDistrict?.message, area: errors.shippingArea?.message }}
+              />
               <div className="sm:col-span-2">
                 <Label htmlFor="shippingAddressLine">House / Road / Details</Label>
                 <Textarea
@@ -408,7 +385,7 @@ export default function NewOrderPage() {
                   {...register("shippingAddressLine")}
                 />
                 {errors.shippingAddressLine && (
-                  <p className="mt-1 text-xs text-danger-600">{errors.shippingAddressLine.message}</p>
+                  <p className="ui-field-error">{errors.shippingAddressLine.message}</p>
                 )}
               </div>
               <div className="sm:col-span-2">
@@ -428,6 +405,7 @@ export default function NewOrderPage() {
             <div className="relative mb-4">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
               <Input
+                aria-label="Search products to add"
                 placeholder="Search products by name or SKU…"
                 value={productQuery}
                 onChange={(e) => setProductQuery(e.target.value)}
@@ -500,6 +478,7 @@ export default function NewOrderPage() {
                     </div>
                     <Input
                       type="number"
+                      aria-label={`Quantity of ${item.productName}`}
                       min={1}
                       max={item.maxQuantity}
                       value={item.quantity}
@@ -512,7 +491,7 @@ export default function NewOrderPage() {
                     <button
                       type="button"
                       onClick={() => removeItem(item.variantId)}
-                      className="shrink-0 text-ink-400 hover:text-danger-600"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-400 hover:bg-danger-50 hover:text-danger-600"
                       aria-label={`Remove ${item.productName}`}
                     >
                       <X size={16} />
@@ -525,7 +504,7 @@ export default function NewOrderPage() {
 
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
-          <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting}>
+          <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting || (perms.ready && !perms.manage)}>
             {isSubmitting ? "Creating order…" : `Create Order — ${money(quote?.total)}`}
           </Button>
         </form>
@@ -550,6 +529,7 @@ export default function NewOrderPage() {
             <div>
               <div className="flex gap-2">
                 <Input
+                  aria-label="Coupon code"
                   placeholder="Coupon code"
                   value={couponInput}
                   onChange={(e) => setCouponInput(e.target.value)}
@@ -565,7 +545,7 @@ export default function NewOrderPage() {
                   Apply
                 </Button>
               </div>
-              {couponError && <p className="mt-1 text-xs text-danger-600">{couponError}</p>}
+              {couponError && <p className="ui-field-error">{couponError}</p>}
               {quote?.coupon && <p className="mt-1 text-xs text-success-600">Coupon &ldquo;{quote.coupon.code}&rdquo; applied</p>}
             </div>
 
@@ -616,6 +596,10 @@ export default function NewOrderPage() {
             </div>
 
             <label className="flex items-center gap-2 border-t border-ink-100 pt-4 text-sm text-ink-700">
+              <Checkbox checked={confirmNow} onChange={(e) => setConfirmNow(e.target.checked)} />
+              Customer confirmed on the call — create it Confirmed
+            </label>
+            <label className="flex items-center gap-2 text-sm text-ink-700">
               <Checkbox checked={markPaid} onChange={(e) => setMarkPaid(e.target.checked)} />
               Already paid (cash in hand / bKash / Nagad)
             </label>

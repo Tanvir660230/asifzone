@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, User, MapPin, Banknote, Smartphone } from "lucide-react";
+import { ChevronDown, User, MapPin, Banknote, Smartphone, Wallet } from "lucide-react";
 import {
   checkoutSchema,
   BD_ALL_DISTRICTS,
@@ -30,15 +30,17 @@ import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
 import { createOrder } from "@/lib/api/orders";
 import { getSessionId } from "@/lib/analytics";
-import { pixelAddPaymentInfo, pixelInitiateCheckout, type MetaLineItem } from "@/lib/meta-pixel";
+import { pixelAddPaymentInfo, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { getQuote, getBestCouponQuote } from "@/lib/api/quote";
 import { useQuote, quoteLineAmount } from "@/hooks/use-quote";
-import { listAddresses } from "@/lib/api/customers";
+import { getMyStoreCredit, listAddresses } from "@/lib/api/customers";
 import { getSettings } from "@/lib/api/settings";
 import { getActivePaymentMethods } from "@/lib/api/payment-methods";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { resolveImageUrl } from "@/lib/image-url";
 
 const checkoutFormSchema = checkoutSchema.omit({ items: true, couponCode: true });
 type CheckoutFormValues = ReturnType<typeof checkoutFormSchema.parse>;
@@ -64,9 +66,10 @@ function CheckoutForm() {
   const clearExpressItem = useExpressCheckoutStore((s) => s.clear);
   const isExpress = expressItem !== null;
   const items = isExpress ? [expressItem] : cartItems;
-  // Meta line items — a marketing signal from the cart's add-time display prices, never a charged amount
+  // Ad-pixel line items — a marketing signal from the cart's add-time display prices, never a charged amount
   // (PRICING_INVARIANTS §9); every total on this page comes from the server quote.
-  const metaItems = (): MetaLineItem[] => items.map((i) => ({ id: i.variantId, quantity: i.quantity, price: i.price }));
+  const pixelItems = (): PixelLineItem[] =>
+    items.map((i) => ({ id: i.variantId, name: i.productName, quantity: i.quantity, price: i.price }));
 
   // A "Buy Now" express item is meant to be one-shot. It's cleared explicitly on successful order
   // below, and the cart page clears any leftover one when the shopper visits their full cart —
@@ -81,7 +84,7 @@ function CheckoutForm() {
   // doesn't count as a new one.
   useEffect(() => {
     if (!mounted || items.length === 0) return;
-    pixelInitiateCheckout(metaItems());
+    pixelInitiateCheckout(pixelItems());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, items.length]);
 
@@ -123,6 +126,11 @@ function CheckoutForm() {
     queryFn: listAddresses,
     enabled: Boolean(customer),
   });
+  // Store balance (docs/ORDER_ADJUSTMENTS.md §6, §18): shown to signed-in customers, used only when they choose to. The
+  // server decides the amount (min(balance, total) under a lock) — the figures here only preview it.
+  const { data: storeCreditData } = useQuery({ queryKey: ["my-store-credit"], queryFn: getMyStoreCredit, enabled: Boolean(customer) });
+  const storeBalance = storeCreditData?.storeCredit.balance ?? 0;
+  const [useStoreCredit, setUseStoreCredit] = useState(false);
 
   const {
     register,
@@ -147,8 +155,9 @@ function CheckoutForm() {
   // load; EPS-PG defaults false to match its own server-side default (off until an admin configures
   // credentials and flips epsPaymentEnabled on).
   const codEnabled = settingsData?.settings.codEnabled ?? true;
-  const onlinePaymentEnabled = settingsData?.settings.onlinePaymentEnabled ?? true;
-  const epsPaymentEnabled = settingsData?.settings.epsPaymentEnabled ?? false;
+  // Phase 12 D-4: and only when this deployment can actually use the gateway (onlineGateways, booleans from the API).
+  const onlinePaymentEnabled = (settingsData?.settings.onlinePaymentEnabled ?? true) && (settingsData?.settings.onlineGateways?.SSLCOMMERZ ?? true);
+  const epsPaymentEnabled = (settingsData?.settings.epsPaymentEnabled ?? false) && (settingsData?.settings.onlineGateways?.EPS_PG ?? true);
   const anyPaymentMethodEnabled = codEnabled || onlinePaymentEnabled || epsPaymentEnabled;
   const paymentMethod = watch("paymentMethod");
 
@@ -301,15 +310,20 @@ function CheckoutForm() {
       sessionId: getSessionId() || undefined,
       // The quote the shopper is looking at — the server refuses the order (409 QUOTE_CHANGED) if its price moved.
       quoteToken: quote?.token,
+      useStoreCredit: useStoreCredit && storeBalance > 0 ? true : undefined,
     };
 
     try {
-      const { order, gatewayUrl } = await createOrder(payload);
+      // Same checkout again (double submit, retry after a timeout) = same Idempotency-Key = the first order / payment attempt,
+      // never a second one — enforced by a unique column, with or without Redis (Phase 9).
+      const { order, gatewayUrl } = await createOrder(payload, idempotencyKeyFor("checkout", payload));
+      settleIdempotencyKey("checkout");
       sessionStorage.setItem("lastOrderPhone", values.customerPhone);
       // Only now that the server has accepted the checkout — a validation/stock error above never
       // gets here. Purchase is NOT fired here: it fires on the confirmation page once the backend
       // reports a real order (and server-side from the API), never from this optimistic step.
-      pixelAddPaymentInfo(metaItems(), values.paymentMethod);
+      pixelAddPaymentInfo(pixelItems(), values.paymentMethod);
+      if (useStoreCredit) void queryClient.invalidateQueries({ queryKey: ["my-store-credit"] });
       if (gatewayUrl) {
         // No Order exists yet for this attempt — it's only created once the gateway confirms
         // success (order.controller.ts / payment.service.ts's settlePaymentSession). Cart is left
@@ -338,7 +352,7 @@ function CheckoutForm() {
   if (items.length === 0) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center">
-        <h1 className="font-display text-2xl text-ink-900">Your cart is empty</h1>
+        <h1 className="font-display ui-page-title text-ink-900">Your cart is empty</h1>
       </div>
     );
   }
@@ -355,7 +369,7 @@ function CheckoutForm() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className={cn("font-display text-2xl text-ink-900", isExpress ? "mb-1" : "mb-8")}>Checkout</h1>
+      <h1 className={cn("font-display ui-page-title text-ink-900", isExpress ? "mb-1" : "mb-8")}>Checkout</h1>
       {isExpress && <p className="mb-7 text-sm text-ink-500">Buying 1 item — your cart is untouched.</p>}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] lg:gap-10">
@@ -387,7 +401,7 @@ function CheckoutForm() {
                       <span>
                         {item.productName} × {item.quantity}
                         {isEligible && (
-                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success-700">
+                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium ui-caps text-success-700">
                             Coupon
                           </span>
                         )}
@@ -423,7 +437,7 @@ function CheckoutForm() {
                     Apply
                   </Button>
                 </div>
-                {couponError && <p className="mt-1 text-xs text-danger-600">{couponError}</p>}
+                {couponError && <p className="ui-field-error">{couponError}</p>}
                 {coupon && (
                   <p className="mt-1 text-xs text-success-600">
                     Coupon &ldquo;{coupon.code}&rdquo; applied{coupon.freeShipping ? " — free shipping" : ""}
@@ -459,8 +473,8 @@ function CheckoutForm() {
                     <span className="text-ink-400">Select district</span>
                   ) : shipping.waived ? (
                     <span>
-                      <span className="mr-1.5 text-ink-400 line-through">{formatPrice(shipping.fee)}</span>
-                      <span className="font-medium text-success-600">Free</span>
+                      <span className="mr-1.5 text-fg-muted line-through">{formatPrice(shipping.fee)}</span>
+                      <span className="font-medium text-success-600">{shipping.waivedReason === "FREE_DELIVERY" ? "Free delivery" : "Free"}</span>
                     </span>
                   ) : (
                     <span>{formatPrice(shipping.charged)}</span>
@@ -481,6 +495,18 @@ function CheckoutForm() {
                 </div>
                 {quote && quote.tax.inclusive && quote.tax.taxAmount > 0 && (
                   <p className="text-xs text-ink-400">Includes VAT {formatPrice(quote.tax.taxAmount)}</p>
+                )}
+                {useStoreCredit && storeBalance > 0 && quote && (
+                  <div className="space-y-1.5" data-testid="checkout-store-balance-summary">
+                    <div className="flex justify-between text-success-600">
+                      <span>Store balance</span>
+                      <span>−{formatPrice(Math.min(storeBalance, quote.total))}</span>
+                    </div>
+                    <div className="flex justify-between font-medium text-ink-900">
+                      <span>To pay</span>
+                      <span>{formatPrice(Math.max(0, quote.total - storeBalance))}</span>
+                    </div>
+                  </div>
                 )}
                 {stockWarnings.map((w, i) => (
                   <p key={i} className="text-xs text-danger-600">
@@ -637,6 +663,26 @@ function CheckoutForm() {
               <h2 className="font-display text-lg text-ink-900">Payment method</h2>
             </div>
             <div className="space-y-2">
+              {/* Store balance (docs/ORDER_ADJUSTMENTS.md §6, §18): a payment choice, so it sits with the payment methods and is
+                  visible on every screen size. The server decides the amount; the summary only previews it. */}
+              {storeBalance > 0 && (
+                <label
+                  className="flex items-start gap-3 rounded-lg border border-success-200 bg-success-50 p-3 text-sm text-ink-700"
+                  data-testid="checkout-store-balance"
+                >
+                  <input type="checkbox" className="mt-0.5 accent-ink-900" checked={useStoreCredit} onChange={(e) => setUseStoreCredit(e.target.checked)} />
+                  <Wallet size={16} className="mt-0.5 shrink-0 text-success-600" />
+                  <span>
+                    Use my store balance
+                    <span className="block text-xs text-ink-500">Store Balance available: {formatPrice(storeBalance)}</span>
+                    {useStoreCredit && quote && (
+                      <span className="mt-1 block text-xs font-medium text-ink-900">
+                        −{formatPrice(Math.min(storeBalance, quote.total))} from your balance · To pay {formatPrice(Math.max(0, quote.total - storeBalance))}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              )}
               {codEnabled && (
                 <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
                   <input
@@ -693,11 +739,11 @@ function CheckoutForm() {
             </div>
             {(settingsData?.settings.paymentMethodsImageUrl ?? paymentMethods.length > 0) && (
               <div className="mt-4 border-t border-ink-100 pt-4">
-                <p className="mb-2 text-[11px] uppercase tracking-wide text-ink-400">Secure Payment Methods</p>
+                <p className="mb-2 text-[11px] ui-caps text-ink-400">Secure Payment Methods</p>
                 {settingsData?.settings.paymentMethodsImageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={settingsData.settings.paymentMethodsImageUrl}
+                    src={resolveImageUrl(settingsData.settings.paymentMethodsImageUrl)}
                     alt="Accepted payment methods"
                     className="h-auto w-full max-w-[220px] rounded-lg object-contain"
                   />
@@ -708,13 +754,13 @@ function CheckoutForm() {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           key={method.id}
-                          src={method.logoUrl}
+                          src={resolveImageUrl(method.logoUrl)}
                           alt={method.name}
                           title={method.name}
                           className="h-6 w-auto object-contain"
                         />
                       ) : (
-                        <span key={method.id} className="text-[11px] uppercase tracking-wide text-ink-400">
+                        <span key={method.id} className="text-[11px] ui-caps text-ink-400">
                           {method.name}
                         </span>
                       ),
@@ -734,7 +780,11 @@ function CheckoutForm() {
             className="w-full"
             disabled={isSubmitting || !anyPaymentMethodEnabled}
           >
-            {isSubmitting ? "Placing order…" : `Place Order — ${money(quote?.total)}`}
+            {isSubmitting
+              ? "Placing order…"
+              : useStoreCredit && storeBalance > 0 && quote
+                ? `Place Order — ${formatPrice(Math.max(0, quote.total - storeBalance))} to pay`
+                : `Place Order — ${money(quote?.total)}`}
           </Button>
         </form>
       </div>

@@ -14,7 +14,7 @@ Related: [TARGET_ARCHITECTURE.md §16](TARGET_ARCHITECTURE.md) · [PRICING_PIPEL
 
 | ID | Topic | Status | Implemented in |
 |---|---|---|---|
-| D1 | Revenue recognition (COD, returns, refunds) | APPROVED | Phase 1 (facts) · Phase 5 (metrics) |
+| D1 | Revenue recognition (COD, returns, refunds) | APPROVED · IMPLEMENTED (refund term resolved by PD-5.1) | Phase 1 (facts) · Phase 5 (metrics — [METRICS_REGISTRY.md](METRICS_REGISTRY.md)) |
 | D2 | Bundle discount on the post-flash price | APPROVED | Phase 1 |
 | D3 | Tax-inclusive pricing | APPROVED · IMPLEMENTED | Phase 1 (helper, analytics fix) · Phase 2 (tax engine, snapshot) |
 | D4 | Enforce `FlashSaleItem.stockLimit` | APPROVED · IMPLEMENTED | Phase 2 |
@@ -24,6 +24,20 @@ Related: [TARGET_ARCHITECTURE.md §16](TARGET_ARCHITECTURE.md) · [PRICING_PIPEL
 | D8 | Reward points on discounted merchandise, reversed on return/refund | APPROVED · IMPLEMENTED | Phase 2 |
 | D9 | Bundle first, then coupon | APPROVED · IMPLEMENTED | Phase 2 |
 | D10 | Shipping VAT-inclusive by default, configurable | APPROVED · IMPLEMENTED | Phase 2 |
+| D11 | Product free delivery: shipping waived only when every line is free-delivery | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED | Order adjustments ([ORDER_ADJUSTMENTS.md](ORDER_ADJUSTMENTS.md) §2) |
+| D12 | Paid-order changes: increase waits for verified payment; decrease → store credit | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED | Order adjustments §3.5 |
+| D13 | Store credit: ledger-derived, store-use only, no expiry/transfer/withdrawal | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED (policy details = safest defaults, see entry) | Order adjustments §4 |
+| D14 | Coupon on a modified order: cart conditions re-checked, capped at original discount, never restored once dropped | INTERPRETATION 2026-10-06 — owner may overrule | Order adjustments §3.3 |
+| D15 | Exchange downgrade difference → store credit by default (refund on request) | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED (amends D6 / P4-6 default) | Order adjustments §9 |
+| D16 | Payment links tied to amount + order revision; regenerate cancels the old one | REQUESTED BY OWNER 2026-10-06 · IMPLEMENTED | Order adjustments §11 |
+| D17–D21 | Installation isolation: one database per store, namespaced Redis/queues, installation-bound tokens | APPROVED (owner, 2026-10-06) · IMPLEMENTED | Portable multi-store foundation (Phase 1) — see *Installation isolation decisions* at the end |
+| D22 | Cancelling an order (Owner or Staff) requires a reason | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — `updateOrderStatusSchema` / `bulkOrderStatusSchema` |
+| D23 | Courier pickup moves the order to SHIPPED automatically | APPROVED (owner, 2026-10-08) · BLOCKED — Steadfast reports no pickup state (see entry) | — |
+| D24 | Phone orders entered by staff are created CONFIRMED by default | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — `createManualOrder` `confirmNow` |
+| D25 | Conversion rate = orders placed ÷ sessions | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — registry `conversion_rate` |
+| D26 | Delivery fees are set per zone (district / division / postcode), each with its own fee and free-delivery limit | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — Settings › Delivery zones (DR-17) |
+| D27 | Staff answer customer messages from the Inbox by email or SMS | APPROVED (owner, 2026-10-08) · IMPLEMENTED | Admin V2 — Inbox R2 conversations (DR-4) |
+| D28 | Audit log entries are kept forever (no retention job) | APPROVED (owner, 2026-10-08) | Admin V2 — DR-24 |
 
 Phase 2 implemented D3–D10 in the canonical pricing pipeline ([PRICING_PIPELINE.md](PRICING_PIPELINE.md),
 [PRICING_INVARIANTS.md](PRICING_INVARIANTS.md)). The interpretations Phase 2 had to make where a decision's wording
@@ -165,3 +179,243 @@ All registered in [SSOT_REGISTRY.md](SSOT_REGISTRY.md) (B2, B4).
 | D10 | Shipping is resolved before tax so its VAT can be computed on the fee actually charged. Merchandise VAT is unaffected by the order. | See PRICING_PIPELINE §1a (dependency graph). |
 | D3 | `Product.taxRate` remains unused; tax uses the store rate only. | No decision asks for per-product rates. |
 
+## Phase 4 implementation notes (interpretations, recorded 2026-09-29)
+
+Phase 4 (the Payment Ledger, [PAYMENT_LEDGER.md](PAYMENT_LEDGER.md)) adds **no new business rule**. It records money
+that D1, D6 and D8 already describe. Where the existing code or decisions left a detail open, this is the
+interpretation I implemented. The owner may overrule any of them with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P4-1 | Once any money has been received for an order (`paid > 0`), its total can't be changed by a price adjustment (409). Corrections after payment go through a refund. Before Phase 4 a paid gateway order could be adjusted, leaving `PAID` against a different total. | `PAID` must keep meaning "this total was received". A downward adjustment after payment is money owed back, which only a refund records. |
+| P4-2 | Refunds may be partial and repeated, up to what was actually received minus refunds already recorded or requested. A partial refund leaves the payment status `PARTIALLY_REFUNDED` (the M8 value planned since Phase 0). Only the full amount gives `REFUNDED`, and the T8 order-status rule still requires that. | Before Phase 4, any partial refund set `REFUNDED` and blocked the rest of the refund. |
+| P4-3 | D1 COD collection at delivery is recorded as a `COD` payment of the order's **balance due** (normally the total; less if part was prepaid and recorded). | D1 says delivery is the collection point. The ledger records the money instead of only flipping the status. |
+| P4-4 | "Refund due" for a cancelled or returned order is everything received (net of refunds already recorded or requested). For an active order it's only an overpayment (e.g. a duplicate gateway payment). | T6/T7 already raise "refund may be owed" for these cases; the ledger gives the amount. |
+| P4-5 | A manually recorded payment does not change the order status. (A gateway settlement still moves `PENDING → CONFIRMED`, as before.) A manual payment on a COD order is not accepted after courier booking, because the parcel's COD amount is fixed at booking. | Manual payments are recorded by staff who confirm orders themselves. The booking rule mirrors the existing price-adjustment and address-edit guards. |
+| P4-6 | A D6 exchange downgrade refund stays `REQUESTED` until staff record that they paid it out ("Complete"). Completing it reverses loyalty points like any refund (D8 interpretation (b)). | D6: "collected or refunded centrally". Before Phase 4 the request could never be completed. |
+| P4-7 | Legacy backfill: an order already marked paid (or a delivered COD order) with no payment record gets one settlement of its total, marked `backfilled`. Its status projection is corrected only by the explicit repair command. | D1 (delivered COD = collected) and the order's own recorded status are the only evidence used. Nothing is invented and no order row is rewritten. |
+
+
+## PD-5.1 — RESOLVED: realised net sales (Phase 5; raised and resolved 2026-09-30)
+
+- **Question (as raised).** The last term of D1's realised revenue, *"refunds not already counted as returns"*, had no
+  rule: a `Refund` isn't linked to what it pays back.
+- **Owner decision (2026-09-30).**
+  - **Realised net sales** = merchandise sales that have become financially realised, less applicable merchandise
+    refunds.
+  - Realisation is D1 unchanged (P5-1):
+    - online: when the payment settles;
+    - COD: when it is delivered, i.e. collected;
+    - unpaid or pending COD is not realised;
+    - an order cancelled before realisation is not realised.
+  - Historical facts only; never current product, tax, shipping, coupon or flash configuration; never "subtract the
+    order total".
+  - Shipping and tax stay separate metrics.
+  - An exchange replacement never double-counts merchandise.
+  - The Phase 4 ledger is the payment/refund truth.
+- **C1 — headline.**
+  - `realised_net_sales` is the canonical headline sales metric: dashboard, KPI strip, BI headline, AOV, customer net
+    spend, VIP/RFM.
+  - `net_sales` remains a **secondary** metric, labelled *"Net sales incl. shipping, less returns"*.
+  - No surface shows two concepts under "Revenue".
+- **C2 — merchandise VAT.** Merchandise is measured without VAT, using the order's own tax snapshot:
+  - `INCLUSIVE`: merchandise VAT = `taxAmount − shippingTaxAmount`.
+  - `EXCLUSIVE`: 0, because the charged price excludes it.
+  - Where the snapshot is insufficient: nothing is guessed, today's rate is never used, and the gap is reported as
+    coverage.
+  - Per-line VAT is a documented value-based **allocation** (largest remainder over line net). It was never stored per
+    line.
+  - `gross_merchandise_sales` is relabelled "as charged": it includes VAT on inclusive orders.
+- **C3 + C4 — refund allocation hierarchy.** Each completed refund of an order, in completion order:
+  1. **Payment overage first:** up to `max(0, payments settled by then − order total)`, minus overage already absorbed
+     by earlier refunds. It never reduces sales. *Example:* total 1000, payments 1200, refund 200 → overpayment refund;
+     merchandise sales unchanged.
+  2. **Goods first, capped:** the rest goes to merchandise, up to the order's remaining eligible merchandise (realised
+     merchandise as charged, less earlier merchandise refund parts; nothing before realisation). Sales fall by its
+     VAT-exclusive equivalent.
+  3. **Non-merchandise:** the remainder belongs to the order's other components (shipping, shipping VAT, exclusive
+     VAT, price adjustment). It doesn't reduce merchandise sales.
+
+  No pro-rata split is used. An exchange downgrade refund, which is pure merchandise, reduces sales in full.
+- **Implemented:** [METRICS_REGISTRY.md](METRICS_REGISTRY.md) §3, §4.1, §6. The pending key `realised_revenue` is
+  withdrawn.
+
+## Phase 5 implementation notes (interpretations, recorded 2026-09-30)
+
+Phase 5 ([METRICS_REGISTRY.md](METRICS_REGISTRY.md)) adds no business rule. It implements D1 and TARGET §11 and
+records these readings. **The owner reviewed all nine on 2026-09-30**; the decision column is authoritative and
+overrides the interpretation where they differ.
+
+| ID | Interpretation | Why | Owner decision (2026-09-30) |
+|---|---|---|---|
+| P5-1 | An online (non-COD) order is realised at its **first successful payment** (`Payment.settledAt`); a COD order at its first `DELIVERED`/`PARTIALLY_DELIVERED`, even if it was prepaid. | D1: "COD: `DELIVERED`… online: `paymentStatus` reached `PAID`". | APPROVED unchanged. |
+| P5-2 | A paid order that is later **cancelled** is not a sale. Its payment and refund count in cash metrics (`collected_cash`, `refunds`), not in sales. | TARGET §11 `SALE_ORDER` excludes cancelled orders; the goods never left. | **CHANGED → reversal at cancellation.** A sale realised before its cancellation stays in its realisation period and is reversed (every realised contribution, opposite sign) at the first `CANCELLED` status entry. No earlier period changes, and nothing extra is stored: it is derived from `OrderStatusHistory`, with no second ledger. Cancellation is read from history, not the current status (`CANCELLED → REFUNDED` is allowed). Cash metrics are unchanged. |
+| P5-3 | In an exchange, the original line's units coming back are **not a return**, and the replacement order is **not a sale**. A downgrade refund is a refund. An upgrade difference collected on the replacement is reported as `exchange_difference_collected` and isn't added to sales. | TARGET §11 excludes replacement orders from `SALE_ORDER`; the exchange keeps the original sale (return-request service: "the sale stands"). Counting either side again would double-count merchandise. | KEPT. Returned exchange units aren't a sale, the replacement isn't a sale, a downgrade difference is a refund (a merchandise refund under PD-5.1), and an upgrade difference is **not** merchandise sales under D6. Counting upgrades as incremental sales would need a new explicit decision. |
+| P5-4 | Customer spend (CRM list, VIP / HIGH_SPENDER tags, minimum-spend filter, SMS `totalSpent`, RFM) becomes `customer_net_spend`: realised, net of returns, trashed orders excluded. Unrealised COD orders no longer count toward VIP. | D1: placing an order isn't revenue; one definition for revenue and customer spend. | APPROVED. Spend, VIP/RFM and CLV use `realised_net_sales` (PD-5.1 C1). |
+| P5-5 | `aov` = `net_sales ÷ orders_realised` until PD-5.1 approves realised revenue. | TARGET §11 denominator; the pending numerator is replaced by its approved components. | **REPLACED.** `aov = realised_net_sales ÷ orders_realised`, both over the same realisation population, with the same cancellation reversals. |
+| P5-6 | COGS, gross margin, inventory turnover and dead-stock value use the **current** cost price and are flagged *estimated*. | TARGET §11: historical rows "fall back to current cost, flagged 'estimated'". No cost snapshot exists (`OrderItem.unitCostSnapshot` deferred). | APPROVED. Stays *estimated* until `OrderItem.unitCostSnapshot` exists. |
+| P5-7 | Category and brand reports attribute sold lines to the product's **current** category/brand. | No category/brand snapshot exists on `OrderItem`; historical re-attribution can't be reconstructed and isn't faked. | APPROVED limitation. Historical category/brand reports change if the catalog is reclassified; documented until snapshots exist. |
+| P5-8 | The store timezone is a store setting (`StoreSetting.timezone`, default `Asia/Dhaka`, today's behaviour). | Configuration over code (TARGET §7). | APPROVED. |
+| P5-9 | "Units ordered" (demand on placed sale orders) drives storefront urgency, trending and forecasts; "units sold" (realised, net of returns) drives sales reports. Before Phase 5 both used ad-hoc `NOT IN (CANCELLED, REFUNDED)` or `!= CANCELLED`. | TARGET §5.5: urgency and the sales panel share one predicate; demand and realised sales are different facts. | APPROVED. No product-level low-stock semantics. |
+
+## Phase 6 implementation notes (interpretations, recorded 2026-09-30)
+
+Phase 6 ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)) freezes the order-line facts reports need. These readings follow from
+the owner's Phase 6 brief ("never fabricate historical values"; "old orders remain explicitly unknown"); the owner may
+overrule any of them with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P6-1 | Cost, category, brand and product are snapshotted **once, in the transaction that writes the order line**: order creation (checkout, admin order, gateway settlement) and exchange-replacement creation. They never change afterwards. | The line is financially committed when written (price fixed, stock sold). Realisation or delivery would be a mutable, later moment. |
+| P6-2 | A line whose product had no cost price at order time records cost **unknown** (NULL), not 0. COGS and gross margin cover only lines with a recorded cost and report the rest as coverage. | "Missing cost = 0" overstated margin. An unknown isn't a zero. |
+| P6-3 | Lines written before Phase 6 are **not** backfilled with today's cost, category or brand. Reports group them as "Not recorded" and count them in cost coverage. The one backfill is `productIdSnapshot`, from the variant's product. | Today's catalog isn't history. A variant never changes product, so its product id is the true historical fact. |
+| P6-4 | The store currency is locked once any order exists: settings refuse the change (409 `CURRENCY_LOCKED`). | Orders record no currency. Every money snapshot, including the new minor-unit cost, means "store currency". Changing it would silently reinterpret all history. |
+| P6-5 | An exchange (P5-3) keeps the original line's cost and attribution (the original sale stands). The replacement line records its own snapshots for the record, but a replacement is not a sale, so it contributes no COGS or sales. | Consistent with D6/P5-3. Counting the replacement's cost would need a new decision, like upgrades (P5-3). |
+
+## Phase 7 implementation notes (interpretations, recorded 2026-09-30)
+
+Phase 7 ([PHASE_7_AUDIT.md](PHASE_7_AUDIT.md), [PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)) adds no business rule beyond
+these readings; the owner may overrule any with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P7-1 | A store may use only a currency the money engine represents exactly: `BDT USD EUR GBP INR JPY`. Other codes are rejected with 400. Adding one means adding it to the engine's minor-digit table. | The engine silently assumed 2 decimals for unknown codes. A wrong scale would reinterpret every amount, and `Intl` can't display a non-ISO code. |
+| P7-2 | Currency and timezone stay stored in `StoreSetting`. No `CommerceSettings` table in Phase 7. `domain/config/commerce-settings` is the single read path. | Storage already had one owner. A new table would have been a second copy during compatibility (Phase 7 boundary). |
+| P7-3 | Every business date shown to admins or customers (orders, payments, refunds, returns, reviews, coupons, "today") is the **store-timezone** date, not the viewer's device date. | Reports bucket by the store's business day (Phase 5). A viewer-local date could place an order on a different day than the reports. |
+| P7-4 | Currency symbols are derived from the store currency (`Intl` narrow symbol). The number locale stays `en-BD` until a locale setting exists. Transactional SMS copy is unchanged (Bengali content). | No locale concept exists yet (TARGET §7 future). The SMS copy is content, not configuration. |
+
+## Phase 11 decisions (owner, 2026-10-01)
+
+Phase 11 ([PHASE_11_IMPLEMENTATION_CONTRACT.md](PHASE_11_IMPLEMENTATION_CONTRACT.md),
+[PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)).
+
+| ID | Decision |
+|---|---|
+| BD-11.1 | A phone is a login identifier only after a successful OTP to it. OTP login matches only `phone = P AND phoneVerifiedAt IS NOT NULL`. At most one customer per verified phone (partial unique index). Unverified phones may repeat. A verified phone changes only through OTP of the new number; the old one stays the login until then. Existing phone data is never auto-verified |
+| BD-11.2 | No account merges and no record moves: orders, addresses, points, payments and refunds stay put. Existing duplicate or unverified phones remain allowed |
+| BD-11.3 | DB-backed customer refresh sessions, at most 7 days from login, rotating. Server-side logout, log out everywhere, and revocation on password change and reset; `tokenVersion` stays compatible. Reuse of a rotated or revoked token revokes that login's chain, with a 10-second grace window for concurrent tabs. `isBlocked` stays a CRM field. No account deletion |
+| BD-11.4 | Provider-neutral observability: correlation IDs, structured logs, error-capture interface, readiness, attention signals |
+| BD-11.5 | Brief deploy downtime acceptable, no blue/green: backup → verify → migrate → start → readiness (≤ 120 s) → fail if not ready; documented rollback |
+| BD-11.6 | **(a)** An existing passwordless customer record is claimed only after proving the matched identity: email (verification/claim link) or phone (OTP). Never by a match alone; never moving history; auditable; safe against concurrency |
+| BD-11.7 | **(a)** Guest checkout attaches to an existing customer only through an already **verified** phone or email; otherwise a guest record per existing guest semantics |
+| F-26 / F-27 | OTP sign-up never marks the email verified. Google `email_verified` is required for customer and admin Google sign-in |
+| R-1 | Existing OTP-only customers are not auto-verified; their first OTP sign-in after the deploy verifies the phone, asking again for their name and email |
+
+**Implementation readings** (recorded; the owner may overrule any with a new dated entry):
+
+| ID | Reading | Why |
+|---|---|---|
+| P11-1 | A guest record ("placeholder") is reused only for the exact same (phone, email) pair. A guest email already held by another unverified record is not used as a key; the order still keeps the email on the order itself | Grouping guests by phone *or* email let one placeholder collect different people's orders, so whoever later proved either identity could see the others' orders. Exact pairs make a claim expose only orders placed with the proven identity |
+| P11-2 | OTP proof of a phone claims the unclaimed guest record holding that phone **and** the email supplied at sign-up, else the one holding that phone with no email | The phone is proven, and the supplied email names which guest record is theirs. An email-only match is never claimed by a phone proof |
+| P11-3 | A record whose phone is verified but whose email isn't can't gain a password through that email (no reset email is sent). Its owner sets a password while signed in | The email on such a record was never proven by the phone's owner, so a stranger holding that mailbox must not take the account over |
+| P11-4 | Google links to an existing record only when that record is an unclaimed placeholder or its email is already verified; otherwise 409 ("sign in another way and verify your email first") | Google proves the Google user owns the email, not that the existing record's owner does |
+| P11-5 | Within the 10-second grace window a replayed refresh token gets a fresh access token but **no** new refresh token, so the session chain never forks. Outside the window the whole chain is revoked | Concurrent tabs keep working through the cookie the winning tab set; there is no unlimited replay window |
+
+**Review closure (2026-10-04).** These record the review of the two contract deviations and the historical-data question
+as explicit Phase 11 policy. P11-8 still needs the owner.
+
+| ID | Policy | Why it is safe |
+|---|---|---|
+| P11-6 | **OTP-only customer, first sign-in after the deploy (R-1).** An OTP to phone P may claim an unclaimed record (no password, no Google, no verified phone) that holds P: the one also holding the email supplied with the sign-in, else the one holding P and no email. The name and email are profile completion and select *which* P-record is meant; they are never proof. The phone becomes verified; the email stays unverified and gets its own link | The record was matched by P, and P is what the OTP proves, which is exactly what BD-11.6 (a) requires for a phone match. F-24 attached to a record because the *email* matched, with no proof of anything. Here an email match without P on the record is refused (409), and knowing P is useless without the code (5 wrong guesses per code and per phone per 30 min, counted atomically). Only credentials are attached; no history moves (BD-11.2). Before the deploy the same person could already sign in with this OTP |
+| P11-7 | **Session concurrency (refines P11-5).** The grace window runs from the token's single rotation (`rotatedAt` is written once, by the request that wins the rotation, and never by a replay). Inside it a replay gets only a 15-minute access token: no refresh token, no new row, no change to the family's fixed 7-day expiry. Revocation is checked first, so a revoked family gets nothing even inside the window. After the window, any replay revokes the family | Browser tabs share one cookie, and the web client single-flights refreshes only within a tab. Without the grace path, a tab losing the race gets a 401 and is sent to the login page. A thief replaying an already-rotated token inside the 10 s gains at most a 15-minute access token and no way to continue; a token stolen *before* rotation is no different with or without the grace path |
+| P11-8 | **Historical `emailVerifiedAt` (pre-Phase-11 OTP sign-ups, F-26).** Leave the values untouched in Phase 11. Before the deploy, the owner runs the read-only identification query (PHASE_11_SIGNOFF §10). If it returns rows, clearing their `emailVerifiedAt` is a separate, owner-approved, audited and reversible data fix; no schema change is needed | Clearing silently would change customer records without approval. The rows that matter are identifiable exactly: used verification and reset tokens are never deleted, so "verified, but no used token and no Google link" means the email was never proven. The residual risk is limited to records whose email was mistyped or foreign at an OTP sign-up (see the sign-off) |
+
+## Phase 10 implementation notes and open decisions (recorded 2026-10-01)
+
+Phase 10 ([PHASE_10_AUDIT.md](PHASE_10_AUDIT.md), [PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)) keeps every role capability
+exactly as it was (TARGET §15). It records these readings; the owner may overrule any of them with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P10-1 | A customer's order timeline shows the order's **status journey**: one entry per status change, with the note written on that change. Same-status entries are **staff annotations** and stay internal: follow-up holds ("call after 6pm"), address/price edit diffs, payment/refund bookkeeping, admin notes on an unchanged status. The return-request reply (`adminNote`) stays customer-visible as "Note from support". | The timeline was shared by staff and customers with no visibility flag, so internal call notes reached customers. Transition notes and the support reply were already customer-facing by design and stay so. |
+| P10-2 | The store always keeps **at least one active OWNER**. Demoting or deactivating the last one is refused (409), including when two owners act at the same moment. | Otherwise no one could manage the team, settings or repairs again without database access. |
+| P10-3 | Deactivating an admin or changing their role takes effect on their **next request**, not when their 15-minute session token expires. | TARGET §15 ("isActive and role re-checked"). A removed admin must lose access immediately. |
+
+**Owner decisions (resolved 2026-10-01):**
+
+| ID | Question | Decision | Enforcement |
+|---|---|---|---|
+| PD-10.1 | Should **permanent delete of coupons and categories** be OWNER-only, like permanent delete of orders and products? | **Yes: OWNER-only.** STAFF gets 403. Normal coupon and category work (create, edit, trash, restore) stays with STAFF | `DELETE /api/coupons/:id/permanent` → `promotions.purge` (new, OWNER-only); `DELETE /api/categories/:id/permanent` → `catalog.purge` (OWNER-only, already used for products) |
+| PD-10.2 | Should STAFF keep **refunds, manual payments, price adjustment, loyalty adjustment, ad-hoc/bulk SMS, exports and financial analytics (COGS/margin)**? | **Yes: STAFF keeps all of them.** OWNER remains fully privileged | unchanged STAFF permissions: `refunds.manage`, `payments.record`, `orders.adjust_price`, `loyalty.adjust`, `customers.message`, `orders.export` / `catalog.export` / `analytics.export`, `analytics.read` |
+
+## Phase 9 implementation notes (interpretations, recorded 2026-10-01)
+
+Phase 9 ([PHASE_9_AUDIT.md](PHASE_9_AUDIT.md), [PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)) adds no business rule beyond
+these readings; the owner may overrule any with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P9-1 | When a Steadfast booking **times out or gets a 5xx**, the order is flagged "Booking outcome unknown" and **can't be re-booked for 10 minutes**. The operator should check the Steadfast portal for the invoice (= order number) first. A definite rejection (4xx, validation) can be retried at once. | Steadfast may have created the consignment. Re-booking blind risks two shipments and two charges, and the duplicate-invoice behaviour isn't verified. |
+| P9-2 | An exchange is refused (409) when the original line has already been returned or exchanged, and the whole approval rolls back when the original units can't be taken back. | A replacement is only owed against units coming back. Otherwise the customer receives a second item for free. |
+| P9-3 | Resubmitting the same checkout, refund or payment form (same content) after a timeout returns the first result. Submitting it again **after a success** is a new operation. | A timeout retry must not double-charge or double-refund, while a deliberate second identical refund stays possible. |
+
+## Phase 8 implementation notes (interpretations, recorded 2026-09-30)
+
+Phase 8 ([PHASE_8_AUDIT.md](PHASE_8_AUDIT.md), [PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)) adds no business rule beyond
+these readings; the owner may overrule either with a new dated entry.
+
+| ID | Interpretation | Why |
+|---|---|---|
+| P8-1 | D8 loyalty points are awarded and reversed **inside** the transaction of the delivery / return / refund that causes them. If the points write fails, that status change or refund fails too and can be retried. Before Phase 8, the change committed and the points were silently lost. | Points are business truth: they may not be lost after commit, and an outbox worker may not write truth. The award is row-locked, so concurrent deliveries can't double-award. |
+| P8-2 | Order SMS / receipt email respect the admin's toggles **at send time**, including after an outage. An intent disabled in the meantime is not sent. | Same behaviour as before, when the send happened immediately. It avoids messages the owner has switched off. |
+
+## Order adjustments decisions (recorded 2026-10-06)
+
+Requested by the owner in the order-adjustments brief; where the brief left a detail open, the interpretation below was
+implemented and may be overruled with a new dated entry. Full rules: [ORDER_ADJUSTMENTS.md](ORDER_ADJUSTMENTS.md).
+
+| ID | Decision / interpretation | Why |
+|---|---|---|
+| D11 | Free delivery is all-or-nothing over the cart's purchasable lines; precedence COUPON > FREE_DELIVERY > FREE_OVER; the free-over threshold counts every line. No pro-rata fee. | Deterministic, explainable at checkout, never frees a normal product's delivery. |
+| D12 | An online-paid order whose change raises the total stays unchanged until the difference is verified paid (the settlement applies the change); if it can no longer be applied, the payment goes to store credit. COD orders / orders with nothing paid apply at once and the difference is due. Staff may apply now and collect later. | "Do not treat an initiated payment as successful"; never oversell; money never lost. |
+| D13 | Store credit never expires, is never withdrawn as cash or transferred, is usable on any order of the account holder (storefront or staff-entered), for merchandise and shipping, with coupons, and as partial payment. Spending requires the signed-in account (never phone matching). | No existing policy; these are the safest defaults and match the brief's "store-use only". |
+| D14 | See summary row. The cap is the coupon discount from the order's first `before` snapshot. | Prevents gaining discount by editing repeatedly; keeps redemption accounting intact. |
+| D15 | Exchange downgrade defaults to store credit; staff may choose a REQUESTED refund instead; orders without a customer account can only be refunded. | Brief §9 ("customer receives ৳300 credit"). |
+| D16 | One ACTIVE link per order; amount = ledger balance due or a waiting change's difference; a link closes when the order changes, is cancelled or is paid. | A stale link must never collect the wrong amount. |
+| OA-1 | Item-level return value = the line's allocated value (price × qty − allocated bundle/coupon, + merchandise VAT share when tax-exclusive), prorated by units. Shipping is not refunded on an item return. A whole-order RETURNED still follows P4-4 (everything received is owed back). | Brief §8 ("never price × quantity when discounts were involved"). |
+| OA-2 | Customer self-service window: PENDING and CONFIRMED (not after courier booking). Staff: every pre-shipment status. | CONFIRMED means confirmed by call/payment; nothing picked yet. |
+
+## Admin V2 decisions (owner, 2026-10-08)
+
+Asked during the Store Console redesign (Blueprint V2 decision register DR-5, DR-8, DR-10, DR-11, DR-22). IDs D17–D21
+are the installation-isolation decisions on the portable-foundation line.
+
+| ID | Decision | Notes |
+|---|---|---|
+| D22 | An admin cancelling an order gives a reason. Owner and Staff both may cancel (no new permission). | Enforced at the API boundary for single and bulk status changes (`cancellationReasonMissing`, minimum 3 characters). The reason is the transition note, so it is on the order timeline and in the audit trail. Courier reports and customer self-cancel write their own note and are unaffected. |
+| D23 | When the courier picks a parcel up, the order moves to SHIPPED by itself. | **Not implementable with Steadfast today:** its status API never reports a picked-up / in-transit state (only `in_review` / `pending` / `hold` until `delivered` / `partial_delivered` / `cancelled`; see `courier.service.ts`). SHIPPED therefore stays a staff action. Revisit if Steadfast adds a pickup status or webhook, or with another courier that reports one. |
+| D24 | A phone order staff enter is confirmed on that call: created CONFIRMED by default, with a checkbox to leave it PENDING. | `createManualOrder({ confirmNow })` applies the PENDING → CONFIRMED transition inside the order's insert transaction, attributed to the admin; stock is reserved once, as for any order. The customer gets the "order placed" SMS (no separate "confirmed" SMS for an order they just confirmed). |
+| D25 | Conversion rate = orders placed ÷ storefront sessions in the same business-date range. | To be added to the metrics registry as a behavioural-family metric (orders with a `sessionId` ÷ distinct sessions), so Home, Analytics and AI read one definition. |
+| D26 | Delivery fees are set per zone. A zone covers districts, whole divisions and/or postcodes and has its own fee and optional "free delivery over" amount; the matching active zone with the highest priority wins, the default zone covers everywhere else. | The two zones the store started with (inside Dhaka district, rest of the country) can't be deleted and their fees still mirror the legacy setting fields; the default zone can't be switched off or given rules. A free-shipping coupon or an all-free-delivery cart still waives the fee. |
+| D27 | Customer messages are conversations, and staff reply from the Store Console by email (when the customer left an address) or SMS (when they left a phone). | Contact-form messages became WEB_FORM conversations (backfilled from Feedback; read = handled). A reply is recorded together with its send intent (outbox), so it is recorded if and only if it will be sent; replying marks the conversation handled. Each reply shows Sending / Sent / Not delivered from the outbox. SMS replies are signed with the store name, max 600 characters. A message is linked to a customer only when that customer has verified the phone (anyone can type any number). WhatsApp / Messenger remain links out (DR-4 c, later). |
+| D28 | The audit log is kept forever: no retention or deletion job. | The table is small today; if it ever becomes large, archiving (not deleting) is the next step and needs a new decision. Rows are append-only by convention (no update/delete API). |
+| DR-8 | Required reasons (Blueprint recommendation, applied under "do all Blueprint work"): besides cancelling (D22), the correction SHIPPED → PACKED (T3) and rejecting a return or exchange request need a written reason. | T3 is checked in `applyOrderTransition` against the locked status (`transitionNeedsReason`); the rejection reason is the request's `adminNote`, which the customer sees on their order. Stock adjustments already required a reason. Routine forward moves need none. |
+| DR-5 | Cancelling an order is its own permission, `orders.cancel` (Blueprint recommendation; owner 2026-10-08: Owner and Staff may cancel). | Both fixed roles hold it, so nobody's access changed. A move to Cancelled — the order's status, the bulk status action and the assistant's cancel tool — checks it on top of `orders.manage`; the Store Console only offers Cancel to admins who have it. Other permissions from the DR-5 options (`catalog.publish`, `promotions.read`) wait for a role that needs them. |
+| DR-19 | Superseded: the per-phase `ADMIN_V2_*` feature flags were for shipping phases dark per store. Every phase is complete, so there is nothing left to switch; none were added. | — |
+| DR-23 | AI action policy (Blueprint recommendation): the assistant reads freely within the admin's permissions, but every change is a proposal an admin confirms; one entity per action (bulk tools capped at 50). | New permission `ai.execute` (OWNER-only). Tools run the same domain commands people use (`updateOrderStatus`, `adjustVariantStock`); a proposal expires after 10 minutes and is refused if what it was previewed against changed. Phones are masked in what the model sees. Every proposal, confirm, refusal and cancel is audited with `source: "ai"`. First tools: metrics, find/get order, stock levels (read); cancel order, adjust stock (propose). |
+
+**Engineering note — Customers list (Blueprint V2 PERF-01), 2026-10-09: done.** The list and its stats now filter, sort
+and page in SQL over the `CustomerFact` read model, kept current by an incremental sync before each read (see
+METRICS_REGISTRY §4.3 "Customer list read model"). Same figures, tags and filters as before (equivalence tests); name
+sorting is case-insensitive in code-point order, ties sort newest first. Measured p95 86 ms on 50,475 customers.
+
+**Engineering note — Customers list (Blueprint V2 PERF-01), 2026-10-08 (superseded above).** Not moved to SQL yet. Measured on the
+Asif Zone demo mirror (467 customers): list 16–45 ms, stats 13 ms. The list's spend and order count are the registry
+metrics (`customerMetricsIndex` → `realised_net_sales`, `orders_placed`); filtering and sorting them in SQL would mean
+a second implementation of those metrics. The planned path is the per-customer daily facts of PERF-02, maintained by
+the metrics engine, which the list then joins and pages in SQL. Revisit when a list request exceeds ~300 ms.
+Also fixed: admin and draft-preview pages were being recorded as storefront pageviews (inflating sessions — the D25
+denominator); the tracker and the beacon now refuse them (`isStorefrontPath`). Rows recorded before the fix remain.
+
+## Installation isolation decisions (owner, 2026-10-06)
+
+One codebase serves many stores. Each store is one **installation** ([STORE_DEPLOYMENT.md](STORE_DEPLOYMENT.md)). These
+decisions make sure two installations never see, use or disturb each other's data, even when they share a server.
+
+| ID | Decision | Why | Enforcement |
+|---|---|---|---|
+| D17 | **Session tokens are bound to their installation.** Every admin access, customer access and customer refresh token carries `aud = install:<INSTALL_ID>`. A token naming another installation is refused (401), even if the two installations share JWT secrets. **Legacy compatibility:** a token without `aud` was issued before this rule; it stays valid until it expires (access tokens: minutes; customer refresh tokens: their normal TTL), so the deploy that introduces the claim logs nobody out. | Installations must use different secrets, but a copied `docker/.env` is an easy mistake. With shared secrets, an id that exists in both databases (e.g. a store started from another store's dump) would otherwise let one store's session into the other. Admin refresh tokens and customer sessions are opaque rows in the installation's own database, so they never cross. | `apps/api/src/config/installation.ts` (`TOKEN_AUDIENCE`, `assertTokenInstallation`) used by `lib/jwt.ts` and `lib/customer-jwt.ts`; `domain/identity/installation-tokens.integration.test.ts` |
+| D18 | **One database per installation; no `storeId` columns.** Products, orders, customers, admins (OWNER/STAFF), Store Balance, payments, payment links, coupons, settings and analytics belong to the installation whose database holds them. Customers and admins are per store: the same email in two stores is two separate accounts with separate sessions, balances and permissions. Nothing is shared between installations. Global reference data (country module rules, the code itself) lives in the source, not in a shared table. | It is the existing production design (Phase 12) and isolates every financial path with zero changes to the business logic. Pooled multi-tenancy (a `storeId` on 88 models, 85 unique constraints, ~1,300 query sites) was rejected for this phase as high-risk for money. | `docker/docker-compose.yml` (`POSTGRES_DB`, `COMPOSE_PROJECT_NAME` per installation); proved by `pnpm --filter api test:installations` |
+| D19 | **Redis is namespaced by installation.** Every cache entry, distributed lock and Next.js data-cache tag lives under `install:<INSTALL_ID>:`. The same logical key in two installations is two entries; one installation's invalidation never touches the other. No code builds a Redis key or cache tag by hand. | Installations may share one Redis server. Before Phase 1, analytics caches collided across processes on a shared Redis. | `packages/shared/src/installation.ts` (`installationNamespace`); API cache helpers in `config/redis.ts`; web `cacheTag()` in `lib/runtime-config.ts`; guards: `domain/config/installation-isolation.guard.test.ts` (Redis connections, raw keys) and the web ESLint rules (cache tags only via the storefront fetch wrapper and the revalidate route) |
+| D20 | **Queues and jobs carry their installation by construction.** Every BullMQ queue and worker uses the installation prefix (`install:<id>:bull`), so a worker only ever consumes its own installation's jobs, and a job runs against the database of the process that consumes it. Jobs never carry or trust a store id from their payload. | A job can't run against the wrong store's data if workers can't even see another installation's queues. | `lib/queue.ts` `createQueue()`, `lib/observability/jobs.ts` `createObservedWorker()`; the isolation guard allows BullMQ constructors only there |
+| D21 | **Isolation is proved with two real installations.** The proof starts two API processes from one checkout, on two disposable databases and one shared Redis, deliberately with the same JWT secrets. It checks admins, staff, products, customers, orders, locks, analytics, the settings cache and queues. It also asserts that every key in the shared Redis is inside one installation's namespace. Disposable resources only; they are dropped afterwards. | Unit tests show the key names differ; only two running stores show nothing leaks. | `apps/api/scripts/isolation/two-installations.ts` (`pnpm --filter api test:installations`) |

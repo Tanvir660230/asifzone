@@ -60,7 +60,7 @@ export function NewsletterForm({ variant = "dark", stacked = false, className }:
           type="submit"
           disabled={status === "loading"}
           className={cn(
-            "glossy h-10 rounded-full px-4 text-xs uppercase tracking-wide shadow-sm transition-all duration-200 ease-smooth active:scale-95 disabled:opacity-50 disabled:active:scale-100",
+            "glossy h-10 rounded-full px-4 text-xs ui-caps shadow-sm transition-all duration-200 ease-smooth active:scale-95 disabled:opacity-50 disabled:active:scale-100",
             stacked ? "w-full" : "shrink-0",
             variant === "dark" ? "bg-brass-400 text-ink-900 hover:bg-brass-500" : "bg-ink-900 text-cream-50 hover:bg-ink-800",
           )}

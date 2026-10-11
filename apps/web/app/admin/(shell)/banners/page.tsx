@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/admin/page-header";
-import { ContentSubNav } from "@/components/admin/content-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { BannerForm } from "@/components/admin/banner-form";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
@@ -28,6 +28,7 @@ import * as bannersApi from "@/lib/api/admin-banners";
 import { ApiError } from "@/lib/api-client";
 import { scheduleStatus } from "@/lib/datetime-local";
 import { cn } from "@/lib/utils";
+import { resolveImageUrl } from "@/lib/image-url";
 
 export default function BannersPage() {
   const queryClient = useQueryClient();
@@ -106,7 +107,7 @@ export default function BannersPage() {
   return (
     <div>
       <PageHeader
-        title="Homepage Banners"
+        title="Banners"
         action={
           <Button variant="brass" onClick={openCreate}>
             <Plus size={16} /> Add banner
@@ -114,7 +115,7 @@ export default function BannersPage() {
         }
       />
 
-      <ContentSubNav />
+      <ModuleTabs />
 
       {isLoading && <p className="text-ink-400">Loading…</p>}
       {!isLoading && banners.length === 0 && (
@@ -178,7 +179,7 @@ function SortableBannerCard({
     >
       <div className="relative">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={banner.imageUrl} alt={banner.altText ?? banner.title ?? ""} className="h-36 w-full object-cover" />
+        <img src={resolveImageUrl(banner.imageUrl)} alt={banner.altText ?? banner.title ?? ""} className="h-36 w-full object-cover" />
         <button
           type="button"
           className="absolute left-2 top-2 touch-none rounded-full bg-ink-900/60 p-1.5 text-cream-50 active:cursor-grabbing"

@@ -11,7 +11,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { AttributeForm } from "@/components/admin/attribute-form";
 import { PageHeader } from "@/components/admin/page-header";
-import { ProductsSubNav } from "@/components/admin/products-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as attributesApi from "@/lib/api/attributes";
@@ -113,7 +113,7 @@ export default function AttributesPage() {
         }
       />
 
-      <ProductsSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         Define reusable option types (Color, Size, Fabric, Pattern…) and their values — used to build variant
@@ -125,8 +125,8 @@ export default function AttributesPage() {
           Orders/Customers/Products admin pages. */}
       <div className="hidden overflow-hidden rounded-lg border border-ink-100 bg-cream-50 sm:block">
         <HScrollShadow className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Values</th>

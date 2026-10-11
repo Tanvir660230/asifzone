@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, type MutableRefObject, type RefObject } from "react";
+import { pushLayer } from "@/lib/layer-stack";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -13,6 +14,9 @@ interface UseFocusTrapOptions {
    * off-canvas overlay in the app wants this; opt out only for something that doesn't cover the
    * page (there's currently no such case, but the option exists rather than assuming). */
   lockScroll?: boolean;
+  /** Receives this overlay's layer id while open (null when closed) — for key handling that belongs to the top layer
+   * only (lib/layer-stack.ts `isTopLayer`). */
+  layerRef?: MutableRefObject<number | null>;
 }
 
 /** The Tab-cycle / Escape-to-close / focus-restore-on-close recipe every modal-like overlay in the
@@ -21,14 +25,33 @@ interface UseFocusTrapOptions {
  * SearchOverlay, and the product gallery lightbox — each of those let a keyboard user Tab out into
  * the page behind the overlay. One hook now backs all of them.
  *
+ * Escape goes through the layer stack (lib/layer-stack.ts): with a popover open over a drawer, Escape closes only the
+ * popover.
+ *
  * Returns a ref to attach to the overlay's outermost focusable container. */
 export function useFocusTrap<T extends HTMLElement>({
   active,
   onEscape,
   lockScroll = true,
+  layerRef,
 }: UseFocusTrapOptions): RefObject<T | null> {
   const panelRef = useRef<T>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const onEscapeRef = useRef(onEscape);
+  useEffect(() => {
+    onEscapeRef.current = onEscape;
+  });
+
+  // Registered once per open (not per render), so a re-rendering parent can't push this layer back over a newer one.
+  useEffect(() => {
+    if (!active) return;
+    const layer = pushLayer(() => onEscapeRef.current());
+    if (layerRef) layerRef.current = layer.id;
+    return () => {
+      layer.pop();
+      if (layerRef) layerRef.current = null;
+    };
+  }, [active, layerRef]);
 
   useEffect(() => {
     if (!active) return;
@@ -40,10 +63,6 @@ export function useFocusTrap<T extends HTMLElement>({
     (focusable[0] ?? panel)?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        onEscape();
-        return;
-      }
       if (e.key !== "Tab" || !panel) return;
 
       const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
@@ -67,7 +86,9 @@ export function useFocusTrap<T extends HTMLElement>({
       if (lockScroll) document.body.style.overflow = "";
       triggerRef.current?.focus();
     };
-  }, [active, onEscape, lockScroll]);
+    // onEscape is read through a ref: a parent's fresh closure must not re-run this setup (which would steal focus back
+    // to the first field on every parent render).
+  }, [active, lockScroll]);
 
   return panelRef;
 }

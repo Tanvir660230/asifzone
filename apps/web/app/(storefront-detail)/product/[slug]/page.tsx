@@ -1,7 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import type { Metadata } from "next";
 import { ProductPageView } from "@/components/storefront/product-page-view";
-import { findProductRedirect, getProductBySlug } from "@/lib/api/storefront";
+import { findProductRedirect, getProductBySlug, getSiteSettings } from "@/lib/api/storefront";
 import { buildOpenGraph, productSeoFields } from "@/lib/seo";
 
 interface Props {
@@ -20,7 +20,7 @@ async function loadProduct(slug: string) {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const data = await loadProduct(slug);
+  const [data, { settings }] = await Promise.all([loadProduct(slug), getSiteSettings()]);
   if (!data) return { title: "Product" };
 
   const { title, description, canonical, og } = productSeoFields(data.product);
@@ -28,7 +28,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title,
     description,
     alternates: { canonical },
-    ...buildOpenGraph({ title: og.title, description: og.description, url: canonical, images: og.images }),
+    ...buildOpenGraph({ title: og.title, description: og.description, url: canonical, siteName: settings.storeName, images: og.images }),
   };
 }
 

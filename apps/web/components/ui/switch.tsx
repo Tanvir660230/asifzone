@@ -21,13 +21,13 @@ export const Switch = forwardRef<HTMLButtonElement, SwitchProps>(
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ring-1 ring-inset transition-colors duration-200 ease-smooth disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-ink-800 ring-ink-900" : "bg-ink-300 ring-ink-400",
+        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ring-1 ring-inset transition-colors duration-base ease-smooth disabled:cursor-not-allowed disabled:opacity-50",
+        checked ? "bg-accent ring-accent" : "bg-ink-300 ring-ink-400",
       )}
     >
       <span
         className={cn(
-          "inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ease-smooth",
+          "inline-block transform rounded-full bg-white shadow-sm transition-transform duration-base ease-smooth",
           checked ? "translate-x-6" : "translate-x-1",
         )}
         style={{ height: "1.125rem", width: "1.125rem" }}

@@ -90,6 +90,15 @@ export const cartAbandonment = asyncHandler(async (_req: Request, res: Response)
   res.json(await analyticsService.getCartAbandonmentSummary());
 });
 
+export const abandonedCarts = asyncHandler(async (req: Request, res: Response) => {
+  const { limit = 50 } = query(req);
+  res.json({ carts: await analyticsService.listAbandonedCarts(limit) });
+});
+
+export const remindAbandonedCarts = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await analyticsService.remindAbandonedCarts(req.body.customerIds, req.body.body));
+});
+
 export const customerInsights = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await analyticsService.getCustomerInsights());
 });
@@ -356,7 +365,7 @@ export const courierPerformance = asyncHandler(async (req: Request, res: Respons
 
 export const profitTrend = asyncHandler(async (req: Request, res: Response) => {
   const { days = 30 } = query(req);
-  res.json({ series: await analyticsService.getProfitTrend(days) });
+  res.json(await analyticsService.getProfitTrend(days));
 });
 
 export const financialCostBreakdown = asyncHandler(async (req: Request, res: Response) => {
@@ -441,7 +450,8 @@ export const exportRevenueSeriesCsv = asyncHandler(async (req: Request, res: Res
   const { days = 365 } = query(req);
   const series = await analyticsService.getRevenueSeries(days);
   const csv = toCsv(
-    ["Date", "Revenue", "Orders"],
+    // Registry metrics (docs/METRICS_REGISTRY.md): realised_net_sales and orders_realised per business day.
+    ["Date", "Realised net sales", "Orders realised"],
     series.map((p) => [p.date, p.revenue, p.orders]),
   );
   sendCsv(res, "revenue", csv);

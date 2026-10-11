@@ -1,12 +1,13 @@
 /// <reference types="node" />
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
+import { resolveSeedAdminCredentials } from "../src/lib/seed-credentials";
 
 const prisma = new PrismaClient();
 
 async function seedAdmin() {
-  const email = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
-  const password = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
+  // Phase 11 (F-14): outside development/test this throws unless real SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD are set.
+  const { email, password, usedDefaults } = resolveSeedAdminCredentials();
 
   const existing = await prisma.adminUser.findUnique({ where: { email } });
   if (existing) {
@@ -19,7 +20,8 @@ async function seedAdmin() {
     data: { name: "Store Owner", email, passwordHash, role: "OWNER" },
   });
 
-  console.log(`Created admin user: ${email} / ${password} (change this password after first login)`);
+  // Never print a real password; the local/test default is public anyway.
+  console.log(usedDefaults ? `Created admin user: ${email} / ${password} (local default — change it after first login)` : `Created admin user: ${email}`);
 }
 
 /** Comprehensive demo products across all categories and sections so a fresh database is fully populated

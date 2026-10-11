@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { bdPhoneSchema, nullableBdPhone, nullableEmail, nullableString, paginationQuerySchema } from "./common";
-import { BD_DIVISIONS } from "./order";
+import { BD_DIVISIONS } from "../country/bd";
 
 export const customerRegisterSchema = z.object({
   name: z.string().min(1, "Enter your name").max(200),
@@ -75,6 +75,27 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(8, "Use at least 8 characters"),
 });
 
+/** Phase 11 (BD-11.1): verify a phone for the signed-in customer — the account's current phone, or a new login phone. */
+export const phoneVerificationRequestSchema = z.object({
+  phone: bdPhoneSchema(),
+});
+
+export const phoneVerificationConfirmSchema = z.object({
+  phone: bdPhoneSchema(),
+  code: z.string().length(6, "Enter the 6-digit code"),
+});
+
+/** Phase 11 (BD-11.3): a signed-in customer sets or changes their password; the current one is required when one exists. */
+export const changeCustomerPasswordSchema = z.object({
+  currentPassword: z.string().min(1).optional(),
+  newPassword: z.string().min(8, "Use at least 8 characters"),
+});
+
+/** Phase 11 (BD-11.6 a): follow the emailed link that proves ownership of an existing account's email. */
+export const confirmCustomerClaimSchema = z.object({
+  token: z.string().min(1),
+});
+
 export const customerTagEnum = z.enum([
   "NEW",
   "REPEAT",
@@ -97,9 +118,8 @@ export const customerListQuerySchema = paginationQuerySchema.extend({
   lastOrderDays: z.coerce.number().int().positive().optional(),
   minSpend: z.coerce.number().nonnegative().optional(),
   minOrders: z.coerce.number().int().nonnegative().optional(),
-  // Computed columns (totalSpent/totalOrders/lastOrderAt), not plain Customer columns — sorted
-  // in-memory by listCustomersAdmin rather than via Prisma orderBy. Fine at this store's customer
-  // volumes; revisit with a raw aggregate query if that stops being true.
+  // totalSpent/totalOrders/lastOrderAt are the CustomerFact read model's columns (Blueprint V2 PERF-01) — sorted in SQL by
+  // listCustomersAdmin; ties sort newest first.
   sortBy: z.enum(["name", "createdAt", "totalSpent", "totalOrders", "lastOrderAt"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
 });
@@ -131,6 +151,10 @@ export const sendAdHocSmsSchema = z.object({
 });
 
 export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
+export type PhoneVerificationRequestInput = z.infer<typeof phoneVerificationRequestSchema>;
+export type PhoneVerificationConfirmInput = z.infer<typeof phoneVerificationConfirmSchema>;
+export type ChangeCustomerPasswordInput = z.infer<typeof changeCustomerPasswordSchema>;
+export type ConfirmCustomerClaimInput = z.infer<typeof confirmCustomerClaimSchema>;
 export type CustomerLoginInput = z.infer<typeof customerLoginSchema>;
 export type GoogleLoginInput = z.infer<typeof googleLoginSchema>;
 export type RequestOtpInput = z.infer<typeof requestOtpSchema>;

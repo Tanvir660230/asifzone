@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { HydrationBoundary } from "@tanstack/react-query";
+import { prefetchAdminSession } from "@/lib/admin/session-prefetch";
 
 export const metadata: Metadata = {
   title: "Store Console",
@@ -12,6 +14,9 @@ export const metadata: Metadata = {
 // Admin must always be live/session-aware, never cached or statically served.
 export const dynamic = "force-dynamic";
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
-  return children;
+// The signed-in admin and provider capabilities arrive with the page (lib/admin/session-prefetch.ts), so permission-gated
+// queries start on hydration instead of one round trip later.
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  const session = await prefetchAdminSession();
+  return session ? <HydrationBoundary state={session}>{children}</HydrationBoundary> : children;
 }

@@ -1,6 +1,6 @@
 import { revalidateTag } from "next/cache";
 import { NextResponse } from "next/server";
-import { env } from "@/lib/env";
+import { cacheTag, serverRuntimeConfig } from "@/lib/runtime-config";
 
 /** Server-to-server only — the API calls this right after a product mutation so the storefront's
  * Next.js data cache doesn't have to wait out its own revalidate window (see lib/api/storefront.ts's
@@ -14,10 +14,10 @@ import { env } from "@/lib/env";
  * on its own within the normal ISR window, so a broken/unset secret degrades to today's behavior
  * rather than breaking anything. */
 export async function POST(req: Request) {
-  if (!env.revalidateSecret) {
+  if (!serverRuntimeConfig().revalidateSecret) {
     return NextResponse.json({ error: "REVALIDATE_SECRET is not configured" }, { status: 503 });
   }
-  if (req.headers.get("X-Revalidate-Secret") !== env.revalidateSecret) {
+  if (req.headers.get("X-Revalidate-Secret") !== serverRuntimeConfig().revalidateSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "`tags` must be a non-empty string array" }, { status: 400 });
   }
 
-  for (const tag of tags as string[]) revalidateTag(tag);
+  // The API sends plain tags; this installation's cache stores them namespaced (lib/api/storefront.ts, Phase 1C).
+  for (const tag of tags as string[]) revalidateTag(cacheTag(tag));
   return NextResponse.json({ revalidated: tags });
 }

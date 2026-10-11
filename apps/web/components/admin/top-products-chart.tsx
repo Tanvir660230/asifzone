@@ -2,9 +2,9 @@ import Link from "next/link";
 import { Package, PackageSearch } from "lucide-react";
 import type { TopProduct } from "@/lib/api/admin-analytics";
 import { formatPrice } from "@/lib/format";
-import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 import { productEditHref } from "@/lib/admin-routes";
+import { Thumbnail } from "@/components/admin/thumbnail";
 
 // First three get a graded dark-to-light badge so #1 reads unmistakably as #1; everything past
 // that is a neutral tie rather than an arbitrary shade.
@@ -38,7 +38,7 @@ export function TopProductsChart({ products }: { products: TopProduct[] }) {
 
             <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
               {p.imageUrl ? (
-                <img src={resolveImageUrl(p.imageUrl)} alt="" className="h-full w-full object-cover" />
+                <Thumbnail src={p.imageUrl} alt="" className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">
                   <Package size={16} className="text-ink-300" />

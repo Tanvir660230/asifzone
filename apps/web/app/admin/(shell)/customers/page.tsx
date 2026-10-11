@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Search,
   XCircle,
   SlidersHorizontal,
   Users,
@@ -21,8 +20,9 @@ import {
   ArrowUpDown,
   UserX,
 } from "lucide-react";
-import { BD_ALL_DISTRICTS, normalizeBdPhone, type CustomerTag } from "@clothing-brand/shared";
+import { BD_ALL_DISTRICTS, type CustomerTag, toBdInternationalDigits } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -42,12 +42,19 @@ import { SmsComposer } from "@/components/admin/sms-composer";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
 import type { AdminCustomerListParams } from "@/lib/api/admin-customers";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
 import { TAG_META, primaryTag } from "@/lib/customer-tags";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 const PAGE_SIZE = 20;
+/** Segment tabs: plain text, the selected one on a soft grey capsule (same as the Orders status tabs). */
+const SEGMENT_BASE =
+  "flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+const SEGMENT_ON = "bg-ink-900/[0.08] text-fg";
+const SEGMENT_OFF = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
+
 const TAG_OPTIONS: CustomerTag[] = [
   "NEW",
   "REPEAT",
@@ -62,11 +69,11 @@ const TAG_OPTIONS: CustomerTag[] = [
 type QuickFilter = "noOrders" | "dhaka" | "gazipur" | "last30" | "last90" | null;
 
 const QUICK_FILTERS: Array<{ id: Exclude<QuickFilter, null>; label: string }> = [
-  { id: "noOrders", label: "No Orders" },
+  { id: "noOrders", label: "No orders" },
   { id: "dhaka", label: "Dhaka" },
   { id: "gazipur", label: "Gazipur" },
-  { id: "last30", label: "Last 30 Days" },
-  { id: "last90", label: "Last 90 Days" },
+  { id: "last30", label: "Ordered in 30 days" },
+  { id: "last90", label: "Ordered in 90 days" },
 ];
 
 function quickFilterParams(filter: QuickFilter): Partial<AdminCustomerListParams> {
@@ -92,8 +99,7 @@ function initials(name: string): string {
 }
 
 function waLink(phone: string): string {
-  const local = normalizeBdPhone(phone);
-  return `https://wa.me/880${local.slice(1)}`;
+  return `https://wa.me/${toBdInternationalDigits(phone)}`;
 }
 
 function CustomerCardSkeleton({ first = false }: { first?: boolean }) {
@@ -125,6 +131,7 @@ function SortableHeader({
   const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
     <button
+      type="button"
       onClick={() => onSort(column)}
       className={cn(
         "flex items-center gap-1 whitespace-nowrap font-medium uppercase tracking-wide transition-colors",
@@ -138,6 +145,7 @@ function SortableHeader({
 }
 
 export default function CustomersPage() {
+  const { sms: smsAvailable } = useProviderCapabilities(); // Phase 12 D-4: SMS actions only when SMS is configured
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<CustomerTag | "">("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>(null);
@@ -161,6 +169,7 @@ export default function CustomersPage() {
 
   const [sortBy, setSortBy] = useState<AdminCustomerListParams["sortBy"]>(undefined);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const ariaSortFor = (column: SortColumn) => (sortBy === column ? (sortDir === "asc" ? "ascending" : "descending") : "none");
 
   function toggleSort(column: SortColumn) {
     if (sortBy === column) {
@@ -200,8 +209,8 @@ export default function CustomersPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-customers", { page, pageSize, search: debouncedSearch, filterParams }],
-    queryFn: () =>
-      adminCustomersApi.listCustomers({ page, pageSize, search: debouncedSearch || undefined, ...filterParams }),
+    queryFn: ({ signal }) =>
+      adminCustomersApi.listCustomers({ page, pageSize, search: debouncedSearch || undefined, ...filterParams }, { signal }),
     placeholderData: (prev) => prev,
   });
 
@@ -281,7 +290,7 @@ export default function CustomersPage() {
     const tone = primaryTag(customer.tags);
     const toneMeta = tone ? TAG_META[tone] : null;
     return toneMeta ? (
-      <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", toneMeta.className)}>
+      <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", toneMeta.className)}>
         <toneMeta.icon size={11} /> {toneMeta.label}
       </span>
     ) : (
@@ -303,6 +312,7 @@ export default function CustomersPage() {
         {customer.phone && (
           <>
             <button
+              hidden={!smsAvailable}
               onClick={() => setDrawer({ id: customer.id, focusSms: true })}
               className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-info-600")}
               aria-label="Send SMS"
@@ -352,7 +362,7 @@ export default function CustomersPage() {
             <StatTile label="Total customers" value={stats.totalCustomers.toLocaleString()} icon={<Users size={18} />} />
             <StatTile label="New this month" value={stats.newThisMonth.toLocaleString()} icon={<UserPlus size={18} />} />
             <StatTile label="Repeat customers" value={stats.repeatCustomers.toLocaleString()} icon={<Flame size={18} />} />
-            <StatTile label="Lifetime revenue" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
+            <StatTile label="Lifetime realised net sales" value={formatPrice(stats.lifetimeRevenue)} icon={<Wallet size={18} />} tone="accent" />
             <StatTile label="VIP customers" value={stats.vipCustomers.toLocaleString()} icon={<Star size={18} />} tone="accent" />
             <StatTile
               label="Inactive customers"
@@ -376,115 +386,81 @@ export default function CustomersPage() {
       {/* Fully opaque, not `.glass` — same reasoning as notification-bell.tsx and the Orders page's
           equivalent bar: this floats over the scrolling customer rows, and translucency there let
           row text visibly bleed/cut through the bar's bottom edge as it scrolled underneath. */}
-      <div className="sticky top-14 z-10 -mx-4 space-y-3.5 border-b border-ink-100 bg-cream-50 px-4 pb-4 pt-3 sm:-mx-8 sm:px-8">
-        <div className="space-y-3 rounded-xl border border-ink-100 bg-cream-50 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Tag</span>
-            <button
-              onClick={() => {
-                setTag("");
-                setPage(1);
-              }}
-              className={cn(
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                !tag
-                  ? "border-ink-900 bg-ink-900 text-cream-50"
-                  : "border-ink-200 text-ink-500 hover:border-ink-400 hover:bg-ink-50",
-              )}
-            >
-              All
-            </button>
-            {TAG_OPTIONS.map((t) => {
-              const meta = TAG_META[t];
-              const Icon = meta.icon;
-              return (
-                <button
-                  key={t}
-                  onClick={() => {
-                    setTag((prev) => (prev === t ? "" : t));
-                    setPage(1);
-                  }}
-                  className={cn(
-                    "flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150 ease-smooth",
-                    meta.className,
-                    tag === t ? "border-ink-900 ring-2 ring-ink-900/70" : "border-transparent opacity-55 hover:opacity-100",
-                  )}
-                >
-                  <Icon size={11} /> {meta.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100 pt-3">
-            <span className="mr-1 text-xs font-medium uppercase tracking-wide text-ink-400">Quick</span>
-            {QUICK_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => selectQuickFilter(f.id)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 ease-smooth",
-                  quickFilter === f.id
-                    ? "border-ink-900 bg-ink-900 text-cream-50"
-                    : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
-                )}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-100 bg-cream-50 px-3.5 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative w-full sm:w-72">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-              <Input
-                placeholder="Search name, phone, email, order #…"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
-                className="pl-9 pr-8"
-              />
-              {search && (
-                <button
-                  onClick={() => {
-                    setSearch("");
-                    setPage(1);
-                  }}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-300 transition-colors hover:text-ink-600"
-                  aria-label="Clear search"
-                >
-                  <XCircle size={14} />
-                </button>
-              )}
-            </div>
-            <button
-              onClick={() => setShowMoreFilters((v) => !v)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-                showMoreFilters || activeMoreFiltersCount > 0
-                  ? "border-ink-900 bg-ink-900 text-cream-50"
-                  : "border-ink-200 text-ink-600 hover:border-ink-400 hover:bg-ink-50",
-              )}
-            >
-              <SlidersHorizontal size={14} />
-              More filters
-              {activeMoreFiltersCount > 0 && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cream-50 text-[10px] font-semibold text-ink-900">
-                  {activeMoreFiltersCount}
-                </span>
-              )}
-            </button>
-          </div>
-          <PageSizeSelect
-            value={pageSize}
-            onChange={(size) => {
-              setPageSize(size);
+      <div className="sticky top-chrome z-10 -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
+        {/* Search, more filters, page size — the same toolbar row as the Orders list. */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <SearchInput
+            wrapperClassName="w-full sm:w-72"
+            placeholder="Search name, phone, email, order #…"
+            value={search}
+            onChange={(value) => {
+              setSearch(value);
               setPage(1);
             }}
           />
+          <Button variant="outline" size="sm" onClick={() => setShowMoreFilters((v) => !v)} aria-expanded={showMoreFilters}>
+            <SlidersHorizontal size={14} /> More filters
+            {activeMoreFiltersCount > 0 && (
+              <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{activeMoreFiltersCount}</span>
+            )}
+          </Button>
+          <div className="ml-auto">
+            <PageSizeSelect
+              value={pageSize}
+              onChange={(size) => {
+                setPageSize(size);
+                setPage(1);
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Segments: the customer tags as quiet tabs (the colour stays on each row's tag). */}
+        <div role="group" aria-label="Filter by tag" className="flex flex-nowrap items-center gap-1 overflow-x-auto py-0.5">
+          <button
+            type="button"
+            aria-pressed={!tag}
+            onClick={() => {
+              setTag("");
+              setPage(1);
+            }}
+            className={cn(SEGMENT_BASE, !tag ? SEGMENT_ON : SEGMENT_OFF)}
+          >
+            All
+          </button>
+          {TAG_OPTIONS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={tag === t}
+              onClick={() => {
+                setTag((prev) => (prev === t ? "" : t));
+                setPage(1);
+              }}
+              className={cn(SEGMENT_BASE, tag === t ? SEGMENT_ON : SEGMENT_OFF)}
+            >
+              {TAG_META[t].label}
+            </button>
+          ))}
+        </div>
+
+        {/* Views: one-click slices of the list. */}
+        <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 overflow-x-auto py-0.5">
+          <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted">Views</span>
+          {QUICK_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              aria-pressed={quickFilter === f.id}
+              onClick={() => selectQuickFilter(f.id)}
+              className={cn(
+                "flex h-8 shrink-0 items-center rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth",
+                quickFilter === f.id ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
 
         {showMoreFilters && (
@@ -559,9 +535,11 @@ export default function CustomersPage() {
               </span>
               selected
             </span>
-            <Button variant="outline" size="sm" onClick={() => setBulkSmsOpen(true)}>
-              <Send size={14} /> Send SMS
-            </Button>
+            {smsAvailable && (
+              <Button variant="outline" size="sm" onClick={() => setBulkSmsOpen(true)}>
+                <Send size={14} /> Send SMS
+              </Button>
+            )}
             <button
               onClick={() => setSelected(new Set())}
               className={cn(ICON_BUTTON_HIT, "ml-auto text-ink-400 hover:text-ink-700")}
@@ -579,7 +557,7 @@ export default function CustomersPage() {
           sm and up: the table below. Below sm: a card list (below that). */}
       <div className="mt-4 hidden overflow-hidden rounded-xl border border-ink-100 bg-cream-50 shadow-sm sm:block">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="ui-table">
             <thead className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
               <tr>
                 <th className="w-10 px-4 py-3">
@@ -590,34 +568,34 @@ export default function CustomersPage() {
                     the app shell header (z-20) in the same stacking context, so as this non-sticky
                     header row scrolled past them, it painted in FRONT of both instead of being
                     covered by them, showing up as a floating box overlapping the tabs/header. */}
-                <th className="sticky left-0 z-[1] bg-ink-50 px-4 py-3">
+                <th aria-sort={ariaSortFor("name")} className="sticky left-0 z-[1] bg-surface px-4 py-3">
                   <SortableHeader column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Customer
                   </SortableHeader>
                 </th>
                 <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">
+                <th className="hidden px-4 py-3 xl:table-cell">Email</th>
+                <th aria-sort={ariaSortFor("totalOrders")} className="px-4 py-3">
                   <div className="flex justify-end">
                     <SortableHeader column="totalOrders" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Orders
                     </SortableHeader>
                   </div>
                 </th>
-                <th className="px-4 py-3">
+                <th aria-sort={ariaSortFor("totalSpent")} className="px-4 py-3">
                   <div className="flex justify-end">
                     <SortableHeader column="totalSpent" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                       Spent
                     </SortableHeader>
                   </div>
                 </th>
-                <th className="px-4 py-3">
+                <th aria-sort={ariaSortFor("lastOrderAt")} className="px-4 py-3">
                   <SortableHeader column="lastOrderAt" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort}>
                     Last Order
                   </SortableHeader>
                 </th>
                 <th className="px-4 py-3">Status</th>
-                <th className="hidden px-4 py-3 sm:table-cell">Last SMS</th>
+                <th className="hidden whitespace-nowrap px-4 py-3 2xl:table-cell">Last SMS</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -658,7 +636,7 @@ export default function CustomersPage() {
                         aria-label={`Select ${customer.name}`}
                       />
                     </td>
-                    <td className="sticky left-0 z-[1] bg-cream-50 px-4 py-3.5 group-hover:bg-ink-50">
+                    <td className="sticky left-0 z-[1] bg-surface px-4 py-3.5 group-hover:bg-ink-50">
                       <button
                         onClick={() => setDrawer({ id: customer.id })}
                         className="flex items-center gap-3 text-left"
@@ -666,22 +644,22 @@ export default function CustomersPage() {
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700">
                           {initials(customer.name)}
                         </span>
-                        <span className="font-medium text-ink-900 hover:text-info-600 hover:underline">{customer.name}</span>
+                        <span className="max-w-[180px] truncate whitespace-nowrap font-medium text-ink-900 hover:text-info-600 hover:underline" title={customer.name}>{customer.name}</span>
                       </button>
                     </td>
-                    <td className="px-4 py-3.5 text-ink-500">{customer.phone ?? "—"}</td>
-                    <td className="px-4 py-3.5 text-ink-500">{customer.email ?? "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">{customer.phone ?? "—"}</td>
+                    <td className="hidden max-w-[220px] truncate px-4 py-3.5 text-ink-500 xl:table-cell" title={customer.email ?? undefined}>{customer.email ?? "—"}</td>
                     <td className="px-4 py-3.5 text-right tabular-nums text-ink-700">{customer.totalOrders}</td>
                     <td className="px-4 py-3.5 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</td>
-                    <td className="px-4 py-3.5 text-ink-500">
-                      {customer.lastOrderAt ? new Date(customer.lastOrderAt).toLocaleDateString() : "—"}
+                    <td className="whitespace-nowrap px-4 py-3.5 text-ink-500">
+                      {customer.lastOrderAt ? formatStoreDate(customer.lastOrderAt) : "—"}
                     </td>
                     <td className="px-4 py-3.5">{renderTagBadge(customer)}</td>
-                    <td className="hidden px-4 py-3.5 text-ink-500 sm:table-cell">
-                      {customer.lastSmsSentAt ? new Date(customer.lastSmsSentAt).toLocaleDateString() : "—"}
+                    <td className="hidden whitespace-nowrap px-4 py-3.5 text-ink-500 2xl:table-cell">
+                      {customer.lastSmsSentAt ? formatStoreDate(customer.lastSmsSentAt) : "—"}
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className="flex justify-end gap-3">{renderRowActions(customer)}</div>
+                      <div className="flex justify-end gap-1">{renderRowActions(customer)}</div>
                     </td>
                   </tr>
                 );
@@ -743,7 +721,7 @@ export default function CustomersPage() {
             <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
               <span>
                 {customer.totalOrders} order{customer.totalOrders === 1 ? "" : "s"} ·{" "}
-                {customer.lastOrderAt ? `last ${new Date(customer.lastOrderAt).toLocaleDateString()}` : "no orders yet"}
+                {customer.lastOrderAt ? `last ${formatStoreDate(customer.lastOrderAt)}` : "no orders yet"}
               </span>
               {renderTagBadge(customer)}
             </div>

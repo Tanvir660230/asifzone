@@ -1,4 +1,4 @@
-import { env } from "./env";
+import { apiBaseUrl } from "./runtime-config";
 
 const COOKIE_NAME = "az_session";
 const VISITOR_COOKIE_NAME = "az_visitor";
@@ -96,7 +96,7 @@ export async function trackPageView(path: string): Promise<string | null> {
   if (!attribution.sid) return null;
 
   try {
-    const res = await fetch(`${env.apiUrl}/api/analytics/pageview`, {
+    const res = await fetch(`${apiBaseUrl()}/api/analytics/pageview`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -128,7 +128,7 @@ export async function trackPageView(path: string): Promise<string | null> {
  * a page unload; fetch's `keepalive` (used elsewhere in this file) is the fallback for the rare
  * browser without sendBeacon support. */
 export function sendPageExit(id: string, payload: { durationMs: number; scrollDepthPct: number; clickCount: number }): void {
-  const url = `${env.apiUrl}/api/analytics/pageview/${id}/exit`;
+  const url = `${apiBaseUrl()}/api/analytics/pageview/${id}/exit`;
   const body = JSON.stringify(payload);
 
   if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
@@ -149,7 +149,7 @@ export function trackFunnelEvent(type: FunnelEventType, payload: { productId?: s
   const attribution = getSessionAttribution();
   if (!attribution.sid) return;
 
-  fetch(`${env.apiUrl}/api/analytics/funnel-event`, {
+  fetch(`${apiBaseUrl()}/api/analytics/funnel-event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -173,7 +173,7 @@ export function trackSearchSession(query: string): void {
   const attribution = getSessionAttribution();
   if (!attribution.sid) return;
 
-  fetch(`${env.apiUrl}/api/analytics/search-session`, {
+  fetch(`${apiBaseUrl()}/api/analytics/search-session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId: attribution.sid, visitorId: getVisitorId(), query }),

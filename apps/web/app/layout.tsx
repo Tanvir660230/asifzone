@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
+import { headers } from "next/headers";
+import { Inter, Instrument_Sans, Newsreader, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { getSiteSettingsSafe } from "@/lib/api/storefront";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { StoreConfig } from "@/components/store-config";
+import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-data";
-import { env } from "@/lib/env";
+import { RUNTIME_CONFIG_ELEMENT_ID, publicRuntimeConfig, setIntegrationIds } from "@/lib/runtime-config";
+import { RuntimeConfig } from "@/components/runtime-config";
+import { resolveThemeId } from "@/lib/theme";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
-import { MetaPixel } from "@/components/analytics/meta-pixel";
+import { AdPixels } from "@/components/analytics/ad-pixels";
+import { TrackingConsentBanner } from "@/components/analytics/tracking-consent-banner";
 import { jsonLdString } from "@clothing-brand/shared";
 
 const inter = Inter({
@@ -22,6 +27,25 @@ const playfairDisplay = Playfair_Display({
   variable: "--font-display",
   display: "swap",
   weight: ["400", "500", "600", "700", "800"],
+});
+
+// Faces a brand theme may choose (packages/ui-tokens `fontVariables`): an editorial serif and a refined grotesk. Not
+// preloaded — the browser downloads a face only when the theme's CSS actually uses it, so other stores never fetch them.
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  variable: "--font-editorial",
+  display: "swap",
+  preload: false,
+  weight: "variable",
+  axes: ["opsz"],
+});
+
+const instrumentSans = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--font-grotesk",
+  display: "swap",
+  preload: false,
+  weight: "variable",
 });
 
 // Covers Bengali text/glyphs (e.g. the ৳ sign) that Inter and Playfair Display don't,
@@ -61,24 +85,33 @@ export async function generateMetadata(): Promise<Metadata> {
       description: settings.tagline ?? undefined,
       url: siteUrl,
       siteName: settings.storeName,
-      images: settings.logoUrl ? [settings.logoUrl] : undefined,
+      images: storeShareImages(settings),
     }),
   };
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Reading the request makes every page render per request, so each response gets the nonce middleware.ts minted for
+  // its Content-Security-Policy — a page prerendered at build time would carry no nonce and its scripts would be blocked.
+  // Data fetches keep their own revalidate caching; nginx's micro-cache still serves hot anonymous pages.
+  await headers();
   const { settings } = await getSiteSettingsSafe();
   const siteUrl = getSiteUrl();
+  setIntegrationIds(settings.integrationIds);
+  const runtime = publicRuntimeConfig();
   const organizationJsonLd = buildOrganizationJsonLd(settings, siteUrl);
   const websiteJsonLd = buildWebsiteJsonLd(settings, siteUrl);
 
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${playfairDisplay.variable} ${notoSansBengali.variable}`}
+      data-brand={resolveThemeId(runtime.theme)}
+      className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${notoSansBengali.variable}`}
     >
       <body>
-        <link rel="preconnect" href={env.apiUrl} />
+        {/* This installation's public runtime configuration (Phase 1A) — data, not script: CSP does not apply to it. */}
+        <script id={RUNTIME_CONFIG_ELEMENT_ID} type="application/json" dangerouslySetInnerHTML={{ __html: jsonLdString(runtime) }} />
+        <link rel="preconnect" href={runtime.apiUrl} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: jsonLdString(organizationJsonLd) }}
@@ -87,10 +120,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: jsonLdString(websiteJsonLd) }}
         />
-        <PageViewTracker />
-        <HeatmapScript />
-        <MetaPixel />
-        <Providers>{children}</Providers>
+        <RuntimeConfig value={runtime}>
+          <PageViewTracker />
+          <HeatmapScript />
+          <AdPixels />
+          <StoreConfig currency={settings.currency} timezone={settings.timezone}>
+            <Providers>{children}</Providers>
+          </StoreConfig>
+          <TrackingConsentBanner />
+        </RuntimeConfig>
       </body>
     </html>
   );

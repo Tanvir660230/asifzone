@@ -18,8 +18,10 @@ import {
   History,
   Radar,
 } from "lucide-react";
-import { normalizeBdPhone } from "@clothing-brand/shared";
+import { toBdInternationalDigits } from "@clothing-brand/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StoreBalanceCard } from "@/components/admin/customers/store-balance-card";
+import { Timeline, TimelineItem } from "@/components/ui/timeline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,10 +31,11 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { SmsComposer } from "@/components/admin/sms-composer";
 import * as adminCustomersApi from "@/lib/api/admin-customers";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStoreDate, formatStoreDateTime } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { TAG_META } from "@/lib/customer-tags";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 interface CustomerDetailPanelProps {
   customerId: string;
@@ -44,11 +47,11 @@ interface CustomerDetailPanelProps {
 }
 
 function waLink(phone: string, message: string): string {
-  const local = normalizeBdPhone(phone);
-  return `https://wa.me/880${local.slice(1)}?text=${encodeURIComponent(message)}`;
+  return `https://wa.me/${toBdInternationalDigits(phone)}?text=${encodeURIComponent(message)}`;
 }
 
 export function CustomerDetailPanel({ customerId: id, onClose, variant = "page", focusSms }: CustomerDetailPanelProps) {
+  const { sms: smsAvailable } = useProviderCapabilities(); // Phase 12 D-4: the SMS composer only when SMS is configured
   const queryClient = useQueryClient();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [pointsDelta, setPointsDelta] = useState("");
@@ -144,7 +147,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
             <h1 className="font-sans text-2xl font-semibold tracking-tight text-ink-900">{customer.name}</h1>
           </div>
           <p className="text-sm text-ink-500">
-            {customer.email ?? "No email"} · Joined {new Date(customer.createdAt).toLocaleDateString()}
+            {customer.email ?? "No email"} · Joined {formatStoreDate(customer.createdAt)}
           </p>
           {customer.tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -235,6 +238,8 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
         </CardContent>
       </Card>
 
+      <StoreBalanceCard customerId={customer.id} />
+
       {customer.favoriteProducts.length > 0 && (
         <Card>
           <CardHeader>
@@ -244,8 +249,14 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           </CardHeader>
           <CardContent className="space-y-1.5 text-sm">
             {customer.favoriteProducts.map((p) => (
-              <div key={p.name} className="flex items-center justify-between">
-                <span className="text-ink-700">{p.name}</span>
+              <div key={p.productId ?? p.name} className="flex items-center justify-between">
+                {p.productId ? (
+                  <Link href={`/admin/products/${p.productId}/edit`} className="text-ink-700 hover:text-accent hover:underline">
+                    {p.name}
+                  </Link>
+                ) : (
+                  <span className="text-ink-700">{p.name}</span>
+                )}
                 <span className="text-ink-400">×{p.quantity}</span>
               </div>
             ))}
@@ -253,6 +264,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
         </Card>
       )}
 
+      {smsAvailable && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -288,6 +300,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           )}
         </CardContent>
       </Card>
+      )}
 
       {customer.smsHistory.length > 0 && (
         <Card>
@@ -432,7 +445,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
                 <Link href={`/admin/orders/${order.id}`} className="text-info-600 hover:underline">
                   {order.orderNumber}
                 </Link>
-                <p className="text-xs text-ink-400">{new Date(order.createdAt).toLocaleDateString()}</p>
+                <p className="text-xs text-ink-400">{formatStoreDate(order.createdAt)}</p>
               </div>
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1 text-ink-700">
@@ -457,6 +470,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
               <p key={item.id}>
                 <Link
                   href={`/product/${item.product.slug}`}
+                  prefetch={false}
                   target="_blank"
                   className="text-info-600 hover:underline"
                 >
@@ -476,18 +490,19 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ol className="space-y-3 border-l border-ink-100 pl-4">
-              {customer.timeline.slice(0, 25).map((entry, i) => (
-                <li key={i} className="relative text-sm">
-                  <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-ink-400" />
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-ink-900">{entry.label}</span>
-                    <span className="text-xs text-ink-400">{new Date(entry.date).toLocaleString()}</span>
-                  </div>
-                  {entry.detail && <p className="mt-0.5 text-ink-600">{entry.detail}</p>}
-                </li>
+            <Timeline aria-label="Customer history">
+              {customer.timeline.slice(0, 25).map((entry, i, shown) => (
+                <TimelineItem
+                  key={i}
+                  tone={entry.type === "ORDER" ? "info" : entry.type === "POINTS" ? "success" : "neutral"}
+                  title={entry.label}
+                  time={entry.date}
+                  timeLabel={formatStoreDateTime(entry.date)}
+                  meta={entry.detail}
+                  last={i === shown.length - 1}
+                />
               ))}
-            </ol>
+            </Timeline>
           </CardContent>
         </Card>
       )}

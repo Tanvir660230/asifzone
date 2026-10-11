@@ -12,7 +12,7 @@ import { GoogleButton } from "@/components/account/google-button";
 import { OrDivider } from "@/components/account/or-divider";
 import { loginAdmin, loginAdminWithGoogle } from "@/lib/auth";
 import { ApiError } from "@/lib/api-client";
-import { env } from "@/lib/env";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 
 export default function LoginPage() {
   return (
@@ -54,10 +54,10 @@ function LoginForm() {
 
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Store Console</h1>
-      <p className="mb-6 text-sm text-ink-500">Sign in to manage your store</p>
+      <h1 className="text-2xl font-semibold tracking-tight text-fg">Sign in</h1>
+      <p className="mb-7 mt-1 text-sm text-fg-muted">to manage your store</p>
 
-      {env.googleClientId && (
+      {publicRuntimeConfig().googleClientId && (
         <>
           <GoogleButton onCredential={onGoogleCredential} onError={setServerError} />
           <OrDivider />
@@ -68,18 +68,18 @@ function LoginForm() {
         <div>
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" autoComplete="email" {...register("email")} />
-          {errors.email && <p className="mt-1 text-xs text-danger-600">{errors.email.message}</p>}
+          {errors.email && <p className="ui-field-error">{errors.email.message}</p>}
         </div>
 
         <div>
           <Label htmlFor="password">Password</Label>
           <Input id="password" type="password" autoComplete="current-password" {...register("password")} />
-          {errors.password && <p className="mt-1 text-xs text-danger-600">{errors.password.message}</p>}
+          {errors.password && <p className="ui-field-error">{errors.password.message}</p>}
         </div>
 
         {serverError && <p className="text-sm text-danger-600">{serverError}</p>}
 
-        <Button type="submit" variant="brass" className="w-full" disabled={isSubmitting}>
+        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting}>
           {isSubmitting ? "Signing in…" : "Sign in"}
         </Button>
       </form>

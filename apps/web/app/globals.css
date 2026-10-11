@@ -2,9 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Playfair Display's "&" is an ornate italic swash that reads as broken/off at heading sizes.
-   This unicode-range trick pulls just that one glyph from a plain system serif instead — every
-   other character in font-display headings still renders in Playfair, untouched. */
+/* Design-system recipe layer. Values come from @clothing-brand/ui-tokens (via Tailwind); this file
+   defines each shared UI "recipe" exactly once — glass surfaces, form controls, tables, skeletons,
+   overlays, menus — and the React primitives in components/ui apply these classes. Page code should
+   use the primitives (or, for plain repeated markup, the `ui-*` classes) rather than re-spelling
+   the utility strings. See docs/DESIGN_SYSTEM.md. */
+
+/* Playfair Display's "&" is an ornate italic swash that reads as broken at heading sizes. This
+   unicode-range trick pulls just that glyph from a plain system serif instead. */
 @font-face {
   font-family: "Ampersand Fix";
   src:
@@ -15,14 +20,8 @@
   unicode-range: U+0026;
 }
 
-body {
-  @apply bg-cream-100 text-ink-900 antialiased;
-}
-
-/* Desktop screens sit further from the eye than phones, so text/spacing that reads fine on
-   mobile looks cramped and small on a large monitor. Bumping the root font-size at wider
-   breakpoints scales every rem-based Tailwind utility (font sizes, padding, gaps) together,
-   giving a proportional "zoom" without touching every className individually. */
+/* Desktop screens sit further from the eye than phones — bumping the root font-size at wider
+   breakpoints scales every rem-based utility together, a proportional "zoom". */
 @media (min-width: 1024px) {
   html {
     font-size: 17px;
@@ -35,25 +34,34 @@ body {
 }
 
 @layer base {
-  /* Sitewide keyboard-focus ring — every interactive element gets a visible, on-brand outline
-     instead of relying on (or suppressing) the browser default. */
-  :focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-ink-900;
+  body {
+    @apply bg-canvas text-fg antialiased;
   }
 
   html {
     scroll-behavior: smooth;
   }
 
-  ::selection {
-    @apply bg-ink-200 text-ink-900;
+  /* Sitewide keyboard-focus ring — visible, on-brand, never suppressed. Form controls replace it
+     with their own softer ring (see .ui-control). */
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-accent;
   }
 
-  /* Thin, low-contrast scrollbars read as more considered than the chunky OS default —
-     the same instinct behind macOS's overlay scrollbars. Firefox + WebKit both covered. */
+  ::selection {
+    @apply bg-ink-200 text-fg;
+  }
+
+  /* Icon line weight is a theme token. Only icons drawn at lucide's default width follow it — one given its own width
+     keeps it — and the default token value is that same width, so the base design is unchanged. */
+  svg.lucide[stroke-width="2"] {
+    stroke-width: var(--icon-stroke);
+  }
+
+  /* Thin, low-contrast scrollbars (macOS overlay-scrollbar feel). Firefox + WebKit. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: theme("colors.ink.200") transparent;
+    scrollbar-color: rgb(var(--color-ink-200)) transparent;
   }
   *::-webkit-scrollbar {
     width: 10px;
@@ -70,33 +78,381 @@ body {
   *::-webkit-scrollbar-thumb:hover {
     @apply bg-ink-300;
   }
+
+  /* Reduced motion: keep state changes, drop the movement. Framer Motion follows the same
+     preference through <MotionConfig reducedMotion="user"> (app/providers.tsx). */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
-  /* Frosted-glass surface for anything that floats above content — sticky headers, dropdowns,
-     modals. Reads as premium/native because content behind it stays partially legible instead
-     of being fully occluded, the same trick used by macOS/iOS translucent chrome. */
+  /* ── Surfaces ───────────────────────────────────────────────────────────────────────────────
+     Glass is used selectively: chrome that floats above content (sticky headers, menus, dialogs,
+     toasts, bottom bars). Content cards stay solid for readability. */
+
+  /* Translucent fill only — for elements that bring their own border/shape (e.g. sticky headers). */
   .glass {
-    @apply bg-cream-50/75 backdrop-blur-xl backdrop-saturate-150;
+    @apply backdrop-blur-xl backdrop-saturate-150;
+    background-color: rgb(var(--color-surface) / var(--glass-alpha));
   }
   .glass-dark {
     @apply bg-ink-900/75 backdrop-blur-xl backdrop-saturate-150;
   }
+  /* A complete floating glass panel: translucent fill, hairline light edge, lit top highlight, soft
+     depth. Used by menus, popovers, dialogs, toasts. */
+  .glass-panel {
+    @apply border border-white/70 bg-surface/85 shadow-glass ring-1 ring-ink-900/[0.04] backdrop-blur-2xl backdrop-saturate-150;
+  }
+  /* Browsers without backdrop-filter get an opaque surface instead of an unreadable see-through one. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass,
+    .glass-panel {
+      @apply bg-surface;
+    }
+    .glass-dark {
+      @apply bg-ink-900;
+    }
+  }
 
-  /* Glossy "liquid glass" sheen for filled buttons/pills/swatches — a bright top highlight over a
-     soft inset shadow, so a solid-color control reads as a lit glass capsule (iOS 26 Liquid Glass)
-     instead of a flat color fill. Layered as background-image so it works on top of any Tailwind
-     bg-* color and never fights with the element's own content for z-index/pointer-events. */
+  /* Glossy sheen for filled buttons/pills — bright top highlight over a soft inset shade, so a
+     solid fill reads as a lit capsule rather than a flat color. Layered as background-image so it
+     sits on top of any bg-* color. */
   .glossy {
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.1) 45%, rgba(255, 255, 255, 0) 65%);
+    background-image: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, calc(0.3 * var(--gloss))) 0%,
+      rgba(255, 255, 255, calc(0.08 * var(--gloss))) 45%,
+      rgba(255, 255, 255, 0) 65%
+    );
     box-shadow:
-      inset 0 1px 1px rgba(255, 255, 255, 0.5),
-      inset 0 -2px 5px rgba(0, 0, 0, 0.14);
+      inset 0 1px 1px rgba(255, 255, 255, calc(0.45 * var(--gloss))),
+      inset 0 -2px 5px rgba(0, 0, 0, calc(0.12 * var(--gloss)));
   }
   .glossy:active {
     box-shadow:
-      inset 0 1px 2px rgba(0, 0, 0, 0.22),
-      inset 0 -1px 1px rgba(255, 255, 255, 0.15);
+      inset 0 1px 2px rgba(0, 0, 0, calc(0.22 * var(--gloss))),
+      inset 0 -1px 1px rgba(255, 255, 255, calc(0.15 * var(--gloss)));
+  }
+
+  /* ── Typography roles (component tokens in @clothing-brand/ui-tokens) ───────────────────── */
+
+  /* The title face's weight and tracking. Unset by default (the property inherits, as before); a theme may set them.
+     Utilities on the same element (font-medium, tracking-wide, text-display-*) still win. */
+  .font-display {
+    font-weight: var(--font-display-weight);
+    letter-spacing: var(--font-display-tracking);
+  }
+  /* Small label: "SOLD OUT", "QTY", accordion and filter headings. Size and color stay with the call site. */
+  .ui-caps {
+    text-transform: var(--caps-transform);
+    letter-spacing: calc(0.025em * var(--caps-spread));
+  }
+  /* Section eyebrow above a title: "OUR PHILOSOPHY", carousel kickers. */
+  .ui-eyebrow {
+    text-transform: var(--eyebrow-transform);
+    letter-spacing: calc(0.3em * var(--eyebrow-spread));
+    font-weight: var(--eyebrow-weight);
+  }
+  .ui-section-title {
+    font-size: var(--section-title-size);
+    line-height: var(--section-title-leading);
+  }
+  .ui-section-heading {
+    font-size: var(--section-heading-size);
+    line-height: var(--section-heading-leading);
+  }
+  .ui-page-title {
+    font-size: var(--page-title-size);
+    line-height: var(--page-title-leading);
+  }
+  @media (min-width: 640px) {
+    .ui-section-title {
+      font-size: var(--section-title-size-sm);
+      line-height: var(--section-title-leading-sm);
+    }
+    .ui-section-heading {
+      font-size: var(--section-heading-size-sm);
+      line-height: var(--section-heading-leading-sm);
+    }
+    .ui-page-title {
+      font-size: var(--page-title-size-sm);
+      line-height: var(--page-title-leading-sm);
+    }
+  }
+  .ui-product-title {
+    font-family: var(--product-title-family);
+    font-size: var(--product-title-size);
+    line-height: var(--product-title-leading);
+    font-weight: var(--product-title-weight);
+    letter-spacing: var(--product-title-tracking);
+  }
+
+  /* ── Product card frame ─────────────────────────────────────────────────────────────────── */
+
+  .ui-card-frame {
+    @apply border transition-shadow duration-300 ease-smooth;
+    border-color: var(--card-frame-border);
+    box-shadow: var(--card-frame-shadow);
+  }
+  .group:hover .ui-card-frame {
+    box-shadow: var(--card-frame-shadow-hover);
+  }
+  /* The sticky storefront header's bottom edge. */
+  .ui-header-bar {
+    box-shadow: var(--header-shadow);
+  }
+  /* Background-specific artwork (a logo for dark backgrounds and one for light): the theme's band decides which shows. */
+  .ui-art-on-dark {
+    display: var(--band-dark-art);
+  }
+  .ui-art-on-light {
+    display: var(--band-light-art);
+  }
+  /* Tile grid (category grid): up to 4 equal columns, fewer as the row narrows — each column at least
+     --tile-min wide — and a short catalog stays centred instead of leaving empty columns. The gap and the column
+     arithmetic read the same variable, so the count can never drift with the root font size. */
+  .ui-tile-grid {
+    --tile-gap: 1rem;
+    --tile-min: 9.5rem;
+    display: grid;
+    gap: var(--tile-gap);
+    grid-template-columns: repeat(auto-fit, minmax(0, max(var(--tile-min), (100% - 3 * var(--tile-gap)) / 4)));
+    justify-content: center;
+  }
+  /* A category tile's caption: over the photograph (absolute, filling the tile so its scrim rises from the bottom) or
+     below it (static) — the theme decides. */
+  .ui-tile-caption {
+    position: var(--tile-caption-position);
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    padding: var(--tile-caption-padding);
+  }
+
+  /* Homepage hero composition: alignment, and from 1024px either stacked (block) or copy beside the image (grid). */
+  .ui-hero {
+    text-align: var(--hero-align);
+  }
+  .ui-hero-media-frame {
+    aspect-ratio: 4 / 5;
+  }
+  @media (min-width: 640px) {
+    .ui-hero-media-frame {
+      aspect-ratio: 16 / 9;
+    }
+  }
+  @media (min-width: 1024px) {
+    .ui-hero-layout {
+      display: var(--hero-layout-lg);
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+      align-items: center;
+      column-gap: 1rem;
+      max-width: var(--hero-content-max-w-lg);
+      margin-inline: auto;
+    }
+    /* Two classes, so they outrank the cells' own spacing utilities. */
+    .ui-hero-layout > .ui-hero-copy {
+      padding-inline: var(--hero-copy-pad-lg);
+    }
+    .ui-hero-layout > .ui-hero-media {
+      margin-top: var(--hero-media-offset-lg);
+      /* A grid item with auto margins shrinks to its content, and a fill image has none — fill the cell instead. */
+      width: 100%;
+    }
+    .ui-hero-media-frame {
+      aspect-ratio: var(--hero-media-aspect-lg);
+    }
+  }
+  /* The secondary hero action's outline (none by default: a text link). */
+  .ui-hero-secondary {
+    border-radius: var(--control-radius);
+    box-shadow: inset 0 0 0 1px var(--hero-secondary-ring);
+  }
+
+  /* Content tile (values grid): a hairline frame a theme may drop. */
+  .ui-panel {
+    @apply border;
+    border-color: var(--panel-border);
+    box-shadow: var(--panel-shadow);
+  }
+
+  /* Dimmed, lightly blurred backdrop behind modal layers (dialogs, drawers, mobile nav). */
+  .ui-overlay {
+    @apply bg-ink-950/30 backdrop-blur-[6px];
+  }
+
+  /* ── Form controls ──────────────────────────────────────────────────────────────────────── */
+
+  /* Shared by Input, Select, Textarea, SearchableSelect and IconPicker. */
+  .ui-control {
+    @apply h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-fg shadow-inset transition-[border-color,box-shadow,background-color] duration-base ease-smooth placeholder:text-fg-subtle;
+  }
+  .ui-control:hover:not(:disabled):not(:focus) {
+    @apply border-line-strong;
+  }
+  .ui-control:focus,
+  .ui-control:focus-visible {
+    @apply border-ink-400 outline-none ring-4 ring-accent/10;
+  }
+  .ui-control:disabled {
+    @apply cursor-not-allowed bg-surface-muted text-fg-muted opacity-70;
+  }
+  .ui-control[aria-invalid="true"] {
+    @apply border-danger-400;
+  }
+  .ui-control[aria-invalid="true"]:focus {
+    @apply border-danger-500 ring-danger-500/15;
+  }
+  /* Native <select> with a consistent chevron instead of each OS's own arrow. */
+  .ui-select {
+    @apply appearance-none bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+  }
+
+  .ui-label {
+    @apply mb-1.5 block text-[0.8125rem] font-medium text-ink-700;
+  }
+  .ui-field-hint {
+    @apply mt-1 text-xs text-fg-muted;
+  }
+  .ui-field-error {
+    @apply mt-1 text-xs text-danger-600;
+  }
+
+  /* ── Data tables ────────────────────────────────────────────────────────────────────────── */
+
+  .ui-table-container {
+    @apply overflow-hidden rounded-xl border border-line-subtle bg-surface shadow-sm;
+  }
+  .ui-table {
+    @apply w-full text-left text-sm;
+  }
+  .ui-table-head {
+    @apply bg-surface-muted text-left text-xs font-medium uppercase tracking-wide text-fg-muted;
+  }
+  .ui-table-row {
+    @apply border-t border-line-subtle transition-colors duration-fast ease-smooth;
+  }
+  .ui-table-row-interactive {
+    @apply cursor-pointer hover:bg-ink-50/70;
+  }
+
+  /* ── Menus (dropdowns, popovers, comboboxes) ────────────────────────────────────────────── */
+
+  .ui-floating {
+    @apply glass-panel rounded-xl;
+  }
+  .ui-menu-item {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] focus-visible:bg-ink-900/[0.05] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  /* ── Store Console surface ──────────────────────────────────────────────────────────────────
+     The admin's Apple-style refinements of the shared recipes. Colors, radii, shadows and density already come from the
+     `admin` surface tokens; these only change shape where the store's recipe and the console's differ. Nothing here
+     reaches the storefront. */
+
+  /* What's pinned at the top of the page column: the toolbar, plus the section bar while it shows (the shell sets
+     data-section-bar: "always", or "compact" when the expanded sidebar lists the pages from lg up). Pages pin their own
+     bars at `top-chrome`. Two attributes so it outranks the surface's own density variables. */
+  [data-surface][data-shell] {
+    --density-chrome: var(--density-header);
+  }
+  [data-surface][data-shell][data-section-bar] {
+    --density-chrome: calc(var(--density-header) + var(--density-section-bar));
+  }
+  @media (min-width: 1024px) {
+    [data-surface][data-shell][data-section-bar="compact"] {
+      --density-chrome: var(--density-header);
+    }
+  }
+
+  [data-surface="admin"] .ui-control {
+    @apply h-control border-line bg-surface;
+  }
+  [data-surface="admin"] .ui-control:focus,
+  [data-surface="admin"] .ui-control:focus-visible {
+    @apply border-accent ring-4 ring-accent/15;
+  }
+  [data-surface="admin"] textarea.ui-control {
+    @apply h-auto;
+  }
+  /* While the on-screen keyboard is open (hooks/use-keyboard-flag.ts), sticky bars step aside for the field. */
+  @media (max-width: 1023px) {
+    html[data-keyboard="open"] [data-hide-on-keyboard] {
+      display: none;
+    }
+  }
+  /* Phones: form fields at 16px, or iOS zooms the page in on focus (Blueprint V2 §X). */
+  @media (max-width: 767px) {
+    [data-surface="admin"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+      font-size: 16px;
+    }
+  }
+  /* Sentence-case column titles on a white head, like a Mac list view. */
+  [data-surface="admin"] .ui-table-container {
+    @apply border-line bg-surface shadow;
+  }
+  /* Mac list views set rows at 13px — denser than body text, so wide operational tables fit without scrolling. */
+  [data-surface="admin"] .ui-table {
+    @apply text-[13px];
+  }
+  [data-surface="admin"] .ui-table-head {
+    @apply border-b border-line bg-surface text-xs font-medium normal-case tracking-normal text-fg-muted;
+  }
+  /* Column titles stay sentence case even where a header control (a sort button) carries the caps-label style. */
+  [data-surface="admin"] thead th,
+  [data-surface="admin"] thead .uppercase {
+    @apply font-medium normal-case tracking-normal;
+  }
+  [data-surface="admin"] .ui-table-row {
+    @apply border-line-subtle;
+  }
+  [data-surface="admin"] .ui-table-row-interactive {
+    @apply hover:bg-ink-900/[0.025];
+  }
+  /* Small caps-labels ("TODAY'S ORDERS") read as sentence-case footnotes in the console, as Apple sets them. The labels
+     are authored in sentence case; only the transform and tracking come off. */
+  [data-surface="admin"] .uppercase:is(.tracking-wide, .tracking-wider, .tracking-widest) {
+    @apply normal-case tracking-normal;
+  }
+  [data-surface="admin"] .uppercase.text-\[11px\]:is(.tracking-wide, .tracking-wider) {
+    @apply text-xs;
+  }
+  /* Menus highlight like macOS: the pointed-at item fills with the accent. */
+  [data-surface="admin"] .ui-floating {
+    @apply rounded-xl border-ink-900/10 bg-surface/90;
+  }
+  [data-surface="admin"] .ui-menu-item {
+    @apply rounded-md px-2.5 py-1.5 text-[13px] text-fg hover:bg-accent hover:text-accent-fg focus-visible:bg-accent focus-visible:text-accent-fg;
+  }
+  [data-surface="admin"] .ui-overlay {
+    @apply bg-ink-950/20 backdrop-blur-[3px];
+  }
+
+  /* ── Loading ────────────────────────────────────────────────────────────────────────────── */
+
+  /* Shimmering placeholder block. Size it with utilities (h-4 w-1/2 …). */
+  .ui-skeleton {
+    @apply animate-shimmer rounded-md;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--color-ink-100)) 0%,
+      rgb(var(--color-ink-50)) 50%,
+      rgb(var(--color-ink-100)) 100%
+    );
+    background-size: 200% 100%;
   }
 }
 
@@ -124,7 +480,7 @@ body {
   @apply mb-3 list-decimal space-y-1 pl-5;
 }
 .tiptap-content blockquote {
-  @apply mb-3 border-l-2 border-brass-400 pl-4 italic text-ink-500;
+  @apply mb-3 border-l-2 border-ink-300 pl-4 italic text-ink-500;
 }
 .tiptap-content code {
   @apply rounded bg-ink-100 px-1.5 py-0.5 font-mono text-xs text-ink-800;
@@ -136,7 +492,7 @@ body {
   @apply bg-transparent p-0 text-cream-100;
 }
 .tiptap-content a {
-  @apply text-brass-600 underline underline-offset-2;
+  @apply text-ink-900 underline underline-offset-2;
 }
 .tiptap-content img {
   @apply mb-3 rounded-md;
@@ -158,4 +514,3 @@ body {
   content: attr(data-placeholder);
   @apply pointer-events-none float-left h-0 text-ink-300;
 }
-

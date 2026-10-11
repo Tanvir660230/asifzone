@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
 import { useCanManageCatalog } from "@/hooks/use-can-manage-catalog";
@@ -65,8 +65,8 @@ export default function SkuSettingsPage() {
   }, [data]);
 
   const patternError = pattern ? validateSkuPattern(pattern) : null;
-  const example = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "AZ", typeCode: "PNJ", color: "Black", size: "M", seq: 1 }) : "";
-  const example2 = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "AZ", typeCode: "SHO", color: "Brown", size: "42", seq: 2 }) : "";
+  const example = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "SKU", typeCode: "PNJ", color: "Black", size: "M", seq: 1 }) : "";
+  const example2 = !patternError && pattern ? renderSkuPattern(pattern, { prefix: prefix || "SKU", typeCode: "SHO", color: "Brown", size: "42", seq: 2 }) : "";
   const dirty = data && (prefix !== data.settings.skuPrefix || pattern !== data.settings.skuPattern);
 
   const save = useMutation({
@@ -80,15 +80,15 @@ export default function SkuSettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Catalog setup" description="Define what kinds of products the store sells, and what each kind collects and shows." />
-      <CatalogSubNav />
+      <PageHeader title="SKUs" description="Define what kinds of products the store sells, and what each kind collects and shows." />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         SKUs are generated from a pattern when you click <strong>Generate</strong> next to a variant&rsquo;s SKU. Numbers are counted per product type and never
         reused, so two products can&rsquo;t end up with the same SKU. Existing SKUs are never changed.
       </p>
 
-      <div className="max-w-2xl space-y-8">
+      <div className="space-y-8">
         <FormSection title="Pattern">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr]">
             <div>
@@ -98,7 +98,7 @@ export default function SkuSettingsPage() {
             <div>
               <Label htmlFor="sku-pattern">Pattern</Label>
               <Input id="sku-pattern" value={pattern} onChange={(e) => setPattern(e.target.value)} disabled={!canManage} className="font-mono" aria-invalid={Boolean(patternError)} />
-              {patternError && <p className="mt-1 text-xs text-danger-600">{patternError}</p>}
+              {patternError && <p className="ui-field-error">{patternError}</p>}
             </div>
           </div>
 
@@ -142,8 +142,8 @@ export default function SkuSettingsPage() {
 
         <FormSection title="SKU code per product type" description="Used by {TYPE}. Leave blank to use the first three letters of the type's name (shown greyed).">
           <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-            <table className="w-full text-sm">
-              <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+            <table className="ui-table">
+              <thead className="ui-table-head">
                 <tr>
                   <th className="px-4 py-2">Product type</th>
                   <th className="px-4 py-2">Code</th>

@@ -4,6 +4,8 @@ import type {
   UpdateCategoryInput,
   ReorderCategoriesInput,
   MoveCategoryInput,
+  CategoryAvailabilityStat,
+  CategoryStockOverview,
   CategoryStockStat,
 } from "@clothing-brand/shared";
 import { slugify } from "@clothing-brand/shared";
@@ -12,6 +14,7 @@ import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteSiteImageFile } from "../uploads/upload.service";
+import { sanitizeCourierNoteRuleIds } from "../courier/courier-note-rules.service";
 
 const CACHE_PREFIX = "categories:";
 const CACHE_TTL_SECONDS = 300;
@@ -97,6 +100,14 @@ async function getCategoryParentPairs(): Promise<Array<{ id: string; parentId: s
   return all;
 }
 
+/** Products browsable in any of `categoryIds`: their home category or one they're also listed in. Wrapped in AND so it
+ * can sit beside a search `OR` in the same where. */
+export function inCategoriesWhere(categoryIds: string[]) {
+  return {
+    AND: [{ OR: [{ categoryId: { in: categoryIds } }, { alsoListedIn: { some: { categoryId: { in: categoryIds } } } }] }],
+  };
+}
+
 /** Category id plus every descendant id (self included) — used to show a parent category's products from all its subcategories. */
 export async function getCategoryDescendantIds(categoryId: string): Promise<string[]> {
   const all = await getCategoryParentPairs();
@@ -119,28 +130,34 @@ export async function getCategoryDescendantIds(categoryId: string): Promise<stri
   return ids;
 }
 
-/** Live (isActive, non-deleted) product/unit counts for one category scope — self plus every
- * descendant, same rollup listStorefrontProducts uses so these numbers match what a shopper
- * actually sees when browsing that category. */
-async function getCategoryStockStat(categoryId: string) {
+/** Live (isActive, non-deleted) product availability counts for one category scope — self plus every descendant, same
+ * rollup listStorefrontProducts uses so these numbers match what a shopper actually sees when browsing that category.
+ * "In stock" is the shared availability rule (engines/availability.ts `isAvailable`, over active variants only): an
+ * untracked product with an active variant is always available, a tracked one needs an active variant with stock.
+ * Public, so it deliberately carries no unit quantities (P0-04) — those stay on the admin-only stock-map. */
+async function getCategoryAvailabilityStat(categoryId: string): Promise<CategoryAvailabilityStat> {
   const descendantIds = await getCategoryDescendantIds(categoryId);
-  const where = { categoryId: { in: descendantIds }, isActive: true, deletedAt: null };
+  const where = { ...inCategoriesWhere(descendantIds), isActive: true, deletedAt: null };
 
-  const [totalProducts, inStockProducts, stockSum] = await Promise.all([
+  const [totalProducts, inStockProducts] = await Promise.all([
     prisma.product.count({ where }),
-    prisma.product.count({ where: { ...where, variants: { some: { stock: { gt: 0 } } } } }),
-    prisma.productVariant.aggregate({ where: { product: where }, _sum: { stock: true } }),
+    prisma.product.count({
+      where: {
+        ...where,
+        OR: [{ trackInventory: false, variants: { some: { isActive: true } } }, { variants: { some: { isActive: true, stock: { gt: 0 } } } }],
+      },
+    }),
   ]);
 
-  return { totalProducts, inStockProducts, totalStock: stockSum._sum.stock ?? 0 };
+  return { totalProducts, inStockProducts };
 }
 
-/** Powers the category page's "N in stock" summary and its subcategory breakdown — the parent's
+/** Powers the category page's "N of M in stock" summary and its subcategory breakdown — the parent's
  * own stat rolls up every descendant (matching what browsing the parent category shows), while
  * each subcategory's stat rolls up only its own descendants. Not cached like getCategoryTree:
  * stock changes with every order, and this is a single per-page-view read rather than a
  * hit-every-request nav lookup, so staleness would cost more than it saves here. */
-export async function getCategoryStockOverview(categoryId: string) {
+export async function getCategoryStockOverview(categoryId: string): Promise<CategoryStockOverview> {
   const children = await prisma.category.findMany({
     where: { parentId: categoryId, isActive: true, deletedAt: null },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -148,8 +165,8 @@ export async function getCategoryStockOverview(categoryId: string) {
   });
 
   const [total, subStats] = await Promise.all([
-    getCategoryStockStat(categoryId),
-    Promise.all(children.map((child) => getCategoryStockStat(child.id))),
+    getCategoryAvailabilityStat(categoryId),
+    Promise.all(children.map((child) => getCategoryAvailabilityStat(child.id))),
   ]);
 
   return {
@@ -159,7 +176,7 @@ export async function getCategoryStockOverview(categoryId: string) {
 }
 
 /** Own-category + rolled-up-to-every-ancestor stock stats for every category in one pass — powers
- * the admin category tree's per-row stock badge. Unlike getCategoryStockStat (storefront, one
+ * the admin category tree's per-row stock badge. Unlike getCategoryAvailabilityStat (storefront, one
  * category at a time via a cached descendant lookup), this computes every node's total in a single
  * pass: one query for each product's variant stock, then a bottom-up accumulate over the parent
  * chain so a parent's total already folds in every descendant's, matching the "self + descendants"
@@ -245,7 +262,7 @@ export async function createCategory(input: CreateCategoryInput) {
 
   let category;
   try {
-    category = await prisma.category.create({ data: { ...input, slug } });
+    category = await prisma.category.create({ data: { ...input, slug, courierNoteRuleIds: await sanitizeCourierNoteRuleIds(input.courierNoteRuleIds) } });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       throw AppError.conflict("A category with this slug already exists");
@@ -270,7 +287,7 @@ export async function updateCategory(id: string, input: UpdateCategoryInput) {
     }
   }
 
-  const data: Record<string, unknown> = { ...input };
+  const data: Record<string, unknown> = { ...input, courierNoteRuleIds: await sanitizeCourierNoteRuleIds(input.courierNoteRuleIds) };
   if (input.name && !input.slug) {
     data.slug = await ensureUniqueSlug(slugify(input.name), async (candidate) => {
       const existing = await prisma.category.findFirst({ where: { slug: candidate, NOT: { id } } });

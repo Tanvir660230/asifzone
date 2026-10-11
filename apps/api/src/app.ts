@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env";
 import { authRouter } from "./modules/auth/auth.routes";
@@ -17,6 +16,10 @@ import { reviewRouter } from "./modules/reviews/review.routes";
 import { redirectRouter } from "./modules/redirects/redirect.routes";
 import { paymentRouter } from "./modules/payments/payment.routes";
 import { paymentAdminRouter } from "./modules/payments/payment-admin.routes";
+import { paymentLinkRouter } from "./modules/payments/payment-link.routes";
+import { metricsRouter } from "./modules/metrics/metrics.routes";
+import { outboxRouter } from "./modules/outbox/outbox.routes";
+import { opsRouter } from "./modules/ops/ops.routes";
 import { paymentMethodRouter } from "./modules/payment-methods/payment-method.routes";
 import { flashSaleRouter } from "./modules/flash-sales/flash-sale.routes";
 import { bannerRouter } from "./modules/banners/banner.routes";
@@ -25,6 +28,8 @@ import { socialLinkRouter } from "./modules/social-links/social-link.routes";
 import { newsletterRouter } from "./modules/newsletter/newsletter.routes";
 import { feedbackRouter } from "./modules/feedback/feedback.routes";
 import { customerRouter } from "./modules/customers/customer.routes";
+import { adminHomeRouter } from "./modules/admin-home/admin-home.routes";
+import { inboxRouter } from "./modules/inbox/inbox.routes";
 import { wishlistRouter } from "./modules/wishlist/wishlist.routes";
 import { cartRouter } from "./modules/cart/cart.routes";
 import { stockAlertRouter } from "./modules/stock-alerts/stock-alert.routes";
@@ -33,6 +38,7 @@ import { biRouter } from "./modules/bi/bi.routes";
 import { inventoryRouter } from "./modules/inventory/inventory.routes";
 import { uploadRouter } from "./modules/uploads/upload.routes";
 import { auditRouter } from "./modules/audit/audit.routes";
+import { storageRouter } from "./modules/storage/storage.routes";
 import { notificationRouter } from "./modules/notifications/notification.routes";
 import { settingsRouter } from "./modules/settings/settings.routes";
 import { smsSettingsRouter } from "./modules/sms-settings/sms-settings.routes";
@@ -42,9 +48,17 @@ import { campaignRouter } from "./modules/campaigns/campaign.routes";
 import { courierRouter } from "./modules/courier/courier.routes";
 import { checkoutV1Router } from "./modules/checkout/checkout.routes";
 import { storefrontReadModelRouter } from "./modules/storefront/read-model.routes";
+import { financeRouter } from "./modules/finance/finance.routes";
+import { purchasingRouter } from "./modules/purchasing/purchasing.routes";
+import { manufacturingRouter } from "./modules/manufacturing/manufacturing.routes";
 import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { auditMiddleware } from "./middlewares/audit";
 import { csrfProtection } from "./middlewares/csrf";
+import { liveProvidersEnabled } from "./lib/provider-guard";
+import { correlationMiddleware } from "./middlewares/correlation";
+import { asyncHandler } from "./lib/async-handler";
+import { readinessReport } from "./modules/ops/readiness";
+import { attentionSignals, requireOpsReadOrMonitorToken } from "./modules/ops/attention";
 
 export const app = express();
 
@@ -58,13 +72,23 @@ app.use(cors({ origin: env.webOrigin, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true })); // SSLCommerz posts callbacks as form-encoded
 app.use(cookieParser());
-app.use(morgan(env.nodeEnv === "development" ? "dev" : "combined"));
+// Phase 11: correlation ID + one structured line per request (replaces morgan). After the parsers — see the middleware.
+app.use(correlationMiddleware);
 app.use(csrfProtection);
 app.use(auditMiddleware);
 
 app.use(`/${env.uploadsDir}`, express.static(env.uploadsDir, { maxAge: "30d" }));
 
-app.get("/health", (_req, res) => res.json({ status: "ok" }));
+// `liveProviders` lets e2e tooling refuse to run against an API that could reach real providers (Phase 9).
+app.get("/health", (_req, res) => res.json({ status: "ok", liveProviders: liveProvidersEnabled() }));
+// Phase 11 readiness: PostgreSQL + Redis + outbox dispatcher; 503 until all are healthy (the deploy gate polls this).
+app.get(
+  "/health/ready",
+  asyncHandler(async (_req, res) => {
+    const report = await readinessReport();
+    res.status(report.ready ? 200 : 503).json(report);
+  }),
+);
 
 app.use("/api/auth", authRouter);
 app.use("/api/categories", categoryRouter);
@@ -79,6 +103,7 @@ app.use("/api/reviews", reviewRouter);
 app.use("/api/redirects", redirectRouter);
 app.use("/api/payments", paymentRouter);
 app.use("/api/payment-admin", paymentAdminRouter);
+app.use("/api/pay", paymentLinkRouter);
 app.use("/api/payment-methods", paymentMethodRouter);
 app.use("/api/flash-sales", flashSaleRouter);
 app.use("/api/banners", bannerRouter);
@@ -95,6 +120,7 @@ app.use("/api/bi", biRouter);
 app.use("/api/inventory", inventoryRouter);
 app.use("/api/uploads", uploadRouter);
 app.use("/api/audit-logs", auditRouter);
+app.use("/api/storage", storageRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/sms-settings", smsSettingsRouter);
@@ -106,6 +132,25 @@ app.use("/api/courier", courierRouter);
 // Versioned API (TARGET_ARCHITECTURE §13): new endpoints land under /api/v1; existing /api routes are unchanged.
 app.use("/api/v1/checkout", checkoutV1Router);
 app.use("/api/v1/storefront/read-model", storefrontReadModelRouter);
+app.use("/api/v1/metrics", metricsRouter);
+app.use("/api/v1/outbox", outboxRouter);
+app.use("/api/v1/admin/conversations", inboxRouter);
+app.use("/api/v1/admin", adminHomeRouter);
+// Financial Core (docs/FINANCE_PHASE_1.md §6): the books of the business — OWNER-only finance.* permissions.
+app.use("/api/v1/finance", financeRouter);
+// Financial Core Phase 4 (docs/FINANCE_PHASE_4.md): purchasing, suppliers / AP and inventory costing.
+app.use("/api/v1/purchasing", purchasingRouter);
+app.use("/api/v1/manufacturing", manufacturingRouter);
+// Phase 11: counts-only attention signals — an admin with ops.read, or an external monitor with OPS_MONITOR_TOKEN.
+// Mounted before the ops router (whose router-level requireAdmin would otherwise run first).
+app.get(
+  "/api/v1/ops/attention",
+  requireOpsReadOrMonitorToken,
+  asyncHandler(async (_req, res) => {
+    res.json(await attentionSignals());
+  }),
+);
+app.use("/api/v1/ops", opsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

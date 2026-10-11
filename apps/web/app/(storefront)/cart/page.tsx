@@ -114,7 +114,7 @@ export default function CartPage() {
           <span className="flex h-16 w-16 items-center justify-center rounded-full bg-ink-100 text-ink-400">
             <ShoppingBag size={28} />
           </span>
-          <h1 className="mt-5 font-display text-2xl text-ink-900">Your cart is empty</h1>
+          <h1 className="mt-5 font-display ui-page-title text-ink-900">Your cart is empty</h1>
           <p className="mt-2 text-sm text-ink-500">Looks like you haven&rsquo;t added anything yet — let&rsquo;s fix that.</p>
           <Link href="/" className="mt-6 w-full">
             <Button variant="primary" size="lg" className="w-full">
@@ -133,7 +133,7 @@ export default function CartPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="mb-8 font-display text-2xl text-ink-900">Your Cart</h1>
+      <h1 className="mb-8 font-display ui-page-title text-ink-900">Your Cart</h1>
 
       {bundlePreview?.eligible && (
         <div className="mb-6 flex items-start gap-3 rounded-lg border border-sale-500/30 bg-sale-50 p-4 text-sm text-ink-800">
@@ -171,7 +171,7 @@ export default function CartPage() {
         {items.map((item) => (
           <div key={item.variantId} className="py-5">
             <div className="flex gap-4">
-              <div className="relative h-24 w-20 shrink-0 overflow-hidden bg-ink-100">
+              <div className="relative h-24 w-20 shrink-0 overflow-hidden rounded-[var(--line-item-radius)] bg-ink-100">
                 {item.imageUrl && (
                   <Image src={resolveImageUrl(item.imageUrl)} alt={item.productName} fill sizes="80px" className="object-cover" />
                 )}
@@ -187,7 +187,7 @@ export default function CartPage() {
                   </p>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center border border-ink-200">
+                  <div className="flex items-center overflow-hidden rounded-[var(--stepper-radius)] border border-ink-200">
                     <button
                       onClick={() => updateQuantity(item.variantId, item.quantity - 1)}
                       disabled={item.quantity <= 1}
@@ -228,8 +228,8 @@ export default function CartPage() {
                 // Negative margin cancels the padding's footprint in the row layout, so the icon
                 // stays visually in place while the actual tappable box grows to ~40px (this app's
                 // baseline touch target, see Button's "md" size) instead of the bare 16px glyph.
-                className="-m-3 shrink-0 self-start p-3 text-ink-300 hover:text-danger-600"
-                aria-label="Remove item"
+                className="-m-3 shrink-0 self-start p-3 text-fg-muted hover:text-danger-600"
+                aria-label={`Remove ${item.productName} from cart`}
               >
                 <Trash2 size={16} />
               </button>
@@ -261,7 +261,7 @@ export default function CartPage() {
       </div>
 
       <div className="mt-6 flex items-center justify-between">
-        <span className="text-sm uppercase tracking-wide text-ink-500">Subtotal</span>
+        <span className="text-sm ui-caps text-ink-500">Subtotal</span>
         <span className="text-lg text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
       </div>
       <p className="mt-1 text-xs text-ink-400">Shipping and any discount are calculated at checkout.</p>

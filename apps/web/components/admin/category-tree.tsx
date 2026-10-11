@@ -26,6 +26,7 @@ import type { Category, CategoryStockStat } from "@clothing-brand/shared";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn, ICON_BUTTON_HIT } from "@/lib/utils";
+import { resolveImageUrl } from "@/lib/image-url";
 
 type ByParent = Map<string | null, Category[]>;
 
@@ -53,6 +54,8 @@ interface CategoryTreeProps {
   onAddChild: (parentId: string) => void;
   onReorder: (parentId: string | null, orderedIds: string[]) => void;
   onMove: (id: string, newParentId: string, sortOrder: number) => void;
+  /** The category open in the inspector (two-pane layout) — highlighted. */
+  selectedId?: string | null;
 }
 
 /** Nested drag-to-reorder category tree. Dragging a row onto another row (in the same or a
@@ -60,7 +63,7 @@ interface CategoryTreeProps {
  * "child zone" (its own droppable region, shown only while dragging, highlighted on hover)
  * moves it to become that category's child instead — this is how a category is reparented, e.g.
  * moving "Cap" out of "Accessories" and into "Men" by dropping it on Men's child zone. */
-export function CategoryTree({ categories, stock, onToggleActive, onEdit, onDelete, onAddChild, onReorder, onMove }: CategoryTreeProps) {
+export function CategoryTree({ categories, stock, onToggleActive, onEdit, onDelete, onAddChild, onReorder, onMove, selectedId = null }: CategoryTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const byParent = groupByParent(categories);
@@ -143,6 +146,7 @@ export function CategoryTree({ categories, stock, onToggleActive, onEdit, onDele
               onEdit={onEdit}
               onDelete={onDelete}
               onAddChild={onAddChild}
+              selectedId={selectedId}
             />
           ))}
         </SortableContext>
@@ -187,6 +191,7 @@ interface CategoryNodeProps {
   onEdit: (category: Category) => void;
   onDelete: (category: Category) => void;
   onAddChild: (parentId: string) => void;
+  selectedId: string | null;
 }
 
 function CategoryNode({
@@ -201,6 +206,7 @@ function CategoryNode({
   onEdit,
   onDelete,
   onAddChild,
+  selectedId,
 }: CategoryNodeProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: category.id,
@@ -223,6 +229,7 @@ function CategoryNode({
             ? "border-ink-100 bg-cream-50 px-4 py-3 shadow-sm hover:shadow-float"
             : "border-ink-100/70 bg-cream-100/50 px-3 py-2 hover:bg-cream-100",
           isDragging && "shadow-float ring-2 ring-brass-300",
+          selectedId === category.id && !isDragging && "ring-2 ring-accent/50",
         )}
       >
         {/* Identity cluster: drag handle, expand chevron, thumbnail, name/slug — always its own row,
@@ -260,7 +267,7 @@ function CategoryNode({
         >
           {category.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={category.imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={resolveImageUrl(category.imageUrl)} alt="" className="h-full w-full object-cover" />
           ) : (
             <ImageIcon size={isMain ? 18 : 14} className="text-ink-300" />
           )}
@@ -286,7 +293,7 @@ function CategoryNode({
                 variant={stock[category.id]!.totalStock > 0 ? "success" : "neutral"}
                 className={cn(
                   "gap-1 border-0 tabular-nums",
-                  stock[category.id]!.totalStock === 0 && "bg-ink-50 text-ink-300",
+                  stock[category.id]!.totalStock === 0 && "bg-ink-50 text-fg-subtle",
                 )}
                 title={`${stock[category.id]!.inStockProducts} of ${stock[category.id]!.totalProducts} products in stock, including subcategories`}
               >
@@ -372,6 +379,7 @@ function CategoryNode({
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onAddChild={onAddChild}
+                    selectedId={selectedId}
                   />
                 ))}
               </SortableContext>

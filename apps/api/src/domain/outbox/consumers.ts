@@ -1,0 +1,125 @@
+/**
+ * Outbox consumers (Phase 8, docs/PHASE_8_AUDIT.md) — each performs ONE external side effect for an intent recorded in the
+ * business transaction. Delivery is at least once, so every consumer states how a repeat stays safe. Consumers read the
+ * order row at send time (contact details, immutable totals — I26) and NEVER write business truth.
+ */
+import { z } from "zod";
+import { prisma } from "../../config/prisma";
+import { deliverAdminOrderAlertSms, deliverCustomerOrderSms } from "../../lib/order-sms";
+import { deliverPaymentConfirmationEmail } from "../../lib/order-mailer";
+import { processMetaPurchase } from "../../lib/meta/purchase";
+import { getProviders } from "../../providers/registry";
+import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
+import { deliverConversationReply } from "../../lib/conversation-reply";
+import { processFinancialEvent } from "../finance/events.service";
+
+export type ConsumerResult = "sent" | "disabled" | "skipped";
+
+export interface OutboxConsumer<P = unknown> {
+  /** Versioned business events this consumer accepts; a payload of any other type/version is refused (not retried). */
+  eventTypes: readonly string[];
+  payload: z.ZodType<P>;
+  /** How a repeated delivery of the same event stays safe (documented, and asserted non-empty by the guard). */
+  idempotency: string;
+  handle(payload: P, event: { id: string; eventKey: string }): Promise<ConsumerResult>;
+  /** What to keep of the payload once delivered (drops personal data that is only needed for the send). */
+  scrub?: (payload: P) => Record<string, unknown>;
+}
+
+const TOUCHPOINTS = ["PLACED", "CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED"] as const;
+const orderIdPayload = z.object({ orderId: z.string().min(1) });
+
+async function orderFacts(orderId: string) {
+  return prisma.order.findUnique({
+    where: { id: orderId },
+    select: { orderNumber: true, total: true, customerName: true, customerPhone: true, customerEmail: true, deletedAt: true },
+  });
+}
+
+export const OUTBOX_CONSUMERS = {
+  "customer-order-sms": {
+    eventTypes: ["order.placed.v1", "order.status_changed.v1"],
+    payload: orderIdPayload.extend({ touchpoint: z.enum(TOUCHPOINTS) }),
+    idempotency:
+      "Outbox row claim (skip once PROCESSED; a PROCESSING lease blocks a concurrent duplicate). BulkSMSBD has no idempotency key, so a crash after the provider accepted and before the row is marked processed can resend once the lease expires (at-least-once).",
+    async handle({ orderId, touchpoint }) {
+      const order = await orderFacts(orderId);
+      if (!order || order.deletedAt) return "skipped";
+      return deliverCustomerOrderSms(order, touchpoint);
+    },
+  } satisfies OutboxConsumer<{ orderId: string; touchpoint: (typeof TOUCHPOINTS)[number] }>,
+
+  "admin-order-alert-sms": {
+    eventTypes: ["order.placed.v1"],
+    payload: orderIdPayload,
+    idempotency: "Outbox row claim (as customer-order-sms); retried only when every admin phone failed, so a partial success is never re-sent.",
+    async handle({ orderId }) {
+      const order = await orderFacts(orderId);
+      if (!order || order.deletedAt) return "skipped";
+      return deliverAdminOrderAlertSms(order);
+    },
+  } satisfies OutboxConsumer<{ orderId: string }>,
+
+  "payment-receipt-email": {
+    eventTypes: ["payment.settled.v1"],
+    payload: orderIdPayload,
+    idempotency: "Outbox row claim + Resend idempotencyKey = outbox event id (the provider drops a repeat within 24 h).",
+    async handle({ orderId }, event) {
+      const order = await orderFacts(orderId);
+      if (!order || order.deletedAt) return "skipped";
+      return deliverPaymentConfirmationEmail(order, event.id);
+    },
+  } satisfies OutboxConsumer<{ orderId: string }>,
+
+  "customer-payment-link": {
+    eventTypes: ["payment_link.send_requested.v1"],
+    payload: z.object({ paymentLinkId: z.string().min(1), channel: z.enum(["SMS", "EMAIL"]) }),
+    idempotency:
+      "Outbox row claim (one row per link × channel × send request); EMAIL also passes the outbox event id as the Resend idempotencyKey. A link that is no longer ACTIVE when the row is processed is skipped, so a stale link is never sent.",
+    async handle({ paymentLinkId, channel }, event) {
+      return deliverPaymentLinkMessage(paymentLinkId, channel, event.id);
+    },
+  } satisfies OutboxConsumer<{ paymentLinkId: string; channel: "SMS" | "EMAIL" }>,
+
+  "conversation-reply": {
+    eventTypes: ["conversation.reply_requested.v1"],
+    payload: z.object({ messageId: z.string().min(1) }),
+    idempotency:
+      "Outbox row claim (one row per reply message — eventKey is the message id); EMAIL also passes the outbox event id as the Resend idempotencyKey. SMS has no provider key, so a crash after the provider accepted can resend once the lease expires (at-least-once).",
+    async handle({ messageId }, event) {
+      return deliverConversationReply(messageId, event.id);
+    },
+  } satisfies OutboxConsumer<{ messageId: string }>,
+
+  "meta-capi-purchase": {
+    eventTypes: ["order.placed.v1"],
+    payload: orderIdPayload.extend({ context: z.record(z.string(), z.unknown()) }),
+    idempotency: "Outbox row claim + Meta event_id purchase_<orderNumber> (Meta keeps one event per id for 48 h).",
+    async handle({ orderId, context }) {
+      if (!getProviders().serverEvents.enabled()) return "disabled";
+      await processMetaPurchase({ orderId, context });
+      return "sent";
+    },
+    // The shopper's IP / user agent / click ids are only needed for the send.
+    scrub: ({ orderId }) => ({ orderId }),
+  } satisfies OutboxConsumer<{ orderId: string; context: Record<string, unknown> }>,
+
+  // Financial Core (docs/FINANCE_PHASE_1.md §5): posts a recorded FinancialEvent to the ledger. Not an external side effect,
+  // but the same durable, retried, FAILED-surfacing delivery is exactly what event posting needs.
+  "finance-event-post": {
+    eventTypes: ["finance.event_recorded.v1"],
+    payload: z.object({ financialEventId: z.string().min(1) }),
+    idempotency:
+      "The event row is locked while it posts, a POSTED event is final (database trigger), and the journal's idempotency key is the event identity — a repeat delivery finds the journal and posts nothing.",
+    async handle({ financialEventId }) {
+      const outcome = await processFinancialEvent(financialEventId);
+      return outcome === "posted" ? "sent" : "skipped";
+    },
+  } satisfies OutboxConsumer<{ financialEventId: string }>,
+} as const;
+
+export type OutboxConsumerName = keyof typeof OUTBOX_CONSUMERS;
+
+export function outboxConsumer(name: string): OutboxConsumer | undefined {
+  return (OUTBOX_CONSUMERS as Record<string, OutboxConsumer>)[name];
+}

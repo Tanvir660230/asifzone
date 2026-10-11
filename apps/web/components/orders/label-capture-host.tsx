@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { Order, StoreSettings } from "@clothing-brand/shared";
+import type { Order, OrderPaymentSummary, StoreSettings } from "@clothing-brand/shared";
 import type { LabelTemplate, ResolvedGeometry } from "@/lib/label-templates";
 import { ShippingLabel } from "./shipping-label";
 import { ShippingLabelSquare } from "./shipping-label-square";
@@ -26,7 +26,8 @@ interface LabelCaptureHostProps {
    * manual reset routinely clobbered a readiness count the children had *just* finished reporting,
    * permanently stalling the capture pipeline. Keying the remount instead sidesteps the race by
    * construction: there's nothing to race when the old instance is simply gone. */
-  orders: Order[];
+  /** Each order carries its payment ledger position (`payment.codToCollect` is the COD amount printed). */
+  orders: Array<Order & { payment: OrderPaymentSummary }>;
   store: StoreSettings | undefined;
   template: LabelTemplate;
   geometry: ResolvedGeometry;

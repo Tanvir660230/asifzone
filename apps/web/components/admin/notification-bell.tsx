@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bell, PackageX, ShoppingBag } from "lucide-react";
 import * as notificationsApi from "@/lib/api/notifications";
+import { useAttentionCounts } from "@/hooks/use-attention-counts";
+import { attentionKeys } from "@/lib/query-keys";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -24,19 +26,24 @@ export function NotificationBell() {
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: () => setOpen(false), lockScroll: false });
   const queryClient = useQueryClient();
 
+  const attention = useAttentionCounts();
   const { data } = useQuery({
     queryKey: ["notifications"],
     queryFn: notificationsApi.listNotifications,
-    refetchInterval: 30_000,
+    enabled: open,
   });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    queryClient.invalidateQueries({ queryKey: attentionKeys.all });
+  };
 
   const markReadMutation = useMutation({
     mutationFn: notificationsApi.markNotificationRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onSuccess: invalidate,
   });
   const markAllMutation = useMutation({
     mutationFn: notificationsApi.markAllNotificationsRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onSuccess: invalidate,
   });
 
   useEffect(() => {
@@ -48,7 +55,7 @@ export function NotificationBell() {
   }, []);
 
   const items = data?.items ?? [];
-  const unreadCount = data?.unreadCount ?? 0;
+  const unreadCount = data?.unreadCount ?? attention.unreadNotifications;
 
   return (
     <div ref={wrapperRef} className="relative">
@@ -56,13 +63,13 @@ export function NotificationBell() {
         onClick={() => setOpen((o) => !o)}
         aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`}
         aria-expanded={open}
-        className="relative flex h-9 w-9 items-center justify-center rounded-full text-ink-500 transition-all duration-200 ease-smooth hover:scale-110 hover:bg-ink-100 hover:text-ink-900"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
       >
-        <Bell size={18} />
+        <Bell size={18} strokeWidth={1.9} />
         {unreadCount > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900"
+            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-semibold text-white ring-2 ring-surface"
           >
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>

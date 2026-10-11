@@ -30,7 +30,7 @@ const stepChip = (page: Page, id: string) => page.getByTestId(`wizard-step-${id}
  * variant-having type can't be created with the untouched blank default row) on the "new" wizard and
  * finishes creation, landing on the edit wizard. */
 async function createThroughWizard(page: Page, name: string, typeLabel: string, price: string) {
-  await page.goto("/admin/products/wizard/new");
+  await page.goto("/admin/products/new");
   await page.getByLabel("Product name").fill(name);
   await page.getByLabel("Category").selectOption({ index: 1 });
   await page.getByLabel("Product type").selectOption({ label: typeLabel });
@@ -48,9 +48,9 @@ async function createThroughWizard(page: Page, name: string, typeLabel: string, 
     await page.getByRole("button", { name: "Continue" }).click(); // creates the product
   }
 
-  await expect(page).toHaveURL(/\/admin\/products\/wizard\/[^/]+\/edit/);
+  await expect(page).toHaveURL(/\/admin\/products\/[^/]+\/edit/);
   await expect(page.getByRole("heading", { name: `Edit ${name}` })).toBeVisible();
-  return page.url().match(/wizard\/([^/]+)\/edit/)?.[1] ?? "";
+  return page.url().match(/products\/([^/]+)\/edit/)?.[1] ?? "";
 }
 
 test.describe.configure({ mode: "serial" });
@@ -88,14 +88,14 @@ test.describe("product wizard: dynamic steps, create, autosave", () => {
   test("2. the 'new' wizard never shows Care & Material or Size Guide (or anything past Pricing) before the product exists", async ({ page }) => {
     await login(page);
     // A type with no variant dimensions: nothing at all exists before the product does — 3 steps flat.
-    await page.goto("/admin/products/wizard/new");
+    await page.goto("/admin/products/new");
     await page.getByLabel("Product type").selectOption({ label: TYPE_NAME });
     await expect(page.getByText("Step 1 of 3")).toBeVisible();
 
     // A type WITH size/color: Variants also has to be reachable pre-creation (the server requires a
     // real size/color on the very first save for a type that declares those dimensions) — but Care &
     // Material and Size Guide still don't, since nothing about creating the row needs them.
-    await page.goto("/admin/products/wizard/new");
+    await page.goto("/admin/products/new");
     await page.getByLabel("Product type").selectOption({ label: "Clothing" });
     await expect(page.getByText("Step 1 of 4")).toBeVisible();
     await expect(stepChip(page, "variants")).toBeVisible();
@@ -106,7 +106,7 @@ test.describe("product wizard: dynamic steps, create, autosave", () => {
 
   test("3. Back preserves what was typed on an earlier step", async ({ page }) => {
     await login(page);
-    await page.goto("/admin/products/wizard/new");
+    await page.goto("/admin/products/new");
     await page.getByLabel("Product name").fill(SIMPLE_PRODUCT);
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(stepChip(page, "media")).toHaveAttribute("aria-current", "step");
@@ -143,7 +143,7 @@ test.describe("product wizard: dynamic steps, create, autosave", () => {
 
   test("6. autosave persists an edit without an explicit save action", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${simpleProductId}/edit`);
+    await page.goto(`/admin/products/${simpleProductId}/edit`);
 
     await page.getByLabel("Short description").fill(`Autosaved ${RUN}`);
     await expect(page.getByTestId("wizard-autosave-status")).toHaveText(/Saving…|Saved/, { timeout: 5_000 });
@@ -155,7 +155,7 @@ test.describe("product wizard: dynamic steps, create, autosave", () => {
 
   test("7. Options & Variants is reachable and works on the variant product's edit wizard", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${variantProductId}/edit`);
+    await page.goto(`/admin/products/${variantProductId}/edit`);
     await stepChip(page, "variants").click();
     await expect(page.getByRole("heading", { name: "Options & Variants" })).toBeVisible();
     await page.getByPlaceholder("SKU-001").first().fill(`WZ-${RUN}-M`);

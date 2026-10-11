@@ -131,3 +131,16 @@ export async function cleanupFixtures() {
     await prisma.product.deleteMany({ where: { id: { in: made.productIds } } });
   }
 }
+
+/** Financial Core test support (docs/FINANCE_PHASE_1.md §4.7): empties every finance table. The ledger refuses TRUNCATE and
+ * deletes, so this opts into maintenance purge for its one transaction — test databases only (a guard keeps it out of
+ * application code). */
+export async function purgeFinanceTables() {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SET LOCAL finance.maintenance_purge = 'on'`);
+    await tx.$executeRawUnsafe(
+      `TRUNCATE "Partner", "PayrollRemittance", "PayslipPayment", "PayslipLine", "Payslip", "PayRun", "EmployeePayItem", "Employee", "PayComponent", "BudgetLine", "Budget", "LoanAccrualLine", "LoanAccrualRun", "LoanRepayment", "Loan", "DepreciationLine", "DepreciationRun", "FixedAsset", "Expense", "RecurringCommitment", "SupplierAllocation", "SupplierInvoiceLine", "SupplierInvoice", "ProductionSettlementLine", "ProductionSettlement", "ProductionReceiptLine", "ProductionReceipt", "ProductionCostEntry", "ProductionMaterialMove", "ProductionPlannedCost", "ProductionMaterialLine", "ProductionOrderLine", "ProductionOrder", "BillOfMaterialsLine", "BillOfMaterials", "ProductionCostCategory", "PurchaseReturnLine", "PurchaseReturn", "GoodsReceiptLine", "GoodsReceipt", "PurchaseOrderLine", "PurchaseOrder", "InventoryCutoverLine", "InventoryCutoverBatch", "InventoryCostState", "InventoryValuationEntry", "Supplier", "TaxCode", "ClearingSettlementLine", "ClearingSettlement", "FinanceException", "FinanceSyncState", "BankTransactionMatch", "BankTransaction", "StatementImport", "BankReconciliation", "TreasuryMovement", "ReconciliationRun", "OpeningInventoryItem", "OpeningBalanceLine", "OpeningBalanceBatch", "JournalLine", "JournalEntry", "FinancialEvent", "FinanceAuditEntry", "FinanceSequence", "FinancialPeriod", "FinancialAccount", "AccountMapping", "LedgerAccount", "FinanceBrand", "FinanceBusiness"`,
+    );
+    await tx.$executeRawUnsafe(`DELETE FROM "OutboxEvent" WHERE consumer = 'finance-event-post'`);
+  });
+}

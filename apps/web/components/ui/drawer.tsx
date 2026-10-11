@@ -1,10 +1,13 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { isTypingTarget } from "@/lib/keyboard";
+import { isTopLayer } from "@/lib/layer-stack";
+import { IconButton } from "./icon-button";
 
 interface DrawerProps {
   open: boolean;
@@ -21,15 +24,15 @@ interface DrawerProps {
   nextDisabled?: boolean;
   /** e.g. "3 of 20" — shown next to the nav buttons on sm and up. */
   navLabel?: string;
+  /** What the prev/next buttons step through, for their accessible names ("Previous order"). */
+  navItemLabel?: string;
+  /** Read out politely when it changes — after a prev/next step the panel's content changes under a fixed title, so
+   * say what's now showing ("Order ORD-… loaded, 4 of 20"). */
+  announcement?: string;
 }
 
-function isTypingTarget(el: EventTarget | null): boolean {
-  const tag = (el as HTMLElement | null)?.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean((el as HTMLElement | null)?.isContentEditable);
-}
-
-/** Right-side slide-in panel — same portal/backdrop/focus-trap recipe as `cart-drawer.tsx`,
- * generalized with `Modal`'s title/children API so it can host arbitrary admin content. */
+/** Right-side slide-in panel (full width on mobile) — portal, backdrop-click and Escape to close,
+ * focus trap, optional prev/next stepping (Arrow Up/Down) through the list it was opened from. */
 export function Drawer({
   open,
   onClose,
@@ -41,8 +44,15 @@ export function Drawer({
   prevDisabled,
   nextDisabled,
   navLabel,
+  navItemLabel = "item",
+  announcement,
 }: DrawerProps) {
-  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose });
+  const layerRef = useRef<number | null>(null);
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, layerRef });
+  // The panel portals into document.body, which doesn't exist during server rendering — a drawer opened from the URL on
+  // first load (?open=, ?reports=1) renders once the page has mounted instead of failing the server render.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Kept as its own effect, separate from the focus-trap hook above — onPrev/onNext are fresh
   // closures every render of the parent (e.g. the Orders list), and folding this into the trap's
@@ -56,8 +66,10 @@ export function Drawer({
   useEffect(() => {
     if (!open) return;
 
+    // The reserved drawer ↑/↓ shortcut (lib/admin/shortcuts.ts "drawer.prev" / "drawer.next") — only while this drawer
+    // is the top layer, so arrow keys in a popover or dialog opened over it stay theirs.
     function onKeyDown(e: KeyboardEvent) {
-      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !isTypingTarget(document.activeElement)) {
+      if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !isTypingTarget(document.activeElement) && isTopLayer(layerRef.current)) {
         const nav = navRef.current;
         if (e.key === "ArrowUp" && nav.onPrev && !nav.prevDisabled) nav.onPrev();
         if (e.key === "ArrowDown" && nav.onNext && !nav.nextDisabled) nav.onNext();
@@ -68,10 +80,10 @@ export function Drawer({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="ui-overlay fixed inset-0 z-overlay animate-fade-in" onClick={onClose}>
       <div
         ref={panelRef}
         role="dialog"
@@ -80,40 +92,29 @@ export function Drawer({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "ml-auto flex h-full w-full flex-col bg-cream-50 shadow-floatLg animate-slide-in-right",
+          "ml-auto flex h-full w-full flex-col border-l border-white/70 bg-surface shadow-glass-lg animate-slide-in-right",
           widthClassName,
         )}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-ink-100 px-5 py-4">
-          <div className="min-w-0 flex-1 truncate font-display text-lg text-ink-900">{title}</div>
+        <p className="sr-only" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </p>
+        <div className="glass sticky top-0 z-raised flex shrink-0 items-center gap-3 border-b border-line-subtle px-5 py-3.5">
+          <div className="min-w-0 flex-1 truncate font-display text-lg tracking-tight text-fg">{title}</div>
           {(onPrev || onNext) && (
             <div className="flex shrink-0 items-center gap-1">
-              {navLabel && <span className="hidden text-xs tabular-nums text-ink-400 sm:inline">{navLabel}</span>}
-              <button
-                onClick={onPrev}
-                disabled={!onPrev || prevDisabled}
-                aria-label="Previous order"
-                className="rounded-full p-1.5 text-ink-500 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900 disabled:opacity-30 disabled:hover:bg-transparent"
-              >
+              {navLabel && <span className="hidden text-xs tabular-nums text-fg-subtle sm:inline">{navLabel}</span>}
+              <IconButton size="sm" onClick={onPrev} disabled={!onPrev || prevDisabled} aria-label={`Previous ${navItemLabel}`}>
                 <ChevronUp size={18} />
-              </button>
-              <button
-                onClick={onNext}
-                disabled={!onNext || nextDisabled}
-                aria-label="Next order"
-                className="rounded-full p-1.5 text-ink-500 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900 disabled:opacity-30 disabled:hover:bg-transparent"
-              >
+              </IconButton>
+              <IconButton size="sm" onClick={onNext} disabled={!onNext || nextDisabled} aria-label={`Next ${navItemLabel}`}>
                 <ChevronDown size={18} />
-              </button>
+              </IconButton>
             </div>
           )}
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 rounded-full p-1.5 text-ink-400 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900"
-          >
-            <X size={20} />
-          </button>
+          <IconButton size="sm" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </IconButton>
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>

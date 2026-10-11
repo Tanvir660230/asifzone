@@ -1,30 +1,96 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Menu } from "lucide-react";
-import { Sidebar } from "@/components/admin/sidebar";
+import { usePathname, useRouter } from "next/navigation";
+import { ExternalLink, Menu, Plus, Search } from "lucide-react";
+import { MobileBottomNav, Sidebar } from "@/components/admin/sidebar";
+import { SectionBar } from "@/components/admin/section-bar";
+import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { NotificationBell } from "@/components/admin/notification-bell";
+import { CommandPalette, useCommandPaletteHotkey, useCreateCommands } from "@/components/admin/command-palette";
+import { NAV_ICONS } from "@/components/admin/nav-icons";
+import { ShortcutHelp } from "@/components/admin/shortcut-help";
+import { AccountMenu } from "@/components/admin/account-menu";
+import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { Toaster } from "@/components/ui/toast";
-import { useCurrentAdmin } from "@/hooks/use-current-admin";
-
-/** "Store Owner" -> "SO" — fallback avatar monogram, same convention as the storefront header's logo fallback. */
-function getInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  return words
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-}
+import { useNavAccess } from "@/hooks/use-nav-access";
+import { useShortcut } from "@/hooks/use-shortcut";
+import { useSidebarCollapse } from "@/hooks/use-sidebar-collapse";
+import { useKeyboardFlag } from "@/hooks/use-keyboard-flag";
+import { documentTitleFor, goTargets, pageWidthFor, sectionBarFor } from "@/lib/admin/navigation";
+import { cn } from "@/lib/utils";
 
 export default function ShellLayout({ children }: { children: ReactNode }) {
-  const { data, isLoading } = useCurrentAdmin();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useCommandPaletteHotkey();
+  const [createOpen, setCreateOpen] = useState(false);
+  const createRef = useRef<HTMLButtonElement>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const access = useNavAccess();
+  const sidebar = useSidebarCollapse();
+  useKeyboardFlag();
+  // The module's pages under the toolbar whenever the sidebar isn't listing them: under a collapsed rail, and below lg.
+  const sectionBar = access.ready ? sectionBarFor(pathname, access) : null;
+  const sectionBarMode = sidebar.collapsed ? "always" : "compact";
+  // The Create menu: the navigation manifest's create commands this admin may run, each with its module's icon.
+  const createItems = useCreateCommands().map((c) => ({
+    label: c.label,
+    icon: c.node.icon ? NAV_ICONS[c.node.icon] : Plus,
+    onClick: () => router.push(c.route),
+  }));
+
+  // Page titles come from the navigation manifest — one place names every admin page.
+  useEffect(() => {
+    document.title = documentTitleFor(pathname);
+  }, [pathname]);
+
+  // Drawers, popovers and menus portal into <body>, outside the shell's element below — the body carries the admin
+  // surface too while the console is mounted, so they get the same tokens (and lose them again on the storefront).
+  useEffect(() => {
+    document.body.dataset.surface = "admin";
+    return () => {
+      delete document.body.dataset.surface;
+    };
+  }, []);
+
+  // Global shortcuts (lib/admin/shortcuts.ts). They stand down while typing or while any overlay is open.
+  useShortcut("create.open", () => setCreateOpen(true), { enabled: createItems.length > 0 });
+  useShortcut("help.open", () => setHelpOpen(true));
+  useShortcut("search.focus", () => {
+    // A page that has its own search box marks it with data-page-search; otherwise "/" opens the palette.
+    const field = document.querySelector<HTMLInputElement>("[data-page-search]");
+    if (field) field.focus();
+    else setPaletteOpen(true);
+  });
+  useShortcut("nav.goTo", (_event, key) => {
+    const target = goTargets(access).find((t) => t.key === key);
+    if (target) router.push(target.href);
+  });
+
+  // "⌘K" on Apple keyboards, "Ctrl K" elsewhere — read after mount, the server can't know.
+  const [modKey, setModKey] = useState("Ctrl");
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.platform)) setModKey("⌘");
+  }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <div className="print:hidden">
-        <Sidebar mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
+    // data-surface="admin": the Store Console's own tokens (Apple-style, light only), whatever the store's brand theme.
+    // On this element for the server render; portalled overlays get it from <body> (effect above).
+    <div data-surface="admin" data-shell="" data-section-bar={sectionBar ? sectionBarMode : undefined} className="relative flex h-screen overflow-hidden bg-canvas font-sans text-fg">
+      {/* First stop for keyboard users: past the sidebar and toolbar straight to the page. */}
+      <a
+        href="#main-content"
+        className="sr-only z-overlay rounded-full bg-fg px-4 py-2 text-sm font-medium text-surface focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+      >
+        Skip to content
+      </a>
+      {/* Its own layer above the page column: the rail's flyouts live inside the sidebar's (blurred, so stacking) box and
+          would otherwise paint under the page's cards. */}
+      <div className="relative z-sticky print:hidden">
+        <Sidebar collapsed={sidebar.collapsed} onToggleCollapsed={sidebar.toggle} mobileOpen={mobileNavOpen} onCloseMobile={() => setMobileNavOpen(false)} />
       </div>
       {/* min-w-0 overrides the flex item's default min-width:auto — without it, a flex child never
           shrinks below its content's natural width (e.g. a wide table), which forces the whole page
@@ -33,37 +99,85 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
           This column owns its own vertical scroll (h-screen + overflow-y-auto on the outer flex
           container) so the sidebar next to it — a plain in-flow flex item, not itself fixed/sticky —
           never scrolls out of view: it only ever needs to be as tall as this column's viewport-height
-          box, never as tall as the page content inside it. */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <header className="glass sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b border-ink-100/70 px-4 print:hidden sm:px-6">
-          <button onClick={() => setMobileNavOpen(true)} className="text-ink-600 lg:hidden" aria-label="Open menu">
-            <Menu size={22} />
-          </button>
+          box, never as tall as the page content inside it.
 
-          <div className="ml-auto flex items-center gap-4">
-            <Link
-              href="/"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1.5 rounded-full border border-ink-200 px-3 py-1.5 text-xs font-medium text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400 hover:text-ink-900"
-            >
-              <ExternalLink size={13} />
-              <span className="hidden sm:inline">View store</span>
-            </Link>
-            <NotificationBell />
-            <div className="flex items-center gap-2.5 border-l border-ink-200 pl-4">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-semibold text-cream-50">
-                {isLoading || !data ? "…" : getInitials(data.admin.name)}
-              </span>
-              <div className="hidden leading-tight sm:block">
-                <p className="text-sm font-medium text-ink-900">{isLoading ? "Loading…" : data?.admin.name}</p>
-                <p className="text-xs text-ink-400">{data?.admin.role === "OWNER" ? "Owner" : "Staff"}</p>
+          Below lg the mobile bottom bar sits UNDER that scrolling box, in normal flow — not fixed over it — so the
+          scroll viewport ends above the bar and no content (or a page's own sticky toolbar) can be hidden behind it. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
+          {/* The toolbar (macOS-style): where you are on the left, one search for everything in the middle, actions on the
+              right — three columns so the search stays centred whatever the breadcrumb's length. */}
+          {/* Toolbar and section bar share one pinned, translucent layer — one material, one bottom edge. */}
+          <div className="sticky top-0 z-20 shrink-0 border-b border-ink-900/[0.07] bg-surface/85 backdrop-blur-xl backdrop-saturate-150 print:hidden">
+            <header className="grid h-header grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 sm:px-6">
+              <div className="flex min-w-0 items-center gap-2">
+                <button onClick={() => setMobileNavOpen(true)} className="-ml-1 flex h-10 w-10 items-center justify-center rounded-full text-ink-600 hover:bg-ink-900/[0.05] lg:hidden" aria-label="Open menu">
+                  <Menu size={20} />
+                </button>
+                <Breadcrumbs titleOnLanding className="hidden min-w-0 md:flex" />
               </div>
-            </div>
+
+              <button
+                onClick={() => setPaletteOpen(true)}
+                className="flex h-10 w-10 items-center justify-center gap-2 rounded-full text-fg-muted transition-[border-color,box-shadow,background-color] duration-fast ease-smooth hover:bg-ink-900/[0.05] sm:w-[min(480px,38vw)] sm:justify-start sm:rounded-xl sm:border sm:border-line sm:bg-canvas sm:px-3 sm:hover:border-line-strong sm:hover:bg-surface sm:hover:shadow-xs"
+                aria-label="Search"
+              >
+                <Search size={16} className="shrink-0" />
+                <span className="hidden truncate text-[13.5px] text-fg-subtle sm:inline">Search orders, products, customers…</span>
+                <kbd className="ml-auto hidden shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] font-medium leading-none text-fg-subtle sm:inline">
+                  {modKey} K
+                </kbd>
+              </button>
+
+              <div className="flex items-center justify-end gap-1">
+                {createItems.length > 0 && (
+                  <>
+                    <button
+                      ref={createRef}
+                      onClick={() => setCreateOpen((o) => !o)}
+                      aria-label="Create"
+                      aria-haspopup="menu"
+                      aria-expanded={createOpen}
+                      title="Create"
+                      className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
+                    >
+                      <Plus size={19} />
+                    </button>
+                    <DropdownMenu open={createOpen} onClose={() => setCreateOpen(false)} anchorRef={createRef} items={createItems} />
+                  </>
+                )}
+                <Link
+                  href="/"
+                  // Opens in a new tab — prefetching the storefront would only load its JS and hero images into the admin.
+                  prefetch={false}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="View store (opens in a new tab)"
+                  title="View store"
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.06] hover:text-fg"
+                >
+                  <ExternalLink size={17} />
+                </Link>
+                <NotificationBell />
+                <span className="mx-2 h-5 w-px bg-ink-900/[0.1]" aria-hidden />
+                <AccountMenu onShowShortcuts={() => setHelpOpen(true)} />
+              </div>
+            </header>
+            <SectionBar bar={sectionBar} mode={sectionBarMode} />
           </div>
-        </header>
-        <main className="flex-1 p-4 sm:p-8 print:p-0">{children}</main>
+          <main id="main-content" tabIndex={-1} className="flex-1 outline-none px-4 py-6 sm:px-page sm:py-8 print:p-0">
+            {/* Full screen for data pages; one centered column for forms (pageWidthFor). The 2400px ceiling only matters on
+                ultra-wide monitors, where a single table row would otherwise be too long to follow. */}
+            <div className={cn("mx-auto w-full", pageWidthFor(pathname) === "form" ? "max-w-[880px]" : "max-w-[2400px]")}>
+              <Breadcrumbs className="mb-3 print:hidden md:hidden" />
+              {children}
+            </div>
+          </main>
+        </div>
+        <MobileBottomNav onOpenMore={() => setMobileNavOpen(true)} />
       </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       <Toaster />
     </div>
   );

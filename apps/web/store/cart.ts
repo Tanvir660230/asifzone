@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { syncCart } from "@/lib/api/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { trackFunnelEvent } from "@/lib/analytics";
-import { pixelAddToCart } from "@/lib/meta-pixel";
+import { pixelAddToCart } from "@/lib/pixels";
 
 export interface CartItem {
   variantId: string;
@@ -67,11 +67,11 @@ export const useCartStore = create<CartState>()(
         });
         scheduleSync(get().items);
         // Measured after the fact rather than assumed from `quantity` — the stock clamp above can
-        // add fewer than asked, or nothing at all when the line is already at maxStock, and Meta
-        // must only ever hear about what actually landed in the cart. Lives here, not in the
+        // add fewer than asked, or nothing at all when the line is already at maxStock, and the ad
+        // pixels must only ever hear about what actually landed in the cart. Lives here, not in the
         // buttons, so every add path (PDP, sticky bar, reorder) reports the same way.
         const added = (get().items.find((i) => i.variantId === item.variantId)?.quantity ?? 0) - before;
-        if (added > 0) pixelAddToCart({ id: item.variantId, quantity: added, price: item.price }, item.productName);
+        if (added > 0) pixelAddToCart({ id: item.variantId, name: item.productName, quantity: added, price: item.price });
         // Surface the drawer as visual confirmation of what was just added — this is the
         // shopper's main feedback that the click registered, since there's no page navigation.
         useCartDrawerStore.getState().open();

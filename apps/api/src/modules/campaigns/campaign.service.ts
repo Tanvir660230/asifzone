@@ -1,17 +1,16 @@
-import { Queue } from "bullmq";
+import { currentCorrelationId } from "../../lib/observability/context";
 import type { Customer, Campaign } from "@prisma/client";
 import type { CampaignListQuery, CreateCampaignInput, SegmentType, UpdateCampaignInput } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
-import { queueConnection } from "../../lib/queue";
+import { createQueue } from "../../lib/queue";
 import { mapWithConcurrency } from "../../lib/concurrency";
-import { sendMail } from "../../lib/mailer";
-import { sendSms } from "../../lib/sms";
-import { sendPush } from "../../lib/push";
 import { renderEmailLayout, emailLink } from "../../lib/email-template";
 import { generateEmailUnsubscribeToken } from "../customers/customer.service";
+import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
 
 /** Every SMS a customer receives — bulk campaign or a one-off admin message (see
  * customer.service.ts's sendAdHocSmsToCustomer) — is recorded as a Campaign + CampaignRecipient
@@ -60,10 +59,10 @@ async function dispatchToRecipient(campaign: Campaign, customer: Customer): Prom
       if (!customer.email) throw new Error("Customer has no email on file");
       if (!customer.emailMarketingOptIn) throw new Error("Customer has not opted in to email marketing");
       const unsubscribeUrl = `${env.webOrigin}/account/unsubscribe?customerId=${customer.id}&token=${generateEmailUnsubscribeToken(customer.id)}`;
-      await sendMail({
+      await getProviders().email.send({
         to: customer.email,
         subject: title,
-        html: renderEmailLayout({
+        html: await renderEmailLayout({
           bodyHtml: campaign.body,
           footerHtml: `Don't want these emails? ${emailLink(unsubscribeUrl, "Unsubscribe")}`,
         }),
@@ -73,13 +72,13 @@ async function dispatchToRecipient(campaign: Campaign, customer: Customer): Prom
     case "SMS":
       if (!customer.phone) throw new Error("Customer has no phone number on file");
       if (!customer.smsMarketingOptIn) throw new Error("Customer has not opted in to SMS marketing");
-      await sendSms({ to: customer.phone, body: campaign.body });
+      await getProviders().sms.send({ to: customer.phone, body: campaign.body });
       return;
     case "PUSH": {
       const subscriptions = await prisma.pushSubscription.findMany({ where: { customerId: customer.id } });
       if (!subscriptions.length) throw new Error("Customer has no push subscription");
       await Promise.all(
-        subscriptions.map((s) => sendPush({ subscription: s, title, body: campaign.body })),
+        subscriptions.map((s) => getProviders().push.send({ subscription: s, title, body: campaign.body })),
       );
       return;
     }
@@ -243,8 +242,9 @@ export async function queueCampaignSend(id: string) {
     }),
   ]);
 
-  const queue = new Queue(CAMPAIGN_SEND_QUEUE, { connection: queueConnection });
-  await queue.add("send", { campaignId: id });
+  const queue = createQueue(CAMPAIGN_SEND_QUEUE);
+  // Phase 11: the send job inherits the request's correlation ID (observability only).
+  await queue.add("send", { campaignId: id, correlationId: currentCorrelationId() });
 }
 
 /** The actual send loop, run by the campaign-send worker. Each recipient's outcome is recorded
@@ -293,7 +293,7 @@ export async function promoteDueCampaigns(): Promise<number> {
     select: { id: true },
   });
   for (const { id } of due) {
-    await queueCampaignSend(id).catch((err) => console.error(`[campaign-scheduler] failed to promote ${id}:`, err));
+    await queueCampaignSend(id).catch((err) => captureError(err, { msg: `[campaign-scheduler] failed to promote ${id}:` }));
   }
   return due.length;
 }

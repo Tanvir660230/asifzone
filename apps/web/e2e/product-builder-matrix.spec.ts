@@ -49,10 +49,10 @@ async function adminFetch(page: Page, method: string, path: string, body?: unkno
 }
 
 const chip = (page: Page, id: string) => page.getByTestId(`wizard-step-${id}`);
-const idFromUrl = (page: Page) => page.url().match(/wizard\/([^/?]+)\/edit/)![1]!;
+const idFromUrl = (page: Page) => page.url().match(/products\/([^/?]+)\/edit/)![1]!;
 
 async function startNew(page: Page, name: string, type: string) {
-  await page.goto("/admin/products/wizard/new");
+  await page.goto("/admin/products/new");
   await page.getByLabel("Product name").fill(name);
   await page.getByLabel("Category").selectOption({ index: 1 });
   await page.getByLabel("Product type").selectOption({ label: type });
@@ -94,7 +94,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
     await page.getByLabel("Stock", { exact: true }).fill("25");
     await page.getByRole("button", { name: "Continue" }).click(); // creates the draft, then uploads the staged photo
 
-    await expect(page).toHaveURL(/\/wizard\/[^/]+\/edit\?step=media/);
+    await expect(page).toHaveURL(/\/products\/[^/]+\/edit\?step=media/);
     perfumeId = idFromUrl(page);
     await expect.poll(async () => (await apiProduct(page, perfumeId)).images.length).toBe(1);
     for (const id of ["variants", "care", "sizeGuide"]) await expect(chip(page, id)).toHaveCount(0);
@@ -136,7 +136,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
     await page.locator('input[name="variants.0.color"]').fill("Brown");
     await page.locator('input[name="variants.0.stock"]').fill("4");
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(page).toHaveURL(/\/wizard\/[^/]+\/edit/);
+    await expect(page).toHaveURL(/\/products\/[^/]+\/edit/);
     const id = idFromUrl(page);
 
     await chip(page, "publish").click();
@@ -172,7 +172,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
     await expect(frame.getByRole("button", { name: "50ml", exact: true })).toBeVisible();
     await expect(frame.getByText(/^Color( — .*)?$/)).toHaveCount(0);
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(page).toHaveURL(/\/wizard\/[^/]+\/edit/);
+    await expect(page).toHaveURL(/\/products\/[^/]+\/edit/);
     const product = await apiProduct(page, idFromUrl(page));
     expect(product.variants[0]).toMatchObject({ size: "50ml", color: "" });
   });
@@ -189,7 +189,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
     await page.locator('input[name="variants.0.size"]').fill("M");
     await page.locator('input[name="variants.0.color"]').fill("Black");
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(page).toHaveURL(/\/wizard\/[^/]+\/edit/);
+    await expect(page).toHaveURL(/\/products\/[^/]+\/edit/);
     const id = idFromUrl(page);
 
     await chip(page, "basics").click();
@@ -223,7 +223,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
     await chip(page, "basics").click();
     await expect(page.getByLabel("Product name")).toHaveValue(`Matrix Refresh ${RUN}`);
 
-    await page.goto(`/admin/products/wizard/${perfumeId}/edit`);
+    await page.goto(`/admin/products/${perfumeId}/edit`);
     await chip(page, "seo").click();
     await page.reload();
     await expect(chip(page, "seo")).toHaveAttribute("aria-current", "step");
@@ -231,7 +231,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
 
   test("17 — a published product's URL changes only when confirmed, and the old URL redirects to the new one", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${perfumeId}/edit?step=seo`);
+    await page.goto(`/admin/products/${perfumeId}/edit?step=seo`);
     const newSlug = `${perfumeSlug}-renamed`;
     await page.getByLabel("URL slug").fill(newSlug);
     await expect(page.getByTestId("slug-change-notice")).toContainText(`/product/${perfumeSlug}`);
@@ -263,7 +263,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
 
   test("19 — unpublishing takes it off the store", async ({ page }) => {
     await login(page);
-    await page.goto(`/admin/products/wizard/${perfumeId}/edit?step=publish`);
+    await page.goto(`/admin/products/${perfumeId}/edit?step=publish`);
     await expect(page.getByTestId("publish-live")).toBeVisible();
     await page.getByTestId("publish-live").getByRole("button", { name: "Unpublish" }).click();
     await expect.poll(async () => (await apiProduct(page, perfumeId)).status).toBe("UNPUBLISHED");
@@ -287,7 +287,7 @@ test.describe("Product Builder — the brief's test matrix", () => {
     await staff.getByLabel("Base price (BDT)").fill("300");
     await staff.getByLabel("Stock", { exact: true }).fill("3");
     await staff.getByRole("button", { name: "Continue" }).click();
-    await expect(staff).toHaveURL(/\/wizard\/[^/]+\/edit/);
+    await expect(staff).toHaveURL(/\/products\/[^/]+\/edit/);
     const id = idFromUrl(staff);
     await expect.poll(async () => (await apiProduct(staff, id)).images.length).toBe(1);
     await chip(staff, "publish").click();

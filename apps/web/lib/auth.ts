@@ -4,6 +4,8 @@ import type {
   AcceptAdminInviteInput,
   UpdateAdminInput,
   GoogleLoginInput,
+  Permission,
+  AdminRoleName,
 } from "@clothing-brand/shared";
 import { apiFetch } from "./api-client";
 import { clearAdminHint } from "./admin-hint";
@@ -12,14 +14,22 @@ export interface AdminUser {
   id: string;
   name: string;
   email: string;
-  role: "OWNER" | "STAFF";
+  role: AdminRoleName;
+  /** Resolved by the API from the admin's current role (Phase 10). */
+  permissions: Permission[];
+}
+
+/** UX only — hides what the API would refuse anyway. The API enforces every permission itself (requirePermission); the
+ * web never re-derives permissions from the role. */
+export function adminCan(admin: Pick<AdminUser, "permissions"> | null | undefined, permission: Permission): boolean {
+  return Boolean(admin?.permissions?.includes(permission));
 }
 
 export interface AdminAccount {
   id: string;
   name: string;
   email: string;
-  role: "OWNER" | "STAFF";
+  role: AdminRoleName;
   isActive: boolean;
   createdAt: string;
 }
@@ -28,7 +38,7 @@ export interface AdminInvite {
   id: string;
   name: string;
   email: string;
-  role: "OWNER" | "STAFF";
+  role: AdminRoleName;
   expiresAt: string;
   createdAt: string;
 }
@@ -56,18 +66,32 @@ export interface AdminSession {
   userAgent: string | null;
   createdAt: string;
   expiresAt: string;
+  /** The session making the request (this browser). */
+  current: boolean;
 }
 
 export function listAdminSessions() {
   return apiFetch<{ sessions: AdminSession[] }>("/api/auth/sessions");
 }
 
+/** Signs out every other device; this one stays signed in. */
+export function revokeOtherAdminSessions() {
+  return apiFetch<{ revoked: number }>("/api/auth/sessions/revoke-others", { method: "POST" });
+}
+
+/** Signs one of my other devices out; the current one is Log out. */
+export function revokeAdminSession(id: string) {
+  return apiFetch<void>(`/api/auth/sessions/${id}`, { method: "DELETE" });
+}
+
 export function getCurrentAdmin() {
   return apiFetch<{ admin: AdminUser }>("/api/auth/me");
 }
 
+/** Each role and what it can do — from the API's role map (the web never re-derives it). */
+export interface RoleCatalogEntry { role: string; kind: "ALL" | "STORE" | "FINANCE"; permissions: string[]; lacks: string[] }
 export function listAdmins() {
-  return apiFetch<{ admins: AdminAccount[] }>("/api/auth/admins");
+  return apiFetch<{ admins: AdminAccount[]; roles: RoleCatalogEntry[] }>("/api/auth/admins");
 }
 
 export function setAdminActive(id: string, isActive: boolean) {

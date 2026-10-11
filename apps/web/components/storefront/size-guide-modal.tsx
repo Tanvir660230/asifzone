@@ -37,7 +37,7 @@ export function SizeGuideModal({ sizeGuide }: SizeGuideProps) {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="text-xs uppercase tracking-wide text-ink-400">
+              <tr className="text-xs ui-caps text-ink-400">
                 {chart.columns.map((col: string, idx: number) => (
                   <th key={idx} className="border-b border-ink-100 pb-2 px-2 first:pl-0">{col}</th>
                 ))}

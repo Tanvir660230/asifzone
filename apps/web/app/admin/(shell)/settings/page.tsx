@@ -1,25 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Upload } from "lucide-react";
 import { updateSettingsSchema, type UpdateSettingsInput, type UpdateSocialLinkInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
+import { useCapability } from "@/hooks/use-capability";
+import { SegmentedControl } from "@/components/ui/tabs";
+import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ImageUploadField } from "@/components/admin/image-upload-field";
 import { toast } from "@/components/ui/toast";
 import * as settingsApi from "@/lib/api/settings";
 import * as socialLinksApi from "@/lib/api/admin-social-links";
 import { ApiError } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { storeCurrencyCode } from "@/lib/format";
+import { IntegrationsPane } from "@/components/admin/integrations-pane";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 /** wa.me and api.whatsapp.com/send?phone= are the two URL shapes admins tend to paste (or that this
  * form itself writes) — read whichever one is there back out to a plain number for editing. */
@@ -114,120 +121,76 @@ function WhatsAppQuickConfig() {
   );
 }
 
-const TABS = [
-  { value: "branding", label: "Store & Branding" },
-  { value: "contact", label: "Contact & Support" },
-  { value: "shipping", label: "Shipping, Tax & Rewards" },
-] as const;
-type SettingsTab = (typeof TABS)[number]["value"];
-
-interface LogoUploadFieldProps {
-  label: string;
-  helpText: string;
-  value: string | null | undefined;
-  onChange: (url: string) => void;
-  onRemove: () => void;
-  /** Preview swatch background — should match where this logo variant is actually shown, so the admin can judge contrast before saving. */
-  previewBackground: "light" | "dark";
-  /** Which endpoint to upload through — logo and favicon are processed differently server-side (favicon gets square-cropped to a small PNG). */
-  uploadFn: (file: File) => Promise<{ url: string }>;
-  uploadLabel?: string;
-}
-
-function LogoUploadField({
-  label,
-  helpText,
-  value,
-  onChange,
-  onRemove,
-  previewBackground,
-  uploadFn,
-  uploadLabel = "Upload logo",
-}: LogoUploadFieldProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const uploadMutation = useMutation({ mutationFn: uploadFn });
-
-  async function handleSelected(file: File | null) {
-    if (!file) return;
-    setError(null);
-    try {
-      const { url } = await uploadMutation.mutateAsync(file);
-      onChange(url);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Upload failed");
-    } finally {
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-
+/** Shown under a payment gateway whose credentials aren't set yet. */
+function IntegrationsHint() {
   return (
-    <div>
-      <Label>{label}</Label>
-      {value ? (
-        <div
-          className={cn(
-            "relative mt-1 flex h-20 w-40 items-center justify-center overflow-hidden rounded-lg border p-3",
-            previewBackground === "dark" ? "border-ink-800 bg-ink-900" : "border-ink-100 bg-cream-50",
-          )}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={value} alt="" className="h-full w-full object-contain" />
-          <button
-            type="button"
-            onClick={onRemove}
-            className="absolute right-1 top-1 rounded-full bg-ink-900/70 p-1 text-cream-50"
-            aria-label={`Remove ${label.toLowerCase()}`}
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploadMutation.isPending}
-          className="mt-1 flex h-20 w-40 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-        >
-          <Upload size={18} />
-          <span className="text-xs">{uploadMutation.isPending ? "Uploading…" : uploadLabel}</span>
-        </button>
-      )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        className="hidden"
-        onChange={(e) => handleSelected(e.target.files?.[0] ?? null)}
-      />
-      {error && <p className="mt-1 text-xs text-danger-600">{error}</p>}
-      <p className="mt-1 text-xs text-ink-400">{helpText}</p>
-    </div>
+    <p className="mt-1 text-xs text-warning-600">
+      Not connected yet —{" "}
+      <Link href="/admin/settings?pane=integrations" className="underline underline-offset-2">
+        add its keys in Integrations
+      </Link>
+      .
+    </p>
   );
 }
 
+const TABS = [
+  { value: "branding", label: "Store & branding" },
+  { value: "contact", label: "Contact & support" },
+  { value: "shipping", label: "Checkout, tax & rewards" },
+  { value: "integrations", label: "Integrations" },
+] as const;
+type SettingsTab = (typeof TABS)[number]["value"];
+
+/** Blueprint V2 P7: each section saves only its own fields (one PATCH → one settings audit entry), so saving one
+ * section never sends another section's untouched — possibly stale — values. */
+const SECTIONS = {
+  store: ["storeName", "currency", "tagline", "logoUrl", "logoOnDarkUrl", "faviconUrl"],
+  seo: ["googleSiteVerification", "seoTitle", "seoDescription", "ogImageUrl"],
+  newsletter: ["newsletterHeading", "newsletterText"],
+  contact: ["contactEmail", "contactPhone"],
+  identity: ["legalName", "legalJurisdiction", "addressLine", "addressCity", "addressRegion", "addressPostalCode", "addressCountry", "supportHours"],
+  contactOptions: ["whatsappLabel", "whatsappMessage", "callEnabled", "callLabel", "liveChatEnabled", "liveChatLabel", "tawkPropertyId", "tawkWidgetId"],
+  policy: ["returnWindowDays", "returnConditions", "handlingDaysMin", "handlingDaysMax"],
+  taxRewards: ["courierReturnFeeDhaka", "courierReturnFeeOutsideDhaka", "rewardPointsPerCurrency", "taxEnabled", "defaultTaxRate", "shippingTaxable"],
+  payments: ["codEnabled", "onlinePaymentEnabled", "epsPaymentEnabled"],
+} as const satisfies Record<string, ReadonlyArray<keyof UpdateSettingsInput>>;
+type SettingsSection = keyof typeof SECTIONS;
+
 export default function SettingsPage() {
-  const [tab, setTab] = useState<SettingsTab>("branding");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab: SettingsTab = TABS.find((t) => t.value === searchParams.get("pane"))?.value ?? "branding";
+  const setTab = (next: SettingsTab) => router.replace(next === "branding" ? pathname : `${pathname}?pane=${next}`, { scroll: false });
+  const [savingSection, setSavingSection] = useState<SettingsSection | null>(null);
+  const loaded = useRef(false);
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["settings"], queryFn: settingsApi.getSettings });
+  const gateways = useProviderCapabilities(); // Phase 12 D-4
   const { data: currentAdmin } = useCurrentAdmin();
-  const isOwner = currentAdmin?.admin.role === "OWNER";
+  const canManageSettings = useCapability("settings.manage");
 
   const {
     register,
-    handleSubmit,
     reset,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    trigger,
+    getValues,
+    resetField,
+    formState: { errors, dirtyFields },
   } = useForm<UpdateSettingsInput>({ resolver: zodResolver(updateSettingsSchema) });
 
   const logoUrl = watch("logoUrl");
   const logoOnDarkUrl = watch("logoOnDarkUrl");
   const faviconUrl = watch("faviconUrl");
+  const ogImageUrl = watch("ogImageUrl");
 
+  // Filled once: a later refetch must not wipe what's being edited in another section.
   useEffect(() => {
-    if (!data) return;
+    if (!data || loaded.current) return;
+    loaded.current = true;
     const s = data.settings;
     reset({
       storeName: s.storeName,
@@ -235,11 +198,14 @@ export default function SettingsPage() {
       logoUrl: s.logoUrl,
       logoOnDarkUrl: s.logoOnDarkUrl,
       faviconUrl: s.faviconUrl,
+      ogImageUrl: s.ogImageUrl,
+      seoTitle: s.seoTitle,
+      seoDescription: s.seoDescription,
+      newsletterHeading: s.newsletterHeading,
+      newsletterText: s.newsletterText,
       currency: s.currency,
       contactEmail: s.contactEmail,
       contactPhone: s.contactPhone,
-      shippingFeeDhaka: Number(s.shippingFeeDhaka),
-      shippingFeeOutsideDhaka: Number(s.shippingFeeOutsideDhaka),
       courierReturnFeeDhaka: Number(s.courierReturnFeeDhaka),
       courierReturnFeeOutsideDhaka: Number(s.courierReturnFeeOutsideDhaka),
       taxEnabled: s.taxEnabled,
@@ -258,17 +224,55 @@ export default function SettingsPage() {
       onlinePaymentEnabled: s.onlinePaymentEnabled,
       epsPaymentEnabled: s.epsPaymentEnabled,
       googleSiteVerification: s.googleSiteVerification,
+      legalName: s.legalName,
+      addressLine: s.addressLine,
+      addressCity: s.addressCity,
+      addressRegion: s.addressRegion,
+      addressPostalCode: s.addressPostalCode,
+      addressCountry: s.addressCountry,
+      legalJurisdiction: s.legalJurisdiction,
+      supportHours: s.supportHours,
+      returnWindowDays: s.returnWindowDays,
+      returnConditions: s.returnConditions,
+      handlingDaysMin: s.handlingDaysMin,
+      handlingDaysMax: s.handlingDaysMax,
     });
   }, [data, reset]);
 
   const updateMutation = useMutation({
     mutationFn: settingsApi.updateSettings,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      toast.success("Settings saved");
+    onSuccess: (saved) => {
+      // The response is the whole settings row: the shell (store name, logo) reads it without a refetch.
+      queryClient.setQueryData(["settings"], saved);
+      toast.success("Saved");
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed to save settings"),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save"),
   });
+
+  async function saveSection(section: SettingsSection) {
+    const fields = SECTIONS[section];
+    if (!(await trigger([...fields]))) return;
+    const values = getValues();
+    const payload = Object.fromEntries(fields.map((f) => [f, values[f]])) as UpdateSettingsInput;
+    setSavingSection(section);
+    updateMutation.mutate(payload, {
+      onSuccess: () => fields.forEach((f) => resetField(f, { defaultValue: values[f] as never })),
+      onSettled: () => setSavingSection(null),
+    });
+  }
+
+  function sectionSave(section: SettingsSection) {
+    const dirty = SECTIONS[section].some((f) => Boolean((dirtyFields as Record<string, unknown>)[f]));
+    const saving = savingSection === section;
+    return (
+      <div className="flex items-center justify-end gap-3 pt-1">
+        {dirty && !saving && <span className="text-[12px] text-fg-subtle">Unsaved changes</span>}
+        <Button type="button" size="sm" disabled={!dirty || updateMutation.isPending} onClick={() => saveSection(section)}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    );
+  }
 
   const taxEnabled = watch("taxEnabled");
   const callEnabled = watch("callEnabled");
@@ -281,38 +285,27 @@ export default function SettingsPage() {
 
   if (isLoading) return <p className="text-ink-400">Loading…</p>;
 
-  if (currentAdmin && !isOwner) {
+  if (currentAdmin && !canManageSettings) {
     return (
       <div>
         <PageHeader title="Settings" />
-        <SettingsSubNav />
+        <ModuleTabs />
         <p className="text-sm text-ink-500">Only store owners can view or change store settings.</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <PageHeader title="Settings" />
-      <SettingsSubNav />
+      <ModuleTabs />
 
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-ink-100">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            type="button"
-            onClick={() => setTab(t.value)}
-            className={cn(
-              "border-b-2 px-4 py-2 text-sm font-medium transition-colors duration-150 ease-smooth",
-              tab === t.value ? "border-ink-900 text-ink-900" : "border-transparent text-ink-400 hover:text-ink-700",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Scrolls sideways on a phone rather than spilling past the screen edge. */}
+      <HScrollShadow className="mb-6 overflow-x-auto">
+        <SegmentedControl aria-label="Settings pane" size="md" className="w-max" value={tab} onChange={setTab} options={TABS.map((t) => ({ value: t.value, label: t.label }))} />
+      </HScrollShadow>
 
-      <form onSubmit={handleSubmit((values) => updateMutation.mutate(values))} className="space-y-6">
+      <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
         {tab === "branding" && (
         <>
         <FormSection title="Store information" description="Name and branding shown across the storefront.">
@@ -320,11 +313,11 @@ export default function SettingsPage() {
             <div>
               <Label htmlFor="storeName">Store name</Label>
               <Input id="storeName" {...register("storeName")} />
-              {errors.storeName && <p className="mt-1 text-xs text-danger-600">{errors.storeName.message}</p>}
+              {errors.storeName && <p className="ui-field-error">{errors.storeName.message}</p>}
             </div>
             <div>
               <Label htmlFor="currency">Currency code</Label>
-              <Input id="currency" placeholder="BDT" {...register("currency")} />
+              <Input id="currency" placeholder={storeCurrencyCode()} {...register("currency")} />
             </div>
             <div className="sm:col-span-2">
               <Label htmlFor="tagline">Tagline</Label>
@@ -335,42 +328,42 @@ export default function SettingsPage() {
           <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
             <div>
               <input type="hidden" {...register("logoUrl")} />
-              <LogoUploadField
+              <ImageUploadField
                 label="Logo (light backgrounds)"
-                helpText="Shown in the header and anywhere else with a light background. A transparent PNG works best."
+                hint="Shown in the header and anywhere else with a light background. A transparent PNG works best."
                 value={logoUrl}
-                previewBackground="light"
-                uploadFn={settingsApi.uploadLogo}
+                upload={settingsApi.uploadLogo}
                 onChange={(url) => setValue("logoUrl", url, { shouldValidate: true })}
-                onRemove={() => setValue("logoUrl", "", { shouldValidate: true })}
+                frame="logo"
+                uploadLabel="Upload logo"
               />
             </div>
             <div>
               <input type="hidden" {...register("logoOnDarkUrl")} />
-              <LogoUploadField
+              <ImageUploadField
                 label="Logo (dark backgrounds)"
-                helpText="A bright/light-colored version, shown in the footer and other dark sections. Falls back to the light-background logo if left empty."
+                hint="A bright/light-colored version for dark sections (the footer, in themes that keep it dark). Falls back to the light-background logo if left empty."
                 value={logoOnDarkUrl}
-                previewBackground="dark"
-                uploadFn={settingsApi.uploadLogo}
+                upload={settingsApi.uploadLogo}
                 onChange={(url) => setValue("logoOnDarkUrl", url, { shouldValidate: true })}
-                onRemove={() => setValue("logoOnDarkUrl", "", { shouldValidate: true })}
+                frame="logo-dark"
+                uploadLabel="Upload logo"
               />
             </div>
             <div>
               <input type="hidden" {...register("faviconUrl")} />
-              <LogoUploadField
+              <ImageUploadField
                 label="Favicon"
-                helpText="The small icon shown in the browser tab. Square images work best — it's cropped to a square automatically."
+                hint="The small icon shown in the browser tab. Square images work best — it's cropped to a square automatically."
                 value={faviconUrl}
-                previewBackground="light"
-                uploadFn={settingsApi.uploadFavicon}
-                uploadLabel="Upload favicon"
+                upload={settingsApi.uploadFavicon}
                 onChange={(url) => setValue("faviconUrl", url, { shouldValidate: true })}
-                onRemove={() => setValue("faviconUrl", "", { shouldValidate: true })}
+                frame="logo"
+                uploadLabel="Upload favicon"
               />
             </div>
           </div>
+          {sectionSave("store")}
         </FormSection>
 
         <FormSection
@@ -385,6 +378,48 @@ export default function SettingsPage() {
             </p>
             <Input id="googleSiteVerification" placeholder="abc123XYZ..." {...register("googleSiteVerification")} />
           </div>
+          <div className="mt-4 grid grid-cols-1 gap-4">
+            <div>
+              <Label htmlFor="seoTitle">Homepage title</Label>
+              <p className="mb-1 text-xs text-ink-400">The title search results show for the homepage. Empty uses the store name.</p>
+              <Input id="seoTitle" maxLength={70} {...register("seoTitle")} />
+              {errors.seoTitle && <p className="ui-field-error">{errors.seoTitle.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="seoDescription">Homepage description</Label>
+              <p className="mb-1 text-xs text-ink-400">The short summary under the title in search results. Empty uses the tagline.</p>
+              <Textarea id="seoDescription" rows={2} maxLength={300} {...register("seoDescription")} />
+              {errors.seoDescription && <p className="ui-field-error">{errors.seoDescription.message}</p>}
+            </div>
+            <div className="sm:max-w-md">
+              <input type="hidden" {...register("ogImageUrl")} />
+              <ImageUploadField
+                label="Social sharing image"
+                hint="Shown when the store is shared on Facebook, WhatsApp and similar. Cropped to 1200×630; pages with their own image (products, categories) use theirs. Empty uses the logo."
+                value={ogImageUrl}
+                upload={settingsApi.uploadSocialImage}
+                onChange={(url) => setValue("ogImageUrl", url, { shouldValidate: true })}
+                uploadLabel="Upload image"
+              />
+            </div>
+          </div>
+          {sectionSave("seo")}
+        </FormSection>
+
+        <FormSection title="Newsletter" description="The newsletter sign-up block in the footer.">
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <Label htmlFor="newsletterHeading">Heading</Label>
+              <p className="mb-1 text-xs text-ink-400">Empty uses &quot;Get in Touch&quot;.</p>
+              <Input id="newsletterHeading" maxLength={80} {...register("newsletterHeading")} />
+            </div>
+            <div>
+              <Label htmlFor="newsletterText">Supporting line</Label>
+              <p className="mb-1 text-xs text-ink-400">Empty uses &quot;New arrivals, offers and news — no spam, unsubscribe any time.&quot;</p>
+              <Input id="newsletterText" maxLength={300} {...register("newsletterText")} />
+            </div>
+          </div>
+          {sectionSave("newsletter")}
         </FormSection>
         </>
         )}
@@ -402,6 +437,49 @@ export default function SettingsPage() {
               <Input id="contactPhone" {...register("contactPhone")} />
             </div>
           </div>
+          {sectionSave("contact")}
+        </FormSection>
+
+        <FormSection
+          title="Business identity"
+          description="Your registered business details — shown in the footer, on the contact and terms pages and in search-engine data. Leave a field blank to hide it."
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="legalName">Legal business name</Label>
+              <Input id="legalName" {...register("legalName")} />
+            </div>
+            <div>
+              <Label htmlFor="legalJurisdiction">Governing law (country or region)</Label>
+              <Input id="legalJurisdiction" placeholder="e.g. Bangladesh" {...register("legalJurisdiction")} />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="addressLine">Street address</Label>
+              <Input id="addressLine" {...register("addressLine")} />
+            </div>
+            <div>
+              <Label htmlFor="addressCity">City</Label>
+              <Input id="addressCity" {...register("addressCity")} />
+            </div>
+            <div>
+              <Label htmlFor="addressRegion">Region / division</Label>
+              <Input id="addressRegion" {...register("addressRegion")} />
+            </div>
+            <div>
+              <Label htmlFor="addressPostalCode">Postal code</Label>
+              <Input id="addressPostalCode" {...register("addressPostalCode")} />
+            </div>
+            <div>
+              <Label htmlFor="addressCountry">Country code</Label>
+              <Input id="addressCountry" placeholder="e.g. BD" maxLength={2} {...register("addressCountry")} />
+              {errors.addressCountry && <p className="mt-1 text-xs text-danger-600">{errors.addressCountry.message}</p>}
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="supportHours">Support hours</Label>
+              <Input id="supportHours" placeholder="e.g. Sat–Thu, 10am–8pm" {...register("supportHours")} />
+            </div>
+          </div>
+          {sectionSave("identity")}
         </FormSection>
 
         <FormSection
@@ -469,33 +547,54 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+          {sectionSave("contactOptions")}
         </FormSection>
         </>
         )}
 
         {tab === "shipping" && (
         <>
-        <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
+        <FormSection
+          title="Store policy"
+          description="What your storefront promises customers — the product page's policy lines, the Shipping & Returns and FAQ pages, and search-engine data. Leave a field blank to make no such claim."
+        >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="shippingFeeDhaka">Shipping fee — inside Dhaka district (BDT)</Label>
-              <Input id="shippingFeeDhaka" type="number" step="0.01" {...register("shippingFeeDhaka", { valueAsNumber: true })} />
-              {errors.shippingFeeDhaka && <p className="mt-1 text-xs text-danger-600">{errors.shippingFeeDhaka.message}</p>}
+              <Label htmlFor="returnWindowDays">Return window (days)</Label>
+              <Input id="returnWindowDays" type="number" min={1} step={1} placeholder="e.g. 7" {...register("returnWindowDays", { valueAsNumber: true })} />
+              <p className="mt-1 text-xs text-ink-400">Blank: your store states no return window.</p>
             </div>
             <div>
-              <Label htmlFor="shippingFeeOutsideDhaka">Shipping fee — outside Dhaka (BDT)</Label>
-              <Input
-                id="shippingFeeOutsideDhaka"
-                type="number"
-                step="0.01"
-                {...register("shippingFeeOutsideDhaka", { valueAsNumber: true })}
-              />
-              {errors.shippingFeeOutsideDhaka && (
-                <p className="mt-1 text-xs text-danger-600">{errors.shippingFeeOutsideDhaka.message}</p>
-              )}
+              <Label htmlFor="returnConditions">Return conditions</Label>
+              <Input id="returnConditions" placeholder="e.g. Unused items in their original packaging" {...register("returnConditions")} />
+              <p className="mt-1 text-xs text-ink-400">Read as “… can be returned or exchanged within N days of delivery.”</p>
             </div>
             <div>
-              <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka district (BDT)</Label>
+              <Label htmlFor="handlingDaysMin">Dispatch time — from (business days)</Label>
+              <Input id="handlingDaysMin" type="number" min={1} step={1} placeholder="e.g. 1" {...register("handlingDaysMin", { valueAsNumber: true })} />
+            </div>
+            <div>
+              <Label htmlFor="handlingDaysMax">Dispatch time — to (business days)</Label>
+              <Input id="handlingDaysMax" type="number" min={1} step={1} placeholder="e.g. 2" {...register("handlingDaysMax", { valueAsNumber: true })} />
+              {errors.handlingDaysMax && <p className="mt-1 text-xs text-danger-600">{errors.handlingDaysMax.message}</p>}
+            </div>
+          </div>
+          <p className="mt-4 text-xs text-ink-400">
+            “Cash on Delivery available” follows the Cash on Delivery switch under Payment methods; delivery times follow your delivery zones.
+          </p>
+          {sectionSave("policy")}
+        </FormSection>
+
+        <FormSection title="Shipping, tax & rewards" description="Applied live to checkout and the customer rewards program.">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-lg bg-ink-900/[0.03] px-3 py-2.5">
+              <p className="text-[13px] text-fg-muted">Delivery fees and free-delivery limits are set per area.</p>
+              <Link href="/admin/settings/delivery-zones" className="shrink-0 text-[13px] font-medium text-accent hover:underline">
+                Delivery zones
+              </Link>
+            </div>
+            <div>
+              <Label htmlFor="courierReturnFeeDhaka">Courier return fee — inside Dhaka district ({storeCurrencyCode()})</Label>
               <Input
                 id="courierReturnFeeDhaka"
                 type="number"
@@ -503,7 +602,7 @@ export default function SettingsPage() {
                 {...register("courierReturnFeeDhaka", { valueAsNumber: true })}
               />
               {errors.courierReturnFeeDhaka && (
-                <p className="mt-1 text-xs text-danger-600">{errors.courierReturnFeeDhaka.message}</p>
+                <p className="ui-field-error">{errors.courierReturnFeeDhaka.message}</p>
               )}
               <p className="mt-1 text-xs text-ink-400">
                 Estimated round-trip cost when a booked order is cancelled or partially returned — Steadfast doesn&apos;t
@@ -511,7 +610,7 @@ export default function SettingsPage() {
               </p>
             </div>
             <div>
-              <Label htmlFor="courierReturnFeeOutsideDhaka">Courier return fee — outside Dhaka (BDT)</Label>
+              <Label htmlFor="courierReturnFeeOutsideDhaka">Courier return fee — outside Dhaka ({storeCurrencyCode()})</Label>
               <Input
                 id="courierReturnFeeOutsideDhaka"
                 type="number"
@@ -519,11 +618,11 @@ export default function SettingsPage() {
                 {...register("courierReturnFeeOutsideDhaka", { valueAsNumber: true })}
               />
               {errors.courierReturnFeeOutsideDhaka && (
-                <p className="mt-1 text-xs text-danger-600">{errors.courierReturnFeeOutsideDhaka.message}</p>
+                <p className="ui-field-error">{errors.courierReturnFeeOutsideDhaka.message}</p>
               )}
             </div>
             <div>
-              <Label htmlFor="rewardPointsPerCurrency">Reward points per 1 BDT spent</Label>
+              <Label htmlFor="rewardPointsPerCurrency">Reward points per 1 {storeCurrencyCode()} spent</Label>
               <Input
                 id="rewardPointsPerCurrency"
                 type="number"
@@ -532,7 +631,7 @@ export default function SettingsPage() {
                 {...register("rewardPointsPerCurrency", { valueAsNumber: true })}
               />
               {errors.rewardPointsPerCurrency && (
-                <p className="mt-1 text-xs text-danger-600">{errors.rewardPointsPerCurrency.message}</p>
+                <p className="ui-field-error">{errors.rewardPointsPerCurrency.message}</p>
               )}
             </div>
             <label className="flex items-center gap-2 pt-6 text-sm text-ink-700">
@@ -548,7 +647,7 @@ export default function SettingsPage() {
                 disabled={!taxEnabled}
                 {...register("defaultTaxRate", { valueAsNumber: true })}
               />
-              {errors.defaultTaxRate && <p className="mt-1 text-xs text-danger-600">{errors.defaultTaxRate.message}</p>}
+              {errors.defaultTaxRate && <p className="ui-field-error">{errors.defaultTaxRate.message}</p>}
             </div>
             {/* D10: stored on the central tax config (TaxSetting), applied by the tax engine — shipping is VAT-inclusive. */}
             <label className="flex items-center gap-2 text-sm text-ink-700">
@@ -556,6 +655,7 @@ export default function SettingsPage() {
               Shipping fee includes VAT
             </label>
           </div>
+          {sectionSave("taxRewards")}
         </FormSection>
 
         <FormSection
@@ -574,30 +674,30 @@ export default function SettingsPage() {
               <div>
                 <p className="text-sm font-medium text-ink-900">Online Payment (SSLCommerz)</p>
                 <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via SSLCommerz.</p>
+                {gateways.loaded && !gateways.payments.SSLCOMMERZ && <IntegrationsHint />}
               </div>
-              <Checkbox {...register("onlinePaymentEnabled")} disabled={onlinePaymentEnabled && isLastPaymentMethodEnabled} />
+              <Checkbox {...register("onlinePaymentEnabled")} disabled={(onlinePaymentEnabled && isLastPaymentMethodEnabled) || (!onlinePaymentEnabled && !gateways.payments.SSLCOMMERZ)} />
             </label>
             <label className="flex items-center justify-between rounded-lg border border-ink-100 p-4">
               <div>
                 <p className="text-sm font-medium text-ink-900">Online Payment (EPS-PG)</p>
-                <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via EPS. Requires EPS_* env vars to be set.</p>
+                <p className="mt-0.5 text-xs text-ink-400">bKash, Nagad &amp; Card via EPS.</p>
+                {gateways.loaded && !gateways.payments.EPS_PG && <IntegrationsHint />}
               </div>
-              <Checkbox {...register("epsPaymentEnabled")} disabled={epsPaymentEnabled && isLastPaymentMethodEnabled} />
+              <Checkbox {...register("epsPaymentEnabled")} disabled={(epsPaymentEnabled && isLastPaymentMethodEnabled) || (!epsPaymentEnabled && !gateways.payments.EPS_PG)} />
             </label>
             {!codEnabled && !onlinePaymentEnabled && !epsPaymentEnabled && (
               <p className="text-xs text-danger-600">At least one payment method must stay enabled.</p>
             )}
           </div>
+          {sectionSave("payments")}
         </FormSection>
         </>
         )}
 
-        <div className="flex justify-end">
-          <Button type="submit" variant="brass" disabled={isSubmitting || updateMutation.isPending}>
-            {updateMutation.isPending ? "Saving…" : "Save settings"}
-          </Button>
-        </div>
       </form>
+      {/* Its own forms per integration — outside the settings form (forms can't nest). */}
+      {tab === "integrations" && <IntegrationsPane />}
     </div>
   );
 }

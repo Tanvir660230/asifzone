@@ -211,6 +211,12 @@ Key Phase 1 semantics (superseding the sketch in the Phase 0 draft):
 
 `UNPAID → PAID` (Payment SUCCEEDED, or COD collected on DELIVERED — decision D1), `UNPAID → FAILED` (last attempt failed), `PAID → PARTIALLY_REFUNDED → REFUNDED` (additive enum value; computed from Σ `Refund.amount` vs. amount paid). Only `PaymentService` writes it (including the manual "mark paid" for admin orders, which becomes a `Payment` row with provider `MANUAL`).
 
+✅ **Phase 4** implements this as the Payment Ledger ([PAYMENT_LEDGER.md](PAYMENT_LEDGER.md), §16d). Every settlement is
+a `Payment` row: gateway, `COD` collected at delivery, or `MANUAL`. Refunds are `Refund` rows (`REQUESTED → COMPLETED`).
+The pure engine `derivePaymentPosition` (`packages/shared/src/engines/payment-ledger.ts`) derives the status, the
+balance due, the cash to collect on delivery, the refundable amount and the refund due. `domain/payments/payment-ledger.service.ts`
+is the only writer of `Payment`, `Refund` and the `Order.paymentStatus` projection.
+
 ### 5.5 Customer and product metrics engines
 
 - `CustomerMetrics` (spend, order count, AOV, last order, RFM, tags) computed from the metrics registry predicates, not ad-hoc filters. Later materialised to `CustomerStats` updated by events.
@@ -359,6 +365,10 @@ defineMetric({
   timezone: "store",                   // CommerceSettings.timezone
 });
 ```
+
+✅ **Phase 5** implements this as the metrics registry ([METRICS_REGISTRY.md](METRICS_REGISTRY.md), §16e). The table below stays the
+approved source of the definitions. PD-5.1 (2026-09-30) resolved realised revenue as **`realised_net_sales`**: merchandise only,
+VAT-exclusive, less merchandise refunds. It is the headline; `net_sales` is secondary. See METRICS_REGISTRY §3 and §4.1.
 
 **Canonical definitions** (D1 approved; implementation in Phase 5):
 
@@ -554,6 +564,249 @@ raw SQL while the DB session timezone is Asia/Dhaka. That stored local time in a
 It now writes `NOW() AT TIME ZONE 'UTC'` (INVENTORY_INVARIANTS INV-8). Rows written before the fix keep their old
 stamp. The read model never relied on `updatedAt` (it uses a content fingerprint). Product-level "low stock" was
 removed at sign-off because no rule approves it; low stock stays per variant.
+
+## 16d. Phase 4 scope — Payment Ledger (order payment & refund SSOT)
+
+**Why this phase.** The Phase 4 audit ([PHASE_4_AUDIT.md](PHASE_4_AUDIT.md)) found every remaining S1 defect in the
+payment and refund truth:
+- `Order.paymentStatus` had six direct writers and no derivation.
+- COD collection, manual payments and free exchanges set `PAID` with no money record.
+- Refunds were capped against the total, not against what was paid. A partial refund was stored as a full one and
+  blocked any further refund.
+- Exchange refunds (D6) could never be paid out.
+- The courier's COD amount was recomputed five times as `COD ? total : 0`, so a prepaid COD order was collected twice.
+
+Analytics (Phase 5) depends on these facts being right, so it follows.
+
+**One ledger.**
+- **Facts:** `Payment` (every settlement) and `Refund`.
+- **Pure engine:** `derivePaymentPosition`, which derives paid, refunded, pending, balance due, `codToCollect`,
+  refundable, refund due and status.
+- **One writer:** `apps/api/src/domain/payments/payment-ledger.service.ts`, whose commands run under the order row lock.
+- **Projection:** `Order.paymentStatus`, refreshed in the same transaction as the fact that changed it.
+- **Architecture guard:** `payment-ledger-writer.guard.test.ts`.
+
+**Consumers switched.**
+- Gateway settlement: now atomic with the `PENDING → CONFIRMED` transition.
+- T4 COD collection: now a `COD` payment of the balance due (D1 unchanged).
+- Manual orders (`markPaid`) in the order's own transaction.
+- Exchange downgrade refunds: completable.
+- Courier booking and labels: send and show `codToCollect`.
+- Admin order page: renders the position; one payment-status label map.
+- The refund queue: one predicate.
+- Price adjustment: refused once money was received (P4-1).
+
+**Additive schema.** `PaymentStatus += PARTIALLY_REFUNDED`; `PaymentProvider += COD, MANUAL`; nullable
+`Payment.paymentSessionId`; audit and idempotency columns. A backfill inserts settlement rows only where the order's
+own record already asserts payment. A drift report and an explicit, dry-run-by-default repair fix the projection;
+nothing rewrites an order.
+
+**Not in Phase 4:** metrics built on this ledger (collected cash, outstanding COD, refunds): Phase 5. Gateway refund
+APIs: Phase 7. Outbox events: Phase 8. Refund permissions: Phase 10.
+
+## 16e. Phase 5 scope — Metrics & Analytics SSOT
+
+**Why this phase.** The Phase 5 audit ([PHASE_5_METRICS_AUDIT.md](PHASE_5_METRICS_AUDIT.md)) traced 85 functions:
+- About 40 private definitions of "a sale".
+- Revenue computed as `Σ total` of placed orders (unrealised COD, no returns or refunds, trashed and exchange orders
+  included).
+- Bundle discounts counted twice.
+- Tax estimated from the *current* rate.
+- Flash attribution guessed from time windows.
+- Customer spend computed three different ways.
+- `stock ≤ 5` as the low-stock rule.
+- A **measured 6-hour skew** in every raw-SQL time window: naive-UTC columns compared with `NOW()` or a bound
+  `timestamptz` under an Asia/Dhaka session.
+
+**One engine.**
+- `packages/shared/src/metrics` (pure):
+  - business time: store timezone, half-open ranges with inclusive business dates, DST-correct;
+  - canonical facts and eligibility: `SALE_ORDER`, D1 realisation;
+  - snapshot valuation: returns from the stock ledger, exchange units excluded;
+  - the registry;
+  - a contribution-based aggregator, so a total, a day series and a product/customer grouping are the same numbers cut
+    differently.
+- `domain/metrics`:
+  - the only fact loader (Phase 2 snapshots, Phase 4 ledger, RETURN movements);
+  - the service (validation, 60 s cache, groupings, `compare=previous`);
+  - reconciliation;
+  - the `SALE_ORDER` query form;
+  - `utcInstant`.
+- API: `GET /api/v1/metrics`, `/definitions`, `/consistency`.
+
+**Consumers switched.**
+- The dashboard, orders KPI strip, every BI page and the ~40 analytics reports are cuts of the engine; response shapes
+  are kept.
+- CRM spend / VIP tags / RFM use `customer_net_spend`.
+- The payments overview.
+- The admin product sales panel and storefront urgency/trending/FBT use `units_ordered`.
+- Behavioural analytics keep their own facts, but every window goes through business time.
+- The web renders server numbers only. BI overview totals are no longer summed in the browser, and business dates are
+  never shifted through the viewer's timezone.
+
+**Additive schema.** `StoreSetting.timezone` (default `Asia/Dhaka`). No metric projection tables: the store's volume
+doesn't need materialisation, and the read-time loader selects only orders with an event in the range.
+
+**PD-5.1 resolved (2026-09-30):**
+- `realised_net_sales` is the headline. It is realised merchandise excluding VAT (from the tax snapshot), less the
+  merchandise part of completed refunds. The refund hierarchy is overpayment first, then goods first (capped), then
+  non-merchandise.
+- A cancellation after realisation is a reversal in the cancellation period (P5-2).
+- AOV = `realised_net_sales ÷ orders_realised`.
+
+**Deferred:** see METRICS_REGISTRY and the Phase 5 report:
+- `OrderItem.unitCostSnapshot` (exact COGS);
+- category/brand snapshots;
+- daily fact tables (TARGET M13);
+- metrics outbox subscribers (Phase 8);
+- the timezone/currency move into `CommerceSettings` (Phase 6);
+- permission scoping of metrics (Phase 10).
+
+## 16f. Phase 6 scope — Historical order-line facts
+
+**Why this phase.** The Phase 6 audit ([PHASE_6_AUDIT.md](PHASE_6_AUDIT.md)) found the remaining places where history
+changes when current data changes:
+- historical COGS and margin used **today's** cost price (and missing cost counted as 0);
+- category and brand reports used **today's** product relationships;
+- a permanent product delete erased a line's product, category, brand and cost;
+- the store currency, the implied currency of every money snapshot, was freely editable.
+
+**Scope** (M7's `unitCostSnapshot`, extended to attribution):
+- **Snapshots.** `OrderItem.unitCostSnapshot` (Int, minor units), `productIdSnapshot`, `categoryIdSnapshot`,
+  `categoryNameSnapshot` and `brandSnapshot`. They are captured once by one writer (`domain/orders/line-snapshots.ts`)
+  in the transaction that writes the line (`insertOrderRecord`, `createExchangeOrder`) and never updated.
+- **Metrics.** `cogs` and `gross_margin` use recorded cost only, with line coverage. Category, brand and product
+  groupings use the snapshots. Pre-Phase-6 lines are "Not recorded". Nothing is fabricated; only `productIdSnapshot`
+  is backfilled from the variant.
+- **Default-deny cost.** Global Prisma `omit`, so no customer response can contain it.
+- **Currency lock** once orders exist (P6-4).
+
+**Deferred with reasons (audit gap matrix):**
+- daily facts / M13: not needed at measured scale;
+- configuration relocation into `CommerceSettings`: Phase 7+ (installer; no duplicate truth);
+- metrics RBAC: Phase 10;
+- outbox subscribers: Phase 8.
+
+## 16g. Phase 7 scope — Commerce settings & configuration SSOT
+
+**Why this phase.** The Phase 7 audit ([PHASE_7_AUDIT.md](PHASE_7_AUDIT.md)) found that every configuration concept already
+had one storage owner, but the reads did not:
+- 8 readers re-declared `|| "BDT"`;
+- SSLCommerz and Meta hard-coded `"BDT"`;
+- display hard-coded `৳`, `en-BD` and `Asia/Dhaka`, or used the browser's timezone;
+- emails hard-coded the brand;
+- a settings save left the storefront's copy stale for 5 minutes;
+- the currency writer accepted any string.
+
+**Delivered** ([PHASE_7_SIGNOFF.md](PHASE_7_SIGNOFF.md)):
+- `domain/config/commerce-settings`, the one currency/timezone reader over `StoreSetting` (no new table);
+- validated currency;
+- the store currency in every money path;
+- shared configuration-driven formatters with one declared display locale;
+- `<StoreConfig>` in the web root layout;
+- email identity from settings;
+- storefront settings revalidation;
+- focused guards.
+
+The Phase 6 lock is unchanged. There is no migration.
+
+**Deferred:** `CommerceSettings`/`StoreProfile` tables and config packs (installer, §7/§9), locale setting and
+configurable SMS copy, country pack, `ProviderConfig` and per-provider currency capability, a per-order currency column.
+
+## 16h. Phase 8 scope — Outbox & reliable side effects
+
+**Why this phase.** The Phase 8 audit ([PHASE_8_AUDIT.md](PHASE_8_AUDIT.md)) found every order / transition / payment side
+effect fired post-commit and fire-and-forget, with no retry: customer and admin SMS, the receipt email, and the Meta
+enqueue. It also found D8 loyalty points, which are business truth, written after commit.
+
+**Delivered** ([PHASE_8_SIGNOFF.md](PHASE_8_SIGNOFF.md)):
+- `OutboxEvent` (a slimmer, delivery-state-carrying form of §6's `DomainEvent`, one row per consumer intent), written
+  only in the business transaction;
+- a `SKIP LOCKED` dispatcher over the existing BullMQ connection;
+- an idempotent worker with retry / failure state in PostgreSQL;
+- per-consumer idempotency (row claim, Resend key, Meta event_id);
+- loyalty points moved into their transactions;
+- operator status and retry;
+- 30-day retention.
+
+**Deferred:** the full §6 event catalogue and subscriber fan-out, notifications and marketing emails, campaign
+reliability, a separate worker process (§14).
+
+## 16i. Phase 9 scope — Commerce reliability & operational hardening
+
+**Why this phase.** The Phase 9 audit ([PHASE_9_AUDIT.md](PHASE_9_AUDIT.md)) found:
+- an exchange could ship a replacement without taking the original back (D-1);
+- checkout, refunds, manual payments and manual orders were sent without an idempotency key (D-2, D-3);
+- courier booking was unlocked, so it could create duplicate consignments (D-4);
+- provider calls had no timeout (D-5);
+- manual points adjustments were unlocked, and nothing detected loyalty drift (D-6, D-7);
+- automated tests reached live providers (D-8).
+
+**Delivered** ([PHASE_9_SIGNOFF.md](PHASE_9_SIGNOFF.md)):
+- a provider guard: `liveProvidersEnabled()` plus a network guard under vitest and `LIVE_PROVIDERS=off`, with a
+  Playwright pre-flight check;
+- client `Idempotency-Key`s on every money-creating web call;
+- an atomic courier booking claim (`Order.courierBookingStartedAt`) with an unknown-outcome state;
+- exchange fulfilment made conditional on the release;
+- 20 s provider timeouts;
+- the locked points adjustment and a loyalty drift detector;
+- quiet same-status courier sync;
+- `GET /api/v1/ops/reliability`, a read-only operator view.
+
+**Deferred:** automatic recovery of an unknown courier outcome (a Steadfast lookup by invoice), notifications and
+campaigns through the outbox, a separate worker, the bounded settings-cache race, roles/permissions (Phase 10).
+
+## 16j. Phase 10 scope — Roles, permissions & authorization
+
+**Why this phase.** The Phase 10 audit ([PHASE_10_AUDIT.md](PHASE_10_AUDIT.md)) found:
+- admin role and active flag trusted from a 15-min JWT (R16), so deactivation and demotion were not immediate;
+- admin/customer token separation that depended on configuration only;
+- customer order responses carrying staff-only data, including notes labelled "not visible to the customer";
+- no permission vocabulary: two role strings checked at 60 route sites and in 15 web files;
+- no last-owner protection.
+
+**Delivered** ([PHASE_10_SIGNOFF.md](PHASE_10_SIGNOFF.md)). This is §15's permission model:
+- `packages/shared/src/permissions.ts` (35 permissions and the role map). The initial mapping reproduced the
+  pre-Phase-10 OWNER/STAFF boundary exactly, verified on all 299 admin routes. The owner's decisions then made
+  permanent coupon / category delete OWNER-only (PD-10.1) and kept STAFF's financial capabilities (PD-10.2);
+- `requirePermission()` on every admin route, replacing `requireRole()`;
+- DB-backed identity on every admin request (`domain/auth/authorization.ts`);
+- typed tokens;
+- the customer order view (`toCustomerOrder`);
+- last-owner protection;
+- audited role changes and exports;
+- the web reads permissions from `/auth/me`.
+
+**Deferred:** custom roles or per-admin grants, per-staff data scoping, Redis-backed rate limits, provider-credential
+encryption (ProviderConfig), per-request customer token revocation.
+
+## 16k. Phase 11 scope — Production readiness: identity integrity, sessions, observability, safe operations
+
+**Why this phase.** The Phase 11 audit and contract ([PHASE_11_IMPLEMENTATION_CONTRACT.md](PHASE_11_IMPLEMENTATION_CONTRACT.md))
+found that unverified contact data granted access:
+- OTP login by an unverified, non-unique phone;
+- registration silently claiming guest and OTP records;
+- guest orders attaching by an unverified match;
+- OTP sign-up marking the email verified;
+- Google linking without `email_verified`.
+
+It also found non-revocable customer sessions, no observability, deploys that started code before migrating, and
+rate-limit gaps.
+
+**Delivered** ([PHASE_11_SIGNOFF.md](PHASE_11_SIGNOFF.md)):
+- `Customer.phoneVerifiedAt` and a partial unique index;
+- proof-before-claim (`CustomerClaim`);
+- verified-only guest attachment;
+- `CustomerRefreshToken` rotating sessions;
+- correlation IDs (`OutboxEvent.correlationId`), a redacting JSON logger and provider-neutral error capture;
+- `/health/ready` and `/api/v1/ops/attention`;
+- `docker/deploy.sh` (backup → migrate → switch → readiness gate);
+- the rate-limit gaps closed;
+- seed and money hardening.
+
+**Deferred:** dedicated worker, Redis-backed rate limits, ProviderConfig, StoreProfile, installer and config packs,
+country packs, per-order currency, daily facts, courier auto-recovery, the remaining notifications through the
+outbox, custom roles, object storage.
 
 ## 17. Definition of done for each phase
 

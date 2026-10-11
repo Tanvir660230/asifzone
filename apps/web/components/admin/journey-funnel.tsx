@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowDown, ArrowUpRight } from "lucide-react";
 import type { JourneyFunnelStep } from "@/lib/api/admin-analytics";
 import { cn } from "@/lib/utils";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 interface JourneyFunnelProps {
   steps: JourneyFunnelStep[];
@@ -39,7 +40,7 @@ export function JourneyFunnel({ steps, bottleneckKey }: JourneyFunnelProps) {
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <span className="font-semibold tabular-nums text-ink-900">{step.sessions.toLocaleString("en-BD")}</span>
+                <span className="font-semibold tabular-nums text-ink-900">{step.sessions.toLocaleString(DISPLAY_LOCALE)}</span>
                 <span className="text-ink-400">· {step.pctOfLanding.toFixed(1)}% of landing</span>
                 {isRealDrop && (
                   <span className="flex items-center gap-0.5 font-medium text-danger-600">

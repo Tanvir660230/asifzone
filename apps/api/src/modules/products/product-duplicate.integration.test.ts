@@ -329,8 +329,18 @@ describe("duplicating a product", () => {
   });
 
   describe("permanent delete", () => {
+    /** A product that was never stocked, sold or valued — the only kind that can be purged (locked decision 4). */
+    const noHistory = (n: number) => ({ variants: [{ sku: `VT-DUP-${RUN}-NH${n}`, size: "M", color: "Black", stock: 0 }] });
+
+    it("is refused for a product with stock history: it stays archived in Trash", async () => {
+      const p = await createProduct(); // opened with stock → a stock movement
+      await owner().delete(`/api/products/${p.id}`);
+      expect((await owner().delete(`/api/products/${p.id}/permanent`)).status).toBe(409);
+      expect((await owner().get(`/api/products/${p.id}`)).status).toBe(200);
+    });
+
     it("is the owner's call: staff get 403, the owner can", async () => {
-      const p = await createProduct();
+      const p = await createProduct(noHistory(1));
       await owner().delete(`/api/products/${p.id}`);
       expect((await staff().delete(`/api/products/${p.id}/permanent`)).status).toBe(403);
       expect((await owner().get(`/api/products/${p.id}`)).status).toBe(200); // still there
@@ -339,8 +349,8 @@ describe("duplicating a product", () => {
     });
 
     it("keeps the files while another image row still uses them", async () => {
-      const a = await withImages(await createProduct(), 1);
-      const b = await createProduct();
+      const a = await withImages(await createProduct(noHistory(2)), 1);
+      const b = await createProduct(noHistory(3));
       // Two rows on one URL (data that predates copy-on-duplicate could look like this).
       await prisma.productImage.create({ data: { productId: b.id, url: a.images[0]!.url, altText: "shared", sortOrder: 0 } });
 

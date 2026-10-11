@@ -5,7 +5,7 @@ import {
   updateHomepageSectionSchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
-import { requireAdmin } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { imageUpload } from "../uploads/upload.middleware";
 import * as homepageSectionController from "./homepage-section.controller";
 
@@ -13,19 +13,21 @@ export const homepageSectionRouter = Router();
 
 homepageSectionRouter.get("/active", homepageSectionController.active);
 
-homepageSectionRouter.get("/", requireAdmin, homepageSectionController.list);
-homepageSectionRouter.post("/upload-image", requireAdmin, imageUpload.single("image"), homepageSectionController.uploadImage);
-homepageSectionRouter.post("/", requireAdmin, validate(createHomepageSectionSchema), homepageSectionController.create);
+homepageSectionRouter.get("/", requireAdmin, requirePermission("content.manage"), homepageSectionController.list);
+homepageSectionRouter.post("/upload-image", requireAdmin, requirePermission("content.manage"), imageUpload.single("image"), homepageSectionController.uploadImage);
+homepageSectionRouter.post("/", requireAdmin, requirePermission("content.manage"), validate(createHomepageSectionSchema), homepageSectionController.create);
 homepageSectionRouter.patch(
   "/reorder",
   requireAdmin,
+  requirePermission("content.manage"),
   validate(reorderHomepageSectionsSchema),
   homepageSectionController.reorder,
 );
 homepageSectionRouter.patch(
   "/:id",
   requireAdmin,
+  requirePermission("content.manage"),
   validate(updateHomepageSectionSchema),
   homepageSectionController.update,
 );
-homepageSectionRouter.delete("/:id", requireAdmin, homepageSectionController.remove);
+homepageSectionRouter.delete("/:id", requireAdmin, requirePermission("content.manage"), homepageSectionController.remove);

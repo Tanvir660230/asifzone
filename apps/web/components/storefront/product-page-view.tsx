@@ -14,27 +14,30 @@ import {
   getPremiumAlternatives,
   getProductRail,
   getSiteSettings,
+  getSiteSettingsSafe,
   getUrgencySignals,
 } from "@/lib/api/storefront";
 import { formatPrice } from "@/lib/format";
 import { buildAccordionItems, productPageLayout, sanitizeRichTextSpecs } from "@/lib/product-specs";
 import { buildProductJsonLd } from "@/lib/structured-data";
 import { getSiteUrl } from "@/lib/seo";
-import { jsonLdString } from "@clothing-brand/shared";
+import { jsonLdString, policyHighlights, storePolicy } from "@clothing-brand/shared";
 import { productEditHref } from "@/lib/admin-routes";
 import { productDisplayPrice } from "@/lib/pricing-display";
 
 // Each list fetches and streams independently via its own Suspense boundary, instead of the whole page waiting on
 // every recommendation endpoint before it can paint — the above-the-fold product info is only blocked on what it needs.
 
-async function BundleCarousel({ productId, title }: { productId: string; title: string }) {
+async function BundleCarousel({ productId, title, currency }: { productId: string; title: string; currency?: string }) {
   const { result: bundleResult } = await getBundleForProduct(productId);
+  // A server component: no <StoreConfig> here, so the amount's currency is passed — the product's own, else the store's.
+  const amountCurrency = currency ?? (await getSiteSettingsSafe()).settings.currency;
   if (!bundleResult) return null;
 
   const discountLabel =
     bundleResult.bundle.discountType === "PERCENTAGE"
       ? `Save ${bundleResult.bundle.discountValue}%`
-      : `Save ${formatPrice(bundleResult.bundle.discountValue)}`;
+      : `Save ${formatPrice(bundleResult.bundle.discountValue, amountCurrency)}`;
 
   return <ProductCarousel title={`${title} — ${discountLabel}`} eyebrow={bundleResult.bundle.name} products={bundleResult.suggestedProducts} />;
 }
@@ -62,7 +65,7 @@ function Block({ section, product }: { section: PublicSection; product: Product 
 
   if (section.key === "reviews") return <ProductReviews productId={product.id} productName={product.name} />;
   if (section.key === "recentlyViewed") return <RecentlyViewedCarousel excludeProductId={product.id} />;
-  if (section.key === "bundle") return wrap(<BundleCarousel productId={product.id} title={section.title} />);
+  if (section.key === "bundle") return wrap(<BundleCarousel productId={product.id} title={section.title} currency={product.pricing?.currency} />);
   if (section.key === "budget") return wrap(<BudgetCarousel productId={product.id} title={section.title} />);
   if (section.key === "premium") return wrap(<PremiumCarousel productId={product.id} title={section.title} />);
   if (RAIL_KEYS.has(section.key)) {
@@ -89,7 +92,8 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
   const live = mode === "live";
   const [urgencySignals, { settings }] = await Promise.all([live ? getUrgencySignals(product.id) : Promise.resolve(NO_SIGNALS), getSiteSettings()]);
 
-  const accordionItems = buildAccordionItems(product, sanitize);
+  const policy = storePolicy(settings);
+  const accordionItems = buildAccordionItems(product, sanitize, policy);
   const { showSizeGuideLink, blocks, faqEnabled } = productPageLayout(product);
   const faqs = product.resolved?.faqs ?? [];
   const siteUrl = getSiteUrl();
@@ -121,7 +125,13 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
             }}
           />
         )}
-        <ProductPageBody product={product} urgencySignals={urgencySignals} accordionItems={accordionItems} showSizeGuideLink={showSizeGuideLink} />
+        <ProductPageBody
+          product={product}
+          urgencySignals={urgencySignals}
+          accordionItems={accordionItems}
+          showSizeGuideLink={showSizeGuideLink}
+          policyLines={policyHighlights(policy)}
+        />
       </div>
 
       {blocks.map((section) => (

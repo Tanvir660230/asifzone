@@ -1,11 +1,12 @@
 import { formatVariantSuffix } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
-import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { env } from "../../config/env";
 import { escapeHtml } from "../../lib/html";
 import { AppError } from "../../lib/app-error";
 import { PURCHASABLE_PRODUCT_WHERE } from "../products/product-public-select";
+import { captureError } from "../../lib/observability/error-capture";
+import { getProviders } from "../../providers/registry";
 
 export async function subscribe(customerId: string, variantId: string) {
   // No restock alerts for something that can't be bought (trashed/unpublished product, inactive variant).
@@ -43,11 +44,11 @@ export async function notifyBackInStock(variantId: string) {
   for (const alert of alerts) {
     try {
       const productUrl = `${env.webOrigin}/product/${alert.variant.product.slug}`;
-      await sendMail({
+      await getProviders().email.send({
         // Non-null by the query filter above — Prisma's include type just can't express that.
         to: alert.customer.email!,
         subject: `Back in stock: ${alert.variant.product.name}`,
-        html: renderEmailLayout({
+        html: await renderEmailLayout({
           bodyHtml: `
             <p style="margin:0 0 8px;font-size:18px;font-weight:600;">Back in stock</p>
             <p style="margin:0;">Hi ${escapeHtml(alert.customer.name)}, good news — <strong>${escapeHtml(alert.variant.product.name)}</strong>${escapeHtml(formatVariantSuffix(alert.variant.size, alert.variant.color))} is available again.</p>
@@ -58,7 +59,7 @@ export async function notifyBackInStock(variantId: string) {
       });
       notifiedIds.push(alert.id);
     } catch (err) {
-      console.error(`[stock-alert] failed to notify alert ${alert.id}:`, err);
+      captureError(err, { msg: `[stock-alert] failed to notify alert ${alert.id}:` });
     }
   }
 

@@ -1,16 +1,16 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
-import { OAuth2Client } from "google-auth-library";
-import type { AdminLoginInput, CreateAdminInviteInput, UpdateAdminInput } from "@clothing-brand/shared";
+import { googleOAuthClient } from "../../lib/google-oauth";
+import { ADMIN_ROLES, permissionsForRole, type AdminLoginInput, type AdminRoleName, type CreateAdminInviteInput, type UpdateAdminInput } from "@clothing-brand/shared";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { signAccessToken } from "../../lib/jwt";
-import { sendMail } from "../../lib/mailer";
 import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken } from "../../lib/token-hash";
 import { env } from "../../config/env";
+import { getProviders } from "../../providers/registry";
 
-const googleClient = env.google.clientId ? new OAuth2Client(env.google.clientId) : null;
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -20,6 +20,12 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  * account exists. Without this, the early-return-on-not-found path is measurably faster than the
  * wrong-password path, letting an attacker enumerate valid admin emails via response timing. */
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("no-account-has-this-password", 10);
+
+/** What the admin console learns about the signed-in admin: its role and the permissions that role resolves to (Phase
+ * 10) — the web decides visibility from `permissions`, never by comparing role strings. */
+function sessionAdmin(admin: { id: string; name: string; email: string; role: AdminRoleName }) {
+  return { id: admin.id, name: admin.name, email: admin.email, role: admin.role, permissions: permissionsForRole(admin.role) };
+}
 
 function generateOpaqueToken(): string {
   return crypto.randomBytes(40).toString("hex");
@@ -52,7 +58,7 @@ export async function loginAdmin(input: AdminLoginInput, userAgent?: string) {
   return {
     accessToken: signAccessToken({ adminId: admin.id, role: admin.role }),
     refreshToken,
-    admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role },
+    admin: sessionAdmin(admin),
   };
 }
 
@@ -60,8 +66,9 @@ export async function loginAdmin(input: AdminLoginInput, userAgent?: string) {
  * invite-only, so Google can only sign in someone who already has an active, invited account with a
  * matching email. First successful Google login links `googleId` for faster lookups next time. */
 export async function loginAdminWithGoogle(idToken: string, userAgent?: string) {
+  const googleClient = googleOAuthClient();
   if (!googleClient) {
-    throw new AppError(503, "Google sign-in isn't configured — set GOOGLE_CLIENT_ID on the API to enable it.");
+    throw new AppError(503, "Google sign-in isn't configured — add a Google OAuth client ID in Settings › Integrations to enable it.");
   }
 
   let payload;
@@ -72,9 +79,16 @@ export async function loginAdminWithGoogle(idToken: string, userAgent?: string) 
     throw AppError.unauthorized("Invalid Google sign-in — please try again");
   }
   if (!payload?.sub || !payload.email) throw AppError.unauthorized("Invalid Google sign-in — please try again");
+  return signInAdminWithGoogleIdentity({ sub: payload.sub, email: payload.email, emailVerified: payload.email_verified }, userAgent);
+}
 
-  const googleId = payload.sub;
-  const email = payload.email.trim().toLowerCase();
+/** Phase 11 (F-27): a Google identity counts only when Google itself confirms the email (`email_verified`) — otherwise an
+ * account whose Google email is unverified could be linked to the invited admin who owns that address. Admin accounts
+ * stay invite-only; permissions are untouched (Phase 10). */
+export async function signInAdminWithGoogleIdentity(identity: { sub: string; email: string; emailVerified?: boolean | null }, userAgent?: string) {
+  if (identity.emailVerified !== true) throw AppError.unauthorized("Google couldn't confirm this email address — sign in with your password");
+  const googleId = identity.sub;
+  const email = identity.email.trim().toLowerCase();
 
   let admin = await prisma.adminUser.findUnique({ where: { googleId } });
   if (!admin) {
@@ -90,7 +104,7 @@ export async function loginAdminWithGoogle(idToken: string, userAgent?: string) 
   return {
     accessToken: signAccessToken({ adminId: admin.id, role: admin.role }),
     refreshToken,
-    admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role },
+    admin: sessionAdmin(admin),
   };
 }
 
@@ -124,21 +138,60 @@ export async function revokeAllRefreshTokens(adminId: string) {
   await prisma.refreshToken.updateMany({ where: { adminId, revokedAt: null }, data: { revokedAt: new Date() } });
 }
 
-export async function listActiveSessions(adminId: string) {
-  return prisma.refreshToken.findMany({
+/** The admin's signed-in devices (one active refresh token each — rotation revokes the old row). `current` marks the
+ * session making the request, matched by its refresh cookie. */
+export async function listActiveSessions(adminId: string, currentRefreshToken?: string) {
+  const currentHash = currentRefreshToken ? hashToken(currentRefreshToken) : null;
+  const rows = await prisma.refreshToken.findMany({
     where: { adminId, revokedAt: null, expiresAt: { gt: new Date() } },
-    select: { id: true, userAgent: true, createdAt: true, expiresAt: true },
+    select: { id: true, tokenHash: true, userAgent: true, createdAt: true, expiresAt: true },
     orderBy: { createdAt: "desc" },
   });
+  return rows.map(({ tokenHash, ...row }) => ({ ...row, current: tokenHash === currentHash }));
+}
+
+/** Signs one of the admin's other devices out. Only their own, still-active sessions; the current one is Log out. */
+export async function revokeSession(adminId: string, sessionId: string, currentRefreshToken?: string) {
+  const session = await prisma.refreshToken.findFirst({
+    where: { id: sessionId, adminId, revokedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true, tokenHash: true },
+  });
+  if (!session) throw AppError.notFound("Session not found");
+  if (currentRefreshToken && session.tokenHash === hashToken(currentRefreshToken)) {
+    throw AppError.badRequest("That's this device — use Log out instead");
+  }
+  await prisma.refreshToken.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
+}
+
+/** "Sign out all other devices": every active session of this admin except the one making the request. */
+export async function revokeOtherSessions(adminId: string, currentRefreshToken?: string) {
+  if (!currentRefreshToken) throw AppError.badRequest("Can't tell which device this is — sign in again first");
+  const { count } = await prisma.refreshToken.updateMany({
+    where: { adminId, revokedAt: null, tokenHash: { not: hashToken(currentRefreshToken) } },
+    data: { revokedAt: new Date() },
+  });
+  return count;
 }
 
 export async function getAdminById(adminId: string) {
   const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
   if (!admin) throw AppError.notFound("Admin not found");
-  return { id: admin.id, name: admin.name, email: admin.email, role: admin.role };
+  return sessionAdmin(admin);
 }
 
 // --- admin management (no public registration — accounts only exist via an OWNER's invite) ---
+
+/** What each role can do, for the invite / edit forms (Blueprint V2 security): ALL = every permission; STORE = runs the
+ * store, with what it lacks; FINANCE = a books-only role, with what it holds. The web only labels these — the role map is
+ * read here, never re-derived in the browser. */
+export function roleCatalog() {
+  const all = permissionsForRole("OWNER");
+  return ADMIN_ROLES.map((role) => {
+    const permissions = [...permissionsForRole(role)];
+    const kind = permissions.length === all.length ? ("ALL" as const) : permissions.includes("orders.read") ? ("STORE" as const) : ("FINANCE" as const);
+    return { role, kind, permissions, lacks: all.filter((p) => !permissions.includes(p)) };
+  });
+}
 
 export async function listAdmins() {
   return prisma.adminUser.findMany({
@@ -147,17 +200,32 @@ export async function listAdmins() {
   });
 }
 
+const adminListSelect = { id: true, name: true, email: true, role: true, isActive: true, createdAt: true } as const;
+
+/** Phase 10 (G-5): the store always keeps at least one active OWNER. Locks every active OWNER row first, so two owners
+ * demoting / deactivating each other at the same moment can't both pass the check. */
+async function assertKeepsAnActiveOwner(tx: Prisma.TransactionClient, targetId: string, losesOwnerStatus: boolean) {
+  if (!losesOwnerStatus) return;
+  const owners = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "AdminUser" WHERE role = 'OWNER' AND "isActive" = true FOR UPDATE`;
+  if (owners.some((o) => o.id === targetId) && owners.length <= 1) {
+    throw AppError.conflict("The store must keep at least one active owner");
+  }
+}
+
+/** Returns the admin as it was and as it is now — the controller records both in the audit trail. */
 export async function setAdminActive(adminId: string, requestingAdminId: string, isActive: boolean) {
   if (adminId === requestingAdminId && !isActive) {
     throw AppError.badRequest("You can't deactivate your own account");
   }
-  const admin = await prisma.adminUser.update({
-    where: { id: adminId },
-    data: { isActive },
-    select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+  const result = await prisma.$transaction(async (tx) => {
+    const before = await tx.adminUser.findUnique({ where: { id: adminId }, select: adminListSelect });
+    if (!before) throw AppError.notFound("Admin not found");
+    await assertKeepsAnActiveOwner(tx, adminId, before.role === "OWNER" && before.isActive && !isActive);
+    const admin = await tx.adminUser.update({ where: { id: adminId }, data: { isActive }, select: adminListSelect });
+    return { before, admin };
   });
   if (!isActive) await revokeAllRefreshTokens(adminId);
-  return admin;
+  return result;
 }
 
 export async function updateAdmin(adminId: string, requestingAdminId: string, input: UpdateAdminInput) {
@@ -175,10 +243,12 @@ export async function updateAdmin(adminId: string, requestingAdminId: string, in
     data.email = email;
   }
 
-  return prisma.adminUser.update({
-    where: { id: adminId },
-    data,
-    select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.adminUser.findUnique({ where: { id: adminId }, select: adminListSelect });
+    if (!before) throw AppError.notFound("Admin not found");
+    await assertKeepsAnActiveOwner(tx, adminId, before.role === "OWNER" && before.isActive && data.role !== undefined && data.role !== "OWNER");
+    const admin = await tx.adminUser.update({ where: { id: adminId }, data, select: adminListSelect });
+    return { before, admin };
   });
 }
 
@@ -218,10 +288,10 @@ export async function createAdminInvite(input: CreateAdminInviteInput, invitedBy
   });
 
   const acceptUrl = `${env.webOrigin}/admin/accept-invite?token=${token}`;
-  await sendMail({
+  await getProviders().email.send({
     to: email,
     subject: "You've been invited to the admin console",
-    html: renderEmailLayout({
+    html: await renderEmailLayout({
       bodyHtml: `
         <p style="margin:0 0 8px;font-size:18px;font-weight:600;">You're invited</p>
         <p style="margin:0;">You've been invited as ${input.role === "OWNER" ? "an owner" : "a staff member"} on the admin console. Set your password to get started — this link expires in 7 days.</p>
@@ -257,5 +327,5 @@ export async function acceptAdminInvite(token: string, password: string) {
   ]);
 
   const refreshToken = await issueRefreshToken(admin.id);
-  return { accessToken: signAccessToken({ adminId: admin.id, role: admin.role }), refreshToken, admin };
+  return { accessToken: signAccessToken({ adminId: admin.id, role: admin.role }), refreshToken, admin: { ...admin, permissions: permissionsForRole(admin.role) } };
 }

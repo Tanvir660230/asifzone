@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import * as inventoryService from "./inventory.service";
+import { listStockLevels } from "./inventory-levels.service";
 
 export const listMovements = asyncHandler(async (req: Request, res: Response) => {
   res.json(await inventoryService.listStockMovements(req.query as never));
@@ -14,4 +15,9 @@ export const adjust = asyncHandler(async (req: Request, res: Response) => {
 
 export const reconciliation = asyncHandler(async (_req: Request, res: Response) => {
   res.json({ discrepancies: await inventoryService.getStockDiscrepancies() });
+});
+
+/** Stock levels per variant: available, reserved by unshipped orders, on hand, state and days of cover. */
+export const levels = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await listStockLevels(req.query as never));
 });

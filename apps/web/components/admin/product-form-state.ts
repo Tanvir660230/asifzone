@@ -20,6 +20,7 @@ import * as attributesApi from "@/lib/api/attributes";
 import * as catalogApi from "@/lib/api/catalog";
 import * as aiApi from "@/lib/api/ai";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
+import { adminCan } from "@/lib/auth";
 
 /** Flattens the category tree into a top-level-first, indented option list (e.g. "— Cap" under
  * "Accessories") so the admin can see hierarchy in a single-select dropdown without a second field. */
@@ -58,8 +59,8 @@ function setNestedError(target: Record<string, any>, path: (string | number)[], 
 }
 
 /** zod checks the payload's shape; the product type's template (fetched, so it can be data) adds the rules
- * zod can't know — required attributes, option lists, per-type variant dimensions. Shared by the tabbed
- * ProductForm and the step-by-step wizard so a product is validated the same way in both. */
+ * zod can't know — required attributes, option lists, per-type variant dimensions. Every Product Builder save
+ * path validates with it. */
 export function buildResolver(getConfig: () => ResolvedTypeConfig | undefined): Resolver<CreateProductInput> {
   const zod = zodResolver(createProductSchema);
   return async (values, context, options) => {
@@ -103,11 +104,15 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
       isFeatured: false,
       carePresetId: "",
       careOverride: [],
+      tags: [],
+      additionalCategoryIds: [],
       materials: [],
       sections: [],
       faqs: [],
       relations: [],
       trackInventory: true,
+      freeDelivery: false,
+      courierNoteRuleIds: [],
       lowStockThreshold: 5,
       sortOrder: 0,
       variants: [{ sku: "", size: "", color: "", stock: 0, isActive: true, attributeValueIds: [] }],
@@ -120,6 +125,7 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
     shortDescription: initial.shortDescription,
     sortOrder: initial.sortOrder,
     categoryId: initial.categoryId,
+    additionalCategoryIds: initial.additionalCategoryIds ?? [],
     // Without these the form would re-submit a default type and blank spec fields, so saving
     // any edit would reset the product's type and wipe its attributes.
     typeId: initial.typeId ?? initial.resolved?.type?.id ?? "",
@@ -131,11 +137,14 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
     costPrice: initial.costPrice ? Number(initial.costPrice) : undefined,
     taxRate: initial.taxRate ? Number(initial.taxRate) : undefined,
     trackInventory: initial.trackInventory,
+    freeDelivery: initial.freeDelivery ?? false,
+    courierNoteRuleIds: initial.courierNoteRuleIds ?? [],
     lowStockThreshold: initial.lowStockThreshold,
     isFeatured: initial.isFeatured,
     seoTitle: initial.seoTitle,
     seoDescription: initial.seoDescription,
     focusKeyword: initial.focusKeyword,
+    tags: initial.tags ?? [],
     ogTitle: initial.ogTitle,
     ogDescription: initial.ogDescription,
     ogImageUrl: initial.ogImageUrl,
@@ -173,11 +182,11 @@ export interface UseProductFormStateOptions {
   stagedImages?: StagedImage[];
 }
 
-/** Everything a product editor UI (the tabbed ProductForm, or the step-by-step wizard) needs: the
+/** Everything the Product Builder needs about the product being edited: the
  * react-hook-form instance (config-driven validation via buildResolver), the fetched type/attribute/
  * category reference data, the currently-selected type's resolved config, this product's resolved page
  * sections, and the live completeness score — computed exactly the way the server gates publishing.
- * One source of truth so the two UIs can never drift on what's required or what's complete. */
+ * One source of truth for what's required and what's complete. */
 export function useProductFormState({ initial, stagedImages }: UseProductFormStateOptions) {
   const { data: typesData } = useQuery({ queryKey: ["catalog-types", "all"], queryFn: () => catalogApi.listTypes(true) });
   const types = useMemo(() => typesData?.types ?? [], [typesData]);
@@ -188,7 +197,7 @@ export function useProductFormState({ initial, stagedImages }: UseProductFormSta
   // AI generation is OWNER-only on the backend (it bills real API usage) — hide the entry points
   // for STAFF rather than showing a button that always 403s.
   const { data: currentAdmin } = useCurrentAdmin();
-  const canUseAi = Boolean(aiStatus?.configured && currentAdmin?.admin.role === "OWNER");
+  const canUseAi = Boolean(aiStatus?.configured && adminCan(currentAdmin?.admin, "ai.use"));
 
   const selectedConfigRef = useRef<ResolvedTypeConfig | undefined>(undefined);
   // The store-wide section layer, so the product's section editor can say what a blank field inherits.

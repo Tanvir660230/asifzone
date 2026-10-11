@@ -65,7 +65,7 @@ Categories · Products (variants, images, flash-sale pricing shown automatically
 ## Running automated tests
 
 - **API unit/integration tests** (Vitest + Supertest, run against your local dev database): `pnpm --filter api test`
-- **Browser end-to-end tests** (Playwright, desktop + mobile, requires the API and web dev servers already running via `pnpm dev`): `pnpm --filter web test:e2e`
+- **Browser end-to-end tests** (Playwright, desktop + mobile, requires the API and web dev servers already running via `pnpm dev`): `pnpm --filter web test:e2e`. Against a production build, start the web with `pnpm --filter web start:e2e`: it empties Next's on-disk data cache first, which otherwise survives rebuilds and can serve product ids from a database you have since reset.
 - Both run automatically in CI (`.github/workflows/ci.yml`) against a throwaway Postgres service once this repo is pushed to GitHub.
 
 ## Verifying end-to-end

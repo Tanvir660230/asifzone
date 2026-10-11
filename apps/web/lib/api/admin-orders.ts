@@ -1,5 +1,6 @@
 import type {
   Order,
+  OrderPaymentSummary,
   AdminOrderListItem,
   OrderStatus,
   BulkOrderStatusResult,
@@ -10,9 +11,9 @@ import type {
   AdminCreateOrderInput,
   AdjustOrderPriceInput,
   ReconcilePartialDeliveryInput,
+  OrderQueueId,
 } from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
-import { env } from "../env";
+import { apiDownload, apiFetch, type FetchSignal } from "../api-client";
 
 export interface AdminOrderListParams {
   page?: number;
@@ -29,8 +30,14 @@ export interface AdminOrderListParams {
   shippingDistrict?: string;
   // "true" = only PENDING orders whose confirmation-call follow-up is due now or overdue.
   followUpDue?: "true";
+  // "true" = the "Needs action" queue (every order a person has to act on).
+  needsAction?: "true";
   // "true" = only CANCELLED orders where paymentStatus is still PAID — the refund-risk queue.
   cancelledButPaid?: "true";
+  // "true" = only RETURNED orders still holding money — the "returned, refund may be owed" queue.
+  refundDue?: "true";
+  // "true" = only booked orders on courier hold or with a failed status sync.
+  courierIssue?: "true";
   dateFrom?: string;
   dateTo?: string;
   sortBy?: "orderNumber" | "customerName" | "paymentStatus" | "total" | "status" | "createdAt";
@@ -45,6 +52,16 @@ export interface OrderStats {
   followUpDue: number;
   cancelledButPaidCount: number;
   statusCounts: Record<OrderStatus, number>;
+  /** One count per quick filter, computed by the same where-builder the list uses (ORDER_QUEUE_FILTERS). */
+  queueCounts: Record<OrderQueueId, number>;
+  /** Return/exchange requests waiting for a decision. */
+  returnRequestsPending: number;
+}
+
+/** Per-order outcome of a bulk trash / restore / permanent delete — the server runs each order on its own. */
+export interface BulkOrderOutcome {
+  succeeded: string[];
+  failed: Array<{ id: string; orderNumber: string | null; reason: string }>;
 }
 
 function buildOrderListQuery(params: AdminOrderListParams) {
@@ -62,7 +79,10 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   if (params.shippingDivision) query.set("shippingDivision", params.shippingDivision);
   if (params.shippingDistrict) query.set("shippingDistrict", params.shippingDistrict);
   if (params.followUpDue) query.set("followUpDue", params.followUpDue);
+  if (params.needsAction) query.set("needsAction", params.needsAction);
   if (params.cancelledButPaid) query.set("cancelledButPaid", params.cancelledButPaid);
+  if (params.refundDue) query.set("refundDue", params.refundDue);
+  if (params.courierIssue) query.set("courierIssue", params.courierIssue);
   if (params.dateFrom) query.set("dateFrom", params.dateFrom);
   if (params.dateTo) query.set("dateTo", params.dateTo);
   if (params.sortBy) query.set("sortBy", params.sortBy);
@@ -70,8 +90,8 @@ function buildOrderListQuery(params: AdminOrderListParams) {
   return query;
 }
 
-export function listOrders(params: AdminOrderListParams = {}) {
-  return apiFetch<PaginatedResult<AdminOrderListItem>>(`/api/orders?${buildOrderListQuery(params).toString()}`);
+export function listOrders(params: AdminOrderListParams = {}, { signal }: FetchSignal = {}) {
+  return apiFetch<PaginatedResult<AdminOrderListItem>>(`/api/orders?${buildOrderListQuery(params).toString()}`, { signal });
 }
 
 export function getOrderStats() {
@@ -80,12 +100,14 @@ export function getOrderStats() {
 
 /** CSV export needs the browser's cookie jar for admin auth but isn't JSON, so it bypasses apiFetch —
  * a plain same-tab navigation lets the browser handle the file download via Content-Disposition. */
-export function downloadOrdersCsvUrl(params: AdminOrderListParams = {}) {
-  return `${env.apiUrl}/api/orders/export/csv?${buildOrderListQuery(params).toString()}`;
+/** Saves the current filtered list as CSV; rejects with the server's message (bad filter, expired session) on failure. */
+export function downloadOrdersCsv(params: AdminOrderListParams = {}) {
+  return apiDownload(`/api/orders/export/csv?${buildOrderListQuery(params).toString()}`, "orders.csv");
 }
 
 export function bulkGetOrders(ids: string[]) {
-  return apiFetch<{ orders: Order[] }>("/api/orders/bulk/get", { method: "POST", body: { ids } });
+  // Each order carries its payment ledger position — labels print `payment.codToCollect` as the COD amount.
+  return apiFetch<{ orders: Array<Order & { payment: OrderPaymentSummary }> }>("/api/orders/bulk/get", { method: "POST", body: { ids } });
 }
 
 /** sessionStorage key the Orders list page writes selected ids to and the print-labels page reads
@@ -99,8 +121,8 @@ export function getOrder(id: string) {
 /** Admin "Create order" page — phone/Facebook orders a staff member types in themselves. Goes
  * through the same server-side createOrder pipeline as storefront checkout (stock decrement,
  * pricing, snapshotting), just via an admin-only endpoint that skips the online-gateway path. */
-export function createManualOrder(input: AdminCreateOrderInput) {
-  return apiFetch<{ order: Order }>("/api/orders/admin", { method: "POST", body: input });
+export function createManualOrder(input: AdminCreateOrderInput, idempotencyKey?: string) {
+  return apiFetch<{ order: Order }>("/api/orders/admin", { method: "POST", body: input, idempotencyKey });
 }
 
 export function updateOrderStatus(id: string, status: OrderStatus, note?: string) {
@@ -148,16 +170,20 @@ export function permanentlyDeleteOrder(id: string) {
   return apiFetch<void>(`/api/orders/${id}/permanent`, { method: "DELETE" });
 }
 
-export function bulkUpdateOrderStatus(ids: string[], status: OrderStatus) {
-  return apiFetch<BulkOrderStatusResult>("/api/orders/bulk/status", { method: "POST", body: { ids, status } });
+export function bulkUpdateOrderStatus(ids: string[], status: OrderStatus, note?: string) {
+  return apiFetch<BulkOrderStatusResult>("/api/orders/bulk/status", { method: "POST", body: { ids, status, note: note || null } });
 }
 
 export function bulkDeleteOrders(ids: string[]) {
-  return apiFetch<void>("/api/orders/bulk/delete", { method: "POST", body: { ids } });
+  return apiFetch<BulkOrderOutcome>("/api/orders/bulk/delete", { method: "POST", body: { ids } });
+}
+
+export function bulkRestoreOrders(ids: string[]) {
+  return apiFetch<BulkOrderOutcome>("/api/orders/bulk/restore", { method: "POST", body: { ids } });
 }
 
 export function bulkPermanentlyDeleteOrders(ids: string[]) {
-  return apiFetch<void>("/api/orders/bulk/permanent", { method: "POST", body: { ids } });
+  return apiFetch<BulkOrderOutcome>("/api/orders/bulk/permanent", { method: "POST", body: { ids } });
 }
 
 export function bookCourier(id: string) {
@@ -191,7 +217,7 @@ export function bulkSyncCourier(ids: string[]) {
 }
 
 export interface BulkDeliveryScoreResult {
-  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number }>;
+  checked: Array<{ orderId: string; orderNumber: string; successRate: number | null; totalParcels: number; volumeRange: string | null }>;
   failed: Array<{ orderId: string; orderNumber: string; reason: string }>;
 }
 
@@ -201,4 +227,18 @@ export function bulkCheckDeliveryScore(ids: string[]) {
 
 export function getSteadfastBalance() {
   return apiFetch<{ balance: number }>("/api/courier/steadfast/balance");
+}
+
+/** The parcel note for the courier: the one built from the store's courier-note rules, staff's own wording if set, what
+ * will be sent (`effective`), and — once booked — what was sent. */
+export interface OrderCourierNote {
+  built: string | null;
+  override: string | null;
+  effective: string | null;
+  sent: string | null;
+  booked: boolean;
+}
+
+export function getOrderCourierNote(id: string) {
+  return apiFetch<OrderCourierNote>(`/api/orders/${id}/courier-note`);
 }

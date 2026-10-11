@@ -76,7 +76,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
       {options.showSizes && (
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs uppercase tracking-wide text-ink-500">{options.sizeLabel}</p>
+            <p className="text-xs ui-caps text-ink-500">{options.sizeLabel}</p>
             {sizeHeadingExtra}
           </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label={options.sizeLabel}>
@@ -119,7 +119,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
 
       {options.showColors && (
         <div>
-          <p className="mb-2 text-xs uppercase tracking-wide text-ink-500">
+          <p className="mb-2 text-xs ui-caps text-ink-500">
             {options.colorLabel}
             {selectedColor ? ` — ${selectedColor}` : ""}
           </p>

@@ -1,10 +1,11 @@
-import type { CheckoutInput, Order } from "@clothing-brand/shared";
+import type { CheckoutInput, Order, PublicPaymentLinkView } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 // `order` is only present for COD (created immediately); every other payment method returns just
 // `gatewayUrl` — the Order isn't materialized until the gateway confirms success server-side.
-export function createOrder(input: CheckoutInput) {
-  return apiFetch<{ order?: Order; gatewayUrl?: string }>("/api/orders", { method: "POST", body: input });
+/** `idempotencyKey`: the same key on a retry returns the first attempt's order / payment session (Phase 9). */
+export function createOrder(input: CheckoutInput, idempotencyKey?: string) {
+  return apiFetch<{ order?: Order; gatewayUrl?: string }>("/api/orders", { method: "POST", body: input, idempotencyKey });
 }
 
 /** Guest tracking — the phone number on the order must match, so an order number alone can't expose someone else's address. */
@@ -18,4 +19,14 @@ export function retryPayment(orderNumber: string, phone: string) {
     method: "POST",
     body: { phone },
   });
+}
+
+// ─── Payment links (docs/ORDER_ADJUSTMENTS.md §11) — public; the token in the URL is the only key ────────────────────
+
+export function getPaymentLink(token: string) {
+  return apiFetch<{ link: PublicPaymentLinkView }>(`/api/pay/${encodeURIComponent(token)}`);
+}
+
+export function startPaymentLink(token: string, provider: "SSLCOMMERZ" | "EPS_PG") {
+  return apiFetch<{ gatewayUrl: string }>(`/api/pay/${encodeURIComponent(token)}/start`, { method: "POST", body: { provider } });
 }

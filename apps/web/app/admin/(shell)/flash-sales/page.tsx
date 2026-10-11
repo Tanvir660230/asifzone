@@ -15,12 +15,12 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { PromotionsSubNav } from "@/components/admin/promotions-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { ProductPicker } from "@/components/admin/product-picker";
 import * as flashSalesApi from "@/lib/api/admin-flash-sales";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, storeCurrencySymbol } from "@/lib/format";
 import { ApiError } from "@/lib/api-client";
 
 /** Same rule the server prices with (packages/shared flashSalePhase): live = switched on and inside the window. */
@@ -109,12 +109,12 @@ export default function FlashSalesPage() {
         }
       />
 
-      <PromotionsSubNav />
+      <ModuleTabs />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Status</th>
@@ -285,16 +285,16 @@ function FlashSaleItemsManager({
         <p className="mb-2 text-xs uppercase tracking-wide text-ink-500">Add product</p>
         {error && <p className="mb-2 text-xs text-danger-600">{error}</p>}
         <ProductPicker selected={selectedProduct ? [selectedProduct] : []} onChange={pickProduct} />
-        {errors.productId && <p className="mt-1 text-xs text-danger-600">Select a product</p>}
+        {errors.productId && <p className="ui-field-error">Select a product</p>}
 
         <div className="mt-3 grid grid-cols-[auto_auto_auto] items-start gap-2">
           <Select {...register("discountType")} className="w-28">
             <option value="PERCENTAGE">% off</option>
-            <option value="FIXED">৳ off</option>
+            <option value="FIXED">{storeCurrencySymbol()} off</option>
           </Select>
           <div>
             <Input type="number" step="any" placeholder="Value" {...register("discountValue", { valueAsNumber: true })} className="w-24" />
-            {errors.discountValue && <p className="mt-1 text-xs text-danger-600">Required</p>}
+            {errors.discountValue && <p className="ui-field-error">Required</p>}
           </div>
           <Button type="submit" variant="outline" disabled={isSubmitting}>
             Add

@@ -82,8 +82,8 @@ export function ProductCard({ product, priority }: ProductCardProps) {
   }
 
   return (
-    <div className="group block transition-transform duration-300 ease-smooth hover:-translate-y-1">
-      <div className="relative aspect-square overflow-hidden rounded-xl border border-ink-100 bg-ink-100 shadow-sm transition-shadow duration-300 ease-smooth group-hover:shadow-float">
+    <div className="group block transition-transform duration-300 ease-smooth hover:translate-y-[var(--card-lift)]">
+      <div className="ui-card-frame relative aspect-square overflow-hidden rounded-xl bg-ink-100">
         <Link href={`/product/${product.slug}`} className="absolute inset-0" aria-label={product.name}>
           {primaryImage ? (
             <>
@@ -95,7 +95,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
                 priority={priority}
                 className={cn(
                   "object-cover transition-all duration-500 ease-smooth",
-                  secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-105",
+                  secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-[var(--card-image-zoom)]",
                 )}
               />
               {secondaryImage && (
@@ -114,11 +114,11 @@ export function ProductCard({ product, priority }: ProductCardProps) {
         </Link>
         {badge && (
           <span className="absolute left-3 top-3">
-            <PromoBadge>{badge}</PromoBadge>
+            <PromoBadge tone={badge.tone}>{badge.label}</PromoBadge>
           </span>
         )}
         {soldOut && (
-          <span className="absolute bottom-3 left-3 rounded-full bg-ink-900 px-2 py-1 text-xs uppercase tracking-wide text-cream-50">
+          <span className="absolute bottom-3 left-3 rounded-full bg-ink-900 px-2 py-1 text-xs ui-caps text-cream-50">
             Sold out
           </span>
         )}
@@ -164,8 +164,8 @@ export function ProductCard({ product, priority }: ProductCardProps) {
         )}
       </div>
       <Link href={`/product/${product.slug}`} className="mt-3 block space-y-1.5">
-        <p className="text-xs uppercase tracking-wide text-ink-400">{product.brandTier}</p>
-        <h3 className="text-sm font-medium tracking-wide text-ink-900">{product.name}</h3>
+        <p className="text-xs ui-caps text-ink-400 [display:var(--card-tier-display)]">{product.brandTier}</p>
+        <h3 className="text-sm font-medium tracking-[var(--card-title-tracking)] text-ink-900">{product.name}</h3>
         {product.reviewCount > 0 && (
           <div className="flex items-center gap-1.5">
             <StarRating value={product.avgRating} size={11} />
@@ -176,7 +176,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           {/* Server-resolved "from" price — formatted, never computed here. */}
           <span className={shown.flash ? "text-sm font-bold text-ink-900" : "text-sm font-semibold text-ink-900"}>{formatPrice(shown.price)}</span>
           {shown.was !== null && Number(shown.was) > Number(shown.price) && (
-            <span className="text-xs text-ink-400 line-through">{formatPrice(shown.was)}</span>
+            <span className="text-xs text-fg-muted line-through">{formatPrice(shown.was)}</span>
           )}
         </div>
         {colors.length > 1 && (

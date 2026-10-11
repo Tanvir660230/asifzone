@@ -38,9 +38,19 @@ export type ShippingResult =
       /** What is actually charged (0 when waived). */
       charged: Money;
       waived: boolean;
-      waivedReason: "COUPON" | "FREE_OVER" | null;
+      waivedReason: ShippingWaiverReason | null;
     }
   | { ok: false; reason: "ADDRESS_REQUIRED" | "NO_ZONE" };
+
+/**
+ * Why shipping was not charged, in precedence order (docs/ORDER_ADJUSTMENTS.md §2):
+ *   COUPON         a FREE_SHIPPING coupon applied to the order
+ *   FREE_DELIVERY  every line in the cart is a product marked "Free delivery" (Product.freeDelivery) — one normal
+ *                  product in the cart means the zone fee is charged (no partial or pro-rata waiver)
+ *   FREE_OVER      merchandise after discounts reached the zone's free-over threshold (counts every line, free-delivery
+ *                  lines included)
+ */
+export type ShippingWaiverReason = "COUPON" | "FREE_DELIVERY" | "FREE_OVER";
 
 const SPECIFICITY: Record<ZoneMatchField, number> = { POSTCODE: 3, DISTRICT: 2, DIVISION: 1 };
 
@@ -67,13 +77,19 @@ export function resolveShipping(
   zones: ShippingZoneRule[],
   address: ShippingAddress | null,
   merchandiseAfterDiscounts: Money,
-  opts: { couponFreeShipping: boolean },
+  opts: { couponFreeShipping: boolean; allLinesFreeDelivery?: boolean },
 ): ShippingResult {
   if (!address || (!norm(address.district) && !norm(address.division) && !norm(address.postcode))) return { ok: false, reason: "ADDRESS_REQUIRED" };
   const zone = resolveZone(zones, address);
   if (!zone) return { ok: false, reason: "NO_ZONE" };
   const freeOver = zone.freeOverAmount !== null && merchandiseAfterDiscounts.amount >= zone.freeOverAmount.amount;
-  const waivedReason = opts.couponFreeShipping ? "COUPON" : freeOver ? "FREE_OVER" : null;
+  const waivedReason: ShippingWaiverReason | null = opts.couponFreeShipping
+    ? "COUPON"
+    : opts.allLinesFreeDelivery
+      ? "FREE_DELIVERY"
+      : freeOver
+        ? "FREE_OVER"
+        : null;
   return {
     ok: true,
     zoneId: zone.id,

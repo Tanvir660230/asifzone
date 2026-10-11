@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAdmin, requireRole } from "../../middlewares/require-admin";
+import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { readModelDrift, rebuildAllReadModels } from "../../domain/storefront/read-model.service";
 
 /** Reconciliation for the Storefront Read Model (docs/STOREFRONT_READ_MODEL.md §5): a read-only drift report (stored
@@ -10,6 +10,7 @@ export const storefrontReadModelRouter = Router();
 storefrontReadModelRouter.get(
   "/drift",
   requireAdmin,
+  requirePermission("ops.read"),
   asyncHandler(async (_req: Request, res: Response) => {
     res.json({ drift: await readModelDrift() });
   }),
@@ -18,7 +19,7 @@ storefrontReadModelRouter.get(
 storefrontReadModelRouter.post(
   "/rebuild",
   requireAdmin,
-  requireRole("OWNER"),
+  requirePermission("ops.repair"),
   asyncHandler(async (_req: Request, res: Response) => {
     res.json({ rebuilt: await rebuildAllReadModels() });
   }),

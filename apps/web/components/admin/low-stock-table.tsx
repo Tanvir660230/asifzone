@@ -2,9 +2,9 @@ import { formatVariantLabel } from "@clothing-brand/shared";
 import Link from "next/link";
 import { AlertTriangle, ArrowUpRight, CheckCircle2, Package } from "lucide-react";
 import type { LowStockVariant } from "@/lib/api/admin-analytics";
-import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
 import { productEditHref } from "@/lib/admin-routes";
+import { Thumbnail } from "@/components/admin/thumbnail";
 
 // Matches the API's default low-stock query threshold (`getLowStockVariants(threshold = 5)`) —
 // used only to size the stock bar, not to decide which variants show up here.
@@ -47,7 +47,7 @@ export function LowStockTable({ variants }: { variants: LowStockVariant[] }) {
           >
             <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
               {imageUrl ? (
-                <img src={resolveImageUrl(imageUrl)} alt="" className="h-full w-full object-cover" />
+                <Thumbnail src={imageUrl} alt="" className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center">
                   {v.colorHex ? (

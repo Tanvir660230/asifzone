@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { BD_PHONE_INVALID_MESSAGE, normalizeBdPhone, PHONE_REGEX } from "../country/bd";
+import { MEDIA_MOUNT } from "../media";
 
 export const slugSchema = z
   .string()
@@ -31,6 +33,24 @@ export function nullableUrl() {
   return z.preprocess(blankToNull, z.string().url().nullable().optional());
 }
 
+/** An image/media field: an absolute http(s) URL, or the domain-free stored reference an upload returns
+ * (`/uploads/<storage key>`, Phase 1B — see media.ts). */
+const ABSOLUTE_URL = /^https?:\/\/\S+$/i;
+
+function isStoredMediaReference(value: string): boolean {
+  const key = value.startsWith(`${MEDIA_MOUNT}/`) ? value.slice(MEDIA_MOUNT.length + 1) : "";
+  return key !== "" && !/\s|\\|(^|\/)\.\.?(\/|$)/.test(key);
+}
+
+export const mediaUrlSchema = z
+  .string()
+  .max(1000)
+  .refine((value) => ABSOLUTE_URL.test(value) || isStoredMediaReference(value), { message: "Invalid url" });
+
+export function nullableMediaUrl() {
+  return z.preprocess(blankToNull, mediaUrlSchema.nullable().optional());
+}
+
 export function nullableCuid() {
   return z.preprocess(blankToNull, z.string().cuid().nullable().optional());
 }
@@ -47,21 +67,7 @@ export function nullableDate() {
   return z.preprocess(blankToNull, z.coerce.date().nullable().optional());
 }
 
-export const PHONE_REGEX = /^01[3-9]\d{8}$/;
-
-/** Folds the ways a customer actually types a BD mobile number — spaces/dashes, a "+880"/"880"/
- * "00880" country code, or a missing leading 0 — down to the one canonical "01XXXXXXXXX" form
- * everything else (SMS sending, order-tracking lookup, courier booking) compares against. Without
- * this, e.g. "+8801999454749" gets stored verbatim and BulkSMSBD silently rejects it later. */
-export function normalizeBdPhone(raw: string): string {
-  let digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("880")) digits = digits.slice(3);
-  if (!digits.startsWith("0")) digits = `0${digits}`;
-  return digits;
-}
-
-export function bdPhoneSchema(message = "Enter a valid Bangladeshi phone number") {
+export function bdPhoneSchema(message = BD_PHONE_INVALID_MESSAGE) {
   return z.preprocess(
     (v) => (typeof v === "string" ? normalizeBdPhone(v) : v),
     z.string().regex(PHONE_REGEX, message),
@@ -76,7 +82,7 @@ export function nullableBdPhone() {
       const cleaned = blankToNull(v);
       return typeof cleaned === "string" ? normalizeBdPhone(cleaned) : cleaned;
     },
-    z.string().regex(PHONE_REGEX, "Enter a valid Bangladeshi phone number").nullable().optional(),
+    z.string().regex(PHONE_REGEX, BD_PHONE_INVALID_MESSAGE).nullable().optional(),
   );
 }
 

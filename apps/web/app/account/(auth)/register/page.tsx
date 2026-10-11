@@ -19,8 +19,8 @@ import { AuthModeToggle } from "@/components/account/auth-mode-toggle";
 import { registerCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
-import { env } from "@/lib/env";
-import { pixelCompleteRegistration } from "@/lib/meta-pixel";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
+import { pixelCompleteRegistration } from "@/lib/pixels";
 
 type Mode = "email" | "phone";
 
@@ -29,6 +29,7 @@ export default function AccountRegisterPage() {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("email");
   const [serverError, setServerError] = useState<string | null>(null);
+  const [claimMessage, setClaimMessage] = useState<string | null>(null);
 
   const {
     register,
@@ -50,7 +51,11 @@ export default function AccountRegisterPage() {
   async function onSubmit(values: CustomerRegisterInput) {
     setServerError(null);
     try {
-      await registerCustomer(values);
+      const result = await registerCustomer(values);
+      if ("claimPending" in result) {
+        setClaimMessage(result.message);
+        return;
+      }
       pixelCompleteRegistration();
       goToAccount();
     } catch (err) {
@@ -67,12 +72,24 @@ export default function AccountRegisterPage() {
     onAltSuccess(customer);
   }
 
+  if (claimMessage) {
+    return (
+      <div>
+        <h1 className="mb-1 font-display ui-page-title text-ink-900">Check your email</h1>
+        <p className="mb-6 text-sm text-ink-500">{claimMessage}</p>
+        <Link href="/account/login" className="text-ink-700 underline hover:text-ink-900">
+          Back to sign in
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <h1 className="mb-1 font-display text-2xl text-ink-900">Create an account</h1>
+      <h1 className="mb-1 font-display ui-page-title text-ink-900">Create an account</h1>
       <p className="mb-6 text-sm text-ink-500">Save addresses, track orders, and build a wishlist.</p>
 
-      {env.googleClientId && (
+      {publicRuntimeConfig().googleClientId && (
         <>
           <GoogleButton onCredential={onGoogleCredential} onError={setServerError} />
           <OrDivider />

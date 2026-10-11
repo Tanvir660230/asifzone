@@ -27,6 +27,47 @@ export const adjustStockSchema = z
   })
   .refine((v) => v.reason !== "RESTOCK" || v.delta > 0, { message: "A restock must add stock", path: ["delta"] });
 
+/** Stock levels list (Blueprint V2 §O): one row per variant. `state` follows the shared variantStockState rule
+ * (UNLIMITED = inventory not tracked). Default order puts what needs restocking first. */
+export const stockLevelStateEnum = z.enum(["OUT_OF_STOCK", "LOW_STOCK", "IN_STOCK", "UNLIMITED"]);
+export const stockLevelsQuerySchema = paginationQuerySchema.extend({
+  search: z.string().trim().max(120).optional(),
+  state: stockLevelStateEnum.optional(),
+  sort: z.enum(["attention", "available", "-available", "name"]).default("attention"),
+});
+
+export interface StockLevelRow {
+  variantId: string;
+  productId: string;
+  productName: string;
+  imageUrl: string | null;
+  sku: string;
+  size: string;
+  color: string;
+  /** ProductVariant.stock — what can still be sold (units are taken off at order placement). */
+  available: number;
+  /** Units held by orders that haven't shipped yet (PENDING, CONFIRMED, PROCESSING, PACKED): Σ quantity − restocked. */
+  reserved: number;
+  /** In the warehouse: available + reserved. */
+  onHand: number;
+  lowStockThreshold: number;
+  trackInventory: boolean;
+  active: boolean;
+  state: z.infer<typeof stockLevelStateEnum>;
+  /** Available ÷ average daily units ordered over the last 30 days; null with no sales in that window or untracked. */
+  daysOfCover: number | null;
+}
+
+export interface StockLevelsResult {
+  items: StockLevelRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Variants per state for the current search (tab badges). */
+  counts: Record<z.infer<typeof stockLevelStateEnum> | "ALL", number>;
+}
+
+export type StockLevelsQuery = z.infer<typeof stockLevelsQuerySchema>;
 export type StockMovementListQuery = z.infer<typeof stockMovementListQuerySchema>;
 export type AdjustStockInput = z.infer<typeof adjustStockSchema>;
 export type StockMovementReason = z.infer<typeof stockMovementReasonEnum>;

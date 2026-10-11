@@ -16,14 +16,15 @@
  * (`volatile`), or the currency / pricing version changed — and recomputes exactly those rows. The minute cron runs the
  * same guard, and a full rebuild + drift report exist for reconciliation.
  */
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { PRICING_VERSION, productAvailability, type ProductAvailability } from "@clothing-brand/shared";
-import { prisma } from "../../config/prisma";
-import { getSettings } from "../../modules/settings/settings.service";
+import { prisma, type Db as AppDb } from "../../config/prisma";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
+import { getCurrency } from "../config/commerce-settings";
+import { captureError } from "../../lib/observability/error-capture";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+type Db = AppDb;
 
 const PROJECTION_SOURCE_SELECT = {
   id: true,
@@ -92,7 +93,7 @@ export async function refreshReadModels(productIds: string[], now: Date = new Da
 
 /** Visible (published, not trashed) products whose projection row is missing or stale at `now`. */
 export async function findStaleProductIds(now: Date = new Date(), db: Db = prisma): Promise<string[]> {
-  const currency = (await getSettings()).currency || "BDT";
+  const currency = await getCurrency();
   const rows = await db.$queryRaw<Array<{ id: string }>>`
     SELECT p.id FROM "Product" p
     LEFT JOIN "ProductReadModel" r ON r."productId" = p.id
@@ -115,7 +116,7 @@ export async function ensureFreshReadModels(now: Date = new Date(), db: Db = pri
     const stale = await findStaleProductIds(now, db);
     return stale.length ? await refreshReadModels(stale, now, db) : 0;
   } catch (err) {
-    console.error("[read-model] freshness guard failed; serving the last projection:", err);
+    captureError(err, { msg: "[read-model] freshness guard failed; serving the last projection:" });
     return 0;
   }
 }

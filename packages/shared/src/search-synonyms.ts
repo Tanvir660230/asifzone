@@ -51,7 +51,7 @@ const SYNONYM_GROUPS: string[][] = [
 
   // Fragrance
   ["perfume", "fragrance", "cologne", "পারফিউম", "পারফিউমস"],
-  ["attar", "ittar", "আতর"],
+  ["attar", "ittar", "itar", "ator", "atar", "আতর", "আতোর"],
 
   // Headwear — cap/topi is the single most-typed example in this catalog (prayer caps),
   // so every observed script/spelling/transliteration variant is listed explicitly.
@@ -109,9 +109,20 @@ export function normalizeBanglaSpelling(term: string): string {
   return result;
 }
 
-const SYNONYM_MAP: Map<string, Set<string>> = (() => {
-  const map = new Map<string, Set<string>>();
-  for (const group of SYNONYM_GROUPS) {
+/** One keyword as search stores and compares it: a leading "#" dropped, trimmed, inner whitespace collapsed,
+ * lowercased and Bangla vowel variants unified. Used for product search tags and admin synonym groups alike, so
+ * whatever an admin types is stored in exactly the form a shopper's query is expanded into. */
+export function normalizeSearchKeyword(term: string): string {
+  return normalizeBanglaSpelling(term.replace(/^\s*#+/, "").trim().replace(/\s+/g, " ").toLowerCase());
+}
+
+type SynonymMap = Map<string, Set<string>>;
+
+/** term -> every term sharing a group with it. A term in two groups gets both (one hop, not transitive: "ছেলেদের"
+ * sits in both "men" and "boys", and that must not make "men" expand to "boys"). */
+function buildSynonymMap(groups: readonly (readonly string[])[]): SynonymMap {
+  const map: SynonymMap = new Map();
+  for (const group of groups) {
     const normalized = group.map((term) => normalizeBanglaSpelling(term.toLowerCase()));
     for (const term of normalized) {
       const existing = map.get(term);
@@ -123,9 +134,12 @@ const SYNONYM_MAP: Map<string, Set<string>> = (() => {
     }
   }
   return map;
-})();
+}
 
-/** Every distinct term the dictionary knows about — the "vocabulary" a did-you-mean spell
+/** The built-in groups above, for showing an admin what search already knows. */
+export const BUILT_IN_SYNONYM_GROUPS: readonly (readonly string[])[] = SYNONYM_GROUPS;
+
+/** Every distinct term the built-in dictionary knows about — the "vocabulary" a did-you-mean spell
  * correction is allowed to suggest back to the shopper (see findClosestVocabularyTerm). */
 export const SEARCH_VOCABULARY: readonly string[] = [...new Set(SYNONYM_GROUPS.flat())];
 
@@ -136,7 +150,7 @@ export const SEARCH_VOCABULARY: readonly string[] = [...new Set(SYNONYM_GROUPS.f
  * (and its synonyms) even though "pakistani topi" itself isn't a dictionary phrase — instead of
  * only ever being searchable as one literal multi-word substring, which would (and previously
  * did) fail to match a product simply titled "Pakistani Cap". */
-export function expandSearchTerms(query: string): string[] {
+function expandWith(map: SynonymMap, query: string): string[] {
   const normalized = normalizeBanglaSpelling(query.trim().toLowerCase());
   if (!normalized) return [];
 
@@ -145,7 +159,7 @@ export function expandSearchTerms(query: string): string[] {
   for (const word of words) terms.add(word);
 
   for (const candidate of [...words, normalized]) {
-    const synonyms = SYNONYM_MAP.get(candidate);
+    const synonyms = map.get(candidate);
     if (synonyms) for (const synonym of synonyms) terms.add(synonym);
   }
 
@@ -181,11 +195,11 @@ function similarity(a: string, b: string): number {
 
 const DID_YOU_MEAN_THRESHOLD = 0.6;
 
-/** Best single spelling-corrected guess from the curated vocabulary (see SEARCH_VOCABULARY) for a
- * query that matched nothing — e.g. "তুপি" -> "টুপি", "pnajabi" -> "panjabi". Checked per-word so
- * a multi-word miss ("kids tupi") still finds "টুপি"/"topi"-style corrections for the word that's
- * actually misspelled. Returns null below the confidence threshold rather than guessing wildly. */
-export function findClosestVocabularyTerm(query: string): string | null {
+/** Best single spelling-corrected guess from a vocabulary for a query that matched nothing — e.g.
+ * "তুপি" -> "টুপি", "pnajabi" -> "panjabi". Checked per-word so a multi-word miss ("kids tupi") still
+ * finds "টুপি"/"topi"-style corrections for the word that's actually misspelled. Returns null below the
+ * confidence threshold rather than guessing wildly. */
+function closestWith(map: SynonymMap, vocabulary: readonly string[], query: string): string | null {
   const normalized = normalizeBanglaSpelling(query.trim().toLowerCase());
   if (!normalized) return null;
 
@@ -193,8 +207,8 @@ export function findClosestVocabularyTerm(query: string): string | null {
   let best: { term: string; score: number } | null = null;
 
   for (const candidate of candidates) {
-    if (SYNONYM_MAP.has(candidate)) continue; // already an exact known term, nothing to correct
-    for (const vocabTerm of SEARCH_VOCABULARY) {
+    if (map.has(candidate)) continue; // already an exact known term, nothing to correct
+    for (const vocabTerm of vocabulary) {
       const score = similarity(candidate, normalizeBanglaSpelling(vocabTerm.toLowerCase()));
       if (score >= DID_YOU_MEAN_THRESHOLD && (!best || score > best.score)) {
         best = { term: vocabTerm, score };
@@ -203,4 +217,42 @@ export function findClosestVocabularyTerm(query: string): string | null {
   }
 
   return best?.term ?? null;
+}
+
+export interface SearchExpander {
+  /** See expandWith: the query, its words, and every synonym of either. */
+  expand(query: string): string[];
+  /** Did-you-mean over the whole vocabulary (built-in + extra groups). */
+  closest(query: string): string | null;
+}
+
+/** Search over the built-in dictionary plus the store's own synonym groups (admin-managed, from the database).
+ * Building one is cheap (a few dozen groups); callers cache it until the groups change. */
+export function createSearchExpander(extraGroups: readonly (readonly string[])[] = []): SearchExpander {
+  // A store group pulls in the built-in groups of the words it names: "attar = perfume" means every spelling of attar
+  // finds every perfume word ("ator" included), which is what an admin writing that line expects. Built-in groups are
+  // still never merged with each other (see buildSynonymMap).
+  const builtInMap = buildSynonymMap(SYNONYM_GROUPS);
+  const widened = extraGroups.map((group) => [
+    ...new Set(group.flatMap((term) => [term, ...(builtInMap.get(normalizeBanglaSpelling(term.toLowerCase())) ?? [])])),
+  ]);
+  const groups = [...SYNONYM_GROUPS, ...widened];
+  const map = buildSynonymMap(groups);
+  const vocabulary = [...new Set(groups.flat())];
+  return {
+    expand: (query) => expandWith(map, query),
+    closest: (query) => closestWith(map, vocabulary, query),
+  };
+}
+
+const builtInExpander = createSearchExpander();
+
+/** expand() over the built-in dictionary only. */
+export function expandSearchTerms(query: string): string[] {
+  return builtInExpander.expand(query);
+}
+
+/** closest() over the built-in dictionary only. */
+export function findClosestVocabularyTerm(query: string): string | null {
+  return builtInExpander.closest(query);
 }

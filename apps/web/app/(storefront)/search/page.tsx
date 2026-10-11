@@ -7,7 +7,7 @@ import { Pagination } from "@/components/storefront/pagination";
 import { FacetFilters } from "@/components/storefront/facet-filters";
 import { NoSearchResults } from "@/components/storefront/no-search-results";
 import { SearchSessionTracker } from "@/components/analytics/search-session-tracker";
-import { getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
+import { getSiteSettings, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
 import { jsonLdString } from "@clothing-brand/shared";
@@ -29,7 +29,7 @@ interface Props {
 }
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
-  const resolvedSearchParams = await searchParams;
+  const [resolvedSearchParams, { settings }] = await Promise.all([searchParams, getSiteSettings()]);
   const query = resolvedSearchParams.q?.trim();
   const title = query ? `Search results for "${query}"` : "All Products";
   const page = Number(resolvedSearchParams.page) || 1;
@@ -37,7 +37,7 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   return {
     title,
     alternates: { canonical: url },
-    ...buildOpenGraph({ title, url }),
+    ...buildOpenGraph({ title, url, siteName: settings.storeName }),
     // The bare /search landing page (in the sitemap) stays indexable; every query-result variant
     // is near-duplicate content, so keep those out of the index rather than indexing every permutation.
     ...(query ? { robots: { index: false, follow: true } } : {}),
@@ -72,7 +72,7 @@ export default async function SearchPage({ searchParams }: Props) {
           so it gets a proper moment rather than looking like an afterthought. */}
       <div className="border-b border-ink-100 bg-cream-100">
         <div className="mx-auto max-w-3xl px-4 py-14 text-center sm:px-6 sm:py-16 lg:px-8">
-          <p className="mb-3 text-xs uppercase tracking-[0.3em] text-brass-500">{query ? "Search" : "Shop"}</p>
+          <p className="mb-3 text-xs ui-eyebrow text-brass-500">{query ? "Search" : "Shop"}</p>
           <h1 className="font-display text-3xl text-ink-900 sm:text-4xl">
             {query ? <>Results for &ldquo;{query}&rdquo;</> : "All Products"}
           </h1>

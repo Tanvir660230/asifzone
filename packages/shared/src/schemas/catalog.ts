@@ -4,6 +4,7 @@ import { skuCodeSchema } from "../sku";
 import { sectionLayerSchema, type PublicSection } from "../sections";
 import type { SizeGuideData } from "../config/product-types";
 import { OPTIONAL_COMPLETENESS_KEYS } from "../completeness-checks";
+import { normalizeSearchKeyword } from "../search-synonyms";
 
 /* ───────────────────────── enums ───────────────────────── */
 
@@ -163,6 +164,33 @@ export const materialSchema = z.object({
   description: nullableString(300),
 });
 
+/** A store-wide synonym group: words a shopper may type that should find the same products ("ator", "attar", "আতর").
+ * Stored normalized (see normalizeSearchKeyword), blanks and duplicates dropped. */
+export const searchSynonymSchema = z.object({
+  terms: z
+    .array(z.string().max(60))
+    .max(30, "At most 30 words in one group")
+    .transform((terms) => [...new Set(terms.map(normalizeSearchKeyword).filter(Boolean))])
+    .refine((terms) => terms.length >= 2, "A synonym group needs at least two different words"),
+  isActive: z.boolean().default(true),
+});
+
+export const COURIER_NOTE_TRIGGERS = ["PRODUCT", "DISCOUNT"] as const;
+
+/** A store-defined instruction for the courier (Catalog → Courier notes). PRODUCT rules apply to the products/categories
+ * they're ticked on; DISCOUNT rules apply on their own to any order with a line discounted at least minDiscountPercent. */
+export const courierNoteRuleSchema = z
+  .object({
+    name: z.string().trim().min(1, "Give the rule a name").max(60),
+    text: z.string().trim().min(1, "Write what the courier should see").max(160),
+    trigger: z.enum(COURIER_NOTE_TRIGGERS).default("PRODUCT"),
+    minDiscountPercent: z.preprocess(blankToNull, z.number().int().min(1).max(99).nullable().optional()),
+    isActive: z.boolean().default(true),
+    sortOrder: z.number().int().min(0).max(1000).default(0),
+  })
+  .refine((r) => r.trigger !== "DISCOUNT" || r.minDiscountPercent != null, { message: "Set the discount that triggers this note", path: ["minDiscountPercent"] })
+  .transform((r) => ({ ...r, minDiscountPercent: r.trigger === "DISCOUNT" ? (r.minDiscountPercent ?? null) : null }));
+
 export const productTypeSchema = z.object({
   name: z.string().trim().min(1).max(80),
   key: z.preprocess((v) => (v === "" ? undefined : v), slugSchema.optional()),
@@ -184,6 +212,9 @@ export type TemplateInput = z.infer<typeof templateSchema>;
 export type ProductTypeInput = z.infer<typeof productTypeSchema>;
 export type CareGuidePresetInput = z.infer<typeof careGuidePresetSchema>;
 export type MaterialInput = z.infer<typeof materialSchema>;
+export type SearchSynonymInput = z.infer<typeof searchSynonymSchema>;
+export type CourierNoteRuleInput = z.input<typeof courierNoteRuleSchema>;
+export type CourierNoteTrigger = (typeof COURIER_NOTE_TRIGGERS)[number];
 export type UpdateProductTypeInput = z.infer<typeof updateProductTypeSchema>;
 
 /* ───────────────────────── API shapes ───────────────────────── */

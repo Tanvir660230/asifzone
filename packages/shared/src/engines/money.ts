@@ -9,8 +9,17 @@ export interface Money {
   currency: string;
 }
 
-/** Minor-unit digits per currency. Unknown currencies default to 2 (the ISO 4217 norm). */
+/** Minor-unit digits per currency — the engine's table of currencies it can represent exactly. Unknown codes default to 2
+ * (the ISO 4217 norm) for internal pseudo-currencies (e.g. allocation weights); a STORE currency must be one of these
+ * (`isSupportedCurrency`, enforced by the settings writer — docs/PHASE_7_AUDIT.md D-8). */
 const MINOR_DIGITS: Record<string, number> = { BDT: 2, USD: 2, EUR: 2, GBP: 2, INR: 2, JPY: 0 };
+
+/** ISO 4217 codes a store may use as its currency. */
+export const SUPPORTED_CURRENCIES: readonly string[] = Object.keys(MINOR_DIGITS);
+
+export function isSupportedCurrency(code: string): boolean {
+  return Object.prototype.hasOwnProperty.call(MINOR_DIGITS, code);
+}
 
 export function minorDigits(currency: string): number {
   return MINOR_DIGITS[currency.toUpperCase()] ?? 2;

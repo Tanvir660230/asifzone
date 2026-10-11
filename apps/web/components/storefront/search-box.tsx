@@ -25,7 +25,7 @@ export function SearchBox({ initialValue = "" }: { initialValue?: string }) {
       />
       <button
         type="submit"
-        className="glossy absolute right-1.5 flex h-11 shrink-0 items-center rounded-full bg-brass-400 px-5 text-xs font-medium uppercase tracking-wide text-ink-900 shadow-sm transition-all duration-200 ease-smooth hover:bg-brass-500 active:scale-95"
+        className="glossy absolute right-1.5 flex h-11 shrink-0 items-center rounded-full bg-brass-400 px-5 text-xs font-medium ui-caps text-ink-900 shadow-sm transition-all duration-200 ease-smooth hover:bg-brass-500 active:scale-95"
       >
         Search
       </button>

@@ -17,13 +17,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { RoleSummary } from "@/components/admin/role-summary";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { PasswordInput } from "@/components/account/password-input";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { SettingsSubNav } from "@/components/admin/settings-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as authApi from "@/lib/auth";
@@ -35,6 +36,7 @@ function InviteForm({ onSubmit, onCancel }: { onSubmit: (values: CreateAdminInvi
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<CreateAdminInviteInput>({
     resolver: zodResolver(createAdminInviteSchema),
@@ -46,19 +48,25 @@ function InviteForm({ onSubmit, onCancel }: { onSubmit: (values: CreateAdminInvi
       <div>
         <Label htmlFor="name">Full name</Label>
         <Input id="name" autoComplete="name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
       <div>
         <Label htmlFor="email">Email</Label>
         <Input id="email" type="email" autoComplete="email" {...register("email")} />
-        {errors.email && <p className="mt-1 text-xs text-danger-600">{errors.email.message}</p>}
+        {errors.email && <p className="ui-field-error">{errors.email.message}</p>}
       </div>
       <div>
         <Label htmlFor="role">Role</Label>
         <Select id="role" {...register("role")}>
           <option value="STAFF">Staff</option>
           <option value="OWNER">Owner (super admin)</option>
+          <option value="FINANCE_ADMIN">Finance admin (books only)</option>
+          <option value="ACCOUNTANT">Accountant (books only — records, can&apos;t post)</option>
+          <option value="FINANCE_VIEWER">Finance viewer (books only — read-only)</option>
         </Select>
+        <div className="mt-2">
+          <RoleSummary role={watch("role") ?? "STAFF"} />
+        </div>
       </div>
       <p className="text-xs text-ink-500">
         They&rsquo;ll get an email with a link to set their own password — you won&rsquo;t need to share a password with them.
@@ -87,6 +95,7 @@ function EditAdminForm({
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<UpdateAdminInput>({
     resolver: zodResolver(updateAdminSchema),
@@ -98,19 +107,25 @@ function EditAdminForm({
       <div>
         <Label htmlFor="edit-name">Full name</Label>
         <Input id="edit-name" autoComplete="name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
       <div>
         <Label htmlFor="edit-email">Email</Label>
         <Input id="edit-email" type="email" autoComplete="email" {...register("email")} />
-        {errors.email && <p className="mt-1 text-xs text-danger-600">{errors.email.message}</p>}
+        {errors.email && <p className="ui-field-error">{errors.email.message}</p>}
       </div>
       <div>
         <Label htmlFor="edit-role">Role</Label>
         <Select id="edit-role" {...register("role")}>
           <option value="STAFF">Staff</option>
           <option value="OWNER">Owner (super admin)</option>
+          <option value="FINANCE_ADMIN">Finance admin (books only)</option>
+          <option value="ACCOUNTANT">Accountant (books only — records, can&apos;t post)</option>
+          <option value="FINANCE_VIEWER">Finance viewer (books only — read-only)</option>
         </Select>
+        <div className="mt-2">
+          <RoleSummary role={watch("role") ?? "STAFF"} />
+        </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
         <Button type="button" variant="outline" onClick={onCancel}>
@@ -142,7 +157,7 @@ function SetPasswordForm({
       <div>
         <Label htmlFor="new-password">New password</Label>
         <PasswordInput id="new-password" autoComplete="new-password" {...register("password")} />
-        {errors.password && <p className="mt-1 text-xs text-danger-600">{errors.password.message}</p>}
+        {errors.password && <p className="ui-field-error">{errors.password.message}</p>}
       </div>
       <p className="text-xs text-ink-500">They&rsquo;ll be signed out everywhere and need to log in again with this password.</p>
       <div className="flex justify-end gap-2 pt-2">
@@ -156,6 +171,15 @@ function SetPasswordForm({
     </form>
   );
 }
+
+/** Display names of the roles (the role map itself lives in @clothing-brand/shared permissions.ts). */
+const ROLE_LABEL: Record<string, string> = {
+  OWNER: "Super admin",
+  STAFF: "Staff",
+  FINANCE_ADMIN: "Finance admin",
+  ACCOUNTANT: "Accountant",
+  FINANCE_VIEWER: "Finance viewer",
+};
 
 export default function AdminTeamPage() {
   const queryClient = useQueryClient();
@@ -244,15 +268,15 @@ export default function AdminTeamPage() {
           </Button>
         }
       />
-      <SettingsSubNav />
+      <ModuleTabs />
       <p className="mb-4 -mt-2 text-sm text-ink-500">
         Admin accounts only ever come from an invite sent here — there&rsquo;s no public sign-up for the console.
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
@@ -270,7 +294,7 @@ export default function AdminTeamPage() {
                   <td className="px-4 py-3 text-ink-500">{admin.email}</td>
                   <td className="px-4 py-3">
                     <Badge className={admin.role === "OWNER" ? "bg-brass-100 text-brass-700" : ""}>
-                      {admin.role === "OWNER" ? "Super admin" : "Staff"}
+                      {ROLE_LABEL[admin.role] ?? admin.role}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
@@ -321,8 +345,8 @@ export default function AdminTeamPage() {
           <h2 className="mb-3 mt-8 font-display text-lg text-ink-900">Pending invites</h2>
           <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
             <HScrollShadow className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+              <table className="ui-table">
+                <thead className="ui-table-head">
                   <tr>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Email</th>
@@ -337,7 +361,7 @@ export default function AdminTeamPage() {
                     <tr key={invite.id} className="border-t border-ink-100">
                       <td className="px-4 py-3">{invite.name}</td>
                       <td className="px-4 py-3 text-ink-500">{invite.email}</td>
-                      <td className="px-4 py-3">{invite.role === "OWNER" ? "Super admin" : "Staff"}</td>
+                      <td className="px-4 py-3">{ROLE_LABEL[invite.role] ?? invite.role}</td>
                       <td className="px-4 py-3 text-ink-500">{formatDateShort(new Date(invite.expiresAt))}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end">

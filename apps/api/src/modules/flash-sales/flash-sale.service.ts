@@ -8,6 +8,7 @@ import { liveFlashSaleWhere } from "./flash-sale-pricing";
 import { ensureFreshReadModels, presentStorefrontProducts, refreshReadModels } from "../../domain/storefront/read-model.service";
 import { triggerStorefrontRevalidation } from "../products/product.cache";
 import { PUBLIC_VARIANT_FIELDS } from "../products/product-public-select";
+import { captureError } from "../../lib/observability/error-capture";
 
 const include = {
   items: { include: { product: { include: { images: { orderBy: { sortOrder: "asc" as const }, take: 1 } } } } },
@@ -64,8 +65,8 @@ async function invalidateProductCache() {
 async function flashSaleChanged(productIds: string[]) {
   await invalidateProductCache();
   if (!productIds.length) return;
-  await refreshReadModels(productIds).catch((err) => console.error("[read-model] flash-sale refresh failed:", err));
-  void triggerStorefrontRevalidation({ productIds }).catch((err) => console.error("[revalidate] unexpected failure:", err));
+  await refreshReadModels(productIds).catch((err) => captureError(err, { msg: "[read-model] flash-sale refresh failed:" }));
+  void triggerStorefrontRevalidation({ productIds }).catch((err) => captureError(err, { msg: "[revalidate] unexpected failure:" }));
 }
 
 async function productIdsOfSale(flashSaleId: string) {

@@ -13,6 +13,8 @@ export interface ExecutiveOverview {
 
   grossProfitLifetime: number;
   profitGrowthPct: number;
+  grossProfitCostedLinesLifetime: number;
+  grossProfitUncostedLinesLifetime: number;
 
   totalVisitors: number;
   returningVisitors: number;
@@ -29,6 +31,23 @@ export interface ExecutiveOverview {
   inventoryValue: number;
   pendingPaymentsCount: number;
   pendingPaymentsAmount: number;
+
+  // Phase 5 — registry metrics (docs/METRICS_REGISTRY.md): the D1 breakdown for the business month, and ledger positions.
+  grossMerchandiseThisMonth: number;
+  discountsThisMonth: number;
+  shippingThisMonth: number;
+  returnsThisMonth: number;
+  refundsThisMonth: number;
+  collectedCashThisMonth: number;
+  taxThisMonth: number;
+  taxUnrecordedOrdersThisMonth: number;
+  merchandiseVatThisMonth: number;
+  merchandiseVatUnrecordedOrdersThisMonth: number;
+  merchandiseRefundsThisMonth: number;
+  overpaymentRefundsThisMonth: number;
+  netSalesInclShippingThisMonth: number;
+  outstandingCod: number;
+  refundDue: number;
 }
 
 export function getExecutiveOverview() {

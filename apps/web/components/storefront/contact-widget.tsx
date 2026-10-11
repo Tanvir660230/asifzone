@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, MessageCircleMore, MessageSquareText, Phone, X } from "lucide-react";
 import type { SocialLink, StoreSettings } from "@clothing-brand/shared";
-import { pixelContact } from "@/lib/meta-pixel";
+import { pixelContact } from "@/lib/pixels";
 
 declare global {
   interface Window {

@@ -17,12 +17,13 @@ import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
-import { PromotionsSubNav } from "@/components/admin/promotions-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import * as campaignsApi from "@/lib/api/admin-campaigns";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { ApiError } from "@/lib/api-client";
+import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
 
 // Tiptap + its ~9 sub-packages are large and admin-only — split out of the main bundle and only
 // fetched once an EMAIL campaign's body field actually renders it (see below).
@@ -47,6 +48,7 @@ const SEGMENT_OPTIONS: Array<{ value: CreateCampaignInput["segmentType"]; label:
 ];
 
 export default function CampaignsPage() {
+  const channels = useProviderCapabilities(); // Phase 12 D-4: a channel without a configured provider can't be chosen
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["admin-campaigns"], queryFn: () => campaignsApi.listCampaigns() });
   const [showCompose, setShowCompose] = useState(false);
@@ -156,12 +158,12 @@ export default function CampaignsPage() {
         }
       />
 
-      <PromotionsSubNav />
+      <ModuleTabs />
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
         <HScrollShadow className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+          <table className="ui-table">
+            <thead className="ui-table-head">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Channel</th>
@@ -238,16 +240,16 @@ export default function CampaignsPage() {
           <div>
             <Label htmlFor="name">Name</Label>
             <Input id="name" placeholder="August restock announcement" {...register("name")} />
-            {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+            {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="channel">Channel</Label>
               <Select id="channel" {...register("channel")}>
-                <option value="EMAIL">Email</option>
-                <option value="SMS">SMS</option>
-                <option value="PUSH">Push notification</option>
+                <option value="EMAIL" disabled={!channels.email}>Email{channels.loaded && !channels.email ? " (not configured)" : ""}</option>
+                <option value="SMS" disabled={!channels.sms}>SMS{channels.loaded && !channels.sms ? " (not configured)" : ""}</option>
+                <option value="PUSH" disabled={!channels.push}>Push notification{channels.loaded && !channels.push ? " (not configured)" : ""}</option>
               </Select>
             </div>
             <div>
@@ -285,7 +287,7 @@ export default function CampaignsPage() {
                 {...register("body")}
               />
             )}
-            {errors.body && <p className="mt-1 text-xs text-danger-600">{errors.body.message}</p>}
+            {errors.body && <p className="ui-field-error">{errors.body.message}</p>}
           </div>
 
           {!editing && (

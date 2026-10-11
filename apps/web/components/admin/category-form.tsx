@@ -1,18 +1,16 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { Trash2, Upload } from "lucide-react";
 import { createCategorySchema, type Category, type CreateCategoryInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/courier-note-picker";
 import { uploadCategoryImage, uploadCategoryBannerImage } from "@/lib/api/categories";
-import { ApiError } from "@/lib/api-client";
+import { ImageUploadField } from "@/components/admin/image-upload-field";
 
 interface CategoryFormProps {
   categories: Category[];
@@ -50,6 +48,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
     handleSubmit,
     setValue,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<CreateCategoryInput>({
     resolver: zodResolver(createCategorySchema),
@@ -66,60 +65,33 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
           isFeatured: initial.isFeatured,
           seoTitle: initial.seoTitle,
           seoDescription: initial.seoDescription,
+          courierNoteRuleIds: initial.courierNoteRuleIds ?? [],
         }
-      : { sortOrder: 0, isActive: true, isFeatured: false, parentId: defaultParentId ?? null },
+      : { sortOrder: 0, isActive: true, isFeatured: false, parentId: defaultParentId ?? null, courierNoteRuleIds: [] },
   });
 
   const excluded = initial ? collectDescendantIds(categories, initial.id) : new Set<string>();
   const parentOptions = categories.filter((c) => c.id !== initial?.id && !excluded.has(c.id));
 
+  const parentId = watch("parentId");
+  const parentName = categories.find((c) => c.id === parentId)?.name;
+
   const imageUrl = watch("imageUrl");
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const uploadMutation = useMutation({ mutationFn: uploadCategoryImage });
-
   const bannerImageUrl = watch("bannerImageUrl");
-  const bannerInputRef = useRef<HTMLInputElement>(null);
-  const [bannerUploadError, setBannerUploadError] = useState<string | null>(null);
-  const bannerUploadMutation = useMutation({ mutationFn: uploadCategoryBannerImage });
 
-  async function handleImageSelected(file: File | null) {
-    if (!file) return;
-    setUploadError(null);
-    try {
-      const { url } = await uploadMutation.mutateAsync(file);
-      setValue("imageUrl", url, { shouldValidate: true });
-    } catch (err) {
-      setUploadError(err instanceof ApiError ? err.message : "Image upload failed");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }
 
-  async function handleBannerSelected(file: File | null) {
-    if (!file) return;
-    setBannerUploadError(null);
-    try {
-      const { url } = await bannerUploadMutation.mutateAsync(file);
-      setValue("bannerImageUrl", url, { shouldValidate: true });
-    } catch (err) {
-      setBannerUploadError(err instanceof ApiError ? err.message : "Image upload failed");
-    } finally {
-      if (bannerInputRef.current) bannerInputRef.current.value = "";
-    }
-  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div>
         <Label htmlFor="name">Name</Label>
         <Input id="name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger-600">{errors.name.message}</p>}
+        {errors.name && <p className="ui-field-error">{errors.name.message}</p>}
       </div>
 
       <div>
         <Label htmlFor="slug">Slug (auto-generated if left blank)</Label>
-        <Input id="slug" placeholder="e.g. formal-shirts" {...register("slug")} />
+        <Input id="slug" placeholder="e.g. gift-sets" {...register("slug")} />
       </div>
 
       <div>
@@ -134,84 +106,27 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
         </Select>
       </div>
 
-      <div>
-        <Label>Category image</Label>
-        <input type="hidden" {...register("imageUrl")} />
-        {imageUrl ? (
-          <div className="relative mt-1 h-28 w-full overflow-hidden rounded-lg border border-ink-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-            <button
-              type="button"
-              onClick={() => setValue("imageUrl", "", { shouldValidate: true })}
-              className="absolute right-2 top-2 rounded-full bg-ink-900/70 p-1 text-cream-50"
-              aria-label="Remove image"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-            className="mt-1 flex h-28 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-          >
-            <Upload size={18} />
-            <span className="text-xs">{uploadMutation.isPending ? "Uploading…" : "Click to upload an image"}</span>
-          </button>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={(e) => handleImageSelected(e.target.files?.[0] ?? null)}
-        />
-        {uploadError && <p className="mt-1 text-xs text-danger-600">{uploadError}</p>}
-      </div>
+      <input type="hidden" {...register("imageUrl")} />
+      <ImageUploadField
+        label="Category image"
+        upload={uploadCategoryImage}
+        value={imageUrl}
+        onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
+      />
 
       <div>
         <Label htmlFor="imageAltText">Image alt text (optional)</Label>
         <Input id="imageAltText" placeholder={`Defaults to "${initial?.name ?? "category name"}"`} {...register("imageAltText")} />
       </div>
 
-      <div>
-        <Label>Banner image (category page hero, optional)</Label>
-        <input type="hidden" {...register("bannerImageUrl")} />
-        {bannerImageUrl ? (
-          <div className="relative mt-1 h-20 w-full overflow-hidden rounded-lg border border-ink-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={bannerImageUrl} alt="" className="h-full w-full object-cover" />
-            <button
-              type="button"
-              onClick={() => setValue("bannerImageUrl", "", { shouldValidate: true })}
-              className="absolute right-2 top-2 rounded-full bg-ink-900/70 p-1 text-cream-50"
-              aria-label="Remove banner image"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => bannerInputRef.current?.click()}
-            disabled={bannerUploadMutation.isPending}
-            className="mt-1 flex h-20 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-300 text-ink-500 transition-colors hover:border-brass-400 hover:text-brass-500 disabled:opacity-50"
-          >
-            <Upload size={18} />
-            <span className="text-xs">{bannerUploadMutation.isPending ? "Uploading…" : "Click to upload a banner"}</span>
-          </button>
-        )}
-        <input
-          ref={bannerInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={(e) => handleBannerSelected(e.target.files?.[0] ?? null)}
-        />
-        {bannerUploadError && <p className="mt-1 text-xs text-danger-600">{bannerUploadError}</p>}
-      </div>
+      <input type="hidden" {...register("bannerImageUrl")} />
+      <ImageUploadField
+        label="Banner image (category page hero, optional)"
+        upload={uploadCategoryBannerImage}
+        value={bannerImageUrl}
+        onChange={(url) => setValue("bannerImageUrl", url, { shouldValidate: true })}
+        uploadLabel="Click to upload a banner"
+      />
 
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -223,6 +138,24 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
           <Input id="seoDescription" placeholder="Shown in search results" {...register("seoDescription")} />
         </div>
       </div>
+
+      <fieldset>
+        <legend className="mb-1 text-sm font-medium text-ink-800">Courier note</legend>
+        <p className="mb-2 text-xs text-ink-500">Every product in this category and its sub-categories gets these.</p>
+        <Controller
+          control={control}
+          name="courierNoteRuleIds"
+          render={({ field }) => (
+            <CourierNotePicker
+              idPrefix="category-courier-note"
+              value={field.value ?? []}
+              onChange={field.onChange}
+              inherited={inheritedCourierNoteIds(parentId, categories)}
+              inheritedFrom={parentName ? `“${parentName}”` : "the parent category"}
+            />
+          )}
+        />
+      </fieldset>
 
       <div className="grid grid-cols-2 gap-4">
         <div>

@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { nullableDate, nullableString, nullableUrl } from "./common";
+import { mediaUrlSchema, nullableDate, nullableMediaUrl, nullableString } from "./common";
 
 export const bannerPlacementEnum = z.enum(["HERO_CAROUSEL", "PROMO_STRIP"]);
 
 export const createBannerSchema = z.object({
   placement: bannerPlacementEnum.default("HERO_CAROUSEL"),
-  imageUrl: z.string().url(),
-  mobileImageUrl: nullableUrl(),
+  imageUrl: mediaUrlSchema,
+  mobileImageUrl: nullableMediaUrl(),
   linkUrl: nullableString(500),
   title: nullableString(200),
   subtitle: nullableString(300),

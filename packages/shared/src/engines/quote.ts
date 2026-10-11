@@ -2,7 +2,7 @@ import { multiply, subtract, sum, toMajor, zero, type Money } from "./money";
 import { priceLineSegments, remainingUnits, resolveUnitPrice, type AppliedFlash, type FlashOffer, type PriceSegment } from "./pricing";
 import { evaluateBundles, evaluateCoupon, type BundleCandidate, type BundleRule, type CouponContext, type CouponRejection, type CouponRule, type PromoLine } from "./promotion";
 import { computeTax, type TaxConfig, type TaxResult } from "./tax";
-import { resolveShipping, type ShippingAddress, type ShippingZoneRule } from "./shipping";
+import { resolveShipping, type ShippingAddress, type ShippingWaiverReason, type ShippingZoneRule } from "./shipping";
 import { computeOrderTotals } from "./order-totals";
 import { isAvailable } from "./availability";
 import type { RoundingPolicy } from "./rounding";
@@ -15,8 +15,10 @@ import type { RoundingPolicy } from "./rounding";
  * Pure: the pricing service loads every input (catalog, offers with units sold, bundles, coupon, zones, tax config,
  * `now`) and calls this; the storefront, cart, checkout, order creation, the admin manual order and exchanges all get
  * their numbers from it. Bump PRICING_VERSION whenever a rule here changes what a cart costs.
+ *
+ * v3 (2026-10-06): product-level free delivery — shipping is waived when every line is a free-delivery product.
  */
-export const PRICING_VERSION = 2;
+export const PRICING_VERSION = 3;
 
 export interface CatalogVariant {
   variantId: string;
@@ -35,6 +37,8 @@ export interface CatalogVariant {
   trackInventory: boolean;
   stock: number;
   offers: FlashOffer[];
+  /** Product.freeDelivery (or, for a kept line of an order being modified, the line's own snapshot). Absent = false. */
+  freeDelivery?: boolean;
 }
 
 export interface QuoteInputs {
@@ -84,6 +88,8 @@ export interface QuoteLine {
   stock: number;
   /** Enough stock for this quantity (always true when inventory isn't tracked — D5). */
   available: boolean;
+  /** The product ships free (Product.freeDelivery) — snapshotted onto the order line. */
+  freeDelivery: boolean;
 }
 
 export type QuoteWarning =
@@ -124,7 +130,7 @@ export interface Quote {
   discount: Money;
   merchandiseTotal: Money;
   shipping:
-    | { resolved: true; zoneId: string; zoneKey: string; zoneName: string; fee: Money; charged: Money; waived: boolean; waivedReason: "COUPON" | "FREE_OVER" | null }
+    | { resolved: true; zoneId: string; zoneKey: string; zoneName: string; fee: Money; charged: Money; waived: boolean; waivedReason: ShippingWaiverReason | null }
     | { resolved: false; reason: "ADDRESS_REQUIRED" | "NO_ZONE" };
   tax: TaxResult;
   total: Money;
@@ -208,6 +214,7 @@ export function buildQuote(input: QuoteInputs): Quote {
       trackInventory: v.trackInventory,
       stock: v.stock,
       available,
+      freeDelivery: v.freeDelivery === true,
     });
   }
 
@@ -271,7 +278,13 @@ export function buildQuote(input: QuoteInputs): Quote {
   });
 
   // 6–7. Shipping from the zones, then tax on merchandise and the shipping actually charged (D10).
-  const ship = resolveShipping(input.shippingZones, input.address, preShipping.merchandiseTotal, { couponFreeShipping: coupon?.freeShipping ?? false });
+  // Product free delivery is all-or-nothing over the lines that can be bought: one normal product means the fee applies.
+  const buyable = lines.filter((l) => l.purchasable);
+  const allLinesFreeDelivery = buyable.length > 0 && buyable.every((l) => l.freeDelivery);
+  const ship = resolveShipping(input.shippingZones, input.address, preShipping.merchandiseTotal, {
+    couponFreeShipping: coupon?.freeShipping ?? false,
+    allLinesFreeDelivery,
+  });
   if (!ship.ok) {
     warnings.push(
       ship.reason === "ADDRESS_REQUIRED"

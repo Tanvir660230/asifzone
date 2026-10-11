@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
+import type { PaymentSessionListQuery } from "@clothing-brand/shared";
+import { listPaymentSessions, listPaymentTransactions, listRefunds } from "./payment-ledger-lists.service";
 import { getPaymentsOverview, searchPaymentAttempts } from "./payments-overview.service";
+import { paymentLedgerDrift, repairPaymentLedger } from "../../domain/payments/payment-ledger.service";
 
 export const overview = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await getPaymentsOverview());
@@ -9,4 +12,24 @@ export const overview = asyncHandler(async (_req: Request, res: Response) => {
 export const search = asyncHandler(async (req: Request, res: Response) => {
   const { phone } = req.query as { phone: string };
   res.json({ results: await searchPaymentAttempts(phone) });
+});
+
+export const ledgerDrift = asyncHandler(async (_req: Request, res: Response) => {
+  res.json(await paymentLedgerDrift());
+});
+
+export const ledgerRepair = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await repairPaymentLedger({ apply: req.body.apply === true }));
+});
+
+export const sessions = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await listPaymentSessions(req.query as unknown as PaymentSessionListQuery));
+});
+
+export const transactions = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await listPaymentTransactions(req.query as never));
+});
+
+export const refunds = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await listRefunds(req.query as never));
 });

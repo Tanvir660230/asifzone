@@ -1,4 +1,4 @@
-import { env } from "./env";
+import { apiBaseUrl } from "./runtime-config";
 
 export class ApiError extends Error {
   constructor(
@@ -50,6 +50,15 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   isFormData?: boolean;
+  /** Sent as the Idempotency-Key header (Phase 9 — see lib/idempotency.ts). */
+  idempotencyKey?: string;
+  /** React Query's signal: a superseded search (the next keystroke) aborts its request. */
+  signal?: AbortSignal;
+}
+
+/** The optional last argument of list/search API functions — pass React Query's `signal` through. */
+export interface FetchSignal {
+  signal?: AbortSignal;
 }
 
 /** Reads the (deliberately non-httpOnly) csrf_token cookie the API sets alongside the admin session, so
@@ -81,7 +90,7 @@ function refreshSession(): Promise<boolean> {
   if (!refreshPromise) {
     const isAdminRealm = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
     const refreshPath = isAdminRealm ? "/api/auth/refresh" : "/api/customers/refresh";
-    refreshPromise = fetch(`${env.apiUrl}${refreshPath}`, { method: "POST", credentials: "include" })
+    refreshPromise = fetch(`${apiBaseUrl()}${refreshPath}`, { method: "POST", credentials: "include" })
       .then((res) => res.ok)
       .catch(() => false)
       .finally(() => {
@@ -96,15 +105,17 @@ function refreshSession(): Promise<boolean> {
  * (15 min) by design, and callers (useCurrentAdmin/useCurrentCustomer) should only redirect to login
  * once this has already failed. */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}, _retried = false): Promise<T> {
-  const { method = "GET", body, isFormData = false } = options;
+  const { method = "GET", body, isFormData = false, idempotencyKey, signal } = options;
   const csrfToken = method === "GET" ? undefined : readCsrfCookie();
 
-  const res = await fetch(`${env.apiUrl}${path}`, {
+  const res = await fetch(`${apiBaseUrl()}${path}`, {
     method,
+    signal,
     credentials: "include",
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: body === undefined ? undefined : isFormData ? (body as FormData) : JSON.stringify(body),
   });
@@ -125,12 +136,37 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
   return data as T;
 }
 
+/** apiFetch's contract for a file download (CSV export): GET with credentials and one silent refresh on a 401, then the
+ * browser saves the body. A failed request throws ApiError with the server's message instead of navigating to raw JSON. */
+export async function apiDownload(path: string, fallbackName: string, _retried = false): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${apiBaseUrl()}${path}`, { credentials: "include" });
+  } catch {
+    throw new ApiError(0, "Network error — check the connection and retry");
+  }
+  if (res.status === 401 && !_retried && (await refreshSession())) return apiDownload(path, fallbackName, true);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.error ?? "Download failed", data.details);
+  }
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /** apiFetch's contract (credentials, CSRF header, one silent session refresh on a 401, ApiError on failure) for a
  * multipart POST — over XHR, because fetch can't report upload progress. `onProgress` gets 0–1 as bytes go out. */
 export function apiUploadWithProgress<T>(path: string, body: FormData, onProgress?: (fraction: number) => void, _retried = false): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${env.apiUrl}${path}`);
+    xhr.open("POST", `${apiBaseUrl()}${path}`);
     xhr.withCredentials = true;
     const csrfToken = readCsrfCookie();
     if (csrfToken) xhr.setRequestHeader("X-CSRF-Token", csrfToken);

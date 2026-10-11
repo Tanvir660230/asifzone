@@ -14,9 +14,9 @@ export function ProductCarouselSection({ heading, subtitle, products }: ProductC
   if (products.length === 0) return null;
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+    <section className="mx-auto max-w-7xl px-4 py-[calc(4rem*var(--section-rhythm))] sm:px-6 lg:px-8">
       <div className="mb-8 text-center">
-        <h2 className="font-display text-2xl text-ink-900">{heading}</h2>
+        <h2 className="ui-section-heading font-display text-ink-900">{heading}</h2>
         {subtitle && <p className="mt-2 text-sm text-ink-500">{subtitle}</p>}
       </div>
       <ProductGrid products={products} />

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { normalizeBdPhone, nullableString, PHONE_REGEX } from "./common";
+import { nullableString } from "./common";
+import { normalizeBdPhone, PHONE_REGEX } from "../country/bd";
 
 /** Comma-separated local "01XXXXXXXXX" numbers — same shape PHONE_REGEX validates elsewhere, just
  * allowing more than one since a shop owner may want alerts on multiple phones. Each number is

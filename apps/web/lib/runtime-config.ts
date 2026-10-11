@@ -1,0 +1,96 @@
+import {
+  installationNamespace,
+  mergePublicIntegrationIds,
+  readPublicRuntimeConfig,
+  readServerRuntimeConfig,
+  resolveMediaUrl,
+  type PublicIntegrationIds,
+  type PublicRuntimeConfig,
+  type ServerRuntimeConfig,
+} from "@clothing-brand/shared";
+
+/**
+ * The web app's ONE source of installation configuration (Phase 1A). Nothing installation-specific is baked into the
+ * build: the server reads its environment at runtime (contract: @clothing-brand/shared runtime-config.ts), and the browser
+ * receives the public half from the root layout (`RUNTIME_CONFIG_ELEMENT_ID` + <RuntimeConfig>). Read values through the
+ * functions below at the moment they are needed — never into a module-level constant.
+ */
+
+export const RUNTIME_CONFIG_ELEMENT_ID = "__runtime_config";
+
+const isServer = typeof window === "undefined";
+let serverConfig: ServerRuntimeConfig | null = null;
+let browserConfig: PublicRuntimeConfig | null = null;
+/** Pixel / sign-in / push ids saved in Settings › Integrations — they win over this installation's environment. */
+let integrationIds: Partial<PublicIntegrationIds> | null = null;
+
+/** Server only. The process environment is passed as a whole (never `process.env.X`), so `next build` cannot inline it. */
+export function serverRuntimeConfig(): ServerRuntimeConfig {
+  if (!isServer) throw new Error("serverRuntimeConfig() is server-only");
+  const environment = process.env as Record<string, string | undefined>;
+  // `next build` runs with NODE_ENV=production while it probes pages; no installation exists at build time, and nothing it
+  // renders is kept (every page renders per request). The running server still requires INSTALL_ID.
+  if (environment["NEXT_PHASE"] === "phase-production-build" && !environment["INSTALL_ID"]) {
+    return readServerRuntimeConfig({ ...environment, INSTALL_ID: "build" });
+  }
+  serverConfig ??= readServerRuntimeConfig(environment);
+  return serverConfig;
+}
+
+/** Server only. Called by the root layout with the ids from the store settings it fetched, before anything renders with
+ * them; the whole process serves one installation, so they are process-wide. An absent value (the settings fetch failed)
+ * keeps the last known ids. */
+export function setIntegrationIds(ids: Partial<PublicIntegrationIds> | undefined): void {
+  if (isServer && ids) integrationIds = ids;
+}
+
+/** Called by <RuntimeConfig> while it renders, before any child reads a value. */
+export function setPublicRuntimeConfig(value: PublicRuntimeConfig): void {
+  if (!isServer) browserConfig = value;
+}
+
+/** The public configuration — on the server straight from the environment, in the browser as the layout handed it over. */
+export function publicRuntimeConfig(): PublicRuntimeConfig {
+  if (isServer) return mergePublicIntegrationIds(serverRuntimeConfig().public, integrationIds);
+  if (browserConfig) return browserConfig;
+  const element = document.getElementById(RUNTIME_CONFIG_ELEMENT_ID);
+  if (element?.textContent) {
+    browserConfig = JSON.parse(element.textContent) as PublicRuntimeConfig;
+    return browserConfig;
+  }
+  return readPublicRuntimeConfig({});
+}
+
+/** Where to call the API from here: the internal service address on the server, the public URL in the browser. */
+export function apiBaseUrl(): string {
+  return isServer ? serverRuntimeConfig().apiInternalUrl : publicRuntimeConfig().apiUrl;
+}
+
+/** The API as the browser reaches it — for URLs the browser navigates to (file downloads in an `href`). Never the internal
+ * address: a link rendered on the server keeps its server-rendered `href` after hydration. */
+export function publicApiUrl(): string {
+  return publicRuntimeConfig().apiUrl;
+}
+
+export function siteUrl(): string {
+  return publicRuntimeConfig().siteUrl;
+}
+
+/** A stored media reference as a loadable URL (same-origin `/uploads/…` by default). */
+export function mediaUrl(ref: string): string;
+export function mediaUrl(ref: string | null | undefined): string | null;
+export function mediaUrl(ref: string | null | undefined): string | null {
+  return resolveMediaUrl(ref, publicRuntimeConfig().mediaBaseUrl);
+}
+
+/** A media URL that must be absolute (Open Graph, JSON-LD, links leaving the site). */
+export function absoluteMediaUrl(ref: string | null | undefined): string | null {
+  const url = mediaUrl(ref);
+  if (!url || /^(https?:|blob:|data:)/i.test(url)) return url;
+  return `${siteUrl()}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+/** This installation's Next.js data-cache tag (server only) — tags of two installations can never collide. */
+export function cacheTag(tag: string): string {
+  return installationNamespace(serverRuntimeConfig().installId).cacheTag(tag);
+}

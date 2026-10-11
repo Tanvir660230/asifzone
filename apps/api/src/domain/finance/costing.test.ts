@@ -1,0 +1,196 @@
+import { describe, it, expect } from "vitest";
+import { applyCostOperation, averageUnitCostMinor, divRound, EMPTY_POSITION, type CostOperation, type CostPosition } from "./costing.service";
+
+// Financial Core Phase 4A (docs/FINANCE_PHASE_4.md §13): the moving weighted-average method, figure by figure. Every
+// expected value below is computed by hand (BDT: 2 minor digits; the average is major units × 10^6).
+
+const BDT = "BDT";
+const run = (ops: CostOperation[], from: CostPosition = EMPTY_POSITION) => {
+  let pos = from;
+  const entries = [];
+  for (const op of ops) {
+    const r = applyCostOperation(pos, op, BDT);
+    pos = r.next;
+    entries.push(r.entry);
+  }
+  return { pos, entries, last: entries[entries.length - 1]! };
+};
+const receipt = (qty: number, valueMinor: number | null): CostOperation => ({ type: "INFLOW", qty, valueMinor, basis: "DOCUMENT" });
+const sale = (qty: number, unitCostMinor: number | null): CostOperation => ({ type: "OUTFLOW", qty, basis: { kind: "SNAPSHOT", unitCostMinor } });
+const writeOff = (qty: number): CostOperation => ({ type: "OUTFLOW", qty, basis: { kind: "AVERAGE" } });
+/** The rule every entry obeys: the inventory account ends where the valuation is. */
+const ruleHolds = (e: { valueChange: bigint; bookValue: bigint; costAdjustment: bigint }) => expect(e.costAdjustment).toBe(e.valueChange - e.bookValue);
+
+describe("integer arithmetic", () => {
+  it("rounds half to even, both signs", () => {
+    expect([divRound(5n, 2n), divRound(7n, 2n), divRound(-5n, 2n), divRound(-7n, 2n), divRound(1n, 3n), divRound(2n, 3n)]).toEqual([2n, 4n, -2n, -4n, 0n, 1n]);
+    expect(() => divRound(1n, 0n)).toThrow();
+  });
+});
+
+describe("weighted average", () => {
+  it("first receipt sets the average; a second receipt at another cost blends it", () => {
+    const a = run([receipt(10, 100_000)]); // 10 × 100.00
+    expect(a.pos).toMatchObject({ valuedQty: 10, value: 100_000n, avgScaled: 100_000_000n, unvaluedQty: 0, deficitQty: 0 });
+    expect(a.last).toMatchObject({ kind: "INFLOW", qtyChange: 10, valueChange: 100_000n, bookValue: 100_000n, costAdjustment: 0n, valuationStatus: "KNOWN" });
+    const b = run([receipt(5, 65_000)], a.pos); // 5 × 130.00 → (1000 + 650) / 15 = 110.00
+    expect(b.pos).toMatchObject({ valuedQty: 15, value: 165_000n, avgScaled: 110_000_000n });
+    expect(averageUnitCostMinor(b.pos, BDT)).toBe(11_000);
+  });
+
+  it("a sale between receipts leaves at its snapshot and does not move the average", () => {
+    const { pos, last } = run([receipt(10, 100_000), receipt(5, 65_000), sale(3, 11_000)]);
+    expect(pos).toMatchObject({ valuedQty: 12, value: 132_000n, avgScaled: 110_000_000n });
+    expect(last).toMatchObject({ kind: "OUTFLOW", qtyChange: -3, valueChange: -33_000n, bookValue: -33_000n, costAdjustment: 0n, costBasis: "SNAPSHOT", valuationStatus: "KNOWN" });
+    const after = run([receipt(12, 120_000)], pos); // (1320 + 1200) / 24 = 105.00
+    expect(after.pos).toMatchObject({ valuedQty: 24, value: 252_000n, avgScaled: 105_000_000n });
+  });
+
+  it("the last unit takes all remaining value — rounding never leaves a residue, and any difference is an explicit adjustment", () => {
+    const { pos } = run([receipt(3, 100_000)]); // 1000.00 / 3
+    expect(pos.avgScaled).toBe(333_333_333n);
+    expect(averageUnitCostMinor(pos, BDT)).toBe(33_333);
+    const s1 = run([sale(1, 33_333)], pos);
+    expect(s1.pos).toMatchObject({ valuedQty: 2, value: 66_667n });
+    const s2 = run([sale(1, 33_333)], s1.pos); // a snapshot taken before s1: 333.33
+    expect(s2.pos).toMatchObject({ valuedQty: 1, value: 33_334n });
+    const s3 = run([sale(1, 33_333)], s2.pos);
+    expect(s3.pos).toMatchObject({ valuedQty: 0, value: 0n });
+    expect(s3.last).toMatchObject({ valueChange: -33_334n, bookValue: -33_333n, costAdjustment: -1n }); // 0.01 to 5150
+    ruleHolds(s3.last);
+  });
+
+  it("an average-basis outflow (write-off) removes its proportional share, rounded half-even", () => {
+    const { pos, last } = run([receipt(3, 100_000), writeOff(1)]);
+    expect(last).toMatchObject({ valueChange: -33_333n, bookValue: -33_333n, costAdjustment: 0n, costBasis: "AVERAGE" });
+    expect(pos).toMatchObject({ valuedQty: 2, value: 66_667n, avgScaled: 333_335_000n });
+  });
+
+  it("a stale snapshot larger than the value held falls back to the average; the difference is an adjustment", () => {
+    const { last, pos } = run([receipt(2, 1_000), sale(1, 1_000)]);
+    expect(last).toMatchObject({ valueChange: -500n, bookValue: -1_000n, costAdjustment: 500n });
+    expect(pos).toMatchObject({ valuedQty: 1, value: 500n });
+  });
+
+  it("a customer return re-enters at the line's own cost", () => {
+    const { pos, last } = run([receipt(10, 100_000), sale(2, 10_000), { type: "INFLOW", qty: 1, valueMinor: 10_000, basis: "SNAPSHOT" }]);
+    expect(last).toMatchObject({ valueChange: 10_000n, bookValue: 10_000n, costAdjustment: 0n });
+    expect(pos).toMatchObject({ valuedQty: 9, value: 90_000n, avgScaled: 100_000_000n });
+  });
+
+  it("multiple receipts with fractional averages stay exact in value", () => {
+    const { pos } = run([receipt(7, 100_000), receipt(3, 33_333), receipt(11, 123_457)]);
+    expect(pos.value).toBe(256_790n);
+    expect(pos.valuedQty).toBe(21);
+    expect(pos.avgScaled).toBe(divRound(256_790n * 10_000n, 21n));
+  });
+});
+
+describe("negative inventory (§15)", () => {
+  it("a sale beyond stock issues the rest provisionally; the next receipt covers it and the difference reaches 5150, never the old journal", () => {
+    const short = run([receipt(2, 20_000), sale(5, 10_000)]);
+    expect(short.pos).toMatchObject({ valuedQty: 0, value: 0n, deficitQty: 3, avgScaled: 100_000_000n, deficitLayers: [{ qty: 3, unitCostMinor: 10_000 }] });
+    expect(short.last).toMatchObject({ valueChange: -20_000n, bookValue: -50_000n, costAdjustment: 30_000n, deficitQtyChange: 3, valuationStatus: "ESTIMATED" });
+    const cover = run([receipt(4, 48_000)], short.pos); // 4 × 120.00: 3 cover the deficit, 1 enters stock
+    expect(cover.pos).toMatchObject({ valuedQty: 1, value: 12_000n, deficitQty: 0, deficitLayers: [], avgScaled: 120_000_000n });
+    expect(cover.last).toMatchObject({ coveredQty: 3, coveredProvisional: 30_000n, valueChange: 12_000n, bookValue: 48_000n, costAdjustment: -36_000n, deficitQtyChange: -3 });
+    // 5150 over the cycle: +30 000 credited at issue, −36 000 debited at cover → 6 000 = (120 − 100) × 3 units sold short.
+    expect(short.last.costAdjustment + cover.last.costAdjustment).toBe(-6_000n);
+  });
+
+  it("units sold short with no cost known: nothing is booked at issue; the covering receipt's cost goes to 5150 in full", () => {
+    const short = run([sale(2, null)]);
+    expect(short.pos).toMatchObject({ deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: null }] });
+    expect(short.last).toMatchObject({ valueChange: 0n, bookValue: 0n, costAdjustment: 0n, valuationStatus: "MISSING", unitCostScaled: null });
+    const cover = run([receipt(2, 50_000)], short.pos);
+    expect(cover.last).toMatchObject({ coveredQty: 2, coveredWithoutCost: 2, valueChange: 0n, bookValue: 50_000n, costAdjustment: -50_000n });
+    expect(cover.pos).toMatchObject({ valuedQty: 0, value: 0n, deficitQty: 0 });
+  });
+
+  it("a deficit is covered FIFO across layers and partially", () => {
+    const { pos } = run([sale(2, 10_000), sale(3, 12_000)]);
+    const part = run([receipt(4, 40_000)], pos);
+    expect(part.last).toMatchObject({ coveredQty: 4, coveredProvisional: 2n * 10_000n + 2n * 12_000n });
+    expect(part.pos).toMatchObject({ deficitQty: 1, deficitLayers: [{ qty: 1, unitCostMinor: 12_000 }], valuedQty: 0 });
+  });
+});
+
+describe("units without a cost", () => {
+  it("are held unvalued (never at zero), leave after valued stock, and are flagged", () => {
+    const a = run([receipt(5, null)]);
+    expect(a.pos).toMatchObject({ valuedQty: 0, unvaluedQty: 5, value: 0n, avgScaled: null });
+    expect(a.last).toMatchObject({ valuationStatus: "MISSING", unvaluedQtyChange: 5, valueChange: 0n });
+    expect(averageUnitCostMinor(a.pos, BDT)).toBeNull();
+    const b = run([receipt(3, 30_000), writeOff(4)], a.pos);
+    expect(b.last).toMatchObject({ valueChange: -30_000n, bookValue: -30_000n, unvaluedQtyChange: -1, valuationStatus: "MISSING" });
+    expect(b.pos).toMatchObject({ valuedQty: 0, unvaluedQty: 4, value: 0n });
+  });
+
+  it("a sale of unvalued units at a known snapshot keeps the ledger equal to the valuation through 5150", () => {
+    const { last } = run([receipt(1, null), { type: "OUTFLOW", qty: 1, basis: { kind: "SNAPSHOT", unitCostMinor: 5_000 } }]);
+    expect(last).toMatchObject({ valueChange: 0n, bookValue: -5_000n, costAdjustment: 5_000n, valuationStatus: "MISSING" });
+  });
+
+  it("an unvalued inflow does not settle a deficit (its true cost is still unknown)", () => {
+    const { pos } = run([sale(2, 10_000), receipt(2, null)]);
+    expect(pos).toMatchObject({ deficitQty: 2, unvaluedQty: 2 });
+  });
+});
+
+describe("late cost (§16–§17)", () => {
+  it("a price difference revalues what is still held and sends the sold share to 5150", () => {
+    const { pos, last } = run([receipt(10, 100_000), sale(6, 10_000), { type: "REVALUE", deltaMinor: 2_000, qty: 10 }]);
+    expect(last).toMatchObject({ kind: "REVALUATION", qtyChange: 0, valueChange: 800n, bookValue: 2_000n, costAdjustment: -1_200n });
+    expect(pos).toMatchObject({ valuedQty: 4, value: 40_800n, avgScaled: 102_000_000n });
+  });
+
+  it("a credit larger than what is held can't make stock negative — the rest is an adjustment", () => {
+    const { pos, last } = run([receipt(1, 1_000), { type: "REVALUE", deltaMinor: -5_000, qty: 1 }]);
+    expect(pos).toMatchObject({ valuedQty: 1, value: 0n });
+    expect(last).toMatchObject({ valueChange: -1_000n, bookValue: -5_000n, costAdjustment: 4_000n });
+  });
+
+  it("with nothing held, the whole difference is an adjustment", () => {
+    const { last } = run([receipt(1, 1_000), sale(1, 1_000), { type: "REVALUE", deltaMinor: 300, qty: 1 }]);
+    expect(last).toMatchObject({ valueChange: 0n, bookValue: 300n, costAdjustment: -300n });
+  });
+});
+
+describe("cutover", () => {
+  it("sets the first position — valued, unvalued or short — and only once", () => {
+    expect(run([{ type: "CUTOVER", qty: 10, valueMinor: 50_000 }]).pos).toMatchObject({ valuedQty: 10, value: 50_000n, avgScaled: 50_000_000n });
+    const est = run([{ type: "CUTOVER", qty: 10, valueMinor: 50_000, status: "ESTIMATED" }]);
+    expect(est.last.valuationStatus).toBe("ESTIMATED");
+    expect(run([{ type: "CUTOVER", qty: 4, valueMinor: null }]).pos).toMatchObject({ unvaluedQty: 4, valuedQty: 0 });
+    expect(run([{ type: "CUTOVER", qty: -2, valueMinor: null }]).pos).toMatchObject({ deficitQty: 2, deficitLayers: [{ qty: 2, unitCostMinor: null }] });
+    expect(() => run([receipt(1, 100), { type: "CUTOVER", qty: 1, valueMinor: 100 }])).toThrow(/first valuation/);
+    expect(() => run([{ type: "CUTOVER", qty: 0, valueMinor: 100 }])).toThrow();
+  });
+});
+
+describe("every entry obeys the adjustment rule and keeps physical units consistent", () => {
+  it("over a mixed sequence", () => {
+    const ops: CostOperation[] = [
+      receipt(10, 100_000), sale(4, 10_000), receipt(5, 61_000), writeOff(2), sale(12, 10_733), receipt(3, 36_000),
+      { type: "REVALUE", deltaMinor: -900, qty: 3 }, { type: "INFLOW", qty: 2, valueMinor: 21_466, basis: "SNAPSHOT" }, receipt(2, null), sale(5, 10_000),
+    ];
+    let pos = EMPTY_POSITION;
+    let physical = 0;
+    for (const op of ops) {
+      const r = applyCostOperation(pos, op, BDT);
+      ruleHolds(r.entry);
+      physical += r.entry.qtyChange;
+      pos = r.next;
+      expect(pos.valuedQty + pos.unvaluedQty - pos.deficitQty).toBe(physical);
+      expect(pos.value >= 0n && (pos.valuedQty > 0 || pos.value === 0n)).toBe(true);
+    }
+  });
+
+  it("refuses malformed input", () => {
+    expect(() => run([receipt(0, 100)])).toThrow();
+    expect(() => run([receipt(1.5, 100)])).toThrow();
+    expect(() => run([receipt(1, -1)])).toThrow();
+    expect(() => run([receipt(1, 10.5)])).toThrow();
+    expect(() => run([sale(1, -5)])).toThrow();
+  });
+});

@@ -76,7 +76,7 @@ export function CareMaterialSection({ control, register, watch, setValue, errors
                 </Select>
               )}
             />
-            {errors?.carePresetId && <p className="mt-1 text-xs text-danger-600">{errors.carePresetId.message}</p>}
+            {errors?.carePresetId && <p className="ui-field-error">{errors.carePresetId.message}</p>}
           </div>
 
           <label className="flex items-center gap-2 text-sm text-ink-700">

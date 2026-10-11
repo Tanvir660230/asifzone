@@ -26,7 +26,7 @@ export function SizeGuideEditor({ typeName, sizeGuide, watch, setValue }: SizeGu
 
   if (sizeGuide.mode === "NOT_APPLICABLE") {
     return (
-      <FormSection title="Size Guide">
+      <FormSection title="Size chart">
         <p className="text-sm text-ink-500">Size guide is not applicable for {typeName}.</p>
       </FormSection>
     );

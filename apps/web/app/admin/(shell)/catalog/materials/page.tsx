@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Modal } from "@/components/ui/modal";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
@@ -72,7 +72,7 @@ export default function MaterialsPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Materials"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
@@ -82,7 +82,7 @@ export default function MaterialsPage() {
           )
         }
       />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         Materials products can be made of (&ldquo;Premium Cotton&rdquo;, &ldquo;Genuine Leather&rdquo;). On a product you combine them with
@@ -90,8 +90,8 @@ export default function MaterialsPage() {
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="px-4 py-3">Material</th>
               <th className="hidden px-4 py-3 sm:table-cell">Description</th>

@@ -2,8 +2,11 @@ import type { Request, Response } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
+import { toCustomerOrder } from "./customer-order-view";
+import { courierNotesForLabels, getCourierNoteView } from "../courier/courier-note";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import { metaContextFromRequest } from "../../lib/meta/capi";
+import { completeRefund, getOrderPaymentSummary, recordManualPayment } from "../../domain/payments/payment-ledger.service";
 import {
   bookOrderWithSteadfast,
   bookOrdersWithSteadfastBulk,
@@ -13,9 +16,10 @@ import {
   refreshSteadfastStatus,
   unlinkCourierBooking,
 } from "../courier/courier.service";
+import { can } from "../../domain/auth/authorization";
 
 /** The Idempotency-Key header (PRICING_INVARIANTS §11): printable, bounded, or absent. */
-function idempotencyKeyOf(req: Request): string | null {
+export function idempotencyKeyOf(req: Request): string | null {
   const raw = req.get("Idempotency-Key");
   if (!raw) return null;
   const key = raw.trim();
@@ -33,18 +37,26 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   // online payment's Order is only written later from a gateway callback/IPN/cron (lib/meta/).
   const metaContext = metaContextFromRequest(req);
 
+  // Store balance is only ever the signed-in account's own (never a guest matched by phone).
+  const creditCustomerId = req.body.useStoreCredit && req.customer ? req.customer.customerId : null;
   if (req.body.paymentMethod === "COD") {
-    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, { idempotencyKey: idempotencyKeyOf(req), metaContext });
-    return res.status(201).json({ order });
+    const order = await orderService.createOrder(req.body, req.customer?.customerId ?? null, {
+      idempotencyKey: idempotencyKeyOf(req),
+      metaContext,
+      storeCreditCustomerId: creditCustomerId,
+    });
+    return res.status(201).json({ order: toCustomerOrder(order) });
   }
 
-  const { gatewayUrl } = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req), metaContext);
-  res.status(201).json({ gatewayUrl });
+  const started = await initiatePendingPayment(req.body, req.customer?.customerId ?? null, req.ip, idempotencyKeyOf(req), metaContext);
+  // Store balance covered the whole order: it is placed (and paid) without a gateway step.
+  if ("order" in started) return res.status(201).json({ order: toCustomerOrder(started.order as never) });
+  res.status(201).json({ gatewayUrl: started.gatewayUrl });
 });
 
 export const track = asyncHandler(async (req: Request, res: Response) => {
   const { orderNumber, phone } = req.body;
-  res.json({ order: await orderService.trackOrder(orderNumber, phone) });
+  res.json({ order: toCustomerOrder(await orderService.trackOrder(orderNumber, phone)) });
 });
 
 export const retryPayment = asyncHandler(async (req: Request, res: Response) => {
@@ -60,8 +72,20 @@ export const createManual = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const createRefund = asyncHandler(async (req: Request, res: Response) => {
-  const refund = await refundOrderPayment(req.params.id!, req.body, req.admin!.adminId);
-  res.status(201).json({ refund });
+  const { summary, ...refund } = await refundOrderPayment(req.params.id!, req.body, req.admin!.adminId, idempotencyKeyOf(req));
+  res.status(201).json({ refund, summary });
+});
+
+export const completeRefundRequest = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await completeRefund(req.params.id!, req.params.refundId!, req.body, req.admin!.adminId));
+});
+
+export const recordPayment = asyncHandler(async (req: Request, res: Response) => {
+  res.status(201).json(await recordManualPayment(req.params.id!, req.body, req.admin!.adminId, idempotencyKeyOf(req)));
+});
+
+export const getPayment = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ payment: await getOrderPaymentSummary(req.params.id!) });
 });
 
 export const listRefunds = asyncHandler(async (req: Request, res: Response) => {
@@ -73,19 +97,35 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ order: await getOrderByIdWithAutoSync(req.params.id!) });
+  const order = await getOrderByIdWithAutoSync(req.params.id!);
+  const courierNotes = await courierNotesForLabels([order]);
+  res.json({ order: { ...order, ...(await orderService.getAdminOrderContext(order)), courierNoteForLabel: courierNotes.get(order.id) ?? null } });
 });
 
 export const bulkGet = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ orders: await orderService.getOrdersByIds(req.body.ids) });
+  const orders = await orderService.getOrdersByIds(req.body.ids);
+  const courierNotes = await courierNotesForLabels(orders);
+  res.json({ orders: orders.map((order) => ({ ...order, courierNoteForLabel: courierNotes.get(order.id) ?? null })) });
 });
 
+/** DR-5: a move to Cancelled also needs orders.cancel (the route already required orders.manage). */
+function assertMayCancel(req: Request, status: unknown) {
+  if (status === "CANCELLED" && !can(req.admin!, "orders.cancel")) throw AppError.forbidden("You don't have permission to cancel orders");
+}
+
 export const updateStatus = asyncHandler(async (req: Request, res: Response) => {
+  assertMayCancel(req, req.body.status);
   res.json({ order: await orderService.updateOrderStatus(req.params.id!, req.body, req.admin!.adminId) });
 });
 
 export const updateDetails = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.updateOrderDetails(req.params.id!, req.body, req.admin!.adminId) });
+});
+
+export const getCourierNote = asyncHandler(async (req: Request, res: Response) => {
+  const view = await getCourierNoteView(req.params.id!);
+  if (!view) throw AppError.notFound("Order not found");
+  res.json(view);
 });
 
 export const hold = asyncHandler(async (req: Request, res: Response) => {
@@ -129,17 +169,20 @@ export const exportCsv = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const bulkStatus = asyncHandler(async (req: Request, res: Response) => {
-  res.json(await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId));
+  assertMayCancel(req, req.body.status);
+  res.json(await orderService.bulkUpdateOrderStatus(req.body.ids, req.body.status, req.admin!.adminId, req.body.note));
 });
 
 export const bulkDelete = asyncHandler(async (req: Request, res: Response) => {
-  await orderService.bulkDeleteOrders(req.body.ids, req.admin!.adminId);
-  res.status(204).send();
+  res.json(await orderService.bulkDeleteOrders(req.body.ids, req.admin!.adminId));
+});
+
+export const bulkRestore = asyncHandler(async (req: Request, res: Response) => {
+  res.json(await orderService.bulkRestoreOrders(req.body.ids, req.admin!.adminId));
 });
 
 export const bulkPermanentDelete = asyncHandler(async (req: Request, res: Response) => {
-  await orderService.bulkPermanentlyDeleteOrders(req.body.ids);
-  res.status(204).send();
+  res.json(await orderService.bulkPermanentlyDeleteOrders(req.body.ids));
 });
 
 export const bookCourier = asyncHandler(async (req: Request, res: Response) => {

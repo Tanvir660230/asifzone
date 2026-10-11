@@ -13,7 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { PageHeader } from "@/components/admin/page-header";
 import { TableSkeleton } from "@/components/admin/table-skeleton";
@@ -104,7 +104,7 @@ export default function ProductTypesPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Product types"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
@@ -114,7 +114,7 @@ export default function ProductTypesPage() {
           )
         }
       />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         A product type (Panjabi, Watch, Cap…) points at a <strong>template</strong> that decides its fields, size guide and
@@ -122,8 +122,8 @@ export default function ProductTypesPage() {
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="px-4 py-3">Type</th>
               <th className="hidden px-4 py-3 sm:table-cell">Template</th>

@@ -1,14 +1,5 @@
-import type {
-  AdminCustomerListItem,
-  AdminCustomerDetail,
-  Customer,
-  CustomerStats,
-  CustomerTag,
-  PaginatedResult,
-  UpdateCustomerAdminFieldsInput,
-  CreateCustomerAdminInput,
-} from "@clothing-brand/shared";
-import { apiFetch } from "../api-client";
+import type { AdminCustomerListItem, AdminCustomerDetail, Customer, CustomerStats, CustomerTag, PaginatedResult, UpdateCustomerAdminFieldsInput, CreateCustomerAdminInput, StoreCreditSummary } from "@clothing-brand/shared";
+import { apiFetch, type FetchSignal } from "../api-client";
 
 export interface AdminCustomerListParams {
   page?: number;
@@ -40,8 +31,8 @@ function buildCustomerListQuery(params: AdminCustomerListParams) {
   return query;
 }
 
-export function listCustomers(params: AdminCustomerListParams = {}) {
-  return apiFetch<PaginatedResult<AdminCustomerListItem>>(`/api/customers/admin?${buildCustomerListQuery(params).toString()}`);
+export function listCustomers(params: AdminCustomerListParams = {}, { signal }: FetchSignal = {}) {
+  return apiFetch<PaginatedResult<AdminCustomerListItem>>(`/api/customers/admin?${buildCustomerListQuery(params).toString()}`, { signal });
 }
 
 export function getCustomerStats() {
@@ -57,6 +48,11 @@ export function createCustomer(input: CreateCustomerAdminInput) {
 
 export function getCustomer(id: string) {
   return apiFetch<{ customer: AdminCustomerDetail }>(`/api/customers/admin/${id}`);
+}
+
+/** The customer's store balance and its ledger entries (read-only). */
+export function getCustomerStoreCredit(id: string) {
+  return apiFetch<{ storeCredit: StoreCreditSummary }>(`/api/customers/admin/${id}/store-credit`);
 }
 
 export function adjustPoints(id: string, points: number, reason?: string) {

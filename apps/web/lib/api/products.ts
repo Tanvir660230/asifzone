@@ -8,9 +8,10 @@ import type {
   DuplicateProductResult,
   ProductImportReport,
   ProductImportResult,
+  ProductListExtras,
 } from "@clothing-brand/shared";
-import { apiFetch, apiUploadWithProgress } from "../api-client";
-import { env } from "../env";
+import { apiFetch, apiUploadWithProgress, type FetchSignal } from "../api-client";
+import { publicApiUrl } from "../runtime-config";
 
 export interface ProductListParams {
   page?: number;
@@ -20,9 +21,11 @@ export interface ProductListParams {
   trashed?: boolean;
   status?: ProductStatus;
   typeId?: string;
+  stock?: "low" | "out";
+  sort?: "newest" | "updated" | "name" | "price" | "-price";
 }
 
-export function listProducts(params: ProductListParams = {}) {
+export function listProducts(params: ProductListParams = {}, { signal }: FetchSignal = {}) {
   const query = new URLSearchParams();
   if (params.page) query.set("page", String(params.page));
   if (params.pageSize) query.set("pageSize", String(params.pageSize));
@@ -31,8 +34,10 @@ export function listProducts(params: ProductListParams = {}) {
   if (params.trashed) query.set("trashed", "true");
   if (params.status) query.set("status", params.status);
   if (params.typeId) query.set("typeId", params.typeId);
+  if (params.stock) query.set("stock", params.stock);
+  if (params.sort && params.sort !== "newest") query.set("sort", params.sort);
 
-  return apiFetch<PaginatedResult<Product>>(`/api/products?${query.toString()}`);
+  return apiFetch<PaginatedResult<Product & ProductListExtras>>(`/api/products?${query.toString()}`, { signal });
 }
 
 export function getProduct(id: string) {
@@ -93,16 +98,16 @@ export function bulkUpdateProductCategory(ids: string[], categoryId: string) {
 /** CSV export needs the browser's cookie jar for admin auth but isn't JSON, so it bypasses apiFetch —
  * a plain same-tab navigation lets the browser handle the file download via Content-Disposition. */
 export function downloadProductsCsvUrl() {
-  return `${env.apiUrl}/api/products/export/csv`;
+  return `${publicApiUrl()}/api/products/export/csv`;
 }
 
 /** The importable format (one row per variant) — a plain navigation, like the summary export above. */
 export function exportFullCsvUrl(typeId?: string) {
-  return `${env.apiUrl}/api/products/export/full${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
+  return `${publicApiUrl()}/api/products/export/full${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
 }
 
 export function importTemplateUrl(typeId?: string) {
-  return `${env.apiUrl}/api/products/import/template${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
+  return `${publicApiUrl()}/api/products/import/template${typeId ? `?typeId=${encodeURIComponent(typeId)}` : ""}`;
 }
 
 /** A draft copy of a product; the input says what to bring along. */

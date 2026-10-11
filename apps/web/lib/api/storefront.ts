@@ -14,7 +14,7 @@ import type {
   StoreSettings,
   UrgencySignals,
 } from "@clothing-brand/shared";
-import { env } from "../env";
+import { apiBaseUrl, cacheTag } from "../runtime-config";
 
 const REVALIDATE_SECONDS = 60;
 
@@ -30,8 +30,9 @@ const REVALIDATE_SECONDS = 60;
  * isn't configured yet, the request fails, ...). */
 async function storefrontFetch<T>(path: string, revalidate: number | false = REVALIDATE_SECONDS, tags?: string[]): Promise<T> {
   const res = await fetch(
-    `${env.apiUrl}${path}`,
-    revalidate === false ? { cache: "no-store" } : { next: { revalidate, tags } },
+    `${apiBaseUrl()}${path}`,
+    // Tags are namespaced by installation (Phase 1C) — the API and /api/revalidate speak the plain names.
+    revalidate === false ? { cache: "no-store" } : { next: { revalidate, tags: typeof window === "undefined" ? tags?.map(cacheTag) : undefined } },
   );
   if (!res.ok) throw new Error(`Storefront fetch failed (${res.status}): ${path}`);
   return res.json();
@@ -140,10 +141,13 @@ export function getActiveHomepageSectionsSafe() {
   return safe(getActiveHomepageSections, { sections: [] });
 }
 
+/** Tagged "settings" so a settings save revalidates it immediately (the API calls /api/revalidate — Phase 7). */
 export function getSiteSettings() {
-  return storefrontFetch<{ settings: StoreSettings }>("/api/settings", 300);
+  return storefrontFetch<{ settings: StoreSettings }>("/api/settings", 300, ["settings"]);
 }
 
+/** Outage placeholder — rendered only when the API is unreachable (image build, outage); never a reader of store truth.
+ * Its currency/timezone mirror the StoreSetting schema defaults, so a placeholder render can't disagree with a fresh store. */
 const DEFAULT_STORE_SETTINGS: StoreSettings = {
   id: "singleton",
   storeName: "Store",
@@ -151,7 +155,13 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   logoUrl: null,
   logoOnDarkUrl: null,
   faviconUrl: null,
+  ogImageUrl: null,
+  seoTitle: null,
+  seoDescription: null,
+  newsletterHeading: null,
+  newsletterText: null,
   currency: "BDT",
+  timezone: "Asia/Dhaka",
   contactEmail: null,
   contactPhone: null,
   shippingFeeDhaka: "60",
@@ -174,6 +184,18 @@ const DEFAULT_STORE_SETTINGS: StoreSettings = {
   onlinePaymentEnabled: true,
   epsPaymentEnabled: false,
   googleSiteVerification: null,
+  legalName: null,
+  addressLine: null,
+  addressCity: null,
+  addressRegion: null,
+  addressPostalCode: null,
+  addressCountry: null,
+  legalJurisdiction: null,
+  supportHours: null,
+  returnWindowDays: null,
+  returnConditions: null,
+  handlingDaysMin: null,
+  handlingDaysMax: null,
   updatedAt: new Date(0).toISOString(),
 };
 
@@ -249,7 +271,7 @@ export function getUrgencySignals(productId: string) {
 /** Client-side, fire-and-forget page-view beacon — not `storefrontFetch` since it's a POST
  * with no response body to cache. */
 export function logProductView(productId: string): void {
-  fetch(`${env.apiUrl}/api/products/${encodeURIComponent(productId)}/view`, { method: "POST" }).catch(() => {
+  fetch(`${apiBaseUrl()}/api/products/${encodeURIComponent(productId)}/view`, { method: "POST" }).catch(() => {
     // best-effort only — a failed view log must never affect the visitor's experience
   });
 }
@@ -258,7 +280,7 @@ export function logProductView(productId: string): void {
  * product records. Public GET, no credentials needed. */
 export async function fetchProductsByIds(ids: string[]) {
   if (ids.length === 0) return { items: [] as Product[] };
-  const res = await fetch(`${env.apiUrl}/api/products/storefront/by-ids?ids=${ids.map(encodeURIComponent).join(",")}`);
+  const res = await fetch(`${apiBaseUrl()}/api/products/storefront/by-ids?ids=${ids.map(encodeURIComponent).join(",")}`);
   if (!res.ok) throw new Error(`Products-by-ids fetch failed (${res.status})`);
   return res.json() as Promise<{ items: Product[] }>;
 }
@@ -271,7 +293,7 @@ export async function fetchTrendingProducts(params: { minPrice?: number; maxPric
   if (params.maxPrice !== undefined) query.set("maxPrice", String(params.maxPrice));
   if (params.limit !== undefined) query.set("limit", String(params.limit));
 
-  const res = await fetch(`${env.apiUrl}/api/products/storefront/trending?${query.toString()}`);
+  const res = await fetch(`${apiBaseUrl()}/api/products/storefront/trending?${query.toString()}`);
   if (!res.ok) throw new Error(`Trending fetch failed (${res.status})`);
   return res.json() as Promise<{ items: Product[] }>;
 }
@@ -283,7 +305,7 @@ export async function fetchRecommendedProducts(params: { categoryIds: string[]; 
   if (params.exclude) query.set("exclude", params.exclude);
   if (params.limit !== undefined) query.set("limit", String(params.limit));
 
-  const res = await fetch(`${env.apiUrl}/api/products/storefront/recommended?${query.toString()}`);
+  const res = await fetch(`${apiBaseUrl()}/api/products/storefront/recommended?${query.toString()}`);
   if (!res.ok) throw new Error(`Recommended fetch failed (${res.status})`);
   return res.json() as Promise<{ items: Product[] }>;
 }
@@ -292,14 +314,14 @@ export async function fetchRecommendedProducts(params: { categoryIds: string[]; 
  * typing. Public GET, no credentials needed. */
 export async function fetchSearchSuggestions(query: string, limit = 6) {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
-  const res = await fetch(`${env.apiUrl}/api/products/storefront/suggest?${params.toString()}`);
+  const res = await fetch(`${apiBaseUrl()}/api/products/storefront/suggest?${params.toString()}`);
   if (!res.ok) throw new Error(`Search-suggest fetch failed (${res.status})`);
   return res.json() as Promise<SearchSuggestions>;
 }
 
 /** Client-side fetch — shown when the search overlay opens with an empty query. */
 export async function fetchPopularSearches(limit = 8) {
-  const res = await fetch(`${env.apiUrl}/api/products/storefront/popular-searches?limit=${limit}`);
+  const res = await fetch(`${apiBaseUrl()}/api/products/storefront/popular-searches?limit=${limit}`);
   if (!res.ok) throw new Error(`Popular-searches fetch failed (${res.status})`);
   return res.json() as Promise<{ queries: string[] }>;
 }

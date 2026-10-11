@@ -15,7 +15,7 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "@/components/ui/toast";
-import { CatalogSubNav } from "@/components/admin/catalog-subnav";
+import { ModuleTabs } from "@/components/admin/module-tabs";
 import { EmptyState } from "@/components/admin/empty-state";
 import { FormSection } from "@/components/admin/form-section";
 import { PageHeader } from "@/components/admin/page-header";
@@ -214,7 +214,7 @@ export default function TemplatesPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
+        title="Templates"
         description="Define what kinds of products the store sells, and what each kind collects and shows."
         action={
           canManage && (
@@ -224,7 +224,7 @@ export default function TemplatesPage() {
           )
         }
       />
-      <CatalogSubNav />
+      <ModuleTabs />
 
       <p className="mb-4 text-sm text-ink-500">
         A template bundles what a product type collects: which attributes, whether variants have a size and/or colour, and which size
@@ -232,8 +232,8 @@ export default function TemplatesPage() {
       </p>
 
       <div className="overflow-hidden rounded-lg border border-ink-100 bg-cream-50">
-        <table className="w-full text-sm">
-          <thead className="bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-500">
+        <table className="ui-table">
+          <thead className="ui-table-head">
             <tr>
               <th className="px-4 py-3">Template</th>
               <th className="hidden px-4 py-3 md:table-cell">Variants</th>
@@ -442,7 +442,7 @@ export default function TemplatesPage() {
               })}
             </div>
             <div className="flex gap-2">
-              <Select value={toAdd} onChange={(e) => setToAdd(e.target.value)} aria-label="Attribute to add">
+              <Select value={toAdd} onChange={(e) => setToAdd(e.target.value)} aria-label="Field to add">
                 <option value="">Add an attribute…</option>
                 {addable.map((d) => (
                   <option key={d.id} value={d.id}>

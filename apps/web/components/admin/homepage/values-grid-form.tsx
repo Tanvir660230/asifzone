@@ -36,6 +36,16 @@ export function ValuesGridForm({ initialConfig, onSubmit, onCancel, onValuesChan
 
   return (
     <form onSubmit={handleSubmit(async (values) => onSubmit(values))} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="eyebrow">Small text above the heading (optional)</Label>
+          <Input id="eyebrow" placeholder="Why your store" {...register("eyebrow")} />
+        </div>
+        <div>
+          <Label htmlFor="heading">Heading (optional)</Label>
+          <Input id="heading" placeholder="What We Stand For" {...register("heading")} />
+        </div>
+      </div>
       <div className="space-y-3">
         {fields.map((field, index) => (
           <div key={field.id} className="space-y-2 rounded-lg border border-ink-100 p-3">

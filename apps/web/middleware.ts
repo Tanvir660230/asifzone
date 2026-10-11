@@ -1,7 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { buildContentSecurityPolicy, createNonce } from "@/lib/security/csp";
+import { mediaUrl, publicRuntimeConfig, serverRuntimeConfig } from "@/lib/runtime-config";
+import { deprecatedRedirect } from "@/lib/admin/navigation";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const REDIRECT_REVALIDATE_SECONDS = 300;
+
+/** The browser-facing API origin for the CSP — runtime configuration (Phase 1A), so one build serves every installation. */
+function publicApiOrigin(): string {
+  try {
+    return new URL(publicRuntimeConfig().apiUrl).origin;
+  } catch {
+    return "'self'";
+  }
+}
 
 interface ActiveRedirect {
   fromPath: string;
@@ -14,7 +25,7 @@ interface ActiveRedirect {
  * down, etc.) must never break the site, so it just falls through to normal routing. */
 async function findActiveRedirect(pathname: string): Promise<ActiveRedirect | null> {
   try {
-    const res = await fetch(`${API_URL}/api/redirects/active`, {
+    const res = await fetch(`${serverRuntimeConfig().apiInternalUrl}/api/redirects/active`, {
       next: { revalidate: REDIRECT_REVALIDATE_SECONDS },
     });
     if (!res.ok) return null;
@@ -32,12 +43,13 @@ async function findActiveRedirect(pathname: string): Promise<ActiveRedirect | nu
  * that path is always treated as the static icon file — so this has to live in middleware instead.)
  * Falls through to the static app/favicon.ico file whenever no custom favicon is configured, or the
  * API call fails. */
-async function faviconRedirect(): Promise<NextResponse | null> {
+async function faviconRedirect(req: NextRequest): Promise<NextResponse | null> {
   try {
-    const res = await fetch(`${API_URL}/api/settings`, { next: { revalidate: REDIRECT_REVALIDATE_SECONDS } });
+    const res = await fetch(`${serverRuntimeConfig().apiInternalUrl}/api/settings`, { next: { revalidate: REDIRECT_REVALIDATE_SECONDS } });
     if (!res.ok) return null;
     const { settings } = (await res.json()) as { settings: { faviconUrl: string | null } };
-    return settings.faviconUrl ? NextResponse.redirect(settings.faviconUrl) : null;
+    // A stored media reference (`/uploads/…`) resolves against this installation's media base, then this request's origin.
+    return settings.faviconUrl ? NextResponse.redirect(new URL(mediaUrl(settings.faviconUrl), req.url)) : null;
   } catch {
     return null;
   }
@@ -47,8 +59,21 @@ async function faviconRedirect(): Promise<NextResponse | null> {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Content-Security-Policy with a fresh nonce on every page response (lib/security/csp.ts). Next reads the nonce from the
+  // request's CSP header and stamps it on its own scripts. Redirects carry no page, so they skip it.
+  const nonce = createNonce();
+  const csp = buildContentSecurityPolicy({ nonce, apiOrigin: publicApiOrigin(), isDev: process.env.NODE_ENV === "development" });
+  const pass = () => {
+    const headers = new Headers(req.headers);
+    headers.set("x-nonce", nonce);
+    headers.set("Content-Security-Policy", csp);
+    const res = NextResponse.next({ request: { headers } });
+    res.headers.set("Content-Security-Policy", csp);
+    return res;
+  };
+
   if (pathname === "/favicon.ico") {
-    return (await faviconRedirect()) ?? NextResponse.next();
+    return (await faviconRedirect(req)) ?? pass();
   }
 
   const redirect = await findActiveRedirect(pathname);
@@ -57,10 +82,18 @@ export async function middleware(req: NextRequest) {
   }
 
   if (pathname.startsWith("/admin")) {
+    // Admin routes that moved: the navigation manifest's `deprecatedRoutes` (lib/admin/navigation.ts) — params and query
+    // (e.g. the Product Builder's ?step=) carried over. Before the session check, so a signed-out visitor's login
+    // round-trip returns to the current URL.
+    const moved = deprecatedRedirect(pathname, req.nextUrl.search);
+    if (moved) {
+      return NextResponse.redirect(new URL(moved, req.url), 308);
+    }
+
     // Same reasoning as /account/verify-email below — an admin accepting an invite may or may not
     // already have a different session, and the page must work either way.
     if (pathname === "/admin/accept-invite") {
-      return NextResponse.next();
+      return pass();
     }
 
     const isLoginPage = pathname === "/admin/login";
@@ -79,7 +112,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/admin/dashboard", req.url));
     }
 
-    return NextResponse.next();
+    return pass();
   }
 
   if (pathname.startsWith("/account")) {
@@ -88,8 +121,9 @@ export async function middleware(req: NextRequest) {
     // bounced away either direction, unlike the auth pages below. /account/unsubscribe needs the
     // same treatment: it's a one-click link from a marketing email, almost always clicked while
     // logged out, and carries its own customerId/token query params that a login-redirect would drop.
-    if (pathname === "/account/verify-email" || pathname === "/account/unsubscribe") {
-      return NextResponse.next();
+    // /account/claim (Phase 11): the emailed link that proves an existing guest record's email — clicked while logged out.
+    if (pathname === "/account/verify-email" || pathname === "/account/unsubscribe" || pathname === "/account/claim") {
+      return pass();
     }
 
     const isAuthPage =
@@ -110,15 +144,17 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(new URL("/account", req.url));
     }
 
-    return NextResponse.next();
+    return pass();
   }
 
-  return NextResponse.next();
+  return pass();
 }
 
 export const config = {
   // Runs on every page request (not just /admin and /account) so admin-managed redirects can
-  // apply anywhere on the site — excludes static assets/Next internals, which never have redirects.
+  // apply anywhere on the site — excludes static assets/Next internals and uploaded media, which never have redirects.
   // favicon.ico is deliberately included (unlike the others) so faviconRedirect above can intercept it.
-  matcher: ["/((?!_next/static|_next/image).*)"],
+  matcher: ["/((?!_next/static|_next/image|uploads/).*)"],
+  // Node.js runtime (Phase 1A): reads this installation's environment at request time like the rest of the server.
+  runtime: "nodejs",
 };

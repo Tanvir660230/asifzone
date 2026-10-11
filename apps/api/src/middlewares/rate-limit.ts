@@ -51,6 +51,25 @@ export const retryPaymentRateLimit = rateLimit({
   message: { error: "Too many payment retries, please slow down and try again shortly" },
 });
 
+/** Public payment-link reads and starts (/api/pay/:token). The token is unguessable (256 bits), so this only stops a
+ * client from hammering the endpoint or the gateway init behind it. */
+export const paymentLinkRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests for this payment link, please try again shortly" },
+});
+
+/** Customer self-service order changes (modify / cancel) — writes, so a tighter budget than reads. */
+export const orderSelfServiceRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many order changes, please slow down and try again shortly" },
+});
+
 export const couponValidateRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 20,
@@ -113,6 +132,25 @@ export const otpRequestRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many codes requested, please try again later" },
+});
+
+/** Phase 11 (F-05): session refresh (admin and customer). Generous enough for many tabs, but a ceiling on token guessing
+ * and refresh abuse. */
+export const refreshRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again shortly" },
+});
+
+/** Phase 11 (F-05): endpoints that send an email on every call (resend verification) — cost and spam ceiling. */
+export const emailSendRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many emails requested, please try again later" },
 });
 
 /** The canonical quote (POST /api/v1/checkout/quote) is re-requested on every cart/checkout change — its own, much

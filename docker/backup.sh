@@ -9,15 +9,18 @@ set -euo pipefail
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/clothing-brand}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 COMPOSE_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker-compose.yml"
+ENV_FILE="$(dirname "$COMPOSE_FILE")/.env"
+POSTGRES_DB="${POSTGRES_DB:-$(grep -E '^POSTGRES_DB=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)}"
+POSTGRES_DB="${POSTGRES_DB:-clothing_brand}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-DB_FILE="$BACKUP_DIR/clothing_brand-$TIMESTAMP.sql.gz"
+DB_FILE="$BACKUP_DIR/$POSTGRES_DB-$TIMESTAMP.sql.gz"
 UPLOADS_FILE="$BACKUP_DIR/uploads-$TIMESTAMP.tar.gz"
 
 mkdir -p "$BACKUP_DIR"
 
 # 1. Database dump
 docker compose -f "$COMPOSE_FILE" exec -T postgres \
-  pg_dump -U postgres clothing_brand | gzip > "$DB_FILE"
+  pg_dump -U postgres "$POSTGRES_DB" | gzip > "$DB_FILE"
 
 # 2. Uploaded product/category/banner images — a separate Docker volume, not covered by the DB dump.
 # Tarred from inside the already-running api container (which mounts it) rather than by guessing
@@ -26,7 +29,7 @@ docker compose -f "$COMPOSE_FILE" exec -T api \
   tar czf - -C /repo/apps/api/uploads . > "$UPLOADS_FILE"
 
 # 3. Prune local copies past retention
-find "$BACKUP_DIR" -name "clothing_brand-*.sql.gz" -mtime "+$RETENTION_DAYS" -delete
+find "$BACKUP_DIR" -name "$POSTGRES_DB-*.sql.gz" -mtime "+$RETENTION_DAYS" -delete
 find "$BACKUP_DIR" -name "uploads-*.tar.gz" -mtime "+$RETENTION_DAYS" -delete
 
 # 4. Off-server copy (skipped automatically until RCLONE_REMOTE is set up)

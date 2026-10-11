@@ -58,7 +58,9 @@ describe("order state machine", () => {
       await updateOrderStatus(order.id, { status: "PACKED" }, admin);
       await updateOrderStatus(order.id, { status: "CONFIRMED" }, admin);
       await updateOrderStatus(order.id, { status: "SHIPPED" }, admin);
-      const back = await updateOrderStatus(order.id, { status: "PACKED" }, admin);
+      // DR-8: the T3 correction needs a reason.
+      await expect(updateOrderStatus(order.id, { status: "PACKED" }, admin)).rejects.toMatchObject({ statusCode: 400 });
+      const back = await updateOrderStatus(order.id, { status: "PACKED", note: "Marked shipped before pickup" }, admin);
       expect(back.status).toBe("PACKED");
       expect(await stockOf(variants[0]!.id)).toBe(4);
     });

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { governingLawSentence } from "@/lib/store-identity";
+import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { PageHero } from "@/components/storefront/page-hero";
 import { Breadcrumb } from "@/components/storefront/breadcrumb";
 import { MobileTocSelect } from "@/components/storefront/mobile-toc-select";
@@ -23,10 +24,11 @@ export async function generateMetadata(): Promise<Metadata> {
     description: DESCRIPTION,
     alternates: { canonical: `${getSiteUrl()}/terms` },
     ...buildOpenGraph({
+      siteName: settings.storeName,
       title: TITLE,
       description: DESCRIPTION,
       url: `${getSiteUrl()}/terms`,
-      images: settings.logoUrl ? [settings.logoUrl] : undefined,
+      images: storeShareImages(settings),
     }),
   };
 }
@@ -124,7 +126,7 @@ const SECTIONS = [
   {
     id: "governing-law",
     title: "Governing Law",
-    body: <p>These terms are governed by the laws of Bangladesh.</p>,
+    body: null, // filled per store in TermsPage (governingLawSentence)
   },
   {
     id: "changes",
@@ -151,7 +153,9 @@ const SECTIONS = [
   },
 ];
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  const { settings } = await getSiteSettings();
+  const sections = SECTIONS.map((s) => (s.id === "governing-law" ? { ...s, body: <p>{governingLawSentence(settings)}</p> } : s));
   return (
     <div>
       <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
@@ -164,11 +168,11 @@ export default function TermsPage() {
       />
 
       <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
-        <MobileTocSelect sections={SECTIONS} />
+        <MobileTocSelect sections={sections} />
         <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-12">
           <nav aria-label="Table of contents" className="hidden lg:block">
             <div className="sticky top-28 space-y-1 border-l border-ink-100 pl-4">
-              {SECTIONS.map((section) => (
+              {sections.map((section) => (
                 <a
                   key={section.id}
                   href={`#${section.id}`}
@@ -181,7 +185,7 @@ export default function TermsPage() {
           </nav>
 
           <div className="max-w-2xl space-y-10 text-sm leading-relaxed text-ink-700">
-            {SECTIONS.map((section, i) => (
+            {sections.map((section, i) => (
               <section key={section.id} id={section.id} className="scroll-mt-28">
                 <h2 className="mb-3 flex items-baseline gap-2 font-display text-lg text-ink-900">
                   <span className="text-xs font-normal text-ink-300">{String(i + 1).padStart(2, "0")}</span>

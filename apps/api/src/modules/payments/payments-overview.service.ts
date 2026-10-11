@@ -2,6 +2,9 @@ import { normalizeBdPhone } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { cacheGet, cacheSet } from "../../config/redis";
 import type { PendingCheckoutPayload } from "./payment.service";
+import { REFUND_QUEUE_WHERE } from "../../domain/payments/payment-ledger.service";
+import { computeMetrics } from "../../domain/metrics/metrics.service";
+import { resolveStoreRange } from "../../domain/metrics/store-time";
 
 const CACHE_TTL_SECONDS = 60;
 const CACHE_KEY = "payments:overview";
@@ -30,8 +33,9 @@ export async function getPaymentsOverview(): Promise<PaymentsOverview> {
   if (cached) return cached;
 
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Business-day boundaries in the store timezone (docs/METRICS_REGISTRY.md §1) — not the server's local midnight.
+  const [today, month] = await Promise.all([resolveStoreRange({ preset: "today" }, now), resolveStoreRange({ preset: "this_month" }, now)]);
+  const startOfToday = today.startUtc;
   const reconciliationGrace = new Date(now.getTime() - 3 * 60 * 1000);
 
   const [
@@ -51,18 +55,15 @@ export async function getPaymentsOverview(): Promise<PaymentsOverview> {
     prisma.paymentSession.count({
       where: { provider: "EPS_PG", status: "ACTIVE", createdAt: { lte: reconciliationGrace } },
     }),
-    prisma.order.count({ where: { deletedAt: null, status: "CANCELLED", paymentStatus: "PAID" } }),
+    prisma.order.count({ where: { deletedAt: null, ...REFUND_QUEUE_WHERE } }),
     prisma.payment.findMany({
       where: { status: "FAILED" },
       orderBy: { settledAt: "desc" },
       take: 10,
       select: { provider: true, settledAt: true, order: { select: { orderNumber: true } } },
     }),
-    prisma.refund.aggregate({
-      where: { status: "COMPLETED", completedAt: { gte: startOfMonth } },
-      _count: true,
-      _sum: { amount: true },
-    }),
+    // The registry's `refunds` / `refund_count` for the business month (payment ledger).
+    computeMetrics({ metrics: ["refunds", "refund_count"], range: month }, now),
   ]);
 
   const settledToday = succeededToday + failedToday;
@@ -80,8 +81,8 @@ export async function getPaymentsOverview(): Promise<PaymentsOverview> {
       provider: p.provider,
       failedAt: p.settledAt.toISOString(),
     })),
-    refundsThisMonthCount: refundAgg._count,
-    refundsThisMonthAmount: Number(refundAgg._sum.amount ?? 0),
+    refundsThisMonthCount: refundAgg.metrics.refund_count!.value,
+    refundsThisMonthAmount: refundAgg.metrics.refunds!.value,
   };
 
   await cacheSet(CACHE_KEY, overview, CACHE_TTL_SECONDS);

@@ -1,5 +1,5 @@
 import { z, type ZodTypeAny } from "zod";
-import { nullableDate, nullableString, nullableUrl } from "./common";
+import { mediaUrlSchema, nullableDate, nullableMediaUrl, nullableString } from "./common";
 
 export const homepageSectionTypeEnum = z.enum([
   "HERO",
@@ -36,22 +36,35 @@ const valuesGridItemSchema = z.object({
   description: z.string().min(1).max(300),
 });
 export const valuesGridConfigSchema = z.object({
+  /** Optional editorial copy; blank keeps the built-in "Why {store name}" / "What We Stand For". */
+  eyebrow: nullableString(60),
+  heading: nullableString(200),
   items: z.array(valuesGridItemSchema).min(1).max(8),
 });
 
 export const brandStoryConfigSchema = z.object({
+  /** Optional kicker above the heading; blank keeps "Our Philosophy". */
+  eyebrow: nullableString(60),
   heading: nullableString(200),
   bodyText: nullableString(1000),
   ctaLabel: nullableString(60),
   ctaHref: nullableString(300),
-  imageUrl: nullableUrl(),
+  imageUrl: nullableMediaUrl(),
 });
 
 export const heroConfigSchema = z.object({
   headline: nullableString(200),
   subtext: nullableString(300),
+  /** Optional supporting line under the headline. */
+  bodyText: nullableString(300),
   ctaLabel: nullableString(60),
   ctaHref: nullableString(300),
+  /** Optional second, quieter action next to the primary one. */
+  secondaryCtaLabel: nullableString(60),
+  secondaryCtaHref: nullableString(300),
+  /** Optional large image shown with the copy (the hero is otherwise a typographic band). */
+  imageUrl: nullableMediaUrl(),
+  imageAltText: nullableString(200),
 });
 
 export const personalizedLeadConfigSchema = z.object({
@@ -66,6 +79,8 @@ export const smartRecommendationsConfigSchema = z.object({
 
 export const categoryGridConfigSchema = z.object({
   heading: nullableString(200),
+  /** Optional supporting line under the heading. */
+  subtitle: nullableString(300),
 });
 
 export const productCarouselSourceEnum = z.enum(["featured", "new", "category"]);
@@ -86,14 +101,20 @@ export const productCarouselConfigSchema = z
     path: ["category"],
   });
 
-export const promoBannerConfigSchema = z.object({
-  heading: nullableString(200),
-  bodyText: nullableString(500),
-  imageUrl: z.string().url(),
-  mobileImageUrl: nullableUrl(),
-  linkUrl: nullableString(500),
-  ctaLabel: nullableString(60),
-});
+export const promoBannerConfigSchema = z
+  .object({
+    heading: nullableString(200),
+    bodyText: nullableString(500),
+    /** Without an image the banner is a typographic band in the theme's dark section color (an editorial callout). */
+    imageUrl: nullableMediaUrl(),
+    mobileImageUrl: nullableMediaUrl(),
+    linkUrl: nullableString(500),
+    ctaLabel: nullableString(60),
+  })
+  .refine((data) => !!data.imageUrl || !!data.heading, {
+    message: "Add an image, or a heading for a text-only banner",
+    path: ["imageUrl"],
+  });
 
 /** The `config` JSON column's shape depends on `type` — this is the lookup both the admin forms
  * and the backend service validate against, since a real discriminated union doesn't fit a flat
@@ -128,8 +149,10 @@ export const updateHomepageSectionSchema = z.object({
   endsAt: nullableDate(),
 });
 
+// Not .cuid(): the default sections are created with fixed ids ("seed-hero", …). The service checks the list is exactly
+// the existing sections, which is the real guard.
 export const reorderHomepageSectionsSchema = z.object({
-  ids: z.array(z.string().cuid()).min(1),
+  ids: z.array(z.string().min(1).max(64)).min(1).max(200),
 });
 
 export type CreateHomepageSectionInput = z.infer<typeof createHomepageSectionSchema>;

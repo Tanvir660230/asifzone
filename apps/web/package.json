@@ -6,8 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:e2e": "node scripts/clear-data-cache.mjs && next start",
     "lint": "eslint .",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test": "vitest run",
+    "budget:admin": "node scripts/check-admin-budget.mjs"
   },
   "dependencies": {
     "@clothing-brand/shared": "workspace:*",
@@ -58,6 +61,7 @@
     "eslint-config-next": "15.5.25",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.10"
   }
 }

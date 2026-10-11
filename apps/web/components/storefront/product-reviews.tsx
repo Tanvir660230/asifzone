@@ -157,7 +157,7 @@ export function ProductReviews({ productId, productName }: { productId: string; 
 
   return (
     <section id="reviews" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-16 sm:px-6 lg:px-8">
-      <h2 className="mb-8 font-display text-2xl text-ink-900">Customer Reviews</h2>
+      <h2 className="ui-section-heading mb-8 font-display text-ink-900">Customer Reviews</h2>
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[280px_1fr]">
         <div>
@@ -220,7 +220,7 @@ export function ProductReviews({ productId, productName }: { productId: string; 
                   <div className="flex items-center gap-2">
                     <StarRating value={review.rating} />
                     {review.isVerifiedPurchase && (
-                      <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-brass-600">
+                      <span className="flex items-center gap-1 text-[11px] font-medium ui-caps text-brass-600">
                         <BadgeCheck size={12} />
                         Verified Purchase
                       </span>

@@ -1,3 +1,7 @@
+# Phase 12 (W10): one compose project per store. Defaults reproduce the original single-store stack
+# (project "docker", database "clothing_brand"); a second store sets its own values in its docker/.env.
+name: ${COMPOSE_PROJECT_NAME:-docker}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,7 +9,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: clothing_brand
+      POSTGRES_DB: ${POSTGRES_DB:-clothing_brand}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,11 +38,18 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/clothing_brand?schema=public
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # Phase 1: this installation's id — namespaces its Redis cache keys, locks and BullMQ queues (install:<id>:…), so
+      # installations can share one Redis server. Required (deploy.sh preflight checks it too).
+      INSTALL_ID: ${INSTALL_ID:?set INSTALL_ID in docker/.env}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-clothing_brand}?schema=public
+      # This stack's own Redis by default; set REDIS_URL to share a Redis server between installations (INSTALL_ID keeps
+      # their keys apart).
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_CUSTOMER_ACCESS_SECRET: ${JWT_CUSTOMER_ACCESS_SECRET}
       JWT_CUSTOMER_REFRESH_SECRET: ${JWT_CUSTOMER_REFRESH_SECRET}
+      # Optional key for the integration credentials saved in Settings › Integrations (else derived from JWT_ACCESS_SECRET).
+      INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       # The api container reaches the web container over the compose network by service name, not
       # through the public domain (WEB_ORIGIN) — a request from api to its own public URL would
@@ -46,11 +57,8 @@ services:
       # cache revalidation call (see apps/api/src/modules/products/product.cache.ts).
       WEB_INTERNAL_URL: http://web:3000
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
-      # Baked directly into the URL for category/banner/logo/editor image uploads (see
-      # apps/api/src/modules/uploads/upload.service.ts's processSiteImage) — must be the public
-      # origin a browser can actually reach, not an internal Docker hostname. Behind the nginx
-      # config here everything lives under one public domain, so this is the same value as
-      # NEXT_PUBLIC_SITE_URL below.
+      # The API's public origin — payment-gateway callback URLs (providers/payment/*). Uploads no longer embed it: they are
+      # stored as domain-free /uploads/… references (Phase 1B).
       API_ORIGIN: ${API_ORIGIN:-http://localhost:4000}
       UPLOADS_DIR: uploads
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -76,50 +84,61 @@ services:
       STEADFAST_SECRET_KEY: ${STEADFAST_SECRET_KEY:-}
       STEADFAST_BASE_URL: ${STEADFAST_BASE_URL:-https://portal.packzy.com/api/v1}
       STEADFAST_WEBHOOK_TOKEN: ${STEADFAST_WEBHOOK_TOKEN:-}
-      # Meta Conversions API (server-side Purchase — apps/api/src/lib/meta/). The pixel id is the
-      # same value the web build bakes in as NEXT_PUBLIC_META_PIXEL_ID, reused rather than a second
-      # variable so the browser and server halves can never point at different pixels. Inert until
-      # META_ACCESS_TOKEN is set too.
-      META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
+      # Meta Conversions API (server-side Purchase — apps/api/src/lib/meta/). The SAME pixel id the web service reads at
+      # runtime below, so the browser and server halves can never point at different pixels. Inert until META_ACCESS_TOKEN
+      # is set too. (NEXT_PUBLIC_META_PIXEL_ID is the pre-Phase-1 name, still accepted.)
+      META_PIXEL_ID: ${META_PIXEL_ID:-${NEXT_PUBLIC_META_PIXEL_ID:-}}
+      # Browser-only ids, passed here only so Settings › Integrations can show they are set on the server.
+      TIKTOK_PIXEL_ID: ${TIKTOK_PIXEL_ID:-${NEXT_PUBLIC_TIKTOK_PIXEL_ID:-}}
+      CLARITY_ID: ${CLARITY_ID:-${NEXT_PUBLIC_CLARITY_ID:-}}
       META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
       META_API_VERSION: ${META_API_VERSION:-}
       META_TEST_EVENT_CODE: ${META_TEST_EVENT_CODE:-}
+      # Phase 12 provider selection (apps/api/src/providers/selection.ts). Blank = today's wiring; "none" disables a
+      # capability explicitly; an explicitly selected provider must have its credentials or the API refuses to start.
+      PAYMENT_GATEWAYS: ${PAYMENT_GATEWAYS:-}
+      SMS_PROVIDER: ${SMS_PROVIDER:-}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-}
+      COURIER_PROVIDER: ${COURIER_PROVIDER:-}
+      PUSH_PROVIDER: ${PUSH_PROVIDER:-}
     volumes:
       - uploads_data:/repo/apps/api/uploads
     ports:
-      - "127.0.0.1:4000:4000"
+      # Host ports are per installation, so a second installation on the same VPS can bind its own. HOST_BIND_IP stays
+      # loopback unless another installation's nginx fronts this one (docs/STORE_DEPLOYMENT.md): then it is that nginx's
+      # Docker network gateway, reachable from its container but not from outside the server.
+      - "${HOST_BIND_IP:-127.0.0.1}:${API_HOST_PORT:-4000}:4000"
 
   web:
+    # Phase 1A: the image carries NO installation configuration — one build serves every store. Everything below is read
+    # at runtime by apps/web/lib/runtime-config.ts (contract: packages/shared/src/runtime-config.ts). The pre-Phase-1
+    # NEXT_PUBLIC_* names in docker/.env are still accepted as fallbacks.
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
-        # NEXT_PUBLIC_* vars are inlined into the compiled output at `next build` time, not read
-        # from the container's runtime environment — without this here, the `environment:` entry
-        # below has zero effect and canonical URLs/og:url/sitemap.xml/robots.txt silently keep
-        # whatever this fell back to at image-build time (http://localhost:3000), no matter what's
-        # actually configured for the running container.
-        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
-        NEXT_PUBLIC_CLARITY_ID: ${NEXT_PUBLIC_CLARITY_ID:-}
-        NEXT_PUBLIC_META_PIXEL_ID: ${NEXT_PUBLIC_META_PIXEL_ID:-}
-        NEXT_PUBLIC_TAWKTO_PROPERTY_ID: ${NEXT_PUBLIC_TAWKTO_PROPERTY_ID:-}
-        NEXT_PUBLIC_TAWKTO_WIDGET_ID: ${NEXT_PUBLIC_TAWKTO_WIDGET_ID:-}
-        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
-        # Must be the public half of the same pair as the api service's WEB_PUSH_PUBLIC_KEY below
-        # (see apps/web/.env.example) — reusing that var here instead of a second secret keeps the
-        # two from ever drifting apart.
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
     restart: unless-stopped
     depends_on:
       - api
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      INSTALL_ID: ${INSTALL_ID:?set INSTALL_ID in docker/.env}
+      SITE_URL: ${SITE_URL:-${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-${NEXT_PUBLIC_API_URL:-http://localhost:4000}}
+      # Server-side rendering reaches the API over the compose network, never through the public domain and nginx.
+      API_INTERNAL_URL: http://api:4000
+      # Where media references resolve: same-origin /uploads (nginx serves this installation's uploads volume) by default.
+      MEDIA_BASE_URL: ${MEDIA_BASE_URL:-/uploads}
+      META_PIXEL_ID: ${META_PIXEL_ID:-${NEXT_PUBLIC_META_PIXEL_ID:-}}
+      TIKTOK_PIXEL_ID: ${TIKTOK_PIXEL_ID:-${NEXT_PUBLIC_TIKTOK_PIXEL_ID:-}}
+      CLARITY_ID: ${CLARITY_ID:-${NEXT_PUBLIC_CLARITY_ID:-}}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}}
+      # The public half of the API's VAPID pair (the private half never leaves the api service).
+      WEB_PUSH_PUBLIC_KEY: ${WEB_PUSH_PUBLIC_KEY:-}
+      # Brand theme id (packages/ui-tokens themes): this installation's palette, radii and title face.
+      STORE_THEME: ${STORE_THEME:-default}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "${HOST_BIND_IP:-127.0.0.1}:${WEB_HOST_PORT:-3000}:3000"
 
   nginx:
     image: nginx:1.27-alpine
@@ -128,18 +147,29 @@ services:
       - web
       - api
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - uploads_data:/uploads:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
+      # Extra stores on this VPS (docker/nginx/sites.d/README.md); server-local files, empty by default.
+      - ./nginx/sites.d:/etc/nginx/sites.d:ro
+    environment:
+      # Per-store, required (no store default): the public host, its aliases (e.g. www.<host>), and the Let's Encrypt
+      # certificate directory name under /etc/letsencrypt/live/.
+      SERVER_NAME: ${SERVER_NAME:?set SERVER_NAME in docker/.env}
+      SERVER_ALIASES: ${SERVER_ALIASES:?set SERVER_ALIASES in docker/.env}
+      CERT_NAME: ${CERT_NAME:?set CERT_NAME in docker/.env}
+      NGINX_ENVSUBST_FILTER: "^(SERVER_NAME|SERVER_ALIASES|CERT_NAME)$$"
+    # 80/443 for an installation that owns its VPS. Installations sharing a VPS each publish other ports and sit behind
+    # one front proxy that routes by host name (docs/STORE_DEPLOYMENT.md "Several installations on one VPS").
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     # Picks up a cert the certbot service renewed underneath it — the ro bind mount doesn't
     # itself trigger nginx to reread the files, and nginx never reloads on its own otherwise.
     entrypoint: "/bin/sh -c"
     command:
-      - "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec nginx -g 'daemon off;'"
+      - "while :; do sleep 6h & wait $${!}; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g 'daemon off;'"
 
   certbot:
     image: certbot/certbot:latest
@@ -149,7 +179,7 @@ services:
     # No command previously — the image's default entrypoint ("certbot" with no args) tries to
     # auto-configure a web server plugin and fails immediately in this webroot-only setup, so
     # nothing was ever actually renewing. `certbot renew` reuses the authenticator/webroot path
-    # already recorded in /etc/letsencrypt/renewal/asifzone.com.conf from the original issuance.
+    # already recorded in /etc/letsencrypt/renewal/<CERT_NAME>.conf from the original issuance.
     entrypoint: "/bin/sh -c"
     command:
       - "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"

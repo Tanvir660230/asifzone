@@ -1,5 +1,5 @@
 import { apiFetch } from "../api-client";
-import { env } from "../env";
+import { publicApiUrl } from "../runtime-config";
 
 export interface DashboardSummary {
   revenue30d: number;
@@ -118,6 +118,33 @@ export interface CartAbandonmentSummary {
 
 export function getCartAbandonment() {
   return apiFetch<CartAbandonmentSummary>("/api/analytics/cart-abandonment");
+}
+
+export interface AbandonedCart {
+  cartId: string;
+  customerId: string;
+  name: string;
+  phone: string | null;
+  smsMarketingOptIn: boolean;
+  /** Has a phone and opted in to marketing SMS — the only carts a reminder will go to. */
+  reachable: boolean;
+  itemCount: number;
+  value: number;
+  firstItemName: string | null;
+  updatedAt: string;
+  reminderSentAt: string | null;
+}
+
+export function listAbandonedCarts(limit = 50) {
+  return apiFetch<{ carts: AbandonedCart[] }>(`/api/analytics/abandoned-carts?limit=${limit}`);
+}
+
+/** Reminder SMS to the chosen carts' customers — the server sends only to opted-in ones still abandoned, and counts the rest as skipped. */
+export function remindAbandonedCarts(customerIds: string[], body: string) {
+  return apiFetch<{ sent: number; failed: number; skipped: number }>("/api/analytics/abandoned-carts/remind", {
+    method: "POST",
+    body: { customerIds, body },
+  });
 }
 
 export interface CustomerInsights {
@@ -693,7 +720,8 @@ export interface ProfitTrendPoint {
 }
 
 export function getProfitTrend(days = 30) {
-  return apiFetch<{ series: ProfitTrendPoint[] }>(`/api/analytics/profit-trend${windowParams({ days })}`);
+  // costCoverage: order lines in the window with / without a recorded cost (Phase 6) — margin covers the recorded ones.
+  return apiFetch<{ series: ProfitTrendPoint[]; costCoverage: { recorded: number; missing: number } }>(`/api/analytics/profit-trend${windowParams({ days })}`);
 }
 
 export interface FinancialCostBreakdown {
@@ -707,11 +735,17 @@ export function getFinancialCostBreakdown(days?: number) {
   return apiFetch<FinancialCostBreakdown>(`/api/analytics/financial-costs${windowParams({ days })}`);
 }
 
+/** VAT from each order's own tax snapshot (registry `tax_collected`) — never the current rate applied to history. */
 export interface EstimatedTax {
   taxEnabled: boolean;
   defaultTaxRatePct: number;
+  /** Σ tax snapshot of realised orders in the window. */
   estimatedTax: number;
+  /** Net sales in the window. */
   revenue: number;
+  taxRecordedOrders?: number;
+  /** Realised orders placed before tax was snapshotted (counted, not estimated). */
+  taxUnrecordedOrders?: number;
 }
 
 export function getEstimatedTax(days?: number) {
@@ -812,16 +846,16 @@ export function getLifetimeYearlyTrend() {
 }
 
 // Section 15 — Reports (CSV export URLs — plain GET, admin session cookie carries auth, same
-// pattern as downloadOrdersCsvUrl in admin-orders.ts)
+// pattern the Orders export used before it moved to apiDownload)
 
 export function downloadCustomerRfmCsvUrl() {
-  return `${env.apiUrl}/api/analytics/export/customer-rfm.csv`;
+  return `${publicApiUrl()}/api/analytics/export/customer-rfm.csv`;
 }
 
 export function downloadRevenueCsvUrl(days = 365) {
-  return `${env.apiUrl}/api/analytics/export/revenue.csv?days=${days}`;
+  return `${publicApiUrl()}/api/analytics/export/revenue.csv?days=${days}`;
 }
 
 export function downloadInventoryTurnoverCsvUrl() {
-  return `${env.apiUrl}/api/analytics/export/inventory-turnover.csv`;
+  return `${publicApiUrl()}/api/analytics/export/inventory-turnover.csv`;
 }

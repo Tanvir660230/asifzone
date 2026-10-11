@@ -4,13 +4,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { AiContentType, GenerateAiContentInput } from "@clothing-brand/shared";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/app-error";
+import type { AiModel, ModelBlock } from "../../domain/ai/chat.service";
 
 const MAX_TOKENS = 1024;
 // Without this, a hung upstream call holds the request (and its Express connection) open
 // indefinitely — aiRateLimit caps how often that can happen, but not how long any single one lasts.
 const AI_REQUEST_TIMEOUT_MS = 30_000;
 
-let client: Anthropic | null = null;
+let client: { apiKey: string; anthropic: Anthropic } | null = null;
 
 export function isAiConfigured(): boolean {
   return env.anthropic.apiKey.length > 0;
@@ -18,12 +19,13 @@ export function isAiConfigured(): boolean {
 
 function getClient(): Anthropic {
   if (!isAiConfigured()) {
-    throw new AppError(503, "AI features aren't configured — set ANTHROPIC_API_KEY on the API to enable them.");
+    throw new AppError(503, "AI features aren't configured — add a Claude API key in Settings › Integrations to enable them.");
   }
   // Lazily constructed so a missing key never throws at server startup, only when a route
   // actually needs the client — the rest of the store works with zero Anthropic setup.
-  client ??= new Anthropic({ apiKey: env.anthropic.apiKey });
-  return client;
+  // Rebuilt when the key changes in Settings › Integrations.
+  if (client?.apiKey !== env.anthropic.apiKey) client = { apiKey: env.anthropic.apiKey, anthropic: new Anthropic({ apiKey: env.anthropic.apiKey }) };
+  return client.anthropic;
 }
 
 /** One prompt per content type — this is the only thing that differs between the seven
@@ -85,6 +87,30 @@ export async function generateContent(input: GenerateAiContentInput): Promise<st
     throw new AppError(502, "AI returned no text content");
   }
   return textBlock.text.trim();
+}
+
+const ASSISTANT_MAX_TOKENS = 1500;
+
+/** The assistant's model (Blueprint V2 §T) on the store's Anthropic key — tool use, one turn per call. */
+export function anthropicAssistantModel(): AiModel {
+  return {
+    async create({ system, messages, tools }) {
+      const res = await getClient().messages.create(
+        {
+          model: env.anthropic.model,
+          max_tokens: ASSISTANT_MAX_TOKENS,
+          system,
+          messages: messages as Anthropic.MessageParam[],
+          tools: tools as Anthropic.Tool[],
+        },
+        { timeout: AI_REQUEST_TIMEOUT_MS },
+      );
+      const content: ModelBlock[] = res.content.flatMap((b): ModelBlock[] =>
+        b.type === "text" ? [{ type: "text", text: b.text }] : b.type === "tool_use" ? [{ type: "tool_use", id: b.id, name: b.name, input: b.input }] : [],
+      );
+      return { content, stop_reason: res.stop_reason };
+    },
+  };
 }
 
 const IMAGE_MEDIA_TYPES: Record<string, string> = {

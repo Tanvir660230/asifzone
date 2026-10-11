@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getCategoryTree, listStorefrontProducts } from "@/lib/api/storefront";
+import { getSiteUrl } from "@/lib/seo";
 
 // Metadata route handlers don't inherit the root layout's `dynamic` export — needs its own, for the
 // same reason (requires a live API at build time otherwise, which isn't available during a Docker build).
@@ -24,7 +25,7 @@ async function fetchAllProducts(): Promise<{ slug: string; updatedAt: string }[]
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const siteUrl = getSiteUrl();
 
   const [{ tree }, products] = await Promise.all([getCategoryTree(), fetchAllProducts()]);
   const categories = flattenCategories(tree);

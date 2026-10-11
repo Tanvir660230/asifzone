@@ -76,7 +76,7 @@ function AcceptInviteForm() {
           <Label htmlFor="password">Password</Label>
           <PasswordInput id="password" autoComplete="new-password" {...register("password")} />
           <PasswordStrengthMeter password={password} />
-          {errors.password && <p className="mt-1 text-xs text-danger-600">{errors.password.message}</p>}
+          {errors.password && <p className="ui-field-error">{errors.password.message}</p>}
         </div>
 
         {serverError && <p className="text-sm text-danger-600">{serverError}</p>}

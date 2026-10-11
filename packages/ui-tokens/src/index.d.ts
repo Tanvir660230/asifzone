@@ -1,25 +1,51 @@
-/** Matches the shape actually exported by index.js — plain nested string records, the same shape
- * Tailwind's own `theme.extend` accepts for colors/boxShadow/etc. */
-type ColorScale = Record<string, string>;
+/** Mirrors the shape exported by index.js — plain records, the same shapes Tailwind's
+ * `theme.extend` accepts, plus the raw palette/motion values for JS consumers. */
+type Scale = Record<string, string>;
+type CubicBezier = [number, number, number, number];
 
 interface UiTokens {
-  colors: {
-    ink: ColorScale;
-    cream: ColorScale;
-    brass: ColorScale;
-    sale: ColorScale;
-    success: ColorScale;
-    warning: ColorScale;
-    danger: ColorScale;
-    info: ColorScale;
+  /** Brand themes by id — each a set of `:root[data-brand="<id>"]` variable overrides (empty for `default`). */
+  themes: Record<
+    string,
+    {
+      label: string;
+      cssVariables: Record<string, string>;
+      /** Inside the dark-palette sections the theme renders light. */
+      bandVariables: Record<string, string>;
+      /** Which sections (`data-band`) render light: `null` = every `.ui-band-inverse`. */
+      lightBandRoles: string[] | null;
+      /** Inside the dark-palette sections that stay dark. */
+      darkBandVariables: Record<string, string>;
+    }
+  >;
+  DEFAULT_THEME: string;
+  /** Regions with their own identity, each the complete variable set for `[data-surface="<id>"]`: `admin` (the Store
+   * Console, independent of the brand theme) and `storefront` (a store-look region inside the admin). */
+  surfaces: Record<"admin" | "storefront", { cssVariables: Record<string, string> }>;
+  /** Raw hex values per scale — for places that genuinely need a literal color (e.g. canvas/SVG export). */
+  palette: Record<string, Scale>;
+  /** Semantic role -> palette reference ("canvas" -> "cream-100"). */
+  semantic: Record<string, string>;
+  /** `:root` custom properties: `--color-<scale>-<step>` (RGB channels) and `--color-<role>`. */
+  cssVariables: Record<string, string>;
+  colors: Record<string, Scale>;
+  fontFamily: { sans: string[]; display: string[] };
+  fontSize: Record<string, [string, { lineHeight: string; letterSpacing?: string }]>;
+  borderRadius: Scale;
+  /** Elevation scale as `var(--shadow-<key>)` references (values declared at :root; a surface may retune them). */
+  boxShadow: Scale;
+  zIndex: Scale;
+  /** Admin density baseline (raw px values) — also declared as `--density-<name>` variables. */
+  density: Scale;
+  /** The same sizes as Tailwind spacing values (`var(--density-<name>)`). */
+  densitySpacing: Scale;
+  motion: {
+    duration: { instant: number; fast: number; base: number; slow: number; slower: number };
+    easing: { smooth: CubicBezier; standard: CubicBezier; exit: CubicBezier };
+    spring: { stiffness: number; damping: number; mass: number };
   };
-  fontFamily: {
-    sans: string[];
-    display: string[];
-  };
-  borderRadius: Record<string, string>;
-  boxShadow: Record<string, string>;
-  transitionTimingFunction: Record<string, string>;
+  transitionTimingFunction: Scale;
+  transitionDuration: Scale;
 }
 
 declare const tokens: UiTokens;

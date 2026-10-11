@@ -3,14 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCcw, Search, ShieldAlert, Undo2 } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Clock, RefreshCcw, ShieldAlert, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatPrice } from "@/lib/format";
+import { DISPLAY_LOCALE } from "@clothing-brand/shared";
 
 const SESSION_STATUS_BADGE: Record<string, "success" | "danger" | "warning" | "neutral"> = {
   SUCCEEDED: "success",
@@ -45,7 +46,7 @@ export default function PaymentsOverviewPage() {
   const debouncedPhone = useDebouncedValue(phoneInput, 350);
   const { data: searchData, isFetching: searching } = useQuery({
     queryKey: ["payment-attempt-search", debouncedPhone],
-    queryFn: () => paymentsAdminApi.searchPaymentAttempts(debouncedPhone),
+    queryFn: ({ signal }) => paymentsAdminApi.searchPaymentAttempts(debouncedPhone, { signal }),
     enabled: debouncedPhone.trim().length >= 4,
   });
   const searchResults = debouncedPhone.trim().length >= 4 ? (searchData?.results ?? []) : [];
@@ -65,15 +66,12 @@ export default function PaymentsOverviewPage() {
           Look Up a Customer&apos;s Payment Attempts
         </h2>
         <Card className="p-4">
-          <div className="relative max-w-sm">
-            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-            <Input
-              value={phoneInput}
-              onChange={(e) => setPhoneInput(e.target.value)}
-              placeholder="Search by phone number (01XXXXXXXXX)…"
-              className="pl-9"
-            />
-          </div>
+          <SearchInput
+            wrapperClassName="max-w-sm"
+            value={phoneInput}
+            onChange={setPhoneInput}
+            placeholder="Search by phone number (01XXXXXXXXX)…"
+          />
           <p className="mt-2 text-xs text-ink-400">
             Covers attempts that never became an order too — a failed or abandoned gateway checkout still
             leaves a record here, keyed on the phone number entered at checkout.
@@ -125,7 +123,7 @@ export default function PaymentsOverviewPage() {
             <>
               <StatTile
                 label="Payment Attempts"
-                value={overview.attemptsToday.toLocaleString("en-BD")}
+                value={overview.attemptsToday.toLocaleString(DISPLAY_LOCALE)}
                 icon={<Activity size={18} />}
               />
               <StatTile
@@ -136,12 +134,12 @@ export default function PaymentsOverviewPage() {
               />
               <StatTile
                 label="Active Sessions"
-                value={overview.activeSessionsCount.toLocaleString("en-BD")}
+                value={overview.activeSessionsCount.toLocaleString(DISPLAY_LOCALE)}
                 icon={<Clock size={18} />}
               />
               <StatTile
                 label="EPS Reconciliation Queue"
-                value={overview.epsReconciliationQueueDepth.toLocaleString("en-BD")}
+                value={overview.epsReconciliationQueueDepth.toLocaleString(DISPLAY_LOCALE)}
                 icon={<RefreshCcw size={18} />}
                 tone={overview.epsReconciliationQueueDepth > 0 ? "warning" : "default"}
               />
@@ -169,7 +167,7 @@ export default function PaymentsOverviewPage() {
               <Link href="/admin/orders?cancelledButPaid=true">
                 <StatTile
                   label="Cancelled but Paid"
-                  value={overview.cancelledButPaidCount.toLocaleString("en-BD")}
+                  value={overview.cancelledButPaidCount.toLocaleString(DISPLAY_LOCALE)}
                   icon={<ShieldAlert size={18} />}
                   tone={overview.cancelledButPaidCount > 0 ? "warning" : "default"}
                 />

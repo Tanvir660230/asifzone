@@ -58,7 +58,7 @@ export function QuickViewModal() {
         </div>
 
         <div>
-          <p className="text-xs uppercase tracking-wide text-ink-400">{product.brandTier}</p>
+          <p className="text-xs ui-caps text-ink-400">{product.brandTier}</p>
           <h3 className="mt-1 font-display text-xl font-medium tracking-wide text-ink-900">{product.name}</h3>
           <div className="mt-2 flex items-center gap-3">
             {(() => {
@@ -67,13 +67,13 @@ export function QuickViewModal() {
               return (
                 <>
                   <span className={shown.flash ? "text-lg font-bold text-ink-900" : "text-lg font-semibold text-ink-900"}>{formatPrice(shown.price)}</span>
-                  {shown.was !== null && <span className="text-sm text-ink-400 line-through">{formatPrice(shown.was)}</span>}
+                  {shown.was !== null && <span className="text-sm text-fg-muted line-through">{formatPrice(shown.was)}</span>}
                 </>
               );
             })()}
           </div>
           {product.activeFlashSale && (
-            <p className="mt-1 text-xs uppercase tracking-wide text-sale-500">
+            <p className="mt-1 text-xs ui-caps text-sale-500">
               Ends in <CountdownTimer endsAt={product.activeFlashSale.endsAt} className="font-medium" />
             </p>
           )}
@@ -94,7 +94,7 @@ export function QuickViewModal() {
           <Link
             href={`/product/${product.slug}`}
             onClick={close}
-            className="mt-4 inline-block text-xs uppercase tracking-wide text-ink-500 underline hover:text-brass-600"
+            className="mt-4 inline-block text-xs ui-caps text-ink-500 underline hover:text-brass-600"
           >
             View full details
           </Link>

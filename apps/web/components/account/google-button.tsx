@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { env } from "@/lib/env";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
 import { ApiError } from "@/lib/api-client";
 
 const SCRIPT_ID = "google-identity-services";
@@ -42,7 +42,7 @@ interface GoogleIdentityServices {
  * thing we need it for). Owns nothing about what the credential means — the caller's onCredential
  * decides whether that idToken logs in a customer or an admin — so both account and admin login
  * pages can drop this in without duplicating the script-loading/One Tap boilerplate. Renders nothing
- * at all when NEXT_PUBLIC_GOOGLE_CLIENT_ID isn't set, same "quietly absent until configured" pattern
+ * at all when this installation's GOOGLE_CLIENT_ID isn't set (runtime configuration), same "quietly absent until configured" pattern
  * as the AI features when ANTHROPIC_API_KEY is unset. */
 export function GoogleButton({
   onCredential,
@@ -54,7 +54,7 @@ export function GoogleButton({
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!env.googleClientId) return;
+    if (!publicRuntimeConfig().googleClientId) return;
 
     async function handleCredential(response: GoogleCredentialResponse) {
       try {
@@ -69,7 +69,7 @@ export function GoogleButton({
       if (!google || !containerRef.current) return;
 
       google.accounts.id.initialize({
-        client_id: env.googleClientId,
+        client_id: publicRuntimeConfig().googleClientId,
         callback: handleCredential,
         auto_select: true,
         cancel_on_tap_outside: false,
@@ -137,7 +137,7 @@ export function GoogleButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!env.googleClientId) return null;
+  if (!publicRuntimeConfig().googleClientId) return null;
 
   return <div ref={containerRef} className="flex justify-center" />;
 }

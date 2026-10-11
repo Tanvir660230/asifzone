@@ -1,42 +1,94 @@
 import { app } from "./app";
 import { env } from "./config/env";
 import { prisma } from "./config/prisma";
+import { verifyDatabaseRole } from "./config/database-guard";
 import { redis } from "./config/redis";
 import { startFlashSaleCron } from "./jobs/flash-sale-cron";
 import { startCampaignSendWorker } from "./jobs/campaign-send-worker";
 import { startCampaignSchedulerCron } from "./jobs/campaign-scheduler-cron";
 import { startCourierStatusCron } from "./jobs/courier-status-cron";
 import { startPaymentReconciliationCron } from "./jobs/payment-reconciliation-cron";
+import { startStorageTrashCron } from "./jobs/storage-trash-cron";
 import { startMetaCapiWorker } from "./jobs/meta-capi-worker";
+import { startOutboxWorker } from "./jobs/outbox-worker";
+import { warmCustomerFacts } from "./modules/customers/customer-facts.service";
+import { startFinanceReconciliationCron } from "./jobs/finance-reconciliation-cron";
+import { startFinanceCommerceSyncCron } from "./jobs/finance-commerce-sync-cron";
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
+import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard";
+import { logger } from "./lib/observability/logger";
+import { captureError } from "./lib/observability/error-capture";
+import { validateProviderConfig } from "./providers/registry";
+import { loadIntegrationOverrides, startIntegrationRefresh } from "./modules/settings/integrations.service";
 
 let shuttingDown = false;
 
 async function main() {
   await prisma.$connect();
-  await redis.connect().catch((err) => console.warn("[redis] not connected yet:", err.message));
+  // Demo mirror guard (docs/DEMO_DATA.md §5): refuses a half-built or mislabeled demo database.
+  const database = await verifyDatabaseRole(prisma, env.nodeEnv);
+  if (database.role === "demo") {
+    logger.info(`[database] DEMO database ${database.database} (independent copy imported ${database.importedAt ?? "?"}) — production is never touched`);
+  }
+  // Credentials saved in Settings › Integrations override the environment — loaded before the provider check below, which
+  // must see them (an explicitly selected provider may have its credentials only in the dashboard).
+  await loadIntegrationOverrides();
+  startIntegrationRefresh();
 
-  await syncFlashSaleActivation().catch((err) => console.error("[flash-sale-cron] initial sync failed:", err));
+  // Phase 12 W5: refuse to start on an invalid provider selection (unknown name, or an explicitly selected provider
+  // without its credentials in production). The error names variables only. Failing here keeps /health/ready red, so
+  // docker/deploy.sh stops before the proxy switch.
+  const providers = validateProviderConfig();
+  logger.info("[providers] selection", {
+    sms: providers.sms,
+    email: providers.email,
+    courier: providers.courier,
+    push: providers.push,
+    paymentGateways: providers.paymentGateways.join(",") || "none",
+  });
+
+  await redis.connect().catch((err) => logger.warn("[redis] not connected yet:", { detail: err.message }));
+
+  await syncFlashSaleActivation().catch((err) => captureError(err, { msg: "[flash-sale-cron] initial sync failed:" }));
+
+  // e2e / local safety (Phase 9): with LIVE_PROVIDERS=off no outbound request may leave for a real provider.
+  if (!liveProvidersEnabled()) {
+    installNetworkGuard([new URL(env.webInternalUrl).hostname]);
+    logger.info("[provider-guard] live providers OFF — outbound requests to non-local hosts are blocked");
+  }
 
   const server = app.listen(env.port, () => {
-    console.log(`API listening on http://localhost:${env.port}`);
+    logger.info(`API listening on http://localhost:${env.port}`);
   });
 
   // BullMQ-backed schedulers need Redis; wired up after listen (not awaited) so a temporarily
   // unreachable Redis never blocks the API from serving requests.
-  startFlashSaleCron().catch((err) => console.error("[flash-sale-cron] failed to start:", err));
-  startCampaignSendWorker().catch((err) => console.error("[campaign-send-worker] failed to start:", err));
-  startCampaignSchedulerCron().catch((err) => console.error("[campaign-scheduler-cron] failed to start:", err));
-  startCourierStatusCron().catch((err) => console.error("[courier-status-cron] failed to start:", err));
-  startPaymentReconciliationCron().catch((err) => console.error("[payment-reconciliation-cron] failed to start:", err));
-  startMetaCapiWorker().catch((err) => console.error("[meta-capi] worker failed to start:", err));
+  startFlashSaleCron().catch((err) => captureError(err, { msg: "[flash-sale-cron] failed to start:" }));
+  startCampaignSendWorker().catch((err) => captureError(err, { msg: "[campaign-send-worker] failed to start:" }));
+  startCampaignSchedulerCron().catch((err) => captureError(err, { msg: "[campaign-scheduler-cron] failed to start:" }));
+  // On the demo mirror with providers off, these two only poll Steadfast/EPS for the copied production orders — every call
+  // is blocked by the network guard, so they would just log errors. Skipped there (docs/DEMO_DATA.md §5).
+  if (database.role === "demo" && !liveProvidersEnabled()) {
+    logger.info("[database] demo: courier-status and payment-reconciliation crons not started (providers off)");
+  } else {
+    startCourierStatusCron().catch((err) => captureError(err, { msg: "[courier-status-cron] failed to start:" }));
+    startPaymentReconciliationCron().catch((err) => captureError(err, { msg: "[payment-reconciliation-cron] failed to start:" }));
+  }
+  startStorageTrashCron().catch((err) => captureError(err, { msg: "[storage-trash-cron] failed to start:" }));
+  startMetaCapiWorker().catch((err) => captureError(err, { msg: "[meta-capi] worker failed to start:" }));
+  startOutboxWorker().catch((err) => captureError(err, { msg: "[outbox] worker failed to start:" }));
+  // The customer list's read model (Blueprint V2 PERF-01): built here in the background, so the first list read after a
+  // deploy doesn't pay for the whole store. Reads keep it current from then on.
+  warmCustomerFacts();
+  startFinanceReconciliationCron().catch((err) => captureError(err, { msg: "[finance-reconciliation-cron] failed to start:" }));
+  startFinanceCommerceSyncCron().catch((err) => captureError(err, { msg: "[finance-commerce-sync-cron] failed to start:" }));
 
   // Stop accepting new connections and let in-flight requests finish before tearing down Prisma —
   // without this, a deploy's SIGTERM could cut a request off mid-response instead of draining it.
   async function shutdown(signal: string) {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`[server] ${signal} received, shutting down...`);
+    logger.info(`[server] ${signal} received, shutting down...`);
 
     const closeServer = new Promise<void>((resolve) => server.close(() => resolve()));
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 10_000));
@@ -51,7 +103,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Failed to start server:", err);
+  captureError(err, { msg: "Failed to start server:" });
   process.exit(1);
 });
 
@@ -60,10 +112,10 @@ main().catch((err) => {
 // an untraced hard crash (exception). Logged and exited deliberately rather than left to Node's
 // default handling, which for uncaughtException is "crash with a raw stack trace and no context".
 process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection]", reason);
+  captureError(reason, { msg: "[unhandledRejection]" });
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[uncaughtException]", err);
+  captureError(err, { msg: "[uncaughtException]" });
   process.exit(1);
 });

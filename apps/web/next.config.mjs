@@ -1,8 +1,8 @@
-// Uploaded banner/category/logo/editor images are always served from the same origin the API
-// itself answers on (see apps/api/src/modules/uploads/upload.service.ts's processSiteImage), so
-// next/image just needs that origin whitelisted — derived from NEXT_PUBLIC_API_URL rather than a
-// separate env var, so it can never drift out of sync with wherever the API actually is.
-const apiHost = new URL(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000");
+import { fileURLToPath } from "node:url";
+
+// Phase 1B: uploaded media is referenced as same-origin `/uploads/…` (resolved at runtime by lib/runtime-config.ts and
+// served by nginx, or by app/uploads/[...path]/route.ts when nginx isn't in front), so next/image needs no remote host —
+// nothing installation-specific is baked into this build.
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -18,11 +18,15 @@ const nextConfig = {
   // it external makes Next.js `require()` it normally from node_modules instead. Promoted from
   // experimental.serverComponentsExternalPackages (Next 14) to this stable top-level option in 15.
   serverExternalPackages: ["isomorphic-dompurify", "jsdom"],
+  // The shared package's ESM source, not its CommonJS build: webpack can then drop the modules a page doesn't use
+  // (Bangladesh locations, product templates, …) instead of shipping all of it to every page. The API keeps using dist/.
+  transpilePackages: ["@clothing-brand/shared"],
+  webpack(config) {
+    config.resolve.alias["@clothing-brand/shared$"] = fileURLToPath(new URL("../../packages/shared/src/index.ts", import.meta.url));
+    return config;
+  },
   images: {
-    remotePatterns: [
-      { protocol: "http", hostname: "localhost" },
-      { protocol: apiHost.protocol.replace(":", ""), hostname: apiHost.hostname },
-    ],
+    remotePatterns: [{ protocol: "http", hostname: "localhost" }],
     // AVIF first — smaller than WebP for most product photography at equivalent quality; Next
     // falls back to WebP (then the original format) for browsers that don't support it.
     formats: ["image/avif", "image/webp"],

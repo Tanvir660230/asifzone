@@ -40,7 +40,7 @@ export function AdjustStockModal({ open, onClose, prefill, onSuccess }: AdjustSt
 
   const searchQuery = useQuery({
     queryKey: ["inventory-product-search", search],
-    queryFn: () => productsApi.listProducts({ search, pageSize: 8 }),
+    queryFn: ({ signal }) => productsApi.listProducts({ search, pageSize: 8 }, { signal }),
     enabled: !prefill && search.trim().length > 1,
   });
 

@@ -104,18 +104,9 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
         // desktop windows (laptop, browser zoom), pushing price/Add to Cart off-screen with no
         // hint anything was below. The cap only ever engages when that would happen; a normal
         // window never hits it.
-        role="button"
-        tabIndex={0}
-        aria-label={`Open zoomed view of ${productName}`}
         className="group relative aspect-square max-h-[70vh] flex-1 cursor-zoom-in touch-pan-y select-none overflow-hidden rounded-xl bg-ink-100"
         onMouseMove={handleMouseMove}
         onClick={handleImageClick}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleImageClick();
-          }
-        }}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
       >
@@ -129,6 +120,13 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               className="object-cover transition-transform duration-300 ease-out group-hover:scale-150"
               style={{ transformOrigin: zoomOrigin }}
               priority
+            />
+            {/* The keyboard/screen-reader way in: a real button over the image (its click bubbles to the frame's handler),
+                rather than making the frame itself a button around the arrow buttons (nested interactive controls). */}
+            <button
+              type="button"
+              aria-label={`Open zoomed view of ${productName}`}
+              className="absolute inset-0 rounded-xl focus-visible:outline-offset-[-3px]"
             />
             {active.caption && (
               <span className="glass absolute left-3 top-3 max-w-[70%] truncate rounded-full px-3 py-1 text-xs text-ink-900" data-testid="image-caption">

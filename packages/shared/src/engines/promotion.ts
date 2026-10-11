@@ -1,5 +1,6 @@
 import { clampNonNegative, fromMajor, min, subtract, sum, toMajor, zero, type Money } from "./money";
 import { allocateProportionally, percentOf, type RoundingPolicy } from "./rounding";
+import { formatMoney } from "../format";
 
 /**
  * Promotions after unit pricing (docs/PRICING_PIPELINE.md, D9): the bundle discount is computed first on the
@@ -136,9 +137,8 @@ export type CouponResult =
   | { ok: true; discount: Money; freeShipping: boolean; allocation: Record<string, Money>; eligibleProductIds: string[] }
   | { ok: false; reason: CouponRejection; message: string };
 
-function formatTaka(m: Money): string {
-  const major = toMajor(m);
-  return Number.isInteger(major) ? String(major) : major.toFixed(2);
+function formatAmount(m: Money): string {
+  return formatMoney(toMajor(m), m.currency);
 }
 
 /**
@@ -164,7 +164,7 @@ export function evaluateCoupon(
   const after = (l: PromoLine) => clampNonNegative(subtract(l.amount, bundleAllocation[l.key] ?? zero(currency)));
   const merchandiseAfterBundle = sum(lines.map(after), currency);
   if (rule.minOrderAmount && merchandiseAfterBundle.amount < rule.minOrderAmount.amount) {
-    return reject("MIN_ORDER", `Minimum order amount for this coupon is ৳${formatTaka(rule.minOrderAmount)}`);
+    return reject("MIN_ORDER", `Minimum order amount for this coupon is ${formatAmount(rule.minOrderAmount)}`);
   }
 
   const eligible =
