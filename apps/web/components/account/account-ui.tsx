@@ -106,12 +106,13 @@ export function RowIcon({ children, tone = "neutral" }: { children: ReactNode; t
   );
 }
 
-/** Large page title for account sub-pages: display serif, left-aligned, with one line of context. */
+/** Page title for account sub-pages: the site-wide page-title size (same as every storefront page), left-aligned, with
+ * one line of context. */
 export function AccountTitle({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
     <div className="mb-8 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-end sm:justify-between">
       <div className="max-w-2xl">
-        <h1 className="text-balance font-display text-display-md tracking-tight text-fg sm:text-display-lg">{title}</h1>
+        <h1 className="text-balance font-display ui-page-title text-ink-900">{title}</h1>
         {description && <p className="mt-2 text-base text-fg-muted">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}

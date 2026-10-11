@@ -1,30 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { LogOut } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentCustomer } from "@/hooks/use-current-customer";
 import { ACCOUNT_SECTIONS, resolveAccountLocation } from "@/lib/account";
 import { logoutCustomer } from "@/lib/customer-auth";
 import { transitions } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
+/** Signing out ends with a full page load of the login page, so everything kept in the browser for the signed-in
+ * customer goes with it: cached data, and the router's prefetched pages — one of which is "signed in, so /account/login
+ * redirects to /account", which a soft navigation would replay and land the shopper back in the account. */
+async function signOut() {
+  await logoutCustomer().catch(() => undefined);
+  window.location.replace("/account/login");
+}
+
 /** The account's navigation: one row of section tabs (Home, Orders, Wallet, Saved, Settings) and, for sections with more
  * than one page, a row of sub-page pills. Persistent across every /account page so moving around never feels like
  * leaving — the underline slides to the new section instead of the page reloading. */
 export function AccountTabs() {
   const pathname = usePathname();
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const { section, page } = resolveAccountLocation(pathname);
 
-  async function handleLogout() {
-    await logoutCustomer();
-    queryClient.clear();
-    router.replace("/account/login");
-  }
 
   return (
     <div>
@@ -56,7 +56,7 @@ export function AccountTabs() {
         </nav>
         <button
           type="button"
-          onClick={handleLogout}
+          onClick={signOut}
           className="mb-1.5 hidden shrink-0 items-center gap-2 rounded-full px-3 py-2 text-sm text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.05] hover:text-fg sm:flex"
         >
           <LogOut size={15} aria-hidden="true" />
@@ -93,19 +93,12 @@ export function AccountTabs() {
 export function AccountFooter() {
   const { data } = useCurrentCustomer();
   const email = data?.customer.email ?? data?.customer.phone;
-  const router = useRouter();
-  const queryClient = useQueryClient();
 
-  async function handleLogout() {
-    await logoutCustomer();
-    queryClient.clear();
-    router.replace("/account/login");
-  }
 
   return (
     <div className="mt-16 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6 text-sm text-fg-muted">
       <span className="min-w-0 truncate">{email ? `Signed in as ${email}` : " "}</span>
-      <button type="button" onClick={handleLogout} className="rounded-full px-3 py-2 hover:bg-ink-900/[0.05] hover:text-fg sm:hidden">
+      <button type="button" onClick={signOut} className="rounded-full px-3 py-2 hover:bg-ink-900/[0.05] hover:text-fg sm:hidden">
         Log out
       </button>
     </div>

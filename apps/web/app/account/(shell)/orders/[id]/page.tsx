@@ -212,7 +212,7 @@ export default function AccountOrderDetailPage() {
         <BackLink href="/account/orders" label="All orders" />
         <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="font-display text-display-md tracking-tight text-fg sm:text-display-lg">Order {order.orderNumber}</h1>
+            <h1 className="font-display ui-page-title text-ink-900">Order {order.orderNumber}</h1>
             <p className="mt-2 text-base text-fg-muted">Placed {formatStoreDateTime(order.createdAt)}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

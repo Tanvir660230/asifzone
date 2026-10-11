@@ -98,6 +98,7 @@ export async function createReview(customerId: string, input: CreateReviewInput)
         rating: input.rating,
         title: input.title ?? null,
         body: input.body,
+        images: input.images ?? [],
         isVerifiedPurchase,
       },
     });

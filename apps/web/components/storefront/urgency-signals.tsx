@@ -19,7 +19,7 @@ export function UrgencySignals({ signals }: UrgencySignalsProps) {
   return (
     <div className="mt-3 space-y-1.5 text-sm text-ink-600">
       {signals.isFastSelling && (
-        <p className="flex items-center gap-1.5 font-medium text-sale-500">
+        <p className="flex items-center gap-1.5 font-medium text-sale-600">
           <Flame size={14} className="shrink-0" />
           Selling fast
         </p>

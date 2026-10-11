@@ -14,7 +14,17 @@ import { cn } from "@/lib/utils";
  * product page rather than pathname/cart-state driven, so its space is reserved conservatively
  * whenever on a product page instead of trying to mirror its exact toggle here. */
 export function StickyBottomBarSpacer() {
-  const { showCartBar, onProductPage } = useBottomDockState();
+  const { showCartBar, onProductPage, onCheckoutPage } = useBottomDockState();
+  // Nothing is docked at the bottom of the checkout (components/storefront/mobile-bottom-nav.tsx).
+  if (onCheckoutPage) return null;
 
-  return <div aria-hidden className={cn(showCartBar || onProductPage ? "h-32" : "h-16", showCartBar ? "lg:h-16" : "lg:h-0")} />;
+  // Painted as the footer's own band (same classes, same data-band), so the space under it continues the footer instead of
+  // showing a strip of page background beneath it, in whichever colour the theme gives the footer.
+  return (
+    <div
+      aria-hidden
+      data-band="footer"
+      className={cn("ui-band-inverse bg-ink-950", showCartBar || onProductPage ? "h-32" : "h-16", showCartBar ? "lg:h-16" : "lg:h-0")}
+    />
+  );
 }

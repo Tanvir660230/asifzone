@@ -71,3 +71,15 @@ export function productSeoFields(product: SeoSource, siteUrl = getSiteUrl()) {
     },
   };
 }
+
+/** A page's `<title>`: the layout template appends " | <store>", so a title that already names the store (a stored
+ * seoTitle such as "Royal Amber | <Store>") is used as-is instead of becoming "… | <Store> | <Store>". */
+export function storeTitle(title: string, storeName: string): Metadata["title"] {
+  return storeName && title.toLowerCase().includes(storeName.toLowerCase()) ? { absolute: title } : title;
+}
+
+/** Metadata for a page that belongs to one shopper (cart, checkout, account, order status): a real title, and kept out
+ * of search results. It sets no canonical — a page that is not indexed has nothing to consolidate. */
+export function privatePageMetadata(title: string): Metadata {
+  return { title, robots: { index: false, follow: true } };
+}

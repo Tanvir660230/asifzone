@@ -5,11 +5,13 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, Clock3, XCircle } from "lucide-react";
 import { estimateDelivery, type Order } from "@clothing-brand/shared";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { OrderSummaryCard } from "@/components/storefront/order-summary-card";
+import { InstallAppCard } from "@/components/storefront/install-app-card";
 import { trackOrder, retryPayment } from "@/lib/api/orders";
 import { ApiError } from "@/lib/api-client";
 import { formatDateShort } from "@/lib/format";
@@ -99,23 +101,28 @@ export default function OrderConfirmationPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-2xl animate-pulse px-4 py-16 text-center sm:px-6 lg:px-8">
-        <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-ink-100" />
-        <div className="mx-auto h-8 w-64 rounded bg-ink-100" />
-        <div className="mx-auto mt-3 h-4 w-48 rounded bg-ink-100" />
-        <div className="mx-auto mt-8 h-48 rounded-lg border border-ink-100 bg-ink-50" />
-      </div>
+      <StorefrontPage>
+        <StorefrontPageHeader eyebrow="Your order" title={orderNumber} />
+        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
+          <div className="ui-skeleton h-72 rounded-2xl" />
+        </div>
+      </StorefrontPage>
     );
   }
 
   if (!order) {
     return (
-      <div className="mx-auto max-w-sm px-4 py-24 sm:px-6 lg:px-8">
-        <h1 className="mb-2 font-display ui-page-title text-ink-900">Find your order</h1>
-        <p className="mb-6 text-sm text-ink-500">
-          Enter the phone number used for order <span className="text-ink-900">{orderNumber}</span>.
-        </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <StorefrontPage>
+        <StorefrontPageHeader
+          eyebrow="Your order"
+          title="Find your order"
+          description={
+            <>
+              Enter the phone number used for order <span className="text-ink-900">{orderNumber}</span>.
+            </>
+          }
+        />
+        <form onSubmit={handleSubmit} className="max-w-[26rem] space-y-4 rounded-2xl bg-surface p-6 shadow-sm ring-1 ring-inset ring-line-subtle sm:p-8">
           <div>
             <Label htmlFor="phone">Phone number</Label>
             <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" />
@@ -125,71 +132,91 @@ export default function OrderConfirmationPage() {
             View order
           </Button>
         </form>
-      </div>
+      </StorefrontPage>
     );
   }
 
   if (isCancelledUnpaid(order)) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
-        <XCircle className="mx-auto mb-4 text-ink-400" size={48} />
-        <h1 className="font-display text-3xl text-ink-900">This order was cancelled</h1>
-        <p className="mt-2 text-ink-500">
-          Order <span className="text-ink-900">{order.orderNumber}</span> was cancelled before payment completed.
-        </p>
-        <Link href="/">
-          <Button variant="brass" className="mt-8">
-            Continue Shopping
-          </Button>
+      <StorefrontPage>
+        <StorefrontPageHeader
+          eyebrow={<StatusLabel icon={<XCircle size={14} aria-hidden="true" />} text="Cancelled" />}
+          title="This order was cancelled"
+          description={
+            <>
+              Order <span className="text-ink-900">{order.orderNumber}</span> was cancelled before payment completed.
+            </>
+          }
+        />
+        <Link href="/" className={buttonVariants({ variant: "primary", size: "lg" })}>
+          Continue shopping
         </Link>
-      </div>
+      </StorefrontPage>
     );
   }
 
   if (needsPaymentRetry(order)) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
-        <Clock3 className="mx-auto mb-4 text-amber-500" size={48} />
-        <h1 className="font-display text-3xl text-ink-900">Payment incomplete</h1>
-        <p className="mt-2 text-ink-500">
-          Order <span className="text-ink-900">{order.orderNumber}</span> was placed, but we haven&apos;t received
-          payment for it yet.
-        </p>
-
-        <div className="mt-8">
+      <StorefrontPage>
+        <StorefrontPageHeader
+          eyebrow={<StatusLabel icon={<Clock3 size={14} aria-hidden="true" />} text="Waiting for payment" />}
+          title="Payment incomplete"
+          description={
+            <>
+              Order <span className="text-ink-900">{order.orderNumber}</span> was placed, but we haven&apos;t received payment for it yet.
+            </>
+          }
+        />
+        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
           <OrderSummaryCard order={order} />
+          <aside className="space-y-3">
+            {retryError && <p className="text-sm text-danger-600">{retryError}</p>}
+            <Button variant="brass" size="lg" className="w-full" onClick={handleRetry} disabled={retrying}>
+              {retrying ? "Redirecting…" : "Retry payment"}
+            </Button>
+          </aside>
         </div>
-
-        {retryError && <p className="mt-4 text-sm text-danger-600">{retryError}</p>}
-        <Button variant="brass" className="mt-8" onClick={handleRetry} disabled={retrying}>
-          {retrying ? "Redirecting…" : "Retry payment"}
-        </Button>
-      </div>
+      </StorefrontPage>
     );
   }
 
   const deliveryEstimate = estimateDelivery(order.shippingDistrict, new Date(order.createdAt));
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 lg:px-8">
-      <CheckCircle2 className="mx-auto mb-4 text-brass-500" size={48} />
-      <h1 className="font-display text-3xl text-ink-900">Thank you, {order.customerName.split(" ")[0]}!</h1>
-      <p className="mt-2 text-ink-500">
-        Your order <span className="text-ink-900">{order.orderNumber}</span> has been placed.
-      </p>
-      <p className="mt-1 text-sm text-ink-500">
-        Estimated delivery: {formatDateShort(deliveryEstimate.minDate)} – {formatDateShort(deliveryEstimate.maxDate)}
-      </p>
-
-      <div className="mt-8">
+    <StorefrontPage>
+      <StorefrontPageHeader
+        eyebrow={<StatusLabel icon={<CheckCircle2 size={14} aria-hidden="true" />} text="Order placed" tone="success" />}
+        title={<>Thank you, {order.customerName.split(" ")[0]}!</>}
+        description={
+          <>
+            Your order <span className="text-ink-900">{order.orderNumber}</span> is in. Estimated delivery {formatDateShort(deliveryEstimate.minDate)} –{" "}
+            {formatDateShort(deliveryEstimate.maxDate)}.
+          </>
+        }
+      />
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-12">
         <OrderSummaryCard order={order} />
+        <aside className="space-y-4">
+          <Link href="/" className={buttonVariants({ variant: "primary", size: "lg", className: "w-full" })}>
+            Continue shopping
+          </Link>
+          <Link href="/track-order" className={buttonVariants({ variant: "outline", size: "lg", className: "w-full" })}>
+            Track an order
+          </Link>
+          {/* Right after an order is when a home-screen shortcut is most useful: tracking it, and coming back. */}
+          <InstallAppCard />
+        </aside>
       </div>
+    </StorefrontPage>
+  );
+}
 
-      <Link href="/">
-        <Button variant="outline" className="mt-8">
-          Continue Shopping
-        </Button>
-      </Link>
-    </div>
+/** The order's state above its title: an icon and a word, in the state's colour. */
+function StatusLabel({ icon, text, tone = "muted" }: { icon: React.ReactNode; text: string; tone?: "muted" | "success" }) {
+  return (
+    <span className={tone === "success" ? "inline-flex items-center gap-1.5 text-success-700" : "inline-flex items-center gap-1.5 text-ink-500"}>
+      {icon}
+      {text}
+    </span>
   );
 }

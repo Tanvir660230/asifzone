@@ -4,8 +4,7 @@ import { Clock, Mail, MapPin, Package, Phone, HelpCircle, Truck } from "lucide-r
 import { getSiteSettings, getActiveSocialLinksSafe } from "@/lib/api/storefront";
 import { fullAddressLines } from "@/lib/store-identity";
 import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
-import { PageHero } from "@/components/storefront/page-hero";
-import { Breadcrumb } from "@/components/storefront/breadcrumb";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { ContactForm } from "@/components/storefront/contact-form";
 import { SocialIcon } from "@/components/social-icon";
 
@@ -76,17 +75,14 @@ export default async function ContactPage() {
   }[];
 
   return (
-    <div>
-      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
-        <Breadcrumb trail={[{ name: "Contact Us" }]} />
-      </div>
-      <PageHero
-        eyebrow="We're here to help"
+    <StorefrontPage>
+      <StorefrontPageHeader
+        breadcrumb={[{ name: "Contact Us" }]}
         title="Contact Us"
         description="Order questions, product help, or just feedback — reach out below and we usually reply within one business day."
       />
 
-      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-10 px-4 py-16 sm:px-6 lg:grid-cols-5 lg:px-8">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-5 lg:gap-16">
         <div className="lg:col-span-3">
           <ContactForm />
         </div>
@@ -101,10 +97,7 @@ export default async function ContactPage() {
                 rel={method.external ? "noreferrer" : undefined}
                 className="group flex items-center gap-4 rounded-2xl border border-ink-100 bg-cream-50 p-5 transition-all duration-200 ease-smooth hover:border-ink-200 hover:shadow-float"
               >
-                <span
-                  aria-hidden="true"
-                  className="glossy flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass-100 text-brass-600"
-                >
+                <span aria-hidden="true" className="glossy flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brass-100 text-brass-600">
                   {method.icon ? <method.icon size={18} /> : <SocialIcon platform="WHATSAPP" size={18} />}
                 </span>
                 <span className="min-w-0">
@@ -131,6 +124,6 @@ export default async function ContactPage() {
           </div>
         </div>
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

@@ -45,7 +45,7 @@ async function registerCustomer(page: Page, tag: string) {
   const email = `pw-adjust-${tag}-${Date.now()}@example.com`;
   await page.goto("/account/register");
   await page.getByLabel("Name").fill("Adjust Tester");
-  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill("Adjust-Test-2026!");
   await page.getByRole("button", { name: /create account/i }).click();
   await expect(page).toHaveURL(/\/account$/);

@@ -19,6 +19,8 @@ interface UiTokens {
     }
   >;
   DEFAULT_THEME: string;
+  /** The base design's dark sections (`.ui-band-inverse`): palette steps re-valued on the dark palette. */
+  inverseBandVariables: Record<string, string>;
   /** Regions with their own identity, each the complete variable set for `[data-surface="<id>"]`: `admin` (the Store
    * Console, independent of the brand theme) and `storefront` (a store-look region inside the admin). */
   surfaces: Record<"admin" | "storefront", { cssVariables: Record<string, string> }>;

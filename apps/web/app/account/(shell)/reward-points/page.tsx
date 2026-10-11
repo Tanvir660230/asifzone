@@ -27,7 +27,9 @@ export default function AccountRewardPointsPage() {
           <Gift size={16} aria-hidden="true" /> Points balance
         </p>
         {points === undefined ? (
-          <div className="mt-2 h-12 w-32 animate-pulse rounded-lg bg-ink-100" aria-busy="true" />
+          <div className="ui-delayed mt-2" aria-busy="true">
+            <div className="h-12 w-32 animate-pulse rounded-lg bg-ink-100" />
+          </div>
         ) : (
           <p className="mt-1 font-display text-5xl tabular-nums tracking-tight text-fg sm:text-6xl" data-testid="points-balance">
             {formatCount(points)}

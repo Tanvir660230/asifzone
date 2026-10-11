@@ -34,7 +34,12 @@ export function ProductCard({ product, priority }: ProductCardProps) {
   const soldOut = !availability.inStock;
   const totalStock = availability.sellableUnits ?? Number.POSITIVE_INFINITY;
   const shown = productDisplayPrice(product);
-  const badge = getProductBadge(product, totalStock);
+  // A discount or "low stock" badge on something that can't be bought only teases: sold out hides it.
+  const badge = soldOut ? null : getProductBadge(product, totalStock);
+  // "2 of 6 sizes left": said only when some sizes are gone (never a unit count — stock is shown as a state).
+  const allSizes = new Set(product.variants.map((v) => v.size));
+  const sizesLeft = new Set(sellableVariants.map((v) => v.size)).size;
+  const sizesNote = !soldOut && allSizes.size > 2 && sizesLeft < allSizes.size ? `${sizesLeft} of ${allSizes.size} sizes left` : null;
   const openQuickView = useQuickViewStore((s) => s.open);
   const toggleCompare = useCompareStore((s) => s.toggle);
   const isComparing = useCompareStore((s) => s.items.some((i) => i.id === product.id));
@@ -47,7 +52,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
   // More than one buyable option is a real choice: quick add asks (the options popup) instead of silently picking one.
   const needsChoice = sellableVariants.length > 1;
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { addToCart, justAdded } = useAddToCart({
+  const { addToCart } = useAddToCart({
     selectedVariant: firstInStockVariant,
     productId: product.id,
     productSlug: product.slug,
@@ -96,6 +101,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
                 className={cn(
                   "object-cover transition-all duration-500 ease-smooth",
                   secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-[var(--card-image-zoom)]",
+                  soldOut && "opacity-60",
                 )}
               />
               {secondaryImage && (
@@ -118,8 +124,11 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           </span>
         )}
         {soldOut && (
-          <span className="absolute bottom-3 left-3 rounded-full bg-ink-900 px-2 py-1 text-xs ui-caps text-cream-50">
-            Sold out
+          // Centred over the dimmed photo, so a sold-out product is recognisable from across the grid.
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="rounded-full bg-ink-900 px-3.5 py-1.5 text-xs font-medium ui-caps text-cream-50 shadow-sm" data-testid="card-sold-out">
+              Sold out
+            </span>
           </span>
         )}
         {/* Desktop-only: quick view + compare need hover to gate them, and on a small mobile
@@ -149,23 +158,24 @@ export function ProductCard({ product, priority }: ProductCardProps) {
           </button>
         </div>
         <WishlistButton productId={product.id} className="absolute right-3 top-3 z-10 h-8 w-8" />
+        {/* Quick add: a round bag button on touch screens; from 1024px a full-width bar that slides up from the image's
+            bottom edge on hover or keyboard focus — the one action a browsing shopper wants, where their pointer already is. */}
         {!soldOut && (
           <button
             onClick={handleQuickAdd}
             aria-label="Quick add to cart"
             data-fab-collision
-            className="glass glossy absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-float transition-all duration-300 ease-smooth hover:scale-110 hover:bg-brass-400 active:scale-95 lg:translate-y-2 lg:opacity-0 lg:group-hover:translate-y-0 lg:group-hover:opacity-100"
+            className="glass glossy absolute bottom-3 right-3 z-10 flex h-10 w-10 items-center justify-center gap-2 rounded-full text-ink-900 shadow-float transition-[transform,opacity,background-color] duration-300 ease-smooth active:scale-95 lg:left-3 lg:h-11 lg:w-auto lg:translate-y-3 lg:bg-surface/95 lg:text-sm lg:font-medium lg:opacity-0 lg:shadow-floatLg lg:hover:bg-surface lg:group-hover:translate-y-0 lg:group-hover:opacity-100 lg:focus-visible:translate-y-0 lg:focus-visible:opacity-100"
           >
-            <ShoppingBag size={16} />
+            <ShoppingBag size={16} aria-hidden="true" />
+            <span className="hidden lg:inline">{needsChoice ? "Choose options" : "Quick add"}</span>
           </button>
         )}
-        {justAdded && (
-          <span className="absolute bottom-3 right-3 z-10 rounded-full bg-ink-900 px-3 py-2 text-xs text-cream-50">Added ✓</span>
-        )}
       </div>
-      <Link href={`/product/${product.slug}`} className="mt-3 block space-y-1.5">
+      <Link href={`/product/${product.slug}`} className="mt-3.5 block space-y-1.5">
         <p className="text-xs ui-caps text-ink-400 [display:var(--card-tier-display)]">{product.brandTier}</p>
-        <h3 className="text-sm font-medium tracking-[var(--card-title-tracking)] text-ink-900">{product.name}</h3>
+        {/* Two lines, always: a one-line name reserves the second line, so prices sit on one baseline across a row. */}
+        <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 tracking-[var(--card-title-tracking)] text-ink-900 transition-colors duration-200 group-hover:text-ink-700">{product.name}</h3>
         {product.reviewCount > 0 && (
           <div className="flex items-center gap-1.5">
             <StarRating value={product.avgRating} size={11} />
@@ -174,11 +184,12 @@ export function ProductCard({ product, priority }: ProductCardProps) {
         )}
         <div className="flex items-center gap-2">
           {/* Server-resolved "from" price — formatted, never computed here. */}
-          <span className={shown.flash ? "text-sm font-bold text-ink-900" : "text-sm font-semibold text-ink-900"}>{formatPrice(shown.price)}</span>
-          {shown.was !== null && Number(shown.was) > Number(shown.price) && (
+          <span className={cn("text-sm", soldOut ? "font-medium text-ink-500" : shown.flash ? "font-bold text-ink-900" : "font-semibold text-ink-900")}>{formatPrice(shown.price)}</span>
+          {!soldOut && shown.was !== null && Number(shown.was) > Number(shown.price) && (
             <span className="text-xs text-fg-muted line-through">{formatPrice(shown.was)}</span>
           )}
         </div>
+        {sizesNote && <p className="text-xs text-ink-500">{sizesNote}</p>}
         {colors.length > 1 && (
           <div className="flex items-center gap-1.5 pt-0.5">
             {colors.slice(0, 5).map(([color, hex]) => (
@@ -192,7 +203,7 @@ export function ProductCard({ product, priority }: ProductCardProps) {
                 style={{ backgroundColor: hex ?? "#d4d4d4" }}
               />
             ))}
-            {colors.length > 5 && <span className="text-[11px] text-ink-400">+{colors.length - 5}</span>}
+            {colors.length > 5 && <span className="text-xs text-ink-400">+{colors.length - 5}</span>}
           </div>
         )}
       </Link>

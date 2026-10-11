@@ -313,7 +313,7 @@ export function SearchOverlay() {
                   type="button"
                   onClick={() => setLangBn((v) => !v)}
                   aria-label="Toggle voice search language"
-                  className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ui-caps text-ink-500 transition-colors duration-150 ease-smooth hover:bg-white hover:text-ink-900"
+                  className="shrink-0 rounded-full px-2 py-1 text-xs font-medium ui-caps text-ink-500 transition-colors duration-150 ease-smooth hover:bg-white hover:text-ink-900"
                 >
                   {langBn ? "বাংলা" : "EN"}
                 </button>

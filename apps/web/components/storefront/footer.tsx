@@ -14,7 +14,6 @@ import { StoreLogoImage } from "@/components/store-logo-image";
 import { NewsletterForm } from "./newsletter-form";
 import { resolveImageUrl } from "@/lib/image-url";
 
-
 interface FooterProps {
   categories?: CategoryTreeNode[];
   settings: StoreSettings;
@@ -27,38 +26,40 @@ interface FooterLinkGroupProps {
   children: React.ReactNode;
 }
 
-/** A bounded card for each link group — a flat, hard-edged panel (border + faint tint, no blur/
- * gradient) rather than plain text floating on the footer's background, so the footer reads as a
- * few distinct solid sections instead of one undifferentiated block of links. Collapses into an
- * accordion (closed by default) below `md` so the mobile footer stays short. */
+/** One column of footer links: a plain labelled list from 768px; below, an accordion row (closed by default) so the
+ * phone footer stays short. */
 function FooterLinkGroup({ title, children }: FooterLinkGroupProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-2xl border border-cream-50/10 bg-cream-50/[0.03] px-5 py-4 md:py-5">
+    <div className="border-b border-cream-50/10 md:border-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-left text-xs ui-caps tracking-[calc(0.15em*var(--caps-spread))] text-ink-400 md:pointer-events-none md:mb-4"
+        className="flex w-full items-center justify-between py-4 text-left text-sm font-medium text-cream-50 md:pointer-events-none md:py-0 md:pb-5"
         aria-expanded={open}
       >
         {title}
-        <ChevronDown size={14} className={cn("transition-transform duration-200 ease-smooth md:hidden", open && "rotate-180")} />
+        <ChevronDown size={16} aria-hidden="true" className={cn("text-ink-400 transition-transform duration-200 ease-smooth md:hidden", open && "rotate-180")} />
       </button>
       <div
         className={cn(
-          "grid overflow-hidden transition-all duration-300 md:grid-rows-[1fr] md:opacity-100",
-          open ? "grid-rows-[1fr] pt-3 opacity-100" : "grid-rows-[0fr] opacity-0 md:pt-0",
+          "grid overflow-hidden transition-[grid-template-rows,opacity] duration-300 ease-smooth md:grid-rows-[1fr] md:opacity-100",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         )}
       >
-        <ul className="space-y-2.5 overflow-hidden text-sm">{children}</ul>
+        <ul className="space-y-1.5 overflow-hidden pb-4 text-sm md:pb-0">{children}</ul>
       </div>
     </div>
   );
 }
 
-const FOOTER_LINK_CLASS = "text-ink-300 transition-colors duration-200 ease-smooth hover:text-[color:var(--band-accent,rgb(var(--color-brass-400)))]";
+// inline-block + vertical padding: a 26px-tall target, comfortably over the 24px minimum (WCAG 2.2 target size).
+const FOOTER_LINK_CLASS = "inline-block py-1 text-ink-300 transition-colors duration-200 ease-smooth hover:text-[color:var(--band-accent,rgb(var(--color-cream-50)))]";
 
+/** The storefront footer: a newsletter row, then the brand and its contact details beside three link columns, then one
+ * bottom bar with how to pay, the copyright and the legal links. Designed on the dark palette as a `.ui-band-inverse`
+ * section, so a theme may render it light (logos swap through `.ui-art-on-dark` / `.ui-art-on-light`). */
 export function Footer({ categories = [], settings, socialLinks = [], paymentMethods = [] }: FooterProps) {
   const address = shortAddress(settings);
   // Depth-first flatten (each parent immediately followed by its own children) so a store with
@@ -71,7 +72,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
   // text wordmark if no logo has been uploaded at all.
   const darkBgLogoUrl = settings.logoOnDarkUrl ?? settings.logoUrl;
   const lightBgLogoUrl = settings.logoUrl ?? settings.logoOnDarkUrl;
-  const wordmark = <span className="font-display text-sm text-cream-50 [text-transform:var(--caps-transform)]">{settings.storeName}</span>;
+  const wordmark = <span className="font-display text-lg text-cream-50 [text-transform:var(--caps-transform)]">{settings.storeName}</span>;
   const bandLogo = (render: (url: string) => React.ReactNode) =>
     darkBgLogoUrl === lightBgLogoUrl ? (
       render(darkBgLogoUrl!)
@@ -81,28 +82,67 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         <span className="ui-art-on-light">{render(lightBgLogoUrl!)}</span>
       </>
     );
+  const hasPayments = Boolean(settings.paymentMethodsImageUrl || paymentMethods.length > 0);
 
   return (
-    // A hard cut into solid black, not a gradient melt — the page content ends and the footer
-    // simply starts, like distinct sections stacked on a page rather than one blending into the
-    // next. Visual interest inside the footer instead comes from the bounded link cards below.
-    <footer data-band="footer" className="ui-band-inverse mt-24 bg-ink-950 text-cream-200">
-      <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
-        {/* Four content categories: who we are (+ how to reach us), what we sell, how to get
-            help, and company/legal — each a clearly labeled, visually bounded group rather than
-            one long undifferentiated link dump. */}
-        <div className="grid grid-cols-1 items-start gap-5 sm:grid-cols-2 lg:grid-cols-4">
+    <footer data-band="footer" className="ui-band-inverse mt-12 bg-ink-950 text-cream-200 sm:mt-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        {/* Newsletter: its own row, the invitation on the left and the form where the eye lands next. */}
+        <div className="grid gap-6 border-b border-cream-50/10 py-12 md:grid-cols-2 md:items-end md:gap-12 md:py-14">
+          <div>
+            <h2 className="font-display text-3xl leading-tight text-cream-50 sm:text-4xl">{settings.newsletterHeading || "Stay in the loop"}</h2>
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-300">
+              {settings.newsletterText || "New arrivals and offers, now and then. Unsubscribe any time."}
+            </p>
+          </div>
+          <NewsletterForm variant="dark" className="w-full md:max-w-md md:justify-self-end" />
+        </div>
+
+        {/* The brand and how to reach it, then the link columns. */}
+        <div className="grid gap-10 py-12 md:grid-cols-[1.4fr_repeat(3,1fr)] md:gap-8 md:py-14">
           <div>
             {darkBgLogoUrl ? (
-              bandLogo((url) => <StoreLogoImage src={resolveImageUrl(url)} alt={settings.storeName} className="h-8 w-32 object-contain object-left" fallback={wordmark} />)
+              bandLogo((url) => <StoreLogoImage src={resolveImageUrl(url)} alt={settings.storeName} className="h-9 w-36 object-contain object-left" fallback={wordmark} />)
             ) : (
               wordmark
             )}
-            <p className="mt-3 max-w-xs text-sm leading-relaxed text-ink-300">
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-ink-300">
               {settings.tagline || "Premium products, quality service and a seamless shopping experience."}
             </p>
+            <ul className="mt-6 space-y-3 text-sm">
+              {settings.contactPhone && (
+                <li className="flex items-center gap-2.5 text-ink-300">
+                  <Phone size={15} aria-hidden="true" className="shrink-0 text-ink-400" />
+                  <a href={`tel:${settings.contactPhone}`} className={FOOTER_LINK_CLASS}>
+                    {settings.contactPhone}
+                  </a>
+                </li>
+              )}
+              {whatsappLink && (
+                <li className="flex items-center gap-2.5 text-ink-300">
+                  <SocialIcon platform="WHATSAPP" size={15} className="shrink-0 text-ink-400" />
+                  <a href={whatsappLink.url} target="_blank" rel="noreferrer" className={FOOTER_LINK_CLASS}>
+                    WhatsApp
+                  </a>
+                </li>
+              )}
+              {settings.contactEmail && (
+                <li className="flex items-center gap-2.5 text-ink-300">
+                  <Mail size={15} aria-hidden="true" className="shrink-0 text-ink-400" />
+                  <a href={`mailto:${settings.contactEmail}`} className={FOOTER_LINK_CLASS}>
+                    {settings.contactEmail}
+                  </a>
+                </li>
+              )}
+              {address && (
+                <li className="flex items-center gap-2.5 text-ink-300">
+                  <MapPin size={15} aria-hidden="true" className="shrink-0 text-ink-400" />
+                  {address}
+                </li>
+              )}
+            </ul>
             {socialLinks.length > 0 && (
-              <div className="mt-5 flex flex-wrap gap-2.5">
+              <div className="mt-6 flex flex-wrap gap-2.5">
                 {socialLinks.map((link) => {
                   const meta = SOCIAL_PLATFORM_META[link.platform];
                   const label = link.platform === "OTHER" ? (link.label ?? "Social link") : meta.label;
@@ -115,7 +155,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                       aria-label={label}
                       title={label}
                       className={cn(
-                        "flex h-9 w-9 items-center justify-center rounded-full border border-cream-50/15 bg-cream-50/5 text-cream-200 transition-all duration-200 ease-smooth hover:scale-110 active:scale-95",
+                        "flex h-10 w-10 items-center justify-center rounded-full border border-cream-50/15 text-cream-200 transition-[transform,background-color,border-color] duration-200 ease-smooth hover:-translate-y-0.5 hover:border-cream-50/40 active:translate-y-0",
                         meta.hoverClass,
                       )}
                     >
@@ -125,193 +165,115 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                 })}
               </div>
             )}
-            <ul className="mt-5 space-y-2.5 text-sm">
-              {settings.contactPhone && (
-                <li className="flex items-center gap-2 text-ink-300">
-                  <Phone size={14} className="shrink-0 text-ink-500" />
-                  <a href={`tel:${settings.contactPhone}`} className="hover:text-brass-400">
-                    {settings.contactPhone}
-                  </a>
-                </li>
-              )}
-              {whatsappLink && (
-                <li className="flex items-center gap-2 text-ink-300">
-                  <SocialIcon platform="WHATSAPP" size={14} className="shrink-0 text-ink-500" />
-                  <a href={whatsappLink.url} target="_blank" rel="noreferrer" className="hover:text-brass-400">
-                    WhatsApp
-                  </a>
-                </li>
-              )}
-              {settings.contactEmail && (
-                <li className="flex items-center gap-2 text-ink-300">
-                  <Mail size={14} className="shrink-0 text-ink-500" />
-                  <a href={`mailto:${settings.contactEmail}`} className="hover:text-brass-400">
-                    {settings.contactEmail}
-                  </a>
-                </li>
-              )}
-              {address && (
-                <li className="flex items-center gap-2 text-ink-300">
-                  <MapPin size={14} className="shrink-0 text-ink-500" />
-                  {address}
-                </li>
-              )}
-            </ul>
           </div>
 
-          <FooterLinkGroup title="Shop by Category">
-            {categoryLinks.map((cat) => (
-              <li key={cat.id}>
-                <Link href={`/category/${cat.slug}`} className={FOOTER_LINK_CLASS}>
-                  {cat.name}
+          <div className="md:contents">
+            <FooterLinkGroup title="Shop">
+              {categoryLinks.map((cat) => (
+                <li key={cat.id}>
+                  <Link href={`/category/${cat.slug}`} className={FOOTER_LINK_CLASS}>
+                    {cat.name}
+                  </Link>
+                </li>
+              ))}
+              <li>
+                <Link href="/search" className={cn(FOOTER_LINK_CLASS, "font-medium text-cream-100")}>
+                  All products
                 </Link>
               </li>
-            ))}
-            <li>
-              <Link href="/search" className={cn(FOOTER_LINK_CLASS, "font-medium text-cream-100")}>
-                View all products →
-              </Link>
-            </li>
-          </FooterLinkGroup>
+            </FooterLinkGroup>
 
-          <FooterLinkGroup title="Customer Care">
-            <li>
-              <Link href="/track-order" className={FOOTER_LINK_CLASS}>
-                Track Order
-              </Link>
-            </li>
-            <li>
-              <Link href="/shipping-returns" className={FOOTER_LINK_CLASS}>
-                Shipping &amp; Delivery
-              </Link>
-            </li>
-            <li>
-              <Link href="/shipping-returns" className={FOOTER_LINK_CLASS}>
-                Return &amp; Refund
-              </Link>
-            </li>
-            <li>
-              <Link href="/faq" className={FOOTER_LINK_CLASS}>
-                FAQ
-              </Link>
-            </li>
-          </FooterLinkGroup>
+            <FooterLinkGroup title="Customer care">
+              <li>
+                <Link href="/track-order" className={FOOTER_LINK_CLASS}>
+                  Track your order
+                </Link>
+              </li>
+              <li>
+                <Link href="/shipping-returns" className={FOOTER_LINK_CLASS}>
+                  Shipping &amp; returns
+                </Link>
+              </li>
+              <li>
+                <Link href="/faq" className={FOOTER_LINK_CLASS}>
+                  FAQ
+                </Link>
+              </li>
+              <li>
+                <Link href="/contact" className={FOOTER_LINK_CLASS}>
+                  Contact us
+                </Link>
+              </li>
+            </FooterLinkGroup>
 
-          <FooterLinkGroup title="Company">
-            <li>
-              <Link href="/contact" className={FOOTER_LINK_CLASS}>
-                Contact Us
-              </Link>
-            </li>
-            <li>
-              <Link href="/privacy-policy" className={FOOTER_LINK_CLASS}>
-                Privacy Policy
-              </Link>
-            </li>
-            <li>
-              <Link href="/terms" className={FOOTER_LINK_CLASS}>
-                Terms &amp; Conditions
-              </Link>
-            </li>
-          </FooterLinkGroup>
-        </div>
-
-        {/* Get in touch — its own full-width moment (same weight as the brand logo below it),
-            not squeezed into a narrow grid column where a side-by-side input+button has no room
-            to breathe. Payment logos live in the bottom bar as a trust badge, not paired here —
-            a newsletter signup and "we accept" iconography are different concerns. */}
-        <div className="mt-14 border-t border-cream-50/10 pt-12 text-center sm:mt-16 sm:pt-14">
-          <p className="mb-2 text-xs ui-eyebrow text-[color:var(--band-accent,rgb(var(--color-brass-400)))]">Newsletter</p>
-          <h3 className="font-display text-2xl text-cream-50 sm:text-3xl">{settings.newsletterHeading || "Get in Touch"}</h3>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-ink-300">
-            {settings.newsletterText || "New arrivals, offers and news — no spam, unsubscribe any time."}
-          </p>
-          <div className="mt-6 flex justify-center">
-            <NewsletterForm variant="dark" className="w-full max-w-sm" />
+            <FooterLinkGroup title="Your account">
+              <li>
+                <Link href="/account" className={FOOTER_LINK_CLASS}>
+                  Account &amp; orders
+                </Link>
+              </li>
+              <li>
+                <Link href="/wishlist" className={FOOTER_LINK_CLASS}>
+                  Wishlist
+                </Link>
+              </li>
+              <li>
+                <Link href="/cart" className={FOOTER_LINK_CLASS}>
+                  Bag
+                </Link>
+              </li>
+            </FooterLinkGroup>
           </div>
         </div>
 
-        {/* Closing brand moment — a large, centered logo mark before the copyright line. */}
-        <div className="mt-14 flex flex-col items-center border-t border-cream-50/10 pt-12 text-center sm:pt-14">
-          {darkBgLogoUrl ? (
-            bandLogo((url) => (
-              <StoreLogoImage
-                src={resolveImageUrl(url)}
-                alt={settings.storeName}
-                className="h-16 w-64 object-contain sm:h-24 sm:w-96"
-                fallback={<span className="font-display text-4xl tracking-wide text-cream-50 sm:text-5xl">{settings.storeName}</span>}
+        {/* Bottom bar: how to pay (only what the store configured — an uploaded graphic, or its payment methods), then the
+            copyright and the legal links. */}
+        <div className="flex flex-col gap-6 border-t border-cream-50/10 py-8 lg:flex-row lg:items-center lg:justify-between">
+          {hasPayments ? (
+            settings.paymentMethodsImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={resolveImageUrl(settings.paymentMethodsImageUrl)}
+                alt="Accepted payment methods"
+                className="h-auto w-full max-w-[280px] rounded-lg object-contain object-left"
               />
-            ))
+            ) : (
+              <div className="flex flex-wrap items-center gap-3" aria-label="Accepted payment methods">
+                {paymentMethods.map((method) =>
+                  method.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={method.id} src={resolveImageUrl(method.logoUrl)} alt={method.name} title={method.name} className="h-7 w-auto object-contain" />
+                  ) : (
+                    <span key={method.id} className="text-xs ui-caps text-ink-400">
+                      {method.name}
+                    </span>
+                  ),
+                )}
+              </div>
+            )
           ) : (
-            <span className="font-display text-3xl tracking-wide text-cream-50 sm:text-4xl">{settings.storeName}</span>
+            <span />
           )}
-          {settings.tagline && (
-            <p className="mt-3 text-[11px] ui-caps tracking-[calc(0.25em*var(--caps-spread))] text-ink-400 sm:text-xs">{settings.tagline}</p>
-          )}
-        </div>
-
-        {/* We Accept — its own full-width moment, same treatment as the brand logo above it,
-            so the payment graphic stays large and legible instead of being squeezed into the
-            fine-print bar below. Rendered only from the store's own configuration (uploaded graphic or
-            PaymentMethodOption entries) — never a hard-coded wallet list (Phase 12 D-7). */}
-        {(settings.paymentMethodsImageUrl || paymentMethods.length > 0) && (
-        <div className="mt-14 flex flex-col items-center border-t border-cream-50/10 pt-12 text-center sm:pt-14">
-          <p className="mb-5 text-xs ui-eyebrow text-ink-500">We Accept</p>
-          {settings.paymentMethodsImageUrl ? (
-            // A single admin-uploaded graphic with every logo already laid out — takes priority
-            // over the per-method list below since it's the simpler path for admins who don't
-            // want to manage individual PaymentMethodOption entries.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={resolveImageUrl(settings.paymentMethodsImageUrl)}
-              alt="Accepted payment methods"
-              className="h-auto w-full max-w-[260px] rounded-lg object-contain sm:max-w-[320px] md:max-w-[380px]"
-            />
-          ) : (
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              {paymentMethods.length > 0
-                ? paymentMethods.map((method) =>
-                    method.logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img key={method.id} src={resolveImageUrl(method.logoUrl)} alt={method.name} title={method.name} className="h-8 w-auto object-contain" />
-                    ) : (
-                      <span key={method.id} className="text-[11px] ui-caps text-ink-400">
-                        {method.name}
-                      </span>
-                    ),
-                  )
-                : null}
-            </div>
-          )}
-        </div>
-        )}
-
-        {/* Bottom bar — copyright + legal links, kept light and out of the way of the moments
-            above (logo, We Accept) that are meant to actually draw the eye. */}
-        <div className="mt-10 flex w-full flex-col-reverse items-center gap-4 border-t border-cream-50/10 pt-8 sm:flex-row sm:justify-between">
-          <p className="text-xs text-ink-500">
-            © {new Date().getFullYear()} {settings.storeName}. All rights reserved.
-          </p>
-          <div className="flex items-center gap-3 text-xs text-ink-500">
-            <Link href="/privacy-policy" className="hover:text-brass-400">
-              Privacy
-            </Link>
-            <span className="text-ink-700">·</span>
-            <Link href="/terms" className="hover:text-brass-400">
-              Terms
-            </Link>
-            <span className="text-ink-700">·</span>
-            <Link href="/shipping-returns" className="hover:text-brass-400">
-              Refund Policy
-            </Link>
-            {trackingConfigured() && (
-              <>
-                <span className="text-ink-700">·</span>
-                <button type="button" onClick={openTrackingPreferences} className="hover:text-brass-400">
+          <div className="flex flex-col gap-3 text-xs text-ink-500 sm:flex-row sm:items-center sm:gap-6">
+            <p>
+              © {new Date().getFullYear()} {settings.storeName}. All rights reserved.
+            </p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <Link href="/privacy-policy" className="inline-block py-1 transition-colors hover:text-cream-50">
+                Privacy
+              </Link>
+              <Link href="/terms" className="inline-block py-1 transition-colors hover:text-cream-50">
+                Terms
+              </Link>
+              <Link href="/shipping-returns" className="inline-block py-1 transition-colors hover:text-cream-50">
+                Refund policy
+              </Link>
+              {trackingConfigured() && (
+                <button type="button" onClick={openTrackingPreferences} className="inline-block py-1 transition-colors hover:text-cream-50">
                   Tracking preferences
                 </button>
-              </>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

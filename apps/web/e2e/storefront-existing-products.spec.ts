@@ -68,7 +68,7 @@ test.describe("existing products keep working", () => {
     if (variant.color) await page.getByRole("button", { name: variant.color, exact: true }).first().click();
 
     await page.getByRole("button", { name: "Add to Cart" }).first().click();
-    await expect(page.getByText(/added to cart/i).first()).toBeVisible();
+    await expect(page.getByTestId("added-to-bag")).toContainText(product.name);
 
     await page.goto("/checkout");
     await page.getByLabel("Full name").fill("E2E Shopper");

@@ -9,6 +9,7 @@ import { CartIcon } from "./cart-icon";
 import { SearchTriggerButton } from "./search-trigger-button";
 import { StickySearchBar } from "./sticky-search-bar";
 import { resolveImageUrl } from "@/lib/image-url";
+import { HeaderShell } from "./header-shell";
 
 interface HeaderProps {
   categories: CategoryTreeNode[];
@@ -48,7 +49,7 @@ export function Header({ categories, settings }: HeaderProps) {
   );
 
   return (
-    <header className="sticky top-0 z-30">
+    <HeaderShell>
       <div className="glass ui-header-bar border-b border-ink-200">
         {/* Mobile: menu — centered logo — search. Account/cart/track-order live in the bottom
             tab bar on mobile instead, so the header stays uncluttered. */}
@@ -99,6 +100,6 @@ export function Header({ categories, settings }: HeaderProps) {
           </div>
         </div>
       </div>
-    </header>
+    </HeaderShell>
   );
 }

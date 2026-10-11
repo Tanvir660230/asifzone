@@ -243,6 +243,8 @@ export interface ProductReview {
   rating: number;
   title: string | null;
   body: string;
+  /** Photo references (`/uploads/reviews/…`); resolve with resolveImageUrl. Empty when the review has none. */
+  images: string[];
   status: "PENDING" | "APPROVED" | "REJECTED";
   isVerifiedPurchase: boolean;
   createdAt: string;

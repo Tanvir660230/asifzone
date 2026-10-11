@@ -4,6 +4,7 @@ import { syncCart } from "@/lib/api/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { trackFunnelEvent } from "@/lib/analytics";
 import { pixelAddToCart } from "@/lib/pixels";
+import { toast } from "@/components/ui/toast";
 
 export interface CartItem {
   variantId: string;
@@ -72,9 +73,14 @@ export const useCartStore = create<CartState>()(
         // buttons, so every add path (PDP, sticky bar, reorder) reports the same way.
         const added = (get().items.find((i) => i.variantId === item.variantId)?.quantity ?? 0) - before;
         if (added > 0) pixelAddToCart({ id: item.variantId, name: item.productName, quantity: added, price: item.price });
-        // Surface the drawer as visual confirmation of what was just added — this is the
-        // shopper's main feedback that the click registered, since there's no page navigation.
-        useCartDrawerStore.getState().open();
+        // A compact "Added to bag" confirmation (components/storefront/added-to-bag.tsx), not the whole bag: the shopper
+        // stays where they were and can keep adding. When the stock limit let nothing more in, it says so instead.
+        // From inside the open bag the new line is already in view, so no confirmation is needed there.
+        const drawer = useCartDrawerStore.getState();
+        if (added === 0) toast.info("You already have all we have in stock of this in your bag.");
+        else if (!drawer.isOpen) {
+          drawer.showAdded({ productName: item.productName, productSlug: item.productSlug, size: item.size, color: item.color, imageUrl: item.imageUrl, quantity: added });
+        }
       },
 
       removeItem: (variantId) => {

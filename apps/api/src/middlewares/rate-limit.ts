@@ -70,6 +70,15 @@ export const orderSelfServiceRateLimit = rateLimit({
   message: { error: "Too many order changes, please slow down and try again shortly" },
 });
 
+/** Customer review-photo uploads: a few photos per review, so a small budget is plenty. */
+export const reviewImageRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many photo uploads, please try again shortly" },
+});
+
 export const couponValidateRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 20,

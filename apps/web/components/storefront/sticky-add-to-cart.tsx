@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/format";
@@ -36,6 +37,16 @@ export function StickyAddToCart({
 }: StickyAddToCartProps) {
   const { addToCart, buyNow } = useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, product });
   const price = variantDisplayPrice(product, selectedVariant?.id).price;
+
+  // Tells other bottom-docked elements (the contact button) that this bar is on screen, so they clear it only while it
+  // actually is: <html data-sticky-atc>.
+  useEffect(() => {
+    if (!visible) return;
+    document.documentElement.dataset.stickyAtc = "";
+    return () => {
+      delete document.documentElement.dataset.stickyAtc;
+    };
+  }, [visible]);
 
   if (!visible) return null;
 

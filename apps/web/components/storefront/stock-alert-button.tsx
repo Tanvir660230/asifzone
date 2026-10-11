@@ -37,9 +37,11 @@ export function StockAlertButton({ variantId }: StockAlertButtonProps) {
       type="button"
       onClick={() => mutation.mutate()}
       disabled={mutation.isPending}
-      className="mt-2 flex items-center gap-2 text-sm text-ink-700 underline decoration-ink-300 underline-offset-2 transition-colors duration-150 ease-smooth hover:text-brass-600 disabled:opacity-50"
+      className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-full border border-ink-900 text-sm font-medium text-ink-900 transition-colors duration-150 ease-smooth hover:bg-ink-900 hover:text-cream-50 disabled:opacity-50"
+      data-testid="stock-alert"
+      data-fab-collision
     >
-      {subscribed ? <BellOff size={14} /> : <BellRing size={14} />}
+      {subscribed ? <BellOff size={16} aria-hidden="true" /> : <BellRing size={16} aria-hidden="true" />}
       {subscribed ? "We'll email you — click to cancel" : "Notify me when back in stock"}
     </button>
   );

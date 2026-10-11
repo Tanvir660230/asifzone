@@ -59,6 +59,12 @@ const config: Config = {
           from: { transform: "translateY(100%)" },
           to: { transform: "translateY(0)" },
         },
+        // A count that just changed (the bag badge after an add): a quick swell and settle.
+        "count-bump": {
+          "0%": { transform: "scale(0.6)" },
+          "55%": { transform: "scale(1.18)" },
+          "100%": { transform: "scale(1)" },
+        },
         shimmer: {
           from: { backgroundPosition: "200% 0" },
           to: { backgroundPosition: "-200% 0" },
@@ -73,6 +79,7 @@ const config: Config = {
         "slide-in-right": "slide-in-right 0.32s cubic-bezier(0.16, 1, 0.3, 1)",
         "slide-in-up": "slide-in-up 0.32s cubic-bezier(0.16, 1, 0.3, 1)",
         shimmer: "shimmer 1.6s linear infinite",
+        "count-bump": "count-bump 0.42s cubic-bezier(0.16, 1, 0.3, 1)",
       },
     },
   },
@@ -80,6 +87,8 @@ const config: Config = {
     typography,
     plugin(({ addBase }) => {
       addBase({ ":root": tokens.cssVariables });
+      // The base design's dark sections (a theme's own band rules below are more specific and win).
+      addBase({ ".ui-band-inverse": tokens.inverseBandVariables });
       // Brand themes override the same variables; `:root[data-brand]` outranks `:root`, whatever the order.
       for (const [id, theme] of Object.entries(tokens.themes)) {
         if (Object.keys(theme.cssVariables).length) addBase({ [`:root[data-brand="${id}"]`]: theme.cssVariables });

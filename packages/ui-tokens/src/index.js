@@ -19,13 +19,15 @@
 /* ───────────────────────────── raw palette (hex) ───────────────────────────── */
 
 const palette = {
-  // True neutral gray scale. 900 = primary text, 500 = secondary text, 200 = border.
+  // True neutral gray scale. 900 = primary text, 500 = secondary text, 400 = tertiary text (meta, hints, struck
+  // prices), 200 = border. 400 clears WCAG AA for body-size text on every light surface: 4.95:1 on white, 4.66:1 on the
+  // canvas, 4.54:1 on ink-100 (it was #b3b3b3, 2.1:1). The dark sections keep the light grey (default `darkBandPalette`).
   ink: {
     50: "#fafafa",
     100: "#f5f5f5",
     200: "#ececec",
     300: "#d9d9d9",
-    400: "#b3b3b3",
+    400: "#707070",
     500: "#666666",
     600: "#4d4d4d",
     700: "#333333",
@@ -268,9 +270,6 @@ const componentTokens = {
   "--badge-note-fg": "#ffffff",
   // The darkening behind light text set on a photograph (promo banners).
   "--media-scrim": "rgb(var(--color-ink-950) / 0.35)",
-  // Category tiles: the scrim behind the name, and the name's color.
-  "--tile-scrim": "rgb(var(--color-ink-950) / 0.6)",
-  "--tile-label": "rgb(var(--color-cream-50))",
   // Primary call to action on the hero band: its fill and text (transparent = the outline style).
   "--hero-cta-fill": "transparent",
   // Cart line items: the product thumbnail on the cart page and the quantity stepper (square in the base design).
@@ -300,11 +299,11 @@ const componentTokens = {
   "--section-title-leading-sm": "2rem",
   // Vertical rhythm: a multiplier on the block padding of homepage and product-page sections.
   "--section-rhythm": "1",
-  // Page titles (<h1> of cart, checkout, account, wishlist, order pages): mobile, then ≥640px.
-  "--page-title-size": "1.5rem",
-  "--page-title-leading": "2rem",
-  "--page-title-size-sm": "1.5rem",
-  "--page-title-leading-sm": "2rem",
+  // Page titles: the one <h1> size of every storefront and account page (StorefrontPageHeader): mobile, then ≥640px.
+  "--page-title-size": "1.875rem",
+  "--page-title-leading": "1.2",
+  "--page-title-size-sm": "2.5rem",
+  "--page-title-leading-sm": "1.1",
   // Homepage section headings ("Shop by Category", "What We Stand For", reviews): mobile, then ≥640px.
   "--section-heading-size": "1.5rem",
   "--section-heading-leading": "2rem",
@@ -343,9 +342,6 @@ const componentTokens = {
   "--tile-media-radius": "0px",
   // Product page title face (the title face by default; a theme may set product data in the UI face).
   "--product-title-family": "var(--font-display-family), var(--font-bn), ui-serif, Georgia, serif",
-  // Brand story image: its maximum width, and its height from 640px.
-  "--story-media-max-w": "28rem",
-  "--story-media-h-sm": "18rem",
 };
 Object.assign(cssVariables, componentTokens);
 
@@ -416,9 +412,7 @@ const themeDefinitions = {
       "--badge-note-bg": "rgb(var(--color-surface) / 0.94)",
       "--badge-note-fg": "rgb(var(--color-ink-900))",
       "--media-scrim": "rgb(var(--color-ink-950) / 0.4)",
-      // Category tiles: the name below the photograph in navy, no scrim.
-      "--tile-scrim": "transparent",
-      "--tile-label": "rgb(var(--color-ink-900))",
+      // Category tiles: the name below the photograph.
       "--tile-caption-position": "static",
       "--tile-caption-padding": "0.875rem 0.125rem 0.125rem",
       "--tile-media-radius": "var(--radius-default)",
@@ -464,8 +458,6 @@ const themeDefinitions = {
       "--hero-secondary-ring": "currentColor",
       "--hero-primary-mr": "0.75rem",
       "--hero-secondary-ml": "0px",
-      "--story-media-max-w": "64rem",
-      "--story-media-h-sm": "26rem",
     },
     // The hero and the brand story render on ivory; the footer, flash sale and editorial banner stay navy.
     lightBands: ["hero", "story"],
@@ -549,6 +541,18 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
   };
 }
 const DEFAULT_THEME = "default";
+
+/**
+ * The base design's dark sections (`.ui-band-inverse`): palette steps that read differently on the dark palette. The grey
+ * text steps are mid greys on light surfaces but must stay light on ink-950: ink-400 #b3b3b3 (9.6:1; the light-surface
+ * #707070 would be 4.0:1) and ink-500 #8a8a8a (5.8:1, the fine print; #666666 was 3.5:1). Emitted for every store under
+ * `.ui-band-inverse`; a theme's own band variables (`:root[data-brand] .ui-band-inverse…`) are more specific and win.
+ */
+const inverseBandVariables = {
+  "--color-ink-400": hexToRgbChannels("#b3b3b3"),
+  "--color-ink-500": hexToRgbChannels("#8a8a8a"),
+  ...referenceVariables(),
+};
 
 /* ───────────────────────────── surfaces ───────────────────────────── */
 
@@ -638,6 +642,7 @@ for (const [id, definition] of Object.entries(surfaceDefinitions)) {
 
 module.exports = {
   themes,
+  inverseBandVariables,
   surfaces,
   DEFAULT_THEME,
   palette,

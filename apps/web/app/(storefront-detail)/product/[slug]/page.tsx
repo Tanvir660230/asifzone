@@ -2,7 +2,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import type { Metadata } from "next";
 import { ProductPageView } from "@/components/storefront/product-page-view";
 import { findProductRedirect, getProductBySlug, getSiteSettings } from "@/lib/api/storefront";
-import { buildOpenGraph, productSeoFields } from "@/lib/seo";
+import { buildOpenGraph, productSeoFields, storeTitle } from "@/lib/seo";
 
 interface Props {
   // Next.js 15: params is a Promise on server components (was a plain object pre-15) — must be
@@ -21,11 +21,11 @@ async function loadProduct(slug: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const [data, { settings }] = await Promise.all([loadProduct(slug), getSiteSettings()]);
-  if (!data) return { title: "Product" };
+  if (!data) return { title: "Product not found" };
 
   const { title, description, canonical, og } = productSeoFields(data.product);
   return {
-    title,
+    title: storeTitle(title, settings.storeName),
     description,
     alternates: { canonical },
     ...buildOpenGraph({ title: og.title, description: og.description, url: canonical, siteName: settings.storeName, images: og.images }),

@@ -1626,6 +1626,8 @@ model ProductReview {
   rating             Int
   title              String?
   body               String
+  /// Customer photos (`/uploads/reviews/<uuid>.webp`, re-encoded on upload), shown once the review is approved.
+  images             String[]     @default([])
   status             ReviewStatus @default(PENDING)
   isVerifiedPurchase Boolean      @default(false)
   createdAt          DateTime     @default(now())

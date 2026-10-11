@@ -48,15 +48,17 @@ export const checkoutItemSchema = z.object({
   quantity: z.number().int().min(1).max(20),
 });
 
+// The checkout form shows these messages to shoppers as they are, so each one says what to do. Name and address are
+// trimmed first, so a field of only spaces counts as empty.
 export const checkoutSchema = z.object({
   items: z.array(checkoutItemSchema).min(1, "Cart is empty"),
-  customerName: z.string().min(1).max(200),
-  customerEmail: nullableEmail(),
+  customerName: z.string().trim().min(1, "Enter your full name").max(200, "Keep your name under 200 characters"),
+  customerEmail: nullableEmail("Enter a valid email address, or leave it empty"),
   customerPhone: bdPhoneSchema(),
-  shippingDivision: z.enum(BD_DIVISIONS),
-  shippingDistrict: z.string().min(1).max(120),
-  shippingArea: z.string().min(1).max(120),
-  shippingAddressLine: z.string().min(1).max(500),
+  shippingDivision: z.enum(BD_DIVISIONS, { errorMap: () => ({ message: "Choose your district" }) }),
+  shippingDistrict: z.string().min(1, "Choose your district").max(120),
+  shippingArea: z.string().min(1, "Choose your area or thana").max(120),
+  shippingAddressLine: z.string().trim().min(1, "Enter your house, road and area").max(500, "Keep the address under 500 characters"),
   paymentMethod: paymentMethodEnum,
   couponCode: z.preprocess((v) => (v === "" ? undefined : v), z.string().min(1).max(64).optional()),
   notes: nullableString(500),

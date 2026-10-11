@@ -41,7 +41,9 @@ export default function StoreBalancePage() {
           <Wallet size={16} aria-hidden="true" /> Available balance
         </p>
         {isLoading ? (
-          <div className="mt-2 h-12 w-44 animate-pulse rounded-lg bg-white/10" aria-busy="true" aria-label="Loading balance" />
+          <div className="ui-delayed mt-2" aria-busy="true" aria-label="Loading balance">
+            <div className="h-12 w-44 animate-pulse rounded-lg bg-white/10" />
+          </div>
         ) : isError ? (
           <div className="mt-2 flex items-center gap-3">
             <p className="text-sm text-cream-50">Your balance didn&apos;t load.</p>

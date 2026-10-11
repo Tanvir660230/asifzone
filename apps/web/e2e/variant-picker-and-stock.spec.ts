@@ -107,12 +107,12 @@ test("Add to Cart with nothing chosen opens the options popup, and the choice is
   await confirm.click();
 
   await expect(dialog).toHaveCount(0);
-  const cart = page.getByRole("dialog", { name: "Your cart" });
-  await expect(cart).toBeVisible();
-  await expect(cart).toContainText(name);
-  await expect(cart).toContainText("L");
+  // Adding shows the compact "Added to bag" confirmation (the shopper stays on the page), naming the choice.
+  const added = page.getByTestId("added-to-bag");
+  await expect(added).toBeVisible();
+  await expect(added).toContainText(name);
+  await expect(added).toContainText("L");
   // The popup's choice became the page's choice.
-  await page.keyboard.press("Escape");
   await expect(page.locator("main").getByRole("group", { name: "Size" }).first().getByRole("button", { name: "L", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -158,7 +158,8 @@ test("Escape or ✕ closes the popup without adding anything", async ({ page }) 
   await page.locator("main").getByRole("button", { name: "Add to Cart", exact: true }).first().click();
   await picker(page).getByRole("button", { name: "Close" }).click();
   await expect(picker(page)).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "Your cart" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Your bag" })).toHaveCount(0);
+  await expect(page.getByTestId("added-to-bag")).toHaveCount(0);
 });
 
 test("mobile sticky bar: Add to Cart with nothing chosen opens the same popup", async ({ page, isMobile }) => {
@@ -183,7 +184,11 @@ test("product card quick add asks for the options when there is a real choice", 
   await dialog.getByRole("button", { name: "M", exact: true }).click();
   await dialog.getByRole("button", { name: "Black", exact: true }).click();
   await dialog.getByRole("button", { name: "Add to Cart", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Your cart" })).toContainText(name);
+  const added = page.getByTestId("added-to-bag");
+  await expect(added).toContainText(name);
+  // "View bag" opens the bag with the item in it.
+  await added.getByRole("button", { name: "View bag" }).click();
+  await expect(page.getByRole("dialog", { name: "Your bag" })).toContainText(name);
   await expect(page).toHaveURL(/\/search/); // tapping inside the popup never navigated the card
 });
 

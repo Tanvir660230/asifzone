@@ -1,20 +1,14 @@
-"use client";
-
+import type { CSSProperties } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { ArrowUpRight } from "lucide-react";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { resolveImageUrl } from "@/lib/image-url";
+import { categoryTileLayout } from "@/lib/category-tile-layout";
+import { Reveal } from "./reveal";
 
-const container = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.08 } },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
-};
+/** Desktop row heights stay equal whatever a tile's width: its aspect ratio is its column span (of 12) over this. */
+const ROW_UNITS = 3.75;
 
 export function CategoryGrid({
   categories,
@@ -27,46 +21,62 @@ export function CategoryGrid({
   subtitle?: string | null;
 }) {
   if (categories.length === 0) return null;
+  const layout = categoryTileLayout(categories.length);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-[calc(4rem*var(--section-rhythm))] sm:px-6 lg:px-8">
-      <h2 className={`ui-section-heading text-center font-display text-ink-900 ${subtitle ? "mb-3" : "mb-8"}`}>{heading || "Shop by Category"}</h2>
-      {subtitle && <p className="mb-8 text-center text-sm text-ink-500 sm:text-base">{subtitle}</p>}
-      {/* `.ui-tile-grid`: up to 4 columns, fewer on narrower screens, and a small catalog stays centred. */}
-      <motion.div
-        variants={container}
-        initial="hidden"
-        whileInView="show"
-        viewport={{ once: true, margin: "-60px" }}
-        className="ui-tile-grid"
-      >
-        {categories.map((cat) => (
-          <motion.div key={cat.id} variants={item}>
-            {/* The caption (`.ui-tile-caption`) sits over the photograph or below it, as the theme decides. */}
-            <Link href={`/category/${cat.slug}`} className="group relative block overflow-hidden rounded">
-              <div className="relative aspect-[4/5] overflow-hidden rounded-[var(--tile-media-radius)] bg-ink-100">
-                {cat.imageUrl ? (
-                  <Image
-                    src={resolveImageUrl(cat.imageUrl)}
-                    alt={cat.imageAltText || cat.name}
-                    fill
-                    sizes="(min-width: 1024px) 25vw, 50vw"
-                    className="object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                ) : (
-                  // No category photo uploaded yet — a flat ink tile reads as a deliberate
-                  // placeholder rather than a broken image. Name isn't repeated here since the
-                  // caption already shows it.
-                  <div className="h-full bg-ink-950 transition-transform duration-500 group-hover:scale-105" />
-                )}
-              </div>
-              <div className="ui-tile-caption bg-gradient-to-t from-[color:var(--tile-scrim)] to-transparent">
-                <span className="text-sm ui-caps text-[color:var(--tile-label)]">{cat.name}</span>
-              </div>
-            </Link>
-          </motion.div>
-        ))}
-      </motion.div>
+    <section className="mx-auto max-w-7xl px-4 py-[calc(2.75rem*var(--section-rhythm))] sm:py-[calc(4rem*var(--section-rhythm))] sm:px-6 lg:px-8">
+      <Reveal className={subtitle ? "mb-8" : "mb-6 sm:mb-8"}>
+        <h2 className="ui-section-heading font-display text-ink-900">{heading || "Shop by Category"}</h2>
+        {subtitle && <p className="mt-2 max-w-prose text-sm text-ink-500 sm:text-base">{subtitle}</p>}
+      </Reveal>
+      <div data-testid="category-grid" className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-12">
+        {categories.map((cat, i) => {
+          const { lg, sm } = layout[i]!;
+          const style = {
+            "--tile-span-sm": sm,
+            "--tile-span-lg": lg,
+            "--tile-aspect-sm": sm === 2 ? "16 / 10" : "4 / 5",
+            "--tile-aspect-lg": `${lg} / ${ROW_UNITS}`,
+          } as CSSProperties;
+          return (
+            <Reveal
+              key={cat.id}
+              index={i}
+              style={style}
+              className="[grid-column:span_var(--tile-span-sm)/span_var(--tile-span-sm)] lg:[grid-column:span_var(--tile-span-lg)/span_var(--tile-span-lg)]"
+            >
+                {/* The caption (`.ui-tile-caption`) sits over the photograph or below it, as the theme decides. */}
+                <Link
+                  href={`/category/${cat.slug}`}
+                  className="group relative block overflow-hidden rounded-xl focus-visible:outline-offset-4"
+                >
+                  <div className="relative overflow-hidden rounded-[var(--tile-media-radius)] bg-ink-100 [aspect-ratio:var(--tile-aspect-sm)] lg:[aspect-ratio:var(--tile-aspect-lg)]">
+                    {cat.imageUrl ? (
+                      <Image
+                        src={resolveImageUrl(cat.imageUrl)}
+                        alt={cat.imageAltText || cat.name}
+                        fill
+                        sizes={lg >= 6 ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"}
+                        className="object-cover transition-transform duration-700 ease-smooth group-hover:scale-[1.04]"
+                      />
+                    ) : (
+                      // No category photo yet: a flat ink tile reads as a deliberate placeholder, not a broken image.
+                      <div className="h-full bg-ink-950" />
+                    )}
+                  </div>
+                  {/* A compact "Name ↗" pill rather than a big title: category artwork often carries its own lettering, and
+                      the pill reads as the action (and stays legible on any photograph). */}
+                  <div className="ui-tile-caption">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-surface/95 py-2 pl-4 pr-3 text-sm font-medium text-ink-900 shadow-float backdrop-blur-sm transition-transform duration-300 ease-smooth group-hover:-translate-y-0.5">
+                      {cat.name}
+                      <ArrowUpRight size={15} aria-hidden="true" className="transition-transform duration-300 ease-smooth group-hover:-translate-y-px group-hover:translate-x-px" />
+                    </span>
+                  </div>
+                </Link>
+            </Reveal>
+          );
+        })}
+      </div>
     </section>
   );
 }

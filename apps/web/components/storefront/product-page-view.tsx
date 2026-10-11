@@ -9,6 +9,7 @@ import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-
 import { TrackProductView } from "@/components/storefront/track-product-view";
 import { ProductReviews } from "@/components/storefront/product-reviews";
 import {
+  getActiveSocialLinksSafe,
   getBudgetAlternatives,
   getBundleForProduct,
   getPremiumAlternatives,
@@ -90,7 +91,15 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
   const sanitize = (html: string) => DOMPurify.sanitize(html);
   const product = sanitizeRichTextSpecs(rawProduct, sanitize);
   const live = mode === "live";
-  const [urgencySignals, { settings }] = await Promise.all([live ? getUrgencySignals(product.id) : Promise.resolve(NO_SIGNALS), getSiteSettings()]);
+  const [urgencySignals, { settings }, { links }] = await Promise.all([
+    live ? getUrgencySignals(product.id) : Promise.resolve(NO_SIGNALS),
+    getSiteSettings(),
+    getActiveSocialLinksSafe(),
+  ]);
+  const orderHelp = {
+    fees: { insideDhaka: settings.shippingFeeDhaka, elsewhere: settings.shippingFeeOutsideDhaka },
+    whatsappUrl: links.find((l) => l.platform === "WHATSAPP" && l.isActive)?.url ?? null,
+  };
 
   const policy = storePolicy(settings);
   const accordionItems = buildAccordionItems(product, sanitize, policy);
@@ -109,7 +118,8 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
         </div>
       )}
       {live && <TrackProductView productId={product.id} productName={product.name} categoryId={product.categoryId} price={Number(productDisplayPrice(product).price)} />}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* The shared page frame; the recommendation sections below carry their own spacing, so no bottom padding here. */}
+      <div className="ui-page pb-0 sm:pb-0 lg:pb-0">
         {live && (
           <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(buildProductJsonLd(product, siteUrl, settings)) }} />
         )}
@@ -131,6 +141,7 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
           accordionItems={accordionItems}
           showSizeGuideLink={showSizeGuideLink}
           policyLines={policyHighlights(policy)}
+          orderHelp={orderHelp}
         />
       </div>
 

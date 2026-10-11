@@ -47,13 +47,12 @@ Presentation that differs between brands is a CSS variable in `componentTokens` 
 | `.ui-header-bar` | `--header-shadow` | the sticky header's edge |
 | `.glossy`, `.glass` | `--gloss` (0 = flat), `--glass-alpha` | filled controls, translucent chrome |
 | `PromoBadge tone="note"` | `--badge-note-bg/-fg` | non-promotional badges ("New Arrival"). `tone="sale"` is always the sale accent. |
-| category tiles, hero CTA, cart line items | `--tile-scrim/-label`, `--hero-cta-fill/-text`*, `--line-item-radius`, `--stepper-radius` | |
+| hero CTA, cart line items | `--hero-cta-fill/-text`*, `--line-item-radius`, `--stepper-radius` | |
 | `.ui-tile-caption`, `rounded-[var(--tile-media-radius)]` | `--tile-caption-position` (`absolute` over the photo / `static` below it), `--tile-caption-padding`, `--tile-media-radius` | category tile caption and photo |
 | `.ui-hero`, `.ui-hero-layout`, `.ui-hero-copy`, `.ui-hero-media`, `.ui-hero-media-frame`, `.ui-hero-secondary` | `--hero-align`, `--hero-layout-lg` (`block` stacked / `grid` copy beside image), `--hero-media-aspect-lg`, `--hero-content-max-w-lg`, `--hero-copy-pad-lg`, `--hero-media-offset-lg`, `--hero-secondary-ring`, `--hero-primary-mr`, `--hero-secondary-ml` | the homepage hero composition |
 | `rounded-[var(--control-radius)]` | `--control-radius` | buttons (`buttonVariants`) and call-to-action links — a pill by default |
 | `hover:bg-[color:var(--accent-hover)]`, nav links | `--accent-hover`, `--nav-hover`, `--nav-underline` | primary-action hover fill; navigation hover color and underline |
 | `svg.lucide[stroke-width="2"]` (base layer) | `--icon-stroke` | icon line weight (icons given their own width keep it) |
-| brand story image | `--story-media-max-w`, `--story-media-h-sm` | a small vignette or a large editorial photograph |
 | `text-[color:var(--band-accent,…)]` | `--band-accent`* | eyebrows, rules and link hovers inside `.ui-band-inverse` sections (each call site keeps its own default) |
 
 \* Opt-in: undefined in the base design, so the property inherits as it did before the token existed. A theme may set it.
@@ -65,6 +64,8 @@ Presentation that differs between brands is a CSS variable in `componentTokens` 
 **Proving a refactor didn't change a store:** screenshot the storefront before and after with `STORE_THEME=default` against the same data, then pixel-diff. The base design is deterministic, so two runs with no change differ by 0 pixels.
 
 - **Palette scales:** `ink` (neutral 50–950), `cream` (surfaces), `sale` (promo labels only), and the semantic statuses `success`, `warning`, `danger`, `info`. `brass` is a legacy alias of `ink`; don't use it in new code.
+- **Grey text steps clear WCAG AA.** `ink-500` is secondary text, `ink-400` tertiary text (meta, hints, struck prices): #707070, ≥ 4.5:1 on every light surface. Neither is a fill behind dark text (use `accent`, `surface` or a status colour). Inside the base design's dark sections (`.ui-band-inverse`) the same steps are re-valued light (`inverseBandVariables` in ui-tokens: ink-400 #b3b3b3, ink-500 #8a8a8a), so `text-ink-400` stays legible on the footer and other dark bands. `apps/api/src/config/theme-tokens.test.ts` enforces both.
+- **Text floor:** 12px (`text-xs`) for words; 11px only for compact numeric or promo badges (`CountBadge`, `PromoBadge`).
 - **Semantic roles:** prefer these in new code, because they describe intent.
 
 | Role | Use | Role | Use |
@@ -102,6 +103,13 @@ Presentation that differs between brands is a CSS variable in `componentTokens` 
 | Status | `Badge` (meaning-based variants, `dot`), `Alert` (inline, persistent), `toast.success/error/info/warning` (transient) |
 | Overlays | `Modal` (`description`, `footer`), `Drawer` (prev/next stepping), `Popover`, `DropdownMenu`, `Tooltip`, `useConfirmDialog` |
 | States | `Skeleton` / `SkeletonText`, `EmptyState` (`plain` / `bordered`, `tone`), `ErrorState` (`onRetry`) |
+| Storefront motion & layout | `Reveal` (scroll-driven CSS reveal, `index` staggers; no JS, off under reduced motion), `ProductCarousel` (the one product rail: snap row, 4 per desktop row, arrows, "View all"), `HeaderShell` (scroll-aware header; publishes `--sticky-top` for anything pinned under it), `categoryTileLayout` in `lib/category-tile-layout.ts` (bento spans, one cell per category) |
+| Product page | `DeliveryEstimate` (the checkout's own estimate and the store's delivery fee, inside/outside Dhaka), `ShareButton` (share sheet or copy link), `WhatsAppOrderButton` (prefilled order message, `lib/whatsapp.ts`), usual-size hint (`lib/size-memory.ts`: a dot on the pill, never pre-selected), `ReviewPhotoPicker` / `ReviewPhotoStrip` |
+| Page frame | `StorefrontPage`, `StorefrontPageHeader` (components/storefront/storefront-page.tsx), `HelpAside`, `NotFoundContent`, `NavigationProgress` |
+| Returning shoppers | `BuyAgainRail` (signed-in, delivered products in stock), cart "Complete your order" rail (`lib/cart-suggestions.ts`: bundle products, then frequently bought together), `InstallAppCard` + `AppShellWorker` (home-screen install, offline page; the service worker caches only the offline page) |
+| Storefront counts | `components/storefront/count-badge.tsx` — `CountBadge` (the bag-icon bubble) and `bagLabel()` for the control's accessible name |
+
+**Page metadata.** Every route has a title. A server page sets it in `generateMetadata`; a client page gets a sibling `layout.tsx` that exports it. Pages that belong to one shopper (cart, checkout, wishlist, order status, payment, account, sign-in) use `privatePageMetadata(title)` from `lib/seo.ts` (titled, `noindex`, no canonical). A stored SEO title goes through `storeTitle(title, storeName)` so the store name isn't appended twice. The root layout sets no canonical: indexable pages set their own.
 
 `components/admin/{page-header,empty-state,pagination,table-skeleton,form-section,sub-nav}` and `components/account/account-empty-state` are thin re-exports or wrappers of the above, kept so existing imports don't change.
 
@@ -117,3 +125,7 @@ Presentation that differs between brands is a CSS variable in `componentTokens` 
    - `Field` links its errors to the control.
 5. **Responsive by variant, not by duplication.** One component, responsive classes inside it.
 6. **Brand-neutral.** No brand names, colors or copy in primitives. Brand differences belong in token overrides.
+7. **Reserve space for what arrives late.** The storefront `<main>` is at least a viewport tall, so streamed sections and client-hydrated pages never push the footer through the viewport (layout shift). Fixed bottom bars carry `data-hide-on-keyboard` so they step aside while a shopper types.
+8. **Motion is transform and opacity only, and CSS first.** Section and card entrances use `Reveal` (`animation-timeline: view()`), never JavaScript scroll listeners; hover and press feedback are CSS transitions. Anything that moves collapses to static under `prefers-reduced-motion`.
+9. **Every storefront and account page uses one frame and one heading.** `StorefrontPage` (`.ui-page`: max-width 80rem, gutters 1rem / 1.5rem / 2rem, the same top gap below the header) and `StorefrontPageHeader` (breadcrumb or eyebrow row of fixed height, then the `<h1>` in `.ui-page-title`, an optional description and actions). Content inside may be narrower, but starts at the frame's left edge — no centred one-off columns, no page-specific title sizes. Sign-in pages and the account sit inside the same storefront shell (header, footer, bag, bottom nav). The product page is the one exception to the heading (its title is the product, `.ui-product-title`), not to the frame.
+10. **No loading screens between pages.** There are no route `loading.tsx` files: the current page stays until the next is ready, and `NavigationProgress` draws a thin line only when that takes over 0.2s. Placeholders that remain (`.ui-skeleton`, `.ui-delayed`) stay invisible for their first 0.3s, so a fast response never shows a loading state. Data a page will need is prefetched where the next step is predictable (the account prefetches every section's data when it opens).

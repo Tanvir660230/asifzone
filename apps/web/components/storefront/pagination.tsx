@@ -26,7 +26,7 @@ export function Pagination({ page, totalPages }: { page: number; totalPages: num
           Previous
         </Link>
       ) : (
-        <span className={cn(buttonVariants({ variant: "outline", size: "sm" }), "pointer-events-none opacity-50")}>
+        <span aria-disabled="true" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "pointer-events-none opacity-50")}>
           Previous
         </span>
       )}
@@ -38,7 +38,7 @@ export function Pagination({ page, totalPages }: { page: number; totalPages: num
           Next
         </Link>
       ) : (
-        <span className={cn(buttonVariants({ variant: "outline", size: "sm" }), "pointer-events-none opacity-50")}>
+        <span aria-disabled="true" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "pointer-events-none opacity-50")}>
           Next
         </span>
       )}

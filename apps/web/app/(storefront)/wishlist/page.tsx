@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ProductGrid } from "@/components/storefront/product-grid";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { ProductGridSkeleton } from "@/components/storefront/skeletons/product-grid-skeleton";
 import { listWishlist } from "@/lib/api/wishlist";
 import { fetchProductsByIds } from "@/lib/api/storefront";
@@ -47,37 +48,36 @@ export default function WishlistPage() {
   const isLoading = isLoggedIn ? serverLoading : mounted && localIds.length > 0 && guestLoading;
   const products = isLoggedIn ? (serverData?.items.map((item) => item.product) ?? []) : (guestData?.items ?? []);
 
-  const content = (
-    <>
-      {!isLoggedIn && <h1 className="mb-1 font-display ui-page-title text-fg">Wishlist</h1>}
-      {!isLoggedIn && mounted && localIds.length > 0 && (
-        <p className="mb-6 text-sm text-ink-500">
-          Saved on this device —{" "}
-          <Link
-            href={`/account/login?next=${encodeURIComponent("/wishlist")}`}
-            className="font-medium text-fg underline underline-offset-2 hover:text-ink-700"
-          >
-            sign in
-          </Link>{" "}
-          to keep it across devices.
-        </p>
-      )}
+  const description =
+    mounted && localIds.length > 0 ? (
+      <>
+        Saved on this device.{" "}
+        <Link href={`/account/login?next=${encodeURIComponent("/wishlist")}`} className="font-medium text-fg underline underline-offset-2 hover:text-ink-700">
+          Sign in
+        </Link>{" "}
+        to keep it on every device.
+      </>
+    ) : undefined;
 
-      {(!mounted || isLoading) && <ProductGridSkeleton count={4} />}
-      {mounted && !isLoading && products.length === 0 && (
-        <p className="text-ink-400">
-          Nothing saved yet —{" "}
-          <Link href="/search" className="font-medium text-fg underline underline-offset-2 hover:text-ink-700">
-            browse the collection
-          </Link>{" "}
-          and tap the heart on anything you like.
-        </p>
+  return (
+    <StorefrontPage>
+      <StorefrontPageHeader breadcrumb={[{ name: "Wishlist" }]} title="Wishlist" description={isLoggedIn ? undefined : description} />
+      {/* A signed-in customer is on their way to /account/saved: nothing to show here meanwhile. */}
+      {!isLoggedIn && (
+        <>
+          {(!mounted || isLoading) && localIds.length > 0 && <ProductGridSkeleton count={Math.min(localIds.length, 4)} />}
+          {mounted && !isLoading && products.length === 0 && (
+            <p className="text-ink-500">
+              Nothing saved yet.{" "}
+              <Link href="/search" className="font-medium text-fg underline underline-offset-2 hover:text-ink-700">
+                Browse the collection
+              </Link>{" "}
+              and tap the heart on anything you like.
+            </p>
+          )}
+          {mounted && !isLoading && products.length > 0 && <ProductGrid products={products} />}
+        </>
       )}
-      {mounted && !isLoading && products.length > 0 && <ProductGrid products={products} />}
-    </>
+    </StorefrontPage>
   );
-
-  if (isLoggedIn) return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"><ProductGridSkeleton count={4} /></div>;
-
-  return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">{content}</div>;
 }

@@ -3,8 +3,7 @@ import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { governingLawSentence } from "@/lib/store-identity";
 import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
-import { PageHero } from "@/components/storefront/page-hero";
-import { Breadcrumb } from "@/components/storefront/breadcrumb";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { MobileTocSelect } from "@/components/storefront/mobile-toc-select";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
@@ -41,9 +40,8 @@ const SECTIONS = [
     title: "Orders",
     body: (
       <p>
-        By placing an order, you confirm that the shipping details and items in your cart are correct. We reserve
-        the right to cancel an order if an item turns out to be unavailable or mispriced, in which case you&rsquo;ll
-        be notified and refunded in full.
+        By placing an order, you confirm that the shipping details and items in your cart are correct. We reserve the right to cancel an order if an item turns
+        out to be unavailable or mispriced, in which case you&rsquo;ll be notified and refunded in full.
       </p>
     ),
   },
@@ -52,8 +50,8 @@ const SECTIONS = [
     title: "Pricing & Availability",
     body: (
       <p>
-        Prices are listed in the currency shown at checkout and may change without notice. The price charged is the
-        one shown at the time your order is placed, not any earlier or later price for the same item.
+        Prices are listed in the currency shown at checkout and may change without notice. The price charged is the one shown at the time your order is placed,
+        not any earlier or later price for the same item.
       </p>
     ),
   },
@@ -62,8 +60,8 @@ const SECTIONS = [
     title: "Payment",
     body: (
       <p>
-        We accept the payment methods shown at checkout, including Cash on Delivery. For prepaid methods, your order
-        is only confirmed once payment is successfully processed by our payment partner.
+        We accept the payment methods shown at checkout, including Cash on Delivery. For prepaid methods, your order is only confirmed once payment is
+        successfully processed by our payment partner.
       </p>
     ),
   },
@@ -98,28 +96,23 @@ const SECTIONS = [
     title: "Your Account",
     body: (
       <p>
-        You&rsquo;re responsible for keeping your account password confidential and for all activity that happens
-        under your account. Let us know immediately if you suspect unauthorized access.
+        You&rsquo;re responsible for keeping your account password confidential and for all activity that happens under your account. Let us know immediately if
+        you suspect unauthorized access.
       </p>
     ),
   },
   {
     id: "intellectual-property",
     title: "Intellectual Property",
-    body: (
-      <p>
-        All product photography, branding, and content on this site belong to us or our licensors and may not be
-        reused without permission.
-      </p>
-    ),
+    body: <p>All product photography, branding, and content on this site belong to us or our licensors and may not be reused without permission.</p>,
   },
   {
     id: "liability",
     title: "Limitation of Liability",
     body: (
       <p>
-        We aim for every order to arrive as described, but to the extent permitted by law, we&rsquo;re not liable for
-        indirect or incidental losses arising from delayed delivery, product unavailability, or use of this site.
+        We aim for every order to arrive as described, but to the extent permitted by law, we&rsquo;re not liable for indirect or incidental losses arising from
+        delayed delivery, product unavailability, or use of this site.
       </p>
     ),
   },
@@ -131,12 +124,7 @@ const SECTIONS = [
   {
     id: "changes",
     title: "Changes to These Terms",
-    body: (
-      <p>
-        We may update these terms as our services evolve. Continued use of the site after a change means you accept
-        the updated terms.
-      </p>
-    ),
+    body: <p>We may update these terms as our services evolve. Continued use of the site after a change means you accept the updated terms.</p>,
   },
   {
     id: "contact",
@@ -157,17 +145,14 @@ export default async function TermsPage() {
   const { settings } = await getSiteSettings();
   const sections = SECTIONS.map((s) => (s.id === "governing-law" ? { ...s, body: <p>{governingLawSentence(settings)}</p> } : s));
   return (
-    <div>
-      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
-        <Breadcrumb trail={[{ name: "Terms & Conditions" }]} />
-      </div>
-      <PageHero
-        eyebrow={`Last updated ${LAST_UPDATED}`}
+    <StorefrontPage>
+      <StorefrontPageHeader
+        breadcrumb={[{ name: "Terms & Conditions" }]}
         title="Terms & Conditions"
-        description="The ground rules for shopping with us — please give it a read before you check out."
+        description={`Last updated ${LAST_UPDATED}. The ground rules for shopping with us — please give it a read before you check out.`}
       />
 
-      <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
+      <div className="max-w-5xl">
         <MobileTocSelect sections={sections} />
         <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-12">
           <nav aria-label="Table of contents" className="hidden lg:block">
@@ -188,7 +173,7 @@ export default async function TermsPage() {
             {sections.map((section, i) => (
               <section key={section.id} id={section.id} className="scroll-mt-28">
                 <h2 className="mb-3 flex items-baseline gap-2 font-display text-lg text-ink-900">
-                  <span className="text-xs font-normal text-ink-300">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="text-xs font-normal text-ink-400">{String(i + 1).padStart(2, "0")}</span>
                   {section.title}
                 </h2>
                 <div className="space-y-3">{section.body}</div>
@@ -197,6 +182,6 @@ export default async function TermsPage() {
           </div>
         </div>
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

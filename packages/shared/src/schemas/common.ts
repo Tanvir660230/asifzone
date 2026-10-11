@@ -59,8 +59,8 @@ export function nullableNumber() {
   return z.preprocess(blankToNull, z.number().positive().nullable().optional());
 }
 
-export function nullableEmail() {
-  return z.preprocess(blankToNull, z.string().email().nullable().optional());
+export function nullableEmail(message?: string) {
+  return z.preprocess(blankToNull, z.string().email(message).nullable().optional());
 }
 
 export function nullableDate() {

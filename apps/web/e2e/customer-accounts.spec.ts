@@ -51,7 +51,7 @@ test.describe("customer account journey", () => {
 
     await page.goto("/account/register");
     await page.getByLabel("Name").fill("Playwright User");
-    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Email", { exact: true }).fill(email);
     // exact: true — otherwise this also matches the PasswordInput's "Show password" toggle button,
     // whose aria-label contains "password" as a substring of the default case-insensitive match.
     await page.getByLabel("Password", { exact: true }).fill(originalPassword);
@@ -65,7 +65,7 @@ test.describe("customer account journey", () => {
     await expect(page).toHaveURL(/\/account\/login/);
 
     await page.goto("/account/forgot-password");
-    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByRole("button", { name: /send reset link/i }).click();
     await expect(page.getByText(/check your email/i)).toBeVisible();
 
@@ -75,7 +75,7 @@ test.describe("customer account journey", () => {
     await page.getByRole("button", { name: /update password/i }).click();
     await expect(page).toHaveURL(/\/account\/login/);
 
-    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Email", { exact: true }).fill(email);
     await page.getByLabel("Password", { exact: true }).fill(newPassword);
     // exact: the customer login page also renders Google's "Sign in with Google" button whenever its script loads, and
     // /sign in/i matched both (a strict-mode violation that failed this test intermittently, depending on the network).

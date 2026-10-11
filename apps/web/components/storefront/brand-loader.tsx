@@ -8,7 +8,7 @@ export function BrandLoader({ label = "Loading", compact = false }: { label?: st
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-4",
+        "ui-delayed flex flex-col items-center justify-center gap-4",
         compact ? "py-10" : "min-h-[50vh] py-24",
       )}
       role="status"

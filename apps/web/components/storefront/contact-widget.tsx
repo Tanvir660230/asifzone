@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, MessageCircleMore, MessageSquareText, Phone, X } from "lucide-react";
 import type { SocialLink, StoreSettings } from "@clothing-brand/shared";
 import { pixelContact } from "@/lib/pixels";
+import { withWhatsAppMessage } from "@/lib/whatsapp";
 
 declare global {
   interface Window {
@@ -13,19 +14,6 @@ declare global {
   }
 }
 
-/** Appends/overwrites the `text` query param on a WhatsApp deep link (wa.me/... or
- * api.whatsapp.com/send?phone=...) with the admin-configured prefill message — both formats accept
- * `text`, so this works regardless of which style the SocialLink URL was pasted in as. */
-function withWhatsAppMessage(url: string, message: string | null): string {
-  if (!message) return url;
-  try {
-    const parsed = new URL(url);
-    parsed.searchParams.set("text", message);
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
 import { useBottomDockState } from "@/hooks/use-bottom-dock";
 import { FeedbackModal } from "./feedback-modal";
 
@@ -68,7 +56,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   // unconditionally on that route, since this widget can't see the sticky bar's own scroll-driven
   // visibility state. showCartBar already accounts for StickyCartBar hiding itself entirely on
   // /cart and /checkout, so this widget doesn't reserve clearance for a bar that isn't there.
-  const { showCartBar, onProductPage } = useBottomDockState();
+  const { showCartBar, onProductPage, onCheckoutPage } = useBottomDockState();
 
   // This button is fixed to a viewport corner, and the bottom of the footer (newsletter form,
   // link columns) scrolls into that exact same corner — without this it visually sits on top of
@@ -98,14 +86,17 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   // carousel card can still slide to any x position, including right under us. Rather than chase
   // every layout, just watch for actual overlap and duck out of the way when it happens.
   const widgetRef = useRef<HTMLDivElement>(null);
+  // Overlap is measured against the round button only: the open menu grows upward and would otherwise "collide" with a
+  // card below it and close itself the moment it opened.
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const [overlappingCard, setOverlappingCard] = useState(false);
   useEffect(() => {
     let raf = 0;
     function checkOverlap() {
       raf = 0;
-      const widget = widgetRef.current;
-      if (!widget) return;
-      const widgetBox = widget.getBoundingClientRect();
+      const toggle = toggleRef.current;
+      if (!toggle) return;
+      const widgetBox = toggle.getBoundingClientRect();
       const cardButtons = document.querySelectorAll<HTMLElement>("[data-fab-collision]");
       let overlaps = false;
       for (const el of cardButtons) {
@@ -126,17 +117,39 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
     // one listener catches both the page scrolling and any carousel scrolling independently of it.
     document.addEventListener("scroll", scheduleCheck, { passive: true, capture: true });
     window.addEventListener("resize", scheduleCheck);
+    // A marked control can also appear without any scroll (e.g. "Notify me" after picking a sold-out size).
+    const mutations = new MutationObserver((records) => {
+      // The widget's own menu opening/closing is not a reason to re-check.
+      if (records.every((r) => widgetRef.current?.contains(r.target))) return;
+      scheduleCheck();
+    });
+    mutations.observe(document.body, { childList: true, subtree: true });
     return () => {
+      mutations.disconnect();
       document.removeEventListener("scroll", scheduleCheck, { capture: true });
       window.removeEventListener("resize", scheduleCheck);
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
 
-  const shouldHide = nearFooter || overlappingCard;
+  // Only a closed button ducks out of the way; an open menu stays open until the shopper closes it.
+  const shouldHide = !open && (nearFooter || overlappingCard);
+  // An open menu closes on a tap outside it or Escape, like any menu.
   useEffect(() => {
-    if (shouldHide) setOpen(false);
-  }, [shouldHide]);
+    if (!open) return;
+    const onPointer = (e: PointerEvent) => {
+      if (!widgetRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const whatsapp = socialLinks.find((l) => l.platform === "WHATSAPP" && l.isActive);
 
@@ -179,24 +192,27 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
     },
   });
 
-  if (actions.length === 0) return null;
+  // Checkout is a focused page: no floating button over the form.
+  if (actions.length === 0 || onCheckoutPage) return null;
 
+  // Above the mobile bottom nav; above the sticky cart bar while it shows; and on a product page above the sticky
+  // add-to-cart bar only while that bar is on screen (it marks <html data-sticky-atc>), not from the top of the page.
   const bottomClass = onProductPage
-    ? "bottom-36 lg:bottom-6"
+    ? "bottom-20 lg:bottom-6 [html[data-sticky-atc]_&]:bottom-36 lg:[html[data-sticky-atc]_&]:bottom-6"
     : showCartBar
       ? "bottom-36 lg:bottom-24"
       : "bottom-20 lg:bottom-6";
 
   return (
     <>
-      {/* right-20, not flush to the edge (sm:right-6 once there's room) — on a narrow 2-column
-          product grid, ProductCard's own quick-add button sits at the card's bottom-right corner
-          (`bottom-3 right-3`, see product-card.tsx), which lands in almost the exact same viewport
-          pocket as a corner-flush FAB. That made this button visually sit on top of — and, being
-          z-40, actually intercept taps meant for — whatever card happened to scroll underneath it. */}
+      {/* Flush to the right edge, in the gutter corner every shop uses. It used to sit at right-20 to dodge the product
+          cards' quick-add buttons, which put it over the middle of the content on phones (product titles, checkout
+          fields); the overlap check above already ducks it out of the way of a quick-add button that scrolls under it.
+          Hidden while the on-screen keyboard is open. */}
       <div
         ref={widgetRef}
-        className={`fixed right-20 z-40 flex flex-col items-end gap-3 transition-[bottom,opacity] duration-200 ease-smooth sm:right-6 ${bottomClass} ${
+        data-hide-on-keyboard
+        className={`fixed right-4 z-40 flex flex-col items-end gap-3 transition-[bottom,opacity] duration-200 ease-smooth sm:right-6 ${bottomClass} ${
           shouldHide ? "pointer-events-none opacity-0" : "opacity-100"
         }`}
       >
@@ -243,6 +259,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
         </AnimatePresence>
 
         <motion.button
+          ref={toggleRef}
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Close contact menu" : "Contact us"}

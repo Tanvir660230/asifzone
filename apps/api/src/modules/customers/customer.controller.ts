@@ -144,6 +144,10 @@ export const listOrders = asyncHandler(async (req: Request, res: Response) => {
   res.json({ ...result, items: result.items.map(toCustomerOrder) });
 });
 
+export const buyAgain = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ productIds: await customerService.listBuyAgainProductIds(req.customer!.customerId) });
+});
+
 export const getOrder = asyncHandler(async (req: Request, res: Response) => {
   const order = await getOrderForCustomer(req.customer!.customerId, req.params.id!);
   res.json({ order: toCustomerOrder(order) });

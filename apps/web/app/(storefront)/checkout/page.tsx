@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,7 +19,8 @@ import {
   type QuoteDto,
   type QuoteRequestInput,
 } from "@clothing-brand/shared";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -68,8 +70,7 @@ function CheckoutForm() {
   const items = isExpress ? [expressItem] : cartItems;
   // Ad-pixel line items — a marketing signal from the cart's add-time display prices, never a charged amount
   // (PRICING_INVARIANTS §9); every total on this page comes from the server quote.
-  const pixelItems = (): PixelLineItem[] =>
-    items.map((i) => ({ id: i.variantId, name: i.productName, quantity: i.quantity, price: i.price }));
+  const pixelItems = (): PixelLineItem[] => items.map((i) => ({ id: i.variantId, name: i.productName, quantity: i.quantity, price: i.price }));
 
   // A "Buy Now" express item is meant to be one-shot. It's cleared explicitly on successful order
   // below, and the cart page clears any leftover one when the shopper visits their full cart —
@@ -93,7 +94,10 @@ function CheckoutForm() {
   const [couponCode, setCouponCode] = useState<string | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponChecking, setCouponChecking] = useState(false);
-  const [bestCoupon, setBestCoupon] = useState<NonNullable<QuoteDto["coupon"]> | null>(null);
+  // The best coupon the shopper qualifies for is applied for them (server-evaluated), once: removing it, or entering a code
+  // of their own, stops that for the rest of this checkout.
+  const [autoApplied, setAutoApplied] = useState(false);
+  const [couponDeclined, setCouponDeclined] = useState(false);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -177,9 +181,7 @@ function CheckoutForm() {
   // Until a district is chosen, offer every area/thana in the country (as "Area — District") so a
   // shopper who knows their thana but not its district can find it directly — picking one fills in
   // both fields. Once a district is set, the list narrows to just that district as before.
-  const areaOptions: readonly string[] = shippingDistrict
-    ? (BD_AREAS_BY_DISTRICT[shippingDistrict] ?? [])
-    : BD_ALL_AREA_OPTIONS;
+  const areaOptions: readonly string[] = shippingDistrict ? (BD_AREAS_BY_DISTRICT[shippingDistrict] ?? []) : BD_ALL_AREA_OPTIONS;
 
   function handleAreaChange(value: string) {
     const parsed = parseAreaDistrictOption(value);
@@ -257,25 +259,44 @@ function CheckoutForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addressData]);
 
-  // Suggests the best coupon the shopper already qualifies for (server-evaluated), so they don't need to know a code.
+  // Applies the best coupon the shopper already qualifies for (server-evaluated), so nobody pays more for not knowing a
+  // code. The best quote seeds the quote cache, so the totals switch over without a second request.
   const itemsKey = JSON.stringify(lineItems);
   useEffect(() => {
-    if (!mounted || items.length === 0 || couponCode) {
-      setBestCoupon(null);
-      return;
-    }
+    if (!mounted || items.length === 0 || couponCode || couponDeclined) return;
+    let cancelled = false;
     getBestCouponQuote(baseRequest)
-      .then(({ quote: best }) => setBestCoupon(best?.coupon ?? null))
-      .catch(() => setBestCoupon(null));
+      .then(({ quote: best }) => {
+        if (cancelled || !best?.coupon) return;
+        queryClient.setQueryData(["quote", { ...baseRequest, couponCode: best.coupon.code }], best);
+        setCouponCode(best.coupon.code);
+        setCouponInput(best.coupon.code);
+        setCouponError(null);
+        setAutoApplied(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, itemsKey, couponCode, shippingDistrict]);
+  }, [mounted, itemsKey, couponCode, couponDeclined, shippingDistrict]);
 
-  function handleApplySuggestedCoupon() {
-    if (!bestCoupon) return;
-    setCouponCode(bestCoupon.code);
-    setCouponInput(bestCoupon.code);
+  // A coupon applied for the shopper that no longer applies (the bag changed) is let go quietly, so the search can run
+  // again for the new bag.
+  useEffect(() => {
+    if (autoApplied && quote && !quote.coupon) {
+      setAutoApplied(false);
+      setCouponCode(null);
+      setCouponInput("");
+    }
+  }, [autoApplied, quote]);
+
+  function handleRemoveCoupon() {
+    setCouponCode(null);
+    setCouponInput("");
     setCouponError(null);
-    setBestCoupon(null);
+    setAutoApplied(false);
+    setCouponDeclined(true);
   }
 
   // Applying a coupon = asking the server to re-quote with it; the quote either applies it or says why not.
@@ -287,6 +308,8 @@ function CheckoutForm() {
     try {
       const { quote: withCoupon } = await getQuote({ ...baseRequest, couponCode: code });
       if (withCoupon.coupon) {
+        setAutoApplied(false);
+        setCouponDeclined(true);
         queryClient.setQueryData(["quote", { ...baseRequest, couponCode: withCoupon.coupon.code }], withCoupon);
         setCouponCode(withCoupon.coupon.code);
       } else {
@@ -347,13 +370,23 @@ function CheckoutForm() {
     }
   }
 
-  if (!mounted) return null;
+  // Before the stored bag is read: the page frame and title, not a blank page.
+  if (!mounted) {
+    return (
+      <StorefrontPage>
+        <StorefrontPageHeader breadcrumb={[{ name: "Bag", href: "/cart" }, { name: "Checkout" }]} title="Checkout" />
+      </StorefrontPage>
+    );
+  }
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-24 text-center">
-        <h1 className="font-display ui-page-title text-ink-900">Your cart is empty</h1>
-      </div>
+      <StorefrontPage>
+        <StorefrontPageHeader breadcrumb={[{ name: "Bag", href: "/cart" }, { name: "Checkout" }]} title="Checkout" description="Your bag is empty — add something first, then come back here to order." />
+        <Link href="/" className={buttonVariants({ variant: "primary", size: "lg" })}>
+          Continue shopping
+        </Link>
+      </StorefrontPage>
     );
   }
 
@@ -368,15 +401,14 @@ function CheckoutForm() {
   const money = (value: number | undefined) => (value === undefined ? "…" : formatPrice(value));
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className={cn("font-display ui-page-title text-ink-900", isExpress ? "mb-1" : "mb-8")}>Checkout</h1>
-      {isExpress && <p className="mb-7 text-sm text-ink-500">Buying 1 item — your cart is untouched.</p>}
+    <StorefrontPage>
+      <StorefrontPageHeader breadcrumb={[{ name: "Bag", href: "/cart" }, { name: "Checkout" }]} title="Checkout" description={isExpress ? "Buying 1 item — your bag is untouched." : undefined} />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] lg:gap-10">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-12">
         {/* Mobile: the price is what a shopper wants to see before typing anything, so the summary
             renders first (collapsed, total visible) and the form follows. Desktop has room for both
             side by side, so it reverts to a sticky sidebar and the form leads. */}
-        <aside className="order-1 h-fit lg:sticky lg:top-24 lg:order-2">
+        <aside className="order-1 h-fit lg:sticky lg:top-[calc(var(--sticky-top)+1.5rem)] lg:order-2">
           <div className="rounded-lg border border-ink-100 bg-cream-50">
             <button
               type="button"
@@ -384,7 +416,10 @@ function CheckoutForm() {
               className="flex w-full items-center justify-between p-5 text-left lg:cursor-default"
             >
               <span className="font-display text-lg text-ink-900">
-                Order Summary <span className="font-sans text-sm font-normal text-ink-400">({items.length} item{items.length > 1 ? "s" : ""})</span>
+                Order Summary{" "}
+                <span className="font-sans text-sm font-normal text-ink-400">
+                  ({items.length} item{items.length > 1 ? "s" : ""})
+                </span>
               </span>
               <span className="flex items-center gap-2 lg:hidden">
                 <span className="text-sm font-medium text-ink-900">{money(quote?.total)}</span>
@@ -401,9 +436,7 @@ function CheckoutForm() {
                       <span>
                         {item.productName} × {item.quantity}
                         {isEligible && (
-                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium ui-caps text-success-700">
-                            Coupon
-                          </span>
+                          <span className="ml-2 rounded-full bg-success-100 px-1.5 py-0.5 text-[10px] font-medium ui-caps text-success-700">Coupon</span>
                         )}
                       </span>
                       <span>{money(quoteLineAmount(quote, item.variantId) ?? undefined)}</span>
@@ -411,18 +444,6 @@ function CheckoutForm() {
                   );
                 })}
               </div>
-
-              {bestCoupon && (
-                <div className="flex items-center justify-between gap-2 rounded-lg border border-sale-500/30 bg-sale-50 p-3 text-xs text-ink-800">
-                  <span>
-                    Use <span className="font-medium">{bestCoupon.code}</span> —{" "}
-                    {bestCoupon.freeShipping ? "get free shipping" : `save ${formatPrice(bestCoupon.discount)}`}
-                  </span>
-                  <Button type="button" variant="sale" size="sm" onClick={handleApplySuggestedCoupon}>
-                    Apply
-                  </Button>
-                </div>
-              )}
 
               <div>
                 <div className="flex gap-2">
@@ -439,15 +460,21 @@ function CheckoutForm() {
                 </div>
                 {couponError && <p className="ui-field-error">{couponError}</p>}
                 {coupon && (
-                  <p className="mt-1 text-xs text-success-600">
-                    Coupon &ldquo;{coupon.code}&rdquo; applied{coupon.freeShipping ? " — free shipping" : ""}
-                  </p>
+                  <div
+                    className="mt-2 flex items-start justify-between gap-3 rounded-lg bg-success-50 px-3 py-2 text-xs text-success-700"
+                    data-testid="applied-coupon"
+                  >
+                    <p>
+                      {autoApplied ? "Best coupon applied for you: " : "Coupon applied: "}
+                      <span className="font-medium">{coupon.code}</span>
+                      {coupon.freeShipping ? " · free shipping" : couponDiscount > 0 ? ` · you save ${formatPrice(couponDiscount)}` : ""}
+                    </p>
+                    <button type="button" onClick={handleRemoveCoupon} className="shrink-0 font-medium underline underline-offset-2 hover:text-ink-900">
+                      Remove
+                    </button>
+                  </div>
                 )}
-                {quote?.bundle && (
-                  <p className="mt-1 text-xs text-success-600">
-                    {quote.bundle.name} bundle discount applied
-                  </p>
-                )}
+                {quote?.bundle && <p className="mt-1 text-xs text-success-600">{quote.bundle.name} bundle discount applied</p>}
               </div>
 
               <div className="space-y-1.5 border-t border-ink-100 pt-4 text-sm">
@@ -521,9 +548,7 @@ function CheckoutForm() {
         <form onSubmit={handleSubmit(onSubmit)} method="post" className="order-2 space-y-5 lg:order-1">
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">
-                1
-              </span>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">1</span>
               <User size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Contact information</h2>
             </div>
@@ -561,16 +586,26 @@ function CheckoutForm() {
               </div>
               <div className="sm:col-span-2">
                 <Label htmlFor="customerEmail">Email (optional)</Label>
-                <Input id="customerEmail" type="email" autoComplete="email" {...register("customerEmail")} />
+                <Input
+                  id="customerEmail"
+                  type="email"
+                  autoComplete="email"
+                  aria-invalid={!!errors.customerEmail}
+                  aria-describedby={errors.customerEmail ? "customerEmail-error" : undefined}
+                  {...register("customerEmail")}
+                />
+                {errors.customerEmail && (
+                  <p id="customerEmail-error" className="ui-field-error">
+                    {errors.customerEmail.message}
+                  </p>
+                )}
               </div>
             </div>
           </div>
 
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">
-                2
-              </span>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">2</span>
               <MapPin size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Delivery address</h2>
             </div>
@@ -656,9 +691,7 @@ function CheckoutForm() {
 
           <div className="rounded-lg border border-ink-100 bg-cream-50 p-5">
             <div className="mb-4 flex items-center gap-2.5">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">
-                3
-              </span>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-xs font-medium text-cream-50">3</span>
               <Banknote size={16} className="text-ink-400" />
               <h2 className="font-display text-lg text-ink-900">Payment method</h2>
             </div>
@@ -685,13 +718,7 @@ function CheckoutForm() {
               )}
               {codEnabled && (
                 <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
-                  <input
-                    type="radio"
-                    value="COD"
-                    className="accent-ink-900"
-                    {...register("paymentMethod")}
-                    defaultChecked={paymentMethod === "COD"}
-                  />
+                  <input type="radio" value="COD" className="accent-ink-900" {...register("paymentMethod")} defaultChecked={paymentMethod === "COD"} />
                   <Banknote size={16} className="text-ink-400" />
                   Cash on Delivery
                 </label>
@@ -714,13 +741,7 @@ function CheckoutForm() {
               )}
               {epsPaymentEnabled && (
                 <label className="flex items-center gap-3 rounded-lg border border-ink-200 p-3 text-sm transition-colors duration-150 ease-smooth has-[:checked]:border-ink-900 has-[:checked]:bg-ink-50">
-                  <input
-                    type="radio"
-                    value="EPS_PG"
-                    className="accent-ink-900"
-                    {...register("paymentMethod")}
-                    defaultChecked={paymentMethod === "EPS_PG"}
-                  />
+                  <input type="radio" value="EPS_PG" className="accent-ink-900" {...register("paymentMethod")} defaultChecked={paymentMethod === "EPS_PG"} />
                   <Smartphone size={16} className="text-ink-400" />
                   <span>
                     Digital Payment
@@ -733,9 +754,7 @@ function CheckoutForm() {
                   Checkout is temporarily unavailable — please try again later.
                 </p>
               )}
-              {errors.paymentMethod && (
-                <p className="text-xs text-danger-600">{errors.paymentMethod.message || "Please select a payment method"}</p>
-              )}
+              {errors.paymentMethod && <p className="text-xs text-danger-600">{errors.paymentMethod.message || "Please select a payment method"}</p>}
             </div>
             {(settingsData?.settings.paymentMethodsImageUrl ?? paymentMethods.length > 0) && (
               <div className="mt-4 border-t border-ink-100 pt-4">
@@ -773,13 +792,7 @@ function CheckoutForm() {
 
           {submitError && <p className="text-sm text-danger-600">{submitError}</p>}
 
-          <Button
-            type="submit"
-            variant="brass"
-            size="lg"
-            className="w-full"
-            disabled={isSubmitting || !anyPaymentMethodEnabled}
-          >
+          <Button type="submit" variant="brass" size="lg" className="w-full" disabled={isSubmitting || !anyPaymentMethodEnabled}>
             {isSubmitting
               ? "Placing order…"
               : useStoreCredit && storeBalance > 0 && quote
@@ -788,6 +801,6 @@ function CheckoutForm() {
           </Button>
         </form>
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

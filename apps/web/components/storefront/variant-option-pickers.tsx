@@ -49,6 +49,10 @@ export function stockLine(trackInventory: boolean, stock: number, lowStockThresh
   return { text: "In stock", tone: "muted" }; // IN_STOCK and UNLIMITED (D5)
 }
 
+/** An option that can't be bought right now: a muted fill, a dashed outline and a clear strike-through, so it reads as
+ * "sold out" at a glance while the value stays legible (information, not an error, so no red). */
+const UNAVAILABLE_PILL = "border-dashed border-line-strong bg-surface-muted text-ink-500 line-through decoration-ink-500 decoration-[1.5px]";
+
 export const STOCK_TONE_CLASS = { muted: "text-ink-500", warn: "font-medium text-brass-600", urgent: "font-medium text-danger-600" } as const;
 
 interface VariantOptionPickersProps {
@@ -63,10 +67,16 @@ interface VariantOptionPickersProps {
   instanceId: string;
   /** Rendered next to the size heading (e.g. the size-guide link). */
   sizeHeadingExtra?: ReactNode;
+  /** The size this shopper usually takes (lib/size-memory), marked on its pill. Never selected for them. */
+  suggestedSize?: string | null;
+  /** Sold-out choices can still be picked (they stay crossed out), so the shopper can ask to be told when one is back.
+   * On for the product page; off in the buying popup, where only what can be bought is offered. */
+  soldOutSelectable?: boolean;
 }
 
-/** Size pills and colour swatches. Out-of-stock choices stay visible but are crossed out and disabled. */
-export function VariantOptionPickers({ variants, trackInventory, options, selectedSize, selectedColor, onSelectSize, onSelectColor, instanceId, sizeHeadingExtra }: VariantOptionPickersProps) {
+/** Size pills and colour swatches. Out-of-stock choices stay visible but crossed out: disabled, or (soldOutSelectable)
+ * pickable for a back-in-stock alert. */
+export function VariantOptionPickers({ variants, trackInventory, options, selectedSize, selectedColor, onSelectSize, onSelectColor, instanceId, sizeHeadingExtra, suggestedSize, soldOutSelectable = false }: VariantOptionPickersProps) {
   const sellable = (v: ProductVariant) => isAvailable(trackInventory, v.stock);
   const sizeHasStock = (size: string) => variants.some((v) => v.size === size && sellable(v));
   const comboHasStock = (size: string, color: string) => variants.some((v) => v.size === size && v.color === color && sellable(v));
@@ -84,19 +94,24 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
               const label = variants.find((v) => v.size === size)?.sizeLabel;
               const inStock = sizeHasStock(size);
               const isSelected = selectedSize === size;
+              const isSuggested = suggestedSize === size && inStock;
               return (
                 <motion.button
                   key={size}
                   type="button"
                   onClick={() => onSelectSize(size)}
-                  disabled={!inStock}
-                  aria-label={inStock ? size : `${size} — out of stock`}
+                  disabled={!inStock && !soldOutSelectable}
+                  aria-label={inStock ? (isSuggested ? `${size}, your usual size` : size) : `${size} — out of stock`}
                   aria-pressed={isSelected}
                   title={inStock ? undefined : "Out of stock"}
-                  whileTap={inStock ? { scale: 0.9 } : undefined}
+                  whileTap={inStock || soldOutSelectable ? { scale: 0.9 } : undefined}
                   className={cn(
                     "relative isolate flex h-10 min-w-10 items-center justify-center rounded-full border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
-                    isSelected ? "border-transparent text-cream-50" : inStock ? "border-ink-200 text-ink-700 hover:border-ink-900" : "border-danger-100 bg-danger-50 text-ink-400",
+                    isSelected
+                      ? cn("border-transparent text-cream-50", !inStock && "line-through decoration-cream-50/70 decoration-[1.5px]")
+                      : inStock
+                        ? "border-ink-200 text-ink-700 hover:border-ink-900"
+                        : UNAVAILABLE_PILL,
                   )}
                 >
                   {isSelected && (
@@ -107,13 +122,19 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                     />
                   )}
                   {label ? `${size} (${label})` : size}
-                  {!inStock && (
-                    <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 -rotate-[14deg] rounded-full bg-danger-500/80" />
+                  {isSuggested && !isSelected && (
+                    // A small accent dot on the pill: "the one you usually take".
+                    <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-canvas" />
                   )}
                 </motion.button>
               );
             })}
           </div>
+          {options.sizes.some((s) => !sizeHasStock(s)) && (
+            <p className="mt-2 text-xs text-ink-500" data-testid="sold-out-legend">
+              Crossed-out sizes are sold out{soldOutSelectable ? ". Tap one to get an alert when it's back." : "."}
+            </p>
+          )}
         </div>
       )}
 
@@ -125,7 +146,8 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
           </p>
           <div className="flex flex-wrap gap-2" role="group" aria-label={options.colorLabel}>
             {options.colors.map((color) => {
-              const disabled = selectedSize ? !comboHasStock(selectedSize, color) : false;
+              const soldOut = selectedSize ? !comboHasStock(selectedSize, color) : false;
+              const disabled = soldOut && !soldOutSelectable;
               const colorHex = variants.find((v) => v.color === color)?.colorHex;
               const isSelected = selectedColor === color;
               // No colour code on file: a blank grey dot would be indistinguishable from the next one, so show the name.
@@ -136,23 +158,20 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                     type="button"
                     onClick={() => onSelectColor(color)}
                     disabled={disabled}
-                    title={disabled ? `${color} — out of stock in this size` : color}
-                    aria-label={disabled ? `${color} — out of stock in this size` : color}
+                    title={soldOut ? `${color} — out of stock in this size` : color}
+                    aria-label={soldOut ? `${color} — out of stock in this size` : color}
                     aria-pressed={isSelected}
                     whileTap={!disabled ? { scale: 0.9 } : undefined}
                     className={cn(
                       "relative flex h-9 items-center justify-center rounded-full border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
                       isSelected
                         ? "border-brass-400 bg-brass-50 text-ink-900 ring-2 ring-brass-200"
-                        : disabled
-                          ? "border-danger-100 bg-danger-50 text-ink-400"
+                        : soldOut
+                          ? UNAVAILABLE_PILL
                           : "border-ink-200 text-ink-700 hover:border-ink-900",
                     )}
                   >
                     {color}
-                    {disabled && (
-                      <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 -rotate-[10deg] rounded-full bg-danger-500/80" />
-                    )}
                   </motion.button>
                 );
               }
@@ -162,19 +181,19 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   type="button"
                   onClick={() => onSelectColor(color)}
                   disabled={disabled}
-                  title={disabled ? `${color} — out of stock in this size` : color}
-                  aria-label={disabled ? `${color} — out of stock in this size` : color}
+                  title={soldOut ? `${color} — out of stock in this size` : color}
+                  aria-label={soldOut ? `${color} — out of stock in this size` : color}
                   aria-pressed={isSelected}
                   whileTap={!disabled ? { scale: 0.85 } : undefined}
                   animate={isSelected ? { scale: [1, 1.12, 1] } : { scale: 1 }}
                   transition={{ duration: 0.35, ease: "easeOut" }}
                   className={cn(
                     "relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-2 shadow-sm transition-all duration-200 ease-smooth disabled:cursor-not-allowed",
-                    isSelected ? "border-brass-400 ring-2 ring-brass-200" : disabled ? "border-ink-200" : isPaleColor(colorHex) ? "border-ink-300" : "border-ink-200",
+                    isSelected ? "border-brass-400 ring-2 ring-brass-200" : soldOut ? "border-ink-200" : isPaleColor(colorHex) ? "border-ink-300" : "border-ink-200",
                   )}
                   style={{ backgroundColor: colorHex ?? "#d4d4d4" }}
                 >
-                  {disabled && (
+                  {soldOut && (
                     <>
                       {/* Wash the swatch down (not the whole button) so the red out-of-stock mark stays fully legible. */}
                       <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-cream-50/70" />
@@ -183,7 +202,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                     </>
                   )}
                   <AnimatePresence>
-                    {isSelected && !disabled && (
+                    {isSelected && !soldOut && (
                       <motion.span
                         key="check"
                         initial={{ scale: 0, opacity: 0 }}

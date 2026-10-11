@@ -152,7 +152,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
               aria-current={i === index}
               className={cn(
                 "h-1.5 rounded-full transition-all duration-300 ease-smooth",
-                i === index ? "w-6 bg-brass-400" : "w-1.5 bg-cream-50/60 hover:bg-cream-50",
+                i === index ? "w-6 bg-cream-50" : "w-1.5 bg-cream-50/50 hover:bg-cream-50/80",
               )}
             />
           ))}

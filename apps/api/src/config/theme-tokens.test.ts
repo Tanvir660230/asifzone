@@ -86,3 +86,16 @@ describe("brand themes", () => {
     }
   });
 });
+
+describe("base tertiary text", () => {
+  it("clears WCAG AA (4.5:1) on every light surface, and the grey text steps do inside the base design's dark sections", () => {
+    const ink400 = channels(tokens.cssVariables["--color-ink-400"]!);
+    for (const surface of ["--color-cream-50", "--color-cream-100", "--color-ink-50", "--color-ink-100"]) {
+      expect(contrast(ink400, channels(tokens.cssVariables[surface]!)), surface).toBeGreaterThanOrEqual(4.5);
+    }
+    const darkSection = channels(tokens.cssVariables["--color-ink-950"]!);
+    for (const text of ["--color-ink-400", "--color-ink-500"]) {
+      expect(contrast(channels(tokens.inverseBandVariables[text]!), darkSection), `dark section ${text}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});

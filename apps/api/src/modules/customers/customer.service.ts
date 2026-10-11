@@ -1185,6 +1185,28 @@ export async function listCustomerOrders(customerId: string, query: PaginationQu
   };
 }
 
+/** "Buy again": the products this customer has received (delivered, fully or partly), the most recent delivery first,
+ * each product once. Ids only: the storefront loads the live products, which drops anything no longer on sale. */
+export async function listBuyAgainProductIds(customerId: string, limit = 12): Promise<string[]> {
+  const items = await prisma.orderItem.findMany({
+    where: { order: { customerId, deletedAt: null, status: { in: ["DELIVERED", "PARTIALLY_DELIVERED"] } } },
+    select: { variantId: true },
+    orderBy: [{ order: { createdAt: "desc" } }, { id: "asc" }],
+    take: 200,
+  });
+  const variantIds = [...new Set(items.map((i) => i.variantId))];
+  if (variantIds.length === 0) return [];
+  const variants = await prisma.productVariant.findMany({ where: { id: { in: variantIds } }, select: { id: true, productId: true } });
+  const productOf = new Map(variants.map((v) => [v.id, v.productId]));
+  const productIds = new Set<string>();
+  for (const variantId of variantIds) {
+    const productId = productOf.get(variantId);
+    if (productId) productIds.add(productId);
+    if (productIds.size >= limit) break;
+  }
+  return [...productIds];
+}
+
 export async function listMyPointsLedger(customerId: string, query: PaginationQuery) {
   const where = { customerId };
   return paginate(

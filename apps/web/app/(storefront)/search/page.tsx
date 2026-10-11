@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ProductSort } from "@clothing-brand/shared";
 import { SearchBox } from "@/components/storefront/search-box";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { SortSelect } from "@/components/storefront/sort-select";
 import { Pagination } from "@/components/storefront/pagination";
@@ -64,55 +65,37 @@ export default async function SearchPage({ searchParams }: Props) {
   ]);
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
-  return (
-    <div>
-      <SearchSessionTracker query={query} />
-      {/* An editorial header band, same language as the other content pages (PageHero), instead
-          of a bare input dropped onto the page — the search box is the whole point of this page,
-          so it gets a proper moment rather than looking like an afterthought. */}
-      <div className="border-b border-ink-100 bg-cream-100">
-        <div className="mx-auto max-w-3xl px-4 py-14 text-center sm:px-6 sm:py-16 lg:px-8">
-          <p className="mb-3 text-xs ui-eyebrow text-brass-500">{query ? "Search" : "Shop"}</p>
-          <h1 className="font-display text-3xl text-ink-900 sm:text-4xl">
-            {query ? <>Results for &ldquo;{query}&rdquo;</> : "All Products"}
-          </h1>
-          {!query && (
-            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-ink-500">
-              Browse the full catalog, or search by name, category, or style.
-            </p>
-          )}
-          <div className="mt-8">
-            <SearchBox initialValue={query} />
-          </div>
-        </div>
-      </div>
+  const countLine = query ? `${result.total} result${result.total === 1 ? "" : "s"}` : `${result.total} product${result.total === 1 ? "" : "s"}`;
 
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-end justify-between">
-          <p className="text-sm text-ink-500">
-            {query
-              ? `${result.total} result${result.total === 1 ? "" : "s"} for “${query}”`
-              : `${result.total} product${result.total === 1 ? "" : "s"}`}
-          </p>
-          <SortSelect hasQuery={Boolean(query)} />
-        </div>
-        <div className="flex flex-col gap-10 lg:flex-row">
-          <FacetFilters facets={facets} />
-          <div className="min-w-0 flex-1">
-            {result.items.length > 0 && (
-              <script
-                type="application/ld+json"
-                dangerouslySetInnerHTML={{ __html: jsonLdString(buildItemListJsonLd(result.items, getSiteUrl())) }}
-              />
-            )}
-            <ProductGrid
-              products={result.items}
-              emptyState={query ? <NoSearchResults query={query} didYouMean={result.didYouMean} /> : undefined}
-            />
-            <Pagination page={page} totalPages={totalPages} />
+  return (
+    <StorefrontPage>
+      <SearchSessionTracker query={query} />
+      <StorefrontPageHeader
+        eyebrow={query ? "Search" : "Shop"}
+        title={query ? <>Results for &ldquo;{query}&rdquo;</> : "All products"}
+        description={countLine}
+        actions={
+          <div className="hidden lg:block">
+            <SortSelect hasQuery={Boolean(query)} />
           </div>
+        }
+      />
+      {/* Refine the search where the results start, at the page's left edge like every other control. */}
+      <div className="mb-8 max-w-2xl">
+        <SearchBox initialValue={query} />
+      </div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-10">
+        <h2 className="sr-only">Refine</h2>
+        <FacetFilters facets={facets} toolbarExtra={<SortSelect hasQuery={Boolean(query)} className="w-44" />} />
+        <div className="min-w-0 flex-1">
+          <h2 className="sr-only">Products</h2>
+          {result.items.length > 0 && (
+            <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(buildItemListJsonLd(result.items, getSiteUrl())) }} />
+          )}
+          <ProductGrid products={result.items} emptyState={query ? <NoSearchResults query={query} didYouMean={result.didYouMean} /> : undefined} />
+          <Pagination page={page} totalPages={totalPages} />
         </div>
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

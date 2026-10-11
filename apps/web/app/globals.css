@@ -175,6 +175,25 @@
     font-size: var(--page-title-size);
     line-height: var(--page-title-leading);
   }
+  /* The page frame every storefront and account page sits in (StorefrontPage): the same width, side gutters and
+     distance below the header everywhere, so moving between pages never shifts the edges the eye follows. Content
+     inside may be narrower, but always starts at this frame's left edge. */
+  .ui-page {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 80rem;
+    padding: 1.5rem 1rem 4rem;
+  }
+  @media (min-width: 640px) {
+    .ui-page {
+      padding: 2rem 1.5rem 5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .ui-page {
+      padding: 2.5rem 2rem 5rem;
+    }
+  }
   @media (min-width: 640px) {
     .ui-section-title {
       font-size: var(--section-title-size-sm);
@@ -217,17 +236,6 @@
   }
   .ui-art-on-light {
     display: var(--band-light-art);
-  }
-  /* Tile grid (category grid): up to 4 equal columns, fewer as the row narrows — each column at least
-     --tile-min wide — and a short catalog stays centred instead of leaving empty columns. The gap and the column
-     arithmetic read the same variable, so the count can never drift with the root font size. */
-  .ui-tile-grid {
-    --tile-gap: 1rem;
-    --tile-min: 9.5rem;
-    display: grid;
-    gap: var(--tile-gap);
-    grid-template-columns: repeat(auto-fit, minmax(0, max(var(--tile-min), (100% - 3 * var(--tile-gap)) / 4)));
-    justify-content: center;
   }
   /* A category tile's caption: over the photograph (absolute, filling the tile so its scrim rises from the bottom) or
      below it (static) — the theme decides. */
@@ -441,11 +449,54 @@
     @apply bg-ink-950/20 backdrop-blur-[3px];
   }
 
+  /* ── Scroll reveal (components/storefront/reveal.tsx) ────────────────────────────────────────
+     A scroll-driven animation: the element rises into place while it enters the viewport. No JavaScript and nothing is
+     hidden up front — browsers without `animation-timeline` and readers who prefer reduced motion just see the content.
+     `--reveal-i` staggers siblings by shifting where in the entry their animation runs. */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .ui-reveal {
+        animation: ui-reveal linear both;
+        animation-timeline: view();
+        animation-range: entry calc(var(--reveal-i, 0) * 2%) entry calc(25% + var(--reveal-i, 0) * 2%);
+      }
+    }
+  }
+
+  /* The storefront header (components/storefront/header-shell.tsx): flat at the top of the page, its edge shadow once
+     the page has scrolled under it. It always stays in view; `--sticky-top` is where elements pinned under it sit
+     (`top-[var(--sticky-top)]`). */
+  .ui-site-header:not([data-scrolled]) .ui-header-bar {
+    box-shadow: none;
+  }
+  :root {
+    --sticky-top: 4rem;
+  }
+  @media (min-width: 1024px) {
+    :root {
+      --sticky-top: 4.5rem;
+    }
+  }
+
+  /* A horizontal product rail's track: scrolls by swipe, trackpad or the arrow buttons, without a visible scrollbar. */
+  .ui-rail {
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .ui-rail::-webkit-scrollbar {
+    display: none;
+  }
+
   /* ── Loading ────────────────────────────────────────────────────────────────────────────── */
 
-  /* Shimmering placeholder block. Size it with utilities (h-4 w-1/2 …). */
+  /* Shimmering placeholder block. Size it with utilities (h-4 w-1/2 …). It stays invisible for its first 0.3s: when the
+     content arrives sooner (the usual case) the shopper never sees a loading state at all; only a genuinely slow load
+     fades the placeholder in. Its box is there from the start, so nothing shifts either way. */
   .ui-skeleton {
-    @apply animate-shimmer rounded-md;
+    @apply rounded-md;
+    animation:
+      shimmer 1.6s linear infinite,
+      ui-appear 0.2s ease-out 0.3s both;
     background-image: linear-gradient(
       90deg,
       rgb(var(--color-ink-100)) 0%,
@@ -453,6 +504,18 @@
       rgb(var(--color-ink-100)) 100%
     );
     background-size: 200% 100%;
+  }
+  /* The same hold-back for any other loading indicator (spinner, "Loading…" line). */
+  .ui-delayed {
+    animation: ui-appear 0.2s ease-out 0.3s both;
+  }
+  @keyframes ui-appear {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 }
 
@@ -513,4 +576,15 @@
 .tiptap-content p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   @apply pointer-events-none float-left h-0 text-ink-300;
+}
+
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
-import { PageHero } from "@/components/storefront/page-hero";
-import { Breadcrumb } from "@/components/storefront/breadcrumb";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { MobileTocSelect } from "@/components/storefront/mobile-toc-select";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
@@ -41,12 +40,12 @@ const SECTIONS = [
     body: (
       <>
         <p>
-          We collect the information you give us directly — your name, email, phone number, and delivery address —
-          when you create an account, place an order, or contact us for support.
+          We collect the information you give us directly — your name, email, phone number, and delivery address — when you create an account, place an order,
+          or contact us for support.
         </p>
         <p>
-          We also collect basic technical information automatically, such as your browser type, device, and pages
-          viewed, which helps us keep the storefront fast, secure, and working correctly across devices.
+          We also collect basic technical information automatically, such as your browser type, device, and pages viewed, which helps us keep the storefront
+          fast, secure, and working correctly across devices.
         </p>
       </>
     ),
@@ -56,9 +55,8 @@ const SECTIONS = [
     title: "How We Use Your Information",
     body: (
       <p>
-        Your information is used to process and deliver orders, provide customer support, prevent fraud, and — only
-        where you&rsquo;ve opted in — send updates about promotions, restocks, or your order status. We do not sell
-        your personal information to third parties.
+        Your information is used to process and deliver orders, provide customer support, prevent fraud, and — only where you&rsquo;ve opted in — send updates
+        about promotions, restocks, or your order status. We do not sell your personal information to third parties.
       </p>
     ),
   },
@@ -67,16 +65,13 @@ const SECTIONS = [
     title: "Cookies & Tracking",
     body: (
       <p>
-        We use essential cookies to keep you signed in and remember your cart between visits, and limited analytics
-        to understand which pages are useful so we can improve them. We also use the Meta (Facebook) Pixel and
-        Meta&rsquo;s Conversions API to measure how our ads perform: they record events such as products viewed,
-        items added to cart and completed orders, and for orders we share your email, phone number, name and
-        city with Meta only in hashed (irreversibly encoded) form, so they can be matched to a Meta account.
-        We never share payment details or passwords. You can disable cookies in your browser settings, though
-        some parts of checkout may not work correctly without them, and manage ad preferences in your Facebook
-        account settings. We also use the TikTok Pixel to measure our TikTok ads: it records the same kinds of shopping
-        events (pages and products viewed, items added to cart, checkout and completed orders with their items and
-        totals), but we do not send it your name, email, phone number, address or any payment details.
+        We use essential cookies to keep you signed in and remember your cart between visits, and limited analytics to understand which pages are useful so we
+        can improve them. We also use the Meta (Facebook) Pixel and Meta&rsquo;s Conversions API to measure how our ads perform: they record events such as
+        products viewed, items added to cart and completed orders, and for orders we share your email, phone number, name and city with Meta only in hashed
+        (irreversibly encoded) form, so they can be matched to a Meta account. We never share payment details or passwords. You can disable cookies in your
+        browser settings, though some parts of checkout may not work correctly without them, and manage ad preferences in your Facebook account settings. We
+        also use the TikTok Pixel to measure our TikTok ads: it records the same kinds of shopping events (pages and products viewed, items added to cart,
+        checkout and completed orders with their items and totals), but we do not send it your name, email, phone number, address or any payment details.
       </p>
     ),
   },
@@ -85,9 +80,8 @@ const SECTIONS = [
     title: "Data Sharing & Third Parties",
     body: (
       <p>
-        We share only what&rsquo;s necessary with the courier partners who deliver your order and the payment
-        providers who process your payment. These partners are only permitted to use your information to complete
-        that specific service — not for their own marketing.
+        We share only what&rsquo;s necessary with the courier partners who deliver your order and the payment providers who process your payment. These partners
+        are only permitted to use your information to complete that specific service — not for their own marketing.
       </p>
     ),
   },
@@ -96,9 +90,8 @@ const SECTIONS = [
     title: "Data Security",
     body: (
       <p>
-        Account passwords are stored encrypted, and payment details are never stored on our own servers. We use
-        industry-standard safeguards to protect your data, though no online system can be guaranteed 100% secure —
-        if we ever become aware of a breach affecting your account, we will notify you promptly.
+        Account passwords are stored encrypted, and payment details are never stored on our own servers. We use industry-standard safeguards to protect your
+        data, though no online system can be guaranteed 100% secure — if we ever become aware of a breach affecting your account, we will notify you promptly.
       </p>
     ),
   },
@@ -107,9 +100,8 @@ const SECTIONS = [
     title: "Your Rights & Choices",
     body: (
       <p>
-        You can review or update your personal details anytime from your account page, unsubscribe from marketing
-        messages using the link in any email, or request that we delete your account and associated data by
-        contacting us directly.
+        You can review or update your personal details anytime from your account page, unsubscribe from marketing messages using the link in any email, or
+        request that we delete your account and associated data by contacting us directly.
       </p>
     ),
   },
@@ -118,8 +110,8 @@ const SECTIONS = [
     title: "Children's Privacy",
     body: (
       <p>
-        Our store is intended for users aged 18 and older. We do not knowingly collect personal information from
-        children, and will delete any such information if we become aware of it.
+        Our store is intended for users aged 18 and older. We do not knowingly collect personal information from children, and will delete any such information
+        if we become aware of it.
       </p>
     ),
   },
@@ -128,8 +120,8 @@ const SECTIONS = [
     title: "Changes to This Policy",
     body: (
       <p>
-        We may update this policy from time to time as our services evolve. Material changes will be reflected here
-        with an updated date at the top of this page.
+        We may update this policy from time to time as our services evolve. Material changes will be reflected here with an updated date at the top of this
+        page.
       </p>
     ),
   },
@@ -150,17 +142,14 @@ const SECTIONS = [
 
 export default function PrivacyPolicyPage() {
   return (
-    <div>
-      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
-        <Breadcrumb trail={[{ name: "Privacy Policy" }]} />
-      </div>
-      <PageHero
-        eyebrow={`Last updated ${LAST_UPDATED}`}
+    <StorefrontPage>
+      <StorefrontPageHeader
+        breadcrumb={[{ name: "Privacy Policy" }]}
         title="Privacy Policy"
-        description="A plain-language look at what we collect, why, and how it's kept safe."
+        description={`Last updated ${LAST_UPDATED}. A plain-language look at what we collect, why, and how it's kept safe.`}
       />
 
-      <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 lg:px-8">
+      <div className="max-w-5xl">
         <MobileTocSelect sections={SECTIONS} />
         <div className="lg:grid lg:grid-cols-[220px_1fr] lg:gap-12">
           <nav aria-label="Table of contents" className="hidden lg:block">
@@ -181,7 +170,7 @@ export default function PrivacyPolicyPage() {
             {SECTIONS.map((section, i) => (
               <section key={section.id} id={section.id} className="scroll-mt-28">
                 <h2 className="mb-3 flex items-baseline gap-2 font-display text-lg text-ink-900">
-                  <span className="text-xs font-normal text-ink-300">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="text-xs font-normal text-ink-400">{String(i + 1).padStart(2, "0")}</span>
                   {section.title}
                 </h2>
                 <div className="space-y-3">{section.body}</div>
@@ -190,6 +179,6 @@ export default function PrivacyPolicyPage() {
           </div>
         </div>
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

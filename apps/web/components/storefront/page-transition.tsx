@@ -14,11 +14,14 @@ import { durations, easings } from "@/lib/motion";
  * the next one mounts, so they crossfade in place with no blank gap and no layout jump. */
 export function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  // The account is one place with its own content fade under fixed tabs (AccountContent): moving between its sections
+  // must not fade the tabs too, so the whole account shares one key here.
+  const key = pathname.startsWith("/account") ? "/account" : pathname;
 
   return (
     <AnimatePresence mode="popLayout" initial={false}>
       <motion.div
-        key={pathname}
+        key={key}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -6 }}
