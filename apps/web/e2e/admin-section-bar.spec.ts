@@ -46,14 +46,18 @@ test.describe("admin section bar", () => {
     await expect(orders.getByRole("link", { name: "All orders" })).toHaveAttribute("aria-current", "page", NAV);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/orders-${info.project.name}.png` });
 
-    // Scrolled: the page's own sticky filter bar pins under the section bar (top-chrome), not beneath it.
-    const barBox = await orders.boundingBox();
-    await page.locator("main").evaluate((main) => main.parentElement?.scrollBy(0, 900));
-    const filterSearch = page.getByPlaceholder(/Search order/);
-    await expect(filterSearch).toBeInViewport();
-    const searchBox = await filterSearch.boundingBox();
-    expect(searchBox!.y).toBeGreaterThanOrEqual(barBox!.y + barBox!.height);
-    if (SHOTS) await page.screenshot({ path: `${SHOTS}/orders-scrolled-${info.project.name}.png` });
+    // Scrolled: the page's own sticky filter bar pins under the section bar (top-chrome), not beneath it. It is sticky from
+    // `sm` only (orders-filter-bar.tsx) — on a phone it scrolls away with the list, which only shows once there are
+    // enough orders to scroll.
+    if (page.viewportSize()!.width >= 640) {
+      const barBox = await orders.boundingBox();
+      await page.locator("main").evaluate((main) => main.parentElement?.scrollBy(0, 900));
+      const filterSearch = page.getByPlaceholder(/Search order/);
+      await expect(filterSearch).toBeInViewport();
+      const searchBox = await filterSearch.boundingBox();
+      expect(searchBox!.y).toBeGreaterThanOrEqual(barBox!.y + barBox!.height);
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/orders-scrolled-${info.project.name}.png` });
+    }
   });
 
   test("stays out of create flows", async ({ page }) => {
