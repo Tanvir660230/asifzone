@@ -32,6 +32,39 @@ const config = [
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
+  // Installation isolation (docs/BUSINESS_DECISIONS.md D19): installations sharing a cache must never read or bust each
+  // other's Next.js data-cache entries, so every cache tag passes through lib/runtime-config.ts cacheTag(). Tags are set
+  // only by the storefront fetch wrapper and revalidated only by the revalidate route — both apply the prefix.
+  {
+    ignores: ["app/api/revalidate/route.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/cache",
+              importNames: ["revalidateTag", "revalidatePath", "unstable_cache", "unstable_cacheTag", "cacheTag"],
+              message: "Cache tags are installation-scoped: revalidate through app/api/revalidate (cacheTag from lib/runtime-config).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    ignores: ["lib/api/storefront.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Property[key.name='next'] > ObjectExpression > Property[key.name='tags']",
+          message: "Cache tags are installation-scoped: fetch through lib/api/storefront.ts, which prefixes them with cacheTag().",
+        },
+      ],
+    },
+  },
+  // Admin architecture guards come after the installation guards: for admin files they replace those rule entries.
   {
     files: ADMIN_UI,
     rules: {

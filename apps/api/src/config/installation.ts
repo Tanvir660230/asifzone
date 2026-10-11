@@ -15,3 +15,18 @@ import { installationNamespace, resolveInstallId, type InstallationNamespace } f
 export const installId = resolveInstallId(process.env);
 
 export const namespace: InstallationNamespace = installationNamespace(installId);
+
+/**
+ * JWT audience binding every session token this installation signs to this installation (docs/BUSINESS_DECISIONS.md D17).
+ * Installations never share JWT secrets (docs/STORE_DEPLOYMENT.md); if two ever do by mistake, one still refuses the
+ * other's tokens.
+ */
+export const TOKEN_AUDIENCE = `install:${installId}`;
+
+/** Throws when a verified token was issued by another installation. A token without an audience was issued before tokens
+ * named their installation; it is accepted until it expires, so the deploy that introduces the claim logs nobody out. */
+export function assertTokenInstallation(payload: { aud?: unknown }): void {
+  if (payload.aud === undefined) return;
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!audiences.includes(TOKEN_AUDIENCE)) throw new Error("token was issued by another installation");
+}

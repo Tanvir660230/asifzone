@@ -69,8 +69,13 @@ the footer should keep its "We Accept" row.
 under `install:<INSTALL_ID>:` — cache keys, distributed locks, BullMQ queues (BullMQ `prefix`) — and its Next.js
 data-cache tags carry the same prefix. Two installations can therefore share one Redis server safely. One owner:
 `packages/shared/src/installation.ts` (`installationNamespace`), used by `apps/api/src/config/installation.ts` and
-`apps/web/lib/runtime-config.ts`. **Never change a running store's `INSTALL_ID`**: its cache starts cold and any job still
-queued under the old id is not picked up.
+`apps/web/lib/runtime-config.ts`. **Never change a running store's `INSTALL_ID`**: its cache starts cold, any job still
+queued under the old id is not picked up, and every signed-in admin and customer is signed out (session tokens name the
+installation — tokens issued before that claim existed stay valid until they expire).
+
+Isolation between installations is proved end to end by `pnpm --filter api test:installations`: two API processes, two
+disposable databases, one shared Redis (decisions D17–D21 in [BUSINESS_DECISIONS.md](BUSINESS_DECISIONS.md)). It needs a
+loopback Postgres (`.env.test` or `ISO_PG_URL`) and an empty Redis logical database (`ISO_REDIS_URL`, default db 9).
 
 ## Runtime configuration (Phase 1A)
 
