@@ -13,8 +13,7 @@ import type {
   ReconcilePartialDeliveryInput,
   OrderQueueId,
 } from "@clothing-brand/shared";
-import { apiFetch, type FetchSignal } from "../api-client";
-import { publicApiUrl } from "../runtime-config";
+import { apiDownload, apiFetch, type FetchSignal } from "../api-client";
 
 export interface AdminOrderListParams {
   page?: number;
@@ -101,8 +100,9 @@ export function getOrderStats() {
 
 /** CSV export needs the browser's cookie jar for admin auth but isn't JSON, so it bypasses apiFetch —
  * a plain same-tab navigation lets the browser handle the file download via Content-Disposition. */
-export function downloadOrdersCsvUrl(params: AdminOrderListParams = {}) {
-  return `${publicApiUrl()}/api/orders/export/csv?${buildOrderListQuery(params).toString()}`;
+/** Saves the current filtered list as CSV; rejects with the server's message (bad filter, expired session) on failure. */
+export function downloadOrdersCsv(params: AdminOrderListParams = {}) {
+  return apiDownload(`/api/orders/export/csv?${buildOrderListQuery(params).toString()}`, "orders.csv");
 }
 
 export function bulkGetOrders(ids: string[]) {

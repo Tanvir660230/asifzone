@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
@@ -13,7 +13,29 @@ interface PopoverProps {
    * edge — pick whichever keeps the panel from overflowing off its side of the trigger. */
   align?: "start" | "end";
   className?: string;
+  /** "menu" when the panel is a list of actions: its `menuitem`s get arrow-key, Home and End navigation (WAI-ARIA menu
+   * pattern). Anything else — fields, pickers — stays a "dialog". */
+  role?: "dialog" | "menu";
+  "aria-label"?: string;
   children: ReactNode;
+}
+
+const MENU_ITEM = '[role="menuitem"]:not(:disabled)';
+
+/** Arrow keys move between a menu's items, wrapping at the ends; Tab still leaves through the focus trap. */
+function onMenuKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+  const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(MENU_ITEM));
+  if (items.length === 0) return;
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  const next =
+    e.key === "ArrowDown" ? (at + 1) % items.length
+    : e.key === "ArrowUp" ? (at <= 0 ? items.length - 1 : at - 1)
+    : e.key === "Home" ? 0
+    : e.key === "End" ? items.length - 1
+    : -1;
+  if (next === -1) return;
+  e.preventDefault();
+  items[next]!.focus();
 }
 
 /** Lightweight anchored popover — portal + outside-click + Escape/Tab-trap (via the same
@@ -21,7 +43,7 @@ interface PopoverProps {
  * the page behind it), positioned in `fixed` coordinates off the anchor's own rect rather than a
  * third-party positioning library. Used for "More filters", row/bulk context menus, and the order
  * status picker. */
-export function Popover({ open, onClose, anchorRef, align = "start", className, children }: PopoverProps) {
+export function Popover({ open, onClose, anchorRef, align = "start", className, role = "dialog", "aria-label": ariaLabel, children }: PopoverProps) {
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, lockScroll: false });
   const [style, setStyle] = useState<{ top: number; left: number } | null>(null);
 
@@ -91,8 +113,10 @@ export function Popover({ open, onClose, anchorRef, align = "start", className, 
   return createPortal(
     <div
       ref={panelRef}
-      role="dialog"
+      role={role}
+      aria-label={ariaLabel}
       tabIndex={-1}
+      onKeyDown={role === "menu" ? onMenuKeyDown : undefined}
       style={{ position: "fixed", top: style?.top ?? -9999, left: style?.left ?? -9999 }}
       className={cn(
         "ui-floating z-overlay max-h-[70vh] overflow-y-auto animate-pop-in",

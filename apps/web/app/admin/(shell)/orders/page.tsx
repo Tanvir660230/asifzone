@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveX, Download, Plus, SearchX, ShoppingBag } from "lucide-react";
+import { ArchiveX, Download, Plus, RefreshCw, SearchX, ShoppingBag } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
-import { EmptyState } from "@/components/ui/empty-state";
+import { EmptyState, ErrorState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
+import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { OrderDetailPanel } from "@/components/admin/order-detail-panel";
@@ -18,7 +19,8 @@ import { orderKeys, prefetchOrder, useOrderPermissions } from "@/components/admi
 import { useOrderCommands } from "@/components/admin/orders/use-order-commands";
 import { useOrdersListState } from "@/components/admin/orders/use-orders-list-state";
 import * as adminOrdersApi from "@/lib/api/admin-orders";
-import { formatCount } from "@/lib/format";
+import { getErrorMessage } from "@/lib/api-client";
+import { formatCount, formatStoreTime } from "@/lib/format";
 
 /** The Orders workspace: a live summary line, a filterable list (status tabs, work-queue views), bulk actions and the order
  * drawer. Today's totals live on Home; each view is the same queue object the server counts. Composition only —
@@ -46,14 +48,26 @@ export default function OrdersPage() {
   }, []);
 
   const { page, pageSize, filterParams } = state;
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } = useQuery({
     queryKey: [...orderKeys.list, { page, pageSize, ...filterParams }],
     queryFn: ({ signal }) => adminOrdersApi.listOrders({ page, pageSize, ...filterParams }, { signal }),
     placeholderData: (prev) => prev,
     // Courier statuses change server-side (webhook, sync cron) — poll so the list stays current. Paused in background tabs.
     refetchInterval: 30_000,
   });
-  const { data: stats } = useQuery({ queryKey: orderKeys.stats, queryFn: adminOrdersApi.getOrderStats, refetchInterval: 60_000 });
+  const { data: stats, isError: statsError } = useQuery({ queryKey: orderKeys.stats, queryFn: adminOrdersApi.getOrderStats, refetchInterval: 60_000 });
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      await adminOrdersApi.downloadOrdersCsv(filterParams);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Couldn't export the orders"));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // A selection only ever refers to rows on screen: a new page/filter clears it, so a bulk action can't hit hidden rows.
   const viewKey = JSON.stringify([page, pageSize, filterParams]);
@@ -91,8 +105,15 @@ export default function OrdersPage() {
   }
   const allSelected = items.length > 0 && items.every((o) => selected.has(o.id));
 
-  const empty =
-    state.view === "trash" ? (
+  // A failed load must never read as "no orders": with nothing cached it replaces the list; with an older page cached
+  // (a failed 30s poll), the rows stay and a marker above them says they may be out of date.
+  const empty = isError ? (
+    <ErrorState
+      title="Couldn't load orders"
+      description={getErrorMessage(error, "The server didn't respond — check the connection, then try again.")}
+      onRetry={() => void refetch()}
+    />
+  ) : state.view === "trash" ? (
       <EmptyState icon={ArchiveX} title="Trash is empty" description="Orders moved to Trash appear here." />
     ) : state.hasFilters ? (
       <EmptyState
@@ -126,15 +147,17 @@ export default function OrdersPage() {
         title="Orders"
         description={
           stats
-            ? `${formatCount(stats.pending)} open · ${formatCount(stats.needsAttention)} need attention · ${formatCount(stats.todayOrders)} placed today`
-            : "Confirm, fulfil, ship and settle every order from one place."
+            ? `${formatCount(stats.pending)} pending or confirmed · ${formatCount(stats.needsAttention)} need attention · ${formatCount(stats.todayOrders)} placed today`
+            : statsError
+              ? "Summary unavailable right now — it retries every minute."
+              : "Loading today's summary…"
         }
         action={
           <div className="flex flex-wrap items-center gap-2">
             {perms.exportCsv && (
-              <a href={adminOrdersApi.downloadOrdersCsvUrl(filterParams)} className={buttonVariants({ variant: "outline" })} title="Export the current filtered list as CSV">
-                <Download size={16} /> Export CSV
-              </a>
+              <Button variant="outline" loading={exporting} onClick={exportCsv} title="Export the current filtered list as CSV">
+                {!exporting && <Download size={16} />} Export CSV
+              </Button>
             )}
             {perms.manage && (
               <Link href="/admin/orders/new" className={buttonVariants({ variant: "primary" })}>
@@ -149,10 +172,24 @@ export default function OrdersPage() {
 
       <OrdersFilterBar ref={searchRef} state={state} stats={stats} canSeeTrash={perms.trash} />
 
+      {isError && data && (
+        <div role="status" className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-warning-200 bg-warning-50 px-3.5 py-2.5 text-sm text-warning-700">
+          <span>Couldn&apos;t refresh — showing orders as of {formatStoreTime(new Date(dataUpdatedAt))}.</span>
+          <Button variant="outline" size="sm" loading={isFetching} onClick={() => void refetch()}>
+            {!isFetching && <RefreshCw size={13} />} Retry
+          </Button>
+        </div>
+      )}
+      {/* Screen readers hear the result size after every search/filter change (the visible count is per layout). */}
+      <p className="sr-only" aria-live="polite">
+        {data ? `${formatCount(data.total)} ${data.total === 1 ? "order" : "orders"}` : ""}
+      </p>
+
       <OrdersList
         items={items}
         total={data?.total}
         isLoading={isLoading}
+        isFetching={isFetching}
         selected={selected}
         onToggle={toggle}
         onToggleAll={() => setSelected(allSelected ? new Set() : new Set(items.map((o) => o.id)))}
@@ -166,6 +203,9 @@ export default function OrdersPage() {
       />
 
       <Pagination page={page} totalPages={totalPages} onChange={state.setPage} />
+
+      {/* Room for the floating bulk bar, so it never covers the last row or the pagination. */}
+      {selectedOrders.length > 0 && <div className="h-28 sm:h-20" aria-hidden="true" />}
 
       <OrdersBulkBar orders={selectedOrders} view={state.view} commands={commands} perms={perms} onClear={() => setSelected(new Set())} />
 

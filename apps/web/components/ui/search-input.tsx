@@ -34,7 +34,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
         <button
           type="button"
           onClick={() => (onClear ? onClear() : onChange(""))}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full text-ink-300 transition-colors duration-fast hover:text-ink-600"
+          className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-fg-subtle transition-colors duration-fast hover:text-fg"
           aria-label="Clear search"
         >
           <XCircle size={15} />

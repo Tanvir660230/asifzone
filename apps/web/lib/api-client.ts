@@ -136,6 +136,31 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
   return data as T;
 }
 
+/** apiFetch's contract for a file download (CSV export): GET with credentials and one silent refresh on a 401, then the
+ * browser saves the body. A failed request throws ApiError with the server's message instead of navigating to raw JSON. */
+export async function apiDownload(path: string, fallbackName: string, _retried = false): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${apiBaseUrl()}${path}`, { credentials: "include" });
+  } catch {
+    throw new ApiError(0, "Network error — check the connection and retry");
+  }
+  if (res.status === 401 && !_retried && (await refreshSession())) return apiDownload(path, fallbackName, true);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.error ?? "Download failed", data.details);
+  }
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /** apiFetch's contract (credentials, CSRF header, one silent session refresh on a 401, ApiError on failure) for a
  * multipart POST — over XHR, because fetch can't report upload progress. `onProgress` gets 0–1 as bytes go out. */
 export function apiUploadWithProgress<T>(path: string, body: FormData, onProgress?: (fraction: number) => void, _retried = false): Promise<T> {

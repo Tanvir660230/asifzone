@@ -53,32 +53,35 @@ export function OrdersBulkBar({
               <Button ref={statusRef} variant="outline" size="sm" onClick={() => setStatusOpen((v) => !v)} aria-haspopup="menu" aria-expanded={statusOpen} disabled={reachable.length === 0}>
                 Set status <ChevronDown size={13} aria-hidden="true" />
               </Button>
-              <Popover open={statusOpen} onClose={() => setStatusOpen(false)} anchorRef={statusRef} align="start" className="w-64 p-1.5">
-                <div role="menu" aria-label="Move selected orders to">
-                  {reachable.map(({ status, count }) => (
-                    <button
-                      key={status}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setStatusOpen(false);
-                        commands.requestStatusChange(orders, status);
-                      }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-ink-700 hover:bg-ink-900/[0.04]"
-                    >
-                      <OrderStatusIcon status={status} size={14} className="text-ink-400" />
-                      <span className="flex-1">{orderStatusLabel(status)}</span>
-                      <span className="text-xs tabular-nums text-ink-400">
-                        {count} of {orders.length}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+              <Popover open={statusOpen} onClose={() => setStatusOpen(false)} anchorRef={statusRef} align="start" role="menu" aria-label="Move selected orders to" className="w-64 p-1.5">
+                {reachable.map(({ status, count }) => (
+                  <button
+                    key={status}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setStatusOpen(false);
+                      commands.requestStatusChange(orders, status);
+                    }}
+                    className="ui-menu-item"
+                  >
+                    <OrderStatusIcon status={status} size={14} className="shrink-0" />
+                    <span className="flex-1">{orderStatusLabel(status)}</span>
+                    <span className="text-xs tabular-nums opacity-70">
+                      {count} of {orders.length}
+                    </span>
+                  </button>
+                ))}
               </Popover>
             </>
           )}
-          {perms.courier && (
-            <Button variant="outline" size="sm" loading={commands.pending.book} onClick={() => commands.bulkBook(orders)}>
+          {(perms.courier || perms.courierNotConnected) && (
+            <Button
+              variant="outline"
+              size="sm"
+              loading={commands.pending.book}
+              onClick={() => (perms.courier ? commands.bulkBook(orders) : commands.explainCourierNotConnected())}
+            >
               <Truck size={14} /> Book courier
             </Button>
           )}
@@ -90,7 +93,7 @@ export function OrdersBulkBar({
               <IconButton ref={moreRef} variant="outline" size="md" aria-label="More bulk actions" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>
                 <MoreHorizontal size={16} />
               </IconButton>
-              <DropdownMenu open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} items={more} align="end" />
+              <DropdownMenu open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} items={more} align="end" label="More bulk actions" />
             </>
           )}
           {perms.trash && (

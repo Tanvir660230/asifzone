@@ -3,6 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 // Phase 12 D-4: provider-backed actions are offered only when the provider is usable on this deployment. The e2e API
 // runs with every provider credential blank (LIVE_PROVIDERS=off), so courier, SMS, email, push and both gateways are
 // unavailable here: their actions must not appear, while the OWNER still sees the status and the missing variables.
+// One exception (2026-10-08): courier booking stays visible to admins who hold courier.manage and, instead of running,
+// explains that the courier isn't connected and links to Integrations — hiding it read as "bulk booking doesn't exist".
+// The order list's closed row menus still render no "Book with Steadfast" text, which the check below relies on.
 
 const API = process.env.E2E_API_URL ?? "http://localhost:4000";
 const OWNER = { email: process.env.SEED_ADMIN_EMAIL ?? "admin@example.com", password: process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!" };

@@ -14,6 +14,7 @@ import {
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useProviderCapabilities } from "@/hooks/use-provider-capabilities";
+import { useCurrentAdmin } from "@/hooks/use-current-admin";
 
 /**
  * Orders workspace — the non-visual pieces shared by the list, the drawer and the full detail page: query keys and
@@ -59,7 +60,9 @@ export function useOrderPermissions() {
   const { can, ready } = useCapabilities();
   // Phase 12 D-4: courier actions (booking, sync, delivery-score checks) only when the courier provider is configured on
   // this deployment — the `courier.manage` capability requires it.
-  const { courier: courierConfigured } = useProviderCapabilities();
+  const { courier: courierConfigured, loaded: providersLoaded } = useProviderCapabilities();
+  const { data: me } = useCurrentAdmin();
+  const holdsCourierPermission = Boolean(me?.admin.permissions?.includes("courier.manage"));
   return {
     /** False until the admin profile has loaded — don't show "not allowed" states before then. */
     ready,
@@ -72,6 +75,9 @@ export function useOrderPermissions() {
     refunds: can("refunds.manage"),
     courier: can("courier.manage"),
     courierConfigured,
+    /** Allowed to book, but no courier is connected on this deployment: booking stays visible and explains why it can't
+     * run (instead of silently disappearing, which read as "bulk booking doesn't exist"). */
+    courierNotConnected: holdsCourierPermission && providersLoaded && !courierConfigured,
     returns: can("returns.manage"),
   };
 }

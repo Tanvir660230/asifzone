@@ -46,7 +46,7 @@ const palette = {
   sale: { 50: "#fdecea", 500: "#dc3733", 600: "#c62828" },
   // Semantic status colors. The 500/600 anchors were validated as a set (chroma floor, CVD
   // separation, contrast) — don't tweak one in isolation without re-validating the others.
-  success: { 50: "#e9f9f4", 100: "#cdf0e4", 200: "#a8e4d0", 500: "#12b491", 600: "#0aa382", 700: "#087d64" },
+  success: { 50: "#e9f9f4", 100: "#cdf0e4", 200: "#a8e4d0", 500: "#12b491", 600: "#0aa382", 700: "#077259" }, // 700: 4.8:1 on success-100 (pills)
   warning: { 50: "#fdf6ec", 100: "#faead0", 200: "#f3d4a6", 500: "#c8862c", 600: "#a66c1f", 700: "#855517" },
   danger: { 50: "#fbeeee", 100: "#f6d9d8", 200: "#edb9b6", 400: "#d6716b", 500: "#c1443c", 600: "#a0332c", 700: "#7c2721" },
   info: { 50: "#eef4f9", 100: "#d7e6f0", 200: "#b6d1e4", 500: "#2b6aad", 600: "#1f5f9e", 700: "#1a4c80" },

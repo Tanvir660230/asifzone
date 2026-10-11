@@ -49,7 +49,7 @@ test.describe("admin dashboard", () => {
 
   test("Create menu offers a new order", async ({ page }) => {
     await page.getByRole("button", { name: "Create", exact: true }).click();
-    await page.getByRole("button", { name: "New order" }).click();
+    await page.getByRole("menuitem", { name: "New order" }).click();
     await expect(page).toHaveURL(/\/admin\/orders\/new/, NAV);
   });
 });

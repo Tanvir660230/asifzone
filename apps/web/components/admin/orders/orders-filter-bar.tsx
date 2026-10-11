@@ -3,7 +3,7 @@
 import { forwardRef, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { SlidersHorizontal, Users, X } from "lucide-react";
+import { ChevronDown, SlidersHorizontal, Users, X } from "lucide-react";
 import {
   BD_DISTRICTS_BY_DIVISION,
   BD_DIVISIONS,
@@ -12,6 +12,7 @@ import {
   paymentMethodEnum,
   paymentStatusEnum,
   type BdDivision,
+  type OrderQueueId,
   type OrderStatus,
   type PaymentMethod,
   type PaymentStatus,
@@ -43,19 +44,22 @@ function CountBadge({ value, inverted }: { value: number | undefined; inverted?:
 }
 
 /** Status tabs: plain text, the selected ones on a soft grey capsule — colour stays in the table's status column. */
-const tabBase =
-  "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+// Focus uses the global :focus-visible outline (DESIGN_SYSTEM §5.4) — a 40% ring was too faint to see (2.6:1).
+const tabBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
 const tabOn = "bg-ink-900/[0.08] text-fg";
 const tabOff = "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg";
 
 /** Views (work queues): white capsules; a queue that needs a person and has work in it shows an amber dot. */
-const viewBase =
-  "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+const viewBase = "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth";
+const viewOff = "border-line bg-surface text-fg hover:border-line-strong";
+const viewOn = "border-accent bg-accent text-accent-fg";
 
 /** Sticky control zone of the Orders list. Stateless: everything lives in useOrdersListState. */
 export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListState; stats: OrderStats | undefined; canSeeTrash: boolean }>(
   function OrdersFilterBar({ state, stats, canSeeTrash }, searchRef) {
     const [moreOpen, setMoreOpen] = useState(false);
+    const [viewsOpen, setViewsOpen] = useState(false);
+    const viewsRef = useRef<HTMLButtonElement>(null);
     // Saved views (DR-18): a named Orders URL. `view` (active/trash) is part of what a view saves here.
     const searchParams = useSearchParams();
     const saved = useSavedViews("orders");
@@ -65,10 +69,17 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
     const { more } = state;
     const statusTotal = stats ? Object.values(stats.statusCounts).reduce((sum, n) => sum + n, 0) : undefined;
     const active = state.view === "active";
+    // Views on show: the selected one plus every queue where a person has work waiting. Empty or slice-only queues
+    // (COD, cancelled/returned) sit under "More views", so the row stays a short to-do list instead of nine pills.
+    const queueCount = (id: OrderQueueId) => stats?.queueCounts?.[id];
+    const shownQueues = ORDER_QUEUE_IDS.filter((id) => state.queue === id || (QUEUE_NEEDS_PERSON.has(id) && (queueCount(id) ?? 0) > 0));
+    const moreQueues = ORDER_QUEUE_IDS.filter((id) => !shownQueues.includes(id));
+    const returnsPending = stats?.returnRequestsPending ?? 0;
 
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
-      <div className="sticky top-chrome z-raised -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:-mx-page sm:px-page">
+      // Sticky from sm up only: on a phone the two pill rows would pin ~40% of the screen, so there it scrolls away.
+      <div className="z-raised -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:sticky sm:top-chrome sm:-mx-page sm:px-page">
         <div className="flex flex-wrap items-center gap-2.5">
           {canSeeTrash && (
             <SegmentedControl
@@ -89,7 +100,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
             value={state.search}
             onChange={state.setSearch}
             emptyAdornment={
-              <kbd className="hidden rounded border border-line px-1 py-0.5 font-sans text-[10px] font-medium text-ink-300 sm:inline-block">/</kbd>
+              <kbd className="hidden rounded border border-line px-1.5 font-sans text-xs font-medium text-fg-subtle sm:inline-block">/</kbd>
             }
           />
           <Button
@@ -101,13 +112,13 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
             aria-haspopup="dialog"
           >
             <SlidersHorizontal size={14} /> Filters
-            {more.count > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{more.count}</span>}
+            {more.count > 0 && <span className="rounded-full bg-accent px-1.5 text-xs font-semibold leading-[18px] text-accent-fg">{more.count}</span>}
           </Button>
           <div className="ml-auto">
             <PageSizeSelect value={state.pageSize} onChange={state.setPageSize} />
           </div>
 
-          <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} align="start" className="w-[min(92vw,640px)] p-4">
+          <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} align="start" aria-label="More filters" className="w-[min(92vw,640px)] p-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Payment status" htmlFor="f-payment-status">
                 <Select id="f-payment-status" value={more.paymentStatus} onChange={(e) => more.setPaymentStatus(e.target.value as PaymentStatus | "")}>
@@ -219,29 +230,62 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
             <HScrollShadow className="overflow-x-auto">
               <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 py-0.5">
                 <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted">Views</span>
-                {ORDER_QUEUE_IDS.map((id) => {
+                {/* Which queues have work is only known once the counts load — hold the row's place until then. */}
+                {!stats && <span className="ui-skeleton h-8 w-32 shrink-0 rounded-full" aria-hidden="true" />}
+                {shownQueues.map((id) => {
                   const on = state.queue === id;
-                  const count = stats?.queueCounts?.[id];
+                  const count = queueCount(id);
                   return (
-                    <button
-                      key={id}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => state.selectQueue(id)}
-                      className={cn(viewBase, on ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong")}
-                    >
+                    <button key={id} type="button" aria-pressed={on} onClick={() => state.selectQueue(id)} className={cn(viewBase, on ? viewOn : viewOff)}>
                       {!on && QUEUE_NEEDS_PERSON.has(id) && (count ?? 0) > 0 && <span className="h-1.5 w-1.5 rounded-full bg-warning-500" aria-hidden="true" />}
                       {ORDER_QUEUE_LABELS[id]}
                       <CountBadge value={count} inverted={on} />
                     </button>
                   );
                 })}
-                {stats && (
-                  <Link href="/admin/return-requests" className={cn(viewBase, "border-line bg-surface text-fg hover:border-line-strong")}>
-                    {(stats.returnRequestsPending ?? 0) > 0 && <span className="h-1.5 w-1.5 rounded-full bg-warning-500" aria-hidden="true" />}
+                {returnsPending > 0 && (
+                  <Link href="/admin/return-requests" className={cn(viewBase, viewOff)}>
+                    <span className="h-1.5 w-1.5 rounded-full bg-warning-500" aria-hidden="true" />
                     Returns to review
-                    <CountBadge value={stats.returnRequestsPending} />
+                    <CountBadge value={returnsPending} />
                   </Link>
+                )}
+                {stats && (moreQueues.length > 0 || returnsPending === 0) && (
+                  <>
+                    <button
+                      ref={viewsRef}
+                      type="button"
+                      onClick={() => setViewsOpen((v) => !v)}
+                      aria-haspopup="menu"
+                      aria-expanded={viewsOpen}
+                      className={cn(viewBase, viewOff, "text-fg-muted")}
+                    >
+                      More views <ChevronDown size={13} aria-hidden="true" />
+                    </button>
+                    <Popover open={viewsOpen} onClose={() => setViewsOpen(false)} anchorRef={viewsRef} align="start" role="menu" aria-label="More views" className="w-64 p-1.5">
+                      {moreQueues.map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setViewsOpen(false);
+                            state.selectQueue(id);
+                          }}
+                          className="ui-menu-item justify-between"
+                        >
+                          {ORDER_QUEUE_LABELS[id]}
+                          <span className="tabular-nums opacity-70">{formatCount(queueCount(id) ?? 0)}</span>
+                        </button>
+                      ))}
+                      {returnsPending === 0 && (
+                        <Link href="/admin/return-requests" role="menuitem" className="ui-menu-item justify-between">
+                          Returns to review
+                          <span className="tabular-nums opacity-70">0</span>
+                        </Link>
+                      )}
+                    </Popover>
+                  </>
                 )}
                 {saved.views.map((v) => {
                   const on = matchingSaved?.id === v.id;
@@ -252,7 +296,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
                         aria-pressed={on}
                         title={v.shared && !v.mine && v.createdBy ? `Shared by ${v.createdBy}` : undefined}
                         onClick={() => applyQuery(on ? "" : v.query)}
-                        className={cn(viewBase, on ? "border-accent bg-accent text-accent-fg" : "border-line bg-surface text-fg hover:border-line-strong")}
+                        className={cn(viewBase, on ? viewOn : viewOff)}
                       >
                         {v.shared && <Users size={12} aria-label="Shared" />}
                         {v.label}
@@ -289,7 +333,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
                 className="flex min-h-[28px] items-center gap-1 rounded-full bg-ink-100 py-1 pl-2.5 pr-1.5 text-xs font-medium text-ink-700 transition-colors duration-fast ease-smooth hover:bg-ink-200"
               >
                 {chip.label}
-                <X size={12} className="text-ink-400" aria-hidden="true" />
+                <X size={12} className="text-fg-subtle" aria-hidden="true" />
               </button>
             ))}
             <button type="button" onClick={state.clearAll} className="px-1 text-xs font-medium text-ink-500 underline-offset-2 hover:text-ink-800 hover:underline">

@@ -110,10 +110,11 @@ export const TONE_PILL_CLASS: Record<StatusTone, string> = {
 export const TONE_TEXT_CLASS: Record<StatusTone, string> = {
   neutral: "text-ink-500",
   muted: "text-ink-500",
-  info: "text-info-600",
-  success: "text-success-600",
-  warning: "text-warning-600",
-  danger: "text-danger-600",
+  // 700 steps: these are 11–12px words ("Paid", "Unpaid"), so they need 4.5:1 on white — success-600 was 3.2:1.
+  info: "text-info-700",
+  success: "text-success-700",
+  warning: "text-warning-700",
+  danger: "text-danger-700",
 };
 
 /** The shared Badge variant for a tone (components/ui/badge.tsx). */

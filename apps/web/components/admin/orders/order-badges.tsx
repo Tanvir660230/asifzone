@@ -50,14 +50,14 @@ export function PaymentBadges({
     <span className={cn("flex", layout === "stack" ? "flex-col items-start gap-1" : "items-center gap-1.5")}>
       <span
         className={cn(
-          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
           method === "COD" ? "bg-ink-100 text-ink-700" : "bg-info-100 text-info-700",
         )}
         title={method === "COD" ? "Cash on delivery" : `Paid online (${method})`}
       >
         {paymentMethodLabel(method)}
       </span>
-      <span className={cn("text-[11px] font-medium", paymentStatusTextClass(status))}>{paymentStatusLabel(status)}</span>
+      <span className={cn("text-xs font-medium", paymentStatusTextClass(status))}>{paymentStatusLabel(status)}</span>
     </span>
   );
 }
@@ -66,7 +66,7 @@ type CourierFacts = Pick<Order, "courierConsignmentId" | "courierStatus" | "cour
 
 /** Courier booking state for a row/card: provider-neutral wording, labels from lib/format. */
 export function CourierCell({ order, compact = false }: { order: CourierFacts; compact?: boolean }) {
-  if (!order.courierConsignmentId) return <span className="text-xs text-ink-400">Not booked</span>;
+  if (!order.courierConsignmentId) return <span className="text-xs text-fg-subtle">Not booked</span>;
   return (
     <span className="flex flex-col gap-0.5">
       <span className="flex items-center gap-1.5">
@@ -96,7 +96,7 @@ export function CourierCell({ order, compact = false }: { order: CourierFacts; c
         )}
       </span>
       {!compact && (
-        <span className="text-[11px] text-ink-400">{order.courierStatusSyncedAt ? `Synced ${timeAgo(order.courierStatusSyncedAt)}` : "Never synced"}</span>
+        <span className="text-xs text-fg-subtle">{order.courierStatusSyncedAt ? `Synced ${timeAgo(order.courierStatusSyncedAt)}` : "Never synced"}</span>
       )}
     </span>
   );
@@ -113,16 +113,16 @@ export function DeliveryScoreBadge({
   checking?: boolean;
 }) {
   if (!score) {
-    if (!onCheck) return <span className="text-[11px] text-ink-400">Score not checked</span>;
+    if (!onCheck) return <span className="whitespace-nowrap text-xs text-fg-subtle">No score yet</span>;
     return (
       <button
         type="button"
         disabled={checking}
         onClick={onCheck}
         title="Check this customer's delivery success rate with the courier"
-        className="inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-[1px] text-[10px] font-semibold leading-tight text-ink-500 ring-1 ring-inset ring-ink-200 transition-colors duration-fast ease-smooth hover:text-ink-800 hover:ring-ink-400 disabled:opacity-50"
+        className="inline-flex min-h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-xs font-medium text-fg-muted ring-1 ring-inset ring-line transition-colors duration-fast ease-smooth hover:text-fg hover:ring-line-strong disabled:opacity-50"
       >
-        <ShieldCheck size={10} aria-hidden="true" />
+        <ShieldCheck size={12} aria-hidden="true" />
         {checking ? "Checking…" : "Check score"}
       </button>
     );
@@ -130,7 +130,7 @@ export function DeliveryScoreBadge({
   const { successRate, checkedAt } = score;
   return (
     <span
-      className={cn("inline-flex shrink-0 items-center rounded px-1.5 py-[1px] text-[10px] font-semibold leading-tight", deliveryScoreBadgeClass(successRate))}
+      className={cn("inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-1.5 py-px text-xs font-semibold tabular-nums", deliveryScoreBadgeClass(successRate))}
       title={`${deliveryScoreSummary(score)} · checked ${timeAgo(checkedAt)}`}
     >
       <span className="sr-only">Delivery success rate: </span>

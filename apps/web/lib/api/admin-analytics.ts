@@ -846,7 +846,7 @@ export function getLifetimeYearlyTrend() {
 }
 
 // Section 15 — Reports (CSV export URLs — plain GET, admin session cookie carries auth, same
-// pattern as downloadOrdersCsvUrl in admin-orders.ts)
+// pattern the Orders export used before it moved to apiDownload)
 
 export function downloadCustomerRfmCsvUrl() {
   return `${publicApiUrl()}/api/analytics/export/customer-rfm.csv`;

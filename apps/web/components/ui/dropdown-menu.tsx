@@ -19,20 +19,24 @@ interface DropdownMenuProps {
   anchorRef: RefObject<HTMLElement | null>;
   items: DropdownMenuItem[];
   align?: "start" | "end";
+  /** Accessible name of the menu, e.g. "Actions for ORD-123". */
+  label?: string;
 }
 
 /** A short list of actions anchored to a trigger (typically a "⋯" icon button) — built on
  * `Popover` so it gets the same positioning/outside-click/Escape behavior for free. Replaces
  * rows of separate icon buttons with a single trigger + menu, per the "context menus instead of
  * icon clutter" requirement. */
-export function DropdownMenu({ open, onClose, anchorRef, items, align = "end" }: DropdownMenuProps) {
+export function DropdownMenu({ open, onClose, anchorRef, items, align = "end", label }: DropdownMenuProps) {
   return (
-    <Popover open={open} onClose={onClose} anchorRef={anchorRef} align={align} className="w-52 p-1.5">
+    <Popover open={open} onClose={onClose} anchorRef={anchorRef} align={align} role="menu" aria-label={label} className="w-52 p-1.5">
       {items.map((item) => {
         const Icon = item.icon;
         return (
           <button
             key={item.label}
+            type="button"
+            role="menuitem"
             disabled={item.disabled}
             onClick={() => {
               item.onClick();

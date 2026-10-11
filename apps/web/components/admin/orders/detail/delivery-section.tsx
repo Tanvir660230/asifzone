@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, Copy, ExternalLink, PackageX, RefreshCw, Truck, Unlink } from "lucide-react";
 import { CLOSED_ORDER_STATUSES, courierBookingBlocker, formatVariantLabel, type Order } from "@clothing-brand/shared";
 import { Alert } from "@/components/ui/alert";
@@ -161,6 +162,15 @@ export function DeliverySection({
               </Button>
             )}
             {perms.courier && bookBlocker && !deleted && <BlockedHint>{bookBlocker}.</BlockedHint>}
+            {perms.courierNotConnected && !bookBlocker && (
+              <BlockedHint>
+                {COURIER_PROVIDER_LABEL} isn&apos;t connected to this store yet —{" "}
+                <Link href="/admin/settings?pane=integrations" className="font-medium text-fg underline underline-offset-2 hover:text-accent">
+                  add its API keys in Settings › Integrations
+                </Link>
+                .
+              </BlockedHint>
+            )}
           </div>
         )}
 

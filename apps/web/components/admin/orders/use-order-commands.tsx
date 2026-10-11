@@ -271,6 +271,14 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     });
     if (ok) bulkBookMutation.mutate(orders);
   }
+  /** Booking while no courier is connected: say why and where it is fixed, rather than failing or hiding the action. */
+  async function explainCourierNotConnected() {
+    const open = await confirm(
+      `${COURIER_PROVIDER_LABEL} isn't connected to this store yet, so orders can't be booked from here. Add its API keys in Settings › Integrations.`,
+      { title: "Courier not connected", confirmLabel: "Add API keys", tone: "default" },
+    );
+    if (open) router.push("/admin/settings?pane=integrations");
+  }
   async function unlinkCourier(order: OrderRef) {
     const ok = await confirm(
       `Unlink the courier booking of ${order.orderNumber}? Only do this if the consignment was cancelled or deleted in the courier's own panel — nothing is cancelled on the courier's side; the link here is cleared so the order can be booked again.`,
@@ -309,6 +317,7 @@ export function useOrderCommands({ onOpenOrder, onPurged }: { onOpenOrder?: (id:
     bulkPurge,
     bookCourier,
     bulkBook,
+    explainCourierNotConnected,
     syncCourier: (order: OrderRef) => syncMutation.mutate(order),
     bulkSync: (orders: OrderRef[]) => bulkSyncMutation.mutate(orders),
     unlinkCourier,

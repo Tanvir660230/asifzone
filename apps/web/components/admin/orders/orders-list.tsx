@@ -9,6 +9,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Check,
   ChevronDown,
   ExternalLink,
   Eye,
@@ -21,7 +22,7 @@ import {
   Trash2,
   Truck,
 } from "lucide-react";
-import { courierBookingBlocker, type AdminOrderListItem, type OrderListItemSummary } from "@clothing-brand/shared";
+import { allowedNextOrderStatuses, courierBookingBlocker, type AdminOrderListItem, type OrderListItemSummary } from "@clothing-brand/shared";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -38,11 +39,12 @@ import type { SortColumn } from "./use-orders-list-state";
 import { Thumbnail } from "@/components/admin/thumbnail";
 import { useShortcut } from "@/hooks/use-shortcut";
 
-// Left accent by status group: amber = waiting on someone, blue = in flight, green = done, red = cancelled.
 export interface OrdersListProps {
   items: AdminOrderListItem[];
   total: number | undefined;
   isLoading: boolean;
+  /** A refetch (poll, filter change) is in flight — announced as aria-busy on the list. */
+  isFetching?: boolean;
   selected: Set<string>;
   onToggle: (id: string) => void;
   onToggleAll: () => void;
@@ -73,7 +75,7 @@ function SortableHeader({ column, label, props, align, className }: { column: So
         )}
       >
         {label}
-        <Icon size={12} className={active ? "text-ink-900" : "text-ink-300"} aria-hidden="true" />
+        <Icon size={12} className={active ? "text-ink-900" : "text-fg-subtle"} aria-hidden="true" />
       </button>
     </TableHeaderCell>
   );
@@ -131,7 +133,7 @@ function StatusPicker({ order, commands, canManage, canCancel }: { order: AdminO
         aria-expanded={open}
         aria-label={`Status ${orderStatusLabel(order.status)} — change status of ${order.orderNumber}`}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs font-medium leading-none transition-opacity duration-fast hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+          "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs font-medium leading-none transition-opacity duration-fast hover:opacity-85",
           orderStatusBadgeClass(order.status),
         )}
       >
@@ -139,25 +141,25 @@ function StatusPicker({ order, commands, canManage, canCancel }: { order: AdminO
         {orderStatusShortLabel(order.status)}
         <ChevronDown size={11} className="opacity-60" aria-hidden="true" />
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={ref} align="start" className="w-60 p-1.5">
-        <p className="px-2.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Move to</p>
-        <div role="menu" aria-label={`Move ${order.orderNumber} to`}>
-          {next.map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                commands.requestStatusChange([order], s);
-              }}
-              className="ui-menu-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm text-ink-700 hover:bg-ink-900/[0.04]"
-            >
-              <OrderStatusIcon status={s} size={14} className="text-ink-400" />
-              {orderStatusLabel(s)}
-            </button>
-          ))}
-        </div>
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={ref} align="start" role="menu" aria-label={`Move ${order.orderNumber} to`} className="w-60 p-1.5">
+        <p className="px-2.5 pb-1 pt-1 text-xs font-medium text-fg-muted" aria-hidden="true">
+          Move to
+        </p>
+        {next.map((s) => (
+          <button
+            key={s}
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              commands.requestStatusChange([order], s);
+            }}
+            className="ui-menu-item"
+          >
+            <OrderStatusIcon status={s} size={14} className="shrink-0" />
+            {orderStatusLabel(s)}
+          </button>
+        ))}
       </Popover>
     </>
   );
@@ -186,6 +188,8 @@ function rowActions(
   if (perms.courier) {
     if (!courierBookingBlocker(order)) items.push({ label: `Book with ${COURIER_PROVIDER_LABEL}`, icon: Truck, onClick: () => commands.bookCourier(order) });
     else if (order.courierConsignmentId) items.push({ label: "Sync courier status", icon: RefreshCw, onClick: () => commands.syncCourier(order) });
+  } else if (perms.courierNotConnected && !courierBookingBlocker(order)) {
+    items.push({ label: `Book with ${COURIER_PROVIDER_LABEL}`, icon: Truck, onClick: commands.explainCourierNotConnected });
   }
   if (perms.trash) items.push({ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => commands.trash(order) });
   return items;
@@ -200,7 +204,14 @@ function RowActionsMenu({ order, ...ctx }: { order: AdminOrderListItem } & Pick<
       <IconButton ref={ref} onClick={() => setOpen((v) => !v)} aria-label={`Actions for ${order.orderNumber}`} aria-haspopup="menu" aria-expanded={open}>
         <MoreHorizontal size={16} />
       </IconButton>
-      <DropdownMenu open={open} onClose={() => setOpen(false)} anchorRef={ref} items={rowActions(order, { ...ctx, navigate: router.push })} align="end" />
+      <DropdownMenu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={ref}
+        items={rowActions(order, { ...ctx, navigate: router.push })}
+        align="end"
+        label={`Actions for ${order.orderNumber}`}
+      />
     </>
   );
 }
@@ -222,13 +233,22 @@ function AttentionMarker({ order }: { order: AdminOrderListItem }) {
 function CustomerCell({ order, commands, perms }: { order: AdminOrderListItem } & Pick<OrdersListProps, "commands" | "perms">) {
   return (
     <span className="flex items-center gap-2.5">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-[11px] font-semibold text-ink-700" aria-hidden="true">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-semibold text-ink-700" aria-hidden="true">
         {initials(order.customerName)}
       </span>
       <span className="min-w-0">
-        <span className="block max-w-[180px] truncate text-ink-800">{order.customerName}</span>
-        <span className="flex items-center gap-1.5 text-xs text-ink-400">
-          <span>{order.customerPhone}</span>
+        <span className="block max-w-[180px] truncate text-ink-800" title={order.customerName}>
+          {order.customerName}
+        </span>
+        {/* Never wrapped, and tap-to-call: a COD order is confirmed by phoning this number. */}
+        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-fg-subtle">
+          <a
+            href={`tel:${order.customerPhone}`}
+            className="whitespace-nowrap tabular-nums underline-offset-2 hover:text-fg hover:underline"
+            aria-label={`Call ${order.customerName} on ${order.customerPhone}`}
+          >
+            {order.customerPhone}
+          </a>
           <DeliveryScoreBadge
             score={order.deliveryScore}
             onCheck={perms.manage && perms.courierConfigured ? () => commands.checkDeliveryScore([order], true) : undefined}
@@ -281,6 +301,7 @@ export function OrdersList(props: OrdersListProps) {
       <TableContainer className="mt-4 hidden xl:block">
         <Table
           aria-label="Orders"
+          aria-busy={props.isFetching || undefined}
           tabIndex={0}
           className="focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
           onFocus={(e) => {
@@ -368,12 +389,12 @@ export function OrdersList(props: OrdersListProps) {
         </Table>
       </TableContainer>
 
-      <div className="mt-4 xl:hidden">
+      <div className="mt-4 xl:hidden" aria-busy={props.isFetching || undefined}>
         {!isLoading && items.length > 0 && (
           <label className="mb-3 flex min-h-[44px] items-center gap-2.5 rounded-xl border border-line-subtle bg-surface px-3.5 text-sm text-ink-600 shadow-sm">
             <Checkbox checked={allSelected} onChange={onToggleAll} />
             Select all on this page
-            <span className="ml-auto text-xs tabular-nums text-ink-400">{props.total ?? items.length} total</span>
+            <span className="ml-auto text-xs tabular-nums text-fg-subtle">{props.total ?? items.length} total</span>
           </label>
         )}
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -383,7 +404,9 @@ export function OrdersList(props: OrdersListProps) {
             ))}
           {!isLoading && items.length === 0 && <div className="col-span-full rounded-xl border border-line-subtle bg-surface">{empty}</div>}
           {items.map((order) => {
-            const canBook = perms.courier && !courierBookingBlocker(order);
+            const canBook = (perms.courier || perms.courierNotConnected) && !courierBookingBlocker(order);
+            // A pending order's first job is the confirmation call, so Confirm leads the card while it is a legal move.
+            const canConfirm = perms.manage && !order.deletedAt && order.status === "PENDING" && allowedNextOrderStatuses(order.status).includes("CONFIRMED");
             return (
               <article
                 key={order.id}
@@ -395,7 +418,10 @@ export function OrdersList(props: OrdersListProps) {
                 )}
               >
                 <div className="flex items-start gap-2.5">
-                  <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} className="mt-1" aria-label={`Select ${order.orderNumber}`} />
+                  {/* 44px hit area around the 16px box: selecting cards for a bulk action is a thumb job. */}
+                  <label className="-my-2.5 -ml-3 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center">
+                    <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
+                  </label>
                   <button type="button" onClick={() => onOpen(order.id)} className="min-w-0 flex-1 text-left">
                     <span className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5 font-medium text-ink-900">
@@ -404,7 +430,7 @@ export function OrdersList(props: OrdersListProps) {
                       </span>
                       <span className="font-semibold tabular-nums text-ink-900">{formatPrice(order.total)}</span>
                     </span>
-                    <span className="mt-0.5 block text-xs text-ink-400">
+                    <span className="mt-0.5 block text-xs text-fg-subtle">
                       {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
                     </span>
                   </button>
@@ -435,8 +461,17 @@ export function OrdersList(props: OrdersListProps) {
                     ) : (
                       <span />
                     )
+                  ) : canConfirm ? (
+                    <Button variant="outline" size="sm" onClick={() => commands.requestStatusChange([order], "CONFIRMED")}>
+                      <Check size={13} /> Confirm
+                    </Button>
                   ) : canBook ? (
-                    <Button variant="outline" size="sm" disabled={commands.pending.book} onClick={() => commands.bookCourier(order)}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={commands.pending.book}
+                      onClick={() => (perms.courier ? commands.bookCourier(order) : commands.explainCourierNotConnected())}
+                    >
                       <Truck size={13} /> Book courier
                     </Button>
                   ) : (

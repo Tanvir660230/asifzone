@@ -41,12 +41,14 @@ test.describe("orders workspace", () => {
   test("list: summary, queues, multi-status, search and empty state", async ({ page }) => {
     await page.goto("/admin/orders");
     await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
-    await expect(page.getByRole("group", { name: "Quick filters" }).getByRole("button", { name: /Unpaid/ })).toBeVisible();
-    await expect(page.getByRole("group", { name: "Quick filters" }).getByRole("link", { name: /Returns to review/ })).toBeVisible();
+    // Queues with work waiting show as pills; the rest (COD always — it is a slice, not a to-do) wait under "More views".
+    const quick = page.getByRole("group", { name: "Quick filters" });
+    await quick.getByRole("button", { name: "More views" }).click();
+    const moreViews = page.getByRole("menu", { name: "More views" });
+    await expect(moreViews.getByRole("menuitem", { name: /Returns to review/ }).or(quick.getByRole("link", { name: /Returns to review/ }))).toBeVisible();
 
     // A quick filter becomes a removable chip and is reflected as pressed.
-    const quick = page.getByRole("group", { name: "Quick filters" });
-    await quick.getByRole("button", { name: /^COD/ }).click();
+    await moreViews.getByRole("menuitem", { name: /^COD/ }).click();
     await expect(quick.getByRole("button", { name: /^COD/ })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "Remove filter COD" })).toBeVisible();
 
@@ -57,7 +59,7 @@ test.describe("orders workspace", () => {
     await expect(page.getByRole("button", { name: "Remove filter Status: Delivered" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Remove filter Status: Packed" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Clear all" }).click();
+    await page.getByRole("button", { name: "Clear all", exact: true }).click();
     await page.getByRole("searchbox", { name: "Search orders" }).fill("zzz-no-such-order-zzz");
     await expect(page.locator(":text('No orders match these filters'):visible").first()).toBeVisible();
   });
@@ -186,11 +188,11 @@ test.describe("orders workspace", () => {
     // Back to active, trash again from the row menu, then delete permanently from Trash.
     await page.getByRole("button", { name: "Active", exact: true }).click();
     await page.locator('[data-testid="order-row"]:visible', { hasText: orderNumber }).getByRole("button", { name: `Actions for ${orderNumber}` }).click();
-    await page.getByRole("button", { name: "Move to Trash" }).click();
+    await page.getByRole("menuitem", { name: "Move to Trash" }).click();
     await dialog(page).getByRole("button", { name: "Move to Trash" }).click();
     await page.getByRole("button", { name: "Trash", exact: true }).first().click();
     await page.locator('[data-testid="order-row"]:visible', { hasText: orderNumber }).getByRole("button", { name: `Actions for ${orderNumber}` }).click();
-    await page.getByRole("button", { name: "Delete permanently" }).click();
+    await page.getByRole("menuitem", { name: "Delete permanently" }).click();
     const confirmDelete = dialog(page).getByRole("button", { name: "Delete forever" });
     await expect(confirmDelete).toBeDisabled();
     await dialog(page).getByRole("textbox").fill(orderNumber);
