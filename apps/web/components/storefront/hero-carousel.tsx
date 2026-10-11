@@ -143,7 +143,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
       {banner.linkUrl ? <Link href={banner.linkUrl}>{slide}</Link> : slide}
 
       {banners.length > 1 && (
-        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-2">
+        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-[var(--chip-radius)] px-3 py-2">
           {banners.map((b, i) => (
             <button
               key={b.id}

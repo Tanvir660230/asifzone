@@ -62,7 +62,7 @@ function SuggestionChip({
   return (
     <span
       className={cn(
-        "group flex items-center rounded-full border border-ink-200 pl-3 pr-1 py-1.5 text-sm text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400",
+        "group flex items-center rounded-[var(--chip-radius)] border border-ink-200 pl-3 pr-1 py-1.5 text-sm text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400",
         highlighted && "border-ink-900",
         !onRemove && "pr-3",
       )}

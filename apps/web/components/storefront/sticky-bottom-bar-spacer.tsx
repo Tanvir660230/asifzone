@@ -24,7 +24,7 @@ export function StickyBottomBarSpacer() {
     <div
       aria-hidden
       data-band="footer"
-      className={cn("ui-band-inverse bg-ink-950", showCartBar || onProductPage ? "h-32" : "h-16", showCartBar ? "lg:h-16" : "lg:h-0")}
+      className={cn("ui-band-inverse bg-ink-950", showCartBar || onProductPage ? "h-[calc(var(--dock-tab-bar)+4rem)]" : "h-[var(--dock-tab-bar)]", showCartBar ? "lg:h-16" : "lg:h-0")}
     />
   );
 }

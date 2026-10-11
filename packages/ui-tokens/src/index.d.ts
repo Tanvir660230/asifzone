@@ -9,6 +9,8 @@ interface UiTokens {
     string,
     {
       label: string;
+      /** The storefront's structural preset (`classic` = the base design). */
+      layout: string;
       cssVariables: Record<string, string>;
       /** Inside the dark-palette sections the theme renders light. */
       bandVariables: Record<string, string>;

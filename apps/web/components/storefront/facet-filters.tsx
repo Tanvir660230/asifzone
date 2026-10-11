@@ -87,7 +87,7 @@ export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacet
                 key={size}
                 onClick={() => toggleListParam("sizes", size)}
                 className={cn(
-                  "h-9 min-w-9 rounded-full border px-2.5 text-sm transition-all duration-200 ease-smooth active:scale-95",
+                  "h-9 min-w-9 rounded-[var(--chip-radius)] border px-2.5 text-sm transition-all duration-200 ease-smooth active:scale-95",
                   activeSizes.includes(size)
                     ? "glossy border-ink-900 bg-ink-900 text-cream-50 shadow-sm"
                     : "border-ink-200 hover:border-ink-900",
@@ -112,7 +112,7 @@ export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacet
                 aria-label={color}
                 aria-pressed={activeColors.includes(color)}
                 className={cn(
-                  "glossy h-8 w-8 rounded-full border-2 shadow-sm transition-all duration-200 ease-smooth active:scale-90",
+                  "glossy h-8 w-8 rounded-[var(--swatch-radius)] border-2 shadow-sm transition-all duration-200 ease-smooth active:scale-90",
                   activeColors.includes(color)
                     ? "border-brass-400 ring-2 ring-brass-200"
                     : isPaleColor(colorHex)

@@ -1,10 +1,13 @@
 import { cn } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
+import { MihrabLoader } from "./presets/mihrab/loader";
 
 /** Zero-data-dependency loading state — shown instantly by Next.js while a route segment's
  * server data is still fetching, so it must never itself wait on anything (store name, logo).
  * `compact` drops the min-height/padding for tight spaces (e.g. the account auth card) where a
  * full-height spinner would push the layout around instead of just sitting where the form goes. */
 export function BrandLoader({ label = "Loading", compact = false }: { label?: string; compact?: boolean }) {
+  if (storeLayout() === "mihrab") return <MihrabLoader label={label} compact={compact} />;
   return (
     <div
       className={cn(

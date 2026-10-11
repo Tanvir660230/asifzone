@@ -25,10 +25,12 @@ The shared visual foundation for the storefront, customer account, and admin. Fe
 
 **Brand themes.** Themes are defined once, in `themeDefinitions` in `packages/ui-tokens/src/index.js`. A theme only re-values tokens: palette steps, radii (`--radius-*`), typography variables and component tokens (§2a). It never adds styling of its own. The Tailwind plugin emits a theme's overrides under `:root[data-brand="<id>"]`. An installation chooses its theme at runtime with `STORE_THEME` (`apps/web/lib/theme.ts`), and the root layout sets `<html data-brand>`. An unknown id falls back to `default`. Components never branch on the theme. If a brand needs a component to look different, add a token for that difference, with a default that reproduces the base design exactly, instead of adding a conditional. `apps/api/src/config/theme-tokens.test.ts` enforces this and checks each theme's text contrast.
 
-| Theme | Character |
-|---|---|
-| `default` | Neutral editorial. True-neutral grays, Playfair titles, the radius scale below. |
-| `nasihamart` | Warm minimal. Warm off-white canvas, warm near-black text, sans semibold titles with tight tracking, sentence-case labels, flat (gloss-free) controls, frameless image-first product cards, softer and larger radii, and light inverse bands. |
+**Layout presets.** Some differences are compositions, not values: where the logo sits, whether there is a bottom tab bar, how a product card arranges its actions. For those a theme names a structural preset (`layout` in its definition, `classic` by default), read with `storeLayout()` from `apps/web/lib/theme-layout.ts`. A few components ask for the preset (`StoreHeader`/`StoreFooter` in `components/storefront/store-chrome.tsx`, which every page shell uses; the tab bar; homepage sections; product card and rail headings; gallery thumbnails; the loading state), never for the brand, and render the preset's composition from `components/storefront/presets/<preset>/`. Preset components reuse the shared hooks and stores, so behaviour is identical in every preset. Import preset components statically: a `next/dynamic` chunk rendered on the server is blocked by the nonce CSP (`strict-dynamic`) and the component never hydrates. Everything else still changes only through tokens.
+
+| Theme | Preset | Character |
+|---|---|---|
+| `default` | `classic` | Neutral editorial. True-neutral grays, Playfair titles, pill controls, the radius scale below. |
+| `nasihamart` | `mihrab` | Night navy, ivory and sand; Instrument Sans in two widths (condensed headings, no serif); a pointed arch framing the photography; left-aligned catalogue layout, two-row header, light footer, no bottom tab bar. See `docs/brand/nasihamart/THEME_BLUEPRINT.md`. |
 
 ### 2a. Component tokens and recipes
 

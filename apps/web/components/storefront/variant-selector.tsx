@@ -224,7 +224,7 @@ export function VariantSelector({
             className="flex items-center gap-3 overflow-hidden"
           >
             <p className="shrink-0 text-xs ui-caps text-ink-500">Qty</p>
-            <div className="flex items-center rounded-full border border-ink-200 shadow-sm">
+            <div className="flex items-center rounded-[var(--control-radius)] border border-ink-200 shadow-sm">
               <button
                 onClick={() => setQuantity(Math.max(1, effectiveQty - 1))}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"

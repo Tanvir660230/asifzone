@@ -198,10 +198,10 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   // Above the mobile bottom nav; above the sticky cart bar while it shows; and on a product page above the sticky
   // add-to-cart bar only while that bar is on screen (it marks <html data-sticky-atc>), not from the top of the page.
   const bottomClass = onProductPage
-    ? "bottom-20 lg:bottom-6 [html[data-sticky-atc]_&]:bottom-36 lg:[html[data-sticky-atc]_&]:bottom-6"
+    ? "bottom-[calc(var(--dock-tab-bar)+1rem)] lg:bottom-6 [html[data-sticky-atc]_&]:bottom-[calc(var(--dock-tab-bar)+5rem)] lg:[html[data-sticky-atc]_&]:bottom-6"
     : showCartBar
-      ? "bottom-36 lg:bottom-24"
-      : "bottom-20 lg:bottom-6";
+      ? "bottom-[calc(var(--dock-tab-bar)+5rem)] lg:bottom-24"
+      : "bottom-[calc(var(--dock-tab-bar)+1rem)] lg:bottom-6";
 
   return (
     <>
@@ -227,7 +227,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                 transition={{ duration: 0.18, delay: i * 0.04, ease: [0.16, 1, 0.3, 1] }}
                 className="flex items-center gap-2"
               >
-                <span className="rounded-full bg-ink-900/90 px-2.5 py-1 text-xs text-cream-50 shadow-sm">{action.label}</span>
+                <span className="rounded-[var(--chip-radius)] bg-ink-900/90 px-2.5 py-1 text-xs text-cream-50 shadow-sm">{action.label}</span>
                 {action.href ? (
                   <Link
                     href={action.href}
@@ -240,7 +240,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                       if (action.key === "whatsapp" || action.key === "call") pixelContact(action.key);
                     }}
                     aria-label={action.label}
-                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
+                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
                   >
                     {action.icon}
                   </Link>
@@ -249,7 +249,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
                     type="button"
                     onClick={action.onClick}
                     aria-label={action.label}
-                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-full text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
+                    className="glass glossy flex h-10 w-10 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg transition-transform duration-150 ease-smooth hover:scale-110 active:scale-95"
                   >
                     {action.icon}
                   </button>
@@ -266,7 +266,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
           aria-expanded={open}
           animate={open ? { scale: 1 } : { scale: [1, 1.05, 1] }}
           transition={open ? { duration: 0.15 } : { duration: 2.4, repeat: 2, repeatDelay: 1, ease: "easeInOut" }}
-          className="glass glossy flex h-11 w-11 items-center justify-center rounded-full text-ink-900 shadow-floatLg"
+          className="glass glossy flex h-11 w-11 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 shadow-floatLg"
         >
           <motion.span initial={false} animate={{ rotate: open ? 90 : 0 }} transition={{ duration: 0.2, ease: "easeOut" }}>
             {open ? <X size={24} /> : <MessageCircle size={24} />}

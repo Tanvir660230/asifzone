@@ -342,6 +342,15 @@ const componentTokens = {
   "--tile-media-radius": "0px",
   // Product page title face (the title face by default; a theme may set product data in the UI face).
   "--product-title-family": "var(--font-display-family), var(--font-bn), ui-serif, Georgia, serif",
+  // Brand story image: its maximum width, and its height from 640px.
+  "--story-media-max-w": "28rem",
+  "--story-media-h-sm": "18rem",
+  // Option chips (sizes), colour swatches, and floating round buttons (wishlist, contact): circles in the base design.
+  "--chip-radius": "9999px",
+  "--swatch-radius": "9999px",
+  "--fab-radius": "9999px",
+  // Height of the mobile bottom tab bar, which the bottom-docked bars sit above (0rem in a preset without one; keep the unit).
+  "--dock-tab-bar": "4rem",
 };
 Object.assign(cssVariables, componentTokens);
 
@@ -356,13 +365,15 @@ Object.assign(cssVariables, componentTokens);
  */
 const themeDefinitions = {
   default: { label: "Default (neutral editorial)" },
-  // Nasihamart — premium Islamic lifestyle, editorial. Deep navy (#0B1F33) for text, actions and the dark sections, soft
-  // ivory (#F8F6F1) canvas with white surfaces, secondary blue (#123B73) for hover and interaction (--accent-hover,
-  // --nav-hover), warm stone (#D6C1A2) as a restrained accent on navy only (1.6:1 on ivory — never text there). Editorial
-  // serif titles (Newsreader) over a refined grotesk (Instrument Sans); near-square controls and cards instead of pills;
-  // hairline warm borders.
+  // Nasihamart — "Mihrab" (docs/brand/nasihamart/THEME_BLUEPRINT.md). Night navy (#0B1F33) for type and actions, ivory
+  // (#F8F6F1) page, sand (#EEE7DB) behind photography and in the footer, lapis (#123B73) for hover and interaction
+  // (--accent-hover, --nav-hover), warm stone (#D6C1A2) for arch outlines and accents on navy only (1.6:1 on ivory — never
+  // text there), mulberry (#8A2E3B) for promotions. One family in two widths: Instrument Sans condensed for headings, normal
+  // for everything else — no serif in the interface. Its own layout preset (`mihrab`): the pointed arch of the logo frames
+  // the photography.
   nasihamart: {
-    label: "Nasihamart (navy · ivory · warm stone)",
+    label: "Nasihamart (Mihrab: navy · ivory · sand)",
+    layout: "mihrab",
     palette: {
       ink: {
         50: "#f4f1eb", // subtle fills
@@ -377,16 +388,19 @@ const themeDefinitions = {
         900: "#0b1f33", // navy: headings, primary actions, focus — 15.5:1
         950: "#0b1f33", // navy: the dark sections and footer
       },
-      cream: { 50: "#ffffff", 100: "#f8f6f1", 200: "#f1ede5", 300: "#e5e0d7" },
-      // The one promotional accent, deep enough that white 10px badge text clears AA (5.0:1).
-      sale: { 50: "#fdecea", 500: "#d32f2f", 600: "#b71c1c" },
+      // 200 = sand: arch backdrops, image wells, the footer.
+      cream: { 50: "#ffffff", 100: "#f8f6f1", 200: "#eee7db", 300: "#e2d8c8" },
+      // Mulberry, the one promotional accent: 8.3:1 under white badge text, 7.7:1 as text on ivory.
+      sale: { 50: "#f6e9eb", 500: "#8a2e3b", 600: "#6f2330" },
     },
     radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "10px", "2xl": "12px", "3xl": "16px" },
     fontVariables: {
       "--font-body-family": "var(--font-grotesk)",
-      "--font-display-family": "var(--font-editorial)",
-      "--font-display-weight": "400",
-      "--font-display-tracking": "-0.012em",
+      // Headings: the same grotesk, condensed — tall like the arches.
+      "--font-display-family": "var(--font-grotesk)",
+      "--font-display-weight": "580",
+      "--font-display-tracking": "-0.018em",
+      "--font-display-stretch": "78%",
       "--eyebrow-weight": "600",
     },
     components: {
@@ -429,21 +443,26 @@ const themeDefinitions = {
       "--card-title-tracking": "0",
       "--panel-border": "rgb(var(--color-ink-200))",
       "--panel-shadow": "none",
-      // Product data is set in the UI face; the serif is for editorial headings.
-      "--product-title-family": "var(--font-body-family), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
-      "--product-title-size": "clamp(1.75rem, 1.4rem + 1vw, 2.25rem)",
-      "--product-title-leading": "1.15",
-      "--product-title-weight": "500",
+      // The product name in the condensed heading face, like every other title.
+      "--product-title-family": "var(--font-display-family), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
+      "--product-title-size": "clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)",
+      "--product-title-leading": "1",
+      "--product-title-weight": "580",
       "--product-title-tracking": "-0.018em",
+      "--product-title-stretch": "78%",
+      // Option chips, colour swatches and the floating buttons: squared off, like the controls.
+      "--chip-radius": "var(--radius-sm)",
+      "--swatch-radius": "var(--radius-sm)",
+      "--fab-radius": "var(--radius-default)",
       "--section-title-size": "1.625rem",
       "--section-title-leading": "1.2",
       "--section-title-size-sm": "2rem",
       "--section-title-leading-sm": "1.15",
       "--section-rhythm": "1.35",
-      "--page-title-size": "2rem",
-      "--page-title-leading": "1.15",
-      "--page-title-size-sm": "2.5rem",
-      "--page-title-leading-sm": "1.1",
+      "--page-title-size": "2.5rem",
+      "--page-title-leading": "1",
+      "--page-title-size-sm": "3.5rem",
+      "--page-title-leading-sm": "1",
       "--section-heading-size": "1.875rem",
       "--section-heading-leading": "1.15",
       "--section-heading-size-sm": "2.75rem",
@@ -458,6 +477,10 @@ const themeDefinitions = {
       "--hero-secondary-ring": "currentColor",
       "--hero-primary-mr": "0.75rem",
       "--hero-secondary-ml": "0px",
+      "--story-media-max-w": "64rem",
+      "--story-media-h-sm": "26rem",
+      // The mihrab header carries search, bag and the menu on phones: no bottom tab bar.
+      "--dock-tab-bar": "0rem",
     },
     // The hero and the brand story render on ivory; the footer, flash sale and editorial banner stay navy.
     lightBands: ["hero", "story"],
@@ -532,6 +555,8 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
   const hasLightBands = definition.band === "light" || (definition.lightBands?.length ?? 0) > 0;
   themes[id] = {
     label: definition.label,
+    // The structural preset the storefront renders its chrome with (apps/web/lib/theme-layout.ts); `classic` = the base design.
+    layout: definition.layout ?? "classic",
     cssVariables: variables,
     // Inside the light sections: every band (`lightBandRoles: null`) or the named ones.
     bandVariables: { ...(hasLightBands ? lightBand(definition) : {}), ...definition.bandComponents },

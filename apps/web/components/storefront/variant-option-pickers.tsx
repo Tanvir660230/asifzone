@@ -106,7 +106,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   title={inStock ? undefined : "Out of stock"}
                   whileTap={inStock || soldOutSelectable ? { scale: 0.9 } : undefined}
                   className={cn(
-                    "relative isolate flex h-10 min-w-10 items-center justify-center rounded-full border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
+                    "relative isolate flex h-10 min-w-10 items-center justify-center rounded-[var(--chip-radius)] border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
                     isSelected
                       ? cn("border-transparent text-cream-50", !inStock && "line-through decoration-cream-50/70 decoration-[1.5px]")
                       : inStock
@@ -117,7 +117,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   {isSelected && (
                     <motion.span
                       layoutId={`size-pill-${instanceId}`}
-                      className="glossy absolute inset-0 -z-10 rounded-full bg-ink-900 shadow-sm"
+                      className="glossy absolute inset-0 -z-10 rounded-[var(--chip-radius)] bg-ink-900 shadow-sm"
                       transition={{ type: "spring", stiffness: 500, damping: 32 }}
                     />
                   )}
@@ -163,7 +163,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                     aria-pressed={isSelected}
                     whileTap={!disabled ? { scale: 0.9 } : undefined}
                     className={cn(
-                      "relative flex h-9 items-center justify-center rounded-full border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
+                      "relative flex h-9 items-center justify-center rounded-[var(--chip-radius)] border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
                       isSelected
                         ? "border-brass-400 bg-brass-50 text-ink-900 ring-2 ring-brass-200"
                         : soldOut
@@ -188,7 +188,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   animate={isSelected ? { scale: [1, 1.12, 1] } : { scale: 1 }}
                   transition={{ duration: 0.35, ease: "easeOut" }}
                   className={cn(
-                    "relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border-2 shadow-sm transition-all duration-200 ease-smooth disabled:cursor-not-allowed",
+                    "relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[var(--swatch-radius)] border-2 shadow-sm transition-all duration-200 ease-smooth disabled:cursor-not-allowed",
                     isSelected ? "border-brass-400 ring-2 ring-brass-200" : soldOut ? "border-ink-200" : isPaleColor(colorHex) ? "border-ink-300" : "border-ink-200",
                   )}
                   style={{ backgroundColor: colorHex ?? "#d4d4d4" }}

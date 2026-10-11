@@ -56,7 +56,7 @@ export function WishlistButton({ productId, className }: WishlistButtonProps) {
       aria-pressed={isSaved}
       disabled={mutation.isPending}
       className={cn(
-        "glass glossy flex h-9 w-9 items-center justify-center rounded-full text-ink-700 shadow-float transition-all duration-200 ease-smooth hover:scale-110 hover:text-danger-600 active:scale-95 disabled:opacity-50",
+        "glass glossy flex h-9 w-9 items-center justify-center rounded-[var(--fab-radius)] text-ink-700 shadow-float transition-all duration-200 ease-smooth hover:scale-110 hover:text-danger-600 active:scale-95 disabled:opacity-50",
         className,
       )}
     >

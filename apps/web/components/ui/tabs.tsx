@@ -48,7 +48,7 @@ export function SegmentedControl<T extends string | number>({
     <div
       role="group"
       aria-label={ariaLabel}
-      className={cn("flex w-fit max-w-full shrink-0 items-center gap-0.5 rounded-full border border-line-subtle bg-ink-900/[0.035] p-1", className)}
+      className={cn("flex w-fit max-w-full shrink-0 items-center gap-0.5 rounded-[var(--chip-radius)] border border-line-subtle bg-ink-900/[0.035] p-1", className)}
     >
       {options.map((option, index) => {
         const active = option.value === value;
@@ -65,7 +65,7 @@ export function SegmentedControl<T extends string | number>({
             onClick={() => onChange(option.value)}
             onKeyDown={(e) => onKeyDown(e, index)}
             className={cn(
-              "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full font-semibold transition-[background-color,color,box-shadow] duration-base ease-smooth",
+              "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--chip-radius)] font-semibold transition-[background-color,color,box-shadow] duration-base ease-smooth",
               size === "sm" ? "px-3.5 py-1.5 text-xs" : "px-4 py-2 text-sm",
               active ? "bg-surface text-fg shadow-float ring-1 ring-ink-900/[0.06]" : "text-fg-muted hover:text-fg",
             )}

@@ -166,7 +166,7 @@ test("mobile sticky bar: Add to Cart with nothing chosen opens the same popup", 
   test.skip(!isMobile, "the sticky bar is mobile-only");
   await openPdp(page);
   await page.mouse.wheel(0, 2500);
-  const sticky = page.locator("div.fixed.bottom-16");
+  const sticky = page.getByTestId("sticky-add-to-cart");
   await expect(sticky.getByRole("button", { name: "Add to Cart" })).toBeVisible();
   await sticky.getByRole("button", { name: "Add to Cart" }).click();
   await expect(picker(page)).toBeVisible();
@@ -178,7 +178,8 @@ test("product card quick add asks for the options when there is a real choice", 
   const card = page.locator("div.group").filter({ has: page.getByRole("link", { name: name }) }).first();
   await expect(card).toBeVisible();
   if (!isMobile) await card.hover();
-  await card.getByRole("button", { name: "Quick add to cart" }).click();
+  // The classic card names it "Quick add to cart", the mihrab preset "Add to bag" — same button, same behaviour.
+  await card.getByRole("button", { name: /^(Quick add to cart|Add to bag)$/ }).click();
   const dialog = picker(page);
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "M", exact: true }).click();

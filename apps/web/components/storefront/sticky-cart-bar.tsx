@@ -21,7 +21,7 @@ export function StickyCartBar() {
   if (!showCartBar) return null;
 
   return (
-    <div data-hide-on-keyboard className="glass fixed inset-x-0 bottom-16 z-40 border-t border-ink-200 shadow-floatLg animate-fade-in lg:bottom-0">
+    <div data-hide-on-keyboard className="glass fixed inset-x-0 bottom-[var(--dock-tab-bar)] z-40 border-t border-ink-200 shadow-floatLg animate-fade-in lg:bottom-0">
       <button
         type="button"
         onClick={openCartDrawer}
@@ -34,7 +34,7 @@ export function StickyCartBar() {
         <p className="flex-1 text-sm text-ink-700">
           {count} item{count === 1 ? "" : "s"} · <span className="font-medium text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
         </p>
-        <span className="glossy shrink-0 rounded-full bg-ink-900 px-4 py-2 text-xs ui-caps text-cream-50">
+        <span className="glossy shrink-0 rounded-[var(--control-radius)] bg-ink-900 px-4 py-2 text-xs ui-caps text-cream-50">
           View bag
         </span>
       </button>

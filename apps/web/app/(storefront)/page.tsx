@@ -31,6 +31,17 @@ import {
   listStorefrontProducts,
 } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
+import { storeLayout } from "@/lib/theme-layout";
+import {
+  MihrabBrandStory,
+  MihrabCategoryArches,
+  MihrabFlashSale,
+  MihrabHero,
+  MihrabProductRail,
+  MihrabPromoBanner,
+  MihrabTrustRow,
+  MihrabValues,
+} from "@/components/storefront/presets/mihrab/sections";
 
 // Below-the-fold sections — split out of the main bundle since they're not needed for first paint.
 const BrandStory = nextDynamic(() => import("@/components/storefront/brand-story").then((m) => m.BrandStory));
@@ -111,6 +122,15 @@ export default async function HomePage() {
   // "Buy again" (signed-in customers only) sits in the welcome-back spot: with the personalized lead when the page has
   // one, otherwise straight after the hero.
   const buyAgainAfter = sections.find((s) => s.type === "PERSONALIZED_LEAD")?.id ?? sections.find((s) => s.type === "HERO")?.id;
+  // The theme's structural preset composes the sections; their content and data are the same either way.
+  const mihrab = storeLayout() === "mihrab";
+  const SectionHero = mihrab ? MihrabHero : Hero;
+  const SectionTrust = mihrab ? MihrabTrustRow : TrustStrip;
+  const SectionCategories = mihrab ? MihrabCategoryArches : CategoryGrid;
+  const SectionStory = mihrab ? MihrabBrandStory : BrandStory;
+  const SectionValues = mihrab ? MihrabValues : ValuesGrid;
+  const SectionPromo = mihrab ? MihrabPromoBanner : PromoBannerSection;
+  const SectionFlashSale = mihrab ? MihrabFlashSale : FlashSaleSection;
 
   return (
     <>
@@ -136,7 +156,7 @@ export default async function HomePage() {
         if (banners.length > 0) return <HeroCarousel key={section.id} banners={banners} />;
         const config = section.config as unknown as HeroConfig;
         return (
-          <Hero
+          <SectionHero
             key={section.id}
             storeName={settings.storeName}
             tagline={settings.tagline}
@@ -154,7 +174,7 @@ export default async function HomePage() {
       }
       case "TRUST_STRIP": {
         const config = section.config as unknown as TrustStripConfig;
-        return <TrustStrip key={section.id} items={config.items} />;
+        return <SectionTrust key={section.id} items={config.items} />;
       }
       case "PERSONALIZED_LEAD": {
         const config = section.config as unknown as PersonalizedLeadConfig;
@@ -169,6 +189,17 @@ export default async function HomePage() {
       }
       case "PRODUCT_CAROUSEL": {
         const config = section.config as unknown as ProductCarouselConfig;
+        if (mihrab) {
+          return (
+            <MihrabProductRail
+              key={section.id}
+              heading={config.heading}
+              subtitle={config.subtitle}
+              products={carouselProducts.get(section.id) ?? []}
+              href={carouselListingHref(config)}
+            />
+          );
+        }
         return (
           <ProductCarouselSection
             key={section.id}
@@ -180,15 +211,15 @@ export default async function HomePage() {
         );
       }
       case "FLASH_SALE":
-        return flashSale ? <FlashSaleSection key={section.id} flashSale={flashSale} /> : null;
+        return flashSale ? <SectionFlashSale key={section.id} flashSale={flashSale} /> : null;
       case "CATEGORY_GRID": {
         const config = section.config as unknown as CategoryGridConfig;
-        return <CategoryGrid key={section.id} categories={tree} heading={config.heading} subtitle={config.subtitle} />;
+        return <SectionCategories key={section.id} categories={tree} heading={config.heading} subtitle={config.subtitle} />;
       }
       case "BRAND_STORY": {
         const config = section.config as unknown as BrandStoryConfig;
         return (
-          <BrandStory
+          <SectionStory
             key={section.id}
             storeName={settings.storeName}
             tagline={settings.tagline}
@@ -203,7 +234,7 @@ export default async function HomePage() {
       }
       case "VALUES_GRID": {
         const config = section.config as unknown as ValuesGridConfig;
-        return <ValuesGrid key={section.id} storeName={settings.storeName} eyebrow={config.eyebrow} heading={config.heading} items={config.items} />;
+        return <SectionValues key={section.id} storeName={settings.storeName} eyebrow={config.eyebrow} heading={config.heading} items={config.items} />;
       }
       case "SMART_RECOMMENDATIONS": {
         const config = section.config as unknown as SmartRecommendationsConfig;
@@ -212,7 +243,7 @@ export default async function HomePage() {
       case "PROMO_BANNER": {
         const config = section.config as unknown as PromoBannerConfig;
         return (
-          <PromoBannerSection
+          <SectionPromo
             key={section.id}
             heading={config.heading}
             bodyText={config.bodyText}

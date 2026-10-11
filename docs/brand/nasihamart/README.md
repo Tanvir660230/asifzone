@@ -34,7 +34,9 @@ Clear space: at least the arch's width on every side. Minimum size: 96 px wide f
 | Primary navy | `#0B1F33` | Headings, primary actions, dark sections, footer, the N |
 | Secondary blue | `#123B73` | Hover, links, selected and interactive states |
 | Warm stone | `#D6C1A2` | The arch; small accents **on navy only** (1.6:1 on ivory — never text on light backgrounds) |
-| Soft ivory | `#F8F6F1` | Page and section background |
+| Soft ivory | `#F8F6F1` | Page background |
+| Sand | `#EEE7DB` | Behind photography, the footer |
+| Mulberry | `#8A2E3B` | Promotions only (sale tags and prices) |
 | White | `#FFFFFF` | Cards, forms, surfaces |
 | Ink | `#1A1F2E` | Body text |
 | Warm border | `#E5E0D7` | Lines, dividers, card and input outlines |
@@ -44,8 +46,11 @@ on navy 9.6:1, ivory on navy 15.5:1.
 
 ## Type
 
-- **Newsreader** (serif, optical sizes) — hero, section and editorial headings, the wordmark.
-- **Instrument Sans** (grotesk) — navigation, UI, product data, buttons, the OG descriptor.
+- **Instrument Sans** condensed (`wdth` 78, weight 580) — every heading on the site, product names included.
+- **Instrument Sans** normal width — navigation, UI, product data, buttons, the OG descriptor.
+- **Newsreader** — the wordmark in the logo artwork only; the interface uses no serif (Asif Zone is serif-led).
+
+The storefront layout (arch frames, header, cards, footer) is described in `THEME_BLUEPRINT.md`.
 
 Both are SIL Open Font License 1.1, loaded by the web app through `next/font` (no files to ship).
 

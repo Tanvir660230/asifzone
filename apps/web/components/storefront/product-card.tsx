@@ -17,6 +17,8 @@ import { WishlistButton } from "./wishlist-button";
 import { PromoBadge, getProductBadge } from "./promo-badge";
 import { StarRating } from "./star-rating";
 import { VariantPickerDialog } from "./variant-picker-dialog";
+import { storeLayout } from "@/lib/theme-layout";
+import { MihrabProductCard } from "./presets/mihrab/product-card";
 
 interface ProductCardProps {
   product: Product;
@@ -26,7 +28,11 @@ interface ProductCardProps {
   priority?: boolean;
 }
 
-export function ProductCard({ product, priority }: ProductCardProps) {
+export function ProductCard(props: ProductCardProps) {
+  return storeLayout() === "mihrab" ? <MihrabProductCard {...props} /> : <ClassicProductCard {...props} />;
+}
+
+function ClassicProductCard({ product, priority }: ProductCardProps) {
   const [primaryImage, secondaryImage] = product.images;
   // Server-derived availability (Storefront Read Model): D5 — an untracked product is never "sold out".
   const availability = availabilityOf(product);

@@ -50,7 +50,7 @@ export function NewsletterForm({ variant = "dark", stacked = false, className }:
           placeholder="Email address"
           aria-label="Email address"
           className={cn(
-            "h-12 min-w-0 flex-1 rounded-full border bg-transparent px-5 text-sm transition-colors duration-200 ease-smooth placeholder:opacity-60",
+            "h-12 min-w-0 flex-1 rounded-[var(--control-radius)] border bg-transparent px-5 text-sm transition-colors duration-200 ease-smooth placeholder:opacity-60",
             variant === "dark"
               ? "border-cream-50/25 text-cream-50 focus:border-cream-50/70 focus:outline-none"
               : "border-ink-300 text-ink-900 focus:border-brass-400",
@@ -60,7 +60,7 @@ export function NewsletterForm({ variant = "dark", stacked = false, className }:
           type="submit"
           disabled={status === "loading"}
           className={cn(
-            "h-12 rounded-full px-6 text-sm font-medium transition-[transform,opacity] duration-200 ease-smooth hover:-translate-y-px active:translate-y-0 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100",
+            "h-12 rounded-[var(--control-radius)] px-6 text-sm font-medium transition-[transform,opacity] duration-200 ease-smooth hover:-translate-y-px active:translate-y-0 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100",
             stacked ? "w-full" : "shrink-0",
             // On the dark band the theme's band accent if it has one, else white; a light band mirrors it automatically.
             variant === "dark" ? "bg-[color:var(--band-accent,rgb(var(--color-cream-50)))] text-ink-950" : "bg-ink-900 text-cream-50 hover:bg-ink-800",

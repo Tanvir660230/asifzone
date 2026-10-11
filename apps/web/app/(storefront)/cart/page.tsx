@@ -167,7 +167,7 @@ export default function CartPage() {
                   <Link
                     key={c.id}
                     href={`/category/${c.slug}`}
-                    className="rounded-full border border-ink-200 px-3 py-1 text-xs text-ink-700 transition-colors duration-150 ease-smooth hover:border-brass-400"
+                    className="rounded-[var(--chip-radius)] border border-ink-200 px-3 py-1 text-xs text-ink-700 transition-colors duration-150 ease-smooth hover:border-brass-400"
                   >
                     {c.name}
                   </Link>
@@ -250,7 +250,7 @@ export default function CartPage() {
                         <Link
                           key={alt.id}
                           href={`/product/${alt.slug}`}
-                          className="flex items-center gap-2 rounded-full border border-ink-200 py-1 pl-1 pr-3 text-xs text-ink-700 transition-colors duration-150 ease-smooth hover:border-brass-400"
+                          className="flex items-center gap-2 rounded-[var(--chip-radius)] border border-ink-200 py-1 pl-1 pr-3 text-xs text-ink-700 transition-colors duration-150 ease-smooth hover:border-brass-400"
                         >
                           {alt.images[0] && (
                             <span className="relative h-6 w-6 overflow-hidden rounded-full bg-ink-100">

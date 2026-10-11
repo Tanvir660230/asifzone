@@ -7,6 +7,8 @@ import type { Product } from "@clothing-brand/shared";
 import { cn } from "@/lib/utils";
 import { ProductCard } from "./product-card";
 import { Reveal } from "./reveal";
+import { storeLayout } from "@/lib/theme-layout";
+import { MihrabSectionHead } from "./presets/mihrab/section-head";
 
 interface ProductCarouselProps {
   title: string;
@@ -75,34 +77,39 @@ export function ProductCarousel({ title, eyebrow, subtitle, href, products, rows
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-[calc(2.5rem*var(--section-rhythm))] sm:py-[calc(3.5rem*var(--section-rhythm))] sm:px-6 lg:px-8">
-      <Reveal className="mb-6 flex items-end justify-between gap-4 sm:mb-8">
-        <div className="min-w-0">
-          {eyebrow && <p className="mb-2 text-xs ui-eyebrow text-fg-muted">{eyebrow}</p>}
-          <h2 className="ui-section-title font-display text-ink-900">{title}</h2>
-          {subtitle && <p className="mt-1.5 max-w-prose text-sm text-ink-500">{subtitle}</p>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {href && (
-            <Link
-              href={href}
-              className="group/all inline-flex items-center gap-1.5 py-2 text-sm font-medium text-ink-900 underline-offset-4 hover:underline"
-            >
-              View all
-              <ArrowRight size={15} className="transition-transform duration-200 ease-smooth group-hover/all:translate-x-0.5" aria-hidden="true" />
-            </Link>
-          )}
-          {scrollable && (
-            <div className="ml-2 hidden items-center gap-2 lg:flex">
-              <RailButton label={`Previous: ${title}`} disabled={edges.atStart} onClick={() => page(-1)}>
-                <ChevronLeft size={18} />
-              </RailButton>
-              <RailButton label={`Next: ${title}`} disabled={edges.atEnd} onClick={() => page(1)}>
-                <ChevronRight size={18} />
-              </RailButton>
-            </div>
-          )}
-        </div>
-      </Reveal>
+      {/* The mihrab preset heads its rails its own way (title, rule, "View all"); the rail itself is shared. */}
+      {storeLayout() === "mihrab" ? (
+        <MihrabSectionHead title={title} subtitle={subtitle ?? eyebrow} link={href ? { href, label: "View all" } : undefined} />
+      ) : (
+        <Reveal className="mb-6 flex items-end justify-between gap-4 sm:mb-8">
+          <div className="min-w-0">
+            {eyebrow && <p className="mb-2 text-xs ui-eyebrow text-fg-muted">{eyebrow}</p>}
+            <h2 className="ui-section-title font-display text-ink-900">{title}</h2>
+            {subtitle && <p className="mt-1.5 max-w-prose text-sm text-ink-500">{subtitle}</p>}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {href && (
+              <Link
+                href={href}
+                className="group/all inline-flex items-center gap-1.5 py-2 text-sm font-medium text-ink-900 underline-offset-4 hover:underline"
+              >
+                View all
+                <ArrowRight size={15} className="transition-transform duration-200 ease-smooth group-hover/all:translate-x-0.5" aria-hidden="true" />
+              </Link>
+            )}
+            {scrollable && (
+              <div className="ml-2 hidden items-center gap-2 lg:flex">
+                <RailButton label={`Previous: ${title}`} disabled={edges.atStart} onClick={() => page(-1)}>
+                  <ChevronLeft size={18} />
+                </RailButton>
+                <RailButton label={`Next: ${title}`} disabled={edges.atEnd} onClick={() => page(1)}>
+                  <ChevronRight size={18} />
+                </RailButton>
+              </div>
+            )}
+          </div>
+        </Reveal>
+      )}
       {/* Bleeds to the screen edge on phones (negative margin + matching padding) so the peeking card reads as "more to
           swipe", while the first card still lines up with the page gutter. */}
       <div

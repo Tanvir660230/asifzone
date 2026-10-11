@@ -64,7 +64,7 @@ export function StickyAddToCart({
   }
 
   return (
-    <div className="glass fixed inset-x-0 bottom-16 z-40 animate-fade-in border-t border-ink-200 shadow-floatLg lg:hidden">
+    <div data-testid="sticky-add-to-cart" className="glass fixed inset-x-0 bottom-[var(--dock-tab-bar)] z-40 animate-fade-in border-t border-ink-200 shadow-floatLg lg:hidden">
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
         <p className="shrink-0 text-sm font-semibold text-ink-900">{formatPrice(price)}</p>
         <div className="flex flex-1 gap-2">

@@ -151,6 +151,7 @@
   .font-display {
     font-weight: var(--font-display-weight);
     letter-spacing: var(--font-display-tracking);
+    font-stretch: var(--font-display-stretch);
   }
   /* Small label: "SOLD OUT", "QTY", accordion and filter headings. Size and color stay with the call site. */
   .ui-caps {
@@ -214,6 +215,7 @@
     line-height: var(--product-title-leading);
     font-weight: var(--product-title-weight);
     letter-spacing: var(--product-title-tracking);
+    font-stretch: var(--product-title-stretch);
   }
 
   /* ── Product card frame ─────────────────────────────────────────────────────────────────── */
@@ -285,6 +287,57 @@
   .ui-hero-secondary {
     border-radius: var(--control-radius);
     box-shadow: inset 0 0 0 1px var(--hero-secondary-ring);
+  }
+
+  /* Pointed (two-centred) arch — the mihrab preset's frame for photography (components/storefront/presets/mihrab/arch.tsx).
+     The mask scales with the box, so arches are drawn on 4:5 or taller frames. */
+  .ui-arch {
+    --arch-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 125' preserveAspectRatio='none'%3E%3Cpath d='M0 125V46C0 22 22 6 50 0c28 6 50 22 50 46v79z'/%3E%3C/svg%3E");
+    -webkit-mask: var(--arch-mask) center / 100% 100% no-repeat;
+    mask: var(--arch-mask) center / 100% 100% no-repeat;
+  }
+
+  /* The hero's stone outline draws itself in once, on first paint (the preset's single moment of motion). */
+  .ui-arch-draw .ui-arch-outline path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: arch-draw 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.25s forwards;
+  }
+  @keyframes arch-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  /* Loading: the arch traces itself, over and over. */
+  .ui-arch-trace path {
+    stroke-dasharray: 1;
+    animation: arch-trace 1.8s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  @keyframes arch-trace {
+    0% {
+      stroke-dashoffset: 1;
+    }
+    55% {
+      stroke-dashoffset: 0;
+    }
+    100% {
+      stroke-dashoffset: -1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-arch-draw .ui-arch-outline path {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+    .ui-arch-trace path {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+  }
+  /* A faint lattice of arches for navy bands. */
+  .ui-arch-lattice {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='64' viewBox='0 0 48 64'%3E%3Cpath d='M4 64V30C4 18 13 9 24 4c11 5 20 14 20 26v34' fill='none' stroke='%23d6c1a2' stroke-opacity='.14' stroke-width='1'/%3E%3C/svg%3E");
+    background-size: 48px 64px;
   }
 
   /* Content tile (values grid): a hairline frame a theme may drop. */

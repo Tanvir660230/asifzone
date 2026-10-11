@@ -74,7 +74,7 @@ export function AccountTabs() {
                 href={p.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "shrink-0 rounded-full px-4 py-2 text-sm transition-colors duration-fast ease-smooth",
+                  "shrink-0 rounded-[var(--chip-radius)] px-4 py-2 text-sm transition-colors duration-fast ease-smooth",
                   active ? "bg-accent text-accent-fg" : "bg-surface text-fg-muted ring-1 ring-inset ring-line-subtle hover:text-fg",
                 )}
               >
