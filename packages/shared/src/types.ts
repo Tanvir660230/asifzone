@@ -51,6 +51,8 @@ export interface Category {
   seoTitle: string | null;
   seoDescription: string | null;
   parentId: string | null;
+  /** Admin reads only: courier-note rules every product in this category carries. */
+  courierNoteRuleIds?: string[];
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -186,6 +188,8 @@ export interface Product {
   trackInventory: boolean;
   /** Ships free (shipping waived when every line of a cart is free-delivery). */
   freeDelivery?: boolean;
+  /** Admin reads only: courier-note rules ticked on this product. */
+  courierNoteRuleIds?: string[];
   lowStockThreshold: number;
   restockDate: string | null;
   isActive: boolean;
@@ -615,6 +619,12 @@ export interface Order {
   bundleDiscount: string;
   notes: string | null;
   adminNotes: string | null;
+  /** Staff's own courier note (null = built from the courier-note rules); admin reads only. */
+  courierNote?: string | null;
+  /** The note the courier was sent at booking; admin reads only. */
+  courierNoteSent?: string | null;
+  /** Admin order reads only: the courier note to print on the shipping label (what was sent, or what would be sent now). */
+  courierNoteForLabel?: string | null;
   trackingNumber: string | null;
   carrier: string | null;
   courierConsignmentId: string | null;

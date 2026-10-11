@@ -228,3 +228,17 @@ export function bulkCheckDeliveryScore(ids: string[]) {
 export function getSteadfastBalance() {
   return apiFetch<{ balance: number }>("/api/courier/steadfast/balance");
 }
+
+/** The parcel note for the courier: the one built from the store's courier-note rules, staff's own wording if set, what
+ * will be sent (`effective`), and — once booked — what was sent. */
+export interface OrderCourierNote {
+  built: string | null;
+  override: string | null;
+  effective: string | null;
+  sent: string | null;
+  booked: boolean;
+}
+
+export function getOrderCourierNote(id: string) {
+  return apiFetch<OrderCourierNote>(`/api/orders/${id}/courier-note`);
+}

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   careGuidePresetSchema,
+  courierNoteRuleSchema,
   createAttributeDefinitionSchema,
   materialSchema,
   searchSynonymSchema,
@@ -21,6 +22,7 @@ import * as catalog from "./catalog.service";
 import * as sku from "./sku.service";
 import * as sections from "./sections.service";
 import * as synonyms from "../products/search-synonyms.service";
+import * as courierNotes from "../courier/courier-note-rules.service";
 import { previewStorefrontSearch } from "../products/product.service";
 
 export const catalogRouter = Router();
@@ -170,6 +172,21 @@ catalogRouter.put("/search-synonyms/:id", requirePermission("catalog.configure")
 }));
 catalogRouter.delete("/search-synonyms/:id", requirePermission("catalog.configure"), asyncHandler(async (req, res) => {
   await synonyms.deleteSearchSynonym(req.params.id!, req.admin!.adminId, req.ip);
+  res.status(204).send();
+}));
+
+/* courier notes — store-written instructions for the courier ("পারফিউম — প্যাকেট খোলা যাবে না"), ticked on products/categories */
+catalogRouter.get("/courier-notes", requirePermission("catalog.read"), asyncHandler(async (_req, res) => {
+  res.json(await courierNotes.listCourierNoteRules());
+}));
+catalogRouter.post("/courier-notes", requirePermission("catalog.configure"), validate(courierNoteRuleSchema), asyncHandler(async (req, res) => {
+  res.status(201).json({ rule: await courierNotes.createCourierNoteRule(req.body, req.admin!.adminId, req.ip) });
+}));
+catalogRouter.put("/courier-notes/:id", requirePermission("catalog.configure"), validate(courierNoteRuleSchema), asyncHandler(async (req, res) => {
+  res.json({ rule: await courierNotes.updateCourierNoteRule(req.params.id!, req.body, req.admin!.adminId, req.ip) });
+}));
+catalogRouter.delete("/courier-notes/:id", requirePermission("catalog.configure"), asyncHandler(async (req, res) => {
+  await courierNotes.deleteCourierNoteRule(req.params.id!, req.admin!.adminId, req.ip);
   res.status(204).send();
 }));
 

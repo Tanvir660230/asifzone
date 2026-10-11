@@ -1362,6 +1362,10 @@ export async function updateOrderDetails(id: string, input: UpdateOrderDetailsIn
   if (diffNote && existing.courierConsignmentId) {
     throw AppError.badRequest("Cannot change name/address after a courier has been booked — unlink the booking first");
   }
+  // Same for the parcel note: Steadfast already has the one sent at booking (kept in courierNoteSent).
+  if (input.courierNote !== undefined && (input.courierNote ?? null) !== (existing.courierNote ?? null) && existing.courierConsignmentId) {
+    throw AppError.badRequest("Cannot change the courier note after a courier has been booked");
+  }
 
   return prisma.order.update({
     where: { id },

@@ -117,6 +117,7 @@ export async function duplicateProduct(sourceId: string, input: DuplicateProduct
       taxRate: num(source.taxRate),
       trackInventory: source.trackInventory,
       freeDelivery: source.freeDelivery,
+      courierNoteRuleIds: source.courierNoteRuleIds,
       lowStockThreshold: source.lowStockThreshold,
       restockDate: source.restockDate ?? undefined,
       status: "DRAFT",

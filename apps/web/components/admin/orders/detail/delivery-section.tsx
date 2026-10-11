@@ -14,6 +14,7 @@ import { CourierCell } from "../order-badges";
 import { COURIER_PROVIDER_LABEL, type OrderPermissions } from "../order-domain";
 import type { OrderCommands } from "../use-order-commands";
 import { BlockedHint, DetailSection, Fact } from "./detail-section";
+import { CourierNotePanel } from "./courier-note-panel";
 import type { OrderDetailCommands } from "./use-order-detail-commands";
 
 const LOSS_REASON = { CANCELLED_POST_BOOKING: "Cancelled after booking", PARTIAL_RETURN: "Partial return" } as const;
@@ -162,6 +163,8 @@ export function DeliverySection({
             {perms.courier && bookBlocker && !deleted && <BlockedHint>{bookBlocker}.</BlockedHint>}
           </div>
         )}
+
+        {(booked || open) && <CourierNotePanel order={order} detail={detail} canEdit={perms.manage && !deleted} />}
 
         {order.status === "PARTIALLY_DELIVERED" && <PartialDelivery order={order} detail={detail} canManage={perms.manage && !deleted} />}
 

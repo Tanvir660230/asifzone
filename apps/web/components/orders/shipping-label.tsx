@@ -117,6 +117,14 @@ export function ShippingLabel({ order, store, onBarcodeReady }: ShippingLabelPro
         </div>
       )}
 
+      {/* The courier note (Catalog → Courier notes, e.g. "পারফিউম — প্যাকেট খোলা যাবে না") — the rider reads the parcel more than
+          the app, so it's printed here too: bold, marked by a black rule, clamped so it can't push the barcode off. */}
+      {order.courierNoteForLabel && (
+        <p lang="bn" className="mt-1.5 line-clamp-2 border-l-2 border-ink-900 pl-1.5 text-[8.5px] font-bold leading-snug text-ink-900">
+          {order.courierNoteForLabel}
+        </p>
+      )}
+
       {/* Packing list — this label is what the box actually gets packed from, so each item gets
           its own line with size/color instead of one truncated summary string. Font size and how
           many lines get shown both scale down as the item count grows (see itemListSizing) so a

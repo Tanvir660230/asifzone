@@ -123,6 +123,7 @@ const CATALOG_SETUP: Array<[slug: string, label: string, keywords?: string[]]> =
   ["sections", "Page sections"],
   ["spec-groups", "Spec groups", ["specifications"]],
   ["search-synonyms", "Search synonyms", ["synonym"]],
+  ["courier-notes", "Courier notes", ["courier", "parcel note", "steadfast note", "fragile"]],
 ];
 
 export const NAV_NODES: readonly NavNode[] = [

@@ -372,29 +372,32 @@ model SearchLog {
 }
 
 model Category {
-  id                String                   @id @default(cuid())
-  name              String
-  slug              String                   @unique
-  imageUrl          String?
-  imageAltText      String?
-  bannerImageUrl    String?
-  sortOrder         Int                      @default(0)
-  isActive          Boolean                  @default(true)
-  isFeatured        Boolean                  @default(false)
-  seoTitle          String?
-  seoDescription    String?
-  parentId          String?
-  parent            Category?                @relation("CategoryToParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children          Category[]               @relation("CategoryToParent")
-  products          Product[]
+  id                 String                   @id @default(cuid())
+  name               String
+  slug               String                   @unique
+  imageUrl           String?
+  imageAltText       String?
+  bannerImageUrl     String?
+  sortOrder          Int                      @default(0)
+  isActive           Boolean                  @default(true)
+  isFeatured         Boolean                  @default(false)
+  seoTitle           String?
+  seoDescription     String?
+  parentId           String?
+  parent             Category?                @relation("CategoryToParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children           Category[]               @relation("CategoryToParent")
+  products           Product[]
   /// Products whose home category is elsewhere but that are also listed here (e.g. a unisex item under Men and Women).
-  listedProducts    ProductCategoryListing[]
-  bundleAnchors     Bundle[]                 @relation("BundleAnchor")
-  bundleSuggestions BundleSuggestion[]       @relation("BundleSuggestionCategory")
-  couponCategories  CouponCategory[]
-  deletedAt         DateTime?
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
+  listedProducts     ProductCategoryListing[]
+  bundleAnchors      Bundle[]                 @relation("BundleAnchor")
+  bundleSuggestions  BundleSuggestion[]       @relation("BundleSuggestionCategory")
+  couponCategories   CouponCategory[]
+  /// CourierNoteRule ids every product in this category (and its sub-categories) carries — no FK; ids of deleted
+  /// rules are removed when the rule is deleted and ignored if any slip through.
+  courierNoteRuleIds String[]                 @default([])
+  deletedAt          DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
   @@index([parentId])
   @@index([deletedAt])
@@ -426,92 +429,95 @@ model AttributeValue {
 }
 
 model Product {
-  id                String                   @id @default(cuid())
-  name              String
-  slug              String                   @unique
-  description       String                   @default("")
-  shortDescription  String?
-  sortOrder         Int                      @default(0)
-  categoryId        String
-  category          Category                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  id                 String                   @id @default(cuid())
+  name               String
+  slug               String                   @unique
+  description        String                   @default("")
+  shortDescription   String?
+  sortOrder          Int                      @default(0)
+  categoryId         String
+  category           Category                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   /// Extra categories the product is also listed in on the storefront. `categoryId` stays its one home category
   /// (breadcrumb, coupons, bundles, reports); these only widen where it can be browsed.
-  alsoListedIn      ProductCategoryListing[]
+  alsoListedIn       ProductCategoryListing[]
   /// Deprecated mirror of typeId's legacy enum value — kept so a rollback and any stale client keep working.
-  productType       ProductType              @default(CLOTHING)
+  productType        ProductType              @default(CLOTHING)
   /// Real product type (admin-managed). Nullable so rows written by older code still load; the service
   /// resolves `typeId ?? ProductTypeDef.key = productType`.
-  typeId            String?
-  type              ProductTypeDef?          @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  typeId             String?
+  type               ProductTypeDef?          @relation(fields: [typeId], references: [id], onDelete: Restrict)
   /// Now only holds what has no attribute definition: the product's own sizeGuide and any legacy key
   /// nobody has defined. Values for defined attributes live in ProductAttributeValue.
-  attributes        Json?
-  attributeValues   ProductAttributeValue[]
-  brand             String?
-  brandTier         BrandTier                @default(PREMIUM)
-  basePrice         Decimal                  @db.Decimal(10, 2)
-  compareAtPrice    Decimal?                 @db.Decimal(10, 2)
-  costPrice         Decimal?                 @db.Decimal(10, 2)
-  taxRate           Decimal?                 @db.Decimal(5, 2)
-  trackInventory    Boolean                  @default(true)
+  attributes         Json?
+  attributeValues    ProductAttributeValue[]
+  brand              String?
+  brandTier          BrandTier                @default(PREMIUM)
+  basePrice          Decimal                  @db.Decimal(10, 2)
+  compareAtPrice     Decimal?                 @db.Decimal(10, 2)
+  costPrice          Decimal?                 @db.Decimal(10, 2)
+  taxRate            Decimal?                 @db.Decimal(5, 2)
+  trackInventory     Boolean                  @default(true)
   /// Manufacturing (docs/MANUFACTURING.md): FINISHED goods are sold; MATERIAL items (fabric, thread, labels, packaging) are
   /// stock-tracked inputs that are never sold — the database keeps them unpublished and inactive.
-  kind              ProductKind              @default(FINISHED)
+  kind               ProductKind              @default(FINISHED)
   /// The unit every stock quantity of a material is counted in (cm, g, pcs, …) — stock stays a whole number of it.
-  stockUnit         String?
+  stockUnit          String?
   /// Ships free: the canonical quote waives shipping when EVERY line of the cart is a free-delivery product (one normal
   /// product → the zone fee applies). Read only when pricing; each order line snapshots it (OrderItem.freeDeliverySnapshot)
   /// so changing it never touches an existing order (docs/ORDER_ADJUSTMENTS.md §2).
-  freeDelivery      Boolean                  @default(false)
-  lowStockThreshold Int                      @default(5)
-  restockDate       DateTime?
-  isActive          Boolean                  @default(true)
+  freeDelivery       Boolean                  @default(false)
+  /// CourierNoteRule ids ticked on this product ("perfume — don't open", "fragile") — on top of its category's. No FK, same
+  /// as Category.courierNoteRuleIds. Read when a courier is booked (modules/courier/courier-note.ts).
+  courierNoteRuleIds String[]                 @default([])
+  lowStockThreshold  Int                      @default(5)
+  restockDate        DateTime?
+  isActive           Boolean                  @default(true)
   /// Defaults to PUBLISHED so rows written by code that only knows `isActive` stay live.
-  status            ProductStatus            @default(PUBLISHED)
-  isFeatured        Boolean                  @default(false)
-  seoTitle          String?
-  seoDescription    String?
-  focusKeyword      String?
+  status             ProductStatus            @default(PUBLISHED)
+  isFeatured         Boolean                  @default(false)
+  seoTitle           String?
+  seoDescription     String?
+  focusKeyword       String?
   /// Admin-entered search tags (YouTube-style): extra words shoppers type that the name/description don't say —
   /// e.g. "ator", "আতর" on a perfume. Stored normalized (lowercase, Bangla vowel variants unified) so storefront
   /// search matches them exactly against its expanded terms. Never shown on the storefront.
-  tags              String[]                 @default([])
-  ogTitle           String?
-  ogDescription     String?
-  ogImageUrl        String?
+  tags               String[]                 @default([])
+  ogTitle            String?
+  ogDescription      String?
+  ogImageUrl         String?
   /// Overrides the self-referencing canonical the product page emits (e.g. when this is a variant of another listing).
-  canonicalUrl      String?
+  canonicalUrl       String?
   /// Care steps: a preset (falls back to the template's), or this product's own list when `careOverride` is set.
-  carePresetId      String?
-  carePreset        CareGuidePreset?         @relation(fields: [carePresetId], references: [id], onDelete: SetNull)
+  carePresetId       String?
+  carePreset         CareGuidePreset?         @relation(fields: [carePresetId], references: [id], onDelete: SetNull)
   /// string[] — the product's own care steps; wins over the preset.
-  careOverride      Json?
-  materials         ProductMaterial[]
+  careOverride       Json?
+  materials          ProductMaterial[]
   /// Per-product page-section overrides (on/off, order, title, own text) — see PageSectionFields below.
-  sections          ProductSection[]
-  faqs              ProductFaq[]
+  sections           ProductSection[]
+  faqs               ProductFaq[]
   /// Curated lists this product owns ("related", "cross-sell", ...), and the reverse side.
-  relations         ProductRelation[]        @relation("ProductRelations")
-  relatedTo         ProductRelation[]        @relation("RelatedToProducts")
-  deletedAt         DateTime?
-  billsOfMaterials  BillOfMaterials[]
-  productionOrders  ProductionOrder[]
-  variants          ProductVariant[]
-  images            ProductImage[]
-  flashSaleItems    FlashSaleItem[]
+  relations          ProductRelation[]        @relation("ProductRelations")
+  relatedTo          ProductRelation[]        @relation("RelatedToProducts")
+  deletedAt          DateTime?
+  billsOfMaterials   BillOfMaterials[]
+  productionOrders   ProductionOrder[]
+  variants           ProductVariant[]
+  images             ProductImage[]
+  flashSaleItems     FlashSaleItem[]
   /// Storefront read model (Phase 3) — a projection, never authoritative (docs/STOREFRONT_READ_MODEL.md).
-  readModel         ProductReadModel?
-  couponProducts    CouponProduct[]
-  wishlistItems     WishlistItem[]
-  viewLogs          ProductViewLog[]
-  reviews           ProductReview[]
+  readModel          ProductReadModel?
+  couponProducts     CouponProduct[]
+  wishlistItems      WishlistItem[]
+  viewLogs           ProductViewLog[]
+  reviews            ProductReview[]
   /// Denormalized from ProductReview (APPROVED only) so every product listing can show a rating
   /// without an aggregate join on every request — recomputed whenever a review is approved,
   /// rejected (after having been approved), or deleted.
-  avgRating         Float                    @default(0)
-  reviewCount       Int                      @default(0)
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
+  avgRating          Float                    @default(0)
+  reviewCount        Int                      @default(0)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
   @@index([categoryId, isActive])
   @@index([deletedAt])
@@ -1179,6 +1185,11 @@ model Order {
   paymentLinks           PaymentLink[]
   notes                  String?
   adminNotes             String?
+  /// Staff's own wording of the note the courier sees, replacing the one built from the courier-note rules. Null = use the
+  /// rules (modules/courier/courier-note.ts). Frozen once a courier is booked.
+  courierNote            String?
+  /// Exactly what was sent to the courier as the parcel note at booking — the record of what the rider was told.
+  courierNoteSent        String?
   trackingNumber         String?
   carrier                String?
   /// @deprecated superseded by PaymentSession.gatewayTransactionRef/providerTransactionId — kept
@@ -2548,6 +2559,30 @@ model CatalogSetting {
   /// Tokens: {PREFIX} {TYPE} {COLOR} {SIZE} {SEQ:n} (n = zero-padded digits). Validated on write.
   skuPattern String   @default("{PREFIX}-{TYPE}-{COLOR}-{SIZE}-{SEQ:3}")
   updatedAt  DateTime @updatedAt
+}
+
+/// PRODUCT: applies to products it is ticked on (directly or through their category). DISCOUNT: applies on its own to any
+/// order with a line discounted at least `minDiscountPercent` off its "was" price.
+enum CourierNoteTrigger {
+  PRODUCT
+  DISCOUNT
+}
+
+/// A store-defined instruction for the courier ("পারফিউম — প্যাকেট খোলা যাবে না"), managed from Catalog → Courier notes.
+/// When an order is booked, the texts of every rule that applies to it are joined into the parcel note.
+model CourierNoteRule {
+  id                 String             @id @default(cuid())
+  /// Staff-facing name shown next to the checkbox ("Perfume", "Fragile").
+  name               String
+  /// What the courier sees.
+  text               String
+  trigger            CourierNoteTrigger @default(PRODUCT)
+  /// DISCOUNT rules only: the smallest line discount (percent) that triggers it.
+  minDiscountPercent Int?
+  isActive           Boolean            @default(true)
+  sortOrder          Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 }
 
 /// Atomic per-scope counters behind the SKU generator's {SEQ} token (scope = the product type's SKU code).

@@ -133,6 +133,9 @@ export const baseProductSchema = z.object({
   /** Ships free. Shipping is waived only when every line of a cart is a free-delivery product (shipping engine,
    * docs/ORDER_ADJUSTMENTS.md §2) — a server-side pricing input, snapshotted per order line, never read back by old orders. */
   freeDelivery: z.boolean().default(false),
+  /** Courier-note rules ticked on this product ("perfume — don't open"), on top of its category's. Sent whole; omit to leave
+   * them alone. Read when a courier is booked, never by old bookings. */
+  courierNoteRuleIds: z.array(z.string().min(1).max(40)).max(20).optional(),
   lowStockThreshold: z.number().int().min(0).default(5),
   restockDate: nullableDate(),
   /** Legacy switch, kept for older clients: true = PUBLISHED, false = UNPUBLISHED, unless `status` is sent. */

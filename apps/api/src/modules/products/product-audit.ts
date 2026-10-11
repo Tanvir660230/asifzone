@@ -29,6 +29,7 @@ export interface AuditSnapshot {
   taxRate: unknown;
   trackInventory: boolean;
   freeDelivery?: boolean;
+  courierNoteRuleIds?: string[];
   lowStockThreshold: number;
   isFeatured: boolean;
   sortOrder: number;
@@ -167,7 +168,7 @@ export function diffProduct(before: AuditSnapshot, after: AuditSnapshot): AuditE
     push("product.materials_updated", [{ field: "materials", from: materialSig(before).join(", ") || null, to: materialSig(after).join(", ") || null }]);
   }
 
-  push("product.details_updated", pick(before, after, ["name", "categoryId", "typeId", "brand", "brandTier", "shortDescription", "trackInventory", "freeDelivery", "lowStockThreshold", "isFeatured", "sortOrder", "tags"]));
+  push("product.details_updated", pick(before, after, ["name", "categoryId", "typeId", "brand", "brandTier", "shortDescription", "trackInventory", "freeDelivery", "courierNoteRuleIds", "lowStockThreshold", "isFeatured", "sortOrder", "tags"]));
 
   return events;
 }

@@ -14,6 +14,7 @@ import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
 import { ensureUniqueSlug } from "../../lib/unique-slug";
 import { deleteSiteImageFile } from "../uploads/upload.service";
+import { sanitizeCourierNoteRuleIds } from "../courier/courier-note-rules.service";
 
 const CACHE_PREFIX = "categories:";
 const CACHE_TTL_SECONDS = 300;
@@ -261,7 +262,7 @@ export async function createCategory(input: CreateCategoryInput) {
 
   let category;
   try {
-    category = await prisma.category.create({ data: { ...input, slug } });
+    category = await prisma.category.create({ data: { ...input, slug, courierNoteRuleIds: await sanitizeCourierNoteRuleIds(input.courierNoteRuleIds) } });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       throw AppError.conflict("A category with this slug already exists");
@@ -286,7 +287,7 @@ export async function updateCategory(id: string, input: UpdateCategoryInput) {
     }
   }
 
-  const data: Record<string, unknown> = { ...input };
+  const data: Record<string, unknown> = { ...input, courierNoteRuleIds: await sanitizeCourierNoteRuleIds(input.courierNoteRuleIds) };
   if (input.name && !input.slug) {
     data.slug = await ensureUniqueSlug(slugify(input.name), async (candidate) => {
       const existing = await prisma.category.findFirst({ where: { slug: candidate, NOT: { id } } });

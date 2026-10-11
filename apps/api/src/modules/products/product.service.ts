@@ -69,6 +69,7 @@ import { PRODUCT_CACHE_PREFIX, invalidateProductCache, triggerStorefrontRevalida
 import { diffProduct, type AuditSnapshot } from "./product-audit";
 import { PUBLIC_PRODUCT_SCALARS, PUBLIC_VARIANT_FIELDS } from "./product-public-select";
 import { captureError } from "../../lib/observability/error-capture";
+import { sanitizeCourierNoteRuleIds } from "../courier/courier-note-rules.service";
 
 const CACHE_PREFIX = PRODUCT_CACHE_PREFIX;
 const CACHE_TTL_SECONDS = 120;
@@ -1474,6 +1475,7 @@ export async function createProduct(
   throwIfInvalid(validateProductAgainstConfig({ attributes: submitted ?? {}, variants }, config));
   const { defined, legacy } = splitAttributes(config.fields, submitted ?? {}, new Set());
   await assertCarePresetUsable(productData.carePresetId, null);
+  productData.courierNoteRuleIds = await sanitizeCourierNoteRuleIds(productData.courierNoteRuleIds);
 
   const baseSlug = slugify(input.slug || input.name);
   const slug = await ensureUniqueSlug(baseSlug, async (candidate) => {
@@ -1618,7 +1620,7 @@ export async function updateProduct(
     ...rest
   } = input;
   void _typeId; void _productType; void _attributes; void _variants;
-  const data: Record<string, unknown> = { ...rest };
+  const data: Record<string, unknown> = { ...rest, courierNoteRuleIds: await sanitizeCourierNoteRuleIds(rest.courierNoteRuleIds) };
   if (careOverride !== undefined) data.careOverride = careOverrideInput(careOverride);
   await assertCarePresetUsable(rest.carePresetId, existing.carePresetId ?? null);
 

@@ -87,6 +87,7 @@ orderRouter.post(
 orderRouter.post("/bulk/get", requireAdmin, requirePermission("orders.read"), validate(bulkOrderIdsSchema), orderController.bulkGet);
 orderRouter.get("/:id", requireAdmin, requirePermission("orders.read"), orderController.getOne);
 orderRouter.patch("/:id/status", requireAdmin, requirePermission("orders.manage"), validate(updateOrderStatusSchema), orderController.updateStatus);
+orderRouter.get("/:id/courier-note", requireAdmin, requirePermission("orders.read"), orderController.getCourierNote);
 orderRouter.patch("/:id/details", requireAdmin, requirePermission("orders.manage"), validate(updateOrderDetailsSchema), orderController.updateDetails);
 orderRouter.post("/:id/hold", requireAdmin, requirePermission("orders.manage"), validate(holdOrderSchema), orderController.hold);
 orderRouter.post("/:id/hold/clear", requireAdmin, requirePermission("orders.manage"), orderController.clearHold);

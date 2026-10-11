@@ -169,7 +169,7 @@ function renderStep(id: WizardStepId, b: ProductBuilderController) {
     case "media":
       return <MediaStep state={state} />;
     case "pricing":
-      return <PricingStep state={state} />;
+      return <PricingStep state={state} categories={categories} />;
     case "variants":
       return <VariantsStep state={state} />;
     case "care":

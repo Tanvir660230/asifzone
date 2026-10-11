@@ -5,6 +5,7 @@ import { notify } from "../../lib/notify";
 import { changeOrderStatus, getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
 import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
+import { buildCourierNotes, effectiveCourierNote } from "./courier-note";
 import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
@@ -164,6 +165,9 @@ export async function bookOrderWithSteadfast(orderId: string) {
   // The payment ledger's cash-to-collect (PL-6): the balance due of an open COD order — 0 when it was prepaid.
   const codAmount = order.payment.codToCollect;
 
+  // The parcel note (store rules + customer note, or staff's own wording) — built before the claim so a failure here
+  // can't leave the order stuck behind a booking lease.
+  const courierNote = effectiveCourierNote(order.courierNote, (await buildCourierNotes([orderId])).get(orderId));
   if (!(await claimCourierBooking(orderId))) {
     throw AppError.conflict("This order is already booked with a courier, or a booking for it is in progress");
   }
@@ -179,7 +183,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
       recipientPhone: normalizeBdPhone(order.customerPhone),
       recipientAddress: buildRecipientAddress(order),
       codAmount,
-      note: order.notes ?? undefined,
+      note: courierNote ?? undefined,
     });
   } catch (err) {
     if (err instanceof CourierOutcomeUnknownError) await flagCourierOutcomeUnknown(orderId, order.orderNumber, err.message);
@@ -198,6 +202,7 @@ export async function bookOrderWithSteadfast(orderId: string) {
       courierBookedAt: new Date(),
       courierBookingStartedAt: null,
       courierSyncError: null,
+      courierNoteSent: courierNote,
     },
   });
 
@@ -243,6 +248,9 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
     }
   }
 
+  const builtNotes = await buildCourierNotes(eligible.map((order) => order.id));
+  const courierNotes = new Map(eligible.map((order) => [order.id, effectiveCourierNote(order.courierNote, builtNotes.get(order.id))]));
+
   // Claim each order first (Phase 9 D-4): one another booking already holds is skipped, never sent twice.
   const claimed: typeof eligible = [];
   for (const order of eligible) {
@@ -261,7 +269,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         recipientPhone: normalizeBdPhone(order.customerPhone),
         recipientAddress: buildRecipientAddress(order),
         codAmount: codAmounts.get(order.id) ?? 0,
-        note: order.notes ?? undefined,
+        note: courierNotes.get(order.id) ?? undefined,
       })),
     );
   } catch (err) {
@@ -306,6 +314,7 @@ export async function bookOrdersWithSteadfastBulk(orderIds: string[]): Promise<B
         courierBookedAt: new Date(),
         courierBookingStartedAt: null,
         courierSyncError: null,
+        courierNoteSent: courierNotes.get(order.id) ?? null,
       },
     });
     if (PRE_PACKED_ORDER_STATUSES.includes(order.status)) {

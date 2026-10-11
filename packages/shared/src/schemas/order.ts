@@ -204,6 +204,9 @@ export const updateOrderDetailsSchema = z.object({
   trackingNumber: nullableString(120),
   carrier: nullableString(80),
   adminNotes: nullableString(2000),
+  /** Staff's own wording of the note the courier sees; blank/null goes back to the one built from the courier-note rules.
+   * Refused once a courier is booked (the parcel already carries its note). */
+  courierNote: nullableString(500),
   // Lets an admin correct a customer/shipping mistake caught during the pre-shipping confirmation
   // call — optional (not nullable) because these columns are required strings on Order; there's no
   // valid "clear it" operation, only "replace it". Same validators as adminCreateOrderSchema so a

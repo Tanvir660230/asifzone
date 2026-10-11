@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createCategorySchema, type Category, type CreateCategoryInput } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/courier-note-picker";
 import { uploadCategoryImage, uploadCategoryBannerImage } from "@/lib/api/categories";
 import { ImageUploadField } from "@/components/admin/image-upload-field";
 
@@ -47,6 +48,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
     handleSubmit,
     setValue,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<CreateCategoryInput>({
     resolver: zodResolver(createCategorySchema),
@@ -63,12 +65,16 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
           isFeatured: initial.isFeatured,
           seoTitle: initial.seoTitle,
           seoDescription: initial.seoDescription,
+          courierNoteRuleIds: initial.courierNoteRuleIds ?? [],
         }
-      : { sortOrder: 0, isActive: true, isFeatured: false, parentId: defaultParentId ?? null },
+      : { sortOrder: 0, isActive: true, isFeatured: false, parentId: defaultParentId ?? null, courierNoteRuleIds: [] },
   });
 
   const excluded = initial ? collectDescendantIds(categories, initial.id) : new Set<string>();
   const parentOptions = categories.filter((c) => c.id !== initial?.id && !excluded.has(c.id));
+
+  const parentId = watch("parentId");
+  const parentName = categories.find((c) => c.id === parentId)?.name;
 
   const imageUrl = watch("imageUrl");
   const bannerImageUrl = watch("bannerImageUrl");
@@ -132,6 +138,24 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
           <Input id="seoDescription" placeholder="Shown in search results" {...register("seoDescription")} />
         </div>
       </div>
+
+      <fieldset>
+        <legend className="mb-1 text-sm font-medium text-ink-800">Courier note</legend>
+        <p className="mb-2 text-xs text-ink-500">Every product in this category and its sub-categories gets these.</p>
+        <Controller
+          control={control}
+          name="courierNoteRuleIds"
+          render={({ field }) => (
+            <CourierNotePicker
+              idPrefix="category-courier-note"
+              value={field.value ?? []}
+              onChange={field.onChange}
+              inherited={inheritedCourierNoteIds(parentId, categories)}
+              inheritedFrom={parentName ? `“${parentName}”` : "the parent category"}
+            />
+          )}
+        />
+      </fieldset>
 
       <div className="grid grid-cols-2 gap-4">
         <div>

@@ -136,6 +136,14 @@ export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLa
         </div>
       )}
 
+      {/* The courier note (Catalog → Courier notes, e.g. "পারফিউম — প্যাকেট খোলা যাবে না") — the rider reads the parcel more than
+          the app, so it's printed here too: bold, marked by a black rule, clamped so it can't push the barcode off. */}
+      {order.courierNoteForLabel && (
+        <p lang="bn" className="mt-1.5 line-clamp-2 border-l-2 border-ink-900 pl-1.5 text-[9.5px] font-bold leading-snug text-ink-900">
+          {order.courierNoteForLabel}
+        </p>
+      )}
+
       {/* Packing list — capped at MAX_ITEMS_SHOWN lines regardless of order size (see that constant's
           own comment). Each item line still truncates rather than wraps: unlike the address, an item
           name getting cut is a labeling inconvenience, not an undeliverable parcel, and letting it

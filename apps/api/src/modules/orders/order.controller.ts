@@ -3,6 +3,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { AppError } from "../../lib/app-error";
 import * as orderService from "./order.service";
 import { toCustomerOrder } from "./customer-order-view";
+import { courierNotesForLabels, getCourierNoteView } from "../courier/courier-note";
 import { initiatePendingPayment, refundOrderPayment, listRefundsForOrder } from "../payments/payment.service";
 import { metaContextFromRequest } from "../../lib/meta/capi";
 import { completeRefund, getOrderPaymentSummary, recordManualPayment } from "../../domain/payments/payment-ledger.service";
@@ -97,11 +98,14 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 
 export const getOne = asyncHandler(async (req: Request, res: Response) => {
   const order = await getOrderByIdWithAutoSync(req.params.id!);
-  res.json({ order: { ...order, ...(await orderService.getAdminOrderContext(order)) } });
+  const courierNotes = await courierNotesForLabels([order]);
+  res.json({ order: { ...order, ...(await orderService.getAdminOrderContext(order)), courierNoteForLabel: courierNotes.get(order.id) ?? null } });
 });
 
 export const bulkGet = asyncHandler(async (req: Request, res: Response) => {
-  res.json({ orders: await orderService.getOrdersByIds(req.body.ids) });
+  const orders = await orderService.getOrdersByIds(req.body.ids);
+  const courierNotes = await courierNotesForLabels(orders);
+  res.json({ orders: orders.map((order) => ({ ...order, courierNoteForLabel: courierNotes.get(order.id) ?? null })) });
 });
 
 /** DR-5: a move to Cancelled also needs orders.cancel (the route already required orders.manage). */
@@ -116,6 +120,12 @@ export const updateStatus = asyncHandler(async (req: Request, res: Response) => 
 
 export const updateDetails = asyncHandler(async (req: Request, res: Response) => {
   res.json({ order: await orderService.updateOrderDetails(req.params.id!, req.body, req.admin!.adminId) });
+});
+
+export const getCourierNote = asyncHandler(async (req: Request, res: Response) => {
+  const view = await getCourierNoteView(req.params.id!);
+  if (!view) throw AppError.notFound("Order not found");
+  res.json(view);
 });
 
 export const hold = asyncHandler(async (req: Request, res: Response) => {

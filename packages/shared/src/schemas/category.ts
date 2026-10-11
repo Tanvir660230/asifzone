@@ -13,6 +13,8 @@ export const createCategorySchema = z.object({
   isFeatured: z.boolean().default(false),
   seoTitle: nullableString(200),
   seoDescription: nullableString(500),
+  /** Courier-note rules every product in this category (and its sub-categories) carries. Omit to leave them alone. */
+  courierNoteRuleIds: z.array(z.string().min(1).max(40)).max(20).optional(),
 });
 
 export const updateCategorySchema = createCategorySchema.partial();

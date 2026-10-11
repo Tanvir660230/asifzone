@@ -155,6 +155,13 @@ export function ShippingLabelCompact({ order, store, templateId, onBarcodeReady 
         </p>
       )}
 
+      {/* The courier note, one bold line — a tiny sticker can't spare more. */}
+      {order.courierNoteForLabel && (
+        <p lang="bn" className="mt-0.5 truncate font-bold leading-snug text-ink-900" style={{ fontSize: `${tier.addressPx}px` }}>
+          {order.courierNoteForLabel}
+        </p>
+      )}
+
       <div className="mt-auto flex w-full justify-center pt-0.5">
         <BarcodeSvg
           value={barcodeValue}

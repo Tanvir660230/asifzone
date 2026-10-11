@@ -26,6 +26,7 @@ import { FaqEditor, RelatedProductsEditor } from "@/components/admin/product-con
 import { ImageUploader } from "@/components/admin/image-uploader";
 import { AiGenerateButton } from "@/components/admin/ai-generate-button";
 import { buildCategoryOptions } from "@/components/admin/product-form-state";
+import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/courier-note-picker";
 import * as aiApi from "@/lib/api/ai";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { storeCurrencyCode, stripHtml } from "@/lib/format";
@@ -312,7 +313,7 @@ export function MediaStep({ state }: StepProps) {
 
 /* ──────────────────────────────────── Pricing & Inventory ───────────────────────────────── */
 
-export function PricingStep({ state }: StepProps) {
+export function PricingStep({ state, categories }: StepProps & { categories: Category[] }) {
   const { form, initial, selectedConfig } = state;
   const variantRows = (form.watch("variants") ?? []) as unknown[];
   // A product with no size/colour options is a first-class simple product — its SKU and stock belong with its price.
@@ -321,6 +322,8 @@ export function PricingStep({ state }: StepProps) {
   const currency = storeCurrencyCode();
   const basePrice = form.watch("basePrice");
   const costPrice = form.watch("costPrice");
+  const categoryId = form.watch("categoryId");
+  const category = categories.find((c) => c.id === categoryId);
   // A display hint only — nothing is priced from it (the server's pricing engine decides every charged amount).
   const margin = basePrice && costPrice && basePrice > 0 ? (((basePrice - costPrice) / basePrice) * 100).toFixed(1) : null;
   const money = { leading: currency, type: "number", step: "0.01", inputMode: "decimal" as const, min: 0 };
@@ -365,6 +368,21 @@ export function PricingStep({ state }: StepProps) {
             </span>
           </span>
         </label>
+      </FormSection>
+
+      <FormSection title="Courier note" description="Instructions printed on the parcel for the rider, e.g. পারফিউম — প্যাকেট খোলা যাবে না.">
+        <Controller
+          control={form.control}
+          name="courierNoteRuleIds"
+          render={({ field }) => (
+            <CourierNotePicker
+              value={field.value ?? []}
+              onChange={field.onChange}
+              inherited={inheritedCourierNoteIds(categoryId, categories)}
+              inheritedFrom={category ? `“${category.name}”` : "its category"}
+            />
+          )}
+        />
       </FormSection>
 
       <FormSection title="Inventory" description="Stock tracking and the low-stock warning.">
