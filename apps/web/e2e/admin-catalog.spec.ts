@@ -132,9 +132,9 @@ test.describe("admin creates a brand-new product type with no code change", () =
     await login(page);
     await page.goto("/admin/products");
     await page.getByPlaceholder(/search/i).first().fill(PRODUCT_NAME);
-    // The list filters after a debounce, and below `sm` it swaps the table for a card list (each with its own
-    // edit link) — so wait until exactly one visible edit link is left: this run's product.
-    const editLinks = page.locator('a[href$="/edit"]:visible');
+    // The list filters after a debounce, and below `sm` it swaps the table for a card list (each card one "Edit <name>"
+    // button) — so wait until exactly one visible way in is left: this run's product.
+    const editLinks = page.locator('a[href$="/edit"]:visible').or(page.getByRole("button", { name: `Edit ${PRODUCT_NAME}`, exact: true }));
     await expect(editLinks).toHaveCount(1);
     await editLinks.click();
     await expect(page).toHaveURL(/\/admin\/products\/.+\/edit/);

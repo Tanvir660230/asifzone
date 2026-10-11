@@ -134,7 +134,9 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
     await page.getByRole("button", { name: "Warranty", exact: true }).click();
     await expect(page.getByText(STORE_WARRANTY)).toBeVisible();
     await page.getByRole("button", { name: "Shipping & Returns", exact: true }).click();
-    await expect(page.getByText(/Dispatched within 1–2 business days/)).toBeVisible();
+    // The store policy's own sentence (store-policy.ts). Not "Dispatched within …": a store created after the
+    // store-policy migration has no handling days until its owner sets them, and CI's database is such a store.
+    await expect(page.getByText(/Inside Dhaka: \d+(–\d+)? days, outside Dhaka: \d+(–\d+)? days\./)).toBeVisible();
   });
 
   test("6. a draft of the new type carries FAQ, video, highlights and a hand-picked list from the product form", async ({ page }) => {

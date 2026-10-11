@@ -127,7 +127,7 @@ test.describe("duplicate a product, and import / export it as CSV", () => {
     // The search also matches the earlier copies (newest first), so open the menu on the source's own row.
     const sourceRow = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${SOURCE}`, exact: true }) });
     await sourceRow.getByRole("button", { name: "More actions" }).click();
-    await page.getByRole("button", { name: "Duplicate", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Duplicate", exact: true }).click();
 
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Name of the copy").fill(`${SOURCE} second copy`);

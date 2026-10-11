@@ -53,7 +53,7 @@ async function toast(page: Page, text: string | RegExp) {
 async function movement(page: Page, button: string, fill: { from?: string; to?: string; account?: string; direction?: "IN" | "OUT"; counter?: string; date: string; amount: string; description: string; reference?: string; reason?: string }) {
   // Admin V2: the four kinds of movement sit behind one "Record movement" menu
   await page.getByTestId("record-movement").click();
-  await page.getByRole("button", { name: button, exact: true }).first().click();
+  await page.getByRole("menuitem", { name: button, exact: true }).first().click();
   const dialog = page.getByRole("dialog");
   if (fill.from) await dialog.locator("#mv-from").selectOption(fill.from);
   if (fill.to) await dialog.locator("#mv-to").selectOption(fill.to);
