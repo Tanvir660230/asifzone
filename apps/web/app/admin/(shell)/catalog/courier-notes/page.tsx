@@ -118,8 +118,8 @@ export default function CourierNotesPage() {
   return (
     <div>
       <PageHeader
-        title="Catalog setup"
-        description="Define what kinds of products the store sells, and what each kind collects and shows."
+        title="Courier notes"
+        description="What the rider is told about a parcel, written once and applied by product, category or discount."
         action={
           canManage && (
             <Button variant="brass" onClick={() => openEditor("new")}>
