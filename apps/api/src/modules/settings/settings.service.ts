@@ -46,7 +46,10 @@ export async function getSettings() {
 async function fetchOrCreate() {
   const existing = await prisma.storeSetting.findUnique({ where: { id: SINGLETON_ID } });
   if (existing) return existing;
-  return prisma.storeSetting.create({ data: { id: SINGLETON_ID } });
+  // ON CONFLICT DO NOTHING: requests racing on a fresh database all end up reading the one row instead of one of them
+  // failing on the primary key.
+  await prisma.storeSetting.createMany({ data: [{ id: SINGLETON_ID }], skipDuplicates: true });
+  return prisma.storeSetting.findUniqueOrThrow({ where: { id: SINGLETON_ID } });
 }
 
 export async function updateSettings(input: UpdateSettingsInput) {
