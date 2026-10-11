@@ -41,6 +41,12 @@ jobs:
       # (P2028 "Unable to start a transaction"). Locally it is ~33; 20 keeps CI close to that.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/clothing_brand?schema=public&connection_limit=20
       REDIS_URL: redis://localhost:6379
+      # The e2e web server is a production build (`next start`), which requires an installation id since Phase 1; the API
+      # defaults to `test` under NODE_ENV=test, so both name the same installation.
+      INSTALL_ID: test
+      # Same secret on the API and the web server, as in production: admin writes revalidate the storefront's data cache
+      # at once. Without it the storefront serves 60 s old data and e2e checks of a just-saved change fail.
+      REVALIDATE_SECRET: ci-revalidate-secret
       JWT_ACCESS_SECRET: ci-access-secret
       JWT_CUSTOMER_ACCESS_SECRET: ci-customer-access-secret
       JWT_CUSTOMER_REFRESH_SECRET: ci-customer-refresh-secret
@@ -49,6 +55,9 @@ jobs:
       SEED_ADMIN_PASSWORD: ChangeMe123!
       E2E_STAFF_EMAIL: staff@example.com
       E2E_STAFF_PASSWORD: ChangeMe123!
+      # The second OWNER the finance browser QA approves with (scripts/create-e2e-staff.ts creates it).
+      QA_APPROVER_EMAIL: approver@example.com
+      QA_APPROVER_PASSWORD: ChangeMe123!
 
     steps:
       - uses: actions/checkout@v4

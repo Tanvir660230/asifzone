@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 // The Orders workspace end to end (ORD-01 … ORD-29 UI paths). The spec creates its own order through the manual-order
 // flow and removes it at the end (Trash → delete permanently), so it only ever touches the order it made. The API under
-// test runs with live providers off (global-setup), so courier booking is expected to be refused by the provider guard.
+// test runs with live providers off and no courier keys (global-setup), so courier booking is not offered (Phase 12 D-4).
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -144,12 +144,13 @@ test.describe("orders workspace", () => {
     await dialog(page).getByRole("button", { name: "Record refund" }).click();
     await expect(payments.getByText("e2e partial refund")).toBeVisible();
 
-    // ── ORD-13 courier: the provider guard refuses the real call in this environment ──
+    // ── ORD-13 courier: no courier is connected in this environment (Phase 12 D-4), so the order explains why it can't be
+    // booked and where the keys go, instead of offering a Book button that would fail ──
     const delivery = page.getByTestId("order-delivery");
-    await delivery.getByRole("button", { name: /Book with/ }).click();
-    await dialog(page).getByRole("button", { name: "Book courier" }).click();
-    await expect(page.getByText(/blocked|Failed to book/i).first()).toBeVisible();
     await expect(delivery.getByText("Not booked with a courier yet.")).toBeVisible();
+    await expect(delivery.getByRole("button", { name: /Book with/ })).toHaveCount(0);
+    await expect(delivery.getByText(/isn.t connected to this store yet/)).toBeVisible();
+    await expect(delivery.getByRole("link", { name: /Settings › Integrations/ })).toHaveAttribute("href", "/admin/settings?pane=integrations");
 
     // ── ORD-18 invoice ──
     const invoice = await page.context().newPage();
