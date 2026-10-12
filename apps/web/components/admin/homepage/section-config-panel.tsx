@@ -67,7 +67,7 @@ export function SectionConfigPanel({
         </a>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-4 rounded-lg border border-ink-100 bg-cream-50 p-3">
+      <div className="mb-4 grid gap-4 rounded-lg border border-ink-100 bg-cream-50 p-3 sm:grid-cols-2">
         <div>
           <Label htmlFor="section-starts-at">Visible from (optional)</Label>
           <Input id="section-starts-at" type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />

@@ -62,7 +62,7 @@ export function FilterBar({
               <SlidersHorizontal size={14} /> More filters
               {moreCount > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{moreCount}</span>}
             </Button>
-            <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} className="w-80 space-y-3 p-4">
+            <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} sheetOnPhone aria-label="More filters" className="w-80 space-y-3 p-4">
               {more.map((def) => (
                 <FilterControl key={def.key} def={def} values={values} onChange={(v) => onChange(setFilterPatch(defs, def.key, v))} />
               ))}

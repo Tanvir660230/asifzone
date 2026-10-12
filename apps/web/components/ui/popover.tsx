@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useState, type KeyboardEvent, 
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 interface PopoverProps {
   open: boolean;
@@ -17,6 +18,9 @@ interface PopoverProps {
    * pattern). Anything else — fields, pickers — stays a "dialog". */
   role?: "dialog" | "menu";
   "aria-label"?: string;
+  /** Phones show the panel as a bottom sheet with a Done button instead of anchoring it — for panels of fields
+   * (filters), not for pickers that belong next to their input. */
+  sheetOnPhone?: boolean;
   children: ReactNode;
 }
 
@@ -43,8 +47,10 @@ function onMenuKeyDown(e: KeyboardEvent<HTMLDivElement>) {
  * the page behind it), positioned in `fixed` coordinates off the anchor's own rect rather than a
  * third-party positioning library. Used for "More filters", row/bulk context menus, and the order
  * status picker. */
-export function Popover({ open, onClose, anchorRef, align = "start", className, role = "dialog", "aria-label": ariaLabel, children }: PopoverProps) {
-  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, lockScroll: false });
+export function Popover({ open, onClose, anchorRef, align = "start", className, role = "dialog", "aria-label": ariaLabel, sheetOnPhone = false, children }: PopoverProps) {
+  const phone = useMediaQuery("(max-width: 767px)");
+  const sheet = sheetOnPhone && phone;
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: onClose, lockScroll: sheet });
   const [style, setStyle] = useState<{ top: number; left: number } | null>(null);
 
   const reposition = useCallback(() => {
@@ -109,6 +115,36 @@ export function Popover({ open, onClose, anchorRef, align = "start", className, 
   }, [open, onClose, anchorRef]);
 
   if (!open) return null;
+
+  if (sheet) {
+    // A phone: the panel is a sheet up from the bottom edge, full width, over a dimmed page (a tap on it closes).
+    return createPortal(
+      <div className="fixed inset-0 z-overlay flex flex-col justify-end">
+        <div className="ui-overlay absolute inset-0 animate-fade-in" aria-hidden />
+        <div
+          ref={panelRef}
+          role={role}
+          aria-label={ariaLabel}
+          tabIndex={-1}
+          onKeyDown={role === "menu" ? onMenuKeyDown : undefined}
+          className={cn(
+            className,
+            "relative flex max-h-[calc(100dvh-env(safe-area-inset-top)-24px)] w-full max-w-none animate-slide-in-up flex-col rounded-t-[22px] bg-surface p-0 shadow-floatLg outline-none",
+          )}
+        >
+          <div className="flex shrink-0 items-center justify-between px-4 pb-1 pt-2">
+            <span className="w-14" />
+            <span className="h-[5px] w-9 rounded-full bg-ink-900/[0.15]" aria-hidden />
+            <button type="button" onClick={onClose} className="h-10 w-14 text-right text-[17px] font-semibold tracking-[-0.02em] text-accent active:opacity-50">
+              Done
+            </button>
+          </div>
+          <div className={cn("min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-1")}>{children}</div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
 
   return createPortal(
     <div

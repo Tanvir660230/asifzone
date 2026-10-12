@@ -5,6 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ExternalLink, Menu, Plus, Search } from "lucide-react";
 import { MobileBottomNav, Sidebar } from "@/components/admin/sidebar";
+import { MobileNavBar, useMobileBack } from "@/components/admin/mobile-nav-bar";
+import { MoreSheet } from "@/components/admin/more-sheet";
+import { PhoneTables } from "@/components/admin/phone-tables";
 import { SectionBar } from "@/components/admin/section-bar";
 import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { NotificationBell } from "@/components/admin/notification-bell";
@@ -23,6 +26,9 @@ import { cn } from "@/lib/utils";
 
 export default function ShellLayout({ children }: { children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [scrollRoot, setScrollRoot] = useState<HTMLDivElement | null>(null);
+  const mobileBack = useMobileBack();
   const [paletteOpen, setPaletteOpen] = useCommandPaletteHotkey();
   const [createOpen, setCreateOpen] = useState(false);
   const createRef = useRef<HTMLButtonElement>(null);
@@ -79,7 +85,16 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
   return (
     // data-surface="admin": the Store Console's own tokens (Apple-style, light only), whatever the store's brand theme.
     // On this element for the server render; portalled overlays get it from <body> (effect above).
-    <div data-surface="admin" data-shell="" data-section-bar={sectionBar ? sectionBarMode : undefined} className="relative flex h-screen overflow-hidden bg-canvas font-sans text-fg">
+    <div
+      data-surface="admin"
+      data-shell=""
+      data-section-bar={sectionBar ? sectionBarMode : undefined}
+      // On phones the navigation bar's back button replaces the page's own "Back to …" link (globals.css).
+      data-nav-back={mobileBack ? "" : undefined}
+      // h-dvh, not h-screen: on phones 100vh is the height with the browser's toolbars hidden, so a 100vh shell runs
+      // under Safari's and Chrome's bottom toolbar — taking the tab bar with it. The dynamic viewport is what's visible.
+      className="relative flex h-dvh overflow-hidden bg-canvas font-sans text-fg"
+    >
       {/* First stop for keyboard users: past the sidebar and toolbar straight to the page. */}
       <a
         href="#main-content"
@@ -104,12 +119,35 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
           Below lg the mobile bottom bar sits UNDER that scrolling box, in normal flow — not fixed over it — so the
           scroll viewport ends above the bar and no content (or a page's own sticky toolbar) can be hidden behind it. */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div ref={setScrollRoot} className="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
           {/* The toolbar (macOS-style): where you are on the left, one search for everything in the middle, actions on the
               right — three columns so the search stays centred whatever the breadcrumb's length. */}
           {/* Toolbar and section bar share one pinned, translucent layer — one material, one bottom edge. */}
-          <div className="sticky top-0 z-20 shrink-0 border-b border-ink-900/[0.07] bg-surface/85 backdrop-blur-xl backdrop-saturate-150 print:hidden">
-            <header className="grid h-header grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 sm:px-6">
+          <div className="sticky top-0 z-20 shrink-0 border-b border-ink-900/[0.07] bg-surface/85 pt-[env(safe-area-inset-top)] backdrop-blur-xl backdrop-saturate-150 print:hidden">
+            <MobileNavBar
+              scrollRoot={scrollRoot}
+              onSearch={() => setPaletteOpen(true)}
+              actions={
+                <>
+                  {createItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCreateOpen(true)}
+                      aria-label="Create"
+                      aria-haspopup="menu"
+                      className="flex h-11 w-11 items-center justify-center rounded-full text-ink-700 active:bg-ink-900/[0.06]"
+                    >
+                      <Plus size={23} strokeWidth={2} />
+                    </button>
+                  )}
+                  <NotificationBell />
+                  <span className="ml-1">
+                    <AccountMenu onShowShortcuts={() => setHelpOpen(true)} />
+                  </span>
+                </>
+              }
+            />
+            <header className="hidden h-header grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 sm:px-6 md:grid">
               <div className="flex min-w-0 items-center gap-2">
                 <button onClick={() => setMobileNavOpen(true)} className="-ml-1 flex h-10 w-10 items-center justify-center rounded-full text-ink-600 hover:bg-ink-900/[0.05] lg:hidden" aria-label="Open menu">
                   <Menu size={20} />
@@ -169,13 +207,15 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
             {/* Full screen for data pages; one centered column for forms (pageWidthFor). The 2400px ceiling only matters on
                 ultra-wide monitors, where a single table row would otherwise be too long to follow. */}
             <div className={cn("mx-auto w-full", pageWidthFor(pathname) === "form" ? "max-w-[880px]" : "max-w-[2400px]")}>
-              <Breadcrumbs className="mb-3 print:hidden md:hidden" />
               {children}
             </div>
           </main>
         </div>
-        <MobileBottomNav onOpenMore={() => setMobileNavOpen(true)} />
+        {/* Phones get the More sheet; tablets (md up to lg) the full sidebar as a drawer. */}
+        <MobileBottomNav onOpenMore={() => (window.matchMedia("(min-width: 768px)").matches ? setMobileNavOpen(true) : setMoreOpen(true))} />
       </div>
+      <PhoneTables />
+      <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} onSearch={() => setPaletteOpen(true)} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       <Toaster />

@@ -104,7 +104,8 @@ export function NavTabs({ tabs, scrollable = false, className, "aria-label": ari
   return (
     <nav
       aria-label={ariaLabel}
-      className={cn("flex gap-1 border-b border-line-subtle", scrollable ? "overflow-x-auto" : "flex-wrap", className)}
+      // Phones keep the tabs on one line that scrolls sideways — wrapped, they stack into a second row of tabs.
+      className={cn("flex gap-1 border-b border-line-subtle", scrollable ? "overflow-x-auto" : "flex-wrap max-sm:flex-nowrap max-sm:overflow-x-auto", className)}
     >
       {tabs.map((t) => {
         const active = activeHref !== undefined ? t.href === activeHref : pathname.startsWith(t.href);

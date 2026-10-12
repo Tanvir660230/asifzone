@@ -35,7 +35,8 @@ export function Modal({ open, onClose, title, description, children, footer, wid
   return createPortal(
     // No backdrop-click-to-close, unlike Drawer — Modal content is almost always an unsaved form,
     // and a stray click just outside the panel shouldn't discard it.
-    <div className="ui-overlay fixed inset-0 z-overlay flex items-start justify-center overflow-y-auto p-4 pt-16 animate-fade-in">
+    // ui-modal-*: in the Store Console a phone gets this as a bottom sheet (globals.css), the way iOS presents a form.
+    <div className="ui-overlay ui-modal-overlay fixed inset-0 z-overlay flex items-start justify-center overflow-y-auto p-4 pt-16 animate-fade-in">
       <div
         ref={panelRef}
         role="dialog"
@@ -44,7 +45,7 @@ export function Modal({ open, onClose, title, description, children, footer, wid
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         className={cn(
-          "w-full animate-modal-in rounded-2xl border border-white/70 bg-surface shadow-glass-lg ring-1 ring-ink-900/[0.04]",
+          "ui-modal-panel w-full animate-modal-in rounded-2xl border border-white/70 bg-surface shadow-glass-lg ring-1 ring-ink-900/[0.04]",
           widthClassName,
         )}
       >
@@ -63,8 +64,8 @@ export function Modal({ open, onClose, title, description, children, footer, wid
             <X size={18} />
           </IconButton>
         </div>
-        <div className="px-6 py-5">{children}</div>
-        {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-line-subtle px-6 py-4">{footer}</div>}
+        <div className="ui-modal-body px-6 py-5">{children}</div>
+        {footer && <div className="ui-modal-footer flex flex-wrap justify-end gap-2 border-t border-line-subtle px-6 py-4">{footer}</div>}
       </div>
     </div>,
     document.body,

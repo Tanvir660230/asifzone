@@ -41,7 +41,7 @@ function formatBadge(count: number) {
 }
 
 /** The store this console belongs to (Blueprint V2 §E): its logo and name from settings, never a fixed product name. */
-function StoreIdentity({ collapse }: { collapse: boolean }) {
+export function StoreIdentity({ collapse }: { collapse: boolean }) {
   const { data } = useQuery({ queryKey: ["settings"], queryFn: settingsApi.getSettings, staleTime: 5 * 60 * 1000 });
   const settings = data?.settings;
   const name = settings?.storeName ?? "Store";
@@ -163,7 +163,7 @@ export function Sidebar({ collapsed, onToggleCollapsed: toggleCollapsed, mobileO
       {/* Desktop: static, collapsible sidebar */}
       <aside
         className={cn(
-          "hidden h-screen shrink-0 flex-col border-r border-ink-900/[0.08] bg-cream-200/70 text-fg backdrop-blur-xl transition-[width] duration-slow ease-smooth lg:flex",
+          "hidden h-dvh shrink-0 flex-col border-r border-ink-900/[0.08] bg-cream-200/70 text-fg backdrop-blur-xl transition-[width] duration-slow ease-smooth lg:flex",
           collapsed ? "w-sidebar-collapsed" : "w-sidebar",
         )}
       >
@@ -336,7 +336,12 @@ export function MobileBottomNav({ onOpenMore }: { onOpenMore: () => void }) {
   if (!access.ready || primary.length === 0) return null;
 
   return (
-    <nav aria-label="Primary" data-hide-on-keyboard="" className="glass flex shrink-0 border-t border-ink-900/[0.08] pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden">
+    // An iOS tab bar: 49pt of tabs above the home indicator, translucent over the page, a red count on the icon.
+    <nav
+      aria-label="Primary"
+      data-hide-on-keyboard=""
+      className="glass flex shrink-0 border-t border-ink-900/[0.1] px-[env(safe-area-inset-left)] pb-[env(safe-area-inset-bottom)] print:hidden lg:hidden"
+    >
       {primary.map(({ node, href }) => {
         const Icon = node.icon ? NAV_ICONS[node.icon] : undefined;
         const active = node.id === activeModuleId;
@@ -346,16 +351,36 @@ export function MobileBottomNav({ onOpenMore }: { onOpenMore: () => void }) {
             key={node.id}
             href={href}
             aria-current={active ? "page" : undefined}
-            className={cn("relative flex h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium", active ? "text-accent" : "text-ink-500")}
+            className={cn(
+              "relative flex h-[49px] flex-1 flex-col items-center justify-center gap-[3px] pt-1 text-[10px] font-medium tracking-[0.01em] transition-colors duration-fast active:opacity-60",
+              active ? "text-accent" : "text-ink-500",
+            )}
           >
-            {Icon && <Icon size={21} strokeWidth={active ? 2.1 : 1.8} aria-hidden />}
+            {Icon && (
+              <span className="relative">
+                <Icon size={24} strokeWidth={active ? 2.1 : 1.7} aria-hidden />
+                {badge > 0 && (
+                  <span
+                    className="absolute -top-1 left-[15px] flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-danger-500 px-[5px] text-[11px] font-semibold tabular-nums leading-none text-white"
+                    aria-label={`${badge} waiting`}
+                  >
+                    {formatBadge(badge)}
+                  </span>
+                )}
+              </span>
+            )}
             {node.shortLabel ?? node.breadcrumb ?? node.label}
-            {badge > 0 && <span className="absolute right-[calc(50%-17px)] top-1.5 h-2 w-2 rounded-full bg-danger-500 ring-2 ring-surface" aria-label={`${badge} waiting`} />}
           </Link>
         );
       })}
-      <button type="button" onClick={onOpenMore} aria-label="More navigation" className="flex h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-medium text-ink-500">
-        <MoreHorizontal size={21} strokeWidth={1.8} aria-hidden />
+      <button
+        type="button"
+        onClick={onOpenMore}
+        aria-label="More navigation"
+        aria-haspopup="dialog"
+        className="flex h-[49px] flex-1 flex-col items-center justify-center gap-[3px] pt-1 text-[10px] font-medium tracking-[0.01em] text-ink-500 active:opacity-60"
+      >
+        <MoreHorizontal size={24} strokeWidth={1.7} aria-hidden />
         More
       </button>
     </nav>

@@ -76,9 +76,10 @@ export function AccountMenu({ onShowShortcuts }: { onShowShortcuts: () => void }
           </div>
         )}
         <div className="my-1 border-t border-line-subtle" />
+        {/* No keyboard on a phone — nothing to list there. */}
         <button
           type="button"
-          className="ui-menu-item"
+          className="ui-menu-item max-md:hidden"
           onClick={() => {
             setOpen(false);
             onShowShortcuts();

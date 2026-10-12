@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { HomepageSection, HomepageSectionType, UpdateHomepageSectionInput } from "@clothing-brand/shared";
 import { PageHeader } from "@/components/admin/page-header";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { SectionList } from "@/components/admin/homepage/section-list";
 import { AddSectionMenu } from "@/components/admin/homepage/add-section-menu";
@@ -18,8 +17,8 @@ import { ApiError } from "@/lib/api-client";
 const QUERY_KEY = ["admin-homepage-sections"];
 
 export default function HomepageBuilderPage() {
-  // DR-25: the homepage editor is view-only on phones — the preview and section editors need the width.
-  const phone = useMediaQuery("(max-width: 767px)");
+  // Phones edit too (owner, 2026-10-12, superseding DR-25's view-only): rows put their controls on a second line, the
+  // section editor is a bottom sheet with the live preview under the form.
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: QUERY_KEY, queryFn: homepageSectionsApi.listHomepageSections });
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -87,11 +86,7 @@ export default function HomepageBuilderPage() {
     <div>
       <PageHeader
         title="Homepage"
-        description={
-          phone
-            ? "Rearranging and editing the homepage needs a wider screen — open it on a tablet or computer. Here you can see what's on and in which order."
-            : "Drag to reorder (or use the arrows), turn sections on or off, and edit each section's content."
-        }
+        description="Drag to reorder (or use the arrows), turn sections on or off, and edit each section's content."
       />
 
       <ModuleTabs />
@@ -104,15 +99,12 @@ export default function HomepageBuilderPage() {
           onToggle={(section, isActive) => toggleMutation.mutate({ id: section.id, isActive })}
           onEdit={(section) => setEditingSection(section)}
           onDelete={handleDelete}
-          readOnly={phone}
         />
       )}
 
-      {!phone && (
-        <div className="mt-4">
-          <AddSectionMenu onAdd={(type) => setCreatingType(type)} />
-        </div>
-      )}
+      <div className="mt-4">
+        <AddSectionMenu onAdd={(type) => setCreatingType(type)} />
+      </div>
 
       {editingSection && (
         <SectionConfigPanel

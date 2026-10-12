@@ -94,8 +94,10 @@ export function NotificationBell() {
           // flex-col + the header's shrink-0 + the list's min-h-0 flex-1 keeps the header pinned
           // while only the notification list scrolls, capped at 70vh so the panel never grows tall
           // enough to swallow the page underneath it. Width is viewport-aware: ~full width with a
-          // margin on phones, 400px on desktop.
-          className="absolute right-0 top-full z-50 mt-2 flex max-h-[70vh] w-[min(92vw,400px)] flex-col overflow-hidden rounded-xl border border-ink-100/70 bg-cream-50 shadow-floatLg animate-modal-in"
+          // margin on phones, 400px on desktop. Phones pin it under the toolbar edge to edge (less a margin) instead: the
+          // bell isn't at the screen's right edge there, so a right-aligned panel would run off the left. `fixed` resolves
+          // against the toolbar (its backdrop blur makes it the containing block), so 100% is the toolbar's bottom edge.
+          className="absolute right-0 top-full z-50 mt-2 flex max-h-[70dvh] w-[min(92vw,400px)] flex-col overflow-hidden rounded-xl border border-ink-100/70 bg-cream-50 shadow-floatLg animate-modal-in max-md:fixed max-md:inset-x-2 max-md:top-[calc(100%+6px)] max-md:mt-0 max-md:w-auto"
         >
           <div className="flex shrink-0 items-center justify-between border-b border-ink-100 px-4 py-3">
             <span className="text-sm font-medium text-ink-900">Notifications</span>

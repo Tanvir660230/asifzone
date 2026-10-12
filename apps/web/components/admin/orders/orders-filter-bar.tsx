@@ -118,7 +118,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
             <PageSizeSelect value={state.pageSize} onChange={state.setPageSize} />
           </div>
 
-          <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} align="start" aria-label="More filters" className="w-[min(92vw,640px)] p-4">
+          <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} align="start" aria-label="More filters" sheetOnPhone className="w-[min(92vw,640px)] p-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Payment status" htmlFor="f-payment-status">
                 <Select id="f-payment-status" value={more.paymentStatus} onChange={(e) => more.setPaymentStatus(e.target.value as PaymentStatus | "")}>
