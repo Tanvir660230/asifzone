@@ -51,7 +51,7 @@ test.describe("product landing page", () => {
     await page.getByTestId("landing-submit").click();
     await expect(page.getByText("আপনার নাম লিখুন")).toBeVisible();
     await expect(page.getByText(/সঠিক মোবাইল নম্বর দিন/)).toBeVisible();
-    await expect(page.getByText("জেলা বেছে নিন")).toBeVisible();
+    await expect(page.locator("#lp-district-error")).toHaveText("জেলা বেছে নিন");
   });
 
   test("a shopper orders Cash on Delivery from the page: total with delivery, confirmation, stock drops", async ({ page }) => {

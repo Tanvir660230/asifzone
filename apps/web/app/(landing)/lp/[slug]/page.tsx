@@ -2,13 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import DOMPurify from "isomorphic-dompurify";
-import { Banknote, Phone, RotateCcw, ShieldCheck, Truck } from "lucide-react";
-import { deliverySpan, storePolicy } from "@clothing-brand/shared";
+import { Banknote, ChevronDown, MessageCircle, Phone, RotateCcw, Star, Truck } from "lucide-react";
+import { storePolicy } from "@clothing-brand/shared";
 import { StoreLogoImage } from "@/components/store-logo-image";
-import { ProductGallery } from "@/components/storefront/product-gallery";
 import { ProductReviews } from "@/components/storefront/product-reviews";
-import { StarRating } from "@/components/storefront/star-rating";
 import { TrackProductView } from "@/components/storefront/track-product-view";
+import { LandingGallery } from "@/components/landing/landing-gallery";
 import { LandingOrderForm } from "@/components/landing/landing-order-form";
 import { LandingStickyCta } from "@/components/landing/landing-sticky-cta";
 import { getActiveSocialLinksSafe, getProductBySlug, getSiteSettings } from "@/lib/api/storefront";
@@ -21,7 +20,7 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-// Live stock and price on every visit — an ad sends people here at any moment.
+// Live stock and price on every visit: an ad sends people here at any moment.
 export const dynamic = "force-dynamic";
 
 async function loadProduct(slug: string) {
@@ -47,6 +46,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+const BN_DIGITS = "০১২৩৪৫৬৭৮৯";
+const bn = (value: number | string) => String(value).replace(/\d/g, (d) => BN_DIGITS[Number(d)]!);
+const range = ([a, b]: readonly [number, number]) => (a === b ? bn(a) : `${bn(a)}-${bn(b)}`);
+
 export default async function ProductLandingPage({ params }: Props) {
   const { slug } = await params;
   const [product, { settings }, { links }] = await Promise.all([loadProduct(slug), getSiteSettings(), getActiveSocialLinksSafe()]);
@@ -57,103 +60,135 @@ export default async function ProductLandingPage({ params }: Props) {
   const shown = productDisplayPrice(product);
   const hasWas = shown.was !== null && Number(shown.was) > Number(shown.price);
   const policy = storePolicy(settings);
-  const [fastest, slowest] = deliverySpan(policy);
+  const { insideDhaka, outsideDhaka } = policy.deliveryDays;
   const description = DOMPurify.sanitize(product.description ?? "");
   const whatsapp = links.find((l) => l.platform === "WHATSAPP" && l.isActive)?.url ?? null;
   const phone = settings.contactPhone;
+  const tel = phone ? `tel:${phone.replace(/\s+/g, "")}` : null;
 
   const promises = [
-    { icon: Truck, title: "সারা দেশে হোম ডেলিভারি", text: `${fastest === slowest ? fastest : `${fastest}–${slowest}`} দিনের মধ্যে` },
-    { icon: Banknote, title: "ক্যাশ অন ডেলিভারি", text: "পণ্য হাতে পেয়ে টাকা দিন" },
-    ...(policy.returns ? [{ icon: RotateCcw, title: `${policy.returns.days} দিনে সহজ রিটার্ন`, text: "সমস্যা হলে বদলে নিন" }] : []),
-    { icon: ShieldCheck, title: "১০০% অরিজিনাল", text: `${settings.storeName}-এর নিজস্ব পণ্য` },
+    { icon: Truck, title: "হোম ডেলিভারি", text: `সারা দেশে ${range([Math.min(insideDhaka[0], outsideDhaka[0]), Math.max(insideDhaka[1], outsideDhaka[1])])} দিনে` },
+    { icon: Banknote, title: "ক্যাশ অন ডেলিভারি", text: "হাতে পেয়ে টাকা দিন" },
+    ...(policy.returns ? [{ icon: RotateCcw, title: `${bn(policy.returns.days)} দিনে রিটার্ন`, text: "সহজে বদলে নিন" }] : []),
+  ];
+
+  // Real answers from this store's own settings and policy: nothing here is promised that the store hasn't set.
+  const faqs = [
+    { q: "কত দিনে ডেলিভারি পাব?", a: `ঢাকার ভেতরে ${range(insideDhaka)} দিনে, ঢাকার বাইরে ${range(outsideDhaka)} দিনে।` },
+    {
+      q: "ডেলিভারি চার্জ কত?",
+      a: `ঢাকার ভেতরে ${money(settings.shippingFeeDhaka)}, ঢাকার বাইরে ${money(settings.shippingFeeOutsideDhaka)}। অর্ডার ফর্মে জেলা বেছে নিলেই সঠিক মোট দেখাবে।`,
+    },
+    { q: "টাকা কখন দিতে হবে?", a: "অর্ডার করতে এখন কোনো টাকা লাগবে না। ডেলিভারির সময় পণ্য হাতে পেয়ে মূল্য পরিশোধ করুন।" },
+    ...(policy.returns
+      ? [
+          {
+            q: "পণ্য পছন্দ না হলে কী করব?",
+            a: `ডেলিভারির ${bn(policy.returns.days)} দিনের মধ্যে রিটার্ন বা এক্সচেঞ্জ করতে পারবেন।${policy.returns.conditions ? ` শর্ত: ${policy.returns.conditions}।` : ""}`,
+          },
+        ]
+      : []),
+    { q: "অর্ডার কনফার্ম হবে কীভাবে?", a: "অর্ডার করার পর আমাদের টিম আপনার নম্বরে ফোন করে অর্ডার নিশ্চিত করবে, তারপর পাঠিয়ে দেবে।" },
   ];
 
   return (
     <>
       <TrackProductView productId={product.id} productName={product.name} categoryId={product.categoryId} price={Number(shown.price)} />
 
-      <header className="border-b border-line bg-surface">
+      <header className="sticky top-0 z-dock border-b border-line bg-surface/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4">
-          <Link href="/" className="flex items-center" aria-label={settings.storeName}>
+          <Link href="/" className="flex min-w-0 items-center" aria-label={settings.storeName}>
             {settings.logoUrl ? (
-              <StoreLogoImage src={resolveImageUrl(settings.logoUrl)} alt={settings.storeName} className="h-8 w-32 object-contain object-left" fallback={<span className="font-display text-lg text-fg">{settings.storeName}</span>} />
+              <StoreLogoImage
+                src={resolveImageUrl(settings.logoUrl)}
+                alt={settings.storeName}
+                className="h-8 w-32 object-contain object-left"
+                fallback={<span className="truncate font-display text-lg text-fg">{settings.storeName}</span>}
+              />
             ) : (
-              <span className="font-display text-lg text-fg">{settings.storeName}</span>
+              <span className="truncate font-display text-lg text-fg">{settings.storeName}</span>
             )}
           </Link>
-          {phone && (
-            <a href={`tel:${phone.replace(/\s+/g, "")}`} className="inline-flex items-center gap-2 rounded-[var(--control-radius)] border border-line px-3 py-2 text-sm font-medium text-fg" lang="bn">
-              <Phone size={15} aria-hidden="true" />
+          {tel && (
+            <a href={tel} className="inline-flex h-10 items-center gap-2 rounded-[var(--control-radius)] bg-surface-muted px-4 text-sm font-semibold text-fg" lang="bn">
+              <Phone size={16} aria-hidden="true" />
               কল করুন
             </a>
           )}
         </div>
       </header>
 
-      <main id="main-content" className="flex-1 pb-28 lg:pb-16" lang="bn">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 pt-4 sm:pt-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-12">
-          <div className="lg:sticky lg:top-6 lg:self-start">
-            <ProductGallery images={product.images} productName={product.name} />
+      <main id="main-content" className="flex-1 pb-28 lg:pb-20" lang="bn">
+        <div className="mx-auto max-w-6xl lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12 lg:px-4 lg:pt-8">
+          <div className="lg:sticky lg:top-24 lg:self-start">
+            <LandingGallery images={product.images} productName={product.name} />
           </div>
 
-          <div>
-            <h1 className="ui-product-title text-fg" lang="en">
+          <div className="px-4 pt-5 lg:px-0 lg:pt-0">
+            <h1 className="font-display text-2xl font-semibold leading-tight text-fg sm:text-3xl" lang="en">
               {product.name}
             </h1>
+
             {product.reviewCount > 0 && (
-              <a href="#reviews" className="mt-2 flex items-center gap-2 text-sm text-fg-muted">
-                <StarRating value={product.avgRating} />
-                <span>
-                  {product.avgRating.toFixed(1)} · {product.reviewCount}টি রিভিউ
-                </span>
+              <a href="#reviews" className="mt-2 inline-flex items-center gap-1.5 text-sm text-fg-muted">
+                <Star size={16} className="fill-current text-sale-500" aria-hidden="true" />
+                <span className="font-semibold text-fg">{bn(product.avgRating.toFixed(1))}</span>
+                <span>({bn(product.reviewCount)}টি রিভিউ)</span>
               </a>
             )}
 
-            <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
               <span className="text-3xl font-bold tabular-nums text-fg" data-testid="landing-price">
                 {money(shown.price)}
               </span>
               {hasWas && (
                 <>
                   <span className="text-lg tabular-nums text-fg-muted line-through">{money(shown.was!)}</span>
-                  <span className="rounded-full bg-sale-50 px-2.5 py-1 text-sm font-semibold text-sale-600">{percentOffLabel(shown.price, shown.was!)}% ছাড়</span>
+                  <span className="rounded-[var(--chip-radius)] bg-sale-500 px-2.5 py-1 text-sm font-bold text-white">{bn(percentOffLabel(shown.price, shown.was!) ?? "")}% ছাড়</span>
                 </>
               )}
             </div>
-            {product.shortDescription && <p className="mt-3 text-base leading-relaxed text-fg-muted" lang="en">{product.shortDescription}</p>}
+            {product.shortDescription && (
+              <p className="mt-3 max-w-prose text-base leading-relaxed text-fg-muted" lang="en">
+                {product.shortDescription}
+              </p>
+            )}
 
-            <ul className="mt-6 grid grid-cols-2 gap-3">
+            <ul className="mt-5 grid grid-cols-3 divide-x divide-line rounded-xl border border-line bg-surface" aria-label="আমাদের প্রতিশ্রুতি">
               {promises.map(({ icon: Icon, title, text }) => (
-                <li key={title} className="flex items-start gap-3 rounded-lg border border-line bg-surface p-3">
-                  <Icon size={20} className="mt-0.5 shrink-0 text-fg" aria-hidden="true" />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold leading-snug text-fg">{title}</span>
-                    <span className="block text-xs leading-snug text-fg-muted">{text}</span>
-                  </span>
+                <li key={title} className="flex flex-col items-center gap-1 px-2 py-3 text-center">
+                  <Icon size={20} className="text-fg" aria-hidden="true" />
+                  <span className="text-xs font-semibold leading-tight text-fg sm:text-sm">{title}</span>
+                  <span className="text-[11px] leading-tight text-fg-muted sm:text-xs">{text}</span>
                 </li>
               ))}
             </ul>
 
-            <section id="order" className="mt-8 scroll-mt-4 rounded-xl border-2 border-ink-900 bg-surface p-4 shadow-float sm:p-6" aria-labelledby="order-title">
+            <section id="order" className="-mx-4 mt-6 scroll-mt-16 bg-surface px-4 py-6 shadow-float sm:mx-0 sm:rounded-2xl sm:p-6" aria-labelledby="order-title">
               <h2 id="order-title" className="text-xl font-bold text-fg">
-                অর্ডার করতে নিচের তথ্য দিন
+                অর্ডার করুন
               </h2>
-              <p className="mb-5 mt-1 text-sm text-fg-muted">আমরা ফোন করে অর্ডার কনফার্ম করব, তারপর পাঠিয়ে দেব।</p>
+              <p className="mb-6 mt-1 text-sm text-fg-muted">নিচের তথ্য দিন। আমরা ফোন করে অর্ডার নিশ্চিত করব।</p>
               <LandingOrderForm product={product} codEnabled={settings.codEnabled} />
             </section>
 
-            {(phone || whatsapp) && (
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-fg-muted">
-                <span>অর্ডার করতে সমস্যা হচ্ছে?</span>
-                {phone && (
-                  <a href={`tel:${phone.replace(/\s+/g, "")}`} className="font-semibold text-fg underline underline-offset-4">
-                    কল করুন {phone}
+            {(tel || whatsapp) && (
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+                {tel && (
+                  <a href={tel} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg">
+                    <Phone size={16} aria-hidden="true" />
+                    ফোনে অর্ডার করুন
                   </a>
                 )}
                 {whatsapp && (
-                  <a href={whatsapp} target="_blank" rel="noopener noreferrer" className="font-semibold text-fg underline underline-offset-4">
-                    WhatsApp করুন
+                  <a
+                    href={whatsapp}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg"
+                  >
+                    <MessageCircle size={16} aria-hidden="true" />
+                    WhatsApp-এ জিজ্ঞেস করুন
                   </a>
                 )}
               </div>
@@ -161,23 +196,39 @@ export default async function ProductLandingPage({ params }: Props) {
           </div>
         </div>
 
-        {description.trim() && (
-          <section className="mx-auto mt-12 max-w-3xl px-4" aria-labelledby="details-title">
-            <h2 id="details-title" className="mb-4 text-xl font-bold text-fg">
-              পণ্যের বিস্তারিত
+        <div className="mx-auto mt-12 max-w-3xl space-y-12 px-4">
+          {description.trim() && (
+            <details className="group rounded-xl border border-line bg-surface" open>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 text-lg font-bold text-fg [&::-webkit-details-marker]:hidden">
+                পণ্যের বিস্তারিত
+                <ChevronDown size={20} className="shrink-0 transition-transform duration-base group-open:rotate-180" aria-hidden="true" />
+              </summary>
+              <div className="prose prose-sm max-w-none px-5 pb-5 text-fg" lang="en" dangerouslySetInnerHTML={{ __html: description }} />
+            </details>
+          )}
+
+          <section aria-labelledby="faq-title">
+            <h2 id="faq-title" className="mb-4 text-xl font-bold text-fg">
+              সাধারণ প্রশ্ন
             </h2>
-            <div className="prose prose-sm max-w-none text-fg" lang="en" dangerouslySetInnerHTML={{ __html: description }} />
+            <div className="divide-y divide-line rounded-xl border border-line bg-surface">
+              {faqs.map(({ q, a }) => (
+                <details key={q} className="group">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-base font-semibold text-fg [&::-webkit-details-marker]:hidden">
+                    {q}
+                    <ChevronDown size={18} className="shrink-0 text-fg-muted transition-transform duration-base group-open:rotate-180" aria-hidden="true" />
+                  </summary>
+                  <p className="px-5 pb-4 text-sm leading-relaxed text-fg-muted">{a}</p>
+                </details>
+              ))}
+            </div>
           </section>
-        )}
 
-        <section id="reviews" className="mx-auto mt-12 max-w-3xl scroll-mt-4 px-4">
-          <ProductReviews productId={product.id} productName={product.name} />
-        </section>
-
-        <div className="mx-auto mt-12 max-w-3xl px-4 text-center">
-          <a href="#order" className="inline-flex h-14 w-full max-w-md items-center justify-center rounded-[var(--control-radius)] bg-ink-900 px-8 text-base font-semibold text-cream-50">
-            এখনই অর্ডার করুন — {money(shown.price)}
-          </a>
+          {product.reviewCount > 0 && (
+            <section id="reviews" className="scroll-mt-16">
+              <ProductReviews productId={product.id} productName={product.name} />
+            </section>
+          )}
         </div>
       </main>
 
@@ -192,7 +243,7 @@ export default async function ProductLandingPage({ params }: Props) {
         </nav>
       </footer>
 
-      <LandingStickyCta price={money(shown.price)} was={hasWas ? money(shown.was!) : null} />
+      <LandingStickyCta price={money(shown.price)} was={hasWas ? money(shown.was!) : null} imageUrl={product.images[0] ? resolveImageUrl(product.images[0].url) : null} />
     </>
   );
 }
