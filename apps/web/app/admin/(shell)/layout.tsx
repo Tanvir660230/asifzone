@@ -7,6 +7,7 @@ import { ExternalLink, Menu, Plus, Search } from "lucide-react";
 import { MobileBottomNav, Sidebar } from "@/components/admin/sidebar";
 import { MobileNavBar, useMobileBack } from "@/components/admin/mobile-nav-bar";
 import { MoreSheet } from "@/components/admin/more-sheet";
+import { PhoneTables } from "@/components/admin/phone-tables";
 import { SectionBar } from "@/components/admin/section-bar";
 import { Breadcrumbs } from "@/components/admin/breadcrumbs";
 import { NotificationBell } from "@/components/admin/notification-bell";
@@ -213,6 +214,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
         {/* Phones get the More sheet; tablets (md up to lg) the full sidebar as a drawer. */}
         <MobileBottomNav onOpenMore={() => (window.matchMedia("(min-width: 768px)").matches ? setMobileNavOpen(true) : setMoreOpen(true))} />
       </div>
+      <PhoneTables />
       <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} onSearch={() => setPaletteOpen(true)} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <ShortcutHelp open={helpOpen} onClose={() => setHelpOpen(false)} />

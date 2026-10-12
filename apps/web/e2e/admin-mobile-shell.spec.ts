@@ -65,6 +65,31 @@ test.describe("admin on a phone", () => {
     await expect(page).toHaveURL(/\/admin\/orders$/, NAV);
   });
 
+  test("wide tables read as cards, and fit the screen", async ({ page }) => {
+    await page.goto("/admin/team", NAV);
+    const table = page.locator("main table").first();
+    await expect(table).toHaveAttribute("data-stack", "on", NAV);
+    // Each value sits beside its column's name; nothing scrolls sideways.
+    await expect(table.locator("tbody td[data-label='Email']").first()).toBeVisible();
+    const overflow = await page.locator("main").evaluate((main) => main.parentElement!.scrollWidth - main.parentElement!.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test("filters open as a sheet, and the homepage can be edited", async ({ page }) => {
+    await page.goto("/admin/orders", NAV);
+    await page.getByRole("button", { name: /Filters/ }).first().click();
+    const sheet = page.getByRole("dialog", { name: "More filters" });
+    await expect(sheet).toBeVisible();
+    const box = await sheet.boundingBox();
+    expect(Math.round(box!.width)).toBe(page.viewportSize()!.width);
+    await sheet.getByRole("button", { name: "Done" }).click();
+    await expect(sheet).toBeHidden();
+
+    await page.goto("/admin/homepage", NAV);
+    await expect(page.getByRole("button", { name: "Edit section" }).first()).toBeVisible(NAV);
+    await expect(page.getByRole("switch").first()).toBeEnabled();
+  });
+
   test("Create is an action sheet; a dialog is a bottom sheet", async ({ page }) => {
     await page.getByRole("button", { name: "Create", exact: true }).click();
     const sheet = page.getByRole("menu");

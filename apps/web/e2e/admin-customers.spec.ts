@@ -8,7 +8,7 @@ test.describe("admin customer management", () => {
     await page.goto("/admin/login");
     await page.getByLabel("Email").fill(adminEmail);
     await page.getByLabel("Password").fill(adminPassword);
-    await page.getByRole("button", { name: /sign in/i }).click();
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/dashboard/);
   });
 

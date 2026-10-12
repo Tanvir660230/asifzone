@@ -494,6 +494,58 @@
     [data-surface="admin"] .ui-modal-footer > * {
       @apply w-full;
     }
+
+    /* Tables as card lists (components/admin/phone-tables.tsx labels the cells): one card per row, the first column as
+       its title, every other value beside its column's name. Sort buttons stay as chips above the cards. */
+    [data-surface="admin"] table[data-stack="on"] {
+      @apply block w-full;
+      min-width: 0 !important;
+    }
+    [data-surface="admin"] table[data-stack="on"] > thead {
+      @apply block border-b border-line-subtle bg-surface;
+    }
+    [data-surface="admin"] table[data-stack="on"] > thead:not(:has(button, input)) {
+      @apply hidden;
+    }
+    [data-surface="admin"] table[data-stack="on"] > thead > tr {
+      @apply flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2;
+    }
+    [data-surface="admin"] table[data-stack="on"] > thead th {
+      @apply hidden;
+    }
+    [data-surface="admin"] table[data-stack="on"] > thead th:has(button, input) {
+      @apply static block p-0;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody {
+      @apply block;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr {
+      @apply block px-4 py-3;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td {
+      @apply static flex min-w-0 items-baseline justify-between gap-4 whitespace-normal bg-transparent px-0 py-[3px] text-right;
+      overflow-wrap: anywhere;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td::before {
+      @apply shrink-0 text-left text-[13px] font-normal text-fg-muted;
+      content: attr(data-label);
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:is([data-label=""], :not([data-label]))::before {
+      content: none;
+    }
+    /* The row's first column is its title. */
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:first-child {
+      @apply justify-start pb-1 text-left text-[15px] font-medium text-fg;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:first-child::before {
+      content: none;
+    }
+    [data-surface="admin"] table[data-stack="on"] td[data-col-hidden] {
+      @apply hidden;
+    }
+    [data-surface="admin"] table[data-stack="on"] td[data-stack-full] {
+      @apply block text-center;
+    }
   }
   /* Sentence-case column titles on a white head, like a Mac list view. */
   [data-surface="admin"] .ui-table-container {

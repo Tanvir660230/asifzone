@@ -200,7 +200,7 @@ export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
         {formatShort(value.from)} – {formatShort(value.to)}
       </button>
 
-      <Popover open={open} onClose={closePicker} anchorRef={anchorRef} align="end">
+      <Popover open={open} onClose={closePicker} anchorRef={anchorRef} align="end" sheetOnPhone>
         <div className="flex">
           <div className="w-40 shrink-0 space-y-0.5 border-r border-ink-100 p-2">
             {PRESETS.map((preset) => (

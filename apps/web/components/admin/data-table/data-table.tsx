@@ -198,7 +198,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
               <Button ref={pickerRef} variant="outline" size="sm" onClick={() => setPickerOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={pickerOpen}>
                 <Columns3 size={14} /> Columns
               </Button>
-              <Popover open={pickerOpen} onClose={() => setPickerOpen(false)} anchorRef={pickerRef} align="end" className="w-56 p-2">
+              <Popover open={pickerOpen} onClose={() => setPickerOpen(false)} anchorRef={pickerRef} align="end" sheetOnPhone className="w-56 p-2">
                 <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Show columns</p>
                 {columns.map((col, i) => (
                   <label key={col.id} className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm", i === 0 || col.hideable === false ? "opacity-60" : "cursor-pointer hover:bg-ink-50")}>

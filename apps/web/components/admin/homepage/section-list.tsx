@@ -128,7 +128,8 @@ function SortableRow({ section, onToggle, onEdit, onDelete, onMoveUp, onMoveDown
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center gap-3 rounded-lg border border-ink-100 bg-cream-50 px-3 py-3 transition-opacity",
+        // Phones: the title on its own line, the controls (thumb-sized) on a second one.
+        "flex items-center gap-3 rounded-lg border border-ink-100 bg-cream-50 px-3 py-3 transition-opacity max-md:flex-wrap max-md:gap-y-1",
         isDragging && "z-10 shadow-float ring-2 ring-brass-300",
         !section.isActive && "opacity-60",
       )}
@@ -142,20 +143,20 @@ function SortableRow({ section, onToggle, onEdit, onDelete, onMoveUp, onMoveDown
       >
         <GripVertical size={18} />
       </button>
-      <Icon size={18} className="shrink-0 text-brass-500" />
-      <div className="min-w-0 flex-1">
+      <Icon size={18} className="shrink-0 text-brass-500 max-md:hidden" />
+      <div className="min-w-0 flex-1 max-md:basis-[calc(100%-2.5rem)]">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-ink-900">{meta.label}</p>
           {status && <Badge className={status.className}>{status.label}</Badge>}
         </div>
         <p className="truncate text-xs text-ink-500">{meta.description}</p>
       </div>
-      <div className="flex flex-col">
+      <div className="flex flex-col max-md:mr-auto max-md:flex-row max-md:pl-6">
         <button
           type="button"
           onClick={onMoveUp}
           disabled={!onMoveUp}
-          className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900 disabled:invisible"
+          className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900 disabled:invisible max-md:p-2.5"
           aria-label={`Move ${meta.label} up`}
         >
           <ChevronUp size={14} />
@@ -164,7 +165,7 @@ function SortableRow({ section, onToggle, onEdit, onDelete, onMoveUp, onMoveDown
           type="button"
           onClick={onMoveDown}
           disabled={!onMoveDown}
-          className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900 disabled:invisible"
+          className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900 disabled:invisible max-md:p-2.5"
           aria-label={`Move ${meta.label} down`}
         >
           <ChevronDown size={14} />
@@ -179,7 +180,7 @@ function SortableRow({ section, onToggle, onEdit, onDelete, onMoveUp, onMoveDown
         <button
           type="button"
           onClick={() => onEdit(section)}
-          className="rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900"
+          className="rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-900 max-md:p-2.5"
           aria-label="Edit section"
         >
           <Pencil size={15} />
@@ -189,7 +190,7 @@ function SortableRow({ section, onToggle, onEdit, onDelete, onMoveUp, onMoveDown
         <button
           type="button"
           onClick={() => onDelete(section)}
-          className="rounded p-1.5 text-ink-400 hover:bg-danger-50 hover:text-danger-600"
+          className="rounded p-1.5 text-ink-400 hover:bg-danger-50 hover:text-danger-600 max-md:p-2.5"
           aria-label="Delete section"
         >
           <Trash2 size={15} />
