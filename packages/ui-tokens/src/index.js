@@ -19,13 +19,15 @@
 /* ───────────────────────────── raw palette (hex) ───────────────────────────── */
 
 const palette = {
-  // True neutral gray scale. 900 = primary text, 500 = secondary text, 200 = border.
+  // True neutral gray scale. 900 = primary text, 500 = secondary text, 400 = tertiary text (meta, hints, struck
+  // prices), 200 = border. 400 clears WCAG AA for body-size text on every light surface: 4.95:1 on white, 4.66:1 on the
+  // canvas, 4.54:1 on ink-100 (it was #b3b3b3, 2.1:1). The dark sections keep the light grey (default `darkBandPalette`).
   ink: {
     50: "#fafafa",
     100: "#f5f5f5",
     200: "#ececec",
     300: "#d9d9d9",
-    400: "#b3b3b3",
+    400: "#707070",
     500: "#666666",
     600: "#4d4d4d",
     700: "#333333",
@@ -268,9 +270,6 @@ const componentTokens = {
   "--badge-note-fg": "#ffffff",
   // The darkening behind light text set on a photograph (promo banners).
   "--media-scrim": "rgb(var(--color-ink-950) / 0.35)",
-  // Category tiles: the scrim behind the name, and the name's color.
-  "--tile-scrim": "rgb(var(--color-ink-950) / 0.6)",
-  "--tile-label": "rgb(var(--color-cream-50))",
   // Primary call to action on the hero band: its fill and text (transparent = the outline style).
   "--hero-cta-fill": "transparent",
   // Cart line items: the product thumbnail on the cart page and the quantity stepper (square in the base design).
@@ -300,11 +299,11 @@ const componentTokens = {
   "--section-title-leading-sm": "2rem",
   // Vertical rhythm: a multiplier on the block padding of homepage and product-page sections.
   "--section-rhythm": "1",
-  // Page titles (<h1> of cart, checkout, account, wishlist, order pages): mobile, then ≥640px.
-  "--page-title-size": "1.5rem",
-  "--page-title-leading": "2rem",
-  "--page-title-size-sm": "1.5rem",
-  "--page-title-leading-sm": "2rem",
+  // Page titles: the one <h1> size of every storefront and account page (StorefrontPageHeader): mobile, then ≥640px.
+  "--page-title-size": "1.875rem",
+  "--page-title-leading": "1.2",
+  "--page-title-size-sm": "2.5rem",
+  "--page-title-leading-sm": "1.1",
   // Homepage section headings ("Shop by Category", "What We Stand For", reviews): mobile, then ≥640px.
   "--section-heading-size": "1.5rem",
   "--section-heading-leading": "2rem",
@@ -346,6 +345,12 @@ const componentTokens = {
   // Brand story image: its maximum width, and its height from 640px.
   "--story-media-max-w": "28rem",
   "--story-media-h-sm": "18rem",
+  // Option chips (sizes), colour swatches, and floating round buttons (wishlist, contact): circles in the base design.
+  "--chip-radius": "9999px",
+  "--swatch-radius": "9999px",
+  "--fab-radius": "9999px",
+  // Height of the mobile bottom tab bar, which the bottom-docked bars sit above (0rem in a preset without one; keep the unit).
+  "--dock-tab-bar": "4rem",
 };
 Object.assign(cssVariables, componentTokens);
 
@@ -360,13 +365,15 @@ Object.assign(cssVariables, componentTokens);
  */
 const themeDefinitions = {
   default: { label: "Default (neutral editorial)" },
-  // Nasihamart — premium Islamic lifestyle, editorial. Deep navy (#0B1F33) for text, actions and the dark sections, soft
-  // ivory (#F8F6F1) canvas with white surfaces, secondary blue (#123B73) for hover and interaction (--accent-hover,
-  // --nav-hover), warm stone (#D6C1A2) as a restrained accent on navy only (1.6:1 on ivory — never text there). Editorial
-  // serif titles (Newsreader) over a refined grotesk (Instrument Sans); near-square controls and cards instead of pills;
-  // hairline warm borders.
+  // Nasihamart — "Mihrab" (docs/brand/nasihamart/THEME_BLUEPRINT.md). Night navy (#0B1F33) for type and actions, ivory
+  // (#F8F6F1) page, sand (#EEE7DB) behind photography and in the footer, lapis (#123B73) for hover and interaction
+  // (--accent-hover, --nav-hover), warm stone (#D6C1A2) for arch outlines and accents on navy only (1.6:1 on ivory — never
+  // text there), mulberry (#8A2E3B) for promotions. One family in two widths: Instrument Sans condensed for headings, normal
+  // for everything else — no serif in the interface. Its own layout preset (`mihrab`): the pointed arch of the logo frames
+  // the photography.
   nasihamart: {
-    label: "Nasihamart (navy · ivory · warm stone)",
+    label: "Nasihamart (Mihrab: navy · ivory · sand)",
+    layout: "mihrab",
     palette: {
       ink: {
         50: "#f4f1eb", // subtle fills
@@ -381,16 +388,19 @@ const themeDefinitions = {
         900: "#0b1f33", // navy: headings, primary actions, focus — 15.5:1
         950: "#0b1f33", // navy: the dark sections and footer
       },
-      cream: { 50: "#ffffff", 100: "#f8f6f1", 200: "#f1ede5", 300: "#e5e0d7" },
-      // The one promotional accent, deep enough that white 10px badge text clears AA (5.0:1).
-      sale: { 50: "#fdecea", 500: "#d32f2f", 600: "#b71c1c" },
+      // 200 = sand: arch backdrops, image wells, the footer.
+      cream: { 50: "#ffffff", 100: "#f8f6f1", 200: "#eee7db", 300: "#e2d8c8" },
+      // Mulberry, the one promotional accent: 8.3:1 under white badge text, 7.7:1 as text on ivory.
+      sale: { 50: "#f6e9eb", 500: "#8a2e3b", 600: "#6f2330" },
     },
     radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "10px", "2xl": "12px", "3xl": "16px" },
     fontVariables: {
       "--font-body-family": "var(--font-grotesk)",
-      "--font-display-family": "var(--font-editorial)",
-      "--font-display-weight": "400",
-      "--font-display-tracking": "-0.012em",
+      // Headings: the same grotesk, condensed — tall like the arches.
+      "--font-display-family": "var(--font-grotesk)",
+      "--font-display-weight": "580",
+      "--font-display-tracking": "-0.018em",
+      "--font-display-stretch": "78%",
       "--eyebrow-weight": "600",
     },
     components: {
@@ -416,9 +426,7 @@ const themeDefinitions = {
       "--badge-note-bg": "rgb(var(--color-surface) / 0.94)",
       "--badge-note-fg": "rgb(var(--color-ink-900))",
       "--media-scrim": "rgb(var(--color-ink-950) / 0.4)",
-      // Category tiles: the name below the photograph in navy, no scrim.
-      "--tile-scrim": "transparent",
-      "--tile-label": "rgb(var(--color-ink-900))",
+      // Category tiles: the name below the photograph.
       "--tile-caption-position": "static",
       "--tile-caption-padding": "0.875rem 0.125rem 0.125rem",
       "--tile-media-radius": "var(--radius-default)",
@@ -435,21 +443,26 @@ const themeDefinitions = {
       "--card-title-tracking": "0",
       "--panel-border": "rgb(var(--color-ink-200))",
       "--panel-shadow": "none",
-      // Product data is set in the UI face; the serif is for editorial headings.
-      "--product-title-family": "var(--font-body-family), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
-      "--product-title-size": "clamp(1.75rem, 1.4rem + 1vw, 2.25rem)",
-      "--product-title-leading": "1.15",
-      "--product-title-weight": "500",
+      // The product name in the condensed heading face, like every other title.
+      "--product-title-family": "var(--font-display-family), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
+      "--product-title-size": "clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)",
+      "--product-title-leading": "1",
+      "--product-title-weight": "580",
       "--product-title-tracking": "-0.018em",
+      "--product-title-stretch": "78%",
+      // Option chips, colour swatches and the floating buttons: squared off, like the controls.
+      "--chip-radius": "var(--radius-sm)",
+      "--swatch-radius": "var(--radius-sm)",
+      "--fab-radius": "var(--radius-default)",
       "--section-title-size": "1.625rem",
       "--section-title-leading": "1.2",
       "--section-title-size-sm": "2rem",
       "--section-title-leading-sm": "1.15",
       "--section-rhythm": "1.35",
-      "--page-title-size": "2rem",
-      "--page-title-leading": "1.15",
-      "--page-title-size-sm": "2.5rem",
-      "--page-title-leading-sm": "1.1",
+      "--page-title-size": "2.5rem",
+      "--page-title-leading": "1",
+      "--page-title-size-sm": "3.5rem",
+      "--page-title-leading-sm": "1",
       "--section-heading-size": "1.875rem",
       "--section-heading-leading": "1.15",
       "--section-heading-size-sm": "2.75rem",
@@ -466,6 +479,8 @@ const themeDefinitions = {
       "--hero-secondary-ml": "0px",
       "--story-media-max-w": "64rem",
       "--story-media-h-sm": "26rem",
+      // The mihrab header carries search, bag and the menu on phones: no bottom tab bar.
+      "--dock-tab-bar": "0rem",
     },
     // The hero and the brand story render on ivory; the footer, flash sale and editorial banner stay navy.
     lightBands: ["hero", "story"],
@@ -540,6 +555,8 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
   const hasLightBands = definition.band === "light" || (definition.lightBands?.length ?? 0) > 0;
   themes[id] = {
     label: definition.label,
+    // The structural preset the storefront renders its chrome with (apps/web/lib/theme-layout.ts); `classic` = the base design.
+    layout: definition.layout ?? "classic",
     cssVariables: variables,
     // Inside the light sections: every band (`lightBandRoles: null`) or the named ones.
     bandVariables: { ...(hasLightBands ? lightBand(definition) : {}), ...definition.bandComponents },
@@ -549,6 +566,18 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
   };
 }
 const DEFAULT_THEME = "default";
+
+/**
+ * The base design's dark sections (`.ui-band-inverse`): palette steps that read differently on the dark palette. The grey
+ * text steps are mid greys on light surfaces but must stay light on ink-950: ink-400 #b3b3b3 (9.6:1; the light-surface
+ * #707070 would be 4.0:1) and ink-500 #8a8a8a (5.8:1, the fine print; #666666 was 3.5:1). Emitted for every store under
+ * `.ui-band-inverse`; a theme's own band variables (`:root[data-brand] .ui-band-inverse…`) are more specific and win.
+ */
+const inverseBandVariables = {
+  "--color-ink-400": hexToRgbChannels("#b3b3b3"),
+  "--color-ink-500": hexToRgbChannels("#8a8a8a"),
+  ...referenceVariables(),
+};
 
 /* ───────────────────────────── surfaces ───────────────────────────── */
 
@@ -638,6 +667,7 @@ for (const [id, definition] of Object.entries(surfaceDefinitions)) {
 
 module.exports = {
   themes,
+  inverseBandVariables,
   surfaces,
   DEFAULT_THEME,
   palette,

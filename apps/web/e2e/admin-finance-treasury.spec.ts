@@ -53,7 +53,7 @@ async function toast(page: Page, text: string | RegExp) {
 async function movement(page: Page, button: string, fill: { from?: string; to?: string; account?: string; direction?: "IN" | "OUT"; counter?: string; date: string; amount: string; description: string; reference?: string; reason?: string }) {
   // Admin V2: the four kinds of movement sit behind one "Record movement" menu
   await page.getByTestId("record-movement").click();
-  await page.getByRole("button", { name: button, exact: true }).first().click();
+  await page.getByRole("menuitem", { name: button, exact: true }).first().click();
   const dialog = page.getByRole("dialog");
   if (fill.from) await dialog.locator("#mv-from").selectOption(fill.from);
   if (fill.to) await dialog.locator("#mv-to").selectOption(fill.to);
@@ -288,7 +288,7 @@ test("bank reconciliation: auto-match, partial match, unmatch, difference, expli
   await expect(owner).toHaveURL(/\/admin\/finance\/reconciliation\/[a-z0-9]+$/, NAV);
   const runId = owner.url().split("/").pop()!;
   await expect(owner.getByText("Not reconciled yet")).toBeVisible();
-  let live = (await api(owner, "GET", `/bank-reconciliations/${runId}`)).body.live;
+  const live = (await api(owner, "GET", `/bank-reconciliations/${runId}`)).body.live;
   expect(live).toMatchObject({ statementGap: 0, ledgerBalance: 93300, difference: 110, unmatchedCount: 5, canComplete: false });
   await expect(owner.getByTestId("reconciliation-figures")).toContainText("110");
   await shot(owner, "07-reconciliation-start");
@@ -325,8 +325,11 @@ test("bank reconciliation: auto-match, partial match, unmatch, difference, expli
     await toast(owner, "posted and matched");
   }
 
-  live = (await api(owner, "GET", `/bank-reconciliations/${runId}`)).body.live;
-  expect(live).toMatchObject({ statementGap: 0, ledgerBalance: 93410, difference: 0, unexplainedDifference: 0, unmatchedCount: 0, adjustmentCount: 3, canComplete: true });
+  // Polled: the loop's last "posted and matched" toast can be the previous one still on screen, so the third adjustment
+  // may still be in flight here.
+  await expect
+    .poll(async () => (await api(owner, "GET", `/bank-reconciliations/${runId}`)).body.live, { timeout: 15_000 })
+    .toMatchObject({ statementGap: 0, ledgerBalance: 93410, difference: 0, unexplainedDifference: 0, unmatchedCount: 0, adjustmentCount: 3, canComplete: true });
   await owner.getByLabel("Notes").fill("August reconciled in browser QA");
   await owner.getByTestId("complete-reconciliation").click();
   await toast(owner, "Reconciliation completed");

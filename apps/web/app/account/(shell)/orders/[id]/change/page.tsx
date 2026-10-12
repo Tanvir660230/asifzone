@@ -28,7 +28,12 @@ export default function ChangeOrderPage() {
       </div>
     );
   }
-  if (isLoading || !data) return <div className="h-64 animate-pulse rounded-2xl bg-ink-50" aria-busy="true" aria-label="Loading order" />;
+  if (isLoading || !data)
+    return (
+      <div className="ui-delayed" aria-busy="true" aria-label="Loading order">
+        <div className="h-64 animate-pulse rounded-2xl bg-ink-50" />
+      </div>
+    );
   return <ChangeOrder order={data.order} />;
 }
 

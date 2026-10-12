@@ -15,6 +15,7 @@ import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageSizeSelect } from "@/components/admin/page-size-select";
 import { Pagination } from "@/components/admin/pagination";
 import { StarRating } from "@/components/storefront/star-rating";
+import { ReviewPhotoStrip } from "@/components/storefront/review-photos";
 import { cn } from "@/lib/utils";
 import * as adminReviewsApi from "@/lib/api/admin-reviews";
 import { ApiError } from "@/lib/api-client";
@@ -145,6 +146,8 @@ export default function AdminReviewsPage() {
                   <td className="px-4 py-3 max-w-xs text-ink-500">
                     {review.title && <p className="font-medium text-ink-700">{review.title}</p>}
                     <p className="line-clamp-3">{review.body}</p>
+                    {/* Customer photos: checked here before approval, since approving publishes them too. */}
+                    <ReviewPhotoStrip images={review.images ?? []} author={review.customerName} />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-ink-500">{formatStoreDate(review.createdAt)}</td>
                   <td className="px-4 py-3">

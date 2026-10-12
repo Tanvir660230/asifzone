@@ -11,18 +11,24 @@ export function Breadcrumb({ trail }: { trail: Array<{ name: string; href?: stri
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(jsonLd) }} />
-      <nav className="flex items-center gap-1.5 text-xs ui-caps text-ink-400">
-        <Link href="/" className="hover:text-ink-900">Home</Link>
-        {trail.map((item, i) => (
-          <span key={i} className="flex items-center gap-1.5">
-            <ChevronRight size={12} />
-            {item.href ? (
-              <Link href={item.href} className="hover:text-ink-900">{item.name}</Link>
-            ) : (
-              <span className="text-ink-700">{item.name}</span>
-            )}
-          </span>
-        ))}
+      {/* One line at every width: the ancestors keep their size and the current page (the long product name) truncates,
+          instead of the trail wrapping into ragged lines on a phone. */}
+      <nav aria-label="Breadcrumb" className="flex h-4 min-w-0 items-center text-xs ui-caps text-ink-400">
+        <ol className="flex min-w-0 items-center gap-1.5">
+          <li className="shrink-0">
+            <Link href="/" className="hover:text-ink-900">Home</Link>
+          </li>
+          {trail.map((item, i) => (
+            <li key={i} className={item.href ? "flex shrink-0 items-center gap-1.5" : "flex min-w-0 items-center gap-1.5"}>
+              <ChevronRight size={12} className="shrink-0" aria-hidden="true" />
+              {item.href ? (
+                <Link href={item.href} className="hover:text-ink-900">{item.name}</Link>
+              ) : (
+                <span aria-current="page" className="truncate text-ink-700">{item.name}</span>
+              )}
+            </li>
+          ))}
+        </ol>
       </nav>
     </>
   );

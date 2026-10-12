@@ -123,18 +123,24 @@ test.describe("navigation and category grid (shared layout)", () => {
     }
   });
 
-  test("the category grid shows up to 4 columns, fewer on narrower screens", async ({ page }) => {
+  test("the category grid fills whole rows: feature tiles first on desktop, a full-width lead tile on phones", async ({ page }) => {
     test.skip(test.info().project.name !== "desktop", "viewport sizes are set explicitly");
     await page.goto("/");
-    const grid = page.locator(".ui-tile-grid").first();
+    const grid = page.getByTestId("category-grid").first();
     test.skip((await grid.count()) === 0, "store's homepage has no category grid");
     const n = await grid.locator(":scope > *").count();
-    for (const [width, columns] of [[1440, 4], [1024, 4], [640, 3], [390, 2]] as const) {
+    const desktopFirstRow = n <= 4 ? n : 2;
+    for (const [width, firstRowCount] of [[1440, desktopFirstRow], [1024, desktopFirstRow], [640, 1], [390, 1]] as const) {
       await page.setViewportSize({ width, height: 900 });
       await page.waitForTimeout(200);
-      const tops = await grid.locator(":scope > *").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
-      const firstRow = tops.filter((top) => top === tops[0]).length;
-      expect(firstRow, `${width}px`).toBe(Math.min(n, columns));
+      const boxes = await grid.locator(":scope > *").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => ({ top: Math.round(r.top), right: Math.round(r.right) })));
+      const box = (await grid.boundingBox())!;
+      const gridRight = Math.round(box.x + box.width);
+      expect(boxes.filter((b) => b.top === boxes[0]!.top).length, `first row at ${width}px`).toBe(firstRowCount);
+      // No empty cells: the last tile of every row ends at the grid's right edge.
+      const rowEnds = new Map<number, number>();
+      for (const b of boxes) rowEnds.set(b.top, Math.max(rowEnds.get(b.top) ?? 0, b.right));
+      for (const right of rowEnds.values()) expect(Math.abs(right - gridRight), `row ends flush at ${width}px`).toBeLessThanOrEqual(1);
     }
   });
 });

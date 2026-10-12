@@ -73,7 +73,7 @@ export function QuickViewModal() {
             })()}
           </div>
           {product.activeFlashSale && (
-            <p className="mt-1 text-xs ui-caps text-sale-500">
+            <p className="mt-1 text-xs ui-caps text-sale-600">
               Ends in <CountdownTimer endsAt={product.activeFlashSale.endsAt} className="font-medium" />
             </p>
           )}

@@ -1,0 +1,83 @@
+import Link from "next/link";
+import { policyHighlights, storePolicy, type StoreSettings } from "@clothing-brand/shared";
+import type { CategoryTreeNode } from "@/lib/api/storefront";
+import { StoreLogoImage } from "@/components/store-logo-image";
+import { resolveImageUrl } from "@/lib/image-url";
+import { MegaMenu } from "../../mega-menu";
+import { MihrabBagButton, MihrabMenu, MihrabSearchField, MihrabSearchIcon } from "./header-actions";
+
+interface HeaderProps {
+  categories: CategoryTreeNode[];
+  settings: StoreSettings;
+}
+
+const TEXT_ACTION = "text-sm font-medium text-fg transition-colors duration-200 ease-smooth hover:text-[color:var(--nav-hover)]";
+
+/**
+ * Mihrab header: a navy strip with the store's own delivery promises, then search · centred logo · text actions, and the
+ * categories on a row of their own. Phones get logo · search · bag · menu and no bottom tab bar.
+ */
+export function MihrabHeader({ categories, settings }: HeaderProps) {
+  const promises = policyHighlights(storePolicy(settings)).map((line) => line.label);
+  const wordmark = <span className="font-display text-2xl leading-none text-fg">{settings.storeName}</span>;
+  const logo = (size: string) =>
+    settings.logoUrl ? (
+      <StoreLogoImage src={resolveImageUrl(settings.logoUrl)} alt={settings.storeName} className={size} fallback={wordmark} />
+    ) : (
+      wordmark
+    );
+
+  return (
+    <>
+      {promises.length > 0 && (
+        <div className="bg-ink-950 text-cream-100">
+          <ul className="mx-auto flex h-9 max-w-7xl items-center justify-center gap-10 px-4 text-xs sm:px-6 lg:px-8">
+            {promises.map((promise, index) => (
+              <li key={promise} className={index > 0 ? "hidden md:block" : undefined}>
+                {promise}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <header className="sticky top-0 z-30 border-b border-line bg-canvas">
+        {/* Phones */}
+        <div className="flex h-16 items-center justify-between gap-2 px-4 lg:hidden">
+          <Link href="/" aria-label={`${settings.storeName} home`} className="flex items-center">
+            {logo("h-8 w-32 object-contain object-left")}
+          </Link>
+          <div className="flex items-center">
+            <MihrabSearchIcon />
+            <MihrabBagButton compact />
+            <MihrabMenu categories={categories} />
+          </div>
+        </div>
+
+        {/* Desktop */}
+        <div className="mx-auto hidden h-20 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-6 px-8 lg:grid">
+          <MihrabSearchField />
+          <Link href="/" aria-label={`${settings.storeName} home`} className="flex items-center justify-center">
+            {logo("h-10 w-44 object-contain")}
+          </Link>
+          <nav aria-label="Your account" className="flex items-center justify-end gap-7">
+            <Link href="/track-order" className={TEXT_ACTION}>
+              Track order
+            </Link>
+            <Link href="/wishlist" className={TEXT_ACTION}>
+              Wishlist
+            </Link>
+            <Link href="/account" className={TEXT_ACTION}>
+              Account
+            </Link>
+            <MihrabBagButton />
+          </nav>
+        </div>
+        <div className="hidden border-t border-line lg:block">
+          <div className="mx-auto flex h-12 max-w-7xl items-center px-8">
+            <MegaMenu categories={categories} />
+          </div>
+        </div>
+      </header>
+    </>
+  );
+}

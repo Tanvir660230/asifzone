@@ -183,6 +183,8 @@ export const processCategoryImage = (buffer: Buffer) => processSiteImage(buffer,
 export const processCategoryBannerImage = (buffer: Buffer) => processSiteImage(buffer, "category-banners", 1600);
 /** Rich-text-editor image inserts (product/category descriptions) — not tied to a product id, since it must also work before a new product has been saved. */
 export const processEditorImage = (buffer: Buffer) => processSiteImage(buffer, "editor", 1200);
+/** A customer's review photo: re-encoded to WebP (which also drops camera metadata such as GPS) and capped at 1200px. */
+export const processReviewImage = (buffer: Buffer) => processSiteImage(buffer, "reviews", 1200);
 /** Payment method badges (bKash, Nagad, Visa, ...) shown in the footer and at checkout — kept
  * small since these render at a fixed, compact height everywhere they appear. */
 export const processPaymentMethodLogo = (buffer: Buffer) => processSiteImage(buffer, "payment-methods", 400);

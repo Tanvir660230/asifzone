@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { maxSellableQuantity, type Product, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
+import { isAvailable, maxSellableQuantity, type Product, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import { trackFunnelEvent } from "@/lib/analytics";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
-import { useCartDrawerStore } from "@/store/cart-drawer";
+import { readSizeMemory, recordSize, suggestSize } from "@/lib/size-memory";
 import { WishlistButton } from "./wishlist-button";
 import { StockAlertButton } from "./stock-alert-button";
 import { SizeGuideModal } from "./size-guide-modal";
@@ -69,9 +69,19 @@ export function VariantSelector({
   const [quantity, setQuantity] = useState(1);
   // Add to Cart / Buy Now pressed before the choice is complete → the options popup, for that action.
   const [pickerIntent, setPickerIntent] = useState<PickerIntent | null>(null);
+  // "Your usual size" (lib/size-memory): read after mount, since it lives in this browser only.
+  const [suggestedSize, setSuggestedSize] = useState<string | null>(null);
+  useEffect(() => {
+    if (!options.showSizes || options.defaultSize) return;
+    const sellable = (size: string) => variants.some((v) => v.size === size && isAvailable(product.trackInventory, v.stock));
+    setSuggestedSize(suggestSize(readSizeMemory(), options.sizes, sellable));
+  }, [options, variants, product.trackInventory]);
+  const remember = (variant: ProductVariant | undefined) => {
+    if (options.showSizes) recordSize(variant?.size);
+  };
 
   const selectedVariant = options.resolve(selectedSize, selectedColor);
-  const { addToCart, buyNow, justAdded } = useAddToCart({
+  const { addToCart, buyNow } = useAddToCart({
     selectedVariant,
     productId,
     productSlug,
@@ -79,7 +89,6 @@ export function VariantSelector({
     imageUrl,
     product,
   });
-  const openCartDrawer = useCartDrawerStore((s) => s.open);
 
   useEffect(() => {
     onVariantChange?.(selectedVariant);
@@ -113,14 +122,17 @@ export function VariantSelector({
   // The quantity shown is capped to what this variant can sell; the action uses exactly that number (a larger quantity
   // picked on another variant must not carry over — express checkout doesn't cap it later).
   const effectiveQty = Math.max(1, Math.min(quantity, maxQty));
+  const soldOut = Boolean(selectedVariant) && maxQty === 0;
 
   function handleAddToCart() {
     if (!selectedVariant) return setPickerIntent("cart");
+    remember(selectedVariant);
     addToCart(effectiveQty);
   }
 
   function handleBuyNow() {
     if (!selectedVariant) return setPickerIntent("buy");
+    remember(selectedVariant);
     buyNow(effectiveQty);
   }
 
@@ -131,6 +143,7 @@ export function VariantSelector({
     if (options.colors.length > 0) setSelectedColor(variant.color);
     setQuantity(qty);
     setPickerIntent(null);
+    remember(variant);
     if (intent === "buy") buyNow(qty, variant);
     else addToCart(qty, variant);
   }
@@ -146,6 +159,8 @@ export function VariantSelector({
         onSelectSize={setSelectedSize}
         onSelectColor={setSelectedColor}
         instanceId="inline"
+        suggestedSize={suggestedSize}
+        soldOutSelectable
         sizeHeadingExtra={showSizeGuide ? <SizeGuideModal sizeGuide={sizeGuide} /> : undefined}
       />
 
@@ -177,6 +192,23 @@ export function VariantSelector({
               className="text-sm text-ink-500"
             >
               {missingSelectionText(options, selectedSize, selectedColor)}
+              {suggestedSize && !selectedSize && (
+                // Its own line, led by the same dot that marks the pill, so the two read as one hint.
+                <span className="mt-1.5 flex items-center gap-2">
+                  <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-accent" />
+                  <span>
+                    You usually take{" "}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSize(suggestedSize)}
+                      className="font-medium text-ink-900 underline underline-offset-2 hover:text-accent"
+                      data-testid="usual-size"
+                    >
+                      {suggestedSize}
+                    </button>
+                  </span>
+                </span>
+              )}
             </motion.p>
           )}
         </AnimatePresence>
@@ -192,7 +224,7 @@ export function VariantSelector({
             className="flex items-center gap-3 overflow-hidden"
           >
             <p className="shrink-0 text-xs ui-caps text-ink-500">Qty</p>
-            <div className="flex items-center rounded-full border border-ink-200 shadow-sm">
+            <div className="flex items-center rounded-[var(--control-radius)] border border-ink-200 shadow-sm">
               <button
                 onClick={() => setQuantity(Math.max(1, effectiveQty - 1))}
                 className="flex h-10 w-10 items-center justify-center rounded-full text-ink-700 transition-all duration-150 ease-smooth hover:bg-ink-50 active:scale-90"
@@ -215,22 +247,14 @@ export function VariantSelector({
 
       <div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" size="lg" className="flex-1" disabled={!!selectedVariant && maxQty === 0} onClick={handleAddToCart}>
-            Add to Cart
+          <Button variant="outline" size="lg" className="flex-1" disabled={soldOut} onClick={handleAddToCart}>
+            {soldOut ? "Sold out" : "Add to Cart"}
           </Button>
-          <Button variant="primary" size="lg" className="flex-1" disabled={!!selectedVariant && maxQty === 0} onClick={handleBuyNow}>
+          <Button variant="primary" size="lg" className="flex-1" disabled={soldOut} onClick={handleBuyNow}>
             Buy Now
           </Button>
           <WishlistButton productId={productId} className="h-12 w-12 shrink-0 border border-ink-200 bg-cream-50" />
         </div>
-        {justAdded && (
-          <p className="mt-2 text-center text-xs text-ink-600">
-            Added to cart —{" "}
-            <button type="button" onClick={openCartDrawer} className="underline hover:text-brass-500">
-              view cart
-            </button>
-          </p>
-        )}
       </div>
 
       <VariantPickerDialog

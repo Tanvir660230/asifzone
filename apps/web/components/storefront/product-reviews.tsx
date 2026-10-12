@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { StarRating, StarRatingInput } from "./star-rating";
+import { ReviewPhotoPicker, ReviewPhotoStrip } from "./review-photos";
 
 const PAGE_SIZE = 10;
 
@@ -46,9 +47,11 @@ function WriteReviewForm({ productId, onDone }: { productId: string; onDone: () 
   const [rating, setRating] = useState(0);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [images, setImages] = useState<string[]>([]);
+  const [photosBusy, setPhotosBusy] = useState(false);
 
   const mutation = useMutation({
-    mutationFn: () => submitReview({ productId, rating, title: title || null, body }),
+    mutationFn: () => submitReview({ productId, rating, title: title || null, body, images }),
     onSuccess: () => {
       toast.success("Thanks — your review is pending approval.");
       queryClient.invalidateQueries({ queryKey: ["my-review", productId] });
@@ -101,9 +104,13 @@ function WriteReviewForm({ productId, onDone }: { productId: string; onDone: () 
             placeholder="What did you like or dislike? How was the fit and quality?"
           />
         </div>
+        <div>
+          <Label>Photos (optional)</Label>
+          <ReviewPhotoPicker value={images} onChange={setImages} onBusyChange={setPhotosBusy} />
+        </div>
         <div className="flex gap-3">
-          <Button type="submit" variant="brass" disabled={mutation.isPending}>
-            {mutation.isPending ? "Submitting…" : "Submit review"}
+          <Button type="submit" variant="brass" disabled={mutation.isPending || photosBusy}>
+            {mutation.isPending ? "Submitting…" : photosBusy ? "Uploading photos…" : "Submit review"}
           </Button>
           <Button type="button" variant="ghost" onClick={onDone}>
             Cancel
@@ -205,13 +212,8 @@ export function ProductReviews({ productId, productName }: { productId: string; 
             </div>
           )}
 
-          {isLoading && <p className="text-sm text-ink-400">Loading reviews…</p>}
+          {isLoading && <p className="ui-delayed text-sm text-ink-400">Loading reviews…</p>}
 
-          {!isLoading && data?.items.length === 0 && (
-            <p className="rounded-xl border border-dashed border-ink-200 p-8 text-center text-sm text-ink-400">
-              No reviews yet for this product.
-            </p>
-          )}
 
           <div className="space-y-6">
             {data?.items.map((review) => (
@@ -220,7 +222,7 @@ export function ProductReviews({ productId, productName }: { productId: string; 
                   <div className="flex items-center gap-2">
                     <StarRating value={review.rating} />
                     {review.isVerifiedPurchase && (
-                      <span className="flex items-center gap-1 text-[11px] font-medium ui-caps text-brass-600">
+                      <span className="flex items-center gap-1 text-xs font-medium ui-caps text-brass-600">
                         <BadgeCheck size={12} />
                         Verified Purchase
                       </span>
@@ -230,6 +232,7 @@ export function ProductReviews({ productId, productName }: { productId: string; 
                 </div>
                 {review.title && <p className="mt-2 text-sm font-medium text-ink-900">{review.title}</p>}
                 <p className="mt-1 text-sm leading-relaxed text-ink-600">{review.body}</p>
+                <ReviewPhotoStrip images={review.images ?? []} author={review.customerName} />
                 <p className="mt-2 text-xs text-ink-400">{review.customerName}</p>
               </div>
             ))}

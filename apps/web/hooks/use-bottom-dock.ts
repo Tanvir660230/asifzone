@@ -17,6 +17,8 @@ interface BottomDockState {
   /** On /cart or /checkout — the cart is already on-screen, so nothing needs to reserve space to
    * reach it. */
   onCartOrCheckoutPage: boolean;
+  /** On /checkout — a focused page without the bottom nav or the contact button. */
+  onCheckoutPage: boolean;
 }
 
 /** Single source of truth for "what's currently docked at the bottom of the viewport." Previously
@@ -36,5 +38,8 @@ export function useBottomDockState(): BottomDockState {
   const onCartOrCheckoutPage = pathname.startsWith("/cart") || pathname.startsWith("/checkout");
   const showCartBar = mounted && items.length > 0 && !CART_BAR_HIDDEN_ROUTES.some((route) => pathname.startsWith(route));
 
-  return { showCartBar, onProductPage, onCartOrCheckoutPage };
+  // Checkout is a focused page: no bottom nav and no contact button over the form.
+  const onCheckoutPage = pathname.startsWith("/checkout");
+
+  return { showCartBar, onProductPage, onCartOrCheckoutPage, onCheckoutPage };
 }

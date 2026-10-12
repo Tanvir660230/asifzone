@@ -2,9 +2,8 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { confirmCustomerClaim } from "@/lib/customer-auth";
+import { useSearchParams } from "next/navigation";
+import { confirmCustomerClaim, enterSignedIn } from "@/lib/customer-auth";
 import { ApiError } from "@/lib/api-client";
 
 /** Phase 11 (BD-11.6 a): the link emailed when someone registers with an email an existing guest record already holds.
@@ -20,8 +19,6 @@ export default function ClaimAccountPage() {
 type Status = "confirming" | "error";
 
 function ClaimAccountContent() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
   const [status, setStatus] = useState<Status>(token ? "confirming" : "error");
@@ -33,14 +30,13 @@ function ClaimAccountContent() {
     started.current = true; // single-use link: never submit twice (e.g. React strict-mode double effects)
     confirmCustomerClaim({ token })
       .then(() => {
-        queryClient.invalidateQueries({ queryKey: ["current-customer"] });
-        router.replace("/account");
+        enterSignedIn();
       })
       .catch((err) => {
         setStatus("error");
         setMessage(err instanceof ApiError ? err.message : "Something went wrong, please try again");
       });
-  }, [token, router, queryClient]);
+  }, [token]);
 
   if (status === "confirming") {
     return (

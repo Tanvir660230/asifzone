@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { SlidersHorizontal, X } from "lucide-react";
 import type { StorefrontFacets } from "@/lib/api/storefront";
@@ -8,7 +8,9 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn, isPaleColor } from "@/lib/utils";
 
-export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
+/** `toolbarExtra` sits beside the Filters button in the phone toolbar (the sort control), so both stay pinned under the
+ * header while the shopper scrolls the grid. */
+export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacets; toolbarExtra?: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -85,7 +87,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
                 key={size}
                 onClick={() => toggleListParam("sizes", size)}
                 className={cn(
-                  "h-9 min-w-9 rounded-full border px-2.5 text-sm transition-all duration-200 ease-smooth active:scale-95",
+                  "h-9 min-w-9 rounded-[var(--chip-radius)] border px-2.5 text-sm transition-all duration-200 ease-smooth active:scale-95",
                   activeSizes.includes(size)
                     ? "glossy border-ink-900 bg-ink-900 text-cream-50 shadow-sm"
                     : "border-ink-200 hover:border-ink-900",
@@ -110,7 +112,7 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
                 aria-label={color}
                 aria-pressed={activeColors.includes(color)}
                 className={cn(
-                  "glossy h-8 w-8 rounded-full border-2 shadow-sm transition-all duration-200 ease-smooth active:scale-90",
+                  "glossy h-8 w-8 rounded-[var(--swatch-radius)] border-2 shadow-sm transition-all duration-200 ease-smooth active:scale-90",
                   activeColors.includes(color)
                     ? "border-brass-400 ring-2 ring-brass-200"
                     : isPaleColor(colorHex)
@@ -163,14 +165,18 @@ export function FacetFilters({ facets }: { facets: StorefrontFacets }) {
 
   return (
     <>
-      <div className="mb-4 lg:hidden">
+      <div className="sticky top-[var(--sticky-top)] z-raised -mx-4 flex items-center gap-2 border-b border-line-subtle bg-canvas/90 px-4 py-2.5 backdrop-blur-md transition-[top] duration-slow ease-smooth sm:-mx-6 sm:px-6 lg:hidden">
         <button
           onClick={() => setMobileOpen(true)}
-          className="flex items-center gap-2 rounded border border-ink-200 px-4 py-2 text-sm text-ink-700"
+          className="flex h-10 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-medium text-ink-900 transition-colors hover:border-ink-900 active:scale-[0.98]"
         >
-          <SlidersHorizontal size={16} />
-          Filters{activeCount > 0 && ` (${activeCount})`}
+          <SlidersHorizontal size={16} aria-hidden="true" />
+          Filters
+          {activeCount > 0 && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-accent-fg">{activeCount}</span>
+          )}
         </button>
+        {toolbarExtra && <div className="ml-auto min-w-0">{toolbarExtra}</div>}
       </div>
 
       <aside className="hidden w-56 shrink-0 lg:block">{panel}</aside>

@@ -6,6 +6,7 @@ import { useCartQuote } from "@/hooks/use-quote";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useBottomDockState } from "@/hooks/use-bottom-dock";
 import { formatPrice } from "@/lib/format";
+import { CountBadge } from "./count-badge";
 
 /** Persistent quick-checkout access, distinct from CartReminderBanner (which only nudges after
  * inactivity) — this shows any time the cart has items, so "go pay" is always one tap away.
@@ -20,7 +21,7 @@ export function StickyCartBar() {
   if (!showCartBar) return null;
 
   return (
-    <div className="glass fixed inset-x-0 bottom-16 z-40 border-t border-ink-200 shadow-floatLg animate-fade-in lg:bottom-0">
+    <div data-hide-on-keyboard className="glass fixed inset-x-0 bottom-[var(--dock-tab-bar)] z-40 border-t border-ink-200 shadow-floatLg animate-fade-in lg:bottom-0">
       <button
         type="button"
         onClick={openCartDrawer}
@@ -28,15 +29,13 @@ export function StickyCartBar() {
       >
         <div className="relative shrink-0 text-ink-900">
           <ShoppingBag size={20} />
-          <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900">
-            {count}
-          </span>
+          <CountBadge count={count} className="-right-2 -top-2" />
         </div>
         <p className="flex-1 text-sm text-ink-700">
           {count} item{count === 1 ? "" : "s"} · <span className="font-medium text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
         </p>
-        <span className="glossy shrink-0 rounded-full bg-ink-900 px-4 py-2 text-xs ui-caps text-cream-50">
-          View Cart
+        <span className="glossy shrink-0 rounded-[var(--control-radius)] bg-ink-900 px-4 py-2 text-xs ui-caps text-cream-50">
+          View bag
         </span>
       </button>
     </div>

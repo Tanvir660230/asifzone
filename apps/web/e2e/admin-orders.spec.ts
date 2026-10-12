@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 // The Orders workspace end to end (ORD-01 … ORD-29 UI paths). The spec creates its own order through the manual-order
 // flow and removes it at the end (Trash → delete permanently), so it only ever touches the order it made. The API under
-// test runs with live providers off (global-setup), so courier booking is expected to be refused by the provider guard.
+// test runs with live providers off and no courier keys (global-setup), so courier booking is not offered (Phase 12 D-4).
 
 const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@example.com";
 const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
@@ -144,12 +144,13 @@ test.describe("orders workspace", () => {
     await dialog(page).getByRole("button", { name: "Record refund" }).click();
     await expect(payments.getByText("e2e partial refund")).toBeVisible();
 
-    // ── ORD-13 courier: the provider guard refuses the real call in this environment ──
+    // ── ORD-13 courier: no courier is connected in this environment (Phase 12 D-4), so the order explains why it can't be
+    // booked and where the keys go, instead of offering a Book button that would fail ──
     const delivery = page.getByTestId("order-delivery");
-    await delivery.getByRole("button", { name: /Book with/ }).click();
-    await dialog(page).getByRole("button", { name: "Book courier" }).click();
-    await expect(page.getByText(/blocked|Failed to book/i).first()).toBeVisible();
     await expect(delivery.getByText("Not booked with a courier yet.")).toBeVisible();
+    await expect(delivery.getByRole("button", { name: /Book with/ })).toHaveCount(0);
+    await expect(delivery.getByText(/isn.t connected to this store yet/)).toBeVisible();
+    await expect(delivery.getByRole("link", { name: /Settings › Integrations/ })).toHaveAttribute("href", "/admin/settings?pane=integrations");
 
     // ── ORD-18 invoice ──
     const invoice = await page.context().newPage();
@@ -209,21 +210,64 @@ test.describe("orders workspace", () => {
   });
 
   test("responsive: cards below xl, no horizontal page scroll", async ({ page }) => {
-    await page.goto("/admin/orders");
-    await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
-    const width = page.viewportSize()!.width;
-    if (width < 1280) await expect(page.locator('[data-testid="order-card"]:visible').first()).toBeVisible();
-    else await expect(page.locator('[data-testid="order-row"]:visible').first()).toBeVisible();
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(1);
-
-    // The drawer opens from a row/card and steps to the next order.
-    await page.locator('[data-testid="order-row"]:visible, [data-testid="order-card"]:visible').first().getByRole("button").first().click();
-    await expect(page.getByTestId("order-detail")).toBeVisible();
-    await expect(page.getByRole("dialog", { name: "Order details" })).toBeVisible();
-    await page.getByRole("button", { name: "Next order" }).click();
-    await expect(page.getByTestId("order-detail")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Order details" })).toHaveCount(0);
+    // Its own two orders (the lifecycle test deletes the one it made, and "Next order" needs a second): placed through the
+    // admin API, removed at the end.
+    const made = await page.evaluate(async (url) => {
+      const csrf = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)?.[1];
+      const headers = { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {}) };
+      const { items } = (await (await fetch(`${url}/api/products/storefront?pageSize=60`, { credentials: "include" })).json()) as {
+        items: Array<{ trackInventory: boolean; variants: Array<{ id: string; stock: number; isActive?: boolean }> }>;
+      };
+      const variant = items.flatMap((p) => p.variants.filter((v) => v.isActive !== false && (!p.trackInventory || v.stock >= 3)))[0];
+      const ids: string[] = [];
+      for (let i = 0; i < 2 && variant; i++) {
+        const res = await fetch(`${url}/api/orders/admin`, {
+          method: "POST",
+          credentials: "include",
+          headers: { ...headers, "Idempotency-Key": `pw-responsive-${Date.now()}-${i}-${Math.random()}` },
+          body: JSON.stringify({
+            items: [{ variantId: variant.id, quantity: 1 }],
+            customerName: "Responsive Tester",
+            customerPhone: "01712345678",
+            shippingDivision: "Dhaka",
+            shippingDistrict: "Dhaka",
+            shippingArea: "Uttara",
+            shippingAddressLine: "House 1, Road 2 (Playwright)",
+            paymentMethod: "COD",
+          }),
+        });
+        const body = (await res.json().catch(() => null)) as { order?: { id: string } } | null;
+        if (body?.order?.id) ids.push(body.order.id);
+      }
+      return ids;
+    }, api);
+    expect(made, "two orders to page through").toHaveLength(2);
+    try {
+      await responsiveChecks(page);
+    } finally {
+      for (const id of made) {
+        await adminFetch(page, `/api/orders/${id}`, "DELETE");
+        await adminFetch(page, `/api/orders/${id}/permanent`, "DELETE");
+      }
+    }
   });
 });
+
+async function responsiveChecks(page: Page) {
+  await page.goto("/admin/orders");
+  await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
+  const width = page.viewportSize()!.width;
+  if (width < 1280) await expect(page.locator('[data-testid="order-card"]:visible').first()).toBeVisible();
+  else await expect(page.locator('[data-testid="order-row"]:visible').first()).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  // The drawer opens from a row/card and steps to the next order.
+  await page.locator('[data-testid="order-row"]:visible, [data-testid="order-card"]:visible').first().getByRole("button").first().click();
+  await expect(page.getByTestId("order-detail")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Order details" })).toBeVisible();
+  await page.getByRole("button", { name: "Next order" }).click();
+  await expect(page.getByTestId("order-detail")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Order details" })).toHaveCount(0);
+}

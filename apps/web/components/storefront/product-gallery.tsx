@@ -9,6 +9,7 @@ import type { ProductImage } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
 
 interface ProductGalleryProps {
   images: ProductImage[];
@@ -25,6 +26,8 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   const didSwipe = useRef(false);
   const active = images[activeIndex];
   const hasMultiple = images.length > 1;
+  // The mihrab preset keeps the thumbnails in a row under a 4:5 photograph at every width; classic moves them beside it.
+  const thumbsBelow = storeLayout() === "mihrab";
   // The only overlay in the storefront that previously had no role="dialog", no Escape handling,
   // and no focus management at all — every other modal/drawer in the app has this.
   const lightboxRef = useFocusTrap<HTMLDivElement>({
@@ -75,12 +78,17 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   }
 
   return (
-    <div className="flex flex-col-reverse gap-3 lg:flex-row">
+    <div className={cn("flex flex-col-reverse gap-3", !thumbsBelow && "lg:flex-row")}>
       {/* Thumbnails: a fixed small size regardless of how many photos exist (never stretched to
           fill the row) — a horizontal strip below the main image on mobile, a vertical rail
           beside it on desktop, scrollable once there are more than fit. */}
       {hasMultiple && (
-        <div className="flex gap-2 overflow-x-auto pb-1 lg:max-h-[34rem] lg:w-20 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0">
+        <div
+          className={cn(
+            "flex gap-2 overflow-x-auto pb-1",
+            !thumbsBelow && "lg:max-h-[34rem] lg:w-20 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0",
+          )}
+        >
           {images.map((img, i) => (
             <button
               key={img.id}
@@ -89,6 +97,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               aria-current={i === activeIndex}
               className={cn(
                 "relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition-colors duration-150 ease-smooth lg:h-20 lg:w-20",
+                thumbsBelow && "aspect-[4/5] h-auto w-14 lg:h-auto lg:w-16",
                 i === activeIndex ? "border-brass-400" : "border-transparent hover:border-ink-200",
               )}
             >
@@ -104,7 +113,10 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
         // desktop windows (laptop, browser zoom), pushing price/Add to Cart off-screen with no
         // hint anything was below. The cap only ever engages when that would happen; a normal
         // window never hits it.
-        className="group relative aspect-square max-h-[70vh] flex-1 cursor-zoom-in touch-pan-y select-none overflow-hidden rounded-xl bg-ink-100"
+        className={cn(
+          "group relative flex-1 cursor-zoom-in touch-pan-y select-none overflow-hidden rounded-xl bg-ink-100",
+          thumbsBelow ? "aspect-[4/5] max-h-[80vh]" : "aspect-square max-h-[70vh]",
+        )}
         onMouseMove={handleMouseMove}
         onClick={handleImageClick}
         onPointerDown={handlePointerDown}
@@ -129,15 +141,15 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               className="absolute inset-0 rounded-xl focus-visible:outline-offset-[-3px]"
             />
             {active.caption && (
-              <span className="glass absolute left-3 top-3 max-w-[70%] truncate rounded-full px-3 py-1 text-xs text-ink-900" data-testid="image-caption">
+              <span className="glass absolute left-3 top-3 max-w-[70%] truncate rounded-[var(--chip-radius)] px-3 py-1 text-xs text-ink-900" data-testid="image-caption">
                 {active.caption}
               </span>
             )}
-            <span className="glass glossy absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full text-ink-900 opacity-0 shadow-float transition-opacity duration-200 ease-smooth group-hover:opacity-100">
+            <span className="glass glossy absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-0 shadow-float transition-opacity duration-200 ease-smooth group-hover:opacity-100">
               <ZoomIn size={16} />
             </span>
             {hasMultiple && (
-              <span className="glass absolute bottom-3 left-3 rounded-full px-2.5 py-1 text-xs text-ink-900">
+              <span className="glass absolute bottom-3 left-3 rounded-[var(--chip-radius)] px-2.5 py-1 text-xs text-ink-900">
                 {activeIndex + 1} / {images.length}
               </span>
             )}
@@ -154,7 +166,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                 step(-1);
               }}
               aria-label="Previous image"
-              className="glass glossy absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
+              className="glass glossy absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
             >
               <ChevronLeft size={18} />
             </button>
@@ -164,7 +176,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                 step(1);
               }}
               aria-label="Next image"
-              className="glass glossy absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
+              className="glass glossy absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
             >
               <ChevronRight size={18} />
             </button>

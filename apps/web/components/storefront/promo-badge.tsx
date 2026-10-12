@@ -12,7 +12,7 @@ const TONE_CLASS: Record<BadgeTone, string> = {
 
 export function PromoBadge({ tone = "sale", children }: { tone?: BadgeTone; children: React.ReactNode }) {
   return (
-    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ui-caps ${TONE_CLASS[tone]}`}>
+    <span className={`rounded-full px-2 py-1 text-xs font-semibold leading-none ui-caps ${TONE_CLASS[tone]}`}>
       {children}
     </span>
   );

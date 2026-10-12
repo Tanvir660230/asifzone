@@ -176,7 +176,7 @@ export function VariantPickerDialog({
           {canConfirm && (
             <div className="flex items-center gap-3">
               <p className="shrink-0 text-xs ui-caps text-ink-500">Qty</p>
-              <div className="flex items-center rounded-full border border-ink-200 shadow-sm">
+              <div className="flex items-center rounded-[var(--control-radius)] border border-ink-200 shadow-sm">
                 <button
                   type="button"
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}

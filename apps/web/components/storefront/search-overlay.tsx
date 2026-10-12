@@ -62,7 +62,7 @@ function SuggestionChip({
   return (
     <span
       className={cn(
-        "group flex items-center rounded-full border border-ink-200 pl-3 pr-1 py-1.5 text-sm text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400",
+        "group flex items-center rounded-[var(--chip-radius)] border border-ink-200 pl-3 pr-1 py-1.5 text-sm text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400",
         highlighted && "border-ink-900",
         !onRemove && "pr-3",
       )}
@@ -313,7 +313,7 @@ export function SearchOverlay() {
                   type="button"
                   onClick={() => setLangBn((v) => !v)}
                   aria-label="Toggle voice search language"
-                  className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ui-caps text-ink-500 transition-colors duration-150 ease-smooth hover:bg-white hover:text-ink-900"
+                  className="shrink-0 rounded-full px-2 py-1 text-xs font-medium ui-caps text-ink-500 transition-colors duration-150 ease-smooth hover:bg-white hover:text-ink-900"
                 >
                   {langBn ? "বাংলা" : "EN"}
                 </button>

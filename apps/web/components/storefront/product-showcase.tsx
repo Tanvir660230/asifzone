@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Banknote, RotateCcw, Truck } from "lucide-react";
-import { pickGalleryImages, type PolicyHighlightKind, type Product, type ProductVariant } from "@clothing-brand/shared";
+import { NO_SIZE_VALUE, pickGalleryImages, type PolicyHighlightKind, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
@@ -12,8 +12,11 @@ import { AdminSalesBadge } from "@/components/storefront/admin-sales-badge";
 import { CountdownTimer } from "@/components/storefront/countdown-timer";
 import { ProductAccordion } from "@/components/storefront/product-accordion";
 import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
+import { DeliveryEstimate } from "@/components/storefront/delivery-estimate";
+import { ShareButton } from "@/components/storefront/share-button";
+import { WhatsAppOrderButton } from "@/components/storefront/whatsapp-order-button";
 import { formatPrice } from "@/lib/format";
-import { variantDisplayPrice } from "@/lib/pricing-display";
+import { percentOffLabel, variantDisplayPrice } from "@/lib/pricing-display";
 import type { SpecAccordionItem } from "@/lib/product-specs";
 
 const POLICY_ICON: Record<PolicyHighlightKind, typeof Truck> = { delivery: Truck, returns: RotateCcw, cashOnDelivery: Banknote };
@@ -28,12 +31,15 @@ interface ProductShowcaseProps {
   showSizeGuideLink: boolean;
   /** The store's own policy lines (@clothing-brand/shared policyHighlights) — none when it states none. */
   policyLines?: { kind: PolicyHighlightKind; label: string }[];
+  /** How to get it: the store's delivery fees and its WhatsApp link (null = no active WhatsApp link). Absent in the admin
+   * wizard's preview, which then shows the dates alone. */
+  orderHelp?: { fees: { insideDhaka: string; elsewhere: string }; whatsappUrl: string | null };
 }
 
 /** Owns the one piece of state that needs to be shared between the gallery and the variant
  * selector — which image is currently "in focus" — since they live in separate, non-adjacent
  * parts of the two-column layout and neither can see the other's props directly. */
-export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [] }: ProductShowcaseProps) {
+export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [], orderHelp }: ProductShowcaseProps) {
   const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
@@ -71,20 +77,35 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
   // cart and checkout will charge. Formatting only here.
   const shown = variantDisplayPrice(product, selectedVariant?.id);
 
+  // The options named in a WhatsApp order: whatever the shopper has chosen so far, labelled as the pickers label them.
+  const dimensionLabel = (field: "size" | "color", fallback: string) => resolved?.variantDimensions.find((d) => d.targetField === field)?.label ?? fallback;
+  const whatsappOptions = [
+    ...(selection.size && selection.size !== NO_SIZE_VALUE ? [{ label: dimensionLabel("size", "Size"), value: selection.size }] : []),
+    ...(selection.color ? [{ label: dimensionLabel("color", "Color"), value: selection.color }] : []),
+  ];
+
   return (
-    <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-2">
-      <ProductGallery images={galleryImages} productName={product.name} />
+    <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
+      {/* From 1024px the gallery stays in view while the details beside it scroll past. */}
+      <div className="lg:sticky lg:top-[calc(var(--sticky-top)+1.5rem)] lg:self-start lg:transition-[top] lg:duration-slow lg:ease-smooth">
+        <ProductGallery images={galleryImages} productName={product.name} />
+      </div>
 
       <div>
-        <p className="text-xs ui-caps text-ink-400">
-          {/* The price tier is presentation a theme may hide (--product-tier-display); the brand always shows. */}
-          <span className="[display:var(--product-tier-display)]">
-            {product.brandTier}
-            {product.brand ? " · " : ""}
-          </span>
-          {product.brand ?? ""}
-        </p>
-        <h1 className="ui-product-title mt-1 text-ink-900">{product.name}</h1>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs ui-caps text-ink-400">
+              {/* The price tier is presentation a theme may hide (--product-tier-display); the brand always shows. */}
+              <span className="[display:var(--product-tier-display)]">
+                {product.brandTier}
+                {product.brand ? " · " : ""}
+              </span>
+              {product.brand ?? ""}
+            </p>
+            <h1 className="ui-product-title mt-1 text-ink-900">{product.name}</h1>
+          </div>
+          <ShareButton title={product.name} />
+        </div>
         {product.reviewCount > 0 && (
           <a href="#reviews" className="mt-2 flex items-center gap-2 text-sm text-ink-500 hover:text-brass-600">
             <StarRating value={product.avgRating} />
@@ -93,16 +114,20 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             </span>
           </a>
         )}
-        <div className="mt-3 flex items-center gap-3">
-          <span className={shown.flash ? "text-lg font-bold text-ink-900" : "text-lg font-semibold text-ink-900"} data-testid="product-price">
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className={shown.flash ? "text-2xl font-bold tabular-nums text-ink-900" : "text-2xl font-semibold tabular-nums text-ink-900"} data-testid="product-price">
             {formatPrice(shown.price)}
           </span>
           {shown.was !== null && Number(shown.was) > Number(shown.price) && (
-            <span className="text-sm text-fg-muted line-through" data-testid="product-compare-price">{formatPrice(shown.was)}</span>
+            <>
+              <span className="text-base text-fg-muted line-through" data-testid="product-compare-price">{formatPrice(shown.was)}</span>
+              {/* The same server-resolved comparison the card badge shows; no price is computed here. */}
+              <span className="rounded-full bg-sale-50 px-2.5 py-0.5 text-xs font-semibold text-sale-600">{percentOffLabel(shown.price, shown.was)}% off</span>
+            </>
           )}
         </div>
         {shown.flash && (
-          <p className="mt-1 text-xs ui-caps text-sale-500">
+          <p className="mt-1 text-xs ui-caps text-sale-600">
             Flash sale ends in <CountdownTimer endsAt={shown.flash.endsAt} className="font-medium" />
           </p>
         )}
@@ -139,13 +164,23 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           />
         </div>
 
+        {orderHelp?.whatsappUrl && (
+          <div className="mt-3">
+            <WhatsAppOrderButton whatsappUrl={orderHelp.whatsappUrl} productName={product.name} options={whatsappOptions} />
+          </div>
+        )}
+
+        <div className="mt-8">
+          <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={product.freeDelivery} />
+        </div>
+
         {policyLines.length > 0 && (
-          <ul className="mt-8 space-y-3 border-t border-ink-100 pt-6">
+          <ul className="mt-6 space-y-3">
             {policyLines.map(({ kind, label }) => {
               const Icon = POLICY_ICON[kind];
               return (
                 <li key={kind} className="flex items-center gap-3 text-sm text-ink-600">
-                  <Icon size={18} className="shrink-0 text-brass-500" aria-hidden="true" />
+                  <Icon size={18} className="shrink-0 text-ink-900" aria-hidden="true" />
                   {label}
                 </li>
               );

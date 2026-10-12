@@ -1,25 +1,17 @@
 import type { Product } from "@clothing-brand/shared";
-import { ProductGrid } from "./product-grid";
+import { ProductCarousel } from "./product-carousel";
 
 interface ProductCarouselSectionProps {
   heading: string;
   subtitle?: string | null;
+  /** The listing this section previews ("View all"). */
+  href?: string;
   products: Product[];
 }
 
-/** Renders one PRODUCT_CAROUSEL homepage section — extracted from the old inline featured-products
- * block in page.tsx so the admin builder can add more than one instance (e.g. a second carousel
- * scoped to a category), each with its own heading/product source. */
-export function ProductCarouselSection({ heading, subtitle, products }: ProductCarouselSectionProps) {
-  if (products.length === 0) return null;
-
-  return (
-    <section className="mx-auto max-w-7xl px-4 py-[calc(4rem*var(--section-rhythm))] sm:px-6 lg:px-8">
-      <div className="mb-8 text-center">
-        <h2 className="ui-section-heading font-display text-ink-900">{heading}</h2>
-        {subtitle && <p className="mt-2 text-sm text-ink-500">{subtitle}</p>}
-      </div>
-      <ProductGrid products={products} />
-    </section>
-  );
+/** Renders one PRODUCT_CAROUSEL homepage section as a two-row product rail: a preview of a listing (featured, newest, a
+ * category) with a "View all" link to the full listing, instead of the whole listing stacked on the homepage. The admin
+ * builder can add more than one instance, each with its own heading and product source. */
+export function ProductCarouselSection({ heading, subtitle, href, products }: ProductCarouselSectionProps) {
+  return <ProductCarousel title={heading} subtitle={subtitle} href={href} products={products} rows={2} />;
 }

@@ -102,6 +102,7 @@ customerRouter.get(
   validate(paginationQuerySchema, "query"),
   customerController.listOrders,
 );
+customerRouter.get("/me/buy-again", requireCustomer, customerController.buyAgain);
 customerRouter.get("/me/orders/:id", requireCustomer, customerController.getOrder);
 // Self-service order changes and store balance (docs/ORDER_ADJUSTMENTS.md §2, §5, §18) — own orders only.
 customerRouter.get("/me/store-credit", requireCustomer, adjustments.myStoreCredit);

@@ -8,8 +8,8 @@ export function CategoryStockPanel({ overview }: { overview: CategoryStockOvervi
   return (
     <div className="mb-6 space-y-3">
       <p className="text-sm text-ink-500">
-        <span className="font-medium text-ink-900">{total.inStockProducts}</span> of {total.totalProducts} product
-        {total.totalProducts === 1 ? "" : "s"} in stock
+        <span className="font-medium text-ink-900">{total.totalProducts}</span> product{total.totalProducts === 1 ? "" : "s"}
+        {total.inStockProducts < total.totalProducts && <> · {total.inStockProducts} in stock</>}
       </p>
 
       {subcategories.length > 0 && (

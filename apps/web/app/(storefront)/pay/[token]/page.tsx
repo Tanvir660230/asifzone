@@ -6,6 +6,7 @@ import { CreditCard, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { getPaymentLink, startPaymentLink } from "@/lib/api/orders";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { formatPrice, formatStoreDateTime } from "@/lib/format";
 
 const PROVIDER_LABEL = { SSLCOMMERZ: "Card / mobile banking (SSLCommerz)", EPS_PG: "EPS" } as const;
@@ -38,21 +39,24 @@ export default function PayPage({ params }: { params: Promise<{ token: string }>
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-16 sm:py-24">
-      <div className="rounded-2xl border border-ink-100 bg-cream-50 p-6 sm:p-8" data-testid="pay-page">
-        <span className="glossy mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-brass-100 text-brass-600">
-          <CreditCard size={20} />
-        </span>
-        {isLoading && <p className="text-sm text-ink-500">Loading…</p>}
+    <StorefrontPage>
+      <StorefrontPageHeader
+        eyebrow={
+          <span className="inline-flex items-center gap-1.5">
+            <CreditCard size={14} aria-hidden="true" /> Secure payment
+          </span>
+        }
+        title={loadError ? "Link not found" : link ? `Pay for order ${link.orderNumber}` : "Payment"}
+      />
+      <div className="max-w-[26rem] rounded-2xl bg-surface p-6 shadow-sm ring-1 ring-inset ring-line-subtle sm:p-8" data-testid="pay-page">
+        {isLoading && <p className="ui-delayed text-sm text-ink-500">Loading…</p>}
         {loadError && (
           <>
-            <h1 className="mb-2 font-display text-2xl text-ink-900">Link not found</h1>
             <p className="text-sm text-ink-500">This payment link isn&apos;t valid. Please check the link you received, or contact us.</p>
           </>
         )}
         {link && (
           <>
-            <h1 className="mb-1 font-display text-2xl text-ink-900">Pay for order {link.orderNumber}</h1>
             <p className="mb-5 text-sm text-ink-500">
               {link.customerFirstName ? `Hi ${link.customerFirstName}, ` : ""}
               {link.purpose === "MODIFICATION" ? "this payment covers the change to your order." : "this is the amount due on your order."}
@@ -94,6 +98,6 @@ export default function PayPage({ params }: { params: Promise<{ token: string }>
           </>
         )}
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

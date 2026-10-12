@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { ProductSort } from "@clothing-brand/shared";
-import { Breadcrumb, categoryBreadcrumbTrail } from "@/components/storefront/breadcrumb";
+import { categoryBreadcrumbTrail } from "@/components/storefront/breadcrumb";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { ProductGrid } from "@/components/storefront/product-grid";
 import { SortSelect } from "@/components/storefront/sort-select";
 import { Pagination } from "@/components/storefront/pagination";
@@ -9,7 +10,7 @@ import { FacetFilters } from "@/components/storefront/facet-filters";
 import { ComingSoon } from "@/components/storefront/coming-soon";
 import { CategoryStockPanel } from "@/components/storefront/category-stock-panel";
 import { getCategoryBySlug, getCategoryStockOverview, getSiteSettings, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
-import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
+import { getSiteUrl, buildOpenGraph, storeTitle } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
 import { resolveImageUrl } from "@/lib/image-url";
 import { jsonLdString } from "@clothing-brand/shared";
@@ -34,7 +35,7 @@ async function loadCategory(slug: string) {
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const [{ slug }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const [data, { settings }] = await Promise.all([loadCategory(slug), getSiteSettings()]);
-  if (!data) return { title: "Category" };
+  if (!data) return { title: "Category not found" };
 
   const { category } = data;
   const title = category.seoTitle || category.name;
@@ -43,7 +44,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const url = `${getSiteUrl()}/category/${category.slug}${page > 1 ? `?page=${page}` : ""}`;
 
   return {
-    title,
+    title: storeTitle(title, settings.storeName),
     description,
     alternates: { canonical: url },
     ...buildOpenGraph({
@@ -83,22 +84,32 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   const isEmptyCategory = result.total === 0 && !isFiltered;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <Breadcrumb trail={categoryBreadcrumbTrail(breadcrumb, category)} />
-      <div className="mb-8 mt-4 flex items-end justify-between">
-        <h1 className="font-display text-3xl text-ink-900">{category.name}</h1>
-        {!isEmptyCategory && <SortSelect />}
-      </div>
+    <StorefrontPage>
+      {/* Sort sits beside the title from 1024px; on phones it lives in the pinned Filters bar. */}
+      <StorefrontPageHeader
+        breadcrumb={categoryBreadcrumbTrail(breadcrumb, category)}
+        title={category.name}
+        actions={
+          !isEmptyCategory ? (
+            <div className="hidden lg:block">
+              <SortSelect />
+            </div>
+          ) : undefined
+        }
+      />
 
       {isEmptyCategory ? (
         <ComingSoon categoryName={category.name} />
       ) : (
-        <div className="flex flex-col gap-10 lg:flex-row">
-          <div className="w-full lg:w-56 lg:shrink-0">
+        <div className="flex flex-col gap-4 lg:flex-row lg:gap-10">
+          {/* On phones the column dissolves (`contents`), so the filter toolbar inside it can stay pinned over the grid. */}
+          <div className="w-full max-lg:contents lg:w-56 lg:shrink-0">
+            <h2 className="sr-only">Refine</h2>
             <CategoryStockPanel overview={stockOverview} />
-            <FacetFilters facets={facets} />
+            <FacetFilters facets={facets} toolbarExtra={<SortSelect className="w-44" />} />
           </div>
           <div className="min-w-0 flex-1">
+            <h2 className="sr-only">Products</h2>
             {result.items.length > 0 && (
               <script
                 type="application/ld+json"
@@ -110,6 +121,6 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </StorefrontPage>
   );
 }

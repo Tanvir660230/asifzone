@@ -4,8 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import { customerRegisterSchema, type CustomerRegisterInput, type Customer } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +14,7 @@ import { GoogleButton } from "@/components/account/google-button";
 import { PhoneOtpForm } from "@/components/account/phone-otp-form";
 import { OrDivider } from "@/components/account/or-divider";
 import { AuthModeToggle } from "@/components/account/auth-mode-toggle";
-import { registerCustomer, loginWithGoogle } from "@/lib/customer-auth";
+import { enterSignedIn, registerCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
 import { publicRuntimeConfig } from "@/lib/runtime-config";
@@ -25,8 +23,6 @@ import { pixelCompleteRegistration } from "@/lib/pixels";
 type Mode = "email" | "phone";
 
 export default function AccountRegisterPage() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("email");
   const [serverError, setServerError] = useState<string | null>(null);
   const [claimMessage, setClaimMessage] = useState<string | null>(null);
@@ -44,8 +40,7 @@ export default function AccountRegisterPage() {
     // Awaited so anything wishlisted as a guest before registering shows up immediately once the
     // new account is created, rather than after a delayed background sync.
     await mergeGuestWishlist();
-    queryClient.invalidateQueries({ queryKey: ["wishlist"] });
-    router.replace("/account");
+    enterSignedIn();
   }
 
   async function onSubmit(values: CustomerRegisterInput) {

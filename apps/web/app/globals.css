@@ -151,6 +151,7 @@
   .font-display {
     font-weight: var(--font-display-weight);
     letter-spacing: var(--font-display-tracking);
+    font-stretch: var(--font-display-stretch);
   }
   /* Small label: "SOLD OUT", "QTY", accordion and filter headings. Size and color stay with the call site. */
   .ui-caps {
@@ -175,6 +176,25 @@
     font-size: var(--page-title-size);
     line-height: var(--page-title-leading);
   }
+  /* The page frame every storefront and account page sits in (StorefrontPage): the same width, side gutters and
+     distance below the header everywhere, so moving between pages never shifts the edges the eye follows. Content
+     inside may be narrower, but always starts at this frame's left edge. */
+  .ui-page {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 80rem;
+    padding: 1.5rem 1rem 4rem;
+  }
+  @media (min-width: 640px) {
+    .ui-page {
+      padding: 2rem 1.5rem 5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .ui-page {
+      padding: 2.5rem 2rem 5rem;
+    }
+  }
   @media (min-width: 640px) {
     .ui-section-title {
       font-size: var(--section-title-size-sm);
@@ -195,6 +215,7 @@
     line-height: var(--product-title-leading);
     font-weight: var(--product-title-weight);
     letter-spacing: var(--product-title-tracking);
+    font-stretch: var(--product-title-stretch);
   }
 
   /* ── Product card frame ─────────────────────────────────────────────────────────────────── */
@@ -217,17 +238,6 @@
   }
   .ui-art-on-light {
     display: var(--band-light-art);
-  }
-  /* Tile grid (category grid): up to 4 equal columns, fewer as the row narrows — each column at least
-     --tile-min wide — and a short catalog stays centred instead of leaving empty columns. The gap and the column
-     arithmetic read the same variable, so the count can never drift with the root font size. */
-  .ui-tile-grid {
-    --tile-gap: 1rem;
-    --tile-min: 9.5rem;
-    display: grid;
-    gap: var(--tile-gap);
-    grid-template-columns: repeat(auto-fit, minmax(0, max(var(--tile-min), (100% - 3 * var(--tile-gap)) / 4)));
-    justify-content: center;
   }
   /* A category tile's caption: over the photograph (absolute, filling the tile so its scrim rises from the bottom) or
      below it (static) — the theme decides. */
@@ -277,6 +287,57 @@
   .ui-hero-secondary {
     border-radius: var(--control-radius);
     box-shadow: inset 0 0 0 1px var(--hero-secondary-ring);
+  }
+
+  /* Pointed (two-centred) arch — the mihrab preset's frame for photography (components/storefront/presets/mihrab/arch.tsx).
+     The mask scales with the box, so arches are drawn on 4:5 or taller frames. */
+  .ui-arch {
+    --arch-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 125' preserveAspectRatio='none'%3E%3Cpath d='M0 125V46C0 22 22 6 50 0c28 6 50 22 50 46v79z'/%3E%3C/svg%3E");
+    -webkit-mask: var(--arch-mask) center / 100% 100% no-repeat;
+    mask: var(--arch-mask) center / 100% 100% no-repeat;
+  }
+
+  /* The hero's stone outline draws itself in once, on first paint (the preset's single moment of motion). */
+  .ui-arch-draw .ui-arch-outline path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: arch-draw 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.25s forwards;
+  }
+  @keyframes arch-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+  /* Loading: the arch traces itself, over and over. */
+  .ui-arch-trace path {
+    stroke-dasharray: 1;
+    animation: arch-trace 1.8s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  }
+  @keyframes arch-trace {
+    0% {
+      stroke-dashoffset: 1;
+    }
+    55% {
+      stroke-dashoffset: 0;
+    }
+    100% {
+      stroke-dashoffset: -1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-arch-draw .ui-arch-outline path {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+    .ui-arch-trace path {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+  }
+  /* A faint lattice of arches for navy bands. */
+  .ui-arch-lattice {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='64' viewBox='0 0 48 64'%3E%3Cpath d='M4 64V30C4 18 13 9 24 4c11 5 20 14 20 26v34' fill='none' stroke='%23d6c1a2' stroke-opacity='.14' stroke-width='1'/%3E%3C/svg%3E");
+    background-size: 48px 64px;
   }
 
   /* Content tile (values grid): a hairline frame a theme may drop. */
@@ -441,11 +502,54 @@
     @apply bg-ink-950/20 backdrop-blur-[3px];
   }
 
+  /* ── Scroll reveal (components/storefront/reveal.tsx) ────────────────────────────────────────
+     A scroll-driven animation: the element rises into place while it enters the viewport. No JavaScript and nothing is
+     hidden up front — browsers without `animation-timeline` and readers who prefer reduced motion just see the content.
+     `--reveal-i` staggers siblings by shifting where in the entry their animation runs. */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      .ui-reveal {
+        animation: ui-reveal linear both;
+        animation-timeline: view();
+        animation-range: entry calc(var(--reveal-i, 0) * 2%) entry calc(25% + var(--reveal-i, 0) * 2%);
+      }
+    }
+  }
+
+  /* The storefront header (components/storefront/header-shell.tsx): flat at the top of the page, its edge shadow once
+     the page has scrolled under it. It always stays in view; `--sticky-top` is where elements pinned under it sit
+     (`top-[var(--sticky-top)]`). */
+  .ui-site-header:not([data-scrolled]) .ui-header-bar {
+    box-shadow: none;
+  }
+  :root {
+    --sticky-top: 4rem;
+  }
+  @media (min-width: 1024px) {
+    :root {
+      --sticky-top: 4.5rem;
+    }
+  }
+
+  /* A horizontal product rail's track: scrolls by swipe, trackpad or the arrow buttons, without a visible scrollbar. */
+  .ui-rail {
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+  .ui-rail::-webkit-scrollbar {
+    display: none;
+  }
+
   /* ── Loading ────────────────────────────────────────────────────────────────────────────── */
 
-  /* Shimmering placeholder block. Size it with utilities (h-4 w-1/2 …). */
+  /* Shimmering placeholder block. Size it with utilities (h-4 w-1/2 …). It stays invisible for its first 0.3s: when the
+     content arrives sooner (the usual case) the shopper never sees a loading state at all; only a genuinely slow load
+     fades the placeholder in. Its box is there from the start, so nothing shifts either way. */
   .ui-skeleton {
-    @apply animate-shimmer rounded-md;
+    @apply rounded-md;
+    animation:
+      shimmer 1.6s linear infinite,
+      ui-appear 0.2s ease-out 0.3s both;
     background-image: linear-gradient(
       90deg,
       rgb(var(--color-ink-100)) 0%,
@@ -453,6 +557,18 @@
       rgb(var(--color-ink-100)) 100%
     );
     background-size: 200% 100%;
+  }
+  /* The same hold-back for any other loading indicator (spinner, "Loading…" line). */
+  .ui-delayed {
+    animation: ui-appear 0.2s ease-out 0.3s both;
+  }
+  @keyframes ui-appear {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 }
 
@@ -513,4 +629,15 @@
 .tiptap-content p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   @apply pointer-events-none float-left h-0 text-ink-300;
+}
+
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

@@ -1,12 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { PackageSearch } from "lucide-react";
+import { MessageCircle, PackageSearch, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trackOrder } from "@/lib/api/orders";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { ApiError } from "@/lib/api-client";
 
 export default function TrackOrderPage() {
@@ -31,34 +33,65 @@ export default function TrackOrderPage() {
   }
 
   return (
-    <div className="mx-auto max-w-sm px-4 py-24 sm:px-6 lg:px-8">
-      <div className="rounded-2xl border border-ink-100 bg-cream-50 p-8">
-        <span className="glossy mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-brass-100 text-brass-600">
-          <PackageSearch size={20} />
-        </span>
-        <h1 className="mb-2 font-display ui-page-title text-ink-900">Track your order</h1>
-        <p className="mb-6 text-sm text-ink-500">Enter your order number and phone to check its status.</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="orderNumber">Order number</Label>
-            <Input
-              id="orderNumber"
-              value={orderNumber}
-              onChange={(e) => setOrderNumber(e.target.value)}
-              placeholder="ORD-20260804-XXXXXX"
-              required
-            />
+    <StorefrontPage>
+      <StorefrontPageHeader breadcrumb={[{ name: "Track your order" }]} title="Track your order" description="Enter your order number and the phone number you ordered with." />
+      <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:gap-16">
+        <div className="rounded-2xl bg-surface p-6 shadow-sm ring-1 ring-inset ring-line-subtle sm:p-8">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="orderNumber">Order number</Label>
+              <Input id="orderNumber" value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="ORD-20260804-XXXXXX" required />
+            </div>
+            <div>
+              <Label htmlFor="phone">Phone number</Label>
+              <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" required />
+            </div>
+            {error && <p className="text-sm text-danger-600">{error}</p>}
+            <Button type="submit" variant="brass" className="w-full" disabled={checking}>
+              {checking ? "Checking…" : "Track order"}
+            </Button>
+          </form>
+        </div>
+        <aside aria-label="Help with tracking" className="space-y-6 text-sm text-ink-600 lg:pt-2">
+          <div className="flex gap-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+              <PackageSearch size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-medium text-ink-900">Where is my order number?</p>
+              <p className="mt-0.5">It&rsquo;s in the confirmation you got after ordering, and starts with ORD-.</p>
+            </div>
           </div>
-          <div>
-            <Label htmlFor="phone">Phone number</Label>
-            <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" required />
+          <div className="flex gap-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+              <UserRound size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-medium text-ink-900">Have an account?</p>
+              <p className="mt-0.5">
+                <Link href="/account/orders" className="font-medium text-ink-900 underline underline-offset-2">
+                  Your orders
+                </Link>{" "}
+                shows every order and where it is, without typing anything.
+              </p>
+            </div>
           </div>
-          {error && <p className="text-sm text-danger-600">{error}</p>}
-          <Button type="submit" variant="brass" className="w-full" disabled={checking}>
-            {checking ? "Checking…" : "Track order"}
-          </Button>
-        </form>
+          <div className="flex gap-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-muted text-ink-900">
+              <MessageCircle size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-medium text-ink-900">Need a hand?</p>
+              <p className="mt-0.5">
+                <Link href="/contact" className="font-medium text-ink-900 underline underline-offset-2">
+                  Contact us
+                </Link>{" "}
+                and we&rsquo;ll check it for you.
+              </p>
+            </div>
+          </div>
+        </aside>
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

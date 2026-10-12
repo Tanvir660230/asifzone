@@ -17,6 +17,7 @@ import { RecentlyViewedCarousel } from "@/components/storefront/recently-viewed-
 import { AccountHomeSkeleton } from "@/components/account/account-skeleton";
 import { MemberCard } from "@/components/account/member-card";
 import { ActiveOrder, FirstOrderWelcome } from "@/components/account/active-order";
+import { InstallAppCard } from "@/components/storefront/install-app-card";
 import { GroupedList, ListRow, OrderThumb, RowIcon, SectionHeading } from "@/components/account/account-ui";
 
 /** The account home (docs/ACCOUNT_HOME.md): a greeting that says what's happening, the order on its way, the member card,
@@ -75,6 +76,7 @@ export default function AccountHomePage() {
         <div className="space-y-10 lg:order-3">
           <SetupList customer={customer} />
           <DeliveringTo summary={summary} />
+          <InstallAppCard />
         </div>
       </div>
     </div>
@@ -84,7 +86,7 @@ export default function AccountHomePage() {
 function Greeting({ greeting, name, line }: { greeting: string | null; name: string; line: string | null }) {
   return (
     <header className="max-w-3xl">
-      <h1 className="text-balance font-display text-[2.5rem] leading-[1.05] tracking-[-0.025em] text-fg sm:text-[3.25rem] lg:text-[3.75rem]">
+      <h1 className="text-balance font-display ui-page-title text-ink-900">
         {/* "Hello" until the clock is read on the client, so the first paint never flips between greetings. */}
         {greeting ?? "Hello"}, {firstName(name)}.
       </h1>

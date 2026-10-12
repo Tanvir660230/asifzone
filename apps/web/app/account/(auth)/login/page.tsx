@@ -4,8 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { customerLoginSchema, type CustomerLoginInput, type Customer } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +15,7 @@ import { GoogleButton } from "@/components/account/google-button";
 import { PhoneOtpForm } from "@/components/account/phone-otp-form";
 import { OrDivider } from "@/components/account/or-divider";
 import { AuthModeToggle } from "@/components/account/auth-mode-toggle";
-import { loginCustomer, loginWithGoogle } from "@/lib/customer-auth";
+import { enterSignedIn, loginCustomer, loginWithGoogle } from "@/lib/customer-auth";
 import { mergeGuestWishlist } from "@/lib/wishlist-merge";
 import { ApiError } from "@/lib/api-client";
 import { publicRuntimeConfig } from "@/lib/runtime-config";
@@ -32,9 +31,7 @@ export default function AccountLoginPage() {
 type Mode = "email" | "phone";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("email");
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -51,8 +48,7 @@ function LoginForm() {
     // Awaited so a redirect straight back to /wishlist (e.g. from the "sign in" prompt on that
     // page) shows the merged items immediately rather than a stale, still-empty server list.
     await mergeGuestWishlist();
-    queryClient.invalidateQueries({ queryKey: ["wishlist"] });
-    router.replace(searchParams.get("next") ?? "/account");
+    enterSignedIn(searchParams.get("next"));
   }
 
   async function onSubmit(values: CustomerLoginInput) {

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ShoppingBag } from "lucide-react";
 import { useCartCount } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
+import { CountBadge, bagLabel } from "./count-badge";
 
 export function CartIcon() {
   const count = useCartCount();
@@ -16,15 +17,11 @@ export function CartIcon() {
     <button
       type="button"
       onClick={openDrawer}
-      aria-label="Open cart"
+      aria-label={bagLabel("Open cart", mounted ? count : 0)}
       className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-700 transition-all duration-200 ease-smooth hover:bg-ink-100 hover:text-brass-500"
     >
       <ShoppingBag size={19} />
-      {mounted && count > 0 && (
-        <span className="absolute right-1 top-1 flex h-4 min-w-4 animate-modal-in items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900 shadow-sm">
-          {count}
-        </span>
-      )}
+      {mounted && count > 0 && <CountBadge count={count} className="right-0.5 top-0.5" />}
     </button>
   );
 }

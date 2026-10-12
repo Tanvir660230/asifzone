@@ -4,8 +4,7 @@ import { Truck, MapPin, Wallet, PackageCheck, Ban } from "lucide-react";
 import { BD_DELIVERY_TIME_TEXT, dayRange, storePolicy, type StorePolicy } from "@clothing-brand/shared";
 import { getSiteSettings } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
-import { PageHero } from "@/components/storefront/page-hero";
-import { Breadcrumb } from "@/components/storefront/breadcrumb";
+import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 
 // Now does a real server-side settings fetch for the og:image fallback below — without this,
 // `next build` would try to statically prerender the page and fail (the api container isn't
@@ -88,26 +87,20 @@ export default async function ShippingReturnsPage() {
   const { settings } = await getSiteSettings();
   const policy = storePolicy(settings);
   return (
-    <div>
-      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 lg:px-8">
-        <Breadcrumb trail={[{ name: "Shipping & Returns" }]} />
-      </div>
-      <PageHero
-        eyebrow="Delivery & aftercare"
+    <StorefrontPage>
+      <StorefrontPageHeader
+        breadcrumb={[{ name: "Shipping & Returns" }]}
         title="Shipping & Returns"
         description="What to expect after you check out — from dispatch to doorstep, and how to send something back if it's not quite right."
       />
 
-      <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+      <div className="max-w-4xl">
         <section className="mb-16">
           <h2 className="mb-6 text-xs ui-caps tracking-[calc(0.2em*var(--caps-spread))] text-ink-400">Shipping</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
             {shippingFacts(policy).map((fact) => (
               <div key={fact.title} className="rounded-2xl border border-ink-100 bg-cream-50 p-6">
-                <span
-                  aria-hidden="true"
-                  className="glossy mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-brass-100 text-brass-600"
-                >
+                <span aria-hidden="true" className="glossy mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-brass-100 text-brass-600">
                   <fact.icon size={18} />
                 </span>
                 <h3 className="mb-1.5 font-display text-base text-ink-900">{fact.title}</h3>
@@ -137,9 +130,7 @@ export default async function ShippingReturnsPage() {
           <ol className="mb-6 space-y-5">
             {returnSteps(policy).map((s) => (
               <li key={s.step} className="flex gap-4">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-900 text-sm font-medium text-cream-50">
-                  {s.step}
-                </span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink-900 text-sm font-medium text-cream-50">{s.step}</span>
                 <div>
                   <h3 className="mb-1 text-sm font-medium text-ink-900">{s.title}</h3>
                   <p className="text-sm leading-relaxed text-ink-500">{s.body}</p>
@@ -151,12 +142,11 @@ export default async function ShippingReturnsPage() {
           <div className="flex items-start gap-3 rounded-2xl border border-dashed border-ink-200 p-5">
             <Ban size={18} className="mt-0.5 shrink-0 text-ink-400" />
             <p className="text-sm leading-relaxed text-ink-500">
-              Items marked <strong className="font-medium text-ink-700">final sale</strong> are not eligible for return
-              or exchange.
+              Items marked <strong className="font-medium text-ink-700">final sale</strong> are not eligible for return or exchange.
             </p>
           </div>
         </section>
       </div>
-    </div>
+    </StorefrontPage>
   );
 }

@@ -46,6 +46,8 @@ const instrumentSans = Instrument_Sans({
   display: "swap",
   preload: false,
   weight: "variable",
+  // Width axis: a theme may set its headings condensed (`--font-display-stretch`).
+  axes: ["wdth"],
 });
 
 // Covers Bengali text/glyphs (e.g. the ৳ sign) that Inter and Playfair Display don't,
@@ -64,7 +66,8 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(siteUrl),
     title: { default: settings.storeName, template: `%s | ${settings.storeName}` },
     description: settings.tagline ?? undefined,
-    alternates: { canonical: siteUrl },
+    // No `alternates.canonical` here: every page inherits the root's metadata, so a canonical set here pointed cart,
+    // checkout, sign-in and every other page without its own at the homepage. Indexable pages set their own.
     // Next.js does not merge the app/icon.png + apple-icon.png convention files into a segment
     // that also defines generateMetadata, so the fallback below is spelled out explicitly rather
     // than left to that (non-)merge — otherwise an unconfigured favicon would render no <link

@@ -1,19 +1,7 @@
-"use client";
-
 import type { ReactNode } from "react";
-import { motion } from "framer-motion";
 import type { Product } from "@clothing-brand/shared";
 import { ProductCard } from "./product-card";
-
-const container = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.06 } },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
-};
+import { Reveal } from "./reveal";
 
 interface ProductGridProps {
   products: Product[];
@@ -33,18 +21,13 @@ export function ProductGrid({ products, emptyState, priority }: ProductGridProps
   }
 
   return (
-    <motion.div
-      variants={container}
-      initial="hidden"
-      whileInView="show"
-      viewport={{ once: true, margin: "-60px" }}
-      className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-4"
-    >
+    <div className="grid grid-cols-2 gap-x-4 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
       {products.map((product, i) => (
-        <motion.div key={product.id} variants={item}>
+        // Staggered within a row (the index restarts every 4), so each row settles left to right as it scrolls in.
+        <Reveal key={product.id} index={i % 4}>
           <ProductCard product={product} priority={priority && i < 4} />
-        </motion.div>
+        </Reveal>
       ))}
-    </motion.div>
+    </div>
   );
 }

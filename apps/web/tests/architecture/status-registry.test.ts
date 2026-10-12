@@ -65,14 +65,15 @@ const OLD_PAYMENT_LABEL: Record<string, string> = {
   REFUNDED: "Refunded",
   CREDITED: "Store credit",
 };
+// 700 steps since the Orders contrast pass (2026-10-08): 11–12px payment words need 4.5:1 on white.
 const OLD_PAYMENT_TEXT: Record<string, string> = {
-  UNPAID: "text-warning-600",
-  PARTIALLY_PAID: "text-warning-600",
-  PAID: "text-success-600",
-  FAILED: "text-danger-600",
-  PARTIALLY_REFUNDED: "text-info-600",
+  UNPAID: "text-warning-700",
+  PARTIALLY_PAID: "text-warning-700",
+  PAID: "text-success-700",
+  FAILED: "text-danger-700",
+  PARTIALLY_REFUNDED: "text-info-700",
   REFUNDED: "text-ink-500",
-  CREDITED: "text-info-600",
+  CREDITED: "text-info-700",
 };
 const OLD_PRODUCT: Record<string, [string, string]> = {
   DRAFT: ["Draft", "neutral"],

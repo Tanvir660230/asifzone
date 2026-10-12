@@ -14,7 +14,7 @@ const RELEVANCE_OPTION = { value: "relevance", label: "Relevance" };
 /** `hasQuery`: only the search page (with an actual `q`) has anything for "Relevance" to be
  * relevant to — a plain category browse doesn't get the option, and keeps defaulting to Newest
  * exactly as before. */
-export function SortSelect({ hasQuery = false }: { hasQuery?: boolean } = {}) {
+export function SortSelect({ hasQuery = false, className = "w-48" }: { hasQuery?: boolean; className?: string } = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -29,7 +29,7 @@ export function SortSelect({ hasQuery = false }: { hasQuery?: boolean } = {}) {
   }
 
   return (
-    <Select aria-label="Sort products" value={current} onChange={(e) => handleChange(e.target.value)} className="w-48">
+    <Select aria-label="Sort products" value={current} onChange={(e) => handleChange(e.target.value)} className={className}>
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>
           {opt.label}

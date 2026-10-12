@@ -444,7 +444,7 @@ test.describe("product management system — the brief's acceptance tests", () =
     await expect(page.getByTestId("product-price")).toContainText("1,400"); // the variant's price override
 
     await page.getByRole("button", { name: "Add to Cart" }).first().click();
-    await expect(page.getByText(/added to cart/i).first()).toBeVisible();
+    await expect(page.getByText(/added to (cart|bag)/i).first()).toBeVisible();
 
     await page.goto("/cart");
     await expect(page.getByText(N.panjabi).first()).toBeVisible();

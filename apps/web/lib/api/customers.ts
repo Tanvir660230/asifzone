@@ -29,6 +29,11 @@ export function deleteAddress(id: string) {
   return apiFetch<void>(`/api/customers/me/addresses/${id}`, { method: "DELETE" });
 }
 
+/** The products this customer has received, latest delivery first (ids; load them with fetchProductsByIds). */
+export function getBuyAgainProductIds() {
+  return apiFetch<{ productIds: string[] }>("/api/customers/me/buy-again");
+}
+
 export function listMyOrders(params: { page?: number; pageSize?: number } = {}) {
   const query = new URLSearchParams();
   if (params.page) query.set("page", String(params.page));

@@ -43,6 +43,15 @@ export function loginCustomer(input: CustomerLoginInput) {
   return apiFetch<{ customer: Customer }>("/api/customers/login", { method: "POST", body: input });
 }
 
+/** After the session changes (signed in, signed up, account claimed): a full page load of `to`, so nothing the browser
+ * kept for the signed-out visitor survives — in particular the router's prefetched "/account → login" redirect, which a
+ * soft navigation could replay. `to` must be a path on this site (a `?next=` from the URL is never trusted beyond that);
+ * anything else goes to the account. */
+export function enterSignedIn(to?: string | null) {
+  const path = to && to.startsWith("/") && !to.startsWith("//") ? to : "/account";
+  window.location.replace(path);
+}
+
 export function logoutCustomer() {
   return apiFetch<void>("/api/customers/logout", { method: "POST" });
 }

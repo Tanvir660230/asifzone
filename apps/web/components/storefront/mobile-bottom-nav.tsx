@@ -5,8 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Heart, ShoppingBag, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useKeyboardFlag } from "@/hooks/use-keyboard-flag";
 import { useCartCount } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
+import { CountBadge, bagLabel } from "./count-badge";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
@@ -22,25 +24,28 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   const count = useCartCount();
   const openCartDrawer = useCartDrawerStore((s) => s.open);
+  // Mounted once per storefront page (this bar is in the shell): fixed bottom bars step aside while the on-screen
+  // keyboard is open, so a checkout field being typed into isn't hidden behind them.
+  useKeyboardFlag();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // Checkout is a focused page: nothing over the form but the form.
+  if (pathname.startsWith("/checkout")) return null;
+
   return (
     <nav
+      data-hide-on-keyboard
       className="glass fixed inset-x-0 bottom-0 z-40 border-t border-ink-200 pb-[env(safe-area-inset-bottom)] lg:hidden"
       aria-label="Primary"
     >
       <div className="grid h-16 grid-cols-4">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
-          const badge = href === "/cart" && mounted && count > 0 && (
-            <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brass-400 px-1 text-[10px] font-medium text-ink-900 shadow-sm">
-              {count}
-            </span>
-          );
+          const badge = href === "/cart" && mounted && count > 0 && <CountBadge count={count} className="-right-2.5 -top-1.5" />;
           const itemClassName = cn(
-            "flex flex-col items-center justify-center gap-1 text-[11px] transition-colors duration-150 ease-smooth",
-            active ? "text-ink-900" : "text-ink-500 hover:text-ink-700",
+            "flex flex-col items-center justify-center gap-1 text-xs transition-colors duration-150 ease-smooth",
+            active ? "font-medium text-ink-900" : "text-ink-600 hover:text-ink-900",
           );
 
           // The Bag tab opens the cart drawer in place, rather than navigating — same behavior as
@@ -51,7 +56,7 @@ export function MobileBottomNav() {
                 key={href}
                 type="button"
                 onClick={openCartDrawer}
-                aria-label={label}
+                aria-label={bagLabel(label, mounted ? count : 0)}
                 className={itemClassName}
               >
                 <span className="relative">

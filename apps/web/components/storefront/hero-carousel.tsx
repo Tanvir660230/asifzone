@@ -143,7 +143,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
       {banner.linkUrl ? <Link href={banner.linkUrl}>{slide}</Link> : slide}
 
       {banners.length > 1 && (
-        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-2">
+        <div className="glass absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-[var(--chip-radius)] px-3 py-2">
           {banners.map((b, i) => (
             <button
               key={b.id}
@@ -152,7 +152,7 @@ export function HeroCarousel({ banners }: { banners: Banner[] }) {
               aria-current={i === index}
               className={cn(
                 "h-1.5 rounded-full transition-all duration-300 ease-smooth",
-                i === index ? "w-6 bg-brass-400" : "w-1.5 bg-cream-50/60 hover:bg-cream-50",
+                i === index ? "w-6 bg-cream-50" : "w-1.5 bg-cream-50/50 hover:bg-cream-50/80",
               )}
             />
           ))}

@@ -12,9 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { AccountPageSkeleton } from "@/components/account/account-skeleton";
 import { listMyOrders } from "@/lib/api/customers";
+import { MY_ORDERS_PAGE_SIZE } from "@/components/account/account-prefetch";
 import { formatPrice, formatStoreDate, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 
-const PAGE_SIZE = 20;
+// Shared with the account prefetch, so the tab opens on data already loaded.
+const PAGE_SIZE = MY_ORDERS_PAGE_SIZE;
 const OPEN: Order["status"][] = ["PENDING", "CONFIRMED", "PROCESSING", "PACKED", "SHIPPED"];
 
 type Filter = "all" | "open" | "done";

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/format";
@@ -37,6 +38,16 @@ export function StickyAddToCart({
   const { addToCart, buyNow } = useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, product });
   const price = variantDisplayPrice(product, selectedVariant?.id).price;
 
+  // Tells other bottom-docked elements (the contact button) that this bar is on screen, so they clear it only while it
+  // actually is: <html data-sticky-atc>.
+  useEffect(() => {
+    if (!visible) return;
+    document.documentElement.dataset.stickyAtc = "";
+    return () => {
+      delete document.documentElement.dataset.stickyAtc;
+    };
+  }, [visible]);
+
   if (!visible) return null;
 
   // Genuinely out of stock is a hard stop; a not-yet-finished selection isn't — tapping it opens the options popup.
@@ -53,7 +64,7 @@ export function StickyAddToCart({
   }
 
   return (
-    <div className="glass fixed inset-x-0 bottom-16 z-40 animate-fade-in border-t border-ink-200 shadow-floatLg lg:hidden">
+    <div data-testid="sticky-add-to-cart" className="glass fixed inset-x-0 bottom-[var(--dock-tab-bar)] z-40 animate-fade-in border-t border-ink-200 shadow-floatLg lg:hidden">
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
         <p className="shrink-0 text-sm font-semibold text-ink-900">{formatPrice(price)}</p>
         <div className="flex flex-1 gap-2">

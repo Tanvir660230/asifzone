@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { useCartStore } from "@/store/cart";
@@ -27,7 +26,6 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
   const router = useRouter();
   const addItem = useCartStore((s) => s.addItem);
   const setExpressItem = useExpressCheckoutStore((s) => s.setItem);
-  const [justAdded, setJustAdded] = useState(false);
 
   // `variant` overrides the hook's selectedVariant — the options popup acts on the variant just chosen in it, before
   // that choice has flowed back into the page's state.
@@ -54,8 +52,6 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     // The ad-pixel AddToCart event fires inside addItem itself, with the quantity the cart actually gained.
     addItem(item, quantity);
     trackFunnelEvent("ADD_TO_CART", { productId: item.productId, variantId: item.variantId });
-    setJustAdded(true);
-    setTimeout(() => setJustAdded(false), 2500);
   }
 
   function buyNow(quantity: number, variant?: ProductVariant) {
@@ -69,5 +65,5 @@ export function useAddToCart({ selectedVariant, productId, productSlug, productN
     router.push("/checkout");
   }
 
-  return { addToCart, buyNow, justAdded };
+  return { addToCart, buyNow };
 }
