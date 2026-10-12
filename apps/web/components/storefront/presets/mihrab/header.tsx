@@ -5,6 +5,7 @@ import { StoreLogoImage } from "@/components/store-logo-image";
 import { resolveImageUrl } from "@/lib/image-url";
 import { MegaMenu } from "../../mega-menu";
 import { MihrabBagButton, MihrabMenu, MihrabSearchField, MihrabSearchIcon } from "./header-actions";
+import { MihrabPromiseStrip } from "./promise-strip";
 
 interface HeaderProps {
   categories: CategoryTreeNode[];
@@ -29,17 +30,7 @@ export function MihrabHeader({ categories, settings }: HeaderProps) {
 
   return (
     <>
-      {promises.length > 0 && (
-        <div className="bg-ink-950 text-cream-100">
-          <ul className="mx-auto flex h-9 max-w-7xl items-center justify-center gap-10 px-4 text-xs sm:px-6 lg:px-8">
-            {promises.map((promise, index) => (
-              <li key={promise} className={index > 0 ? "hidden md:block" : undefined}>
-                {promise}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {promises.length > 0 && <MihrabPromiseStrip promises={promises} />}
       <header className="sticky top-0 z-30 border-b border-line bg-canvas">
         {/* Phones */}
         <div className="flex h-16 items-center justify-between gap-2 px-4 lg:hidden">

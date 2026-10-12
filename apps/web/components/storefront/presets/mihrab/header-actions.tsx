@@ -114,7 +114,7 @@ export function MihrabMenu({ categories }: { categories: CategoryTreeNode[] }) {
                   return (
                     <li key={cat.id} className="border-b border-line">
                       <div className="flex items-center justify-between">
-                        <Link href={`/category/${cat.slug}`} onClick={close} className="flex-1 py-4 font-display text-[1.75rem] leading-none text-fg">
+                        <Link href={`/category/${cat.slug}`} onClick={close} className="flex-1 py-4 font-display text-[1.5rem] leading-tight text-fg">
                           {cat.name}
                         </Link>
                         {cat.children.length > 0 && (

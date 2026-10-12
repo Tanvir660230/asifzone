@@ -59,15 +59,15 @@ describe("brand themes", () => {
     }
   });
 
-  it("gives Nasihamart its own identity: navy / ivory / sand, one grotesk in two widths, square controls, the mihrab preset", () => {
+  it("gives Nasihamart its own identity: navy / ivory / sand, the logo's serif for headings, square controls, the mihrab preset", () => {
     const n = tokens.themes.nasihamart!.cssVariables;
     expect(n["--color-ink-900"]).toBe("11 31 51"); // navy #0B1F33
     expect(n["--color-cream-100"]).toBe("248 246 241"); // ivory #F8F6F1
     expect(n["--color-cream-200"]).toBe("238 231 219"); // sand #EEE7DB
-    // No serif in the interface: headings are the body grotesk, condensed.
-    expect(n["--font-display-family"]).toBe("var(--font-grotesk)");
+    // Headings in Newsreader (the wordmark's serif, not Asif Zone's Playfair), everything else in the grotesk.
+    expect(n["--font-display-family"]).toBe("var(--font-editorial)");
+    expect(n["--product-title-family"]).toContain("var(--font-display-family)");
     expect(n["--font-body-family"]).toBe("var(--font-grotesk)");
-    expect(n["--font-display-stretch"]).toBe("78%");
     for (const name of ["--control-radius", "--chip-radius", "--swatch-radius", "--fab-radius"]) {
       expect(n[name], name).not.toBe(tokens.cssVariables[name]);
     }

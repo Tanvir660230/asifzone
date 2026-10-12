@@ -46,8 +46,6 @@ const instrumentSans = Instrument_Sans({
   display: "swap",
   preload: false,
   weight: "variable",
-  // Width axis: a theme may set its headings condensed (`--font-display-stretch`).
-  axes: ["wdth"],
 });
 
 // Covers Bengali text/glyphs (e.g. the ৳ sign) that Inter and Playfair Display don't,
