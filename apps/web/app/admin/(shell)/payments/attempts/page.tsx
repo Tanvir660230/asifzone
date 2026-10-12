@@ -75,7 +75,7 @@ export default function PaymentAttemptsPage() {
 
   return (
     <div>
-      <PageHeader title="Online attempts" description="Every online checkout with SSLCommerz or EPS — paid, failed or abandoned — even when no order was created." />
+      <PageHeader title="Online checkouts" description="Every online checkout with SSLCommerz or EPS — paid, failed or abandoned — even when no order was created." />
       <ModuleTabs />
       <div className="space-y-3">
         <FilterBar

@@ -52,7 +52,8 @@ export async function financeAlerts() {
   const add = (a: Omit<FinanceAlert, "amount"> & { amount?: number | null }) => { if (a.count > 0) alerts.push({ amount: null, ...a }); };
 
   const stale = new Date(Date.now() - STALE_EVENT_MS);
-  const [failedEvents, waitingEvents, approvals, exceptions, readyToClose, checkRuns, periods] = await Promise.all([
+  const [openingBatch, failedEvents, waitingEvents, approvals, exceptions, readyToClose, checkRuns, periods] = await Promise.all([
+    prisma.openingBalanceBatch.findUnique({ where: { businessId: business.id }, select: { status: true } }),
     prisma.financialEvent.count({ where: { businessId: business.id, status: "FAILED" } }),
     prisma.financialEvent.count({ where: { businessId: business.id, status: "RECEIVED", receivedAt: { lt: stale } } }),
     prisma.treasuryMovement.aggregate({ where: { businessId: business.id, status: "PENDING_APPROVAL" }, _count: { _all: true }, _sum: { amount: true } }),
@@ -62,8 +63,11 @@ export async function financeAlerts() {
     prisma.financialPeriod.findMany({ where: { businessId: business.id, status: { not: "CLOSED" }, endDate: { lt: day(addDays(today, -5)) } }, orderBy: { startDate: "asc" }, select: { startDate: true } }),
   ]);
 
-  add({ key: "events.failed", severity: "critical", title: "Financial events failed to post", detail: "These sales, receipts or stock movements are not in the books yet. Open them to see the error and retry.", count: failedEvents, href: "/admin/finance/sales", action: "Review events" });
-  add({ key: "events.waiting", severity: "warning", title: "Financial events waiting to post", detail: "Received more than 15 minutes ago and still not posted.", count: waitingEvents, href: "/admin/finance/sales", action: "Review events" });
+  // Until the opening balances are posted the books record nothing — every other finance page reads empty.
+  if (!business.openingDate) add({ key: "books.not_started", severity: "critical", title: "The books haven't started", detail: "Choose the date your books start — nothing is recorded in Finance until then.", count: 1, href: "/admin/finance/opening", action: "Start the books" });
+  else if (openingBatch?.status !== "POSTED") add({ key: "books.not_started", severity: "warning", title: "Opening balances not posted", detail: `Books start on ${business.openingDate}. Enter what you had and owed that day, then post it.`, count: 1, href: "/admin/finance/opening", action: "Finish starting the books" });
+  add({ key: "events.failed", severity: "critical", title: "Financial events failed to post", detail: "These sales, receipts or stock movements are not in the books yet. Open them to see the error and retry.", count: failedEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
+  add({ key: "events.waiting", severity: "warning", title: "Financial events waiting to post", detail: "Received more than 15 minutes ago and still not posted.", count: waitingEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
 
   const labels = new Map<string, string>(listReconciliationChecks().map((c) => [c.key, c.label]));
   const differing = checkRuns.filter((r) => r.status === "DIFFERENCE" || r.status === "ERROR");
@@ -161,7 +165,7 @@ export async function monthEndChecklist(q: { month?: string } = {}) {
     payrollStartMonth(business.id, business.openingDate, today),
   ]);
 
-  step({ key: "events", label: "Every financial event is posted", status: events ? "TODO" : "DONE", detail: events ? `${plural(events, "event")} failed or still waiting.` : "Sales, receipts and stock movements are all in the books.", href: "/admin/finance/sales" });
+  step({ key: "events", label: "Every financial event is posted", status: events ? "TODO" : "DONE", detail: events ? `${plural(events, "event")} failed or still waiting.` : "Sales, receipts and stock movements are all in the books.", href: "/admin/finance/activity?view=events" });
   step({ key: "approvals", label: "Money movements approved or rejected", status: approvals ? "TODO" : "DONE", detail: approvals ? `${plural(approvals, "movement")} dated this month waiting for approval.` : "Nothing waiting.", href: "/admin/finance/accounts" });
 
   const unpaid: string[] = [];

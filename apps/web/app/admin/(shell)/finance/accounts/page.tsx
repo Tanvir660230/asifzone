@@ -35,6 +35,7 @@ export default function FinanceAccountsPage() {
   useCreateParam("deposit", () => setDialog("DEPOSIT"));
   useCreateParam("withdrawal", () => setDialog("WITHDRAWAL"));
   useCreateParam("transfer", () => setDialog("TRANSFER"));
+  useCreateParam("account", () => setDialog("ACCOUNT"));
 
   const decide = useMutation({
     mutationFn: async ({ id, approve }: { id: string; approve: boolean }) => {

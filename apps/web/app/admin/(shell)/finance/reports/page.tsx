@@ -49,7 +49,7 @@ const REPORTS: Record<ReportId, { label: string; capability: Capability; period:
       columns: [{ key: "number", label: "Receipt", format: "text" }, { key: "date", label: "Date", format: "text" }, { key: "ageDays", label: "Days", format: "int" }, { key: "supplier", label: "Supplier", format: "text" }, { key: "sku", label: "SKU", format: "text" }, { key: "unbilledQty", label: "Units", format: "int" }, { key: "unbilled", label: "Not billed", format: "money" }],
       rows: arr(d.open),
       totals: [{ label: "0–30 days", value: num(obj(d.buckets).d0_30) }, { label: "31–60", value: num(obj(d.buckets).d31_60) }, { label: "61–90", value: num(obj(d.buckets).d61_90) }, { label: "90+", value: num(obj(d.buckets).d90_plus) }, { label: "Returned, not credited", value: -num(d.returnedNotCredited) }, { label: "Goods received not invoiced", value: num(d.grni) }],
-      tie: "The last figure equals the GRNI account (Finance checks → Goods received not invoiced).",
+      tie: "The last figure equals the GRNI account (Books health check → Goods received not invoiced).",
     }),
   },
   "price-variance": {
@@ -67,7 +67,7 @@ const REPORTS: Record<ReportId, { label: string; capability: Capability; period:
       columns: [{ key: "sku", label: "SKU", format: "text" }, { key: "name", label: "Item", format: "text" }, { key: "stock", label: "In stock", format: "int" }, { key: "valuedQty", label: "Valued", format: "int" }, { key: "unvaluedQty", label: "No cost", format: "int" }, { key: "avgUnitCost", label: "Average", format: "money" }, { key: "value", label: "Value", format: "money" }],
       rows: arr(d.items),
       totals: [{ label: "Finished goods", value: num(obj(d.totals).finishedGoods) }, { label: "Materials", value: num(obj(d.totals).materials) }, { label: "Inventory value", value: num(obj(d.totals).value) }, { label: "Items with missing cost", value: num(obj(d.totals).incomplete), format: "int" }],
-      tie: "The inventory value is the valuation side of Finance checks → Inventory account = valuation.",
+      tie: "The inventory value is the valuation side of Books health check → Inventory account = valuation.",
     }),
   },
   "cost-adjustments": {
@@ -85,7 +85,7 @@ const REPORTS: Record<ReportId, { label: string; capability: Capability; period:
       columns: [{ key: "date", label: "Date", format: "text" }, { key: "supplier", label: "Supplier", format: "text" }, { key: "from", label: "Paid from", format: "text" }, { key: "reference", label: "Reference", format: "text" }, { key: "status", label: "Status", format: "text" }, { key: "amount", label: "Amount", format: "money" }, { key: "allocated", label: "Settled bills", format: "money" }, { key: "advance", label: "Advance", format: "money" }],
       rows: arr(d.items).map((i) => ({ ...i, status: String(i.status).toLowerCase().replace("_", " ") })),
       totals: [{ label: "Paid (posted)", value: num(obj(d.totals).paid) }, { label: "Payments", value: num(obj(d.totals).count), format: "int" }],
-      tie: "Posted payments reduce the payables account (Finance checks → Payables = supplier invoices).",
+      tie: "Posted payments reduce the payables account (Books health check → Payables = supplier invoices).",
     }),
   },
 };

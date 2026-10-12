@@ -78,7 +78,7 @@ export default function PurchaseOrderPage() {
         {can("purchasing.manage") && o.status === "DRAFT" && <Button size="sm" variant="ghost" loading={remove.isPending} onClick={() => remove.mutate()}>Delete draft</Button>}
       </div>
       {receivable && overview.data && !overview.data.costingActive && (
-        <Alert variant="info" title="Receipts post after the valuation cutover">You can prepare a receipt now; posting it waits until inventory costing is switched on (Finance → Valuation cutover).</Alert>
+        <Alert variant="info" title="Receipts post after the valuation cutover">You can prepare a receipt now; posting it waits until inventory costing is switched on (Finance → Setup & checks → Opening stock value).</Alert>
       )}
       {o.closedReason && <p className="text-sm text-ink-600">{o.status === "CANCELLED" ? "Cancelled" : "Closed"}: {o.closedReason}</p>}
 
