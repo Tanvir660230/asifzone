@@ -10,7 +10,7 @@ const OWNER = { email: process.env.SEED_ADMIN_EMAIL ?? "admin@example.com", pass
 const NAV = { timeout: 30_000 };
 
 test.describe.configure({ mode: "serial" });
-test.skip(({ browserName }) => browserName !== "chromium", "desktop Chromium only");
+test.skip(({ browserName, isMobile }) => browserName !== "chromium" || isMobile, "desktop Chromium only (phones show the group as tabs, not a side list)");
 
 async function login(browser: Browser): Promise<Page> {
   const page = await (await browser.newContext()).newPage();

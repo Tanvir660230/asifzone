@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { PERMISSIONS } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { ownerId, purgeFinanceTables } from "../../test-fixtures";
@@ -17,6 +17,11 @@ let OWNER: FinanceActor;
 beforeAll(async () => {
   await purgeFinanceTables();
   OWNER = { type: "ADMIN", adminId: await ownerId(), label: "owner@test", permissions: [...PERMISSIONS] };
+});
+
+// Leave no books behind: the e2e suite runs on this database next and starts its own books.
+afterAll(async () => {
+  await purgeFinanceTables();
 });
 
 const startAlert = async () => (await financeAlerts()).alerts.find((a) => a.key === "books.not_started");
