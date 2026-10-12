@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveX, Copy, FileSpreadsheet, ImageOff, LayoutGrid, List, MoreHorizontal, Package, Pencil, Plus, RotateCcw, Trash2, XCircle } from "lucide-react";
+import { ArchiveX, Copy, FileSpreadsheet, ImageOff, LayoutGrid, Link2, List, MoreHorizontal, Package, Pencil, Plus, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { PRODUCT_STATUSES, type Product, type ProductListExtras, type ProductStatus } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
@@ -33,6 +33,7 @@ import * as catalogApi from "@/lib/api/catalog";
 import { describeApiError } from "@/lib/api-client";
 import { PRODUCT_NEW_HREF, productEditHref } from "@/lib/admin-routes";
 import { formatCount, formatPrice, timeAgo } from "@/lib/format";
+import { landingPageUrl } from "@/lib/landing";
 import { cn } from "@/lib/utils";
 import { Thumbnail } from "@/components/admin/thumbnail";
 
@@ -242,6 +243,20 @@ export default function ProductsPage() {
     return [
       { label: "Edit", icon: Pencil, onClick: () => router.push(productEditHref(p.id)) },
       { label: "Duplicate", icon: Copy, onClick: () => setDuplicating({ id: p.id, name: p.name }) },
+      // The ad-ready order page (/lp/<slug>) — only a published product has one.
+      ...(p.status === "PUBLISHED"
+        ? [
+            {
+              label: "Copy landing page link",
+              icon: Link2,
+              onClick: () =>
+                navigator.clipboard.writeText(landingPageUrl(p.slug)).then(
+                  () => toast.success("Landing page link copied — paste it into your ad"),
+                  () => toast.error("Couldn't copy the link"),
+                ),
+            },
+          ]
+        : []),
       { label: "Move to Trash", icon: Trash2, destructive: true, onClick: async () => (await confirm(`Move "${p.name}" to Trash?`)) && remove.mutate(p.id) },
     ];
   }
