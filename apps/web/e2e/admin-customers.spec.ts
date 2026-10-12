@@ -13,10 +13,14 @@ test.describe("admin customer management", () => {
   });
 
   test("lists customers and opens a detail panel", async ({ page }) => {
-    const openMenu = page.getByRole("button", { name: /open menu/i });
-    if (await openMenu.isVisible()) await openMenu.click();
-
-    await page.getByRole("link", { name: "Customers" }).click();
+    // Phones reach every module through the tab bar's More sheet; desktop through the sidebar.
+    const more = page.getByRole("button", { name: "More navigation" });
+    if (await more.isVisible()) {
+      await more.click();
+      await page.getByRole("dialog", { name: "Menu" }).getByRole("link", { name: "Customers" }).click();
+    } else {
+      await page.getByRole("link", { name: "Customers" }).click();
+    }
     await expect(page).toHaveURL(/\/admin\/customers$/);
     await expect(page.getByRole("heading", { name: "Customers" })).toBeVisible();
 

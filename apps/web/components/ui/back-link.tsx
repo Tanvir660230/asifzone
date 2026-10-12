@@ -38,15 +38,17 @@ export function BackLink({ href, onClick, label }: BackLinkProps) {
     router.back();
   }
 
+  // data-back-link (on the outermost element): on phones the Store Console's navigation bar carries the back button
+  // instead (globals.css).
   const button = (
-    <Button type="button" variant="outline" size="sm" onClick={onClick}>
+    <Button type="button" variant="outline" size="sm" onClick={onClick} data-back-link={href ? undefined : ""}>
       <ArrowLeft size={16} /> {label}
     </Button>
   );
 
   if (href) {
     return (
-      <Link href={href} onClick={handleLinkClick}>
+      <Link href={href} onClick={handleLinkClick} data-back-link="">
         {button}
       </Link>
     );
