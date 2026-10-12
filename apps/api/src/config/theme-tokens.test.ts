@@ -110,6 +110,21 @@ describe("brand themes", () => {
   });
 });
 
+describe("per-section band tone (Storefront Studio)", () => {
+  it("keeps a band's text legible (WCAG AA 4.5:1) when a store forces it light or dark, in every theme", () => {
+    for (const [id, theme] of Object.entries(tokens.themes)) {
+      for (const tone of ["light", "dark"] as const) {
+        const vars = theme.toneVariables[tone];
+        const at = (name: string) => channels(vars[`--color-${name}`] ?? theme.cssVariables[`--color-${name}`] ?? tokens.cssVariables[`--color-${name}`]!);
+        // The band is painted ink-950; its copy uses the dark-palette names.
+        for (const text of ["cream-50", "ink-300", "ink-400"]) {
+          expect(contrast(at(text), at("ink-950")), `${id} ${tone} band ${text}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+});
+
 describe("base tertiary text", () => {
   it("clears WCAG AA (4.5:1) on every light surface, and the grey text steps do inside the base design's dark sections", () => {
     const ink400 = channels(tokens.cssVariables["--color-ink-400"]!);

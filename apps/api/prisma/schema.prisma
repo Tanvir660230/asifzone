@@ -259,6 +259,10 @@ enum HomepageSectionType {
   VALUES_GRID
   SMART_RECOMMENDATIONS
   PROMO_BANNER
+  RICH_TEXT
+  TESTIMONIALS
+  NEWSLETTER
+  IMAGE_GALLERY
 }
 
 model AdminUser {
@@ -1814,6 +1818,28 @@ model HomepageSection {
   updatedAt DateTime            @updatedAt
 
   @@index([isActive, sortOrder])
+}
+
+/// The Storefront Studio's working copy of the homepage: one document, edited and autosaved by the admin, applied to
+/// HomepageSection rows on publish. `version` guards against two editors overwriting each other.
+model HomepageDraft {
+  id          String   @id @default("homepage")
+  version     Int      @default(0)
+  /// The working copy; null once it has been published or discarded (the row stays so `version` keeps counting).
+  sections    Json?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}
+
+/// A published homepage (the sections as they went live), for the Studio's history and one-click restore.
+model HomepageRevision {
+  id              String   @id @default(cuid())
+  sections        Json
+  publishedById   String?
+  publishedByName String?
+  publishedAt     DateTime @default(now())
+
+  @@index([publishedAt])
 }
 
 model NewsletterSubscriber {

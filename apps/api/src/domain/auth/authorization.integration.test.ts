@@ -418,13 +418,14 @@ describe("the role matrix — every admin route, every identity", () => {
     for (const prefix of CACHE_FAMILIES) await cacheDelByPrefix(prefix);
   });
 
-  it("covers all 589 admin routes, each with exactly one permission (or explicit self-service)", () => {
+  it("covers all 595 admin routes, each with exactly one permission (or explicit self-service)", () => {
     // +13: order adjustments (docs/ORDER_ADJUSTMENTS.md), incl. the return / exchange previews; +2: abandoned-cart list + remind; +5: search synonyms; +1: bulk restore; +1: inventory stock levels; +2: finance transactions + refunds; +1: shell attention composite; +3: saved views; +1: audit facets; +4: delivery zones; +3: AI assistant chat + proposal confirm/cancel; +5 −3: Inbox conversations replace the admin feedback routes; +1: payment attempts list (Admin V2); +1: store social-share image upload (Phase 7)
     // +35: Financial Core Phase 1 (docs/FINANCE_PHASE_1.md §6); +30: Phase 2 (docs/FINANCE_PHASE_2.md §7); +17: Phase 3 (docs/FINANCE_PHASE_3.md §7)
     // +10: Phase 4A (docs/FINANCE_PHASE_4.md §23); +8: Phase 4C valuation cutover (docs/FINANCE_PHASE_4C.md); +26: Phase 4D purchasing (docs/FINANCE_PHASE_4D.md); +25: manufacturing M1 (docs/MANUFACTURING.md); +4: M2 custody; +5: M3 costs; +4: M4 receipts
     // = 347 on the 2026-10-09 production release + 234 (Financial Core / ERP / manufacturing)
     // +5: courier notes (4 Catalog → Courier notes routes + the order's courier-note view)
-    expect(routes).toHaveLength(589);
+    // +6: Storefront Studio (homepage draft, save, discard, publish, revisions, restore)
+    expect(routes).toHaveLength(595);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

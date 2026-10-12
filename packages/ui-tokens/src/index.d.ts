@@ -18,6 +18,8 @@ interface UiTokens {
       lightBandRoles: string[] | null;
       /** Inside the dark-palette sections that stay dark. */
       darkBandVariables: Record<string, string>;
+      /** A band given its own tone in the Storefront Studio (`.ui-band-inverse[data-tone="light"|"dark"]`). */
+      toneVariables: { light: Record<string, string>; dark: Record<string, string> };
     }
   >;
   DEFAULT_THEME: string;

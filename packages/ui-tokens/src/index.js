@@ -543,6 +543,38 @@ function darkBand(definition) {
   return { ...variables, ...referenceVariables() };
 }
 
+/**
+ * The base design's dark sections (`.ui-band-inverse`): palette steps that read differently on the dark palette. The grey
+ * text steps are mid greys on light surfaces but must stay light on ink-950: ink-400 #b3b3b3 (9.6:1; the light-surface
+ * #707070 would be 4.0:1) and ink-500 #8a8a8a (5.8:1, the fine print; #666666 was 3.5:1). Emitted for every store under
+ * `.ui-band-inverse`; a theme's own band variables (`:root[data-brand] .ui-band-inverse…`) are more specific and win.
+ */
+const inverseBandVariables = {
+  "--color-ink-400": hexToRgbChannels("#b3b3b3"),
+  "--color-ink-500": hexToRgbChannels("#8a8a8a"),
+  ...referenceVariables(),
+};
+
+/**
+ * A band forced dark in a theme that may render it light: the theme's own (unmirrored) palette, the base dark-band steps,
+ * the theme's dark-band steps, and its light-band component values put back to what they are outside the bands.
+ */
+function darkTone(definition) {
+  const variables = {};
+  for (const scale of ["ink", "cream"]) {
+    const steps = { ...palette[scale], ...(definition.palette?.[scale] ?? {}) };
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  Object.assign(variables, inverseBandVariables, darkBand(definition), referenceVariables());
+  for (const name of Object.keys(definition.bandComponents ?? {})) {
+    // `initial` makes the property guaranteed-invalid, so `var(--x, fallback)` uses the call site's own default.
+    variables[name] = definition.components?.[name] ?? cssVariables[name] ?? "initial";
+  }
+  variables["--band-dark-art"] = "contents";
+  variables["--band-light-art"] = "none";
+  return variables;
+}
+
 const themes = {};
 for (const [id, definition] of Object.entries(themeDefinitions)) {
   const variables = {};
@@ -562,21 +594,11 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
     lightBandRoles: definition.band === "light" ? null : (definition.lightBands ?? []),
     // Inside the bands that stay dark.
     darkBandVariables: darkBand(definition),
+    // A band whose tone the store chose per section (Storefront Studio → Style → Tone, `data-tone` on the band).
+    toneVariables: { light: { ...lightBand(definition), ...definition.bandComponents }, dark: darkTone(definition) },
   };
 }
 const DEFAULT_THEME = "default";
-
-/**
- * The base design's dark sections (`.ui-band-inverse`): palette steps that read differently on the dark palette. The grey
- * text steps are mid greys on light surfaces but must stay light on ink-950: ink-400 #b3b3b3 (9.6:1; the light-surface
- * #707070 would be 4.0:1) and ink-500 #8a8a8a (5.8:1, the fine print; #666666 was 3.5:1). Emitted for every store under
- * `.ui-band-inverse`; a theme's own band variables (`:root[data-brand] .ui-band-inverse…`) are more specific and win.
- */
-const inverseBandVariables = {
-  "--color-ink-400": hexToRgbChannels("#b3b3b3"),
-  "--color-ink-500": hexToRgbChannels("#8a8a8a"),
-  ...referenceVariables(),
-};
 
 /* ───────────────────────────── surfaces ───────────────────────────── */
 

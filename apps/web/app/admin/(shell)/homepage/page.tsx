@@ -1,138 +1,53 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { HomepageSection, HomepageSectionType, UpdateHomepageSectionInput } from "@clothing-brand/shared";
+import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/admin/page-header";
+import { Outline } from "@/components/admin/studio/outline";
+import { StudioShell } from "@/components/admin/studio/studio-shell";
+import { ErrorState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { ModuleTabs } from "@/components/admin/module-tabs";
-import { SectionList } from "@/components/admin/homepage/section-list";
-import { AddSectionMenu } from "@/components/admin/homepage/add-section-menu";
-import { SectionConfigPanel, type SectionSavePayload } from "@/components/admin/homepage/section-config-panel";
-import { SECTION_META } from "@/components/admin/homepage/section-meta";
-import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import { toast } from "@/components/ui/toast";
-import * as homepageSectionsApi from "@/lib/api/admin-homepage-sections";
-import { ApiError } from "@/lib/api-client";
+import { getStudio } from "@/lib/api/admin-homepage-studio";
 
-const QUERY_KEY = ["admin-homepage-sections"];
-
-export default function HomepageBuilderPage() {
-  // DR-25: the homepage editor is view-only on phones — the preview and section editors need the width.
+/** Admin → Storefront → Homepage: the Storefront Studio, full screen over the console. */
+export default function HomepageStudioPage() {
+  // DR-25: designing the page needs the width — on phones the homepage is view-only (its sections, in order).
   const phone = useMediaQuery("(max-width: 767px)");
-  const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: QUERY_KEY, queryFn: homepageSectionsApi.listHomepageSections });
-  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  if (phone) return <PhoneView />;
+  return (
+    <div className="fixed inset-0 z-dock" data-surface="admin">
+      <StudioShell />
+    </div>
+  );
+}
 
-  const [editingSection, setEditingSection] = useState<HomepageSection | null>(null);
-  const [creatingType, setCreatingType] = useState<HomepageSectionType | null>(null);
-
-  function invalidate() {
-    return queryClient.invalidateQueries({ queryKey: QUERY_KEY });
-  }
-
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      homepageSectionsApi.updateHomepageSection(id, { isActive }),
-    onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't update the section"),
-  });
-  const reorderMutation = useMutation({
-    mutationFn: homepageSectionsApi.reorderHomepageSections,
-    onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't save the new order"),
-  });
-  const deleteMutation = useMutation({
-    mutationFn: homepageSectionsApi.deleteHomepageSection,
-    onSuccess: () => {
-      invalidate();
-      toast.success("Section deleted");
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't delete the section"),
-  });
-  const createMutation = useMutation({ mutationFn: homepageSectionsApi.createHomepageSection });
-  const updateMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: UpdateHomepageSectionInput }) =>
-      homepageSectionsApi.updateHomepageSection(id, input),
-  });
-
-  const sections = data?.sections ?? [];
-
-  async function handleDelete(section: HomepageSection) {
-    if (!(await confirm(`Delete this ${SECTION_META[section.type].label.toLowerCase()}? This can't be undone.`))) return;
-    deleteMutation.mutate(section.id);
-  }
-
-  async function handleConfigSubmit(payload: SectionSavePayload) {
-    // `payload.startsAt`/`endsAt` are datetime-local strings, not Date objects — the API validates
-    // and coerces them with zod's `coerce.date()` server-side, same as the coupon admin form's
-    // date inputs do, so the cast here is just satisfying the client's Zod-inferred input type.
-    const schedule = { startsAt: payload.startsAt as unknown as Date | null, endsAt: payload.endsAt as unknown as Date | null };
-    try {
-      if (editingSection) {
-        await updateMutation.mutateAsync({ id: editingSection.id, input: { config: payload.config, ...schedule } });
-        setEditingSection(null);
-      } else if (creatingType) {
-        await createMutation.mutateAsync({ type: creatingType, config: payload.config, isActive: true, ...schedule });
-        setCreatingType(null);
-      }
-      await invalidate();
-      toast.success("Homepage updated");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Couldn't save the section");
-    }
-  }
-
+function PhoneView() {
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ["studio-phone-view"], queryFn: getStudio });
   return (
     <div>
-      <PageHeader
-        title="Homepage"
-        description={
-          phone
-            ? "Rearranging and editing the homepage needs a wider screen — open it on a tablet or computer. Here you can see what's on and in which order."
-            : "Drag to reorder (or use the arrows), turn sections on or off, and edit each section's content."
-        }
-      />
-
-      <ModuleTabs />
-
-      {isLoading && <p className="text-ink-400">Loading…</p>}
-      {!isLoading && (
-        <SectionList
-          sections={sections}
-          onReorder={(ids) => reorderMutation.mutate(ids)}
-          onToggle={(section, isActive) => toggleMutation.mutate({ id: section.id, isActive })}
-          onEdit={(section) => setEditingSection(section)}
-          onDelete={handleDelete}
-          readOnly={phone}
-        />
-      )}
-
-      {!phone && (
-        <div className="mt-4">
-          <AddSectionMenu onAdd={(type) => setCreatingType(type)} />
+      <PageHeader title="Homepage" description="Designing the homepage needs a wider screen — open it on a tablet or computer. Here you can see what's on the page, in order." />
+      {isLoading && (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }, (_, i) => (
+            <Skeleton key={i} className="h-14 w-full rounded-xl" />
+          ))}
         </div>
       )}
-
-      {editingSection && (
-        <SectionConfigPanel
-          type={editingSection.type}
-          initialConfig={editingSection.config}
-          initialStartsAt={editingSection.startsAt}
-          initialEndsAt={editingSection.endsAt}
-          onSubmit={handleConfigSubmit}
-          onClose={() => setEditingSection(null)}
+      {isError && <ErrorState title="Couldn't load the homepage" onRetry={() => void refetch()} />}
+      {data && (
+        <Outline
+          readOnly
+          sections={data.sections}
+          selectedId={null}
+          checks={[]}
+          emptyIds={new Set()}
+          deviceLabel="phones"
+          onSelect={() => {}}
+          onMove={() => {}}
+          onToggle={() => {}}
+          onAdd={() => {}}
         />
       )}
-      {creatingType && (
-        <SectionConfigPanel
-          type={creatingType}
-          initialConfig={{}}
-          onSubmit={handleConfigSubmit}
-          onClose={() => setCreatingType(null)}
-        />
-      )}
-      {confirmDialog}
     </div>
   );
 }
