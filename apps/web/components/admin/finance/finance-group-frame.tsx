@@ -6,8 +6,8 @@ import { InnerNav } from "@/components/admin/inner-nav";
 import { navNode, resolveNavNode } from "@/lib/admin/navigation";
 
 /**
- * Finance's groups (Money, Purchasing, Books, Payroll & partners) list their pages beside the page on wide screens, like
- * Catalog setup — the manifest marks each group `innerList`. Pages outside a group (Needs attention) and detail views
+ * Finance's groups (Money, Sales & payments, Purchasing, Reports & books, Payroll & partners, Setup & checks) list their pages beside the page on wide screens, like
+ * Catalog setup — the manifest marks each group `innerList`. Pages outside a group (Overview, Needs attention) and detail views
  * (a money account, a supplier's account) keep the full width.
  */
 export function FinanceGroupFrame({ children }: { children: ReactNode }) {

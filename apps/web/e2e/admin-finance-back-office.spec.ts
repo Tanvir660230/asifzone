@@ -58,7 +58,7 @@ test("needs attention: every alert links to its fix; the month-end checklist cov
 
 test("budgets & cash: the forecast loads from the books", async () => {
   await owner.goto("/admin/finance/budgets");
-  await expect(owner.getByRole("heading", { name: "Budgets & cash" })).toBeVisible(NAV);
+  await expect(owner.getByRole("heading", { name: "Budgets & cash forecast" })).toBeVisible(NAV);
   await expect(owner.getByText(/cash now/i).first()).toBeVisible(NAV);
   await expect(owner.getByRole("alert").filter({ hasText: /couldn't be loaded/ })).toHaveCount(0);
 });

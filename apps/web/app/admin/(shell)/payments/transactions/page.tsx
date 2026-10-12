@@ -60,7 +60,7 @@ export default function PaymentTransactionsPage() {
 
   return (
     <div>
-      <PageHeader title="Transactions" description="Every payment in the ledger — gateway, cash on delivery, staff-recorded and store balance." />
+      <PageHeader title="Customer payments" description="Every payment customers made — gateway, cash on delivery, staff-recorded and store balance." />
       <ModuleTabs />
       <div className="space-y-3">
         <FilterBar

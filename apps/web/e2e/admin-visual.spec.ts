@@ -18,7 +18,7 @@ const PAGES: ReadonlyArray<{ name: string; path: string; heading: string | RegEx
   { name: "products", path: "/admin/products", heading: "Products" },
   { name: "customers", path: "/admin/customers", heading: "Customers" },
   { name: "inbox", path: "/admin/feedback", heading: "Inbox" },
-  { name: "payments", path: "/admin/payments/overview", heading: /Payments|Overview/ },
+  { name: "payments", path: "/admin/payments/overview", heading: /Gateway monitor/ },
   { name: "analytics", path: "/admin/analytics/overview", heading: /Overview|Analytics/ },
   { name: "settings", path: "/admin/settings", heading: "Settings" },
   { name: "audit-log", path: "/admin/audit-log", heading: /Audit/ },

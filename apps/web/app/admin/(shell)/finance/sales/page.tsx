@@ -85,7 +85,7 @@ export default function SalesAccountingPage() {
           Commerce can&apos;t post until these are mapped: {s.readiness.missing.join(", ")}.
         </Alert>
       )}
-      {s && !s.openingDate && <Alert variant="info" title="The books haven't started">Set the Financial Opening Date first — sales before it are carried by the opening balances.</Alert>}
+      {s && !s.openingDate && <Alert variant="info" title="The books haven't started"><Link href="/admin/finance/opening" className="font-medium text-accent hover:underline">Set the date your books start</Link> first — sales before it are carried by the opening balances.</Alert>}
       {s && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="sales-status">
           {[

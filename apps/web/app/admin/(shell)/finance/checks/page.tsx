@@ -75,7 +75,7 @@ export default function FinanceChecksPage() {
     <div className="space-y-6">
       <ModuleTabs />
       <PageHeader
-        title="Finance checks"
+        title="Books health check"
         description="Revenue and cost of goods are proved against the dashboard's own figures, and the ledger against itself. A difference lists the orders or records behind it."
         action={can("finance.reconcile") && <Button size="sm" loading={run.isPending} onClick={() => run.mutate()} data-testid="run-checks">Run all checks</Button>}
       />

@@ -43,7 +43,7 @@ export default function PayablesPage() {
   return (
     <div className="space-y-6">
       <ModuleTabs />
-      <PageHeader title="Payables" description="What you owe each supplier, by how far past due — open bills, less credits and advances. Open a supplier to pay." action={<Link href="/admin/finance/supplier-invoices"><Button size="sm" variant="outline">Supplier bills</Button></Link>} />
+      <PageHeader title="Supplier dues" description="What you owe each supplier, by how far past due — open bills, less credits and advances. Open a supplier to pay." action={<Link href="/admin/finance/supplier-invoices"><Button size="sm" variant="outline">Supplier bills</Button></Link>} />
       {q.isLoading && <Skeleton className="h-48 w-full" />}
       {q.isError && <Alert variant="danger" title="Payables couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>}
       {d && (

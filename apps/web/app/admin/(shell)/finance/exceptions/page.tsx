@@ -81,7 +81,7 @@ export default function FinanceExceptionsPage() {
   return (
     <div className="space-y-6">
       <ModuleTabs />
-      <PageHeader title="Finance exceptions" description="Accounting problems the books won't guess about — each names its source record. Missing costs are never invented." />
+      <PageHeader title="Missing costs & exceptions" description="Accounting problems the books won't guess about — each names its source record. Missing costs are never invented." />
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
         <p className="text-sm text-ink-700">
           Cost policy: <span className="font-semibold">{estimates ? "approved estimates allowed (labelled ESTIMATED)" : "known costs only"}</span>
