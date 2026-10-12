@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -10,6 +11,7 @@ import { TrackProductView } from "@/components/storefront/track-product-view";
 import { LandingGallery } from "@/components/landing/landing-gallery";
 import { LandingOrderForm } from "@/components/landing/landing-order-form";
 import { LandingStickyCta } from "@/components/landing/landing-sticky-cta";
+import { LandingMoreProducts } from "@/components/landing/landing-more-products";
 import { getActiveSocialLinksSafe, getProductBySlug, getSiteSettings } from "@/lib/api/storefront";
 import { formatPrice } from "@/lib/format";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -67,28 +69,28 @@ export default async function ProductLandingPage({ params }: Props) {
   const tel = phone ? `tel:${phone.replace(/\s+/g, "")}` : null;
 
   const promises = [
-    { icon: Truck, title: "হোম ডেলিভারি", text: `সারা দেশে ${range([Math.min(insideDhaka[0], outsideDhaka[0]), Math.max(insideDhaka[1], outsideDhaka[1])])} দিনে` },
-    { icon: Banknote, title: "ক্যাশ অন ডেলিভারি", text: "হাতে পেয়ে টাকা দিন" },
-    ...(policy.returns ? [{ icon: RotateCcw, title: `${bn(policy.returns.days)} দিনে রিটার্ন`, text: "সহজে বদলে নিন" }] : []),
+    { icon: Truck, title: "সারা দেশে হোম ডেলিভারি", text: `${range([Math.min(insideDhaka[0], outsideDhaka[0]), Math.max(insideDhaka[1], outsideDhaka[1])])} দিনে পৌঁছে যাবে` },
+    { icon: Banknote, title: "ক্যাশ অন ডেলিভারি", text: "পণ্য হাতে পেয়ে দাম দিন" },
+    ...(policy.returns ? [{ icon: RotateCcw, title: `${bn(policy.returns.days)} দিনের সহজ রিটার্ন`, text: "পছন্দ না হলে বদলে নিন" }] : []),
   ];
 
   // Real answers from this store's own settings and policy: nothing here is promised that the store hasn't set.
   const faqs = [
-    { q: "কত দিনে ডেলিভারি পাব?", a: `ঢাকার ভেতরে ${range(insideDhaka)} দিনে, ঢাকার বাইরে ${range(outsideDhaka)} দিনে।` },
+    { q: "অর্ডার করলে কত দিনে হাতে পাব?", a: `ঢাকার ভেতরে ${range(insideDhaka)} দিনে, ঢাকার বাইরে ${range(outsideDhaka)} দিনে।` },
     {
       q: "ডেলিভারি চার্জ কত?",
-      a: `ঢাকার ভেতরে ${money(settings.shippingFeeDhaka)}, ঢাকার বাইরে ${money(settings.shippingFeeOutsideDhaka)}। অর্ডার ফর্মে জেলা বেছে নিলেই সঠিক মোট দেখাবে।`,
+      a: `ঢাকার ভেতরে ${money(settings.shippingFeeDhaka)}, ঢাকার বাইরে ${money(settings.shippingFeeOutsideDhaka)}। অর্ডার ফর্মে জেলা দিলেই ডেলিভারিসহ মোট দাম দেখতে পাবেন।`,
     },
-    { q: "টাকা কখন দিতে হবে?", a: "অর্ডার করতে এখন কোনো টাকা লাগবে না। ডেলিভারির সময় পণ্য হাতে পেয়ে মূল্য পরিশোধ করুন।" },
+    { q: "আগে টাকা দিতে হবে কি?", a: "না। অর্ডার করতে কোনো অগ্রিম টাকা লাগবে না। ডেলিভারিম্যানের কাছ থেকে পণ্য হাতে পেয়ে তারপর মূল্য পরিশোধ করবেন।" },
     ...(policy.returns
       ? [
           {
-            q: "পণ্য পছন্দ না হলে কী করব?",
-            a: `ডেলিভারির ${bn(policy.returns.days)} দিনের মধ্যে রিটার্ন বা এক্সচেঞ্জ করতে পারবেন।${policy.returns.conditions ? ` শর্ত: ${policy.returns.conditions}।` : ""}`,
+            q: "পণ্য পছন্দ না হলে বা সাইজ না মিললে?",
+            a: `ডেলিভারির ${bn(policy.returns.days)} দিনের মধ্যে রিটার্ন বা সাইজ বদল করতে পারবেন।${policy.returns.conditions ? ` শর্ত: ${policy.returns.conditions}।` : ""}`,
           },
         ]
       : []),
-    { q: "অর্ডার কনফার্ম হবে কীভাবে?", a: "অর্ডার করার পর আমাদের টিম আপনার নম্বরে ফোন করে অর্ডার নিশ্চিত করবে, তারপর পাঠিয়ে দেবে।" },
+    { q: "অর্ডার করার পর কী হবে?", a: "অর্ডার পাওয়ার পর আমাদের প্রতিনিধি আপনার নম্বরে ফোন করে সাইজ ও ঠিকানা নিশ্চিত করবেন, তারপর পণ্যটি পাঠিয়ে দেওয়া হবে।" },
   ];
 
   return (
@@ -166,9 +168,9 @@ export default async function ProductLandingPage({ params }: Props) {
 
             <section id="order" className="-mx-4 mt-6 scroll-mt-16 bg-surface px-4 py-6 shadow-float sm:mx-0 sm:rounded-2xl sm:p-6" aria-labelledby="order-title">
               <h2 id="order-title" className="text-xl font-bold text-fg">
-                অর্ডার করুন
+                এখনই অর্ডার করুন
               </h2>
-              <p className="mb-6 mt-1 text-sm text-fg-muted">নিচের তথ্য দিন। আমরা ফোন করে অর্ডার নিশ্চিত করব।</p>
+              <p className="mb-6 mt-1 text-sm leading-relaxed text-fg-muted">নাম, মোবাইল নম্বর ও ঠিকানা দিন। আমাদের প্রতিনিধি ফোন করে অর্ডারটি নিশ্চিত করবেন।</p>
               <LandingOrderForm product={product} codEnabled={settings.codEnabled} />
             </section>
 
@@ -177,7 +179,7 @@ export default async function ProductLandingPage({ params }: Props) {
                 {tel && (
                   <a href={tel} className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg">
                     <Phone size={16} aria-hidden="true" />
-                    ফোনে অর্ডার করুন
+                    ফোনে অর্ডার দিন
                   </a>
                 )}
                 {whatsapp && (
@@ -188,7 +190,7 @@ export default async function ProductLandingPage({ params }: Props) {
                     className="flex h-12 flex-1 items-center justify-center gap-2 rounded-[var(--control-radius)] border border-line bg-surface text-sm font-semibold text-fg"
                   >
                     <MessageCircle size={16} aria-hidden="true" />
-                    WhatsApp-এ জিজ্ঞেস করুন
+                    WhatsApp-এ মেসেজ দিন
                   </a>
                 )}
               </div>
@@ -200,7 +202,7 @@ export default async function ProductLandingPage({ params }: Props) {
           {description.trim() && (
             <details className="group rounded-xl border border-line bg-surface" open>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 text-lg font-bold text-fg [&::-webkit-details-marker]:hidden">
-                পণ্যের বিস্তারিত
+                পণ্যের বিবরণ
                 <ChevronDown size={20} className="shrink-0 transition-transform duration-base group-open:rotate-180" aria-hidden="true" />
               </summary>
               <div className="prose prose-sm max-w-none px-5 pb-5 text-fg" lang="en" dangerouslySetInnerHTML={{ __html: description }} />
@@ -209,7 +211,7 @@ export default async function ProductLandingPage({ params }: Props) {
 
           <section aria-labelledby="faq-title">
             <h2 id="faq-title" className="mb-4 text-xl font-bold text-fg">
-              সাধারণ প্রশ্ন
+              যা জানতে চান
             </h2>
             <div className="divide-y divide-line rounded-xl border border-line bg-surface">
               {faqs.map(({ q, a }) => (
@@ -223,6 +225,10 @@ export default async function ProductLandingPage({ params }: Props) {
               ))}
             </div>
           </section>
+
+          <Suspense fallback={null}>
+            <LandingMoreProducts product={product} currency={settings.currency} />
+          </Suspense>
 
           {product.reviewCount > 0 && (
             <section id="reviews" className="scroll-mt-16">

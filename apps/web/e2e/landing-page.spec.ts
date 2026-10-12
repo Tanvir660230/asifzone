@@ -51,7 +51,7 @@ test.describe("product landing page", () => {
     await page.getByTestId("landing-submit").click();
     await expect(page.getByText("আপনার নাম লিখুন")).toBeVisible();
     await expect(page.getByText(/সঠিক মোবাইল নম্বর দিন/)).toBeVisible();
-    await expect(page.locator("#lp-district-error")).toHaveText("জেলা বেছে নিন");
+    await expect(page.locator("#lp-district-error")).toHaveText("আপনার জেলা বেছে নিন");
   });
 
   test("a shopper orders Cash on Delivery from the page: total with delivery, confirmation, stock drops", async ({ page }) => {
@@ -67,9 +67,9 @@ test.describe("product landing page", () => {
     await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345680");
     await page.getByLabel("জেলা", { exact: true }).fill("Dhaka");
     await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
-    await page.getByLabel("এলাকা / থানা", { exact: true }).fill("Dhanmondi");
+    await page.getByLabel("থানা / এলাকা", { exact: true }).fill("Dhanmondi");
     await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
-    await page.getByLabel("বাসা / রোড / এলাকার বিস্তারিত").fill("House 1, Road 2 (automated test order)");
+    await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
     // The delivery charge and total come from the server quote once the district is known.
     await expect(page.getByTestId("landing-total")).toHaveText(/\d/);
 
@@ -79,6 +79,42 @@ test.describe("product landing page", () => {
 
     if (product.trackInventory) expect(await stockOf(product.slug, variant.id)).toBe(before - 1);
     expect(errors).toEqual([]);
+  });
+
+  test("ordering without a size opens a size popup, and picking one carries on with the order", async ({ page }) => {
+    const res = await fetch(`${API}/api/products/storefront?pageSize=50`);
+    const items = ((await res.json()) as { items: ApiProduct[] }).items;
+    // A product with a real size choice (two or more sizes in stock), so nothing is pre-selected.
+    const product = items.find((p) => new Set(p.variants.filter((v) => v.stock > 2).map((v) => v.size)).size > 1);
+    test.skip(!product, "needs a product with two sizes in stock");
+    const variant = product!.variants.find((v) => v.stock > 2)!;
+
+    await page.goto(`/lp/${product!.slug}`);
+    await page.getByLabel("আপনার নাম", { exact: true }).fill("Popup Tester");
+    await page.getByLabel("মোবাইল নম্বর", { exact: true }).fill("01712345681");
+    await page.getByLabel("জেলা", { exact: true }).fill("Dhaka");
+    await page.getByRole("option", { name: "Dhaka", exact: true }).first().click();
+    await page.getByLabel("থানা / এলাকা", { exact: true }).fill("Dhanmondi");
+    await page.getByRole("option", { name: /Dhanmondi/ }).first().click();
+    await page.getByLabel("পূর্ণ ঠিকানা", { exact: true }).fill("House 1, Road 2 (automated test order)");
+
+    await page.getByTestId("landing-submit").click();
+    const popup = page.getByTestId("landing-option-popup");
+    await expect(popup).toBeVisible();
+    await popup.getByRole("button", { name: variant.size, exact: true }).click();
+    if (new Set(product!.variants.map((v) => v.color)).size > 1) await popup.getByRole("button", { name: variant.color, exact: true }).click();
+    await popup.getByRole("button", { name: "এগিয়ে যান" }).click();
+    await expect(page).toHaveURL(/\/order-confirmation\/.+/, { timeout: 30_000 });
+  });
+
+  test("shows more products, each opening its own landing page", async ({ page }) => {
+    const { product } = await stockedProduct();
+    await page.goto(`/lp/${product.slug}`);
+    const more = page.getByRole("region", { name: "আরও পণ্য দেখুন" });
+    await expect(more).toBeVisible();
+    const first = more.locator('a[href^="/lp/"]').first();
+    await expect(first).toBeVisible();
+    expect(await more.locator(`a[href="/lp/${product.slug}"]`).count()).toBe(0);
   });
 
   test("an unknown product is a 404", async ({ page }) => {
