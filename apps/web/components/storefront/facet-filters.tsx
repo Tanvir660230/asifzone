@@ -168,7 +168,7 @@ export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacet
       <div className="sticky top-[var(--sticky-top)] z-raised -mx-4 flex items-center gap-2 border-b border-line-subtle bg-canvas/90 px-4 py-2.5 backdrop-blur-md transition-[top] duration-slow ease-smooth sm:-mx-6 sm:px-6 lg:hidden">
         <button
           onClick={() => setMobileOpen(true)}
-          className="flex h-10 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-medium text-ink-900 transition-colors hover:border-ink-900 active:scale-[0.98]"
+          className="flex h-10 items-center gap-2 rounded-[var(--chip-radius)] border border-line bg-surface px-4 text-sm font-medium text-ink-900 transition-colors hover:border-ink-900 active:scale-[0.98]"
         >
           <SlidersHorizontal size={16} aria-hidden="true" />
           Filters

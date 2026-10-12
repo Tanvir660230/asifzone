@@ -56,7 +56,7 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
       <div className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 sm:pt-20 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-8">
           <div className="lg:col-span-5">
-            <h2 className="font-display text-[2rem] leading-[1.05] sm:text-[2.5rem]">{settings.newsletterHeading || "Stay in touch"}</h2>
+            <h2 className="font-display text-[1.75rem] leading-[1.1] sm:text-[2.125rem]">{settings.newsletterHeading || "Stay in touch"}</h2>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-fg-muted">
               {settings.newsletterText || "New arrivals and offers by email. Unsubscribe any time."}
             </p>

@@ -368,8 +368,8 @@ const themeDefinitions = {
   // Nasihamart — "Mihrab" (docs/brand/nasihamart/THEME_BLUEPRINT.md). Night navy (#0B1F33) for type and actions, ivory
   // (#F8F6F1) page, sand (#EEE7DB) behind photography and in the footer, lapis (#123B73) for hover and interaction
   // (--accent-hover, --nav-hover), warm stone (#D6C1A2) for arch outlines and accents on navy only (1.6:1 on ivory — never
-  // text there), mulberry (#8A2E3B) for promotions. One family in two widths: Instrument Sans condensed for headings, normal
-  // for everything else — no serif in the interface. Its own layout preset (`mihrab`): the pointed arch of the logo frames
+  // text there), mulberry (#8A2E3B) for promotions. Headings in Newsreader, the serif of the logo's wordmark, so the logo and
+  // the page speak with one voice; Instrument Sans for everything else. Its own layout preset (`mihrab`): the pointed arch of the logo frames
   // the photography.
   nasihamart: {
     label: "Nasihamart (Mihrab: navy · ivory · sand)",
@@ -396,11 +396,10 @@ const themeDefinitions = {
     radii: { sm: "2px", DEFAULT: "4px", md: "6px", lg: "8px", xl: "10px", "2xl": "12px", "3xl": "16px" },
     fontVariables: {
       "--font-body-family": "var(--font-grotesk)",
-      // Headings: the same grotesk, condensed — tall like the arches.
-      "--font-display-family": "var(--font-grotesk)",
-      "--font-display-weight": "580",
-      "--font-display-tracking": "-0.018em",
-      "--font-display-stretch": "78%",
+      // Headings: Newsreader, the logo's serif, at a calm book weight.
+      "--font-display-family": "var(--font-editorial)",
+      "--font-display-weight": "500",
+      "--font-display-tracking": "-0.012em",
       "--eyebrow-weight": "600",
     },
     components: {
@@ -443,30 +442,30 @@ const themeDefinitions = {
       "--card-title-tracking": "0",
       "--panel-border": "rgb(var(--color-ink-200))",
       "--panel-shadow": "none",
-      // The product name in the condensed heading face, like every other title.
-      "--product-title-family": "var(--font-display-family), var(--font-bn), ui-sans-serif, system-ui, sans-serif",
-      "--product-title-size": "clamp(2.25rem, 1.8rem + 1.4vw, 3.25rem)",
-      "--product-title-leading": "1",
-      "--product-title-weight": "580",
-      "--product-title-tracking": "-0.018em",
-      "--product-title-stretch": "78%",
+      // The product name in the heading serif, like every other title.
+      "--product-title-family": "var(--font-display-family), var(--font-bn), ui-serif, Georgia, serif",
+      "--product-title-size": "clamp(1.75rem, 1.5rem + 0.8vw, 2.25rem)",
+      "--product-title-leading": "1.15",
+      "--product-title-weight": "500",
+      "--product-title-tracking": "-0.012em",
       // Option chips, colour swatches and the floating buttons: squared off, like the controls.
       "--chip-radius": "var(--radius-sm)",
       "--swatch-radius": "var(--radius-sm)",
       "--fab-radius": "var(--radius-default)",
-      "--section-title-size": "1.625rem",
+      // One modest scale: titles lead, but never shout over the products.
+      "--section-title-size": "1.5rem",
       "--section-title-leading": "1.2",
-      "--section-title-size-sm": "2rem",
-      "--section-title-leading-sm": "1.15",
-      "--section-rhythm": "1.35",
-      "--page-title-size": "2.5rem",
-      "--page-title-leading": "1",
-      "--page-title-size-sm": "3.5rem",
-      "--page-title-leading-sm": "1",
-      "--section-heading-size": "1.875rem",
-      "--section-heading-leading": "1.15",
-      "--section-heading-size-sm": "2.75rem",
-      "--section-heading-leading-sm": "1.08",
+      "--section-title-size-sm": "1.75rem",
+      "--section-title-leading-sm": "1.2",
+      "--section-rhythm": "1.1",
+      "--page-title-size": "2rem",
+      "--page-title-leading": "1.1",
+      "--page-title-size-sm": "2.625rem",
+      "--page-title-leading-sm": "1.1",
+      "--section-heading-size": "1.625rem",
+      "--section-heading-leading": "1.2",
+      "--section-heading-size-sm": "2.125rem",
+      "--section-heading-leading-sm": "1.15",
       // Editorial hero: left-aligned copy beside a tall photograph from 1024px.
       "--hero-align": "left",
       "--hero-layout-lg": "grid",

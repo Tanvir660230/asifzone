@@ -43,15 +43,16 @@ One memorable thing: **the arch**. Everything around it stays quiet: no glass, n
 
 Asif Zone is white, black and red; Nasihamart is ivory, sand and navy with no black and no red anywhere.
 
-### Type — one family, two widths
+### Type — the logo's serif for headings, a quiet sans for the rest
 
-**Instrument Sans** (variable, `wdth` 75–100):
+(2026-10-12: the condensed sans headings were replaced — they clashed with the Newsreader wordmark and read loud.)
 
-- Headings: condensed (`wdth` 78), weight 560, tight tracking, sentence case. Tall like the arches.
-- UI, body and product data: normal width, 400/500.
+- Headings: **Newsreader** (the logo's serif), weight 500, tracking −0.012em, sentence case. A modest scale: hero
+  2.5–3.75rem, carousel and section headings 1.625–2.125rem, page titles 2–2.625rem, product name 1.75–2.25rem.
+- UI, body and product data: **Instrument Sans**, 400/500.
 - Prices: tabular figures.
-- No serif in the interface at all (the wordmark in the logo artwork keeps Newsreader). Asif Zone is serif-led; Nasihamart
-  is sans-led, which is the single biggest separation.
+- Separation from Asif Zone comes from palette, the arch layout and the face: Newsreader is a calm book serif, Asif
+  Zone's Playfair a high-contrast display serif.
 - No uppercase tracked labels; no eyebrow over every heading.
 
 ### Shape

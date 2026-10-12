@@ -163,7 +163,7 @@ export function ProductReviews({ productId, productName }: { productId: string; 
   }
 
   return (
-    <section id="reviews" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-16 sm:px-6 lg:px-8">
+    <section id="reviews" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-16 pt-12 sm:px-6 sm:pt-16 lg:px-8">
       <h2 className="ui-section-heading mb-8 font-display text-ink-900">Customer Reviews</h2>
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[280px_1fr]">

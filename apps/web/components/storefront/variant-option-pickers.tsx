@@ -22,6 +22,9 @@ export function useVariantOptions(variants: ProductVariant[], variantDimensions:
     const onlyPlaceholderSize = sizes.length === 1 && sizes[0] === NO_SIZE_VALUE;
     const showSizes = sizes.length > 0 && !onlyPlaceholderSize && (Boolean(sizeDim) || sizes.length > 1);
     const showColors = colors.length > 0 && (Boolean(colorDim) || colors.length > 1);
+    // When color is the only choice (no size picker), start on the first color in stock, so Buy Now works in one tap; the
+    // shopper can still switch. With a size to pick as well, nothing is chosen for them.
+    const firstColorInStock = variants.find((v) => v.color && v.stock > 0)?.color ?? colors[0] ?? null;
     return {
       sizes,
       colors,
@@ -31,7 +34,7 @@ export function useVariantOptions(variants: ProductVariant[], variantDimensions:
       colorLabel: colorDim?.label ?? "Color",
       /** A single value needs no choice — it's pre-selected. */
       defaultSize: sizes.length === 1 ? (sizes[0] ?? null) : null,
-      defaultColor: colors.length === 1 ? (colors[0] ?? null) : null,
+      defaultColor: colors.length === 1 ? (colors[0] ?? null) : !showSizes ? firstColorInStock : null,
       /** Products without any color have nothing to match on for color. */
       resolve: (size: string | null, color: string | null) => variants.find((v) => v.size === size && (colors.length === 0 || v.color === color)),
     };

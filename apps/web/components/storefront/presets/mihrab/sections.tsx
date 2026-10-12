@@ -51,10 +51,10 @@ export function MihrabHero({
 }: HeroProps) {
   return (
     <section className="overflow-hidden">
-      <div className="mx-auto grid max-w-7xl gap-12 px-4 pb-16 pt-10 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-8 lg:px-8 lg:pb-20 lg:pt-14">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-16 pt-10 sm:px-6 lg:grid-cols-12 lg:items-center lg:gap-8 lg:px-8 lg:pb-20 lg:pt-14">
         <div className="lg:col-span-6">
           {subtext && <p className="text-sm font-medium text-[color:var(--nav-hover)]">{subtext}</p>}
-          <h2 className="mt-4 max-w-[14ch] font-display text-[3.25rem] leading-[0.92] text-fg sm:text-[4.75rem] lg:text-[5.5rem]">
+          <h2 className="mt-4 max-w-[16ch] text-balance font-display text-[2.5rem] leading-[1.05] text-fg sm:text-[3.25rem] lg:text-[3.75rem]">
             {headline || tagline || storeName}
           </h2>
           {bodyText && <p className="mt-6 max-w-md text-base leading-relaxed text-fg-muted sm:text-lg">{bodyText}</p>}
@@ -70,7 +70,7 @@ export function MihrabHero({
           </div>
         </div>
         <div className="lg:col-span-5 lg:col-start-8">
-          <Arch outline className="ui-arch-draw mx-auto aspect-[4/5] w-[82%] max-w-[26rem] sm:w-[62%] lg:w-full">
+          <Arch outline className="ui-arch-draw mx-auto aspect-[4/5] w-[68%] max-w-[26rem] sm:w-[56%] lg:w-full">
             {imageUrl && (
               <Image
                 src={resolveImageUrl(imageUrl)}
@@ -153,10 +153,11 @@ export function MihrabPromoBanner({ heading, bodyText, imageUrl, mobileImageUrl,
   if (!imageUrl) {
     return (
       <section className="ui-arch-lattice bg-ink-950 text-cream-100">
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-[calc(4.5rem*var(--section-rhythm))] sm:px-6 lg:grid-cols-12 lg:items-end lg:px-8">
-          {heading && <h2 className="font-display text-[2.5rem] leading-[0.95] text-cream-50 sm:text-[3.5rem] lg:col-span-7">{heading}</h2>}
-          <div className="lg:col-span-4 lg:col-start-9">
-            {bodyText && <p className="text-base leading-relaxed text-cream-200/85">{bodyText}</p>}
+        {/* One column read top to bottom — heading, the line under it, the action — rather than two ends of a row. */}
+        <div className="mx-auto max-w-7xl px-4 py-[calc(4.5rem*var(--section-rhythm))] sm:px-6 lg:px-8">
+          <div className="max-w-2xl">
+            {heading && <h2 className="text-balance font-display text-[2rem] leading-[1.1] text-cream-50 sm:text-[2.75rem]">{heading}</h2>}
+            {bodyText && <p className="mt-4 text-base leading-relaxed text-cream-200/85 sm:text-lg">{bodyText}</p>}
             {action}
           </div>
         </div>
@@ -175,7 +176,7 @@ export function MihrabPromoBanner({ heading, bodyText, imageUrl, mobileImageUrl,
       <div className="grid items-center gap-8 lg:grid-cols-12">
         <div className="lg:col-span-7">{linkUrl ? <Link href={linkUrl}>{media}</Link> : media}</div>
         <div className="lg:col-span-4 lg:col-start-9">
-          {heading && <h2 className="font-display text-[2.25rem] leading-[0.95] text-fg sm:text-[3rem]">{heading}</h2>}
+          {heading && <h2 className="text-balance font-display text-[1.875rem] leading-[1.1] text-fg sm:text-[2.5rem]">{heading}</h2>}
           {bodyText && <p className="mt-4 text-base leading-relaxed text-fg-muted">{bodyText}</p>}
           {ctaLabel && linkUrl && (
             <Link href={linkUrl} className={`mt-7 ${PRIMARY_ACTION}`}>
@@ -212,7 +213,7 @@ export function MihrabBrandStory({ storeName, tagline, eyebrow, heading, bodyTex
         )}
         <div className={imageUrl ? "lg:col-span-6 lg:col-start-7" : "max-w-2xl"}>
           {eyebrow && <p className="text-sm font-medium text-[color:var(--nav-hover)]">{eyebrow}</p>}
-          <h2 className="mt-3 font-display text-[2.5rem] leading-[0.95] text-fg sm:text-[3.5rem]">{heading || tagline || storeName}</h2>
+          <h2 className="mt-3 text-balance font-display text-[2rem] leading-[1.1] text-fg sm:text-[2.75rem]">{heading || tagline || storeName}</h2>
           {bodyText && <p className="mt-6 max-w-lg text-base leading-relaxed text-fg-muted">{bodyText}</p>}
           <Link href={ctaHref || "/search"} className={`mt-6 ${TEXT_ACTION}`}>
             {ctaLabel || "Explore the collection"}
