@@ -18,9 +18,13 @@ interface UiTokens {
       lightBandRoles: string[] | null;
       /** Inside the dark-palette sections that stay dark. */
       darkBandVariables: Record<string, string>;
+      /** A band given its own tone in the Storefront Studio (`.ui-band-inverse[data-tone="light"|"dark"]`). */
+      toneVariables: { light: Record<string, string>; dark: Record<string, string> };
     }
   >;
   DEFAULT_THEME: string;
+  /** Store-chosen corner styles: the complete radius variable set for each. */
+  cornerPresets: Record<"sharp" | "soft" | "round", Record<string, string>>;
   /** The base design's dark sections (`.ui-band-inverse`): palette steps re-valued on the dark palette. */
   inverseBandVariables: Record<string, string>;
   /** Regions with their own identity, each the complete variable set for `[data-surface="<id>"]`: `admin` (the Store

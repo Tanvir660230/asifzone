@@ -83,11 +83,15 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
       </>
     );
   const hasPayments = Boolean(settings.paymentMethodsImageUrl || paymentMethods.length > 0);
+  // The store's own footer choices (Storefront Studio → Site design → Footer).
+  const design = settings.storefrontDesign?.footer;
+  const extraLinks = design?.links ?? [];
 
   return (
     <footer data-band="footer" className="ui-band-inverse mt-12 bg-ink-950 text-cream-200 sm:mt-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Newsletter: its own row, the invitation on the left and the form where the eye lands next. */}
+        {design?.showNewsletter !== false && (
         <div className="grid gap-6 border-b border-cream-50/10 py-12 md:grid-cols-2 md:items-end md:gap-12 md:py-14">
           <div>
             <h2 className="font-display text-3xl leading-tight text-cream-50 sm:text-4xl">{settings.newsletterHeading || "Stay in the loop"}</h2>
@@ -97,9 +101,10 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
           </div>
           <NewsletterForm variant="dark" className="w-full md:max-w-md md:justify-self-end" />
         </div>
+        )}
 
         {/* The brand and how to reach it, then the link columns. */}
-        <div className="grid gap-10 py-12 md:grid-cols-[1.4fr_repeat(3,1fr)] md:gap-8 md:py-14">
+        <div className={cn("grid gap-10 py-12 md:gap-8 md:py-14", extraLinks.length > 0 ? "md:grid-cols-[1.4fr_repeat(4,1fr)]" : "md:grid-cols-[1.4fr_repeat(3,1fr)]")}>
           <div>
             {darkBgLogoUrl ? (
               bandLogo((url) => <StoreLogoImage src={resolveImageUrl(url)} alt={settings.storeName} className="h-9 w-36 object-contain object-left" fallback={wordmark} />)
@@ -107,7 +112,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
               wordmark
             )}
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-ink-300">
-              {settings.tagline || "Premium products, quality service and a seamless shopping experience."}
+              {design?.about || settings.tagline || "Premium products, quality service and a seamless shopping experience."}
             </p>
             <ul className="mt-6 space-y-3 text-sm">
               {settings.contactPhone && (
@@ -205,6 +210,18 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
                 </Link>
               </li>
             </FooterLinkGroup>
+
+            {extraLinks.length > 0 && (
+              <FooterLinkGroup title={design?.linksTitle || "Explore"}>
+                {extraLinks.map((link, i) => (
+                  <li key={i}>
+                    <Link href={link.href} className={FOOTER_LINK_CLASS}>
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </FooterLinkGroup>
+            )}
 
             <FooterLinkGroup title="Your account">
               <li>

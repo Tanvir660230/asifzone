@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import type { AdminReviewListQuery, CreateReviewInput, ReviewListQuery } from "@clothing-brand/shared";
+import type { AdminReviewListQuery, CreateReviewInput, FeaturedReview, FeaturedReviewsQuery, ReviewListQuery } from "@clothing-brand/shared";
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
@@ -153,4 +153,39 @@ export async function deleteReview(id: string) {
   if (review.status === "APPROVED") {
     await recomputeProductRating(review.productId);
   }
+}
+
+/** "Rahim Uddin" → "Rahim U." — reviews are shown publicly beyond the product page, so never the full name. */
+function publicName(name: string) {
+  const [first, ...rest] = name.trim().split(/\s+/);
+  const last = rest.at(-1);
+  return last ? `${first} ${last[0]!.toUpperCase()}.` : (first ?? "");
+}
+
+/** Approved, written reviews across the store for the homepage's "Customer reviews" section — newest first, only for
+ * products a shopper can still open. */
+export async function listFeaturedReviews(query: FeaturedReviewsQuery): Promise<FeaturedReview[]> {
+  const reviews = await prisma.productReview.findMany({
+    where: {
+      status: "APPROVED",
+      rating: { gte: query.minRating },
+      body: { not: "" },
+      product: { status: "PUBLISHED", deletedAt: null, isActive: true },
+    },
+    orderBy: [{ createdAt: "desc" }],
+    take: query.count,
+    include: { product: { select: { name: true, slug: true, images: { orderBy: { sortOrder: "asc" }, take: 1, select: { url: true } } } } },
+  });
+  return reviews.map((r) => ({
+    id: r.id,
+    rating: r.rating,
+    title: r.title,
+    body: r.body,
+    customerName: publicName(r.customerName),
+    isVerifiedPurchase: r.isVerifiedPurchase,
+    productName: r.product.name,
+    productSlug: r.product.slug,
+    productImageUrl: r.product.images[0]?.url ?? null,
+    createdAt: r.createdAt.toISOString(),
+  }));
 }

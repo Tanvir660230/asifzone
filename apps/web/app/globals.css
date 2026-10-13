@@ -34,6 +34,11 @@
 }
 
 @layer base {
+  /* The theme's section rhythm, kept under its own name so a section frame can scale it (.ui-section-frame). */
+  :root {
+    --section-rhythm-base: var(--section-rhythm);
+  }
+
   body {
     @apply bg-canvas text-fg antialiased;
   }
@@ -238,6 +243,33 @@
   }
   .ui-art-on-light {
     display: var(--band-light-art);
+  }
+  /* A homepage section's own appearance (Storefront Studio → Style), on the frame around it
+     (components/storefront/home/section-frame.tsx): spacing scales the theme's rhythm, the background uses the muted
+     surface role, and a section may show on one kind of screen only. */
+  .ui-section-frame {
+    /* Scrolled to (Studio preview, in-page links) below the sticky header, not under it. */
+    scroll-margin-top: calc(var(--sticky-top, 0px) + 1rem);
+  }
+  .ui-section-frame[data-spacing="compact"] {
+    --section-rhythm: calc(var(--section-rhythm-base) * 0.6);
+  }
+  .ui-section-frame[data-spacing="spacious"] {
+    --section-rhythm: calc(var(--section-rhythm-base) * 1.45);
+  }
+  .ui-section-frame[data-background="muted"] {
+    @apply bg-surface-muted;
+  }
+  .ui-section-frame[data-show="desktop"] {
+    display: none;
+  }
+  @media (min-width: 1024px) {
+    .ui-section-frame[data-show="desktop"] {
+      display: block;
+    }
+    .ui-section-frame[data-show="mobile"] {
+      display: none;
+    }
   }
   /* A category tile's caption: over the photograph (absolute, filling the tile so its scrim rises from the bottom) or
      below it (static) — the theme decides. */

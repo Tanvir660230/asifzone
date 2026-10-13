@@ -32,3 +32,7 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   await reviewService.deleteReview(req.params.id!);
   res.status(204).end();
 });
+
+export const listFeatured = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ reviews: await reviewService.listFeaturedReviews(req.query as never) });
+});

@@ -100,6 +100,13 @@ const config: Config = {
         if (Object.keys(theme.bandVariables).length) addBase({ [roles === null ? band : `${band}${named}`]: theme.bandVariables });
         if (Object.keys(theme.darkBandVariables).length) addBase({ [roles?.length ? `${band}:not(${named})` : band]: theme.darkBandVariables });
       }
+      // A tone the store chose for one section (Storefront Studio). Same specificity as the theme's band rules above and
+      // emitted after them, so the section's own choice wins.
+      for (const [id, theme] of Object.entries(tokens.themes)) {
+        for (const tone of ["light", "dark"] as const) {
+          addBase({ [`:root[data-brand="${id}"] .ui-band-inverse[data-tone="${tone}"]`]: theme.toneVariables[tone] });
+        }
+      }
       // Surfaces re-declare the whole variable set on their own element, so the admin never inherits a brand theme.
       addBase({ '[data-surface="admin"]': tokens.surfaces.admin.cssVariables });
       // A store-look region inside the admin: base tokens, then the active brand theme on the same element (higher

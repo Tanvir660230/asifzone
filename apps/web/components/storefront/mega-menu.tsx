@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import type { FocusEvent, KeyboardEvent } from "react";
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import type { CategoryTreeNode } from "@/lib/api/storefront";
+import { navHref, type NavNode } from "@/lib/nav-links";
 import { cn } from "@/lib/utils";
 
 const NAV_LINK_CLASS =
@@ -21,7 +21,7 @@ const PANEL_LINK_CLASS = "mx-2 block rounded-lg px-4 py-2 text-sm text-ink-700 t
  * are shown, in the store's own order, and the rest move into a "More" menu. The split is measured, not guessed, so it
  * holds for any number of categories, any names, any theme's typography and any window width.
  */
-export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
+export function MegaMenu({ categories }: { categories: NavNode[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   // Every item until measured: the server's markup is the full list, clipped (not wrapped) if it doesn't fit.
@@ -118,7 +118,7 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
             onKeyDown={closeOnEscape}
           >
             <Link
-              href={`/category/${cat.slug}`}
+              href={navHref(cat)}
               aria-haspopup={cat.children.length > 0 ? "true" : undefined}
               aria-expanded={cat.children.length > 0 ? openId === cat.id : undefined}
               className={NAV_LINK_CLASS}
@@ -172,7 +172,7 @@ export function MegaMenu({ categories }: { categories: CategoryTreeNode[] }) {
                 <ul>
                   {overflow.map((cat) => (
                     <li key={cat.id}>
-                      <Link href={`/category/${cat.slug}`} className={cn(PANEL_LINK_CLASS, "font-medium text-ink-900")}>
+                      <Link href={navHref(cat)} className={cn(PANEL_LINK_CLASS, "font-medium text-ink-900")}>
                         {cat.name}
                       </Link>
                       {cat.children.length > 0 && (

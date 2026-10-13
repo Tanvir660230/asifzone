@@ -85,9 +85,10 @@ test.describe("admin on a phone", () => {
     await sheet.getByRole("button", { name: "Done" }).click();
     await expect(sheet).toBeHidden();
 
+    // The homepage opens the Storefront Studio in its phone layout — editable, not view-only.
     await page.goto("/admin/homepage", NAV);
-    await expect(page.getByRole("button", { name: "Edit section" }).first()).toBeVisible(NAV);
-    await expect(page.getByRole("switch").first()).toBeEnabled();
+    await expect(page.getByTestId("studio-mode-page")).toBeVisible(NAV);
+    await expect(page.getByRole("button", { name: /^Switch off/ }).first()).toBeEnabled();
   });
 
   test("Create is an action sheet; a dialog is a bottom sheet", async ({ page }) => {

@@ -40,3 +40,24 @@ export type ReviewListQuery = z.infer<typeof reviewListQuerySchema>;
 export type MyReviewQuery = z.infer<typeof myReviewQuerySchema>;
 export type AdminReviewListQuery = z.infer<typeof adminReviewListQuerySchema>;
 export type ReviewStatus = z.infer<typeof reviewStatusEnum>;
+
+/** The homepage "Customer reviews" section: approved, written reviews across the store (GET /api/reviews/featured). */
+export const featuredReviewsQuerySchema = z.object({
+  count: z.coerce.number().int().min(1).max(12).default(6),
+  minRating: z.coerce.number().int().min(1).max(5).default(4),
+});
+export type FeaturedReviewsQuery = z.infer<typeof featuredReviewsQuerySchema>;
+
+export interface FeaturedReview {
+  id: string;
+  rating: number;
+  title: string | null;
+  body: string;
+  /** First name and last initial only ("Rahim U.") — a public page never shows a customer's full name. */
+  customerName: string;
+  isVerifiedPurchase: boolean;
+  productName: string;
+  productSlug: string;
+  productImageUrl: string | null;
+  createdAt: string;
+}

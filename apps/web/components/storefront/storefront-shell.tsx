@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import nextDynamic from "next/dynamic";
 import { StoreFooter, StoreHeader } from "@/components/storefront/store-chrome";
+import { AnnouncementBar } from "@/components/storefront/announcement-bar";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
 import { AddedToBag } from "@/components/storefront/added-to-bag";
 import { CartReminderBanner } from "@/components/storefront/cart-reminder-banner";
@@ -53,6 +54,7 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
       <Suspense fallback={null}>
         <NavigationProgress />
       </Suspense>
+      <AnnouncementBar announcement={settings.storefrontDesign?.announcement} />
       <StoreHeader categories={tree} settings={settings} />
       {/* At least a viewport tall: the footer starts below the fold on first paint, so content that streams in (a route's
           loading state) or appears after hydration (cart/checkout read the persisted cart) never pushes it out of view —

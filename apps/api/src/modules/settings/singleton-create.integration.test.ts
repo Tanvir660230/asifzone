@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { cacheDel } from "../../config/redis";
 import { loadTaxConfig, TAX_SETTING_ID } from "../../domain/pricing/pricing-config";
@@ -23,7 +24,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Put back exactly what the shared test database held, so later files see the settings they expect.
-  if (storeSnapshot) await prisma.storeSetting.upsert({ where: { id: storeSnapshot.id }, create: storeSnapshot, update: storeSnapshot });
+  if (storeSnapshot) {
+    // A JSON column read back as null has to be written as Prisma's DbNull.
+    const store = { ...storeSnapshot, storefrontDesign: storeSnapshot.storefrontDesign ?? Prisma.DbNull };
+    await prisma.storeSetting.upsert({ where: { id: store.id }, create: store, update: store });
+  }
   if (smsSnapshot) await prisma.smsNotificationSetting.upsert({ where: { id: smsSnapshot.id }, create: smsSnapshot, update: smsSnapshot });
   if (taxSnapshot) await prisma.taxSetting.upsert({ where: { id: taxSnapshot.id }, create: taxSnapshot, update: taxSnapshot });
   await invalidateSettingsCache();

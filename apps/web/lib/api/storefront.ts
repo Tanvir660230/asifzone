@@ -3,6 +3,7 @@ import type {
   BundleForProduct,
   Category,
   CategoryStockOverview,
+  FeaturedReview,
   FlashSale,
   HomepageSection,
   PaymentMethodOption,
@@ -135,6 +136,11 @@ export function getActiveBanners(placement: "HERO_CAROUSEL" | "PROMO_STRIP" = "H
 
 export function getActiveHomepageSections() {
   return storefrontFetch<{ sections: HomepageSection[] }>("/api/homepage-sections/active", false);
+}
+
+/** Approved, written reviews across the store — the homepage "Customer reviews" section. */
+export function getFeaturedReviews(params: { count: number; minRating: number }) {
+  return storefrontFetch<{ reviews: FeaturedReview[] }>(`/api/reviews/featured?count=${params.count}&minRating=${params.minRating}`, 120);
 }
 
 export function getActiveHomepageSectionsSafe() {

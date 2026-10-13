@@ -6,6 +6,7 @@ import type { PublicIntegrationIds } from "./integrations";
 // rather than redeclared, to avoid a duplicate-export collision via the package's barrel index.ts.
 import type { CustomerTag } from "./schemas/customer";
 import type { HomepageSectionType } from "./schemas/homepage-section";
+import type { StorefrontDesign } from "./storefront-design";
 import type { ProductType } from "./config/product-types";
 import type { ProductResolvedView } from "./schemas/catalog";
 import type { CompletenessResult } from "./completeness";
@@ -1053,6 +1054,8 @@ export interface StoreSettings {
   /** Pixel / sign-in / push ids saved in Settings › Integrations (blank = not set there). The web app overlays them on its
    * own environment with mergePublicIntegrationIds. Absent on old API responses. */
   integrationIds?: PublicIntegrationIds;
+  /** Storefront Studio → Site design, as published (null = the theme as designed). */
+  storefrontDesign?: StorefrontDesign | null;
   updatedAt: string;
 }
 

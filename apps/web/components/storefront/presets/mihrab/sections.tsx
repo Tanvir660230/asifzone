@@ -198,20 +198,24 @@ interface StoryProps {
   ctaLabel?: string | null;
   ctaHref?: string | null;
   imageUrl?: string | null;
+  imageAltText?: string | null;
+  /** The arch beside the copy on the left (the preset's default) or the right — Storefront Studio → Style. */
+  imageSide?: "left" | "right";
 }
 
-export function MihrabBrandStory({ storeName, tagline, eyebrow, heading, bodyText, ctaLabel, ctaHref, imageUrl }: StoryProps) {
+export function MihrabBrandStory({ storeName, tagline, eyebrow, heading, bodyText, ctaLabel, ctaHref, imageUrl, imageAltText, imageSide = "left" }: StoryProps) {
+  const right = imageSide === "right";
   return (
     <section className={SECTION}>
       <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-8">
         {imageUrl && (
-          <div className="lg:col-span-5">
+          <div className={right ? "lg:order-last lg:col-span-5 lg:col-start-8" : "lg:col-span-5"}>
             <Arch outline className="mx-auto aspect-[4/5] w-[78%] max-w-sm lg:w-[86%]">
-              <Image src={resolveImageUrl(imageUrl)} alt={heading || storeName} fill sizes="(min-width: 1024px) 34vw, 78vw" className="object-cover" />
+              <Image src={resolveImageUrl(imageUrl)} alt={imageAltText || heading || storeName} fill sizes="(min-width: 1024px) 34vw, 78vw" className="object-cover" />
             </Arch>
           </div>
         )}
-        <div className={imageUrl ? "lg:col-span-6 lg:col-start-7" : "max-w-2xl"}>
+        <div className={imageUrl ? (right ? "lg:col-span-6 lg:row-start-1" : "lg:col-span-6 lg:col-start-7") : "max-w-2xl lg:col-span-8"}>
           {eyebrow && <p className="text-sm font-medium text-[color:var(--nav-hover)]">{eyebrow}</p>}
           <h2 className="mt-3 text-balance font-display text-[2rem] leading-[1.1] text-fg sm:text-[2.75rem]">{heading || tagline || storeName}</h2>
           {bodyText && <p className="mt-6 max-w-lg text-base leading-relaxed text-fg-muted">{bodyText}</p>}

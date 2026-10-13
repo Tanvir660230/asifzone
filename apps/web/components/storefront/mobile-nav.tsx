@@ -4,11 +4,11 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Menu, X, ChevronDown, User, PackageSearch, Search } from "lucide-react";
-import type { CategoryTreeNode } from "@/lib/api/storefront";
+import { navHref, type NavNode } from "@/lib/nav-links";
 import { useSearchOverlayStore } from "@/store/search-overlay";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 
-export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
+export function MobileNav({ categories }: { categories: NavNode[] }) {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const openSearch = useSearchOverlayStore((s) => s.open);
@@ -85,7 +85,7 @@ export function MobileNav({ categories }: { categories: CategoryTreeNode[] }) {
                 <div key={cat.id} className="border-b border-ink-100">
                   <div className="flex items-center justify-between py-3">
                     <Link
-                      href={`/category/${cat.slug}`}
+                      href={navHref(cat)}
                       onClick={close}
                       className="text-sm ui-caps"
                     >
