@@ -86,10 +86,20 @@ const SKIP_REFRESH_PATHS = [
 // cause the second one to look like token reuse and log the session out for real.
 let refreshPromise: Promise<boolean> | null = null;
 
-function refreshSession(): Promise<boolean> {
+/** The session a 401 from `path` should refresh, or null when there is none to refresh. Admin screens — including the
+ * storefront previews framed under /admin — hold only the admin session: a shopper endpoint (/api/customers/…) answering
+ * 401 there just means no shopper is signed in, and refreshing the ADMIN session for it would rotate the admin's tokens
+ * and CSRF cookie in the middle of an edit (a request already carrying the old token then fails with 403). */
+function refreshPathFor(path: string): string | null {
+  const isAdminRealm = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
+  if (!isAdminRealm) return "/api/customers/refresh";
+  return path.startsWith("/api/customers/") ? null : "/api/auth/refresh";
+}
+
+function refreshSession(path: string): Promise<boolean> {
+  const refreshPath = refreshPathFor(path);
+  if (!refreshPath) return Promise.resolve(false);
   if (!refreshPromise) {
-    const isAdminRealm = typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
-    const refreshPath = isAdminRealm ? "/api/auth/refresh" : "/api/customers/refresh";
     refreshPromise = fetch(`${apiBaseUrl()}${refreshPath}`, { method: "POST", credentials: "include" })
       .then((res) => res.ok)
       .catch(() => false)
@@ -121,7 +131,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
   });
 
   if (res.status === 401 && !_retried && !SKIP_REFRESH_PATHS.some((p) => path.startsWith(p))) {
-    const refreshed = await refreshSession();
+    const refreshed = await refreshSession(path);
     if (refreshed) return apiFetch<T>(path, options, true);
   }
 
@@ -145,7 +155,7 @@ export async function apiDownload(path: string, fallbackName: string, _retried =
   } catch {
     throw new ApiError(0, "Network error — check the connection and retry");
   }
-  if (res.status === 401 && !_retried && (await refreshSession())) return apiDownload(path, fallbackName, true);
+  if (res.status === 401 && !_retried && (await refreshSession(path))) return apiDownload(path, fallbackName, true);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new ApiError(res.status, data.error ?? "Download failed", data.details);
@@ -174,7 +184,7 @@ export function apiUploadWithProgress<T>(path: string, body: FormData, onProgres
       if (e.lengthComputable) onProgress?.(e.loaded / e.total);
     };
     xhr.onload = async () => {
-      if (xhr.status === 401 && !_retried && (await refreshSession())) {
+      if (xhr.status === 401 && !_retried && (await refreshSession(path))) {
         apiUploadWithProgress<T>(path, body, onProgress, true).then(resolve, reject);
         return;
       }
