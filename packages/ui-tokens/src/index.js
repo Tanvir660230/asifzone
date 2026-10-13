@@ -153,6 +153,24 @@ for (const [step, value] of Object.entries(radii)) {
 }
 Object.assign(cssVariables, fontVariables);
 
+/**
+ * Corner styles a store may pick on top of its theme (Storefront Studio → Site design → Corners). Each is the whole radius
+ * scale plus the control radii, so a choice never mixes with another style's corners. "soft" and "round" share the base
+ * scale and differ in controls (soft rectangles / pills); "sharp" is a tight scale.
+ */
+const baseRadiusVariables = Object.fromEntries(Object.entries(radii).map(([step, value]) => [radiusVariable(step), value]));
+const cornerPresets = {
+  sharp: {
+    ...Object.fromEntries(Object.keys(radii).map((step, i) => [radiusVariable(step), `${[2, 3, 4, 6, 8, 10, 12][i]}px`])),
+    "--control-radius": "3px",
+    "--chip-radius": "3px",
+    "--swatch-radius": "3px",
+    "--fab-radius": "6px",
+  },
+  soft: { ...baseRadiusVariables, "--control-radius": radii.md, "--chip-radius": radii.md, "--swatch-radius": radii.DEFAULT, "--fab-radius": radii.lg },
+  round: { ...baseRadiusVariables, "--control-radius": "9999px", "--chip-radius": "9999px", "--swatch-radius": "9999px", "--fab-radius": "9999px" },
+};
+
 // Neutral, two-layer elevation: a soft far shadow plus a crisp near one is what makes a surface
 // read as "lifted" rather than just blurrier.
 const boxShadow = {
@@ -688,6 +706,7 @@ for (const [id, definition] of Object.entries(surfaceDefinitions)) {
 
 module.exports = {
   themes,
+  cornerPresets,
   inverseBandVariables,
   surfaces,
   DEFAULT_THEME,

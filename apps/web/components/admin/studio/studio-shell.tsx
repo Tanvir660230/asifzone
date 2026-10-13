@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MousePointerClick } from "lucide-react";
 import tokens from "@clothing-brand/ui-tokens";
-import { studioHealthChecks, type HomepageSectionType, type StudioSection } from "@clothing-brand/shared";
+import { studioDesignChecks, studioHealthChecks, type HomepageSectionType, type StudioSection } from "@clothing-brand/shared";
 import { Drawer } from "@/components/ui/drawer";
+import { SegmentedControl } from "@/components/ui/tabs";
 import { ErrorState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -21,6 +22,8 @@ import { AddSectionGallery } from "./add-section-gallery";
 import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
 import { Outline } from "./outline";
+import { DesignInspector, DesignOutline } from "./design-panels";
+import { DESIGN_META, designGroupOf } from "./design-meta";
 import { SECTION_META } from "./section-meta";
 import { TopBar } from "./top-bar";
 
@@ -46,6 +49,8 @@ export function StudioShell() {
   const wide = useMediaQuery("(min-width: 1024px)");
   const layout = storeLayout();
   const [device, setDevice] = useState<StudioDevice>("desktop");
+  // The left pane: the homepage's sections, or the store-wide design (theme, announcement bar, header, footer).
+  const [mode, setMode] = useState<"page" | "design">("page");
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [emptyIds, setEmptyIds] = useState<Set<string>>(new Set());
   const [scrollRequest, setScrollRequest] = useState<{ id: string; at: number } | null>(null);
@@ -61,21 +66,29 @@ export function StudioShell() {
     return roles === null ? ("all" as const) : (roles ?? []);
   }, []);
   const checks = useMemo(() => {
-    const found = studioHealthChecks(draft.sections, new Date(), { lightBands });
+    const found = [...studioHealthChecks(draft.sections, new Date(), { lightBands }), ...studioDesignChecks(draft.design)];
     // Anything the server refused on the last publish that the client rules didn't catch.
     for (const [sectionId, messages] of Object.entries(publishErrors)) {
       if (!found.some((c) => c.sectionId === sectionId && c.level === "error")) found.push({ sectionId, level: "error", code: "invalid", message: messages[0] ?? "Needs fixing" });
     }
     return found;
-  }, [draft.sections, lightBands, publishErrors]);
+  }, [draft.sections, draft.design, lightBands, publishErrors]);
 
   // What the server refused applies to the draft it saw — any edit after that clears it (the client rules re-check).
-  useEffect(() => setPublishErrors({}), [draft.sections]);
+  useEffect(() => setPublishErrors({}), [draft.sections, draft.design]);
 
   const selected = draft.sections.find((s) => s.id === draft.selectedId) ?? null;
+  const selectedGroup = designGroupOf(draft.selectedId);
+
+  // A click in the preview (or a check) may pick the header or footer: show the tab it belongs to.
+  useEffect(() => {
+    if (selectedGroup) setMode("design");
+    else if (selected) setMode("page");
+  }, [selectedGroup, selected]);
 
   function selectAndReveal(id: string) {
     draft.select(id);
+    if (designGroupOf(id) === "theme") return;
     setScrollRequest({ id, at: Date.now() });
   }
 
@@ -165,7 +178,16 @@ export function StudioShell() {
     );
   }
 
-  const inspector = selected ? (
+  const inspector = selectedGroup ? (
+    <DesignInspector
+      key={selectedGroup}
+      draft={draft}
+      group={selectedGroup}
+      layout={layout}
+      categories={categories}
+      checks={checks.filter((c) => c.sectionId === draft.selectedId)}
+    />
+  ) : selected ? (
     <Inspector
       key={selected.id}
       draft={draft}
@@ -191,21 +213,44 @@ export function StudioShell() {
         onSelectSection={selectAndReveal}
       />
       <div className={wide ? "grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)_360px]" : "grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]"}>
-        <aside className="min-h-0 border-r border-line-subtle bg-surface" aria-label="Sections">
-          <Outline
-            sections={draft.sections}
-            selectedId={draft.selectedId}
-            checks={checks}
-            emptyIds={emptyIds}
-            deviceLabel={DEVICE_LABEL[device]}
-            onSelect={selectAndReveal}
-            onMove={draft.move}
-            onToggle={(id, isActive) => draft.update(id, { isActive })}
-            onAdd={() => setGalleryOpen(true)}
-          />
+        <aside className="flex min-h-0 flex-col border-r border-line-subtle bg-surface" aria-label={mode === "page" ? "Sections" : "Site design"}>
+          <div className="border-b border-line-subtle px-3 py-3">
+            <SegmentedControl
+              aria-label="What to edit"
+              size="sm"
+              className="w-full"
+              value={mode}
+              onChange={(next) => {
+                setMode(next);
+                draft.select(null);
+              }}
+              options={[
+                { value: "page", label: "Homepage", testId: "studio-mode-page" },
+                { value: "design", label: "Site design", testId: "studio-mode-design" },
+              ]}
+            />
+          </div>
+          <div className="min-h-0 flex-1">
+            {mode === "page" ? (
+              <Outline
+                sections={draft.sections}
+                selectedId={draft.selectedId}
+                checks={checks}
+                emptyIds={emptyIds}
+                deviceLabel={DEVICE_LABEL[device]}
+                onSelect={selectAndReveal}
+                onMove={draft.move}
+                onToggle={(id, isActive) => draft.update(id, { isActive })}
+                onAdd={() => setGalleryOpen(true)}
+              />
+            ) : (
+              <DesignOutline design={draft.design} selectedId={draft.selectedId} checks={checks} onSelect={selectAndReveal} />
+            )}
+          </div>
         </aside>
         <Canvas
           sections={draft.sections}
+          design={draft.design}
           selectedId={draft.selectedId}
           device={device}
           onSelect={draft.select}
@@ -219,7 +264,12 @@ export function StudioShell() {
         )}
       </div>
       {!wide && (
-        <Drawer open={Boolean(selected)} onClose={() => draft.select(null)} title={selected ? SECTION_META[selected.type].label : ""} widthClassName="max-w-[400px]">
+        <Drawer
+          open={Boolean(selected || selectedGroup)}
+          onClose={() => draft.select(null)}
+          title={selectedGroup ? DESIGN_META[selectedGroup].label : selected ? SECTION_META[selected.type].label : ""}
+          widthClassName="max-w-[400px]"
+        >
           {inspector}
         </Drawer>
       )}

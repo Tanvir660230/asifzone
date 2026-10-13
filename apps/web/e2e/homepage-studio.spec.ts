@@ -23,7 +23,7 @@ async function login(page: Page) {
   await page.goto("/admin/login");
   await page.getByLabel("Email").fill(adminEmail);
   await page.getByLabel("Password").fill(adminPassword);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/dashboard/);
 }
 
@@ -100,6 +100,61 @@ test("edit in the live preview, hide per device, add a section and publish", asy
     // Put the homepage back as it was.
     const now = (await adminApi<StudioState>(page, "GET", "/api/homepage-sections/studio")).json;
     const saved = await adminApi<{ version: number }>(page, "PUT", "/api/homepage-sections/studio/draft", { version: now.version, sections: original.liveSections });
+    await adminApi(page, "POST", "/api/homepage-sections/studio/publish", { version: saved.json.version });
+  }
+});
+
+test("site design: brand colour, announcement bar and a menu link go live with Publish", async ({ page, isMobile }) => {
+  test.skip(isMobile, "the Studio needs a wide screen");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await login(page);
+  const original = (await adminApi<StudioState & { liveDesign: Record<string, unknown> }>(page, "GET", "/api/homepage-sections/studio")).json;
+  const NOTE = `Free delivery ${RUN}`;
+  const LINK = `Sale ${RUN.slice(-4)}`;
+
+  try {
+    await page.goto("/admin/homepage");
+    const frame = page.frameLocator('[data-testid="studio-frame"]');
+    await page.getByTestId("studio-mode-design").click();
+    const inspector = page.getByTestId("design-inspector");
+    // Start each group from the theme's defaults, whatever the store published before.
+    const open = async (group: string) => {
+      await page.getByTestId(`design-row-${group}`).click();
+      const reset = inspector.getByRole("button", { name: "Reset" });
+      if (await reset.isVisible()) await reset.click();
+    };
+
+    // Colours & type: a brand colour from the suggestions.
+    await open("theme");
+    await inspector.getByRole("button", { name: "#1f4d3a" }).click();
+
+    // Announcement bar: on, one message — visible in the preview at once.
+    await open("announcement");
+    await inspector.getByRole("switch", { name: /show the announcement bar/i }).click();
+    await inspector.getByRole("button", { name: /add message/i }).click();
+    await inspector.getByLabel("Message", { exact: true }).fill(NOTE);
+    await expect(frame.getByRole("region", { name: "Announcements" })).toContainText(NOTE);
+
+    // Header: a menu link before the categories.
+    await open("header");
+    await inspector.getByRole("button", { name: /add link/i }).click();
+    await inspector.getByLabel("Label", { exact: true }).fill(LINK);
+    await inspector.getByLabel("Link", { exact: true }).fill("/search");
+    await expect(frame.getByRole("navigation", { name: "Categories" }).getByRole("link", { name: LINK })).toBeVisible();
+
+    await page.getByTestId("studio-publish").click();
+    await expect(page.getByTestId("studio-save-status")).toContainText(/everything is published/i);
+    const html = await (await page.request.get("/")).text();
+    expect(html).toContain(NOTE);
+    expect(html).toContain(LINK);
+    expect(html).toContain("--color-accent:31 77 58");
+  } finally {
+    const now = (await adminApi<StudioState>(page, "GET", "/api/homepage-sections/studio")).json;
+    const saved = await adminApi<{ version: number }>(page, "PUT", "/api/homepage-sections/studio/draft", {
+      version: now.version,
+      sections: original.liveSections,
+      design: original.liveDesign,
+    });
     await adminApi(page, "POST", "/api/homepage-sections/studio/publish", { version: saved.json.version });
   }
 });

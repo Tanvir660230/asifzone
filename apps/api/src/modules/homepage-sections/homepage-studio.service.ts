@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import {
   configSchemaByType,
   REPEATABLE_SECTION_TYPES,
+  storefrontDesignSchema,
+  validateStorefrontDesign,
   validateStudioSections,
   type SaveStudioDraftInput,
   type StudioSection,
@@ -9,6 +11,7 @@ import {
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { invalidateHomepageSectionsCache, listHomepageSections } from "./homepage-section.service";
+import { getSettings, invalidateSettingsCache, SINGLETON_ID } from "../settings/settings.service";
 import { DRAFT_ID, lockDraft, toStudioSection } from "./homepage-draft-lock";
 
 /**
@@ -24,16 +27,25 @@ function staleVersion(version: number) {
   return new AppError(409, "The homepage draft was changed somewhere else — reload to get the latest.", { version });
 }
 
+async function liveDesign(): Promise<Record<string, unknown>> {
+  return ((await getSettings()).storefrontDesign as Record<string, unknown> | null) ?? {};
+}
+
 export async function getStudio() {
-  const live = (await listHomepageSections()).map(toStudioSection);
-  const draft = await prisma.homepageDraft.findUnique({ where: { id: DRAFT_ID } });
+  const [live, published, draft] = await Promise.all([
+    listHomepageSections().then((rows) => rows.map(toStudioSection)),
+    liveDesign(),
+    prisma.homepageDraft.findUnique({ where: { id: DRAFT_ID } }),
+  ]);
   const draftSections = (draft?.sections ?? null) as StudioSection[] | null;
   return {
     version: draft?.version ?? 0,
     sections: draftSections ?? live,
+    design: draftSections ? ((draft!.design as Record<string, unknown> | null) ?? published) : published,
     hasDraft: draftSections !== null,
     updatedAt: draftSections ? draft!.updatedAt.toISOString() : null,
     liveSections: live,
+    liveDesign: published,
   };
 }
 
@@ -44,7 +56,12 @@ export async function saveDraft(input: SaveStudioDraftInput, adminId: string) {
     if (input.version !== version) throw staleVersion(version);
     const saved = await tx.homepageDraft.update({
       where: { id: DRAFT_ID },
-      data: { version: version + 1, sections: input.sections as unknown as Prisma.InputJsonValue, updatedById: adminId },
+      data: {
+        version: version + 1,
+        sections: input.sections as unknown as Prisma.InputJsonValue,
+        ...(input.design !== undefined && { design: input.design as Prisma.InputJsonValue }),
+        updatedById: adminId,
+      },
     });
     return { version: saved.version, updatedAt: saved.updatedAt.toISOString() };
   });
@@ -53,7 +70,7 @@ export async function saveDraft(input: SaveStudioDraftInput, adminId: string) {
 export async function discardDraft(adminId: string) {
   await prisma.homepageDraft.updateMany({
     where: { id: DRAFT_ID },
-    data: { sections: Prisma.DbNull, version: { increment: 1 }, updatedById: adminId },
+    data: { sections: Prisma.DbNull, design: Prisma.DbNull, version: { increment: 1 }, updatedById: adminId },
   });
 }
 
@@ -77,7 +94,21 @@ export async function publishDraft(version: number, adminId: string) {
         (errors[row.id] ??= []).push("This section can't be removed — switch it off instead.");
       }
     }
+    // The site design goes live with the sections; a draft that never touched it keeps the published one.
+    if (draft.design) {
+      for (const [group, messages] of Object.entries(validateStorefrontDesign(draft.design).groups)) errors[`design:${group}`] = messages!;
+    }
     if (Object.keys(errors).length > 0) throw AppError.badRequest("Fix the highlighted sections before publishing.", errors);
+    // Stored as the admin wrote it (already validated above), not zod's output — the output fills in defaults, which
+    // would make an untouched group look customised next time.
+    const design = draft.design && storefrontDesignSchema.safeParse(draft.design).success ? draft.design : null;
+    if (design) {
+      await tx.storeSetting.upsert({
+        where: { id: SINGLETON_ID },
+        create: { id: SINGLETON_ID, storefrontDesign: design as Prisma.InputJsonValue },
+        update: { storefrontDesign: design as Prisma.InputJsonValue },
+      });
+    }
 
     await tx.homepageSection.deleteMany({ where: { id: { in: live.filter((row) => !draftIds.has(row.id)).map((row) => row.id) } } });
     const liveIds = new Set(live.map((row) => row.id));
@@ -96,20 +127,23 @@ export async function publishDraft(version: number, adminId: string) {
 
     const result = await tx.homepageSection.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
     const admin = await tx.adminUser.findUnique({ where: { id: adminId }, select: { name: true } });
+    const publishedDesign = (await tx.storeSetting.findUnique({ where: { id: SINGLETON_ID }, select: { storefrontDesign: true } }))?.storefrontDesign;
     await tx.homepageRevision.create({
       data: {
         sections: result.map(toStudioSection) as unknown as Prisma.InputJsonValue,
+        design: (publishedDesign ?? {}) as Prisma.InputJsonValue,
         publishedById: adminId,
         publishedByName: admin?.name ?? null,
       },
     });
     const old = await tx.homepageRevision.findMany({ orderBy: { publishedAt: "desc" }, skip: REVISIONS_KEPT, select: { id: true } });
     if (old.length) await tx.homepageRevision.deleteMany({ where: { id: { in: old.map((r) => r.id) } } });
-    await tx.homepageDraft.update({ where: { id: DRAFT_ID }, data: { sections: Prisma.DbNull, version: { increment: 1 }, updatedById: adminId } });
-    return result;
+    await tx.homepageDraft.update({ where: { id: DRAFT_ID }, data: { sections: Prisma.DbNull, design: Prisma.DbNull, version: { increment: 1 }, updatedById: adminId } });
+    return { result, designChanged: Boolean(design) };
   });
   await invalidateHomepageSectionsCache();
-  return published;
+  if (published.designChanged) await invalidateSettingsCache();
+  return published.result;
 }
 
 export async function listRevisions() {
@@ -130,7 +164,13 @@ export async function restoreRevision(id: string, adminId: string) {
     await lockDraft(tx);
     await tx.homepageDraft.update({
       where: { id: DRAFT_ID },
-      data: { version: { increment: 1 }, sections: revision.sections as Prisma.InputJsonValue, updatedById: adminId },
+      data: {
+        version: { increment: 1 },
+        sections: revision.sections as Prisma.InputJsonValue,
+        // Revisions from before the site design existed carry none: keep the draft on the published design then.
+        design: (revision.design ?? (await liveDesign())) as Prisma.InputJsonValue,
+        updatedById: adminId,
+      },
     });
   });
   return getStudio();

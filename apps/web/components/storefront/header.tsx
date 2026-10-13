@@ -1,3 +1,4 @@
+import { withMenuLinks } from "@/lib/nav-links";
 import Link from "next/link";
 import { PackageSearch, User } from "lucide-react";
 import type { StoreSettings } from "@clothing-brand/shared";
@@ -32,6 +33,8 @@ const iconButtonClass =
   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-700 transition-all duration-200 ease-smooth hover:bg-ink-100 hover:text-brass-500";
 
 export function Header({ categories, settings }: HeaderProps) {
+  // The store's own menu links (Site design → Header) lead, then the categories.
+  const menu = withMenuLinks(categories, settings.storefrontDesign?.header?.menuLinks);
   const monogram = (
     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-ink-900 font-display text-base font-semibold tracking-tight text-ink-900">
       {getInitials(settings.storeName)}
@@ -55,7 +58,7 @@ export function Header({ categories, settings }: HeaderProps) {
             tab bar on mobile instead, so the header stays uncluttered. */}
         <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 lg:hidden">
           <div className="flex items-center justify-start">
-            <MobileNav categories={categories} />
+            <MobileNav categories={menu} />
           </div>
           <Link
             href="/"
@@ -82,7 +85,7 @@ export function Header({ categories, settings }: HeaderProps) {
           </div>
 
           <div className="flex min-w-0 flex-1 justify-center">
-            <MegaMenu categories={categories} />
+            <MegaMenu categories={menu} />
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">

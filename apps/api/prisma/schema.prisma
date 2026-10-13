@@ -1827,6 +1827,8 @@ model HomepageDraft {
   version     Int      @default(0)
   /// The working copy; null once it has been published or discarded (the row stays so `version` keeps counting).
   sections    Json?
+  /// The site design being edited with it (theme, announcement bar, header, footer); null with `sections`.
+  design      Json?
   updatedById String?
   updatedAt   DateTime @updatedAt
 }
@@ -1835,6 +1837,8 @@ model HomepageDraft {
 model HomepageRevision {
   id              String   @id @default(cuid())
   sections        Json
+  /// The site design as it went live with these sections (null on revisions from before the design existed).
+  design          Json?
   publishedById   String?
   publishedByName String?
   publishedAt     DateTime @default(now())
@@ -2103,6 +2107,9 @@ model StoreSetting {
   seoDescription               String?
   newsletterHeading            String?
   newsletterText               String?
+  /// Storefront Studio → Site design, as published: theme choices, announcement bar, header and footer
+  /// (packages/shared storefront-design.ts). Written only by the Studio's publish.
+  storefrontDesign             Json?
   updatedAt                    DateTime @updatedAt
 }
 

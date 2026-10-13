@@ -1,3 +1,4 @@
+import { contrastRatio, hexToRgb, isHexColor, validateStorefrontDesign, type StorefrontDesign } from "./storefront-design";
 import {
   configSchemaByType,
   REPEATABLE_SECTION_TYPES,
@@ -72,7 +73,9 @@ export interface StudioCheck {
     | "cta-incomplete"
     | "dark-bands-adjacent"
     | "no-hero"
-    | "wide-promo-no-mobile-image";
+    | "wide-promo-no-mobile-image"
+    | "accent-low-contrast"
+    | "announcement-long";
   message: string;
 }
 
@@ -107,6 +110,25 @@ function isLive(section: StudioSection, now: Date) {
   if (section.startsAt && new Date(section.startsAt) > now) return false;
   if (section.endsAt && new Date(section.endsAt) < now) return false;
   return true;
+}
+
+/** Site-design checks (Studio "Site design" tab). Section ids are `design:<group>`. */
+export function studioDesignChecks(design: unknown): StudioCheck[] {
+  const checks: StudioCheck[] = [];
+  const { groups } = validateStorefrontDesign(design);
+  for (const [group, messages] of Object.entries(groups)) {
+    checks.push({ sectionId: `design:${group}`, level: "error", code: "invalid", message: messages![0]! });
+  }
+  const d = (design ?? {}) as StorefrontDesign;
+  const accent = d.theme?.accent;
+  // The accent is also link and focus colour on the page background: under 3:1 it stops reading as either.
+  if (isHexColor(accent) && contrastRatio(hexToRgb(accent), [255, 255, 255]) < 3) {
+    checks.push({ sectionId: "design:theme", level: "warning", code: "accent-low-contrast", message: "This brand colour is light — links and focus rings in it are hard to see. Pick a deeper shade." });
+  }
+  if (d.announcement?.enabled && d.announcement.messages?.some((m) => (m?.text ?? "").length > 70)) {
+    checks.push({ sectionId: "design:announcement", level: "tip", code: "announcement-long", message: "Long announcements wrap to two lines on phones — aim for under 70 characters." });
+  }
+  return checks;
 }
 
 /** Page-health checks the Studio shows before publishing: errors block it, warnings and tips only advise. */

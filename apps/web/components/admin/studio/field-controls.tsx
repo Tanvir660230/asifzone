@@ -9,9 +9,11 @@ import { IconPicker } from "@/components/ui/icon-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageUploadField } from "@/components/admin/image-upload-field";
+import { isHexColor } from "@clothing-brand/shared";
 import { uploadHomepageSectionImage } from "@/lib/api/admin-homepage-sections";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
@@ -121,15 +123,35 @@ function FieldControl({
           <p className="ui-label mb-1.5" id={`${id}-label`}>
             {field.label}
           </p>
-          <SegmentedControl
-            aria-label={field.label}
-            size="sm"
-            className="w-full"
-            options={field.options.map((o) => ({ value: o.value, label: o.label }))}
-            value={current}
-            // The default isn't stored — the config stays the store's actual choices.
-            onChange={(next) => set(next === field.defaultValue ? undefined : next)}
-          />
+          {/* A segmented row while the options fit the inspector's width; more (or longer) ones wrap as a grid of choices. */}
+          {field.options.length <= 4 && field.options.reduce((n, o) => n + o.label.length, 0) <= 28 ? (
+            <SegmentedControl
+              aria-label={field.label}
+              size="sm"
+              className="w-full"
+              options={field.options.map((o) => ({ value: o.value, label: o.label }))}
+              value={current}
+              // The default isn't stored — the config stays the store's actual choices.
+              onChange={(next) => set(next === field.defaultValue ? undefined : next)}
+            />
+          ) : (
+            <div role="group" aria-label={field.label} className="grid grid-cols-2 gap-2">
+              {field.options.map((o) => (
+                <button
+                  key={String(o.value)}
+                  type="button"
+                  aria-pressed={current === o.value}
+                  onClick={() => set(o.value === field.defaultValue ? undefined : o.value)}
+                  className={cn(
+                    "min-h-10 rounded-lg border px-3 py-2 text-left text-sm transition-colors duration-fast",
+                    current === o.value ? "border-accent bg-accent/10 font-medium text-fg" : "border-line text-fg-muted hover:border-line-strong hover:text-fg",
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
           {field.hint && <p className="ui-field-hint mt-1.5">{field.hint}</p>}
           {error && <p className="ui-field-error mt-1.5">{error}</p>}
         </div>
@@ -150,6 +172,23 @@ function FieldControl({
           </Select>
         </Field>
       );
+    case "color":
+      return <ColorField field={field} value={typeof value === "string" ? value : ""} id={id} error={error} onValue={(next, typing) => set(next || undefined, typing)} />;
+    case "toggle": {
+      const on = typeof value === "boolean" ? value : field.defaultValue;
+      return (
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-line bg-surface px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-fg" id={`${id}-label`}>
+              {field.label}
+            </p>
+            {field.hint && <p className="text-xs text-fg-muted">{field.hint}</p>}
+          </div>
+          {/* The default isn't stored, so the config holds only the store's actual choices. */}
+          <Switch aria-label={field.label} checked={on} onChange={(next) => set(next === field.defaultValue ? undefined : next)} />
+        </div>
+      );
+    }
     case "icon":
       return (
         <div>
@@ -171,6 +210,84 @@ function FieldControl({
         />
       );
   }
+}
+
+/** A brand colour: one tap on a suggested swatch, the system colour picker, or a typed hex value — and "Theme" to go
+ * back to the store theme's own colour. The swatches show the store's data, so they're drawn with an inline style. */
+function ColorField({
+  field,
+  value,
+  id,
+  error,
+  onValue,
+}: {
+  field: Extract<FieldDef, { kind: "color" }>;
+  value: string;
+  id: string;
+  error?: string;
+  onValue: (hex: string, typing?: boolean) => void;
+}) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const current = value.toLowerCase();
+  return (
+    <div>
+      <p className="ui-label mb-1.5">{field.label}</p>
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`${field.label} suggestions`}>
+        <button
+          type="button"
+          onClick={() => onValue("")}
+          aria-pressed={!value}
+          className={cn(
+            "h-8 rounded-full border px-3 text-xs font-medium transition-colors duration-fast",
+            !value ? "border-accent bg-accent/10 text-fg" : "border-line text-fg-muted hover:border-line-strong",
+          )}
+        >
+          Theme
+        </button>
+        {field.swatches.map((hex) => (
+          <button
+            key={hex}
+            type="button"
+            onClick={() => onValue(hex)}
+            aria-label={hex}
+            aria-pressed={current === hex.toLowerCase()}
+            title={hex}
+            className={cn(
+              "h-8 w-8 rounded-full ring-offset-2 ring-offset-surface transition-shadow duration-fast",
+              current === hex.toLowerCase() ? "ring-2 ring-accent" : "ring-1 ring-line hover:ring-line-strong",
+            )}
+            style={{ backgroundColor: hex }}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          type="color"
+          aria-label="Pick any colour"
+          value={isHexColor(value) ? value : "#222222"}
+          onChange={(e) => onValue(e.target.value, true)}
+          className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-line bg-surface p-1"
+        />
+        <Input
+          id={id}
+          value={text}
+          placeholder="#1F3A5F"
+          spellCheck={false}
+          autoComplete="off"
+          aria-label={`${field.label} hex value`}
+          onChange={(e) => {
+            const next = e.target.value.trim();
+            setText(next);
+            if (isHexColor(next)) onValue(next, true);
+            else if (next === "") onValue("");
+          }}
+        />
+      </div>
+      {field.hint && <p className="ui-field-hint mt-1.5">{field.hint}</p>}
+      {error && <p className="ui-field-error mt-1.5">{error}</p>}
+    </div>
+  );
 }
 
 /** A whole number typed freely (so "10" can be typed through "1") — applied as soon as it's in range, and pulled back
@@ -316,7 +433,7 @@ function ItemsField({
                   type="button"
                   aria-expanded={expanded}
                   onClick={() => setOpen(expanded ? null : i)}
-                  className="flex min-h-11 flex-1 items-center gap-2 text-left text-sm text-fg"
+                  className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left text-sm text-fg"
                 >
                   <ChevronDown size={15} aria-hidden="true" className={cn("shrink-0 text-fg-subtle transition-transform duration-fast", expanded && "rotate-180")} />
                   <span className="truncate">{field.summary(item)}</span>

@@ -297,6 +297,17 @@ export const saveStudioDraftSchema = z.object({
   /** The draft version this edit was made on; a mismatch means someone else saved in between (409). */
   version: z.number().int().min(0),
   sections: z.array(studioSectionSchema).max(60),
+  /** The site design (theme, announcement bar, header, footer) — stored as typed, validated on publish. Absent keeps
+   * the draft's current design. */
+  design: z
+    .object({
+      theme: z.record(z.unknown()).optional(),
+      announcement: z.record(z.unknown()).optional(),
+      header: z.record(z.unknown()).optional(),
+      footer: z.record(z.unknown()).optional(),
+    })
+    .strict()
+    .optional(),
 });
 
 export const publishStudioDraftSchema = z.object({

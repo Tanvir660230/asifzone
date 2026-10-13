@@ -25,8 +25,8 @@ function LinkColumn({ title, links }: { title: string; links: { href: string; la
     <div>
       <h2 className="text-sm font-medium text-fg">{title}</h2>
       <ul className="mt-4 space-y-2.5 text-sm">
-        {links.map((link) => (
-          <li key={link.label}>
+        {links.map((link, i) => (
+          <li key={i}>
             <Link href={link.href} className={LINK}>
               {link.label}
             </Link>
@@ -50,17 +50,31 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
     whatsappLink && { href: whatsappLink.url, label: "WhatsApp", external: true },
     settings.contactEmail && { href: `mailto:${settings.contactEmail}`, label: settings.contactEmail },
   ].filter(Boolean) as { href: string; label: string; external?: boolean }[];
+  // The store's own footer choices (Storefront Studio → Site design → Footer).
+  const design = settings.storefrontDesign?.footer;
+  const extraLinks = design?.links ?? [];
+  const showNewsletter = design?.showNewsletter !== false;
 
   return (
     <footer className="mt-24 bg-cream-200 text-fg">
       <div className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 sm:pt-20 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-8">
           <div className="lg:col-span-5">
-            <h2 className="font-display text-[1.75rem] leading-[1.1] sm:text-[2.125rem]">{settings.newsletterHeading || "Stay in touch"}</h2>
-            <p className="mt-3 max-w-sm text-sm leading-relaxed text-fg-muted">
-              {settings.newsletterText || "New arrivals and offers by email. Unsubscribe any time."}
-            </p>
-            <NewsletterForm variant="light" className="mt-6 w-full max-w-sm" />
+            {showNewsletter ? (
+              <>
+                <h2 className="font-display text-[1.75rem] leading-[1.1] sm:text-[2.125rem]">{settings.newsletterHeading || "Stay in touch"}</h2>
+                <p className="mt-3 max-w-sm text-sm leading-relaxed text-fg-muted">
+                  {settings.newsletterText || "New arrivals and offers by email. Unsubscribe any time."}
+                </p>
+                <NewsletterForm variant="light" className="mt-6 w-full max-w-sm" />
+                {design?.about && <p className="mt-8 max-w-sm text-sm leading-relaxed text-fg-muted">{design.about}</p>}
+              </>
+            ) : (
+              <>
+                <h2 className="font-display text-[1.75rem] leading-[1.1] sm:text-[2.125rem]">{settings.storeName}</h2>
+                <p className="mt-3 max-w-sm text-sm leading-relaxed text-fg-muted">{design?.about || settings.tagline}</p>
+              </>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:col-span-6 lg:col-start-7">
             {categoryLinks.length > 0 && (
@@ -69,6 +83,7 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
                 links={[...categoryLinks.map((c) => ({ href: `/category/${c.slug}`, label: c.name })), { href: "/search", label: "All products" }]}
               />
             )}
+            {extraLinks.length > 0 && <LinkColumn title={design?.linksTitle || "Explore"} links={extraLinks} />}
             <LinkColumn
               title="Help"
               links={[

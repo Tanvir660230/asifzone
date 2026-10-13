@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ChevronRight, Search, X } from "lucide-react";
-import type { CategoryTreeNode } from "@/lib/api/storefront";
+import { navHref, type NavNode } from "@/lib/nav-links";
 import { useCartCount } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useSearchOverlayStore } from "@/store/search-overlay";
@@ -73,7 +73,7 @@ export function MihrabBagButton({ compact = false }: { compact?: boolean }) {
 }
 
 /** Phones: the whole store in one sheet — categories set large, then the account links the classic tab bar carried. */
-export function MihrabMenu({ categories }: { categories: CategoryTreeNode[] }) {
+export function MihrabMenu({ categories }: { categories: NavNode[] }) {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const openSearch = useSearchOverlayStore((s) => s.open);
@@ -114,7 +114,7 @@ export function MihrabMenu({ categories }: { categories: CategoryTreeNode[] }) {
                   return (
                     <li key={cat.id} className="border-b border-line">
                       <div className="flex items-center justify-between">
-                        <Link href={`/category/${cat.slug}`} onClick={close} className="flex-1 py-4 font-display text-[1.5rem] leading-tight text-fg">
+                        <Link href={navHref(cat)} onClick={close} className="flex-1 py-4 font-display text-[1.5rem] leading-tight text-fg">
                           {cat.name}
                         </Link>
                         {cat.children.length > 0 && (

@@ -1,4 +1,4 @@
-import type { StudioSection } from "@clothing-brand/shared";
+import type { StorefrontDesign, StudioSection } from "@clothing-brand/shared";
 
 /** The Storefront Studio's preview: the real homepage rendered in a same-origin iframe from the unsaved draft. */
 export const STUDIO_FRAME_PATH = "/admin/homepage-preview-frame";
@@ -13,6 +13,8 @@ export const STUDIO_DEVICE_WIDTH: Record<StudioDevice, number> = { desktop: 1280
 export interface StudioUpdateMessage {
   type: "studio:update";
   sections: StudioSection[];
+  /** The draft site design: theme tokens, announcement bar, header and footer. */
+  design: StorefrontDesign;
   selectedId: string | null;
 }
 

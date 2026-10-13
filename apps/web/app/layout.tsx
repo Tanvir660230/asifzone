@@ -10,6 +10,7 @@ import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-da
 import { RUNTIME_CONFIG_ELEMENT_ID, publicRuntimeConfig, setIntegrationIds } from "@/lib/runtime-config";
 import { RuntimeConfig } from "@/components/runtime-config";
 import { resolveThemeId } from "@/lib/theme";
+import { DESIGN_STYLE_ELEMENT_ID, designCss } from "@/lib/design-css";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
 import { AdPixels } from "@/components/analytics/ad-pixels";
@@ -102,14 +103,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const runtime = publicRuntimeConfig();
   const organizationJsonLd = buildOrganizationJsonLd(settings, siteUrl);
   const websiteJsonLd = buildWebsiteJsonLd(settings, siteUrl);
+  const themeId = resolveThemeId(runtime.theme);
 
   return (
     <html
       lang="en"
-      data-brand={resolveThemeId(runtime.theme)}
+      data-brand={themeId}
       className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${notoSansBengali.variable}`}
     >
       <body>
+        {/* The store's own design choices (Storefront Studio → Site design): token re-values only, validated on publish.
+            Always present, so the Studio preview can swap in the draft's. */}
+        <style id={DESIGN_STYLE_ELEMENT_ID} dangerouslySetInnerHTML={{ __html: designCss(themeId, settings.storefrontDesign?.theme) }} />
         {/* This installation's public runtime configuration (Phase 1A) — data, not script: CSP does not apply to it. */}
         <script id={RUNTIME_CONFIG_ELEMENT_ID} type="application/json" dangerouslySetInnerHTML={{ __html: jsonLdString(runtime) }} />
         <link rel="preconnect" href={runtime.apiUrl} />

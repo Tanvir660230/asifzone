@@ -11,11 +11,11 @@ type Tx = Prisma.TransactionClient;
  * Locks the draft row for the rest of the transaction and returns it. The row is created first if it doesn't exist yet,
  * so the lock always has a row to hold — otherwise two first saves would both see "no draft" and both win.
  */
-export async function lockDraft(tx: Tx): Promise<{ version: number; sections: StudioSection[] | null }> {
+export async function lockDraft(tx: Tx): Promise<{ version: number; sections: StudioSection[] | null; design: Record<string, unknown> | null }> {
   await tx.$executeRaw`INSERT INTO "HomepageDraft" (id, version, "updatedAt") VALUES (${DRAFT_ID}, 0, now()) ON CONFLICT (id) DO NOTHING`;
-  const [row] = await tx.$queryRaw<{ version: number; sections: StudioSection[] | null }[]>`
-    SELECT version, sections FROM "HomepageDraft" WHERE id = ${DRAFT_ID} FOR UPDATE`;
-  return { version: row!.version, sections: row!.sections };
+  const [row] = await tx.$queryRaw<{ version: number; sections: StudioSection[] | null; design: Record<string, unknown> | null }[]>`
+    SELECT version, sections, design FROM "HomepageDraft" WHERE id = ${DRAFT_ID} FOR UPDATE`;
+  return { version: row!.version, sections: row!.sections, design: row!.design };
 }
 
 export function toStudioSection(section: HomepageSection): StudioSection {

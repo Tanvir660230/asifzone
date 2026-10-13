@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import request from "supertest";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { StudioSection } from "@clothing-brand/shared";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
+import { invalidateSettingsCache } from "../settings/settings.service";
 import { asOwner, cleanupFixtures, createStockedProduct, RUN } from "../../test-fixtures";
 
 // Storefront Studio: the homepage is edited as one autosaved draft (optimistic `version`), validated strictly only on
@@ -14,6 +15,7 @@ type Owner = Awaited<ReturnType<typeof asOwner>>;
 let owner: Owner;
 let liveBefore: Prisma.HomepageSectionCreateManyInput[] = [];
 let revisionIdsBefore: string[] = [];
+let designBefore: Prisma.InputJsonValue | typeof Prisma.DbNull = Prisma.DbNull;
 const customerIds: string[] = [];
 
 beforeAll(async () => {
@@ -21,6 +23,9 @@ beforeAll(async () => {
   await owner.get("/api/homepage-sections"); // seeds the defaults on an empty store
   liveBefore = (await prisma.homepageSection.findMany()).map((s) => ({ ...s, config: s.config as Prisma.InputJsonValue }));
   revisionIdsBefore = (await prisma.homepageRevision.findMany({ select: { id: true } })).map((r) => r.id);
+  await owner.get("/api/settings"); // creates the settings row on an empty store
+  const settings = await prisma.storeSetting.findFirstOrThrow();
+  designBefore = (settings.storefrontDesign as Prisma.InputJsonValue | null) ?? Prisma.DbNull;
 });
 
 beforeEach(async () => {
@@ -34,6 +39,8 @@ afterAll(async () => {
     prisma.homepageSection.deleteMany({ where: { id: { notIn: liveBefore.map((s) => s.id!) } } }),
     ...liveBefore.map(({ id, ...data }) => prisma.homepageSection.upsert({ where: { id: id! }, create: { id, ...data }, update: data })),
   ]);
+  await prisma.storeSetting.updateMany({ where: { id: "singleton" }, data: { storefrontDesign: designBefore } });
+  await invalidateSettingsCache();
   await prisma.productReview.deleteMany({ where: { customerId: { in: customerIds } } });
   await prisma.customer.deleteMany({ where: { id: { in: customerIds } } });
   await cleanupFixtures();
@@ -43,12 +50,19 @@ afterAll(async () => {
 async function studio() {
   const res = await owner.get(BASE);
   expect(res.status).toBe(200);
-  return res.body as { version: number; sections: StudioSection[]; hasDraft: boolean; liveSections: StudioSection[] };
+  return res.body as {
+    version: number;
+    sections: StudioSection[];
+    hasDraft: boolean;
+    liveSections: StudioSection[];
+    design: Record<string, unknown>;
+    liveDesign: Record<string, unknown>;
+  };
 }
 
 /** Saves the draft on top of whatever version the server has now (as the editor does). */
-async function save(sections: StudioSection[]) {
-  return owner.put(`${BASE}/draft`, { version: (await studio()).version, sections });
+async function save(sections: StudioSection[], design?: Record<string, unknown>) {
+  return owner.put(`${BASE}/draft`, { version: (await studio()).version, sections, ...(design && { design }) });
 }
 
 async function publish() {
@@ -221,6 +235,47 @@ describe("Storefront Studio concurrency and the older section routes", () => {
     // The draft carries the change (so a later publish keeps it) and its version moved (so open editors reload).
     expect(after.sections.find((s) => s.id === story.id)!.config.heading).toBe(`Legacy ${RUN}`);
     expect(after.version).toBeGreaterThan(before);
+  });
+});
+
+describe("Storefront Studio site design", () => {
+  const design = {
+    theme: { accent: "#1f3a5f", corners: "soft" },
+    announcement: { enabled: true, messages: [{ text: `Free delivery ${RUN}`, href: "/shipping-returns" }] },
+    header: { menuLinks: [{ label: "Sale", href: "/search" }] },
+  };
+
+  it("drafts the design with the sections and publishes it to the public settings", async () => {
+    const { sections, liveDesign } = await studio();
+    await save(sections, design);
+    const drafted = await studio();
+    expect(drafted.design).toMatchObject(design);
+    expect(drafted.liveDesign).toEqual(liveDesign);
+    // Not public until published.
+    expect((await request(app).get("/api/settings")).body.settings.storefrontDesign ?? {}).not.toMatchObject(design);
+
+    expect((await publish()).status).toBe(200);
+    expect((await request(app).get("/api/settings")).body.settings.storefrontDesign).toMatchObject(design);
+    expect((await studio()).liveDesign).toMatchObject(design);
+  });
+
+  it("refuses to publish an invalid design, keyed by its group", async () => {
+    const { sections } = await studio();
+    await save(sections, { announcement: { enabled: true, messages: [] } });
+    const res = await publish();
+    expect(res.status).toBe(400);
+    expect(Object.keys(res.body.details)).toEqual(["design:announcement"]);
+  });
+
+  it("restores the design along with the sections", async () => {
+    const { sections } = await studio();
+    await save(sections, design);
+    await publish();
+    const [withDesign] = (await owner.get(`${BASE}/revisions`)).body.revisions as { id: string }[];
+    await save(sections, {});
+    await publish();
+    const restored = (await owner.post(`${BASE}/revisions/${withDesign!.id}/restore`)).body;
+    expect(restored.design).toMatchObject(design);
   });
 });
 

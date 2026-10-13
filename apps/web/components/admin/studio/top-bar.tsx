@@ -33,6 +33,7 @@ import type { StudioDevice } from "@/lib/studio/preview-protocol";
 import type { StudioDraft } from "@/lib/studio/use-studio-draft";
 import { cn } from "@/lib/utils";
 import { SECTION_META } from "./section-meta";
+import { DESIGN_META, designGroupOf } from "./design-meta";
 
 const DEVICES: { value: StudioDevice; label: string; icon: typeof Monitor }[] = [
   { value: "desktop", label: "Computer", icon: Monitor },
@@ -227,20 +228,22 @@ function ChecksButton({ checks, sections, onSelectSection }: { checks: StudioChe
                   <ul>
                     {items.map((check, i) => {
                       const section = sections.find((s) => s.id === check.sectionId);
+                      const group = designGroupOf(check.sectionId);
+                      const name = group ? DESIGN_META[group].label : section ? SECTION_META[section.type].label : null;
                       return (
                         <li key={`${check.code}-${check.sectionId}-${i}`}>
                           <button
                             type="button"
-                            disabled={!section}
+                            disabled={!name}
                             onClick={() => {
-                              if (section) onSelectSection(section.id);
+                              if (name && check.sectionId) onSelectSection(check.sectionId);
                               setOpen(false);
                             }}
                             className="flex w-full gap-2.5 rounded-lg px-3 py-2 text-left hover:bg-ink-900/[0.04] disabled:hover:bg-transparent"
                           >
                             <Icon size={15} className={cn("mt-0.5 shrink-0", className)} aria-hidden="true" />
                             <span className="min-w-0">
-                              {section && <span className="block text-xs font-medium text-fg">{SECTION_META[section.type].label}</span>}
+                              {name && <span className="block text-xs font-medium text-fg">{name}</span>}
                               <span className="block text-xs leading-relaxed text-fg-muted">{check.message}</span>
                             </span>
                           </button>

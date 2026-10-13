@@ -1,3 +1,4 @@
+import { withMenuLinks } from "@/lib/nav-links";
 import Link from "next/link";
 import { policyHighlights, storePolicy, type StoreSettings } from "@clothing-brand/shared";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
@@ -19,6 +20,7 @@ const TEXT_ACTION = "text-sm font-medium text-fg transition-colors duration-200 
  * categories on a row of their own. Phones get logo · search · bag · menu and no bottom tab bar.
  */
 export function MihrabHeader({ categories, settings }: HeaderProps) {
+  const menu = withMenuLinks(categories, settings.storefrontDesign?.header?.menuLinks);
   const promises = policyHighlights(storePolicy(settings)).map((line) => line.label);
   const wordmark = <span className="font-display text-2xl leading-none text-fg">{settings.storeName}</span>;
   const logo = (size: string) =>
@@ -40,7 +42,7 @@ export function MihrabHeader({ categories, settings }: HeaderProps) {
           <div className="flex items-center">
             <MihrabSearchIcon />
             <MihrabBagButton compact />
-            <MihrabMenu categories={categories} />
+            <MihrabMenu categories={menu} />
           </div>
         </div>
 
@@ -65,7 +67,7 @@ export function MihrabHeader({ categories, settings }: HeaderProps) {
         </div>
         <div className="hidden border-t border-line lg:block">
           <div className="mx-auto flex h-12 max-w-7xl items-center px-8">
-            <MegaMenu categories={categories} />
+            <MegaMenu categories={menu} />
           </div>
         </div>
       </header>

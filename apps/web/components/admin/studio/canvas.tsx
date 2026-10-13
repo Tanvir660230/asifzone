@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { StudioSection } from "@clothing-brand/shared";
+import type { StorefrontDesign, StudioSection } from "@clothing-brand/shared";
 import { Spinner } from "@/components/ui/spinner";
 import {
   isStudioMessage,
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 interface CanvasProps {
   sections: StudioSection[];
+  design: StorefrontDesign;
   selectedId: string | null;
   device: StudioDevice;
   onSelect: (id: string) => void;
@@ -30,14 +31,14 @@ interface CanvasProps {
  * The live preview: the storefront running in an iframe at the device's real width (so its own breakpoints decide the
  * layout, exactly as on that device), scaled down to fit the canvas. Draft changes are posted to it as they happen.
  */
-export function Canvas({ sections, selectedId, device, onSelect, onEmptyIds, scrollRequest }: CanvasProps) {
+export function Canvas({ sections, design, selectedId, device, onSelect, onEmptyIds, scrollRequest }: CanvasProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
   const [ready, setReady] = useState(false);
 
-  const latest = useRef<StudioUpdateMessage>({ type: "studio:update", sections, selectedId });
-  latest.current = { type: "studio:update", sections, selectedId };
+  const latest = useRef<StudioUpdateMessage>({ type: "studio:update", sections, design, selectedId });
+  latest.current = { type: "studio:update", sections, design, selectedId };
   const handlers = useRef({ onSelect, onEmptyIds });
   handlers.current = { onSelect, onEmptyIds };
 
@@ -72,7 +73,7 @@ export function Canvas({ sections, selectedId, device, onSelect, onEmptyIds, scr
     if (!ready) return;
     const t = setTimeout(() => send(latest.current), 60);
     return () => clearTimeout(t);
-  }, [sections, selectedId, ready]);
+  }, [sections, design, selectedId, ready]);
 
   useEffect(() => {
     if (ready && scrollRequest) send({ type: "studio:scroll-to", id: scrollRequest.id });

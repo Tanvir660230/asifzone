@@ -23,6 +23,8 @@ interface UiTokens {
     }
   >;
   DEFAULT_THEME: string;
+  /** Store-chosen corner styles: the complete radius variable set for each. */
+  cornerPresets: Record<"sharp" | "soft" | "round", Record<string, string>>;
   /** The base design's dark sections (`.ui-band-inverse`): palette steps re-valued on the dark palette. */
   inverseBandVariables: Record<string, string>;
   /** Regions with their own identity, each the complete variable set for `[data-surface="<id>"]`: `admin` (the Store

@@ -7,6 +7,9 @@ export interface StudioState {
   hasDraft: boolean;
   updatedAt: string | null;
   liveSections: StudioSection[];
+  /** The site design being edited (draft, else published) and as published. */
+  design: Record<string, unknown>;
+  liveDesign: Record<string, unknown>;
 }
 
 export interface StudioRevision {
@@ -23,8 +26,8 @@ export function getStudio() {
 }
 
 /** 409 (ApiError.details.version) when the draft was saved elsewhere since `version`. */
-export function saveStudioDraft(version: number, sections: StudioSection[]) {
-  return apiFetch<{ version: number; updatedAt: string }>(`${BASE}/draft`, { method: "PUT", body: { version, sections } });
+export function saveStudioDraft(version: number, sections: StudioSection[], design: Record<string, unknown>) {
+  return apiFetch<{ version: number; updatedAt: string }>(`${BASE}/draft`, { method: "PUT", body: { version, sections, design } });
 }
 
 export function discardStudioDraft() {

@@ -2,7 +2,22 @@
 
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Banner, FlashSale, Product, ProductCarouselConfig, StudioSection } from "@clothing-brand/shared";
+import type {
+  Banner,
+  FlashSale,
+  PaymentMethodOption,
+  Product,
+  ProductCarouselConfig,
+  SocialLink,
+  StorefrontDesign,
+  StoreSettings,
+  StudioSection,
+} from "@clothing-brand/shared";
+import { AnnouncementBar } from "@/components/storefront/announcement-bar";
+import { StoreFooter, StoreHeader } from "@/components/storefront/store-chrome";
+import { DESIGN_STYLE_ELEMENT_ID, designCss } from "@/lib/design-css";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
+import { resolveThemeId } from "@/lib/theme";
 import { HomeSection, type HomeSectionData } from "@/components/storefront/home/home-section";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { featuredReviewsQueries, loadFeaturedReviews, resolveProductCarouselProducts } from "@/lib/homepage-data";
@@ -16,10 +31,12 @@ import {
   type StudioUpdateMessage,
 } from "@/lib/studio/preview-protocol";
 import { SECTION_META } from "./section-meta";
+import { DESIGN_META, designGroupOf } from "./design-meta";
 
 interface HomepagePreviewFrameProps {
-  storeName: string;
-  tagline: string | null;
+  settings: StoreSettings;
+  socialLinks: SocialLink[];
+  paymentMethods: PaymentMethodOption[];
   tree: CategoryTreeNode[];
   banners: Banner[];
   flashSale: FlashSale | null;
@@ -31,7 +48,9 @@ function post(message: StudioReadyMessage | StudioSelectMessage | StudioRendered
 }
 
 function sectionElement(id: string) {
-  return document.querySelector<HTMLElement>(`[data-section-id="${CSS.escape(id)}"]`);
+  const el = document.querySelector<HTMLElement>(`[data-section-id="${CSS.escape(id)}"]`);
+  // The chrome (announcement, header, footer) is tagged on a `display: contents` wrapper, which has no box of its own.
+  return el?.classList.contains("contents") ? ((el.firstElementChild as HTMLElement | null) ?? null) : el;
 }
 
 function scheduleNote(section: StudioSection, now: number) {
@@ -46,14 +65,15 @@ function scheduleNote(section: StudioSection, now: number) {
  * section selects it in the Studio; links, buttons and forms never act (the preview must not touch the admin's real
  * storefront session or navigate away).
  */
-export function HomepagePreviewFrame({ storeName, tagline, tree, banners, flashSale, layout }: HomepagePreviewFrameProps) {
-  const [state, setState] = useState<{ sections: StudioSection[]; selectedId: string | null } | null>(null);
+export function HomepagePreviewFrame({ settings, socialLinks, paymentMethods, tree, banners, flashSale, layout }: HomepagePreviewFrameProps) {
+  const { storeName, tagline } = settings;
+  const [state, setState] = useState<{ sections: StudioSection[]; design: StorefrontDesign; selectedId: string | null } | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin || e.source !== window.parent) return;
-      if (isStudioMessage<StudioUpdateMessage>(e.data, "studio:update")) setState({ sections: e.data.sections, selectedId: e.data.selectedId });
+      if (isStudioMessage<StudioUpdateMessage>(e.data, "studio:update")) setState({ sections: e.data.sections, design: e.data.design, selectedId: e.data.selectedId });
       if (isStudioMessage<StudioScrollToMessage>(e.data, "studio:scroll-to")) {
         sectionElement(e.data.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
@@ -151,13 +171,50 @@ export function HomepagePreviewFrame({ storeName, tagline, tree, banners, flashS
     };
   }, []);
 
-  if (!state) return <p className="mx-auto max-w-7xl px-4 py-24 text-sm text-fg-muted">Loading preview…</p>;
+  // The draft's theme choices replace the published ones in the page's design stylesheet (same tokens, same selectors).
+  const draftDesign = state?.design;
+  useEffect(() => {
+    const el = document.getElementById(DESIGN_STYLE_ELEMENT_ID);
+    if (el && draftDesign) el.textContent = designCss(resolveThemeId(publicRuntimeConfig().theme), draftDesign.theme);
+  }, [draftDesign]);
+
+  // The header, footer and announcement bar render from the draft design too, each tagged so a click selects it.
+  const draftSettings: StoreSettings = { ...settings, storefrontDesign: draftDesign ?? settings.storefrontDesign };
+  const chrome = (body: React.ReactNode) => (
+    <div className="flex min-h-screen flex-col">
+      <div data-section-id="design:announcement" className="contents">
+        <AnnouncementBar announcement={draftSettings.storefrontDesign?.announcement} />
+      </div>
+      <div data-section-id="design:header" className="contents">
+        <StoreHeader categories={tree} settings={draftSettings} />
+      </div>
+      <main className="flex-1">{body}</main>
+      <div data-section-id="design:footer" className="contents">
+        <StoreFooter categories={tree} settings={draftSettings} socialLinks={socialLinks} paymentMethods={paymentMethods} />
+      </div>
+    </div>
+  );
+
+  if (!state) return chrome(<p className="mx-auto max-w-7xl px-4 py-24 text-sm text-fg-muted">Loading preview…</p>);
+  const now = Date.now();
+  const overlay = (
+    <SelectionOverlay
+      sections={sections}
+      hoveredId={hoveredId}
+      selectedId={selectedId}
+      noteFor={(s) => (!s.isActive ? "Switched off — not on the live page" : scheduleNote(s, now))}
+    />
+  );
   if (visible.length === 0) {
-    return <p className="mx-auto max-w-7xl px-4 py-24 text-sm text-fg-muted">Every section is switched off — the homepage would show only the header and footer.</p>;
+    return chrome(
+      <>
+        <p className="mx-auto max-w-7xl px-4 py-24 text-sm text-fg-muted">Every section is switched off — the homepage would show only the header and footer.</p>
+        {overlay}
+      </>,
+    );
   }
 
-  const now = Date.now();
-  return (
+  return chrome(
     <>
       {visible.map((section) => (
         <Fragment key={section.id}>
@@ -170,13 +227,8 @@ export function HomepagePreviewFrame({ storeName, tagline, tree, banners, flashS
           )}
         </Fragment>
       ))}
-      <SelectionOverlay
-        sections={sections}
-        hoveredId={hoveredId}
-        selectedId={selectedId}
-        noteFor={(s) => (!s.isActive ? "Switched off — not on the live page" : scheduleNote(s, now))}
-      />
-    </>
+      {overlay}
+    </>,
   );
 }
 
@@ -225,6 +277,8 @@ function SelectionOverlay({
   }, [measure, sections]);
 
   const label = (id: string) => {
+    const group = designGroupOf(id);
+    if (group) return { name: DESIGN_META[group].label, note: null };
     const section = sections.find((s) => s.id === id);
     if (!section) return null;
     return { name: SECTION_META[section.type].label, note: noteFor(section) };

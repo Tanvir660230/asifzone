@@ -31,6 +31,9 @@ export type FieldDef =
   | (FieldBase & { kind: "number"; min: number; max: number; defaultValue: number })
   | (FieldBase & { kind: "category" })
   | (FieldBase & { kind: "icon" })
+  /** A brand colour: suggested swatches, the system picker and a hex field; empty = the theme's. */
+  | (FieldBase & { kind: "color"; swatches: string[] })
+  | (FieldBase & { kind: "toggle"; defaultValue: boolean })
   | (FieldBase & {
       kind: "items";
       itemLabel: string;
