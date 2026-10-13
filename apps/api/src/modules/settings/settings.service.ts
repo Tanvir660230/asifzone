@@ -28,6 +28,22 @@ export async function mirrorLegacyShippingFee(tx: Prisma.TransactionClient, fiel
   await tx.storeSetting.update({ where: { id: SINGLETON_ID }, data: { [field]: fee } });
 }
 
+/** Storefront Studio: the site design goes live in the publish's own transaction, alongside the homepage sections. Call
+ * invalidateSettingsCache() after the commit. */
+export async function writeStorefrontDesign(tx: Prisma.TransactionClient, design: Prisma.InputJsonValue) {
+  await tx.storeSetting.upsert({
+    where: { id: SINGLETON_ID },
+    create: { id: SINGLETON_ID, storefrontDesign: design },
+    update: { storefrontDesign: design },
+  });
+}
+
+/** The published site design as this transaction sees it (Studio's revision snapshot); null when never set. */
+export async function readStorefrontDesign(tx: Prisma.TransactionClient) {
+  const row = await tx.storeSetting.findUnique({ where: { id: SINGLETON_ID }, select: { storefrontDesign: true } });
+  return row?.storefrontDesign ?? null;
+}
+
 /** Drops the cached settings (API + the storefront's tagged copy) after a write that changes them. */
 export async function invalidateSettingsCache() {
   await cacheDel(CACHE_KEY);

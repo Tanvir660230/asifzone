@@ -11,7 +11,7 @@ import {
 import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { invalidateHomepageSectionsCache, listHomepageSections } from "./homepage-section.service";
-import { getSettings, invalidateSettingsCache, SINGLETON_ID } from "../settings/settings.service";
+import { getSettings, invalidateSettingsCache, readStorefrontDesign, writeStorefrontDesign } from "../settings/settings.service";
 import { DRAFT_ID, lockDraft, toStudioSection } from "./homepage-draft-lock";
 
 /**
@@ -103,11 +103,7 @@ export async function publishDraft(version: number, adminId: string) {
     // would make an untouched group look customised next time.
     const design = draft.design && storefrontDesignSchema.safeParse(draft.design).success ? draft.design : null;
     if (design) {
-      await tx.storeSetting.upsert({
-        where: { id: SINGLETON_ID },
-        create: { id: SINGLETON_ID, storefrontDesign: design as Prisma.InputJsonValue },
-        update: { storefrontDesign: design as Prisma.InputJsonValue },
-      });
+      await writeStorefrontDesign(tx, design as Prisma.InputJsonValue);
     }
 
     await tx.homepageSection.deleteMany({ where: { id: { in: live.filter((row) => !draftIds.has(row.id)).map((row) => row.id) } } });
@@ -127,7 +123,7 @@ export async function publishDraft(version: number, adminId: string) {
 
     const result = await tx.homepageSection.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
     const admin = await tx.adminUser.findUnique({ where: { id: adminId }, select: { name: true } });
-    const publishedDesign = (await tx.storeSetting.findUnique({ where: { id: SINGLETON_ID }, select: { storefrontDesign: true } }))?.storefrontDesign;
+    const publishedDesign = await readStorefrontDesign(tx);
     await tx.homepageRevision.create({
       data: {
         sections: result.map(toStudioSection) as unknown as Prisma.InputJsonValue,
