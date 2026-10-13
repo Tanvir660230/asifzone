@@ -57,7 +57,7 @@ export function Toaster() {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-4 bottom-4 z-toast flex flex-col gap-2 sm:inset-x-auto sm:right-4 sm:w-full sm:max-w-sm"
+      className="pointer-events-none fixed inset-x-4 bottom-[calc(var(--dock-offset)+1rem)] z-toast flex flex-col gap-2 sm:inset-x-auto sm:right-4 sm:w-full sm:max-w-sm"
     >
       <AnimatePresence>
         {toasts.map((t) => {

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Eye, Scale, ShoppingBag } from "lucide-react";
 import type { Product } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { availabilityOf } from "@/lib/availability-display";
 import { cn, isPaleColor } from "@/lib/utils";
@@ -183,8 +183,8 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
           </span>
         )}
         <span className="mt-1.5 flex items-baseline gap-2 tabular-nums">
-          <span className={cn("text-[0.9375rem] font-medium", hasWas ? "text-sale-500" : "text-fg")}>{formatPrice(shown.price)}</span>
-          {hasWas && <span className="text-sm text-fg-muted line-through">{formatPrice(shown.was!)}</span>}
+          <span className={cn("text-[0.9375rem] font-medium", hasWas ? "text-sale-500" : "text-fg")}><Money value={shown.price} /></span>
+          {hasWas && <span className="text-sm text-fg-muted line-through"><Money value={shown.was!} /></span>}
         </span>
         {colors.length > 1 && (
           <span className="mt-2.5 flex items-center gap-1.5" aria-label={`${colors.length} colours`}>

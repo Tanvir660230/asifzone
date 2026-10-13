@@ -32,7 +32,7 @@ function FooterLinkGroup({ title, children }: FooterLinkGroupProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border-b border-cream-50/10 md:border-0">
+    <div className="border-b border-cream-50/10 last:border-b-0 md:border-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -99,7 +99,7 @@ export function Footer({ categories = [], settings, socialLinks = [], paymentMet
         </div>
 
         {/* The brand and how to reach it, then the link columns. */}
-        <div className="grid gap-10 py-12 md:grid-cols-[1.4fr_repeat(3,1fr)] md:gap-8 md:py-14">
+        <div className="grid gap-8 pb-2 pt-12 md:grid-cols-[1.4fr_repeat(3,1fr)] md:gap-8 md:py-14">
           <div>
             {darkBgLogoUrl ? (
               bandLogo((url) => <StoreLogoImage src={resolveImageUrl(url)} alt={settings.storeName} className="h-9 w-36 object-contain object-left" fallback={wordmark} />)

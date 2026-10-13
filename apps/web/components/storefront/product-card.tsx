@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ShoppingBag, Eye, Scale } from "lucide-react";
 import type { Product } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { availabilityOf } from "@/lib/availability-display";
 import { cn, isPaleColor } from "@/lib/utils";
@@ -42,10 +42,6 @@ function ClassicProductCard({ product, priority }: ProductCardProps) {
   const shown = productDisplayPrice(product);
   // A discount or "low stock" badge on something that can't be bought only teases: sold out hides it.
   const badge = soldOut ? null : getProductBadge(product, totalStock);
-  // "2 of 6 sizes left": said only when some sizes are gone (never a unit count — stock is shown as a state).
-  const allSizes = new Set(product.variants.map((v) => v.size));
-  const sizesLeft = new Set(sellableVariants.map((v) => v.size)).size;
-  const sizesNote = !soldOut && allSizes.size > 2 && sizesLeft < allSizes.size ? `${sizesLeft} of ${allSizes.size} sizes left` : null;
   const openQuickView = useQuickViewStore((s) => s.open);
   const toggleCompare = useCompareStore((s) => s.toggle);
   const isComparing = useCompareStore((s) => s.items.some((i) => i.id === product.id));
@@ -107,7 +103,7 @@ function ClassicProductCard({ product, priority }: ProductCardProps) {
                 className={cn(
                   "object-cover transition-all duration-500 ease-smooth",
                   secondaryImage ? "lg:group-hover:opacity-0" : "lg:group-hover:scale-[var(--card-image-zoom)]",
-                  soldOut && "opacity-60",
+                  soldOut && "opacity-70 saturate-50",
                 )}
               />
               {secondaryImage && (
@@ -130,11 +126,12 @@ function ClassicProductCard({ product, priority }: ProductCardProps) {
           </span>
         )}
         {soldOut && (
-          // Centred over the dimmed photo, so a sold-out product is recognisable from across the grid.
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="rounded-full bg-ink-900 px-3.5 py-1.5 text-xs font-medium ui-caps text-cream-50 shadow-sm" data-testid="card-sold-out">
-              Sold out
-            </span>
+          // A quiet label where the discount badge would sit; the washed-out photo already says "not available".
+          <span
+            className="pointer-events-none absolute left-3 top-3 rounded-full bg-surface/95 px-2.5 py-1 text-[11px] font-medium ui-caps text-ink-700 shadow-sm"
+            data-testid="card-sold-out"
+          >
+            Sold out
           </span>
         )}
         {/* Desktop-only: quick view + compare need hover to gate them, and on a small mobile
@@ -190,12 +187,11 @@ function ClassicProductCard({ product, priority }: ProductCardProps) {
         )}
         <div className="flex items-center gap-2">
           {/* Server-resolved "from" price — formatted, never computed here. */}
-          <span className={cn("text-sm", soldOut ? "font-medium text-ink-500" : shown.flash ? "font-bold text-ink-900" : "font-semibold text-ink-900")}>{formatPrice(shown.price)}</span>
+          <span className={cn("text-sm", soldOut ? "font-medium text-ink-500" : shown.flash ? "font-bold text-ink-900" : "font-semibold text-ink-900")}><Money value={shown.price} /></span>
           {!soldOut && shown.was !== null && Number(shown.was) > Number(shown.price) && (
-            <span className="text-xs text-fg-muted line-through">{formatPrice(shown.was)}</span>
+            <span className="text-xs text-fg-muted line-through"><Money value={shown.was} /></span>
           )}
         </div>
-        {sizesNote && <p className="text-xs text-ink-500">{sizesNote}</p>}
         {colors.length > 1 && (
           <div className="flex items-center gap-1.5 pt-0.5">
             {colors.slice(0, 5).map(([color, hex]) => (

@@ -15,6 +15,7 @@ import { useCartQuote, quoteLineAmount } from "@/hooks/use-quote";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { variantAvailabilityOf } from "@/lib/availability-display";
 import { useCartSuggestions } from "@/hooks/use-cart-suggestions";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
@@ -149,7 +150,7 @@ export default function CartPage() {
             <div className="mb-6 flex items-start gap-3 rounded-lg border border-sale-500/30 bg-sale-50 p-4 text-sm text-ink-800">
               <Gift size={18} className="mt-0.5 shrink-0 text-sale-500" />
               <p>
-                <span className="font-medium">{bundlePreview.eligible.bundle.name} unlocked</span> — save {formatPrice(bundlePreview.eligible.discount)} at
+                <span className="font-medium">{bundlePreview.eligible.bundle.name} unlocked</span> — save <Money value={bundlePreview.eligible.discount} /> at
                 checkout.
               </p>
             </div>
@@ -274,7 +275,7 @@ export default function CartPage() {
         >
           <div className="flex items-center justify-between">
             <span className="text-sm text-ink-600">Subtotal</span>
-            <span className="text-lg font-medium tabular-nums text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
+            <span className="text-lg font-medium tabular-nums text-ink-900">{quote ? <Money value={quote.subtotal} /> : "…"}</span>
           </div>
           <p className="mt-1 text-xs text-ink-500">Delivery and any discount are added at checkout.</p>
           <Link href="/checkout" className={buttonVariants({ variant: "primary", size: "lg", className: "mt-5 w-full" })}>

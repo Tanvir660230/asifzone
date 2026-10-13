@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { MessageCircle, MessageCircleMore, MessageSquareText, Phone, X } from "lucide-react";
 import type { SocialLink, StoreSettings } from "@clothing-brand/shared";
@@ -15,6 +16,7 @@ declare global {
 }
 
 import { useBottomDockState } from "@/hooks/use-bottom-dock";
+import { cn } from "@/lib/utils";
 import { FeedbackModal } from "./feedback-modal";
 
 function WhatsAppGlyph({ size = 20 }: { size?: number }) {
@@ -56,7 +58,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   // unconditionally on that route, since this widget can't see the sticky bar's own scroll-driven
   // visibility state. showCartBar already accounts for StickyCartBar hiding itself entirely on
   // /cart and /checkout, so this widget doesn't reserve clearance for a bar that isn't there.
-  const { showCartBar, onProductPage, onCheckoutPage } = useBottomDockState();
+  const { showCartBar, showCartBarOnPhone, onProductPage, onCheckoutPage } = useBottomDockState();
 
   // This button is fixed to a viewport corner, and the bottom of the footer (newsletter form,
   // link columns) scrolls into that exact same corner — without this it visually sits on top of
@@ -66,10 +68,19 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   // hiding as soon as the footer's top peeks in would hide this for a lot of ordinary scrolling
   // that never actually overlaps anything.
   const [nearFooter, setNearFooter] = useState(false);
+  // On a phone the button sits over the content column itself (prices, delivery dates, form fields), so it steps aside
+  // while the shopper scrolls down through the page and comes back as soon as they scroll up or reach the top.
+  const [scrollingDown, setScrollingDown] = useState(false);
   useEffect(() => {
+    let lastY = window.scrollY;
     function checkNearBottom() {
       const distanceFromBottom = document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
       setNearFooter(distanceFromBottom < 180);
+      const y = window.scrollY;
+      if (Math.abs(y - lastY) > 8) {
+        setScrollingDown(y > lastY && y > 120);
+        lastY = y;
+      }
     }
     checkNearBottom();
     window.addEventListener("scroll", checkNearBottom, { passive: true });
@@ -134,6 +145,11 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
 
   // Only a closed button ducks out of the way; an open menu stays open until the shopper closes it.
   const shouldHide = !open && (nearFooter || overlappingCard);
+  const phoneHide = !open && scrollingDown ? "max-lg:pointer-events-none max-lg:opacity-0" : "";
+  // Phones only: a product page has its own "Order on WhatsApp" and a docked add-to-cart bar, the bag and account pages
+  // are forms and lists that run edge to edge; the footer, menu and contact page still carry every way to reach the shop.
+  const pathname = usePathname() ?? "";
+  const phoneRouteHide = ["/product", "/cart", "/account"].some((route) => pathname.startsWith(route)) ? "max-lg:hidden" : "";
   // An open menu closes on a tap outside it or Escape, like any menu.
   useEffect(() => {
     if (!open) return;
@@ -198,10 +214,10 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   // Above the mobile bottom nav; above the sticky cart bar while it shows; and on a product page above the sticky
   // add-to-cart bar only while that bar is on screen (it marks <html data-sticky-atc>), not from the top of the page.
   const bottomClass = onProductPage
-    ? "bottom-[calc(var(--dock-tab-bar)+1rem)] lg:bottom-6 [html[data-sticky-atc]_&]:bottom-[calc(var(--dock-tab-bar)+5rem)] lg:[html[data-sticky-atc]_&]:bottom-6"
+    ? "bottom-[calc(var(--dock-offset)+1rem)] lg:bottom-6 [html[data-sticky-atc]_&]:bottom-[calc(var(--dock-offset)+5rem)] lg:[html[data-sticky-atc]_&]:bottom-6"
     : showCartBar
-      ? "bottom-[calc(var(--dock-tab-bar)+5rem)] lg:bottom-24"
-      : "bottom-[calc(var(--dock-tab-bar)+1rem)] lg:bottom-6";
+      ? cn(showCartBarOnPhone ? "bottom-[calc(var(--dock-offset)+5rem)]" : "bottom-[calc(var(--dock-offset)+1rem)]", "lg:bottom-24")
+      : "bottom-[calc(var(--dock-offset)+1rem)] lg:bottom-6";
 
   return (
     <>
@@ -213,7 +229,7 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
         ref={widgetRef}
         data-hide-on-keyboard
         className={`fixed right-4 z-40 flex flex-col items-end gap-3 transition-[bottom,opacity] duration-200 ease-smooth sm:right-6 ${bottomClass} ${
-          shouldHide ? "pointer-events-none opacity-0" : "opacity-100"
+          shouldHide ? "pointer-events-none opacity-0" : "opacity-100"} ${phoneHide} ${phoneRouteHide
         }`}
       >
         <AnimatePresence>

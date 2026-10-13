@@ -78,7 +78,10 @@ export function GoogleButton({
         // localhost / non-HTTPS dev origins, so it is switched off just there.
         use_fedcm_for_prompt: !["localhost", "127.0.0.1"].includes(window.location.hostname),
       });
-      google.accounts.id.renderButton(containerRef.current, { theme: "outline", size: "large", width: 320 });
+      // Google renders a fixed-width iframe: size it to the card it sits in (Google allows 200–400px), so a 375px phone
+      // never gets a button wider than the card.
+      const width = Math.round(Math.min(400, Math.max(200, containerRef.current.offsetWidth || 320)));
+      google.accounts.id.renderButton(containerRef.current, { theme: "outline", size: "large", width });
       // Cancel any pending One Tap prompt or FedCM request first to avoid
       // "NotAllowedError: Only one navigator.credentials.get request may be outstanding at one time."
       try {

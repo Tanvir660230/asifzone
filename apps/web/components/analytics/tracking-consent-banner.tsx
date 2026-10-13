@@ -40,7 +40,7 @@ export function TrackingConsentBanner() {
       role="dialog"
       aria-live="polite"
       aria-label="Tracking preferences"
-      className="glass fixed inset-x-3 bottom-3 z-50 mx-auto max-w-2xl rounded-2xl border border-ink-200 p-4 shadow-floatLg sm:inset-x-6 sm:bottom-6"
+      className="glass fixed inset-x-3 bottom-[calc(var(--dock-offset)+0.75rem)] z-50 mx-auto max-w-2xl rounded-2xl border border-ink-200 p-4 shadow-floatLg sm:inset-x-6 sm:bottom-[calc(var(--dock-offset)+1.5rem)]"
     >
       <p className="text-sm text-ink-700">
         We&apos;d like to use advertising and analytics cookies (Meta, TikTok, Microsoft Clarity) to measure our ads and

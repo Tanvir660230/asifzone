@@ -21,7 +21,7 @@ export default function AccountAuthLayout({ children }: { children: ReactNode })
   return (
     <StorefrontShell>
       <StorefrontPage>
-        <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:gap-16">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-10 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:gap-16">
           <div className="rounded-2xl bg-surface p-6 shadow-sm ring-1 ring-inset ring-line-subtle sm:p-8">{children}</div>
           <aside aria-label="Why have an account" className="hidden lg:block lg:pt-6">
             <p className="text-xs ui-eyebrow text-fg-muted">Your account</p>

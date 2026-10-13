@@ -5,7 +5,8 @@ import { useCartCount } from "@/store/cart";
 import { useCartQuote } from "@/hooks/use-quote";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useBottomDockState } from "@/hooks/use-bottom-dock";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { cn } from "@/lib/utils";
 import { CountBadge } from "./count-badge";
 
 /** Persistent quick-checkout access, distinct from CartReminderBanner (which only nudges after
@@ -13,7 +14,7 @@ import { CountBadge } from "./count-badge";
  * Hidden on PDPs, where StickyAddToCart takes over the same bottom-bar slot with an action for
  * the item actually being viewed rather than a generic "view cart" link. */
 export function StickyCartBar() {
-  const { showCartBar } = useBottomDockState();
+  const { showCartBar, showCartBarOnPhone } = useBottomDockState();
   const count = useCartCount();
   const { data: quote } = useCartQuote();
   const openCartDrawer = useCartDrawerStore((s) => s.open);
@@ -21,7 +22,7 @@ export function StickyCartBar() {
   if (!showCartBar) return null;
 
   return (
-    <div data-hide-on-keyboard className="glass fixed inset-x-0 bottom-[var(--dock-tab-bar)] z-40 border-t border-ink-200 shadow-floatLg animate-fade-in lg:bottom-0">
+    <div data-hide-on-keyboard className={cn("glass fixed inset-x-0 bottom-[var(--dock-offset)] z-40 border-t border-ink-200 shadow-floatLg animate-fade-in lg:bottom-0", !showCartBarOnPhone && "max-lg:hidden")}>
       <button
         type="button"
         onClick={openCartDrawer}
@@ -32,7 +33,7 @@ export function StickyCartBar() {
           <CountBadge count={count} className="-right-2 -top-2" />
         </div>
         <p className="flex-1 text-sm text-ink-700">
-          {count} item{count === 1 ? "" : "s"} · <span className="font-medium text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
+          {count} item{count === 1 ? "" : "s"} · <span className="font-medium text-ink-900">{quote ? <Money value={quote.subtotal} /> : "…"}</span>
         </p>
         <span className="glossy shrink-0 rounded-[var(--control-radius)] bg-ink-900 px-4 py-2 text-xs ui-caps text-cream-50">
           View bag

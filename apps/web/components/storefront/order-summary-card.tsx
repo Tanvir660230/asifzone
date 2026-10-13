@@ -1,7 +1,8 @@
 import { formatVariantSuffix } from "@clothing-brand/shared";
 import type { Order } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
-import { formatPrice, orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
+import { orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 
 export function OrderSummaryCard({ order }: { order: Order }) {
   return (
@@ -17,7 +18,7 @@ export function OrderSummaryCard({ order }: { order: Order }) {
             <span>
               {item.productNameSnapshot}{formatVariantSuffix(item.sizeSnapshot, item.colorSnapshot)} × {item.quantity}
             </span>
-            <span>{formatPrice(Number(item.priceSnapshot) * item.quantity)}</span>
+            <span><Money value={Number(item.priceSnapshot) * item.quantity} /></span>
           </div>
         ))}
       </div>
@@ -25,21 +26,21 @@ export function OrderSummaryCard({ order }: { order: Order }) {
       <div className="mt-4 space-y-1 border-t border-ink-100 pt-4 text-sm">
         <div className="flex justify-between text-ink-600">
           <span>Subtotal</span>
-          <span>{formatPrice(order.subtotal)}</span>
+          <span><Money value={order.subtotal} /></span>
         </div>
         {Number(order.discount) > 0 && (
           <div className="flex justify-between text-success-600">
             <span>Discount</span>
-            <span>−{formatPrice(order.discount)}</span>
+            <span>−<Money value={order.discount} /></span>
           </div>
         )}
         <div className="flex justify-between text-ink-600">
           <span>Shipping</span>
-          <span>{formatPrice(order.shippingFee)}</span>
+          <span><Money value={order.shippingFee} /></span>
         </div>
         <div className="flex justify-between border-t border-ink-100 pt-1 text-base text-ink-900">
           <span>Total</span>
-          <span>{formatPrice(order.total)}</span>
+          <span><Money value={order.total} /></span>
         </div>
       </div>
 

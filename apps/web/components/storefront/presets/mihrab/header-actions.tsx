@@ -3,12 +3,15 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ChevronRight, Search, X } from "lucide-react";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { useCartCount } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useSearchOverlayStore } from "@/store/search-overlay";
+import { useMobileMenuStore } from "@/store/mobile-menu";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useSheetDrag } from "@/hooks/use-sheet-drag";
 import { cn } from "@/lib/utils";
 
 /** The persisted cart count is only known in the browser — `null` until mounted, so server and client markup agree. */
@@ -72,27 +75,44 @@ export function MihrabBagButton({ compact = false }: { compact?: boolean }) {
   );
 }
 
-/** Phones: the whole store in one sheet — categories set large, then the account links the classic tab bar carried. */
+/** Phones: the whole store in one sheet — categories set large, then help links. Opened by the tab bar's Shop tab
+ * (store/mobile-menu.ts); it rises above the tab bar, and drags down to close. */
 export function MihrabMenu({ categories }: { categories: CategoryTreeNode[] }) {
-  const [open, setOpen] = useState(false);
+  const open = useMobileMenuStore((s) => s.isOpen);
+  const closeMenu = useMobileMenuStore((s) => s.close);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const openSearch = useSearchOverlayStore((s) => s.open);
+  const pathname = usePathname();
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: close });
+  useSheetDrag(panelRef, close, open);
 
   function close() {
-    setOpen(false);
+    closeMenu();
     setExpandedId(null);
   }
 
+  // Any navigation (a link here, the browser's back button) closes the sheet.
+  useEffect(() => {
+    closeMenu();
+    setExpandedId(null);
+  }, [pathname, closeMenu]);
+
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-label="Open menu" className="flex h-11 items-center pl-1.5 text-sm font-medium text-fg">
-        Menu
-      </button>
       {open &&
         createPortal(
-          <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Menu" tabIndex={-1} className="fixed inset-0 z-overlay flex animate-fade-in flex-col bg-canvas">
-            <div className="flex h-16 shrink-0 items-center justify-between border-b border-line px-4">
+          <div className="ui-overlay ui-sheet-overlay fixed inset-x-0 bottom-[var(--dock-offset)] top-0 z-overlay animate-fade-in" onClick={close}>
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            className="ui-sheet ui-sheet-large flex w-full flex-col overflow-hidden bg-canvas md:h-full"
+          >
+            <span className="ui-sheet-grabber" aria-hidden />
+            <div data-sheet-handle className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
               <button
                 type="button"
                 onClick={() => {
@@ -107,7 +127,7 @@ export function MihrabMenu({ categories }: { categories: CategoryTreeNode[] }) {
                 <X size={22} />
               </button>
             </div>
-            <nav aria-label="Categories" className="flex-1 overflow-y-auto px-4 pb-6">
+            <nav aria-label="Categories" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
               <ul>
                 {categories.map((cat) => {
                   const expanded = expandedId === cat.id;
@@ -145,10 +165,11 @@ export function MihrabMenu({ categories }: { categories: CategoryTreeNode[] }) {
                 })}
               </ul>
               <ul className="mt-8 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {/* Account, wishlist and the bag are tabs now; the menu keeps the help pages. */}
                 {[
-                  ["/account", "Account"],
-                  ["/wishlist", "Wishlist"],
                   ["/track-order", "Track an order"],
+                  ["/shipping-returns", "Shipping & returns"],
+                  ["/faq", "FAQ"],
                   ["/contact", "Contact"],
                 ].map(([href, label]) => (
                   <li key={href}>
@@ -159,6 +180,7 @@ export function MihrabMenu({ categories }: { categories: CategoryTreeNode[] }) {
                 ))}
               </ul>
             </nav>
+          </div>
           </div>,
           document.body,
         )}

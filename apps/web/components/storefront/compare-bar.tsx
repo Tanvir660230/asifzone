@@ -7,7 +7,7 @@ import { X, Scale } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useCompareStore, MAX_COMPARE_ITEMS } from "@/store/compare";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { availabilityOf } from "@/lib/availability-display";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -27,7 +27,7 @@ export function CompareBar() {
 
   return (
     <>
-      <div className="glass fixed inset-x-0 bottom-0 z-40 border-t border-ink-200 shadow-floatLg animate-modal-in">
+      <div className="glass fixed inset-x-0 bottom-[var(--dock-offset)] z-40 border-t border-ink-200 shadow-floatLg animate-modal-in">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex flex-1 items-center gap-2 overflow-x-auto">
             {items.map((product) => {
@@ -93,7 +93,7 @@ export function CompareBar() {
                 <td className="py-2 text-xs ui-caps text-ink-400">Price</td>
                 {items.map((product) => (
                   <td key={product.id} className="p-2 text-ink-900">
-                    {formatPrice(productDisplayPrice(product).price)}
+                    <Money value={productDisplayPrice(product).price} />
                   </td>
                 ))}
               </tr>

@@ -19,7 +19,7 @@ export function MihrabPromiseStrip({ promises }: { promises: string[] }) {
   }, [promises.length]);
 
   return (
-    <div className="bg-ink-950 text-cream-100">
+    <div data-promise-strip className="bg-ink-950 text-cream-100">
       <ul className="mx-auto grid h-9 max-w-7xl items-center px-4 text-xs sm:px-6 md:flex md:justify-center md:gap-10 lg:px-8">
         {promises.map((promise, index) => (
           <li

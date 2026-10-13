@@ -8,6 +8,9 @@ import tokens from "@clothing-brand/ui-tokens";
  * theme can override them at runtime (see docs/DESIGN_SYSTEM.md). */
 const config: Config = {
   darkMode: "class",
+  // `hover:` only where there is a real pointer: on a phone a tapped button doesn't keep its hover look after the finger
+  // lifts (the "stuck hover" that gives a web page away); touch gets its own pressed state in globals.css instead.
+  future: { hoverOnlyWhenSupported: true },
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
