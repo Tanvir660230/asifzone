@@ -15,7 +15,7 @@ import { StickyAddToCart } from "@/components/storefront/sticky-add-to-cart";
 import { DeliveryEstimate } from "@/components/storefront/delivery-estimate";
 import { ShareButton } from "@/components/storefront/share-button";
 import { WhatsAppOrderButton } from "@/components/storefront/whatsapp-order-button";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { percentOffLabel, variantDisplayPrice } from "@/lib/pricing-display";
 import type { SpecAccordionItem } from "@/lib/product-specs";
 
@@ -53,14 +53,15 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
     setPickerRequest({ intent, nonce: Date.now() });
   }
 
-  // Shows the mobile sticky bar only once the inline Add to Cart/Buy Now buttons have scrolled out
-  // of view, so there's never two of the same action visible on screen at once.
+  // Shows the mobile sticky bar only once the inline Add to Cart/Buy Now buttons have scrolled up past the top of the
+  // screen, so there's never two of the same action visible at once. Not while they're still below the fold on first
+  // load: the bar would then cover the product name and price the shopper is reading on the way down to them.
   useEffect(() => {
     const target = buttonsRef.current;
     if (!target) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry) setShowStickyBar(!entry.isIntersecting);
+        if (entry) setShowStickyBar(!entry.isIntersecting && entry.boundingClientRect.top < 0);
       },
       { rootMargin: "0px 0px -1px 0px" },
     );
@@ -116,11 +117,11 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         )}
         <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className={shown.flash ? "text-2xl font-bold tabular-nums text-ink-900" : "text-2xl font-semibold tabular-nums text-ink-900"} data-testid="product-price">
-            {formatPrice(shown.price)}
+            <Money value={shown.price} />
           </span>
           {shown.was !== null && Number(shown.was) > Number(shown.price) && (
             <>
-              <span className="text-base text-fg-muted line-through" data-testid="product-compare-price">{formatPrice(shown.was)}</span>
+              <span className="text-base text-fg-muted line-through" data-testid="product-compare-price"><Money value={shown.was} /></span>
               {/* The same server-resolved comparison the card badge shows; no price is computed here. */}
               <span className="rounded-full bg-sale-50 px-2.5 py-0.5 text-xs font-semibold text-sale-600">{percentOffLabel(shown.price, shown.was)}% off</span>
             </>
@@ -135,10 +136,14 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         {product.freeDelivery && (
           // Informational only: the product ships free; the checkout's server quote decides the fee for the whole bag (one
           // normal-delivery item means the usual fee applies — docs/ORDER_ADJUSTMENTS.md §2).
-          <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-success-200 bg-success-50 px-3 py-1 text-sm font-medium text-success-700" data-testid="product-free-delivery">
-            <Truck size={15} aria-hidden="true" />
-            Free delivery
-            <span className="font-normal text-success-700/80">· when everything in your bag ships free</span>
+          // One line of text beside the icon: on a phone it wraps as a sentence inside a soft box, not as two broken
+          // columns inside a pill.
+          <p className="mt-3 flex items-start gap-2 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-700 sm:inline-flex sm:items-center sm:rounded-full sm:py-1" data-testid="product-free-delivery">
+            <Truck size={15} aria-hidden="true" className="mt-0.5 shrink-0 sm:mt-0" />
+            <span>
+              <span className="font-medium">Free delivery</span>{" "}
+              <span className="text-success-700/80">· when everything in your bag ships free</span>
+            </span>
           </p>
         )}
 

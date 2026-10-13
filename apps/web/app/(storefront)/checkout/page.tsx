@@ -30,6 +30,7 @@ import { toast } from "@/components/ui/toast";
 import { useCartStore } from "@/store/cart";
 import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { createOrder } from "@/lib/api/orders";
 import { getSessionId } from "@/lib/analytics";
 import { pixelAddPaymentInfo, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
@@ -492,13 +493,13 @@ function CheckoutForm() {
                 {couponDiscount > 0 && (
                   <div className="flex justify-between text-success-600">
                     <span>Coupon discount</span>
-                    <span>−{formatPrice(couponDiscount)}</span>
+                    <span>−<Money value={couponDiscount} /></span>
                   </div>
                 )}
                 {bundleDiscount > 0 && (
                   <div className="flex justify-between text-success-600">
                     <span>Bundle discount</span>
-                    <span>−{formatPrice(bundleDiscount)}</span>
+                    <span>−<Money value={bundleDiscount} /></span>
                   </div>
                 )}
                 <div className="flex justify-between text-ink-600">
@@ -507,17 +508,17 @@ function CheckoutForm() {
                     <span className="text-ink-400">Select district</span>
                   ) : shipping.waived ? (
                     <span>
-                      <span className="mr-1.5 text-fg-muted line-through">{formatPrice(shipping.fee)}</span>
+                      <span className="mr-1.5 text-fg-muted line-through"><Money value={shipping.fee} /></span>
                       <span className="font-medium text-success-600">{shipping.waivedReason === "FREE_DELIVERY" ? "Free delivery" : "Free"}</span>
                     </span>
                   ) : (
-                    <span>{formatPrice(shipping.charged)}</span>
+                    <span><Money value={shipping.charged} /></span>
                   )}
                 </div>
                 {quote && quote.tax.addedToTotal > 0 && (
                   <div className="flex justify-between text-ink-600">
                     <span>VAT ({quote.tax.ratePct}%)</span>
-                    <span>{formatPrice(quote.tax.addedToTotal)}</span>
+                    <span><Money value={quote.tax.addedToTotal} /></span>
                   </div>
                 )}
                 <p className="text-xs text-ink-400">
@@ -528,17 +529,17 @@ function CheckoutForm() {
                   <span className="font-medium">{money(quote?.total)}</span>
                 </div>
                 {quote && quote.tax.inclusive && quote.tax.taxAmount > 0 && (
-                  <p className="text-xs text-ink-400">Includes VAT {formatPrice(quote.tax.taxAmount)}</p>
+                  <p className="text-xs text-ink-400">Includes VAT <Money value={quote.tax.taxAmount} /></p>
                 )}
                 {useStoreCredit && storeBalance > 0 && quote && (
                   <div className="space-y-1.5" data-testid="checkout-store-balance-summary">
                     <div className="flex justify-between text-success-600">
                       <span>Store balance</span>
-                      <span>−{formatPrice(Math.min(storeBalance, quote.total))}</span>
+                      <span>−<Money value={Math.min(storeBalance, quote.total)} /></span>
                     </div>
                     <div className="flex justify-between font-medium text-ink-900">
                       <span>To pay</span>
-                      <span>{formatPrice(Math.max(0, quote.total - storeBalance))}</span>
+                      <span><Money value={Math.max(0, quote.total - storeBalance)} /></span>
                     </div>
                   </div>
                 )}
@@ -714,10 +715,10 @@ function CheckoutForm() {
                   <Wallet size={16} className="mt-0.5 shrink-0 text-success-600" />
                   <span>
                     Use my store balance
-                    <span className="block text-xs text-ink-500">Store Balance available: {formatPrice(storeBalance)}</span>
+                    <span className="block text-xs text-ink-500">Store Balance available: <Money value={storeBalance} /></span>
                     {useStoreCredit && quote && (
                       <span className="mt-1 block text-xs font-medium text-ink-900">
-                        −{formatPrice(Math.min(storeBalance, quote.total))} from your balance · To pay {formatPrice(Math.max(0, quote.total - storeBalance))}
+                        −<Money value={Math.min(storeBalance, quote.total)} /> from your balance · To pay <Money value={Math.max(0, quote.total - storeBalance)} />
                       </span>
                     )}
                   </span>

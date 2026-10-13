@@ -8,6 +8,8 @@ export interface NavNode {
   name: string;
   slug: string;
   href?: string;
+  /** Categories only: the photo the phone menu shows beside the name. */
+  imageUrl?: string | null;
   children: NavNode[];
 }
 

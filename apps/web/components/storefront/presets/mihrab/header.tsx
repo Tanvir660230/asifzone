@@ -5,6 +5,7 @@ import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { StoreLogoImage } from "@/components/store-logo-image";
 import { resolveImageUrl } from "@/lib/image-url";
 import { MegaMenu } from "../../mega-menu";
+import { PhoneNavBar } from "../../phone-nav-bar";
 import { MihrabBagButton, MihrabMenu, MihrabSearchField, MihrabSearchIcon } from "./header-actions";
 import { MihrabPromiseStrip } from "./promise-strip";
 
@@ -17,7 +18,8 @@ const TEXT_ACTION = "text-sm font-medium text-fg transition-colors duration-200 
 
 /**
  * Mihrab header: a navy strip with the store's own delivery promises, then search · centred logo · text actions, and the
- * categories on a row of their own. Phones get logo · search · bag · menu and no bottom tab bar.
+ * categories on a row of their own. Phones get logo · search, with bag, menu and account in the bottom tab bar, and an iOS
+ * navigation bar on inner pages (PhoneNavBar).
  */
 export function MihrabHeader({ categories, settings }: HeaderProps) {
   const menu = withMenuLinks(categories, settings.storefrontDesign?.header?.menuLinks);
@@ -33,18 +35,17 @@ export function MihrabHeader({ categories, settings }: HeaderProps) {
   return (
     <>
       {promises.length > 0 && <MihrabPromiseStrip promises={promises} />}
-      <header className="sticky top-0 z-30 border-b border-line bg-canvas">
-        {/* Phones */}
-        <div className="flex h-16 items-center justify-between gap-2 px-4 lg:hidden">
-          <Link href="/" aria-label={`${settings.storeName} home`} className="flex items-center">
-            {logo("h-8 w-32 object-contain object-left")}
-          </Link>
-          <div className="flex items-center">
+      <header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-xl backdrop-saturate-150 [border-bottom-width:0.5px] lg:bg-canvas lg:[border-bottom-width:1px]">
+        {/* Phones: logo and search; the menu panel opens from the tab bar's Shop tab. */}
+        <PhoneNavBar>
+          <div className="flex h-16 items-center justify-between gap-2 px-4 lg:hidden">
+            <Link href="/" aria-label={`${settings.storeName} home`} className="flex items-center">
+              {logo("h-8 w-32 object-contain object-left")}
+            </Link>
             <MihrabSearchIcon />
-            <MihrabBagButton compact />
-            <MihrabMenu categories={menu} />
           </div>
-        </div>
+          <MihrabMenu categories={menu} />
+        </PhoneNavBar>
 
         {/* Desktop */}
         <div className="mx-auto hidden h-20 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-6 px-8 lg:grid">

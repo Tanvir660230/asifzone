@@ -2,10 +2,12 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import type { StorefrontFacets } from "@/lib/api/storefront";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useSheetDrag } from "@/hooks/use-sheet-drag";
+import { CLOSE_PANELS_EVENT } from "@/store/panels";
 import { cn, isPaleColor } from "@/lib/utils";
 
 /** `toolbarExtra` sits beside the Filters button in the phone toolbar (the sort control), so both stay pinned under the
@@ -16,6 +18,14 @@ export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacet
   const searchParams = useSearchParams();
   const [mobileOpen, setMobileOpen] = useState(false);
   const drawerRef = useFocusTrap<HTMLDivElement>({ active: mobileOpen, onEscape: () => setMobileOpen(false) });
+  useSheetDrag(drawerRef, () => setMobileOpen(false), mobileOpen);
+  // The phone tab bar stays in view under this sheet; a tap on any of its tabs closes it (store/panels.ts).
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const close = () => setMobileOpen(false);
+    window.addEventListener(CLOSE_PANELS_EVENT, close);
+    return () => window.removeEventListener(CLOSE_PANELS_EVENT, close);
+  }, [mobileOpen]);
 
   const activeSizes = searchParams.get("sizes")?.split(",").filter(Boolean) ?? [];
   const activeColors = searchParams.get("colors")?.split(",").filter(Boolean) ?? [];
@@ -165,7 +175,7 @@ export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacet
 
   return (
     <>
-      <div className="sticky top-[var(--sticky-top)] z-raised -mx-4 flex items-center gap-2 border-b border-line-subtle bg-canvas/90 px-4 py-2.5 backdrop-blur-md transition-[top] duration-slow ease-smooth sm:-mx-6 sm:px-6 lg:hidden">
+      <div className="sticky top-[var(--sticky-top)] z-raised -mx-4 flex items-center gap-2 border-b border-line-subtle bg-canvas px-4 py-2.5 transition-[top] duration-slow ease-smooth sm:-mx-6 sm:px-6 lg:hidden">
         <button
           onClick={() => setMobileOpen(true)}
           className="flex h-10 items-center gap-2 rounded-[var(--chip-radius)] border border-line bg-surface px-4 text-sm font-medium text-ink-900 transition-colors hover:border-ink-900 active:scale-[0.98]"
@@ -181,24 +191,34 @@ export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacet
 
       <aside className="hidden w-56 shrink-0 lg:block">{panel}</aside>
 
+      {/* Phones: a sheet over the dimmed grid, above the tab bar — results update behind it as filters change; Done or a
+          drag down puts it away. */}
       {mobileOpen && (
-        <div
-          ref={drawerRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="mobile-filters-title"
-          tabIndex={-1}
-          className="fixed inset-0 z-50 flex flex-col bg-cream-50 lg:hidden"
-        >
-          <div className="flex items-center justify-between border-b border-ink-100 px-4 py-4">
-            <h2 id="mobile-filters-title" className="font-display text-lg text-ink-900">
-              Filters
-            </h2>
-            <button onClick={() => setMobileOpen(false)} aria-label="Close filters">
-              <X size={20} />
-            </button>
+        <div className="ui-overlay ui-sheet-overlay fixed inset-x-0 bottom-[var(--dock-offset)] top-0 z-50 animate-fade-in lg:hidden" onClick={() => setMobileOpen(false)}>
+          <div
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-filters-title"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+            className="ui-sheet ui-sheet-large flex w-full flex-col overflow-hidden bg-cream-50 md:h-full"
+          >
+            <span className="ui-sheet-grabber" aria-hidden />
+            <div data-sheet-handle className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
+              <h2 id="mobile-filters-title" className="font-display text-lg text-ink-900">
+                Filters
+              </h2>
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="-mr-2 flex h-11 items-center gap-1 rounded-full px-3 text-[0.9375rem] font-semibold text-ink-900"
+              >
+                Done
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6">{panel}</div>
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-6">{panel}</div>
         </div>
       )}
     </>

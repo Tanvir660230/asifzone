@@ -49,7 +49,7 @@ interface UiTokens {
   densitySpacing: Scale;
   motion: {
     duration: { instant: number; fast: number; base: number; slow: number; slower: number };
-    easing: { smooth: CubicBezier; standard: CubicBezier; exit: CubicBezier };
+    easing: { smooth: CubicBezier; standard: CubicBezier; exit: CubicBezier; sheet: CubicBezier };
     spring: { stiffness: number; damping: number; mass: number };
   };
   transitionTimingFunction: Scale;

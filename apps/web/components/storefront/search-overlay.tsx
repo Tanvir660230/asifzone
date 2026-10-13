@@ -10,7 +10,7 @@ import { addRecentSearch, clearRecentSearches, getRecentSearches, removeRecentSe
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { useSearchOverlayStore } from "@/store/search-overlay";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { cn } from "@/lib/utils";
 import { resolveImageUrl } from "@/lib/image-url";
 
@@ -318,7 +318,7 @@ export function SearchOverlay() {
   const showList = sections.length > 0;
 
   return createPortal(
-    <div className="fixed inset-0 z-overlay sm:px-4 sm:pt-[12vh]">
+    <div className="fixed inset-x-0 bottom-[var(--dock-offset)] top-0 z-overlay sm:px-4 sm:pt-[12vh]">
       <div className="ui-overlay absolute inset-0 hidden animate-fade-in sm:block" onClick={close} aria-hidden />
       <div
         ref={panelRef}
@@ -597,7 +597,9 @@ export function SearchSuggestionProductContent({ product }: { product: SearchSug
       )}
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] text-fg">{product.name}</p>
-        <p className="text-[13px] tabular-nums text-fg-muted">{formatPrice(product.price)}</p>
+        <p className="text-[13px] tabular-nums text-fg-muted">
+          <Money value={product.price} />
+        </p>
       </div>
     </>
   );

@@ -247,6 +247,8 @@ const motion = {
     standard: [0.2, 0, 0, 1],
     // accelerate away — for exits.
     exit: [0.4, 0, 1, 1],
+    // iOS sheets and navigation pushes: quick off the mark, then a long, soft settle.
+    sheet: [0.32, 0.72, 0, 1],
   },
   spring: { stiffness: 420, damping: 32, mass: 0.9 },
 };
@@ -257,6 +259,7 @@ const transitionTimingFunction = {
   smooth: toCubic(motion.easing.smooth),
   standard: toCubic(motion.easing.standard),
   exit: toCubic(motion.easing.exit),
+  sheet: toCubic(motion.easing.sheet),
 };
 
 const transitionDuration = Object.fromEntries(Object.entries(motion.duration).map(([k, v]) => [k, `${v}ms`]));
@@ -367,8 +370,13 @@ const componentTokens = {
   "--chip-radius": "9999px",
   "--swatch-radius": "9999px",
   "--fab-radius": "9999px",
-  // Height of the mobile bottom tab bar, which the bottom-docked bars sit above (0rem in a preset without one; keep the unit).
-  "--dock-tab-bar": "4rem",
+  // Height of the mobile bottom tab bar's row (iOS: 49pt), which the bottom-docked bars sit above; the bar adds the
+  // home-indicator inset below it. 0rem in a preset without one; keep the unit.
+  "--dock-tab-bar": "3.25rem",
+  // Phone sheets (globals.css .ui-sheet): top corner radius, and the rise — iOS's sheet curve, quick then a long settle.
+  "--sheet-radius": "1.375rem",
+  "--sheet-duration": "0.44s",
+  "--sheet-ease": toCubic(motion.easing.sheet),
 };
 Object.assign(cssVariables, componentTokens);
 
@@ -496,8 +504,8 @@ const themeDefinitions = {
       "--hero-secondary-ml": "0px",
       "--story-media-max-w": "64rem",
       "--story-media-h-sm": "26rem",
-      // The mihrab header carries search, bag and the menu on phones: no bottom tab bar.
-      "--dock-tab-bar": "0rem",
+      // Sheets squared off like the rest of the controls, still soft enough to read as a sheet.
+      "--sheet-radius": "0.75rem",
     },
     // The hero and the brand story render on ivory; the footer, flash sale and editorial banner stay navy.
     lightBands: ["hero", "story"],

@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * product page rather than pathname/cart-state driven, so its space is reserved conservatively
  * whenever on a product page instead of trying to mirror its exact toggle here. */
 export function StickyBottomBarSpacer() {
-  const { showCartBar, onProductPage, onCheckoutPage } = useBottomDockState();
+  const { showCartBar, showCartBarOnPhone, onProductPage, onCheckoutPage } = useBottomDockState();
   // Nothing is docked at the bottom of the checkout (components/storefront/mobile-bottom-nav.tsx).
   if (onCheckoutPage) return null;
 
@@ -24,7 +24,7 @@ export function StickyBottomBarSpacer() {
     <div
       aria-hidden
       data-band="footer"
-      className={cn("ui-band-inverse bg-ink-950", showCartBar || onProductPage ? "h-[calc(var(--dock-tab-bar)+4rem)]" : "h-[var(--dock-tab-bar)]", showCartBar ? "lg:h-16" : "lg:h-0")}
+      className={cn("ui-band-inverse bg-ink-950", showCartBarOnPhone || onProductPage ? "h-[calc(var(--dock-offset)+4rem)]" : "h-[var(--dock-offset)]", showCartBar ? "lg:h-16" : "lg:h-0")}
     />
   );
 }

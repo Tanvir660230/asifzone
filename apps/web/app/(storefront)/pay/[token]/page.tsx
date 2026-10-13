@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { getPaymentLink, startPaymentLink } from "@/lib/api/orders";
 import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
-import { formatPrice, formatStoreDateTime } from "@/lib/format";
+import { formatStoreDateTime } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 
 const PROVIDER_LABEL = { SSLCOMMERZ: "Card / mobile banking (SSLCommerz)", EPS_PG: "EPS" } as const;
 
@@ -74,7 +75,7 @@ export default function PayPage({ params }: { params: Promise<{ token: string }>
             </ul>
             <div className="mb-5 flex items-baseline justify-between">
               <span className="text-sm text-ink-600">Amount to pay</span>
-              <span className="text-2xl font-semibold text-ink-900">{formatPrice(link.amount)}</span>
+              <span className="text-2xl font-semibold text-ink-900"><Money value={link.amount} /></span>
             </div>
             {link.status === "ACTIVE" ? (
               <>
@@ -82,7 +83,7 @@ export default function PayPage({ params }: { params: Promise<{ token: string }>
                 <div className="space-y-2">
                   {link.providers.map((p) => (
                     <Button key={p} variant="brass" className="w-full" loading={starting === p} disabled={Boolean(starting)} onClick={() => pay(p)}>
-                      Pay {formatPrice(link.amount)} with {PROVIDER_LABEL[p]}
+                      Pay <Money value={link.amount} /> with {PROVIDER_LABEL[p]}
                     </Button>
                   ))}
                   {link.providers.length === 0 && <p className="text-sm text-ink-500">Online payment is unavailable right now — please contact us.</p>}

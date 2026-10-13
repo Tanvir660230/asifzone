@@ -52,9 +52,18 @@ export function stockLine(trackInventory: boolean, stock: number, lowStockThresh
   return { text: "In stock", tone: "muted" }; // IN_STOCK and UNLIMITED (D5)
 }
 
-/** An option that can't be bought right now: a muted fill, a dashed outline and a clear strike-through, so it reads as
- * "sold out" at a glance while the value stays legible (information, not an error, so no red). */
-const UNAVAILABLE_PILL = "border-dashed border-line-strong bg-surface-muted text-ink-500 line-through decoration-ink-500 decoration-[1.5px]";
+/** An option that can't be bought right now: a quiet fill, faded text and one fine diagonal across the tile (SoldOutMark),
+ * so it reads as "sold out" at a glance while the value stays legible (information, not an error, so no red). */
+const UNAVAILABLE_PILL = "border-line bg-surface-muted text-ink-400";
+
+/** The fine corner-to-corner line across a sold-out tile; it stretches with the tile and keeps a hairline weight. */
+function SoldOutMark({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={cn("pointer-events-none absolute inset-0 h-full w-full", className)} preserveAspectRatio="none" viewBox="0 0 100 100">
+      <line x1="0" y1="100" x2="100" y2="0" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
 
 export const STOCK_TONE_CLASS = { muted: "text-ink-500", warn: "font-medium text-brass-600", urgent: "font-medium text-danger-600" } as const;
 
@@ -83,6 +92,8 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
   const sellable = (v: ProductVariant) => isAvailable(trackInventory, v.stock);
   const sizeHasStock = (size: string) => variants.some((v) => v.size === size && sellable(v));
   const comboHasStock = (size: string, color: string) => variants.some((v) => v.size === size && v.color === color && sellable(v));
+  const sizeLabelOf = (size: string) => variants.find((v) => v.size === size)?.sizeLabel;
+  const hasSizeLabels = options.sizes.some((s) => Boolean(sizeLabelOf(s)));
 
   return (
     <>
@@ -92,9 +103,14 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
             <p className="text-xs ui-caps text-ink-500">{options.sizeLabel}</p>
             {sizeHeadingExtra}
           </div>
-          <div className="flex flex-wrap gap-2" role="group" aria-label={options.sizeLabel}>
+          <div
+            // Sizes with a measurement ("M · 55cm") sit in an even grid of two-line tiles; bare sizes stay compact pills.
+            className={hasSizeLabels ? "grid grid-cols-3 gap-2 sm:grid-cols-4" : "flex flex-wrap gap-2"}
+            role="group"
+            aria-label={options.sizeLabel}
+          >
             {options.sizes.map((size) => {
-              const label = variants.find((v) => v.size === size)?.sizeLabel;
+              const label = sizeLabelOf(size);
               const inStock = sizeHasStock(size);
               const isSelected = selectedSize === size;
               const isSuggested = suggestedSize === size && inStock;
@@ -109,22 +125,25 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                   title={inStock ? undefined : "Out of stock"}
                   whileTap={inStock || soldOutSelectable ? { scale: 0.9 } : undefined}
                   className={cn(
-                    "relative isolate flex h-10 min-w-10 items-center justify-center rounded-[var(--chip-radius)] border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
+                    "relative isolate flex items-center justify-center overflow-hidden border text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
+                    hasSizeLabels ? "h-14 flex-col gap-0.5 rounded-xl px-2" : "h-10 min-w-12 rounded-[var(--chip-radius)] px-3",
                     isSelected
-                      ? cn("border-transparent text-cream-50", !inStock && "line-through decoration-cream-50/70 decoration-[1.5px]")
+                      ? cn("border-transparent text-cream-50", !inStock && "text-cream-50/70")
                       : inStock
-                        ? "border-ink-200 text-ink-700 hover:border-ink-900"
+                        ? "border-ink-200 text-ink-900 hover:border-ink-900"
                         : UNAVAILABLE_PILL,
                   )}
                 >
                   {isSelected && (
                     <motion.span
                       layoutId={`size-pill-${instanceId}`}
-                      className="glossy absolute inset-0 -z-10 rounded-[var(--chip-radius)] bg-ink-900 shadow-sm"
+                      className={cn("glossy absolute inset-0 -z-10 bg-ink-900 shadow-sm", hasSizeLabels ? "rounded-xl" : "rounded-[var(--chip-radius)]")}
                       transition={{ type: "spring", stiffness: 500, damping: 32 }}
                     />
                   )}
-                  {label ? `${size} (${label})` : size}
+                  {!inStock && <SoldOutMark className={isSelected ? "text-cream-50/40" : "text-ink-300"} />}
+                  <span className="font-medium leading-tight">{size}</span>
+                  {label && <span className={cn("text-[11px] leading-tight tabular-nums", isSelected ? "text-cream-50/70" : inStock ? "text-ink-500" : "text-ink-400")}>{label}</span>}
                   {isSuggested && !isSelected && (
                     // A small accent dot on the pill: "the one you usually take".
                     <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-canvas" />
@@ -135,7 +154,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
           </div>
           {options.sizes.some((s) => !sizeHasStock(s)) && (
             <p className="mt-2 text-xs text-ink-500" data-testid="sold-out-legend">
-              Crossed-out sizes are sold out{soldOutSelectable ? ". Tap one to get an alert when it's back." : "."}
+              Faded sizes are sold out{soldOutSelectable ? " — tap one to be told when it's back." : "."}
             </p>
           )}
         </div>
@@ -166,7 +185,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                     aria-pressed={isSelected}
                     whileTap={!disabled ? { scale: 0.9 } : undefined}
                     className={cn(
-                      "relative flex h-9 items-center justify-center rounded-[var(--chip-radius)] border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
+                      "relative flex h-9 items-center justify-center overflow-hidden rounded-[var(--chip-radius)] border px-3 text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
                       isSelected
                         ? "border-brass-400 bg-brass-50 text-ink-900 ring-2 ring-brass-200"
                         : soldOut
@@ -174,6 +193,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                           : "border-ink-200 text-ink-700 hover:border-ink-900",
                     )}
                   >
+                    {soldOut && !isSelected && <SoldOutMark className="text-ink-300" />}
                     {color}
                   </motion.button>
                 );

@@ -14,11 +14,13 @@ import { useCartSuggestions } from "@/hooks/use-cart-suggestions";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
+import { useSheetDrag } from "@/hooks/use-sheet-drag";
 import { getSettings } from "@/lib/api/settings";
 import { availabilityOf } from "@/lib/availability-display";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { resolveImageUrl } from "@/lib/image-url";
 import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 
 /** The bag: what's in it (quantities editable), what goes with it, the subtotal and delivery fee, then Checkout — or
  * Continue shopping, which simply closes it. Opened from the bag icon, the bottom nav and "View bag". */
@@ -32,6 +34,7 @@ export function CartDrawer() {
   const { data: suggestions } = useCartSuggestions(isOpen, 4);
   const { data: settingsData } = useQuery({ queryKey: ["settings"], queryFn: getSettings, staleTime: 5 * 60 * 1000, enabled: isOpen });
   const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: close });
+  useSheetDrag(panelRef, close, isOpen);
 
   // Zustand's persisted cart hydrates after mount — avoid a flash of "empty bag" on first paint.
   const [mounted, setMounted] = useState(false);
@@ -42,7 +45,8 @@ export function CartDrawer() {
   const settings = settingsData?.settings;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={close}>
+    // Phones: a sheet rising above the tab bar (drag it down to close); from 768px a panel sliding in from the right.
+    <div className="ui-sheet-overlay fixed inset-x-0 bottom-[var(--dock-offset)] top-0 z-50 bg-ink-950/40 backdrop-blur-sm animate-fade-in" onClick={close}>
       <div
         ref={panelRef}
         role="dialog"
@@ -50,9 +54,10 @@ export function CartDrawer() {
         aria-label="Your bag"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="ml-auto flex h-full w-full max-w-md flex-col bg-cream-50 shadow-floatLg animate-slide-in-right"
+        className="ui-sheet ui-sheet-large ml-auto flex w-full max-w-md flex-col overflow-hidden bg-cream-50 shadow-floatLg md:h-full md:animate-slide-in-right"
       >
-        <div className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
+        <span className="ui-sheet-grabber" aria-hidden />
+        <div data-sheet-handle className="flex items-center justify-between border-b border-ink-100 px-5 py-4">
           <h2 className="font-display text-lg text-ink-900">
             Your bag
             {mounted && count > 0 ? (
@@ -79,7 +84,7 @@ export function CartDrawer() {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto px-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5">
               <ul className="divide-y divide-ink-100">
                 {items.map((item) => (
                   <li key={item.variantId} className="flex gap-3 py-4">
@@ -155,7 +160,7 @@ export function CartDrawer() {
             <div className="border-t border-ink-100 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-ink-600">Subtotal</span>
-                <span className="text-lg font-medium tabular-nums text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
+                <span className="text-lg font-medium tabular-nums text-ink-900">{quote ? <Money value={quote.subtotal} /> : "…"}</span>
               </div>
               <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-500">
                 <Truck size={13} aria-hidden="true" className="shrink-0" />
@@ -203,7 +208,7 @@ function SuggestionRow({ product, onNavigate }: { product: Product; onNavigate: 
         <Link href={`/product/${product.slug}`} onClick={onNavigate} className="line-clamp-2 text-sm leading-5 text-ink-900 hover:text-ink-700">
           {product.name}
         </Link>
-        <p className="text-sm font-medium tabular-nums text-ink-900">{formatPrice(shown.price)}</p>
+        <p className="text-sm font-medium tabular-nums text-ink-900"><Money value={shown.price} /></p>
       </div>
       {single ? (
         <Button variant="outline" size="sm" onClick={() => addToCart(1)} aria-label={`Add ${product.name} to bag`}>
