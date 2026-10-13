@@ -65,9 +65,36 @@ To add the **TikTok Events API** later:
 2. Use `event_id: metaPurchaseEventId(order.orderNumber)` (it's platform-neutral despite the name) so the browser
    and server copies collapse into one.
 3. Hashed matching keys (SHA-256 of trimmed, lower-cased email; E.164 phone) belong there, server-side, per TikTok's
-   spec. The browser layer deliberately sends no PII and doesn't call `ttq.identify`.
+   spec. The browser TikTok pixel doesn't call `ttq.identify`.
 
 For other events, pass the browser's id to the server (for example in the checkout payload) and reuse it.
+
+## Meta advanced matching
+
+Meta gets the shopper's own contact details so it can match conversions to Meta accounts. Both senders use the same
+keys: email, phone, first and last name, district (`ct`), division (`st`) and country `bd`. Both normalize them with
+`metaMatchKeys` in `@clothing-brand/shared`, so one shopper produces the same hash on both sides:
+
+- **Conversions API** (`apps/api/src/lib/meta/capi.ts`): hashes the keys with SHA-256, plus `external_id` (the customer id).
+- **Browser Pixel** (`lib/pixels/meta.ts`): passes them as the third argument of `fbq('init')`, and fbevents.js
+  hashes them before they leave the browser. `external_id` stays server-side.
+
+`pixelIdentify()` in `lib/pixels/index.ts` records who the shopper is. It's called from:
+
+- the signed-in customer's session (`hooks/use-current-customer.ts`)
+- the checkout and `/lp` order submit, just before AddPaymentInfo
+- `pixelPurchase`, from the order itself, which also covers a fresh page load after a gateway redirect
+
+The data is kept in memory for the current page load only, never in storage. It only goes out with an event that
+passes the consent gate.
+
+fbevents.js accepts user data from a repeat `init` only while the pixel has none yet. A second set is refused as
+"Duplicate Pixel ID". So the first known details of a page load are attached exactly once: with the first `init`, or
+with one more `init` before the next event. Verified against the real fbevents.js. Unit tests:
+`lib/pixels/advanced-matching.test.ts`.
+
+Also turn on **Automatic Advanced Matching** in Events Manager → the pixel → Settings. It reads form fields the code
+doesn't send.
 
 ## Consent
 

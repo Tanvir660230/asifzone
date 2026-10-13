@@ -32,7 +32,7 @@ import { useExpressCheckoutStore } from "@/store/express-checkout";
 import { formatPrice, formatDateShort } from "@/lib/format";
 import { createOrder } from "@/lib/api/orders";
 import { getSessionId } from "@/lib/analytics";
-import { pixelAddPaymentInfo, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
+import { pixelAddPaymentInfo, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { getQuote, getBestCouponQuote } from "@/lib/api/quote";
 import { useQuote, quoteLineAmount } from "@/hooks/use-quote";
 import { getMyStoreCredit, listAddresses } from "@/lib/api/customers";
@@ -345,6 +345,13 @@ function CheckoutForm() {
       // Only now that the server has accepted the checkout — a validation/stock error above never
       // gets here. Purchase is NOT fired here: it fires on the confirmation page once the backend
       // reports a real order (and server-side from the API), never from this optimistic step.
+      pixelIdentify({
+        email: values.customerEmail,
+        phone: values.customerPhone,
+        fullName: values.customerName,
+        city: values.shippingDistrict,
+        state: values.shippingDivision,
+      });
       pixelAddPaymentInfo(pixelItems(), values.paymentMethod);
       if (useStoreCredit) void queryClient.invalidateQueries({ queryKey: ["my-store-credit"] });
       if (gatewayUrl) {

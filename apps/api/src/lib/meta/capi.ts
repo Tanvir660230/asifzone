@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import type { Request } from "express";
-import { isBdMobileLocal, normalizeBdPhone, toBdInternationalDigits } from "@clothing-brand/shared";
+import { metaMatchKeys } from "@clothing-brand/shared";
 
 /** Meta Conversions API payload helpers — Meta's customer-information normalization + SHA-256 hashing rules and the
  * event shapes. The config gate and the one HTTP call to the Graph API are the provider
@@ -52,30 +52,14 @@ export function sha256(value: string): string {
   return crypto.createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-/** Meta: trim + lowercase. */
-export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-/** Meta wants digits only, country code included, no leading "+" or trunk 0 — 01712345678 → 8801712345678. */
-export function normalizePhone(phone: string): string | null {
-  const local = normalizeBdPhone(phone);
-  return isBdMobileLocal(local) ? toBdInternationalDigits(local) : null;
-}
-
-/** Names, city, state: lowercase with punctuation and whitespace stripped. Unicode-aware so a
- * Bengali-script name survives as UTF-8 (which Meta accepts) instead of being erased. */
-export function normalizeText(value: string): string {
-  return value.toLowerCase().replace(/[^\p{L}\p{M}\p{N}]/gu, "");
-}
-
-/** First token → first name, last token → last name. A single-word name only yields a first name —
- * guessing a last name would just hand Meta a wrong match key. */
-export function splitName(fullName: string): { firstName: string | null; lastName: string | null } {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return { firstName: null, lastName: null };
-  return { firstName: parts[0]!, lastName: parts.length > 1 ? parts[parts.length - 1]! : null };
-}
+// Meta's normalization rules live in @clothing-brand/shared so the browser Pixel normalizes exactly the same way —
+// the same shopper must hash to the same value on both sides. Re-exported under their original names.
+export {
+  normalizeMetaEmail as normalizeEmail,
+  normalizeMetaPhone as normalizePhone,
+  normalizeMetaText as normalizeText,
+  splitMetaName as splitName,
+} from "@clothing-brand/shared";
 
 function hashed(value: string | null | undefined): string[] | undefined {
   return value ? [sha256(value)] : undefined;
@@ -115,15 +99,15 @@ export interface MetaCustomerInfo {
 /** Only fields the shopper typed into checkout themselves (plus their own customer id), normalized
  * and hashed per Meta's advanced-matching spec. Never payment data, never anything auth-related. */
 export function buildUserData(customer: MetaCustomerInfo, context: MetaRequestContext): MetaUserData {
-  const { firstName, lastName } = splitName(customer.fullName ?? "");
+  const keys = metaMatchKeys(customer);
   const userData: MetaUserData = {
-    em: hashed(customer.email ? normalizeEmail(customer.email) : null),
-    ph: hashed(customer.phone ? normalizePhone(customer.phone) : null),
-    fn: hashed(firstName ? normalizeText(firstName) : null),
-    ln: hashed(lastName ? normalizeText(lastName) : null),
-    ct: hashed(customer.city ? normalizeText(customer.city) : null),
-    st: hashed(customer.state ? normalizeText(customer.state) : null),
-    country: hashed("bd"),
+    em: hashed(keys.em),
+    ph: hashed(keys.ph),
+    fn: hashed(keys.fn),
+    ln: hashed(keys.ln),
+    ct: hashed(keys.ct),
+    st: hashed(keys.st),
+    country: hashed(keys.country),
     external_id: hashed(customer.externalId),
     client_ip_address: context.clientIpAddress,
     client_user_agent: context.clientUserAgent,

@@ -1,4 +1,5 @@
-import type { PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
+import { metaMatchKeys, type MetaMatchKeys } from "@clothing-brand/shared";
+import type { PixelCustomer, PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
 import { publicRuntimeConfig } from "../runtime-config";
 
 /** The one module that talks to the Meta Pixel — it only translates the neutral events lib/pixels/index.ts dispatches
@@ -10,6 +11,10 @@ import { publicRuntimeConfig } from "../runtime-config";
  * only id the order rows carry), the PRODUCT id with content_type "product_group" for ViewContent, since a product page
  * is viewed before any variant is picked. A future Meta catalog feed should therefore use variant id as `id` and product
  * id as `item_group_id`.
+ *
+ * Advanced matching: once the shopper is known (lib/pixels/index.ts's pixelIdentify), their email / phone / name /
+ * district / division go to `fbq('init')` as its third argument — normalized by the same metaMatchKeys the Conversions
+ * API uses, and SHA-256 hashed by fbevents.js itself before anything leaves the browser.
  *
  * Inert (every call a no-op) until this installation's META_PIXEL_ID is set (runtime configuration) — only the production build gets it,
  * so dev/CI traffic never reaches the real pixel. */
@@ -33,15 +38,35 @@ declare global {
 }
 
 let initialized = false;
+let matched = false;
 
-/** Loads fbevents.js and runs `fbq('init')` exactly once per page load, however many times it's called. Installs Meta's
+function matchKeysFor(customer: PixelCustomer | null): MetaMatchKeys | null {
+  if (!customer) return null;
+  const keys = metaMatchKeys(customer);
+  return Object.keys(keys).length > 0 ? keys : null;
+}
+
+/** Loads fbevents.js and runs `fbq('init')` once per page load, however many times it's called. Installs Meta's
  * standard queueing stub first, so events tracked before the script finishes downloading are buffered rather than
  * lost. The base code's own PageView is deliberately not fired here — every PageView comes from <AdPixels />, which is
- * what keeps the first load from counting twice. */
-function ensureInitialized(): boolean {
+ * what keeps the first load from counting twice.
+ *
+ * Advanced matching usually becomes known after the first init (the PageView fires before the shopper's account loads
+ * or they check out). fbevents.js accepts user data from a repeat `init` only while the pixel has none yet — a second
+ * set is refused as "Duplicate Pixel ID" — so it's attached exactly once: with the first init when already known,
+ * otherwise with one more `init` just before the first event that carries it. */
+function ensureInitialized(customer: PixelCustomer | null): boolean {
   if (!pixelId() || typeof window === "undefined") return false;
-  if (initialized) return true;
+  const matching = matchKeysFor(customer);
+  if (initialized) {
+    if (matching && !matched) {
+      matched = true;
+      window.fbq!("init", pixelId(), matching);
+    }
+    return true;
+  }
   initialized = true;
+  matched = matching !== null;
 
   if (!window.fbq) {
     const stub = function (...args: unknown[]) {
@@ -61,7 +86,8 @@ function ensureInitialized(): boolean {
     document.head.appendChild(script);
   }
 
-  window.fbq!("init", pixelId());
+  if (matching) window.fbq!("init", pixelId(), matching);
+  else window.fbq!("init", pixelId());
   return true;
 }
 
@@ -114,7 +140,7 @@ export const metaPixel: PixelProvider = {
     return Boolean(pixelId());
   },
   send(event, ctx) {
-    if (!ensureInitialized()) return;
+    if (!ensureInitialized(ctx.customer)) return;
     const [name, params] = toMeta(event, ctx);
     window.fbq!("track", name, params, { eventID: ctx.eventId });
   },

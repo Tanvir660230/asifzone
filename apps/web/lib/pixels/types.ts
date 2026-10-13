@@ -17,6 +17,18 @@ export interface PixelLineItem {
 
 export type ContactChannel = "form" | "whatsapp" | "call";
 
+/** Who the shopper is, in their own words — only what they typed into checkout or keep on their own account; never
+ * passwords, payment details or anything else. Each provider decides which of these it sends (Meta: advanced matching). */
+export interface PixelCustomer {
+  email?: string | null;
+  phone?: string | null;
+  fullName?: string | null;
+  /** The shipping district. */
+  city?: string | null;
+  /** The shipping division. */
+  state?: string | null;
+}
+
 export type PixelEvent =
   | { name: "PageView" }
   | { name: "ViewContent"; product: { id: string; name: string; price: number } }
@@ -36,6 +48,8 @@ export interface PixelEventContext {
   eventId: string;
   /** The store currency (store settings, via lib/store-config.ts). A getter: read only by events that carry money. */
   readonly currency: string;
+  /** The shopper as far as this page load knows them (see pixelIdentify), or null for an anonymous visitor. */
+  customer: PixelCustomer | null;
 }
 
 /** One ad platform. `send` must be a cheap no-op when the platform isn't configured (no pixel id at build time). */

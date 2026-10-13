@@ -15,8 +15,8 @@ import { publicRuntimeConfig } from "../runtime-config";
  * same pixel + event name + event_id within 48h counts once. Purchase's id is deterministic per order (see
  * purchaseEventId in ./index.ts), so a future server-side TikTok Events API sender only has to reuse it.
  *
- * Advanced matching (ttq.identify with hashed email/phone) is deliberately not used: the store has no consent banner,
- * and the browser would have to hash PII client-side. If it's added, it belongs server-side in the Events API sender,
+ * Advanced matching (ttq.identify with hashed email/phone) is not used here yet — the browser would have to hash PII
+ * client-side (Meta's pixel hashes it itself; see ./meta.ts). If it's added, it belongs server-side in the Events API sender,
  * SHA-256 of trimmed lowercase email / E.164 phone per TikTok's spec — never passwords or payment data.
  *
  * Inert (every call a no-op, nothing downloaded) until this installation's TIKTOK_PIXEL_ID is set (runtime configuration). */
