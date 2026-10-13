@@ -101,7 +101,7 @@ export default function StatementsPage() {
       {view === "balance" && balance.data && (
         <>
           <Totals items={[{ label: "Assets", value: balance.data.totalAssets }, { label: "Liabilities", value: sec(balance.data.sections, "liabilities") }, { label: "Equity", value: sec(balance.data.sections, "equity") }, { label: "Liabilities + equity", value: balance.data.totalLiabilitiesAndEquity, strong: true }]} />
-          <Check ok={balance.data.balanced} okText="Assets equal liabilities plus equity." badText="The sheet doesn't balance — run Finance checks → ledger integrity." />
+          <Check ok={balance.data.balanced} okText="Assets equal liabilities plus equity." badText="The sheet doesn't balance — run Books health check → ledger integrity." />
           <StatementTable title={`As at ${balance.data.asOf}`} sections={balance.data.sections} subtotals={{}} csvName={`balance-sheet-${balance.data.asOf}.csv`} />
         </>
       )}
@@ -109,14 +109,14 @@ export default function StatementsPage() {
       {view === "cash" && cash.data && (
         <>
           <Totals items={[{ label: "Net profit", value: cash.data.netProfit }, { label: "Cash from operations", value: cash.data.operatingCashFlow }, { label: "Net change in money", value: cash.data.netChange, strong: true }, { label: "Money at the end", value: cash.data.money.closing }]} />
-          <Check ok={cash.data.reconciles} okText={`Explains the money accounts exactly: ${formatPrice(cash.data.money.opening)} → ${formatPrice(cash.data.money.closing)}.`} badText="The statement doesn't explain the money accounts' change — run Finance checks." />
+          <Check ok={cash.data.reconciles} okText={`Explains the money accounts exactly: ${formatPrice(cash.data.money.opening)} → ${formatPrice(cash.data.money.closing)}.`} badText="The statement doesn't explain the money accounts' change — run the Books health check." />
           <StatementTable title={`${cash.data.period.from} to ${cash.data.period.to}`} lead={["Net profit", cash.data.netProfit]} sections={cash.data.sections} subtotals={{ operating: ["Cash from operations", cash.data.operatingCashFlow] }} csvName={`cash-flow-${cash.data.period.from}-${cash.data.period.to}.csv`} />
         </>
       )}
 
       {view === "trial" && trial.data && (
         <>
-          <Check ok={trial.data.balanced} okText={`Debits equal credits: ${formatPrice(trial.data.totalDebit)}.`} badText="Debits and credits differ — run Finance checks → ledger integrity." />
+          <Check ok={trial.data.balanced} okText={`Debits equal credits: ${formatPrice(trial.data.totalDebit)}.`} badText="Debits and credits differ — run Books health check → ledger integrity." />
           <Card className="overflow-hidden p-0">
             <HScrollShadow>
               <Table>

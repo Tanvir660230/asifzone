@@ -79,7 +79,7 @@ export default function SettlementsPage() {
       {dialog}
       <ModuleTabs />
       <PageHeader
-        title="Courier & gateway settlements"
+        title="Courier & gateway payouts"
         description="Cash on delivery and online payments sit in clearing until the courier or gateway pays out. A settlement moves them to the bank, with the fees the statement shows."
         action={
           can("finance.transact") && (

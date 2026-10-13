@@ -359,7 +359,75 @@ export const listExceptions = (q: { status?: string; kind?: string; page?: numbe
   apiFetch<{ total: number; openByKind: Record<string, number>; exceptions: FinanceException[] }>(`${BASE}/exceptions${qs(q)}`);
 export const acknowledgeException = (id: string, note: string) => apiFetch<FinanceException>(`${BASE}/exceptions/${id}/acknowledge`, { method: "POST", body: { note } });
 export const approveEstimate = (id: string, unitCost: number, note: string) => apiFetch<{ outcomes: Record<string, string> }>(`${BASE}/exceptions/${id}/approve-estimate`, { method: "POST", body: { unitCost, note } });
-export const getBusiness = () => apiFetch<{ costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES"; business: { openingDate: string | null }; brands: Array<{ id: string; key: string; name: string; isActive: boolean }> }>(`${BASE}/business`);
+export interface BusinessSettings {
+  costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES";
+  business: { id: string; name: string; baseCurrency: string; timezone: string; fiscalYearStartMonth: number; openingDate: string | null };
+  brands: Array<{ id: string; key: string; name: string; isActive: boolean }>;
+  /** DRAFT while the opening balances are being prepared, POSTED once the books have started; null before either. */
+  openingBalancesStatus: "DRAFT" | "POSTED" | null;
+  postedJournals: number;
+  /** The opening date can't change once anything is posted. */
+  openingDateLocked: boolean;
+  inventoryCostingActivatedAt: string | null;
+}
+export const businessKeys = { settings: () => ["finance", "business"] as const };
+export const getBusiness = () => apiFetch<BusinessSettings>(`${BASE}/business`);
+export const updateBusiness = (body: { name?: string; fiscalYearStartMonth?: number; openingDate?: string; reason?: string | null }) =>
+  apiFetch<BusinessSettings>(`${BASE}/business`, { method: "PATCH", body });
+
+// ── opening balances (docs/FINANCE_PHASE_1.md §8): the books start from what the business holds and owes on the opening date
+export type OpeningBalanceCategory = "CASH" | "BANK" | "MOBILE_WALLET" | "PAYMENT_ACCOUNT" | "INVENTORY" | "RECEIVABLE" | "PAYABLE" | "LOAN" | "FIXED_ASSET" | "CAPITAL" | "OTHER_ASSET" | "OTHER_LIABILITY" | "OTHER_EQUITY";
+export type ValuationStatus = "KNOWN" | "ESTIMATED" | "MISSING";
+export interface OpeningLine {
+  id?: string; category: OpeningBalanceCategory; accountId: string | null; financialAccountId: string | null; side: "DEBIT" | "CREDIT"; amount: number;
+  brandId: string | null; partyType: string | null; partyId: string | null; description: string | null;
+}
+export interface OpeningInventoryItem {
+  variantId: string | null; sku: string; name: string; quantity: number; unitCost: number | null; valuationAmount: number | null;
+  valuationStatus: ValuationStatus; valuationMethod: string; valuationSource: string | null; valuationDate: string;
+  confidence: "HIGH" | "MEDIUM" | "LOW" | null; notes: string | null; brandId: string | null;
+}
+export interface OpeningBatch {
+  id: string; status: "DRAFT" | "POSTED"; openingDate: string; notes: string | null; journalEntryId: string | null; postedAt: string | null;
+  lines: OpeningLine[]; inventoryItems: OpeningInventoryItem[];
+  summary: {
+    lineDebits: number; lineCredits: number;
+    inventory: { valuedTotal: number; known: { items: number; quantity: number; value: number }; estimated: { items: number; quantity: number; value: number }; missing: { items: number; quantity: number }; unvaluedQuantity: number };
+    openingBalanceEquity: { side: "DEBIT" | "CREDIT"; amount: number };
+  };
+}
+export const openingKeys = { all: ["finance", "opening-balances"] as const };
+export const getOpeningBalances = () => apiFetch<{ openingDate: string | null; batch: OpeningBatch | null }>(`${BASE}/opening-balances`);
+export const saveOpeningLines = (body: { notes?: string | null; lines: Array<Omit<OpeningLine, "id">> }) => apiFetch<OpeningBatch>(`${BASE}/opening-balances/lines`, { method: "PUT", body });
+export const saveOpeningInventory = (items: OpeningInventoryItem[]) => apiFetch<OpeningBatch>(`${BASE}/opening-balances/inventory`, { method: "PUT", body: { items } });
+export const prefillOpeningInventory = () => apiFetch<OpeningBatch>(`${BASE}/opening-balances/inventory/prefill`, { method: "POST", body: {} });
+export const postOpeningBalances = () => apiFetch<{ batch: OpeningBatch; journal: { id: string; number: number | null } }>(`${BASE}/opening-balances/post`, { method: "POST", body: {} });
+
+// ── account mapping: which ledger account each kind of posting uses (docs/FINANCE_PHASE_1.md §3) ───────────────────────
+export interface AccountMapping { key: string; account: { id: string; code: string; name: string } | null }
+export const mappingKeys = { all: ["finance", "mappings"] as const };
+export const listMappings = () => apiFetch<{ mappings: AccountMapping[] }>(`${BASE}/mappings`);
+export const setMapping = (key: string, accountId: string, reason?: string) => apiFetch<AccountMapping>(`${BASE}/mappings/${encodeURIComponent(key)}`, { method: "PUT", body: { accountId, reason } });
+
+// ── activity: accounting events from commerce, and the finance audit trail ─────────────────────────────────────────────
+export type FinancialEventStatus = "RECEIVED" | "POSTED" | "FAILED" | "IGNORED";
+export interface FinancialEventRow {
+  id: string; eventType: string; sourceEntityType: string; sourceEntityId: string; financialDate: string; occurredAt: string; status: FinancialEventStatus;
+  attempts: number; lastError: string | null; receivedAt: string; processedAt: string | null; journalEntry: { id: string; number: number | null } | null;
+}
+export interface FinanceAuditRow {
+  id: string; actorType: string; actorLabel: string; action: string; entityType: string; entityId: string; reason: string | null; createdAt: string;
+  before: unknown; after: unknown;
+}
+export const activityKeys = {
+  events: (q: object) => ["finance", "events", q] as const,
+  audit: (q: object) => ["finance", "audit", q] as const,
+};
+export const listFinancialEvents = (q: { status?: FinancialEventStatus; page?: number; pageSize?: number } = {}) =>
+  apiFetch<{ total: number; page: number; pageSize: number; events: FinancialEventRow[] }>(`${BASE}/events${qs(q)}`);
+export const retryFinancialEvent = (id: string) => apiFetch<{ outcome: unknown }>(`${BASE}/events/${id}/retry`, { method: "POST", body: {} });
+export const listFinanceAudit = (q: { entityType?: string; page?: number; pageSize?: number } = {}) =>
+  apiFetch<{ total: number; page: number; pageSize: number; entries: FinanceAuditRow[] }>(`${BASE}/audit${qs(q)}`);
 export const setCostPolicy = (costPolicy: "KNOWN_ONLY" | "APPROVED_ESTIMATES", reason: string) => apiFetch(`${BASE}/business/cost-policy`, { method: "PUT", body: { costPolicy, reason } });
 
 export const listSettlements = (q: { status?: string; page?: number; pageSize?: number } = {}) => apiFetch<{ total: number; settlements: Settlement[] }>(`${BASE}/settlements${qs(q)}`);

@@ -30,7 +30,7 @@ async function login(browser: Browser, who: { email: string; password: string })
   await page.goto("/admin/login");
   await page.getByLabel("Email").fill(who.email);
   await page.getByLabel("Password").fill(who.password);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).not.toHaveURL(/\/admin\/login/, NAV);
   return page;
 }
@@ -55,7 +55,7 @@ test("inventory costing is OFF until the 4C cutover — the books say so", async
   const business = (await api(owner, "GET", "/api/v1/finance/business")).body;
   expect(business).toHaveProperty("inventoryCostingActivatedAt", null); // read-only: set only by the 4C cutover
   await owner.goto("/admin/finance/checks");
-  await expect(owner.getByRole("heading", { name: "Finance checks" })).toBeVisible(NAV);
+  await expect(owner.getByRole("heading", { name: "Books health check" })).toBeVisible(NAV);
   for (const key of ["inventory.order_cost_links", "inventory.quantity_vs_valuation", "inventory.valuation_postings"]) await expect(owner.getByTestId(`check-${key}`)).toBeVisible();
   await owner.getByTestId("run-checks").click();
   for (const key of ["inventory.order_cost_links", "inventory.quantity_vs_valuation", "inventory.valuation_postings"]) {

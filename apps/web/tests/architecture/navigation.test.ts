@@ -14,6 +14,7 @@ import {
   MAX_NAV_DEPTH,
   MAX_PRIMARY_MODULES,
   NAV_NODES,
+  navChildren,
   navNode,
   navTree,
   resolveNavNode,
@@ -142,6 +143,22 @@ describe("navigation manifest — derivation", () => {
     expect(resolveNavNode("/admin/finance/suppliers")?.id).toBe("finance.suppliers");
     expect(resolveNavNode("/admin/finance/tax-codes")?.id).toBe("finance.tax-codes");
     expect(resolveNavNode("/admin/nowhere")).toBeUndefined();
+  });
+
+  it("organises Finance as Overview, Needs attention and six groups — payments inside Sales & payments", () => {
+    expect(resolveNavNode("/admin/finance")?.id).toBe("finance.home");
+    expect(navNode("finance")?.index).toBe("/admin/finance");
+    const owner = access("OWNER");
+    expect(navChildren("finance", owner).map((c) => c.node.label)).toEqual(["Overview", "Needs attention", "Money", "Sales & payments", "Purchasing", "Reports & books", "Payroll & partners", "Setup & checks"]);
+    for (const route of ["/admin/payments/transactions", "/admin/payments/refunds", "/admin/payments/attempts", "/admin/payments/overview", "/admin/finance/settlements", "/admin/finance/sales"]) {
+      expect(resolveNavNode(route)?.parent, route).toBe("finance.selling");
+    }
+    expect(navChildren("finance.setup", owner).map((c) => c.href)).toEqual([
+      "/admin/finance/opening", "/admin/finance/checks", "/admin/finance/exceptions", "/admin/finance/inventory-cutover", "/admin/finance/tax-codes", "/admin/finance/mappings", "/admin/finance/activity",
+    ]);
+    // every listed finance page explains itself in one sentence (the Overview's map shows it)
+    const listed = ["finance.money", "finance.selling", "finance.purchasing", "finance.books", "finance.people", "finance.setup"].flatMap((g) => navChildren(g, owner));
+    for (const item of listed) expect(item.node.description, item.node.id).toBeTruthy();
   });
 
   it("builds breadcrumbs and titles from the tree", () => {

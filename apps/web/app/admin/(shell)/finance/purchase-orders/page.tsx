@@ -171,7 +171,7 @@ function PurchaseOrderModal({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="space-y-5">
-        {suppliers.data?.suppliers.length === 0 && <Alert variant="warning" title="No active supplier">Add a supplier in Finance → Suppliers first.</Alert>}
+        {suppliers.data?.suppliers.length === 0 && <Alert variant="warning" title="No active supplier">Add a supplier in Finance → Purchasing → Suppliers first.</Alert>}
         <div className="grid gap-4 sm:grid-cols-3">
           <Field htmlFor="po-supplier" label="Supplier" required>
             <Select id="po-supplier" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>

@@ -108,8 +108,14 @@ export function DetailHeader({
       {!deleted && <OrderProgress order={order} />}
 
       <div className="flex flex-wrap items-center gap-2" data-testid="order-actions">
+        {/* On a phone's order page the same action is pinned at the bottom (OrderPhoneActionBar) — once is enough. */}
         {primary && canPrimary && (
-          <Button size="sm" onClick={runPrimary} loading={primary.kind === "book_courier" && commands.pending.book}>
+          <Button
+            size="sm"
+            onClick={runPrimary}
+            loading={primary.kind === "book_courier" && commands.pending.book}
+            className={variant === "page" ? "max-md:hidden" : undefined}
+          >
             {primary.label} <ArrowRight size={14} aria-hidden="true" />
           </Button>
         )}

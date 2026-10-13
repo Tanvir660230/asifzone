@@ -2,11 +2,10 @@
 
 import { formatVariantLabel, isAvailable, maxSellableQuantity } from "@clothing-brand/shared";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Search, User, MapPin, Package, X, CheckCircle2 } from "lucide-react";
+import { Search, User, MapPin, Package, X, CheckCircle2 } from "lucide-react";
 import {
   adminCreateOrderSchema,
   BD_DIVISION_BY_DISTRICT,
@@ -16,6 +15,7 @@ import {
   type ProductVariant,
   type AdminCustomerListItem,
 } from "@clothing-brand/shared";
+import { BackLink } from "@/components/ui/back-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -262,13 +262,7 @@ export default function NewOrderPage() {
       <PageHeader
         title="Create Order"
         description="For phone, Facebook or walk-in orders — stock and pricing sync the same way a storefront checkout does."
-        action={
-          <Link href="/admin/orders">
-            <Button variant="outline">
-              <ArrowLeft size={16} /> Back to Orders
-            </Button>
-          </Link>
-        }
+        action={<BackLink href="/admin/orders" label="Back to Orders" />}
       />
 
       {perms.ready && !perms.manage && (

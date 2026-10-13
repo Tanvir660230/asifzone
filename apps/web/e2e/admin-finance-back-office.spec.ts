@@ -21,7 +21,7 @@ async function login(browser: Browser, who: { email: string; password: string })
   await page.goto("/admin/login");
   await page.getByLabel("Email").fill(who.email);
   await page.getByLabel("Password").fill(who.password);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/dashboard/, NAV);
   return page;
 }
@@ -58,7 +58,7 @@ test("needs attention: every alert links to its fix; the month-end checklist cov
 
 test("budgets & cash: the forecast loads from the books", async () => {
   await owner.goto("/admin/finance/budgets");
-  await expect(owner.getByRole("heading", { name: "Budgets & cash" })).toBeVisible(NAV);
+  await expect(owner.getByRole("heading", { name: "Budgets & cash forecast" })).toBeVisible(NAV);
   await expect(owner.getByText(/cash now/i).first()).toBeVisible(NAV);
   await expect(owner.getByRole("alert").filter({ hasText: /couldn't be loaded/ })).toHaveCount(0);
 });

@@ -18,6 +18,7 @@ import { resolveThemeId } from "@/lib/theme";
 import { storeLayout } from "@/lib/theme-layout";
 import type { StudioDevice } from "@/lib/studio/preview-protocol";
 import { useStudioDraft } from "@/lib/studio/use-studio-draft";
+import { cn } from "@/lib/utils";
 import { AddSectionGallery } from "./add-section-gallery";
 import { Canvas } from "./canvas";
 import { Inspector } from "./inspector";
@@ -47,8 +48,13 @@ export function StudioShell() {
   const draft = useStudioDraft();
   const queryClient = useQueryClient();
   const wide = useMediaQuery("(min-width: 1024px)");
+  // Phones edit too: one pane at a time (sections, site design or the preview), the settings in a full-screen sheet,
+  // and the preview always at phone width.
+  const phone = useMediaQuery("(max-width: 767px)");
   const layout = storeLayout();
-  const [device, setDevice] = useState<StudioDevice>("desktop");
+  const [chosenDevice, setDevice] = useState<StudioDevice>("desktop");
+  const device: StudioDevice = phone ? "mobile" : chosenDevice;
+  const [previewing, setPreviewing] = useState(false);
   // The left pane: the homepage's sections, or the store-wide design (theme, announcement bar, header, footer).
   const [mode, setMode] = useState<"page" | "design">("page");
   const [galleryOpen, setGalleryOpen] = useState(false);
@@ -200,9 +206,39 @@ export function StudioShell() {
     />
   ) : null;
 
+  const outline =
+    mode === "page" ? (
+      <Outline
+        sections={draft.sections}
+        selectedId={draft.selectedId}
+        checks={checks}
+        emptyIds={emptyIds}
+        deviceLabel={DEVICE_LABEL[device]}
+        onSelect={selectAndReveal}
+        onMove={draft.move}
+        onToggle={(id, isActive) => draft.update(id, { isActive })}
+        onAdd={() => setGalleryOpen(true)}
+      />
+    ) : (
+      <DesignOutline design={draft.design} selectedId={draft.selectedId} checks={checks} onSelect={selectAndReveal} />
+    );
+
+  const canvas = (
+    <Canvas
+      sections={draft.sections}
+      design={draft.design}
+      selectedId={draft.selectedId}
+      device={device}
+      onSelect={draft.select}
+      onEmptyIds={(ids) => setEmptyIds((prev) => (prev.size === ids.length && ids.every((id) => prev.has(id)) ? prev : new Set(ids)))}
+      scrollRequest={scrollRequest}
+    />
+  );
+
   return (
     <div className="flex h-full flex-col bg-surface" data-testid="studio">
       <TopBar
+        compact={phone}
         draft={draft}
         device={device}
         onDevice={setDevice}
@@ -212,63 +248,76 @@ export function StudioShell() {
         onRestore={(id, at) => void handleRestore(id, at)}
         onSelectSection={selectAndReveal}
       />
-      <div className={wide ? "grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)_360px]" : "grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]"}>
-        <aside className="flex min-h-0 flex-col border-r border-line-subtle bg-surface" aria-label={mode === "page" ? "Sections" : "Site design"}>
-          <div className="border-b border-line-subtle px-3 py-3">
+      {phone ? (
+        <>
+          <div className="border-b border-line-subtle px-3 py-2">
             <SegmentedControl
-              aria-label="What to edit"
+              aria-label="What to show"
               size="sm"
               className="w-full"
-              value={mode}
+              value={previewing ? "preview" : mode}
               onChange={(next) => {
-                setMode(next);
-                draft.select(null);
+                setPreviewing(next === "preview");
+                if (next !== "preview" && next !== mode) {
+                  setMode(next);
+                  draft.select(null);
+                }
               }}
               options={[
-                { value: "page", label: "Homepage", testId: "studio-mode-page" },
+                { value: "page", label: "Sections", testId: "studio-mode-page" },
                 { value: "design", label: "Site design", testId: "studio-mode-design" },
+                { value: "preview", label: "Preview", testId: "studio-pane-preview" },
               ]}
             />
           </div>
-          <div className="min-h-0 flex-1">
-            {mode === "page" ? (
-              <Outline
-                sections={draft.sections}
-                selectedId={draft.selectedId}
-                checks={checks}
-                emptyIds={emptyIds}
-                deviceLabel={DEVICE_LABEL[device]}
-                onSelect={selectAndReveal}
-                onMove={draft.move}
-                onToggle={(id, isActive) => draft.update(id, { isActive })}
-                onAdd={() => setGalleryOpen(true)}
-              />
-            ) : (
-              <DesignOutline design={draft.design} selectedId={draft.selectedId} checks={checks} onSelect={selectAndReveal} />
+          <div className="relative min-h-0 flex-1">
+            {/* The preview stays laid out (only invisible) under the lists: it doesn't reload on every switch, and its
+                real size keeps the outline's "takes no space on a phone" measurement right. */}
+            <div className={cn("absolute inset-0", !previewing && "invisible")} aria-hidden={!previewing || undefined}>
+              {canvas}
+            </div>
+            {!previewing && (
+              <div role="region" aria-label={mode === "page" ? "Sections" : "Site design"} className="absolute inset-0 bg-surface">
+                {outline}
+              </div>
             )}
           </div>
-        </aside>
-        <Canvas
-          sections={draft.sections}
-          design={draft.design}
-          selectedId={draft.selectedId}
-          device={device}
-          onSelect={draft.select}
-          onEmptyIds={(ids) => setEmptyIds((prev) => (prev.size === ids.length && ids.every((id) => prev.has(id)) ? prev : new Set(ids)))}
-          scrollRequest={scrollRequest}
-        />
-        {wide && (
-          <aside className="min-h-0 border-l border-line-subtle bg-surface" aria-label="Section settings">
-            {inspector ?? <NothingSelected />}
+        </>
+      ) : (
+        <div className={wide ? "grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)_360px]" : "grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)]"}>
+          <aside className="flex min-h-0 flex-col border-r border-line-subtle bg-surface" aria-label={mode === "page" ? "Sections" : "Site design"}>
+            <div className="border-b border-line-subtle px-3 py-3">
+              <SegmentedControl
+                aria-label="What to edit"
+                size="sm"
+                className="w-full"
+                value={mode}
+                onChange={(next) => {
+                  setMode(next);
+                  draft.select(null);
+                }}
+                options={[
+                  { value: "page", label: "Homepage", testId: "studio-mode-page" },
+                  { value: "design", label: "Site design", testId: "studio-mode-design" },
+                ]}
+              />
+            </div>
+            <div className="min-h-0 flex-1">{outline}</div>
           </aside>
-        )}
-      </div>
+          {canvas}
+          {wide && (
+            <aside className="min-h-0 border-l border-line-subtle bg-surface" aria-label="Section settings">
+              {inspector ?? <NothingSelected />}
+            </aside>
+          )}
+        </div>
+      )}
       {!wide && (
         <Drawer
           open={Boolean(selected || selectedGroup)}
           onClose={() => draft.select(null)}
           title={selectedGroup ? DESIGN_META[selectedGroup].label : selected ? SECTION_META[selected.type].label : ""}
-          widthClassName="max-w-[400px]"
+          widthClassName={phone ? "max-w-none" : "max-w-[400px]"}
         >
           {inspector}
         </Drawer>

@@ -75,7 +75,7 @@ export function SupplierPaymentModal({ account, onClose, onDone }: { account: Su
             <Input id="pay-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={String(allocated / 100)} data-testid="payment-amount" />
           </Field>
         </div>
-        {accounts.data && money.length === 0 && <Alert variant="warning" title="No cash, bank or wallet account yet">Add one in Finance → Money accounts to pay suppliers from it.</Alert>}
+        {accounts.data && money.length === 0 && <Alert variant="warning" title="No cash, bank or wallet account yet">Add one in Finance → Money → Money accounts to pay suppliers from it.</Alert>}
         {accounts.isError && <Alert variant="danger" title="Money accounts couldn't be loaded">{getErrorMessage(accounts.error, "")}</Alert>}
         {bills.length ? (
           <ul className="space-y-2">

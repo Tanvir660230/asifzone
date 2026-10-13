@@ -113,12 +113,12 @@ export default function ProductImportPage() {
               <Download size={16} /> Export all products
             </Button>
           </a>
-          <div className="flex items-end gap-2">
-            <div>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-full sm:w-auto">
               <label htmlFor="template-type" className="mb-1 block text-xs text-ink-500">
                 Empty template for
               </label>
-              <Select id="template-type" value={typeId} onChange={(e) => setTypeId(e.target.value)} className="h-10 w-56">
+              <Select id="template-type" value={typeId} onChange={(e) => setTypeId(e.target.value)} className="h-10 w-full sm:w-56">
                 <option value="">Any type (no attribute columns)</option>
                 {types.filter((t) => t.isActive).map((t) => (
                   <option key={t.typeId} value={t.typeId}>

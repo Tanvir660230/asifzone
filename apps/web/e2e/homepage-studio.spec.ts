@@ -43,17 +43,41 @@ async function adminApi<T = unknown>(page: Page, method: string, path: string, b
   ) as Promise<{ status: number; json: T }>;
 }
 
-test("phones see the homepage's sections, read-only", async ({ page, isMobile }) => {
+test("phones edit too: sections, settings sheet, phone preview", async ({ page, isMobile }) => {
   test.skip(!isMobile, "phone layout");
   await login(page);
   await page.goto("/admin/homepage");
-  await expect(page.getByText(/needs a wider screen/i)).toBeVisible();
-  await expect(page.getByRole("list", { name: /homepage sections/i })).toBeVisible();
-  await expect(page.getByTestId("studio")).toHaveCount(0);
+  await expect(page.getByTestId("studio")).toBeVisible();
+  // No device switch on a phone — the preview is always a phone.
+  await expect(page.getByTestId("studio-device-desktop")).toHaveCount(0);
+
+  // Switching a section off is one tap (no hover on touch), and undo brings it back.
+  const firstRow = page.getByRole("list", { name: /homepage sections/i }).getByRole("listitem").first();
+  const toggle = firstRow.getByRole("button", { name: /^Switch off/ });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  await expect(firstRow.getByText("Off", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(firstRow.getByText("Off", { exact: true })).toHaveCount(0);
+
+  // A row opens its settings full screen.
+  await firstRow.getByRole("button", { name: /.+/ }).nth(1).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet).toBeVisible();
+  const box = await sheet.boundingBox();
+  expect(Math.round(box!.width)).toBe(page.viewportSize()!.width);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+
+  // The preview tab: the storefront at phone width.
+  await page.getByTestId("studio-pane-preview").click();
+  await expect(page.getByTestId("studio-frame")).toBeVisible();
+  await expect(page.getByTestId("studio-frame")).toHaveAttribute("data-device-width", "375");
+  await expect(page.frameLocator('[data-testid="studio-frame"]').locator("[data-section-id]").first()).toBeVisible();
 });
 
 test("edit in the live preview, hide per device, add a section and publish", async ({ page, isMobile }) => {
-  test.skip(isMobile, "the Studio needs a wide screen");
+  test.skip(isMobile, "desktop flow — the phone layout has its own test");
   await page.setViewportSize({ width: 1440, height: 900 });
   await login(page);
   const original = (await adminApi<StudioState>(page, "GET", "/api/homepage-sections/studio")).json;
@@ -105,7 +129,7 @@ test("edit in the live preview, hide per device, add a section and publish", asy
 });
 
 test("site design: brand colour, announcement bar and a menu link go live with Publish", async ({ page, isMobile }) => {
-  test.skip(isMobile, "the Studio needs a wide screen");
+  test.skip(isMobile, "desktop flow — the phone layout has its own test");
   await page.setViewportSize({ width: 1440, height: 900 });
   await login(page);
   const original = (await adminApi<StudioState & { liveDesign: Record<string, unknown> }>(page, "GET", "/api/homepage-sections/studio")).json;

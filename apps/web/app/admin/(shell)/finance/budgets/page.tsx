@@ -45,7 +45,7 @@ export default function BudgetsPage() {
   return (
     <div className="space-y-6">
       <ModuleTabs />
-      <PageHeader title="Budgets & cash" description="The cash coming and going over the next weeks, how long it lasts, and the year against plan." />
+      <PageHeader title="Budgets & cash forecast" description="The cash coming and going over the next weeks, how long it lasts, and the year against plan." />
       <SegmentedControl aria-label="View" options={[{ value: "forecast" as const, label: "Cash forecast" }, { value: "budget" as const, label: "Budget vs actual" }]} value={view} onChange={setView} />
       {view === "forecast" ? <Forecast /> : <Budgets canEdit={can("finance.transact")} />}
     </div>

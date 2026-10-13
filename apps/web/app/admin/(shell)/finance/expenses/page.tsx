@@ -205,7 +205,7 @@ function ExpenseModal({ preset, onClose, onDone }: { preset: { commitment?: Comm
         <Field htmlFor="ex-desc" label="Description" required={!c} className="sm:col-span-2"><Input id="ex-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} /></Field>
         <Field htmlFor="ex-payee" label="Paid to"><Input id="ex-payee" value={payee} onChange={(e) => setPayee(e.target.value)} maxLength={200} /></Field>
         <Field htmlFor="ex-ref" label="Reference" hint="Receipt or cheque number"><Input id="ex-ref" value={reference} onChange={(e) => setReference(e.target.value)} maxLength={120} /></Field>
-        {paying.length === 0 && <Alert variant="warning" title="No cash, bank or wallet account yet" className="sm:col-span-2">Add one in Finance → Money accounts.</Alert>}
+        {paying.length === 0 && <Alert variant="warning" title="No cash, bank or wallet account yet" className="sm:col-span-2">Add one in Finance → Money → Money accounts.</Alert>}
       </div>
     </Modal>
   );

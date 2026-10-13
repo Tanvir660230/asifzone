@@ -78,7 +78,7 @@ export default function GoodsReceiptsPage() {
         description="Deliveries from suppliers. Posting a receipt adds the accepted units to stock at their cost and records what you owe until the invoice arrives."
         action={can("purchasing.receive") && can("purchasing.approve") && <Button size="sm" variant="outline" onClick={() => setDirect(true)} data-testid="new-direct-receipt"><Plus className="h-4 w-4" /> Receipt without an order</Button>}
       />
-      {overview.data && !costingActive && <Alert variant="info" title="Receipts post after the valuation cutover">Drafts can be prepared; posting waits until inventory costing is switched on (Finance → Valuation cutover).</Alert>}
+      {overview.data && !costingActive && <Alert variant="info" title="Receipts post after the valuation cutover">Drafts can be prepared; posting waits until inventory costing is switched on (Finance → Setup & checks → Opening stock value).</Alert>}
       <div className="flex flex-wrap items-center gap-3">
         <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:w-44">
           <option value="">Every status</option>

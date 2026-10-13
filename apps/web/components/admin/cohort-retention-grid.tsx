@@ -17,7 +17,7 @@ export function CohortRetentionGrid({ cohorts }: { cohorts: CohortRetention[] })
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] text-sm">
+      <table data-no-stack="" className="w-full min-w-[560px] text-sm">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-ink-500">
             <th className="pb-2 pr-4">Cohort</th>

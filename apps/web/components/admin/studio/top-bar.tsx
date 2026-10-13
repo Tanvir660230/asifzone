@@ -53,6 +53,8 @@ function timeAgo(date: Date) {
 }
 
 interface TopBarProps {
+  /** Phone width: no device switch (the preview is always a phone), redo and the live-page link move into More. */
+  compact?: boolean;
   draft: StudioDraft;
   device: StudioDevice;
   onDevice: (device: StudioDevice) => void;
@@ -63,14 +65,14 @@ interface TopBarProps {
   onSelectSection: (id: string) => void;
 }
 
-export function TopBar({ draft, device, onDevice, checks, onPublish, onDiscard, onRestore, onSelectSection }: TopBarProps) {
+export function TopBar({ compact = false, draft, device, onDevice, checks, onPublish, onDiscard, onRestore, onSelectSection }: TopBarProps) {
   const errors = checks.filter((c) => c.level === "error");
   const blocking = errors.length > 0;
   const moreRef = useRef<HTMLButtonElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line-subtle bg-surface px-3" data-testid="studio-top-bar">
+    <header className={cn("flex h-14 shrink-0 items-center border-b border-line-subtle bg-surface", compact ? "gap-1 px-1.5" : "gap-3 px-3")} data-testid="studio-top-bar">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <Tooltip content="Back to the admin">
           <Link href="/admin" aria-label="Back to the admin" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-ink-900/[0.05] hover:text-fg">
@@ -79,46 +81,52 @@ export function TopBar({ draft, device, onDevice, checks, onPublish, onDiscard, 
         </Tooltip>
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-fg">Homepage</h1>
-          <SaveStatus draft={draft} />
+          <SaveStatus draft={draft} short={compact} />
         </div>
       </div>
 
-      <SegmentedControl
-        aria-label="Preview size"
-        size="sm"
-        value={device}
-        onChange={onDevice}
-        options={DEVICES.map(({ value, label, icon: Icon }) => ({
-          value,
-          ariaLabel: label,
-          testId: `studio-device-${value}`,
-          label: (
-            <span className="flex items-center gap-1.5">
-              <Icon size={15} aria-hidden="true" />
-              <span className="hidden xl:inline">{label}</span>
-            </span>
-          ),
-        }))}
-      />
+      {!compact && (
+        <SegmentedControl
+          aria-label="Preview size"
+          size="sm"
+          value={device}
+          onChange={onDevice}
+          options={DEVICES.map(({ value, label, icon: Icon }) => ({
+            value,
+            ariaLabel: label,
+            testId: `studio-device-${value}`,
+            label: (
+              <span className="flex items-center gap-1.5">
+                <Icon size={15} aria-hidden="true" />
+                <span className="hidden xl:inline">{label}</span>
+              </span>
+            ),
+          }))}
+        />
+      )}
 
-      <div className="flex flex-1 items-center justify-end gap-1">
+      <div className={cn("flex items-center justify-end gap-1", !compact && "flex-1")}>
         <Tooltip content={`Undo (${MOD}Z)`}>
           <IconButton aria-label="Undo" disabled={!draft.canUndo} onClick={draft.undo}>
             <Undo2 size={17} />
           </IconButton>
         </Tooltip>
-        <Tooltip content={`Redo (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`}>
-          <IconButton aria-label="Redo" disabled={!draft.canRedo} onClick={draft.redo}>
-            <Redo2 size={17} />
-          </IconButton>
-        </Tooltip>
+        {!compact && (
+          <Tooltip content={`Redo (${isMac ? "⇧⌘Z" : "Ctrl+Y"})`}>
+            <IconButton aria-label="Redo" disabled={!draft.canRedo} onClick={draft.redo}>
+              <Redo2 size={17} />
+            </IconButton>
+          </Tooltip>
+        )}
         <ChecksButton checks={checks} onSelectSection={onSelectSection} sections={draft.sections} />
         <HistoryButton onRestore={onRestore} />
-        <Tooltip content="Open the live homepage">
-          <a href="/" target="_blank" rel="noopener noreferrer" aria-label="Open the live homepage in a new tab" className="flex h-9 w-9 items-center justify-center rounded-full text-ink-500 hover:bg-ink-900/[0.06] hover:text-fg">
-            <ExternalLink size={17} />
-          </a>
-        </Tooltip>
+        {!compact && (
+          <Tooltip content="Open the live homepage">
+            <a href="/" target="_blank" rel="noopener noreferrer" aria-label="Open the live homepage in a new tab" className="flex h-9 w-9 items-center justify-center rounded-full text-ink-500 hover:bg-ink-900/[0.06] hover:text-fg">
+              <ExternalLink size={17} />
+            </a>
+          </Tooltip>
+        )}
         <IconButton ref={moreRef} aria-label="More actions" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
           <MoreHorizontal size={18} />
         </IconButton>
@@ -127,9 +135,17 @@ export function TopBar({ draft, device, onDevice, checks, onPublish, onDiscard, 
           onClose={() => setMoreOpen(false)}
           anchorRef={moreRef}
           label="More actions"
-          items={[{ label: "Discard unpublished changes", icon: RotateCcw, destructive: true, disabled: !draft.hasUnpublishedChanges, onClick: onDiscard }]}
+          items={[
+            ...(compact
+              ? [
+                  { label: "Redo", icon: Redo2, disabled: !draft.canRedo, onClick: draft.redo },
+                  { label: "Open the live homepage", icon: ExternalLink, onClick: () => window.open("/", "_blank", "noopener,noreferrer") },
+                ]
+              : []),
+            { label: "Discard unpublished changes", icon: RotateCcw, destructive: true, disabled: !draft.hasUnpublishedChanges, onClick: onDiscard },
+          ]}
         />
-        <span className="mx-1 h-6 w-px bg-line" aria-hidden="true" />
+        {!compact && <span className="mx-1 h-6 w-px bg-line" aria-hidden="true" />}
         <Tooltip content={blocking ? `Fix ${errors.length === 1 ? "1 section" : `${errors.length} sections`} first` : draft.hasUnpublishedChanges ? "Make these changes live" : "Nothing new to publish"}>
           <span>
             <Button
@@ -147,11 +163,12 @@ export function TopBar({ draft, device, onDevice, checks, onPublish, onDiscard, 
   );
 }
 
-function SaveStatus({ draft }: { draft: StudioDraft }) {
+/** `short`: the phone's top bar — one line, the fewest words. */
+function SaveStatus({ draft, short = false }: { draft: StudioDraft; short?: boolean }) {
   const { saveState, savedAt, hasUnpublishedChanges } = draft;
   if (saveState === "conflict") {
     return (
-      <p className="flex items-center gap-1 text-xs text-danger-600">
+      <p className="flex items-center gap-1 whitespace-nowrap text-xs text-danger-600">
         <AlertTriangle size={12} aria-hidden="true" /> Changed elsewhere —{" "}
         <button type="button" className="font-medium underline" onClick={() => void draft.reload()}>
           reload
@@ -159,7 +176,7 @@ function SaveStatus({ draft }: { draft: StudioDraft }) {
       </p>
     );
   }
-  if (saveState === "error") return <p className="text-xs text-danger-600">Couldn&rsquo;t save — retrying on your next change</p>;
+  if (saveState === "error") return <p className="truncate text-xs text-danger-600">{short ? "Couldn’t save — will retry" : "Couldn’t save — retrying on your next change"}</p>;
   if (saveState === "saving") {
     return (
       <p className="flex items-center gap-1 text-xs text-fg-muted" aria-live="polite">
@@ -168,15 +185,16 @@ function SaveStatus({ draft }: { draft: StudioDraft }) {
     );
   }
   return (
-    <p className="flex items-center gap-1.5 text-xs text-fg-muted" aria-live="polite" data-testid="studio-save-status">
+    <p className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted" aria-live="polite" data-testid="studio-save-status">
       {hasUnpublishedChanges ? (
         <>
-          <span className="h-1.5 w-1.5 rounded-full bg-warning-500" aria-hidden="true" />
-          Draft{savedAt ? ` saved ${timeAgo(savedAt)}` : ""} · not live yet
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-500" aria-hidden="true" />
+          <span className="truncate">{short ? "Draft · not live" : `Draft${savedAt ? ` saved ${timeAgo(savedAt)}` : ""} · not live yet`}</span>
         </>
       ) : (
         <>
-          <span className="h-1.5 w-1.5 rounded-full bg-success-500" aria-hidden="true" /> Live — everything is published
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success-500" aria-hidden="true" />
+          <span className="truncate">{short ? "All published" : "Live — everything is published"}</span>
         </>
       )}
     </p>
@@ -211,7 +229,7 @@ function ChecksButton({ checks, sections, onSelectSection }: { checks: StudioChe
           {serious > 0 && <span className="tabular-nums">{serious}</span>}
         </button>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={ref} align="end" aria-label="Page checks" className="w-[360px] p-0">
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={ref} align="end" aria-label="Page checks" className="w-[360px] p-0" sheetOnPhone>
         <div className="max-h-[60vh] overflow-y-auto p-2">
           {checks.length === 0 ? (
             <p className="flex items-center gap-2 px-3 py-4 text-sm text-fg-muted">
@@ -274,7 +292,7 @@ function HistoryButton({ onRestore }: { onRestore: (revisionId: string, publishe
           <History size={17} />
         </IconButton>
       </Tooltip>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={ref} align="end" aria-label="Publish history" className="w-[320px] p-0">
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={ref} align="end" aria-label="Publish history" className="w-[320px] p-0" sheetOnPhone>
         <p className="border-b border-line-subtle px-4 py-3 text-xs text-fg-muted">Bring back an earlier version as your draft — nothing changes on the live page until you publish.</p>
         <div className="max-h-[50vh] overflow-y-auto p-2">
           {isLoading && (

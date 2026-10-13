@@ -156,7 +156,7 @@ function OutlineRow({
       {!readOnly && (
         <button
           type="button"
-          className="flex h-10 w-6 shrink-0 cursor-grab touch-none items-center justify-center text-fg-subtle opacity-60 hover:opacity-100 active:cursor-grabbing"
+          className="flex h-10 w-6 shrink-0 cursor-grab touch-none [@media(pointer:coarse)]:h-12 [@media(pointer:coarse)]:w-9 items-center justify-center text-fg-subtle opacity-60 hover:opacity-100 active:cursor-grabbing"
           aria-label={`Reorder ${meta.label}`}
           onKeyDown={(e) => {
             // A keyboard alternative to dragging that doesn't need dnd-kit's pick-up mode.
@@ -212,7 +212,8 @@ function OutlineRow({
           aria-label={section.isActive ? `Switch off ${meta.label}` : `Switch on ${meta.label}`}
           aria-pressed={!section.isActive}
           onClick={onToggle}
-          className={cn(section.isActive && "opacity-0 focus-visible:opacity-100 group-hover:opacity-100", selected && "opacity-100")}
+          // Touch screens have no hover: the switch is always there.
+          className={cn(section.isActive && "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100", selected && "opacity-100")}
         >
           {section.isActive ? <Eye size={15} /> : <EyeOff size={15} />}
         </IconButton>

@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { SearchInput } from "@/components/ui/search-input";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
+import { ModuleTabs } from "@/components/admin/module-tabs";
+import { PageHeader } from "@/components/admin/page-header";
 import * as paymentsAdminApi from "@/lib/api/payments-admin";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatPrice } from "@/lib/format";
@@ -54,10 +56,8 @@ export default function PaymentsOverviewPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="font-display text-2xl tracking-tight text-ink-900 sm:text-3xl">Payments</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          EPS and SSLCommerz attempts, the reconciliation queue, and refund-risk signals — updated roughly every minute.
-        </p>
+        <PageHeader title="Gateway monitor" description="Today's SSLCommerz and EPS checkouts, the EPS reconciliation queue and refund-risk signals — updated roughly every minute." />
+        <ModuleTabs />
       </div>
 
       {/* Customer lookup */}

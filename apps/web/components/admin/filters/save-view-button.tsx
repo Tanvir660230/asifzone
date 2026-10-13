@@ -46,7 +46,7 @@ export function SaveViewButton({ onSave, saving, className }: { onSave: (label: 
       >
         <BookmarkPlus size={14} aria-hidden="true" /> Save view
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} align="end" className="w-[min(92vw,320px)] p-4">
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} align="end" sheetOnPhone className="w-[min(92vw,320px)] p-4">
         <form onSubmit={submit} className="space-y-3">
           <Field label="Name this view" htmlFor="save-view-name">
             <Input id="save-view-name" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={40} placeholder="e.g. Dhaka COD, unpaid" autoFocus />

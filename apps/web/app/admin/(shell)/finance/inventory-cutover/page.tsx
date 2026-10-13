@@ -91,7 +91,7 @@ export default function InventoryCutoverPage() {
     <div className="space-y-6">
       <ModuleTabs />
       <PageHeader
-        title="Valuation cutover"
+        title="Opening stock value"
         description="Give every stock-tracked product a starting unit cost. Posting values the stock on hand at that moment, trues the inventory account up in one journal and switches inventory costing on. It happens once and can't be undone."
         action={
           canAdjust && batch?.status !== "POSTED" && !pre?.costingActive ? (
@@ -148,8 +148,8 @@ export default function InventoryCutoverPage() {
           <Card className="space-y-3 p-5">
             <p className="font-medium text-ink-900">Before posting</p>
             <ul className="space-y-2 text-sm">
-              <Prerequisite ok={Boolean(pre?.openingDateSet)}>Financial opening date set</Prerequisite>
-              <Prerequisite ok={Boolean(pre?.openingBalancesPosted)}>Opening balances posted</Prerequisite>
+              <Prerequisite ok={Boolean(pre?.openingDateSet)}>Financial opening date set{!pre?.openingDateSet && <> — <Link href="/admin/finance/opening" className="text-accent hover:underline">set it</Link></>}</Prerequisite>
+              <Prerequisite ok={Boolean(pre?.openingBalancesPosted)}>Opening balances posted{!pre?.openingBalancesPosted && <> — <Link href="/admin/finance/opening" className="text-accent hover:underline">Start the books</Link></>}</Prerequisite>
               <Prerequisite ok={Boolean(data.summary && data.summary.missing === 0)}>
                 Every variant has a cost{data.summary?.missing ? ` (${data.summary.missing} without — ${data.summary.missingUnits} unit(s) will be held unvalued)` : ""}
               </Prerequisite>
