@@ -71,8 +71,9 @@ describe("brand themes", () => {
     for (const name of ["--control-radius", "--chip-radius", "--swatch-radius", "--fab-radius"]) {
       expect(n[name], name).not.toBe(tokens.cssVariables[name]);
     }
-    // No bottom tab bar in the mihrab preset, so nothing reserves room for one.
-    expect(n["--dock-tab-bar"]).toBe("0rem");
+    // The phone tab bar is the same height in every theme (owner, 2026-10-13: Nasihamart gets it too); sheets squarer.
+    expect(n["--dock-tab-bar"]).toBeUndefined();
+    expect(n["--sheet-radius"]).not.toBe(tokens.cssVariables["--sheet-radius"]);
     expect(tokens.themes.nasihamart!.layout).toBe("mihrab");
     expect(tokens.themes.default!.layout).toBe("classic");
     // The hero and brand story are light; the footer, flash sale and editorial banner stay navy.
@@ -106,6 +107,21 @@ describe("brand themes", () => {
     const band = step("nasihamart", "ink-950", "band");
     for (const text of ["cream-50", "cream-200", "ink-300", "ink-400"]) {
       expect(contrast(step("nasihamart", text, "band"), band), `band ${text}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe("per-section band tone (Storefront Studio)", () => {
+  it("keeps a band's text legible (WCAG AA 4.5:1) when a store forces it light or dark, in every theme", () => {
+    for (const [id, theme] of Object.entries(tokens.themes)) {
+      for (const tone of ["light", "dark"] as const) {
+        const vars = theme.toneVariables[tone];
+        const at = (name: string) => channels(vars[`--color-${name}`] ?? theme.cssVariables[`--color-${name}`] ?? tokens.cssVariables[`--color-${name}`]!);
+        // The band is painted ink-950; its copy uses the dark-palette names.
+        for (const text of ["cream-50", "ink-300", "ink-400"]) {
+          expect(contrast(at(text), at("ink-950")), `${id} ${tone} band ${text}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
     }
   });
 });

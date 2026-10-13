@@ -7,7 +7,8 @@ import { X } from "lucide-react";
 import { maxSellableQuantity, type Product, type ProductVariant, type VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { useFocusTrap } from "@/hooks/use-focus-trap";
-import { formatPrice } from "@/lib/format";
+import { useSheetDrag } from "@/hooks/use-sheet-drag";
+import { Money } from "@/components/ui/money";
 import { resolveImageUrl } from "@/lib/image-url";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
@@ -88,6 +89,7 @@ export function VariantPickerDialog({
   onCloseRef.current = onClose;
   const close = useCallback(() => onCloseRef.current(), []);
   const panelRef = useFocusTrap<HTMLDivElement>({ active: open, onEscape: close, lockScroll: false });
+  useSheetDrag(panelRef, close, open && mounted);
 
   if (!open || !mounted) return null;
 
@@ -111,7 +113,7 @@ export function VariantPickerDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-ink-950/40 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4"
+      className="ui-sheet-overlay fixed inset-0 z-[60] flex items-end justify-center bg-ink-950/40 backdrop-blur-sm animate-fade-in md:items-center md:p-4"
       onClick={onClose}
     >
       <div
@@ -129,9 +131,10 @@ export function VariantPickerDialog({
           }
         }}
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-cream-50 shadow-floatLg animate-modal-in sm:max-w-md sm:rounded-2xl"
+        className="ui-sheet max-h-[90vh] w-full overflow-y-auto bg-cream-50 pb-[env(safe-area-inset-bottom)] shadow-floatLg md:max-w-md md:rounded-2xl md:pb-0 md:animate-modal-in"
       >
-        <div className="flex items-start gap-3 border-b border-ink-100 px-5 py-4">
+        <span className="ui-sheet-grabber" aria-hidden />
+        <div data-sheet-handle className="flex items-start gap-3 border-b border-ink-100 px-5 py-4">
           {imageUrl && (
             <div className="relative h-16 w-14 shrink-0 overflow-hidden rounded-lg bg-ink-100">
               <Image src={resolveImageUrl(imageUrl)} alt="" fill sizes="56px" className="object-cover" />
@@ -143,8 +146,8 @@ export function VariantPickerDialog({
             </h2>
             <p className="truncate text-sm text-ink-600">{productName}</p>
             <p className="mt-0.5 text-sm font-semibold text-ink-900" data-testid="variant-picker-price">
-              {formatPrice(price.price)}
-              {price.was !== null && <span className="ml-2 text-xs font-normal text-fg-muted line-through">{formatPrice(price.was)}</span>}
+              <Money value={price.price} />
+              {price.was !== null && <span className="ml-2 text-xs font-normal text-fg-muted line-through"><Money value={price.was} /></span>}
             </p>
           </div>
           <button

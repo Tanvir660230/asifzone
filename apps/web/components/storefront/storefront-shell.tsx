@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from "react";
 import nextDynamic from "next/dynamic";
 import { StoreFooter, StoreHeader } from "@/components/storefront/store-chrome";
+import { AnnouncementBar } from "@/components/storefront/announcement-bar";
 import { CartDrawer } from "@/components/storefront/cart-drawer";
 import { AddedToBag } from "@/components/storefront/added-to-bag";
 import { CartReminderBanner } from "@/components/storefront/cart-reminder-banner";
@@ -13,7 +14,6 @@ import { MobileBottomNav } from "@/components/storefront/mobile-bottom-nav";
 import { PageTransition } from "@/components/storefront/page-transition";
 import { SkipToContentLink } from "@/components/storefront/skip-to-content-link";
 import { Toaster } from "@/components/ui/toast";
-import { storeLayout } from "@/lib/theme-layout";
 import {
   getActivePaymentMethodsSafe,
   getActiveSocialLinksSafe,
@@ -44,15 +44,15 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
     getActiveSocialLinksSafe(),
     getActivePaymentMethodsSafe(),
   ]);
-  // The mihrab preset carries search, bag and menu in its header on phones: no bottom tab bar.
-  const tabBar = storeLayout() === "classic";
 
   return (
-    <div className="flex min-h-screen flex-col">
+    // data-storefront: the phone's app-like touch behaviour (globals.css) applies to the shop, not the admin.
+    <div data-storefront className="flex min-h-screen flex-col">
       <SkipToContentLink />
       <Suspense fallback={null}>
         <NavigationProgress />
       </Suspense>
+      <AnnouncementBar announcement={settings.storefrontDesign?.announcement} />
       <StoreHeader categories={tree} settings={settings} />
       {/* At least a viewport tall: the footer starts below the fold on first paint, so content that streams in (a route's
           loading state) or appears after hydration (cart/checkout read the persisted cart) never pushes it out of view —
@@ -68,7 +68,7 @@ export async function StorefrontShell({ children }: { children: ReactNode }) {
       <CartReminderBanner />
       <StickyCartBar />
       <ContactWidget socialLinks={links} settings={settings} />
-      {tabBar && <MobileBottomNav />}
+      <MobileBottomNav />
       <LiveChatWidget settings={settings} />
       <QuickViewModal />
       <CompareBar />

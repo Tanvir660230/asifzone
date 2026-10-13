@@ -5,6 +5,7 @@ import {
   reviewListQuerySchema,
   myReviewQuerySchema,
   adminReviewListQuerySchema,
+  featuredReviewsQuerySchema,
 } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
 import { requireCustomer } from "../../middlewares/require-customer";
@@ -18,6 +19,7 @@ import * as reviewController from "./review.controller";
 export const reviewRouter = Router();
 
 reviewRouter.get("/", validate(reviewListQuerySchema, "query"), reviewController.listForProduct);
+reviewRouter.get("/featured", validate(featuredReviewsQuerySchema, "query"), reviewController.listFeatured);
 reviewRouter.get("/mine", requireCustomer, validate(myReviewQuerySchema, "query"), reviewController.getMine);
 reviewRouter.post("/", requireCustomer, validate(createReviewSchema), reviewController.create);
 // One photo per request; the review then lists the returned references (createReviewSchema.images).

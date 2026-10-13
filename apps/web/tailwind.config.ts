@@ -8,6 +8,9 @@ import tokens from "@clothing-brand/ui-tokens";
  * theme can override them at runtime (see docs/DESIGN_SYSTEM.md). */
 const config: Config = {
   darkMode: "class",
+  // `hover:` only where there is a real pointer: on a phone a tapped button doesn't keep its hover look after the finger
+  // lifts (the "stuck hover" that gives a web page away); touch gets its own pressed state in globals.css instead.
+  future: { hoverOnlyWhenSupported: true },
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
@@ -99,6 +102,13 @@ const config: Config = {
         const band = `:root[data-brand="${id}"] .ui-band-inverse`;
         if (Object.keys(theme.bandVariables).length) addBase({ [roles === null ? band : `${band}${named}`]: theme.bandVariables });
         if (Object.keys(theme.darkBandVariables).length) addBase({ [roles?.length ? `${band}:not(${named})` : band]: theme.darkBandVariables });
+      }
+      // A tone the store chose for one section (Storefront Studio). Same specificity as the theme's band rules above and
+      // emitted after them, so the section's own choice wins.
+      for (const [id, theme] of Object.entries(tokens.themes)) {
+        for (const tone of ["light", "dark"] as const) {
+          addBase({ [`:root[data-brand="${id}"] .ui-band-inverse[data-tone="${tone}"]`]: theme.toneVariables[tone] });
+        }
       }
       // Surfaces re-declare the whole variable set on their own element, so the admin never inherits a brand theme.
       addBase({ '[data-surface="admin"]': tokens.surfaces.admin.cssVariables });

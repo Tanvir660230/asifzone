@@ -7,31 +7,49 @@ interface NoSearchResultsProps {
   /** Best-guess spelling correction from the catalog's search vocabulary — populated only when
    * the backend genuinely found a close-enough match (see product.service.ts's findDidYouMean). */
   didYouMean?: string;
+  /** What other shoppers search for, as one-tap ways out of the dead end. */
+  popular?: string[];
 }
 
-/** Search-specific counterpart to ComingSoon (which fits an empty category, not a zero-result
- * query) — same panel treatment as the rest of the storefront's empty states, so a dead-end
- * search doesn't read as more broken than an empty cart or an unfinished category. */
-export function NoSearchResults({ query, didYouMean }: NoSearchResultsProps) {
+const searchHref = (q: string) => `/search?q=${encodeURIComponent(q)}`;
+
+/** A zero-result search: say so plainly, offer the spelling fix when there is one, then a few searches that do work. */
+export function NoSearchResults({ query, didYouMean, popular = [] }: NoSearchResultsProps) {
+  const others = popular.filter((q) => q.toLowerCase() !== query.toLowerCase()).slice(0, 6);
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed border-ink-200 bg-cream-50 px-6 py-20 text-center sm:py-28">
-      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-ink-100 text-ink-400">
-        <SearchX size={26} />
-      </span>
-      <h2 className="mt-6 font-display text-2xl text-ink-900 sm:text-3xl">No results found</h2>
-      <p className="mx-auto mt-3 max-w-sm text-sm text-ink-500">
-        We couldn&rsquo;t find anything for &ldquo;{query}&rdquo;. Try a different search term, or browse our categories instead.
-      </p>
-      {didYouMean && (
-        <Link
-          href={`/search?q=${encodeURIComponent(didYouMean)}`}
-          className="mt-4 text-sm text-ink-700 underline underline-offset-2 transition-colors duration-150 ease-smooth hover:text-brass-600"
-        >
-          Did you mean <span className="font-medium">&ldquo;{didYouMean}&rdquo;</span>?
-        </Link>
+    <div className="flex flex-col items-center px-6 py-16 text-center sm:py-24">
+      <SearchX size={36} strokeWidth={1.5} className="text-ink-300" aria-hidden />
+      <h2 className="mt-5 text-balance font-display text-2xl text-fg sm:text-3xl">No results for &ldquo;{query}&rdquo;</h2>
+      {didYouMean ? (
+        <p className="mt-3 text-[15px] text-fg-muted">
+          Did you mean{" "}
+          <Link href={searchHref(didYouMean)} className="font-medium text-fg underline underline-offset-4 transition-opacity hover:opacity-70">
+            {didYouMean}
+          </Link>
+          ?
+        </p>
+      ) : (
+        <p className="mx-auto mt-3 max-w-sm text-[15px] text-fg-muted">Check the spelling, or try a shorter or more general word.</p>
       )}
-      <Link href="/" className={buttonVariants({ variant: "primary", size: "lg", className: "mt-8" })}>
-        Continue shopping
+      {others.length > 0 && (
+        <div className="mt-8">
+          <p className="text-[13px] font-semibold text-fg">Popular searches</p>
+          <ul className="mt-3 flex max-w-md flex-wrap justify-center gap-2">
+            {others.map((q) => (
+              <li key={q}>
+                <Link
+                  href={searchHref(q)}
+                  className="inline-flex h-9 items-center rounded-[var(--chip-radius)] bg-ink-100/70 px-4 text-sm text-fg transition-colors duration-fast ease-smooth hover:bg-ink-100"
+                >
+                  {q}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <Link href="/search" className={buttonVariants({ variant: "outline", size: "md", className: "mt-10" })}>
+        Browse all products
       </Link>
     </div>
   );

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Inter, Instrument_Sans, Newsreader, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
@@ -9,7 +9,9 @@ import { getSiteUrl, buildOpenGraph, storeShareImages } from "@/lib/seo";
 import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/structured-data";
 import { RUNTIME_CONFIG_ELEMENT_ID, publicRuntimeConfig, setIntegrationIds } from "@/lib/runtime-config";
 import { RuntimeConfig } from "@/components/runtime-config";
-import { resolveThemeId } from "@/lib/theme";
+import { resolveThemeId, themeColorHex } from "@/lib/theme";
+import { storeLayout } from "@/lib/theme-layout";
+import { DESIGN_STYLE_ELEMENT_ID, designCss } from "@/lib/design-css";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { HeatmapScript } from "@/components/analytics/heatmap-script";
 import { AdPixels } from "@/components/analytics/ad-pixels";
@@ -80,6 +82,8 @@ export async function generateMetadata(): Promise<Metadata> {
           apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
           shortcut: ["/favicon.ico"],
         },
+    // Saved to an iPhone's home screen, the store opens full screen like an app, under its own name.
+    appleWebApp: { capable: true, title: settings.storeName, statusBarStyle: "default" },
     verification: settings.googleSiteVerification ? { google: settings.googleSiteVerification } : undefined,
     ...buildOpenGraph({
       title: settings.storeName,
@@ -88,6 +92,19 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: settings.storeName,
       images: storeShareImages(settings),
     }),
+  };
+}
+
+/** Edge to edge on notched phones (viewport-fit=cover), so env(safe-area-inset-*) reports the home indicator and the
+ * bottom tab bar sits above it. The browser's own bars take the colour of the store's header, so the page and the
+ * phone's chrome read as one surface, the way an app does. */
+export function generateViewport(): Viewport {
+  const theme = resolveThemeId(publicRuntimeConfig().theme);
+  return {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+    themeColor: themeColorHex(theme, storeLayout() === "mihrab" ? "canvas" : "surface"),
   };
 }
 
@@ -102,14 +119,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const runtime = publicRuntimeConfig();
   const organizationJsonLd = buildOrganizationJsonLd(settings, siteUrl);
   const websiteJsonLd = buildWebsiteJsonLd(settings, siteUrl);
+  const themeId = resolveThemeId(runtime.theme);
 
   return (
     <html
       lang="en"
-      data-brand={resolveThemeId(runtime.theme)}
+      data-brand={themeId}
       className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${notoSansBengali.variable}`}
     >
       <body>
+        {/* The store's own design choices (Storefront Studio → Site design): token re-values only, validated on publish.
+            Always present, so the Studio preview can swap in the draft's. */}
+        <style id={DESIGN_STYLE_ELEMENT_ID} dangerouslySetInnerHTML={{ __html: designCss(themeId, settings.storefrontDesign?.theme) }} />
         {/* This installation's public runtime configuration (Phase 1A) — data, not script: CSP does not apply to it. */}
         <script id={RUNTIME_CONFIG_ELEMENT_ID} type="application/json" dangerouslySetInnerHTML={{ __html: jsonLdString(runtime) }} />
         <link rel="preconnect" href={runtime.apiUrl} />

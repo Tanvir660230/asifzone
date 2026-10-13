@@ -1,4 +1,4 @@
-import { metaPurchaseEventId, type Order } from "@clothing-brand/shared";
+import { metaPurchaseEventId, normalizeBdPhone, normalizeMetaEmail, type Order } from "@clothing-brand/shared";
 import { getStoreConfig } from "../store-config";
 import { clarityConfigured } from "./clarity";
 import { hasAdTrackingConsent } from "./consent";
@@ -6,7 +6,7 @@ import { pixelDebug } from "./debug";
 import { cartSignature, firedJustNow, firstTime, newEventId } from "./guards";
 import { metaPixel } from "./meta";
 import { tiktokPixel } from "./tiktok";
-import type { ContactChannel, PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
+import type { ContactChannel, PixelCustomer, PixelEvent, PixelEventContext, PixelLineItem, PixelProvider } from "./types";
 
 /** The storefront's one ad-tracking layer. Components call the typed pixel* functions below — never `fbq`/`ttq` — and
  * every business event fans out to each configured platform (Meta, TikTok) with ONE decision about whether it fires and
@@ -17,7 +17,7 @@ import type { ContactChannel, PixelEvent, PixelEventContext, PixelLineItem, Pixe
  * Tracking is strictly best-effort: every call is synchronous, never throws and never awaits, so a blocked script, an
  * ad blocker or a provider bug can't break add-to-cart, checkout or the confirmation page. */
 
-export type { PixelLineItem, ContactChannel } from "./types";
+export type { PixelLineItem, ContactChannel, PixelCustomer } from "./types";
 
 const PROVIDERS: PixelProvider[] = [metaPixel, tiktokPixel];
 
@@ -38,6 +38,27 @@ export function isPixelExcludedPath(pathname: string): boolean {
  * (apps/api/src/lib/meta/) already sends it; a TikTok Events API sender must too. */
 export function purchaseEventId(orderNumber: string): string {
   return metaPurchaseEventId(orderNumber);
+}
+
+let customer: PixelCustomer | null = null;
+
+/** Unknown on either side counts as a match — only two different known values mean a different person. */
+const consistent = (a: string | null | undefined, b: string | null | undefined, normalize: (v: string) => string) =>
+  !a || !b || normalize(a) === normalize(b);
+
+/** Tells the ad platforms who the shopper is (Meta advanced matching), from what they typed into checkout or keep on
+ * their own account. Held in memory for this page load only — never written to storage — and only ever sent along with
+ * an event, so the consent and admin-path gates in emit() apply to it too. A later call fills in what earlier ones
+ * didn't know (account email + checkout district); a different email or phone means a different person, and replaces
+ * it outright. */
+export function pixelIdentify(next: PixelCustomer): void {
+  const known = Object.fromEntries(Object.entries(next).filter(([, v]) => typeof v === "string" && v.trim())) as PixelCustomer;
+  if (Object.keys(known).length === 0) return;
+  const samePerson =
+    customer !== null &&
+    consistent(customer.email, known.email, normalizeMetaEmail) &&
+    consistent(customer.phone, known.phone, normalizeBdPhone);
+  customer = samePerson ? { ...customer, ...known } : known;
 }
 
 interface EmitOptions {
@@ -71,6 +92,7 @@ function emit(event: PixelEvent, options: EmitOptions = {}): void {
       get currency() {
         return getStoreConfig().currency;
       },
+      customer,
     };
     const enabled = PROVIDERS.filter((p) => p.enabled);
     pixelDebug(`${event.name} → ${enabled.map((p) => p.name).join(", ") || "(no pixel ids configured)"}`, { ...event, eventId: ctx.eventId });
@@ -143,6 +165,15 @@ export function isTrackablePurchase(order: Order): boolean {
  * by each platform against the first. */
 export function pixelPurchase(order: Order): void {
   if (!isTrackablePurchase(order)) return;
+  // The same customer fields the server-side Purchase hashes (apps/api/src/lib/meta/purchase.ts) — also what identifies
+  // the shopper after a gateway payment, whose redirect back starts a fresh page load.
+  pixelIdentify({
+    email: order.customerEmail,
+    phone: order.customerPhone,
+    fullName: order.customerName,
+    city: order.shippingDistrict,
+    state: order.shippingDivision,
+  });
   const items = order.items.map((i) => ({
     id: i.variantId,
     name: i.productNameSnapshot,

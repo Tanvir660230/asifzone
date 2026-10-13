@@ -3,12 +3,13 @@ import { configSchemaByType, DEFAULT_TRUST_STRIP_ITEMS, DEFAULT_VALUES_GRID_ITEM
 import { prisma } from "../../config/prisma";
 import { cacheDelByPrefix, cacheGet, cacheSet } from "../../config/redis";
 import { AppError } from "../../lib/app-error";
+import { reorderDraft, syncOpenDraft, toStudioSection } from "./homepage-draft-lock";
 
 const CACHE_PREFIX = "homepage-sections:";
 const ACTIVE_CACHE_KEY = `${CACHE_PREFIX}active`;
 const CACHE_TTL_SECONDS = 300;
 
-async function invalidateCache() {
+export async function invalidateHomepageSectionsCache() {
   await cacheDelByPrefix(CACHE_PREFIX);
 }
 
@@ -105,7 +106,8 @@ export async function createHomepageSection(input: CreateHomepageSectionInput) {
   const section = await prisma.homepageSection.create({
     data: { type: input.type, config, isActive: input.isActive, startsAt: input.startsAt, endsAt: input.endsAt },
   });
-  await invalidateCache();
+  await syncOpenDraft((draft) => [...draft, toStudioSection(section)]);
+  await invalidateHomepageSectionsCache();
   return section;
 }
 
@@ -122,7 +124,22 @@ export async function updateHomepageSection(id: string, input: UpdateHomepageSec
       ...(input.endsAt !== undefined && { endsAt: input.endsAt }),
     },
   });
-  await invalidateCache();
+  // Only the fields this call changed — the draft keeps the admin's other unpublished edits to the section.
+  const changed = toStudioSection(section);
+  await syncOpenDraft((draft) =>
+    draft.map((s) =>
+      s.id !== id
+        ? s
+        : {
+            ...s,
+            ...(config !== undefined && { config: changed.config }),
+            ...(input.isActive !== undefined && { isActive: changed.isActive }),
+            ...(input.startsAt !== undefined && { startsAt: changed.startsAt }),
+            ...(input.endsAt !== undefined && { endsAt: changed.endsAt }),
+          },
+    ),
+  );
+  await invalidateHomepageSectionsCache();
   return section;
 }
 
@@ -136,7 +153,8 @@ export async function reorderHomepageSections(ids: string[]) {
   await prisma.$transaction(
     ids.map((id, sortOrder) => prisma.homepageSection.update({ where: { id }, data: { sortOrder } })),
   );
-  await invalidateCache();
+  await syncOpenDraft((draft) => reorderDraft(draft, ids));
+  await invalidateHomepageSectionsCache();
   return listHomepageSections();
 }
 
@@ -146,5 +164,6 @@ export async function deleteHomepageSection(id: string) {
     throw AppError.badRequest(`"${existing.type}" can't be deleted — toggle it off instead`);
   }
   await prisma.homepageSection.delete({ where: { id } });
-  await invalidateCache();
+  await syncOpenDraft((draft) => draft.filter((s) => s.id !== id));
+  await invalidateHomepageSectionsCache();
 }

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
   createHomepageSectionSchema,
+  publishStudioDraftSchema,
+  saveStudioDraftSchema,
   reorderHomepageSectionsSchema,
   updateHomepageSectionSchema,
 } from "@clothing-brand/shared";
@@ -12,6 +14,15 @@ import * as homepageSectionController from "./homepage-section.controller";
 export const homepageSectionRouter = Router();
 
 homepageSectionRouter.get("/active", homepageSectionController.active);
+
+// Storefront Studio: the autosaved homepage draft, publish, and the publish history.
+const studioAccess = [requireAdmin, requirePermission("content.manage")];
+homepageSectionRouter.get("/studio", ...studioAccess, homepageSectionController.studio);
+homepageSectionRouter.put("/studio/draft", ...studioAccess, validate(saveStudioDraftSchema), homepageSectionController.saveStudioDraft);
+homepageSectionRouter.delete("/studio/draft", ...studioAccess, homepageSectionController.discardStudioDraft);
+homepageSectionRouter.post("/studio/publish", ...studioAccess, validate(publishStudioDraftSchema), homepageSectionController.publishStudioDraft);
+homepageSectionRouter.get("/studio/revisions", ...studioAccess, homepageSectionController.studioRevisions);
+homepageSectionRouter.post("/studio/revisions/:id/restore", ...studioAccess, homepageSectionController.restoreStudioRevision);
 
 homepageSectionRouter.get("/", requireAdmin, requirePermission("content.manage"), homepageSectionController.list);
 homepageSectionRouter.post("/upload-image", requireAdmin, requirePermission("content.manage"), imageUpload.single("image"), homepageSectionController.uploadImage);

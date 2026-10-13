@@ -19,6 +19,10 @@ interface BottomDockState {
   onCartOrCheckoutPage: boolean;
   /** On /checkout — a focused page without the bottom nav or the contact button. */
   onCheckoutPage: boolean;
+  /** Is StickyCartBar showing below 1024px too. Not where the theme has the bottom tab bar (`--dock-tab-bar` above 0):
+   * its Bag tab already carries the count one tap away, and a second bar stacked over it only took screen from the
+   * products. Where there is no tab bar (the mihrab preset) the phone keeps the bar. */
+  showCartBarOnPhone: boolean;
 }
 
 /** Single source of truth for "what's currently docked at the bottom of the viewport." Previously
@@ -32,7 +36,11 @@ export function useBottomDockState(): BottomDockState {
   // Cart persists to localStorage and hydrates client-side after mount — avoids a flash where
   // bottom-docked elements briefly show/hide before the real cart state loads.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [hasTabBar, setHasTabBar] = useState(true);
+  useEffect(() => {
+    setMounted(true);
+    setHasTabBar(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--dock-tab-bar")) > 0);
+  }, []);
 
   const onProductPage = pathname.startsWith("/product");
   const onCartOrCheckoutPage = pathname.startsWith("/cart") || pathname.startsWith("/checkout");
@@ -41,5 +49,5 @@ export function useBottomDockState(): BottomDockState {
   // Checkout is a focused page: no bottom nav and no contact button over the form.
   const onCheckoutPage = pathname.startsWith("/checkout");
 
-  return { showCartBar, onProductPage, onCartOrCheckoutPage, onCheckoutPage };
+  return { showCartBar, onProductPage, onCartOrCheckoutPage, onCheckoutPage, showCartBarOnPhone: showCartBar && !hasTabBar };
 }

@@ -53,6 +53,8 @@ export * from "./gallery";
 export * from "./json-ld";
 export * from "./sections";
 export * from "./homepage-defaults";
+export * from "./homepage-studio";
+export * from "./storefront-design";
 export * from "./store-policy";
 export * from "./spec-groups";
 export * from "./resolved-view";

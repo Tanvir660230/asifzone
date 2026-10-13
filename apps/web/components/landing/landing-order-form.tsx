@@ -36,7 +36,7 @@ import { getSessionId } from "@/lib/analytics";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { resolveImageUrl } from "@/lib/image-url";
-import { pixelAddPaymentInfo, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
+import { pixelAddPaymentInfo, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn, isPaleColor } from "@/lib/utils";
 
@@ -167,6 +167,12 @@ export function LandingOrderForm({ product, codEnabled }: { product: Product; co
       const { order } = await createOrder(payload, idempotencyKeyFor("landing", payload));
       settleIdempotencyKey("landing");
       sessionStorage.setItem("lastOrderPhone", values.customerPhone);
+      pixelIdentify({
+        phone: values.customerPhone,
+        fullName: values.customerName,
+        city: values.shippingDistrict,
+        state: division,
+      });
       pixelAddPaymentInfo(pixelItems(), "COD");
       router.push(`/order-confirmation/${order!.orderNumber}`);
     } catch (err) {

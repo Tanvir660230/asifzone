@@ -10,7 +10,7 @@ import { captureError } from "../../lib/observability/error-capture";
 
 const CACHE_KEY = "settings:singleton";
 const CACHE_TTL_SECONDS = 300;
-const SINGLETON_ID = "singleton";
+export const SINGLETON_ID = "singleton";
 // Single-file image fields where a new upload fully replaces the old one — the old file has no
 // other referrer once overwritten, so it should be cleaned up rather than left on disk forever.
 const REPLACEABLE_IMAGE_FIELDS = ["logoUrl", "faviconUrl", "ogImageUrl", "paymentMethodsImageUrl"] as const;
@@ -26,6 +26,22 @@ export function currencyChangeBlocked(requested: string | undefined, current: st
  * zone's own transaction (pricingConfigDrift stays empty). Call invalidateSettingsCache() after the commit. */
 export async function mirrorLegacyShippingFee(tx: Prisma.TransactionClient, field: "shippingFeeDhaka" | "shippingFeeOutsideDhaka", fee: number) {
   await tx.storeSetting.update({ where: { id: SINGLETON_ID }, data: { [field]: fee } });
+}
+
+/** Storefront Studio: the site design goes live in the publish's own transaction, alongside the homepage sections. Call
+ * invalidateSettingsCache() after the commit. */
+export async function writeStorefrontDesign(tx: Prisma.TransactionClient, design: Prisma.InputJsonValue) {
+  await tx.storeSetting.upsert({
+    where: { id: SINGLETON_ID },
+    create: { id: SINGLETON_ID, storefrontDesign: design },
+    update: { storefrontDesign: design },
+  });
+}
+
+/** The published site design as this transaction sees it (Studio's revision snapshot); null when never set. */
+export async function readStorefrontDesign(tx: Prisma.TransactionClient) {
+  const row = await tx.storeSetting.findUnique({ where: { id: SINGLETON_ID }, select: { storefrontDesign: true } });
+  return row?.storefrontDesign ?? null;
 }
 
 /** Drops the cached settings (API + the storefront's tagged copy) after a write that changes them. */

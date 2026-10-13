@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { maxSellableQuantity, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import type { PickerIntent } from "./variant-picker-dialog";
@@ -36,7 +36,7 @@ export function StickyAddToCart({
   onRequireSelection,
 }: StickyAddToCartProps) {
   const { addToCart, buyNow } = useAddToCart({ selectedVariant, productId, productSlug, productName, imageUrl, product });
-  const price = variantDisplayPrice(product, selectedVariant?.id).price;
+  const { price, was } = variantDisplayPrice(product, selectedVariant?.id);
 
   // Tells other bottom-docked elements (the contact button) that this bar is on screen, so they clear it only while it
   // actually is: <html data-sticky-atc>.
@@ -64,9 +64,13 @@ export function StickyAddToCart({
   }
 
   return (
-    <div data-testid="sticky-add-to-cart" className="glass fixed inset-x-0 bottom-[var(--dock-tab-bar)] z-40 animate-fade-in border-t border-ink-200 shadow-floatLg lg:hidden">
+    <div data-testid="sticky-add-to-cart" className="glass fixed inset-x-0 bottom-[var(--dock-offset)] z-40 animate-fade-in border-t border-ink-200 shadow-floatLg lg:hidden">
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
-        <p className="shrink-0 text-sm font-semibold text-ink-900">{formatPrice(price)}</p>
+        {/* The price as a small stack (now / was), so it reads as a price beside the buttons rather than a stray label. */}
+        <div className="flex shrink-0 flex-col leading-tight">
+          <Money value={price} className="text-base font-semibold text-ink-900" />
+          {was !== null && Number(was) > Number(price) && <Money value={was} className="text-xs text-fg-muted line-through" />}
+        </div>
         <div className="flex flex-1 gap-2">
           <Button variant="outline" size="lg" className="flex-1" disabled={outOfStock} onClick={handleAddToCart}>
             Add to Cart

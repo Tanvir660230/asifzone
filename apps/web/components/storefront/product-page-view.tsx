@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import Link from "next/link";
 import DOMPurify from "isomorphic-dompurify";
 import type { Product, PublicSection } from "@clothing-brand/shared";
@@ -43,34 +43,60 @@ async function BundleCarousel({ productId, title, currency }: { productId: strin
   return <ProductCarousel title={`${title} — ${discountLabel}`} eyebrow={bundleResult.bundle.name} products={bundleResult.suggestedProducts} />;
 }
 
-/** One of the hand-pickable lists: the admin's picks, or the automatic list that always fed it. */
-async function RailCarousel({ productId, railKey, title }: { productId: string; railKey: Parameters<typeof getProductRail>[1]; title: string }) {
-  const { items } = await getProductRail(productId, railKey);
+type RailKey = Parameters<typeof getProductRail>[1];
+const RAIL_KEYS = new Set<string>(["related", "frequentlyBought", "crossSell", "upsell", "recommended"]);
+/** Every list that is a plain "more products" rail — the ones de-duplicated against each other below. */
+const LIST_KEYS = new Set<string>([...RAIL_KEYS, "budget", "premium"]);
+/** A rail left with fewer products than this after de-duplication isn't worth a row of its own. */
+const MIN_RAIL_PRODUCTS = 2;
+
+async function fetchList(productId: string, key: string): Promise<{ items: Product[]; curated: boolean }> {
+  try {
+    if (key === "budget") return { items: (await getBudgetAlternatives(productId)).items, curated: false };
+    if (key === "premium") return { items: (await getPremiumAlternatives(productId)).items, curated: false };
+    const rail = await getProductRail(productId, key as RailKey);
+    return { items: rail.items, curated: rail.source === "curated" };
+  } catch {
+    // One list failing to load takes away that row, not the product page.
+    return { items: [], curated: false };
+  }
+}
+
+/** The page's recommendation lists, fetched together and de-duplicated in page order: a product already shown in an
+ * earlier row (or the product being viewed) doesn't repeat further down, so four rows read as four different sets of
+ * products instead of the same caps four times, and an automatic row left with almost nothing is dropped. A list the
+ * admin hand-picked shows exactly as picked. One resolution per request (React `cache`), shared by every row's Suspense
+ * boundary; the rows still stream in after the product itself. `keys` is the comma-joined page order. */
+const pageLists = cache(async (productId: string, keys: string): Promise<Record<string, Product[]>> => {
+  const order = keys.split(",").filter(Boolean);
+  const lists = await Promise.all(order.map((key) => fetchList(productId, key)));
+  const seen = new Set<string>([productId]);
+  const result: Record<string, Product[]> = {};
+  order.forEach((key, i) => {
+    const list = lists[i];
+    if (!list) return;
+    const items = list.curated ? list.items : list.items.filter((p) => !seen.has(p.id));
+    if (!list.curated && items.length < MIN_RAIL_PRODUCTS) return;
+    for (const p of items) seen.add(p.id);
+    result[key] = items;
+  });
+  return result;
+});
+
+/** One of the recommendation lists (hand-picked or automatic), minus what the rows above it already showed. */
+async function ListCarousel({ productId, listKey, pageKeys, title }: { productId: string; listKey: string; pageKeys: string; title: string }) {
+  const items = (await pageLists(productId, pageKeys))[listKey] ?? [];
   return <ProductCarousel title={title} products={items} />;
 }
 
-async function BudgetCarousel({ productId, title }: { productId: string; title: string }) {
-  const { items } = await getBudgetAlternatives(productId);
-  return <ProductCarousel title={title} products={items} />;
-}
-
-async function PremiumCarousel({ productId, title }: { productId: string; title: string }) {
-  const { items } = await getPremiumAlternatives(productId);
-  return <ProductCarousel title={title} products={items} />;
-}
-
-const RAIL_KEYS = new Set(["related", "frequentlyBought", "crossSell", "upsell", "recommended"]);
-
-function Block({ section, product }: { section: PublicSection; product: Product }) {
+function Block({ section, product, pageKeys }: { section: PublicSection; product: Product; pageKeys: string }) {
   const wrap = (node: React.ReactNode) => <Suspense fallback={<ProductCarouselSkeleton />}>{node}</Suspense>;
 
   if (section.key === "reviews") return <ProductReviews productId={product.id} productName={product.name} />;
   if (section.key === "recentlyViewed") return <RecentlyViewedCarousel excludeProductId={product.id} />;
   if (section.key === "bundle") return wrap(<BundleCarousel productId={product.id} title={section.title} currency={product.pricing?.currency} />);
-  if (section.key === "budget") return wrap(<BudgetCarousel productId={product.id} title={section.title} />);
-  if (section.key === "premium") return wrap(<PremiumCarousel productId={product.id} title={section.title} />);
-  if (RAIL_KEYS.has(section.key)) {
-    return wrap(<RailCarousel productId={product.id} railKey={section.key as Parameters<typeof getProductRail>[1]} title={section.title} />);
+  if (LIST_KEYS.has(section.key)) {
+    return wrap(<ListCarousel productId={product.id} listKey={section.key} pageKeys={pageKeys} title={section.title} />);
   }
   return null;
 }
@@ -104,6 +130,10 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
   const policy = storePolicy(settings);
   const accordionItems = buildAccordionItems(product, sanitize, policy);
   const { showSizeGuideLink, blocks, faqEnabled } = productPageLayout(product);
+  const listKeys = blocks
+    .map((s) => s.key)
+    .filter((key) => LIST_KEYS.has(key))
+    .join(",");
   const faqs = product.resolved?.faqs ?? [];
   const siteUrl = getSiteUrl();
 
@@ -146,7 +176,7 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
       </div>
 
       {blocks.map((section) => (
-        <Block key={section.key} section={section} product={product} />
+        <Block key={section.key} section={section} product={product} pageKeys={listKeys} />
       ))}
     </>
   );

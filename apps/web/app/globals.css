@@ -34,6 +34,11 @@
 }
 
 @layer base {
+  /* The theme's section rhythm, kept under its own name so a section frame can scale it (.ui-section-frame). */
+  :root {
+    --section-rhythm-base: var(--section-rhythm);
+  }
+
   body {
     @apply bg-canvas text-fg antialiased;
   }
@@ -158,6 +163,21 @@
     text-transform: var(--caps-transform);
     letter-spacing: calc(0.025em * var(--caps-spread));
   }
+  /* A price (components/ui/money.tsx): even-width figures; the currency sign a step smaller and lighter, nudged up to
+     sit on the figures' cap height, so "৳750" never reads as "b750". */
+  .ui-money {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ui-money-symbol {
+    /* Inline (not inline-block), so a struck-through "was" price strikes the sign too. */
+    position: relative;
+    top: -0.04em;
+    margin-right: 0.1em;
+    font-size: 0.8em;
+    font-weight: 500;
+    opacity: 0.8;
+  }
   /* Section eyebrow above a title: "OUR PHILOSOPHY", carousel kickers. */
   .ui-eyebrow {
     text-transform: var(--eyebrow-transform);
@@ -238,6 +258,33 @@
   }
   .ui-art-on-light {
     display: var(--band-light-art);
+  }
+  /* A homepage section's own appearance (Storefront Studio → Style), on the frame around it
+     (components/storefront/home/section-frame.tsx): spacing scales the theme's rhythm, the background uses the muted
+     surface role, and a section may show on one kind of screen only. */
+  .ui-section-frame {
+    /* Scrolled to (Studio preview, in-page links) below the sticky header, not under it. */
+    scroll-margin-top: calc(var(--sticky-top, 0px) + 1rem);
+  }
+  .ui-section-frame[data-spacing="compact"] {
+    --section-rhythm: calc(var(--section-rhythm-base) * 0.6);
+  }
+  .ui-section-frame[data-spacing="spacious"] {
+    --section-rhythm: calc(var(--section-rhythm-base) * 1.45);
+  }
+  .ui-section-frame[data-background="muted"] {
+    @apply bg-surface-muted;
+  }
+  .ui-section-frame[data-show="desktop"] {
+    display: none;
+  }
+  @media (min-width: 1024px) {
+    .ui-section-frame[data-show="desktop"] {
+      display: block;
+    }
+    .ui-section-frame[data-show="mobile"] {
+      display: none;
+    }
   }
   /* A category tile's caption: over the photograph (absolute, filling the tile so its scrim rises from the bottom) or
      below it (static) — the theme decides. */
@@ -466,32 +513,33 @@
       display: none;
     }
   }
-  /* Phones: a Modal is an iOS sheet — up from the bottom edge, its body scrolling under a fixed title and action row,
+  /* Phones, in the console and the store: a Modal is an iOS sheet — up from the bottom edge, its body scrolling under a
+     fixed title and action row,
      the actions full width above the home indicator. */
   @media (max-width: 639px) {
-    [data-surface="admin"] .ui-modal-overlay {
+    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-overlay {
       @apply items-end overflow-hidden p-0;
     }
-    [data-surface="admin"] .ui-modal-panel {
-      @apply flex max-w-none animate-slide-in-up flex-col rounded-b-none rounded-t-[22px] border-x-0 border-b-0;
+    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel {
+      @apply flex max-w-none animate-slide-in-up flex-col rounded-b-none rounded-t-[var(--sheet-radius)] border-x-0 border-b-0;
       max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
     }
     /* The grabber. */
-    [data-surface="admin"] .ui-modal-panel::before {
+    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel::before {
       @apply mx-auto mt-2 block h-[5px] w-9 shrink-0 rounded-full bg-ink-900/[0.15];
       content: "";
     }
-    [data-surface="admin"] .ui-modal-panel > :first-child {
+    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-panel > :first-child {
       @apply shrink-0;
     }
-    [data-surface="admin"] .ui-modal-body {
+    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-body {
       @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-5;
     }
-    [data-surface="admin"] .ui-modal-footer {
+    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-footer {
       @apply shrink-0 flex-col-reverse px-5;
       padding-bottom: max(1rem, env(safe-area-inset-bottom));
     }
-    [data-surface="admin"] .ui-modal-footer > * {
+    :is([data-surface="admin"], body:has([data-storefront])) .ui-modal-footer > * {
       @apply w-full;
     }
 
@@ -614,6 +662,121 @@
   @media (min-width: 1024px) {
     :root {
       --sticky-top: 4.5rem;
+    }
+  }
+
+  /* `--dock-offset`: the screen height the phone's bottom tab bar really takes — its row plus the iPhone home-indicator
+     area it pads itself with — so everything docked at the bottom (sticky bars, toasts, the cookie notice) sits above it
+     instead of over it, and the panels the tab bar opens (menu, bag, search, filters) stop at its top edge, leaving it in
+     view and tappable. Keyed on the bar itself being on the page ([data-tab-bar], components/storefront/mobile-bottom-nav.tsx),
+     so it is right from the first paint and 0 wherever there is none: the checkout, the admin, a theme without one, and
+     from 1024px. Browsers without :has() keep the bar's own height, as before. */
+  :root {
+    --dock-offset: 0px;
+  }
+  @media (max-width: 1023.98px) {
+    html:has([data-tab-bar]) {
+      --dock-offset: calc(var(--dock-tab-bar) + env(safe-area-inset-bottom, 0px));
+    }
+    /* The tab bar steps aside while the on-screen keyboard is up (hooks/use-keyboard-flag.ts); so does its space. */
+    html[data-keyboard="open"]:has([data-tab-bar]) {
+      --dock-offset: 0px;
+    }
+    @supports not selector(:has(*)) {
+      :root {
+        --dock-offset: var(--dock-tab-bar);
+      }
+    }
+  }
+
+  /* ── The storefront on a phone, like an app ─────────────────────────────────────────────────
+     Touch screens only. No grey flash over a tapped link, no double-tap-zoom delay on controls, the app chrome (tab bar,
+     navigation bar, sheet grabbers) can't be text-selected or long-pressed into a callout, and a pressed link or button
+     dims while the finger is on it, the way a UIKit control does. `.ui-press` is for large tappable surfaces (product
+     cards, menu rows): they sink slightly instead of dimming. */
+  @media (hover: none) and (pointer: coarse) {
+    html {
+      -webkit-tap-highlight-color: transparent;
+    }
+    :is(a, button, [role="button"], label, summary, select) {
+      touch-action: manipulation;
+    }
+    [data-app-chrome] {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    body:has([data-storefront]) :is(a, button, [role="button"], summary):not(:disabled):not(.ui-press):active {
+      opacity: 0.6;
+    }
+    .ui-press {
+      @apply transition-transform duration-fast ease-smooth;
+    }
+    .ui-press:active {
+      transform: scale(0.97);
+    }
+  }
+
+  /* Phones: on a page inside a tab (the navigation bar is showing) the header is just the bar — the Mihrab promise strip
+     above it is for the tab pages, where the store introduces itself. */
+  @media (max-width: 1023.98px) {
+    body:has([data-nav-bar]) [data-promise-strip] {
+      display: none;
+    }
+    /* The bar's Back already says where you came from; a breadcrumb under it would be a second way back. */
+    body:has([data-nav-bar]) [data-breadcrumb] {
+      display: none;
+    }
+  }
+
+  /* Sheets (hooks/use-sheet-drag.ts): on phones a panel rises from the bottom edge with rounded top corners and a grabber,
+     and follows the finger down to close. `.ui-sheet-large` fills the screen below the status bar (the bag, the menu,
+     filters); a plain `.ui-sheet` is as tall as its content (option picker, size guide). The overlay keeps the tab bar in
+     view when the panel stops above it (`bottom-[var(--dock-offset)]`). From 768px the panels keep their own layout. */
+  .ui-sheet-grabber {
+    display: none;
+  }
+  @media (max-width: 767.98px) {
+    .ui-sheet-overlay {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+    .ui-sheet {
+      margin-top: auto;
+      width: 100%;
+      max-width: none;
+      height: auto;
+      max-height: calc(100% - env(safe-area-inset-top, 0px) - 0.75rem);
+      border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
+      /* `backwards`, not `both`: a finished animation holding `transform` would outrank the drag's inline transform. */
+      animation: ui-sheet-in var(--sheet-duration) var(--sheet-ease) backwards;
+      overscroll-behavior: contain;
+      will-change: transform;
+    }
+    .ui-sheet-large {
+      height: calc(100% - env(safe-area-inset-top, 0px) - 0.75rem);
+    }
+    .ui-sheet-grabber {
+      @apply mx-auto mb-1 mt-2 block h-[5px] w-9 shrink-0 rounded-full bg-ink-900/20;
+      touch-action: none;
+    }
+    /* The header row under the grabber is part of the handle: no gap above it. */
+    .ui-sheet-grabber + * {
+      @apply pt-1;
+    }
+  }
+  @keyframes ui-sheet-in {
+    from {
+      transform: translate3d(0, 100%, 0);
+    }
+    to {
+      transform: translate3d(0, 0, 0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-sheet {
+      animation-name: ui-appear;
     }
   }
 

@@ -259,6 +259,10 @@ enum HomepageSectionType {
   VALUES_GRID
   SMART_RECOMMENDATIONS
   PROMO_BANNER
+  RICH_TEXT
+  TESTIMONIALS
+  NEWSLETTER
+  IMAGE_GALLERY
 }
 
 model AdminUser {
@@ -1816,6 +1820,32 @@ model HomepageSection {
   @@index([isActive, sortOrder])
 }
 
+/// The Storefront Studio's working copy of the homepage: one document, edited and autosaved by the admin, applied to
+/// HomepageSection rows on publish. `version` guards against two editors overwriting each other.
+model HomepageDraft {
+  id          String   @id @default("homepage")
+  version     Int      @default(0)
+  /// The working copy; null once it has been published or discarded (the row stays so `version` keeps counting).
+  sections    Json?
+  /// The site design being edited with it (theme, announcement bar, header, footer); null with `sections`.
+  design      Json?
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+}
+
+/// A published homepage (the sections as they went live), for the Studio's history and one-click restore.
+model HomepageRevision {
+  id              String   @id @default(cuid())
+  sections        Json
+  /// The site design as it went live with these sections (null on revisions from before the design existed).
+  design          Json?
+  publishedById   String?
+  publishedByName String?
+  publishedAt     DateTime @default(now())
+
+  @@index([publishedAt])
+}
+
 model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -2077,6 +2107,9 @@ model StoreSetting {
   seoDescription               String?
   newsletterHeading            String?
   newsletterText               String?
+  /// Storefront Studio → Site design, as published: theme choices, announcement bar, header and footer
+  /// (packages/shared storefront-design.ts). Written only by the Studio's publish.
+  storefrontDesign             Json?
   updatedAt                    DateTime @updatedAt
 }
 

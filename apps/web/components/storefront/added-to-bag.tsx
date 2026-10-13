@@ -12,7 +12,7 @@ import { useCartStore } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
 import { useCartQuote } from "@/hooks/use-quote";
 import { resolveImageUrl } from "@/lib/image-url";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 
 const SHOW_FOR_MS = 5000;
 
@@ -89,7 +89,7 @@ export function AddedToBag() {
               <span>
                 Bag · {count} item{count === 1 ? "" : "s"}
               </span>
-              <span className="font-medium tabular-nums text-ink-900">{quote ? formatPrice(quote.subtotal) : "…"}</span>
+              <span className="font-medium tabular-nums text-ink-900">{quote ? <Money value={quote.subtotal} /> : "…"}</span>
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Button variant="outline" size="md" onClick={openBag}>

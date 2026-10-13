@@ -1,9 +1,34 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import type { SectionAppearance } from "@clothing-brand/shared";
 import { resolveImageUrl } from "@/lib/image-url";
+import { bandTone } from "@/lib/band-tone";
+
+/** The two hero compositions a store can force per section (Style → Photo position), each the full set of hero tokens
+ * that make it work — the same values the base design (stacked) and the editorial theme (split) declare in ui-tokens —
+ * so forcing one never mixes its layout with the other's proportions. */
+const HERO_COMPOSITION: Record<"stacked" | "split", CSSProperties> = {
+  stacked: {
+    "--hero-align": "center",
+    "--hero-layout-lg": "block",
+    "--hero-media-aspect-lg": "21 / 9",
+    "--hero-content-max-w-lg": "none",
+    "--hero-copy-pad-lg": "1rem",
+    "--hero-media-offset-lg": "3.5rem",
+  } as CSSProperties,
+  split: {
+    "--hero-align": "left",
+    "--hero-layout-lg": "grid",
+    "--hero-media-aspect-lg": "4 / 5",
+    "--hero-content-max-w-lg": "80rem",
+    "--hero-copy-pad-lg": "2rem",
+    "--hero-media-offset-lg": "0",
+  } as CSSProperties,
+};
 
 /** Shown only when the hero section has no button label of its own — store- and category-neutral on purpose. */
 const FALLBACK_CTA_LABEL = "Explore the collection";
@@ -21,11 +46,15 @@ interface HeroProps {
   secondaryCtaHref?: string | null;
   imageUrl?: string | null;
   imageAltText?: string | null;
+  /** The store's own choice for this section (Storefront Studio → Style); absent = the theme decides. */
+  tone?: SectionAppearance["tone"];
+  layout?: SectionAppearance["layout"];
 }
 
 /** The homepage hero when no hero banners are active. Its message is entirely the store's (Admin → Homepage → Hero, then
  * the tagline, then the store name); the theme decides how it looks — alignment, stacked or side-by-side composition,
- * and (as `data-band="hero"` of `ui-band-inverse`) whether it is a dark or a light section. */
+ * and (as `data-band="hero"` of `ui-band-inverse`) whether it is a dark or a light section — unless the store chose a
+ * tone or layout for it. */
 export function Hero({
   storeName,
   tagline,
@@ -38,6 +67,8 @@ export function Hero({
   secondaryCtaHref,
   imageUrl,
   imageAltText,
+  tone,
+  layout,
 }: HeroProps) {
   const copy = (
     <div className="ui-hero-copy relative z-10 px-4">
@@ -76,7 +107,7 @@ export function Hero({
       >
         <Link
           href={ctaHref || "/search"}
-          className="mr-[var(--hero-primary-mr)] mt-8 inline-block rounded-[var(--control-radius)] border border-cream-50 bg-[color:var(--hero-cta-fill)] px-8 py-3 text-sm ui-caps text-[color:var(--hero-cta-text)] transition-all duration-300 ease-smooth hover:scale-105 hover:bg-cream-50 hover:text-ink-900"
+          className="mr-[var(--hero-primary-mr)] mt-8 inline-block rounded-[var(--control-radius)] border border-cream-50 bg-[color:var(--hero-cta-fill)] px-8 py-3 text-sm ui-caps text-[color:var(--hero-cta-text)] transition-[transform,background-color,color] duration-300 ease-smooth hover:scale-105 hover:bg-cream-50 hover:text-ink-900"
         >
           {ctaLabel || FALLBACK_CTA_LABEL}
         </Link>
@@ -99,6 +130,7 @@ export function Hero({
     return (
       <section
         data-band="hero"
+        data-tone={bandTone(tone)}
         className="ui-band-inverse ui-hero relative flex h-[70vh] min-h-[420px] items-center justify-center overflow-hidden bg-ink-950 text-cream-50"
       >
         {copy}
@@ -107,10 +139,16 @@ export function Hero({
   }
 
   // With an image the copy leads and the image follows — stacked at full width, or beside it from 1024px when the theme
-  // asks for it — an editorial composition rather than text laid over a photo, so the headline never depends on the
-  // picture's contrast.
+  // (or the store, `layout`) asks for it — an editorial composition rather than text laid over a photo, so the headline
+  // never depends on the picture's contrast.
+  const layoutStyle = layout === "stacked" || layout === "split" ? HERO_COMPOSITION[layout] : undefined;
   return (
-    <section data-band="hero" className="ui-band-inverse ui-hero overflow-hidden bg-ink-950 pt-16 text-cream-50 sm:pt-20 lg:pt-24">
+    <section
+      data-band="hero"
+      data-tone={bandTone(tone)}
+      style={layoutStyle}
+      className="ui-band-inverse ui-hero overflow-hidden bg-ink-950 pt-16 text-cream-50 sm:pt-20 lg:pt-24"
+    >
       <div className="ui-hero-layout">
         {copy}
         <motion.div

@@ -72,6 +72,7 @@ const PUBLIC_ROUTES = [
   "GET /api/bundles/for-product/:productId",
   "POST /api/bundles/preview",
   "GET /api/reviews/",
+  "GET /api/reviews/featured",
   "GET /api/redirects/active",
   "POST /api/payments/sslcommerz/success",
   "POST /api/payments/sslcommerz/fail",

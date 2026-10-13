@@ -1,3 +1,4 @@
+import { withMenuLinks } from "@/lib/nav-links";
 import Link from "next/link";
 import { PackageSearch, User } from "lucide-react";
 import type { StoreSettings } from "@clothing-brand/shared";
@@ -10,6 +11,7 @@ import { SearchTriggerButton } from "./search-trigger-button";
 import { StickySearchBar } from "./sticky-search-bar";
 import { resolveImageUrl } from "@/lib/image-url";
 import { HeaderShell } from "./header-shell";
+import { PhoneNavBar } from "./phone-nav-bar";
 
 interface HeaderProps {
   categories: CategoryTreeNode[];
@@ -32,6 +34,8 @@ const iconButtonClass =
   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-700 transition-all duration-200 ease-smooth hover:bg-ink-100 hover:text-brass-500";
 
 export function Header({ categories, settings }: HeaderProps) {
+  // The store's own menu links (Site design → Header) lead, then the categories.
+  const menu = withMenuLinks(categories, settings.storefrontDesign?.header?.menuLinks);
   const monogram = (
     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-ink-900 font-display text-base font-semibold tracking-tight text-ink-900">
       {getInitials(settings.storeName)}
@@ -50,24 +54,26 @@ export function Header({ categories, settings }: HeaderProps) {
 
   return (
     <HeaderShell>
-      <div className="glass ui-header-bar border-b border-ink-200">
-        {/* Mobile: menu — centered logo — search. Account/cart/track-order live in the bottom
-            tab bar on mobile instead, so the header stays uncluttered. */}
-        <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 lg:hidden">
-          <div className="flex items-center justify-start">
-            <MobileNav categories={categories} />
+      <div className="ui-header-bar border-b border-line-subtle bg-surface/80 backdrop-blur-xl backdrop-saturate-150 [border-bottom-width:0.5px] lg:bg-surface/95 lg:[border-bottom-width:1px]">
+        {/* Mobile: menu — centered logo — search on the tab bar's own pages; an iOS navigation bar (Back, the page's
+            name, search) on every page inside them. Account/cart/track-order live in the bottom tab bar. */}
+        <PhoneNavBar>
+          <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 lg:hidden">
+            <div className="flex items-center justify-start">
+              <MobileNav categories={menu} />
+            </div>
+            <Link
+              href="/"
+              aria-label={`${settings.storeName} home`}
+              className="flex items-center justify-center transition-transform duration-200 ease-smooth hover:scale-[1.02]"
+            >
+              {logo}
+            </Link>
+            <div className="flex items-center justify-end">
+              <SearchTriggerButton />
+            </div>
           </div>
-          <Link
-            href="/"
-            aria-label={`${settings.storeName} home`}
-            className="flex items-center justify-center transition-transform duration-200 ease-smooth hover:scale-[1.02]"
-          >
-            {logo}
-          </Link>
-          <div className="flex items-center justify-end">
-            <SearchTriggerButton />
-          </div>
-        </div>
+        </PhoneNavBar>
 
         {/* Desktop */}
         <div className="mx-auto hidden h-[4.5rem] max-w-7xl items-center justify-between gap-4 px-6 lg:flex lg:px-8">
@@ -82,7 +88,7 @@ export function Header({ categories, settings }: HeaderProps) {
           </div>
 
           <div className="flex min-w-0 flex-1 justify-center">
-            <MegaMenu categories={categories} />
+            <MegaMenu categories={menu} />
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">

@@ -153,6 +153,24 @@ for (const [step, value] of Object.entries(radii)) {
 }
 Object.assign(cssVariables, fontVariables);
 
+/**
+ * Corner styles a store may pick on top of its theme (Storefront Studio → Site design → Corners). Each is the whole radius
+ * scale plus the control radii, so a choice never mixes with another style's corners. "soft" and "round" share the base
+ * scale and differ in controls (soft rectangles / pills); "sharp" is a tight scale.
+ */
+const baseRadiusVariables = Object.fromEntries(Object.entries(radii).map(([step, value]) => [radiusVariable(step), value]));
+const cornerPresets = {
+  sharp: {
+    ...Object.fromEntries(Object.keys(radii).map((step, i) => [radiusVariable(step), `${[2, 3, 4, 6, 8, 10, 12][i]}px`])),
+    "--control-radius": "3px",
+    "--chip-radius": "3px",
+    "--swatch-radius": "3px",
+    "--fab-radius": "6px",
+  },
+  soft: { ...baseRadiusVariables, "--control-radius": radii.md, "--chip-radius": radii.md, "--swatch-radius": radii.DEFAULT, "--fab-radius": radii.lg },
+  round: { ...baseRadiusVariables, "--control-radius": "9999px", "--chip-radius": "9999px", "--swatch-radius": "9999px", "--fab-radius": "9999px" },
+};
+
 // Neutral, two-layer elevation: a soft far shadow plus a crisp near one is what makes a surface
 // read as "lifted" rather than just blurrier.
 const boxShadow = {
@@ -229,6 +247,8 @@ const motion = {
     standard: [0.2, 0, 0, 1],
     // accelerate away — for exits.
     exit: [0.4, 0, 1, 1],
+    // iOS sheets and navigation pushes: quick off the mark, then a long, soft settle.
+    sheet: [0.32, 0.72, 0, 1],
   },
   spring: { stiffness: 420, damping: 32, mass: 0.9 },
 };
@@ -239,6 +259,7 @@ const transitionTimingFunction = {
   smooth: toCubic(motion.easing.smooth),
   standard: toCubic(motion.easing.standard),
   exit: toCubic(motion.easing.exit),
+  sheet: toCubic(motion.easing.sheet),
 };
 
 const transitionDuration = Object.fromEntries(Object.entries(motion.duration).map(([k, v]) => [k, `${v}ms`]));
@@ -349,8 +370,13 @@ const componentTokens = {
   "--chip-radius": "9999px",
   "--swatch-radius": "9999px",
   "--fab-radius": "9999px",
-  // Height of the mobile bottom tab bar, which the bottom-docked bars sit above (0rem in a preset without one; keep the unit).
-  "--dock-tab-bar": "4rem",
+  // Height of the mobile bottom tab bar's row (iOS: 49pt), which the bottom-docked bars sit above; the bar adds the
+  // home-indicator inset below it. 0rem in a preset without one; keep the unit.
+  "--dock-tab-bar": "3.25rem",
+  // Phone sheets (globals.css .ui-sheet): top corner radius, and the rise — iOS's sheet curve, quick then a long settle.
+  "--sheet-radius": "1.375rem",
+  "--sheet-duration": "0.44s",
+  "--sheet-ease": toCubic(motion.easing.sheet),
 };
 Object.assign(cssVariables, componentTokens);
 
@@ -478,8 +504,8 @@ const themeDefinitions = {
       "--hero-secondary-ml": "0px",
       "--story-media-max-w": "64rem",
       "--story-media-h-sm": "26rem",
-      // The mihrab header carries search, bag and the menu on phones: no bottom tab bar.
-      "--dock-tab-bar": "0rem",
+      // Sheets squared off like the rest of the controls, still soft enough to read as a sheet.
+      "--sheet-radius": "0.75rem",
     },
     // The hero and the brand story render on ivory; the footer, flash sale and editorial banner stay navy.
     lightBands: ["hero", "story"],
@@ -543,6 +569,38 @@ function darkBand(definition) {
   return { ...variables, ...referenceVariables() };
 }
 
+/**
+ * The base design's dark sections (`.ui-band-inverse`): palette steps that read differently on the dark palette. The grey
+ * text steps are mid greys on light surfaces but must stay light on ink-950: ink-400 #b3b3b3 (9.6:1; the light-surface
+ * #707070 would be 4.0:1) and ink-500 #8a8a8a (5.8:1, the fine print; #666666 was 3.5:1). Emitted for every store under
+ * `.ui-band-inverse`; a theme's own band variables (`:root[data-brand] .ui-band-inverse…`) are more specific and win.
+ */
+const inverseBandVariables = {
+  "--color-ink-400": hexToRgbChannels("#b3b3b3"),
+  "--color-ink-500": hexToRgbChannels("#8a8a8a"),
+  ...referenceVariables(),
+};
+
+/**
+ * A band forced dark in a theme that may render it light: the theme's own (unmirrored) palette, the base dark-band steps,
+ * the theme's dark-band steps, and its light-band component values put back to what they are outside the bands.
+ */
+function darkTone(definition) {
+  const variables = {};
+  for (const scale of ["ink", "cream"]) {
+    const steps = { ...palette[scale], ...(definition.palette?.[scale] ?? {}) };
+    for (const [step, hex] of Object.entries(steps)) variables[`--color-${scale}-${step}`] = hexToRgbChannels(hex);
+  }
+  Object.assign(variables, inverseBandVariables, darkBand(definition), referenceVariables());
+  for (const name of Object.keys(definition.bandComponents ?? {})) {
+    // `initial` makes the property guaranteed-invalid, so `var(--x, fallback)` uses the call site's own default.
+    variables[name] = definition.components?.[name] ?? cssVariables[name] ?? "initial";
+  }
+  variables["--band-dark-art"] = "contents";
+  variables["--band-light-art"] = "none";
+  return variables;
+}
+
 const themes = {};
 for (const [id, definition] of Object.entries(themeDefinitions)) {
   const variables = {};
@@ -562,21 +620,11 @@ for (const [id, definition] of Object.entries(themeDefinitions)) {
     lightBandRoles: definition.band === "light" ? null : (definition.lightBands ?? []),
     // Inside the bands that stay dark.
     darkBandVariables: darkBand(definition),
+    // A band whose tone the store chose per section (Storefront Studio → Style → Tone, `data-tone` on the band).
+    toneVariables: { light: { ...lightBand(definition), ...definition.bandComponents }, dark: darkTone(definition) },
   };
 }
 const DEFAULT_THEME = "default";
-
-/**
- * The base design's dark sections (`.ui-band-inverse`): palette steps that read differently on the dark palette. The grey
- * text steps are mid greys on light surfaces but must stay light on ink-950: ink-400 #b3b3b3 (9.6:1; the light-surface
- * #707070 would be 4.0:1) and ink-500 #8a8a8a (5.8:1, the fine print; #666666 was 3.5:1). Emitted for every store under
- * `.ui-band-inverse`; a theme's own band variables (`:root[data-brand] .ui-band-inverse…`) are more specific and win.
- */
-const inverseBandVariables = {
-  "--color-ink-400": hexToRgbChannels("#b3b3b3"),
-  "--color-ink-500": hexToRgbChannels("#8a8a8a"),
-  ...referenceVariables(),
-};
 
 /* ───────────────────────────── surfaces ───────────────────────────── */
 
@@ -666,6 +714,7 @@ for (const [id, definition] of Object.entries(surfaceDefinitions)) {
 
 module.exports = {
   themes,
+  cornerPresets,
   inverseBandVariables,
   surfaces,
   DEFAULT_THEME,

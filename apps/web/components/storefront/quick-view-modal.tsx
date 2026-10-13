@@ -7,7 +7,7 @@ import { Modal } from "@/components/ui/modal";
 import { VariantSelector } from "./variant-selector";
 import { CountdownTimer } from "./countdown-timer";
 import { useQuickViewStore } from "@/store/quick-view";
-import { formatPrice } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { resolveImageUrl } from "@/lib/image-url";
 import { cn } from "@/lib/utils";
@@ -66,8 +66,8 @@ export function QuickViewModal() {
               const shown = productDisplayPrice(product);
               return (
                 <>
-                  <span className={shown.flash ? "text-lg font-bold text-ink-900" : "text-lg font-semibold text-ink-900"}>{formatPrice(shown.price)}</span>
-                  {shown.was !== null && <span className="text-sm text-fg-muted line-through">{formatPrice(shown.was)}</span>}
+                  <span className={shown.flash ? "text-lg font-bold text-ink-900" : "text-lg font-semibold text-ink-900"}><Money value={shown.price} /></span>
+                  {shown.was !== null && <span className="text-sm text-fg-muted line-through"><Money value={shown.was} /></span>}
                 </>
               );
             })()}
