@@ -73,7 +73,7 @@ test("phones edit too: sections, settings sheet, phone preview", async ({ page, 
   await page.getByTestId("studio-pane-preview").click();
   await expect(page.getByTestId("studio-frame")).toBeVisible();
   await expect(page.getByTestId("studio-frame")).toHaveAttribute("data-device-width", "375");
-  await expect(page.frameLocator('[data-testid="studio-frame"]').locator("[data-section-id]").first()).toBeVisible();
+  await expect(page.frameLocator('[data-testid="studio-frame"]').locator(".ui-section-frame[data-section-id]").first()).toBeVisible();
 });
 
 test("edit in the live preview, hide per device, add a section and publish", async ({ page, isMobile }) => {
@@ -85,7 +85,7 @@ test("edit in the live preview, hide per device, add a section and publish", asy
   try {
     await page.goto("/admin/homepage");
     const frame = page.frameLocator('[data-testid="studio-frame"]');
-    await expect(frame.locator("[data-section-id]").first()).toBeVisible();
+    await expect(frame.locator(".ui-section-frame[data-section-id]").first()).toBeVisible();
 
     // Edit: the preview shows the unsaved text, and the draft autosaves (not live yet).
     await page.getByTestId("outline-row-BRAND_STORY").getByRole("button", { name: /^image with text/i }).click();
