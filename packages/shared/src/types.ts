@@ -278,7 +278,12 @@ export interface PaginatedResult<T> {
  * in the app (orders, customers, coupons, ...) also uses and has no business knowing about search. */
 export interface StorefrontProductResult extends PaginatedResult<Product> {
   didYouMean?: string;
+  /** Set on a text search: "related" when no product is named, categorised or tagged by the query, so the results only
+   * mention it (or spell it similarly) — the storefront says so rather than calling them matches. */
+  matchQuality?: SearchMatchQuality;
 }
+
+export type SearchMatchQuality = "exact" | "related";
 
 /** Lightweight product shape for the search typeahead dropdown — not the full `Product`. */
 export interface SearchSuggestionProduct {
@@ -291,8 +296,12 @@ export interface SearchSuggestionProduct {
 
 export interface SearchSuggestions {
   products: SearchSuggestionProduct[];
+  /** Categories whose name matches the query (synonyms included), each a link to its page. */
+  categories: { name: string; slug: string }[];
+  /** Query completions — never a product or category already shown as its own row. */
   predictions: string[];
   didYouMean?: string;
+  matchQuality?: SearchMatchQuality;
 }
 
 /** Live product/stock info for this line item, joined in only by the customer-scoped order-detail
