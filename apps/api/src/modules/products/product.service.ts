@@ -333,18 +333,34 @@ const TYPO_SIMILARITY_THRESHOLD = 0.3;
  * synonyms) — name, description, brand, and category name, unlike the old name-only match — plus the
  * admin's search tags. Tags match whole (not as substrings): they're stored with the same normalization
  * expandSearchTerms applies, so a tag "ator" is found by "ator", "Ator" or "ator perfume". */
-function buildFieldSearchOr(terms: string[]) {
+function buildFieldSearchOr(terms: string[], { includeDescription = true } = {}) {
   return {
     OR: [
       ...terms.flatMap((term) => [
         { name: { contains: term, mode: "insensitive" as const } },
-        { description: { contains: term, mode: "insensitive" as const } },
+        ...(includeDescription ? [{ description: { contains: term, mode: "insensitive" as const } }] : []),
         { brand: { contains: term, mode: "insensitive" as const } },
         { category: { name: { contains: term, mode: "insensitive" as const } } },
       ]),
       { tags: { hasSome: terms } },
     ],
   };
+}
+
+/** "exact": some product is named, categorised, branded or tagged by the search. "related": nothing is, so the results
+ * are products that only mention it (a cap whose text says "pairs beautifully with panjabi") or similar spellings — the
+ * storefront says so instead of presenting them as matches. */
+export type SearchMatchQuality = "exact" | "related";
+
+/** The search filter for a scope (active products, maybe a category). Name/category/brand/tag matches say what a
+ * product *is*; a description only mentions things. So when anything in the scope matches on those fields, description-
+ * only matches are left out; only when nothing does are they the results, marked "related". */
+async function resolveSearchFilter(terms: string[], scope: Prisma.ProductWhereInput) {
+  const strong = buildFieldSearchOr(terms, { includeDescription: false });
+  const strongCount = await prisma.product.count({ where: { ...scope, AND: [strong] } });
+  return strongCount > 0
+    ? { filter: strong, matchQuality: "exact" as SearchMatchQuality }
+    : { filter: buildFieldSearchOr(terms), matchQuality: "related" as SearchMatchQuality };
 }
 
 /** How many search-matching candidates get pulled in (unpaginated) to be scored and ranked by
@@ -615,12 +631,17 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
   // search, which is the overwhelmingly common case and stays exactly as fast/cheap as before).
   const useRelevanceRanking = query.sort === "relevance" && searchTerms.length > 0;
 
-  const where = {
+  const scope = {
     isActive: true,
     deletedAt: null,
     ...(categoryIds ? inCategoriesWhere(categoryIds) : {}),
     ...(query.featured ? { isFeatured: true } : {}),
-    ...(searchTerms.length ? buildFieldSearchOr(searchTerms) : {}),
+  };
+  const search = searchTerms.length ? await resolveSearchFilter(searchTerms, scope) : null;
+
+  const where = {
+    ...scope,
+    ...(search ? search.filter : {}),
     ...(query.sizes?.length ? { variants: { some: { size: { in: query.sizes } } } } : {}),
     ...(query.colors?.length ? { variants: { some: { color: { in: query.colors } } } } : {}),
     // The price filter matches the canonical "from" price (what the card shows), not the stored base price.
@@ -691,7 +712,7 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
     void logSearch(query.search, resultTotal, didYouMean);
   }
 
-  return { items, total: resultTotal, page: query.page, pageSize: query.pageSize, didYouMean };
+  return { items, total: resultTotal, page: query.page, pageSize: query.pageSize, didYouMean, ...(search ? { matchQuality: search.matchQuality } : {}) };
 }
 
 /** Available filter options (sizes/colors/price range) for the storefront's currently-scoped product set — recomputed per category/search so the panel never offers a facet with zero results. */
@@ -705,11 +726,15 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
 
   const facetSearchTerms = query.search ? (await getSearchExpander()).expand(query.search) : [];
 
-  const where = {
+  const scope = {
     isActive: true,
     deletedAt: null,
     ...(categoryIds ? inCategoriesWhere(categoryIds) : {}),
-    ...(facetSearchTerms.length ? buildFieldSearchOr(facetSearchTerms) : {}),
+  };
+  // The same filter the listing resolves, so the panel offers exactly the facets of the products shown.
+  const where = {
+    ...scope,
+    ...(facetSearchTerms.length ? (await resolveSearchFilter(facetSearchTerms, scope)).filter : {}),
   };
 
   const [sizes, colors, priceRange] = await Promise.all([
@@ -771,14 +796,17 @@ function toSuggestionProduct(
  * only a real search-page navigation (via listStorefrontProducts) counts as a real search. */
 export async function suggestSearch(query: string, limit = 6) {
   const searchTerms = (await getSearchExpander()).expand(query);
-  if (searchTerms.length === 0) return { products: [], predictions: [] };
+  if (searchTerms.length === 0) return { products: [], categories: [], predictions: [] };
+
+  const scope = { isActive: true, deletedAt: null };
+  const search = await resolveSearchFilter(searchTerms, scope);
 
   // Same relevance-ranking approach as listStorefrontProducts: pull a bounded candidate pool and
   // rank in application code, rather than trusting "whichever `limit` rows the DB happened to
   // return newest-first" to also be the `limit` most relevant ones — the dropdown is exactly where
   // a shopper judges whether this search "understands" what they typed.
   const candidateRows = await prisma.product.findMany({
-    where: { isActive: true, deletedAt: null, ...buildFieldSearchOr(searchTerms) },
+    where: { ...scope, ...search.filter },
     select: SUGGEST_SELECT,
     orderBy: { createdAt: "desc" },
     take: SUGGEST_CANDIDATE_CAP,
@@ -805,18 +833,20 @@ export async function suggestSearch(query: string, limit = 6) {
   const lowerQuery = query.trim().toLowerCase();
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const [productNameMatches, categoryNameMatches, popularQueryMatches] = await Promise.all([
+  const shownNames = new Set(productRows.map((p) => p.name));
+  const [productNameMatches, categoryMatches, popularQueryMatches] = await Promise.all([
     prisma.product.findMany({
-      where: { isActive: true, deletedAt: null, name: { contains: lowerQuery, mode: "insensitive" } },
+      where: { isActive: true, deletedAt: null, name: { contains: lowerQuery, mode: "insensitive" }, NOT: { name: { in: [...shownNames] } } },
       distinct: ["name"],
       select: { name: true },
       take: limit,
     }),
+    // Categories are their own rows (a link to the category), matched through the synonyms like products are.
     prisma.category.findMany({
-      where: { isActive: true, name: { contains: lowerQuery, mode: "insensitive" } },
-      distinct: ["name"],
-      select: { name: true },
-      take: limit,
+      where: { isActive: true, OR: searchTerms.map((term) => ({ name: { contains: term, mode: "insensitive" as const } })) },
+      select: { name: true, slug: true },
+      orderBy: { sortOrder: "asc" },
+      take: 3,
     }),
     prisma.searchLog.findMany({
       where: { query: { contains: lowerQuery, mode: "insensitive" }, createdAt: { gte: since } },
@@ -829,16 +859,29 @@ export async function suggestSearch(query: string, limit = 6) {
 
   const predictions = [
     ...new Set([
-      ...productNameMatches.map((p) => p.name),
-      ...categoryNameMatches.map((c) => c.name),
       ...popularQueryMatches.map((s) => s.query),
+      // Sibling product names ("… Cap - Gray") read as near-copies of the product rows below them: two at most.
+      ...productNameMatches.slice(0, 2).map((p) => p.name),
     ]),
-  ].slice(0, limit);
+  ]
+    // Query completions only: not what was typed, and not a product or category already shown as its own row.
+    .filter(
+      (text) =>
+        text.toLowerCase() !== lowerQuery && !shownNames.has(text) && !categoryMatches.some((c) => c.name.toLowerCase() === text.toLowerCase()),
+    )
+    .slice(0, 4);
 
-  const didYouMean = productRows.length === 0 && predictions.length === 0 ? await findDidYouMean(query) : undefined;
+  const didYouMean =
+    productRows.length === 0 && predictions.length === 0 && categoryMatches.length === 0 ? await findDidYouMean(query) : undefined;
 
   const pricing = await priceProductsForDisplay(productRows);
-  return { products: productRows.map((p) => toSuggestionProduct(p, pricing)), predictions, didYouMean };
+  return {
+    products: productRows.map((p) => toSuggestionProduct(p, pricing)),
+    categories: categoryMatches,
+    predictions,
+    didYouMean,
+    matchQuality: search.matchQuality,
+  };
 }
 
 const POPULAR_SEARCHES_CACHE_KEY = `${CACHE_PREFIX}popular-searches`;

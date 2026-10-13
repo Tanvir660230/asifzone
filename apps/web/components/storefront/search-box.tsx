@@ -1,34 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, XCircle } from "lucide-react";
+import { addRecentSearch } from "@/lib/recent-searches";
 
+/** The results page's own field, for refining the search where the results start. Filled like the overlay's field;
+ * Enter (or the keyboard's Search key) submits, so there is no separate button to aim for. */
 export function SearchBox({ initialValue = "" }: { initialValue?: string }) {
   const router = useRouter();
   const [value, setValue] = useState(initialValue);
 
+  // A new search from elsewhere (the overlay, a suggestion) lands on this same page: follow it.
+  useEffect(() => setValue(initialValue), [initialValue]);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    router.push(value.trim() ? `/search?q=${encodeURIComponent(value.trim())}` : "/search");
+    const trimmed = value.trim();
+    if (trimmed) addRecentSearch(trimmed);
+    router.push(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
   }
 
   return (
-    <form onSubmit={handleSubmit} className="relative flex max-w-xl items-center">
-      <Search size={18} className="pointer-events-none absolute left-5 shrink-0 text-ink-400" />
-      <input
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Search for products, categories, styles…"
-        aria-label="Search for products, categories, styles"
-        className="h-14 w-full rounded-full border border-ink-200 bg-cream-50 pl-12 pr-[6.5rem] text-sm text-ink-900 shadow-sm outline-none transition-all duration-200 ease-smooth placeholder:text-ink-400 focus:border-brass-400 focus:shadow-glow sm:pr-28 sm:text-base"
-      />
-      <button
-        type="submit"
-        className="glossy absolute right-1.5 flex h-11 shrink-0 items-center rounded-full bg-accent px-5 text-xs font-medium ui-caps text-accent-fg shadow-sm transition-all duration-200 ease-smooth hover:bg-[color:var(--accent-hover)] active:scale-95"
-      >
-        Search
-      </button>
+    <form role="search" onSubmit={handleSubmit} className="max-w-xl">
+      <div className="flex h-12 items-center gap-2.5 rounded-lg bg-ink-100/70 pl-4 pr-1.5 transition-shadow duration-fast ease-smooth focus-within:ring-2 focus-within:ring-accent/15">
+        <Search size={18} className="shrink-0 text-fg-subtle" aria-hidden />
+        <input
+          type="search"
+          name="q"
+          enterKeyHint="search"
+          autoComplete="off"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Search products"
+          aria-label="Search products"
+          className="h-full min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle [&::-webkit-search-cancel-button]:hidden"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => setValue("")}
+            aria-label="Clear search"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-subtle transition-colors duration-fast ease-smooth hover:text-fg"
+          >
+            <XCircle size={17} />
+          </button>
+        )}
+      </div>
     </form>
   );
 }

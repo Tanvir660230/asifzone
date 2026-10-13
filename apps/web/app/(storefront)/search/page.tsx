@@ -8,7 +8,7 @@ import { Pagination } from "@/components/storefront/pagination";
 import { FacetFilters } from "@/components/storefront/facet-filters";
 import { NoSearchResults } from "@/components/storefront/no-search-results";
 import { SearchSessionTracker } from "@/components/analytics/search-session-tracker";
-import { getSiteSettings, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
+import { fetchPopularSearches, getSiteSettings, getStorefrontFacets, listStorefrontProducts } from "@/lib/api/storefront";
 import { getSiteUrl, buildOpenGraph } from "@/lib/seo";
 import { buildItemListJsonLd } from "@/lib/structured-data";
 import { jsonLdString } from "@clothing-brand/shared";
@@ -65,7 +65,13 @@ export default async function SearchPage({ searchParams }: Props) {
   ]);
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
-  const countLine = query ? `${result.total} result${result.total === 1 ? "" : "s"}` : `${result.total} product${result.total === 1 ? "" : "s"}`;
+  // Nothing is named, categorised or tagged by the query: the results only mention it, and the page says so.
+  const related = Boolean(query) && result.matchQuality === "related" && result.items.length > 0;
+  // A dead end gets a few searches that do work; fetched only then, and never allowed to break the page.
+  const popular = query && result.items.length === 0 ? (await fetchPopularSearches().catch(() => ({ queries: [] }))).queries : [];
+
+  const plural = result.total === 1 ? "" : "s";
+  const countLine = !query ? `${result.total} product${plural}` : related ? `${result.total} related product${plural}` : `${result.total} result${plural}`;
 
   return (
     <StorefrontPage>
@@ -92,7 +98,11 @@ export default async function SearchPage({ searchParams }: Props) {
           {result.items.length > 0 && (
             <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(buildItemListJsonLd(result.items, getSiteUrl())) }} />
           )}
-          <ProductGrid products={result.items} emptyState={query ? <NoSearchResults query={query} didYouMean={result.didYouMean} /> : undefined} />
+          {related && <p className="mb-6 text-[15px] text-fg-muted">No exact matches for &ldquo;{query}&rdquo;. These products are related to it.</p>}
+          <ProductGrid
+            products={result.items}
+            emptyState={query ? <NoSearchResults query={query} didYouMean={result.didYouMean} popular={popular} /> : undefined}
+          />
           <Pagination page={page} totalPages={totalPages} />
         </div>
       </div>

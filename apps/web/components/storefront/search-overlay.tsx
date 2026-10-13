@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ArrowUpRight, Clock, Loader2, Mic, Search, TrendingUp, X } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowRight, ChevronRight, Clock, LayoutGrid, Mic, Search, SearchX, X, XCircle } from "lucide-react";
 import type { SearchSuggestionProduct, SearchSuggestions } from "@clothing-brand/shared";
 import { fetchPopularSearches, fetchSearchSuggestions } from "@/lib/api/storefront";
 import { addRecentSearch, clearRecentSearches, getRecentSearches, removeRecentSearch } from "@/lib/recent-searches";
@@ -41,118 +39,116 @@ function getSpeechRecognitionCtor(): SpeechRecognitionConstructor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-type FlatItem =
-  | { type: "recent" | "popular" | "prediction"; text: string }
-  | { type: "product"; product: SearchSuggestionProduct }
-  | { type: "see-all"; text: string };
+/** One selectable row. Rows are a single list for the keyboard (↑/↓ walk all of them), grouped into sections on screen. */
+type Row =
+  | { kind: "recent" | "popular" | "prediction" | "did-you-mean"; text: string }
+  | { kind: "category"; name: string; slug: string }
+  | { kind: "product"; product: SearchSuggestionProduct }
+  | { kind: "see-all"; text: string };
 
-function SuggestionChip({
-  text,
-  icon: Icon,
-  highlighted,
-  onClick,
-  onRemove,
-}: {
-  text: string;
-  icon?: LucideIcon;
-  highlighted: boolean;
-  onClick: () => void;
-  onRemove?: () => void;
-}) {
-  return (
-    <span
-      className={cn(
-        "group flex items-center rounded-[var(--chip-radius)] border border-ink-200 pl-3 pr-1 py-1.5 text-sm text-ink-700 transition-colors duration-150 ease-smooth hover:border-ink-400",
-        highlighted && "border-ink-900",
-        !onRemove && "pr-3",
-      )}
-    >
-      <button type="button" onClick={onClick} className="flex items-center gap-1.5">
-        {Icon && <Icon size={13} className="shrink-0 text-ink-400" />}
-        {text}
-      </button>
-      {onRemove && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          aria-label={`Remove "${text}" from recent searches`}
-          className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink-300 opacity-0 transition-opacity duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-700 group-hover:opacity-100"
-        >
-          <X size={11} />
-        </button>
-      )}
-    </span>
-  );
+interface Section {
+  key: string;
+  title?: string;
+  note?: string;
+  action?: { label: string; onClick: () => void };
+  rows: { row: Row; index: number }[];
 }
 
-function SectionHeading({ icon: Icon, children }: { icon: LucideIcon; children: React.ReactNode }) {
+/** The typed part stays quiet and the completion carries the weight, so the eye lands on what's new. */
+function Completion({ text, query }: { text: string; query: string }) {
+  const at = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1;
+  if (at < 0) return <span className="truncate text-fg">{text}</span>;
   return (
-    <h3 className="flex items-center gap-1.5 text-xs font-medium ui-caps text-ink-400">
-      <Icon size={13} />
-      {children}
-    </h3>
+    <span className="truncate font-medium text-fg">
+      {text.slice(0, at)}
+      <span className="font-normal text-fg-muted">{text.slice(at, at + query.length)}</span>
+      {text.slice(at + query.length)}
+    </span>
   );
 }
 
 export function SearchOverlay() {
   const router = useRouter();
-  const { isOpen, close: closeStore } = useSearchOverlayStore();
+  const { isOpen, open: openStore, close: closeStore } = useSearchOverlayStore();
+  const listId = useId();
 
   const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<SearchSuggestions | null>(null);
+  // The last answer and the query it answers: kept on screen while the next one loads, so the list never blanks mid-typing.
+  const [result, setResult] = useState<{ query: string; data: SearchSuggestions } | null>(null);
+  const [failed, setFailed] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [popularSearches, setPopularSearches] = useState<string[]>([]);
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [speechSupported, setSpeechSupported] = useState(false);
   const [langBn, setLangBn] = useState(true);
   const [listening, setListening] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  // Tab-trap + scroll-lock + focus-restore-on-close — this overlay previously only handled Escape
-  // itself (see the effect below); a keyboard user could Tab straight out of it into the page
-  // behind the backdrop. The input's own delayed autofocus-on-open (below) and its in-place
-  // Arrow/Enter suggestion navigation are unrelated concerns and stay exactly as they were.
-  const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: close });
+  const selectPrefill = useRef(false);
+  // Tab-trap + scroll-lock + focus-restore-on-close + Escape; arrow keys move through the list from the input itself.
+  const panelRef = useFocusTrap<HTMLDivElement>({ active: isOpen, onEscape: handleEscape });
 
   const trimmedQuery = query.trim();
-  const showEmptyState = trimmedQuery.length === 0;
-  const isSearching = !showEmptyState && suggestions === null;
-  const debouncedQuery = useDebouncedValue(trimmedQuery, 250);
+  const typing = trimmedQuery.length > 0;
+  const debouncedQuery = useDebouncedValue(trimmedQuery, 200);
+  const suggestions = typing ? result?.data ?? null : null;
+  const stale = typing && result?.query !== trimmedQuery;
 
   useEffect(() => {
     setSpeechSupported(getSpeechRecognitionCtor() !== null);
   }, []);
 
+  // "/" or Ctrl/⌘+K opens search from anywhere in the store (not while the shopper is typing in a field).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (isOpen || e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      const inField = !!target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+      if ((e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) || (e.key === "/" && !inField && !e.metaKey && !e.ctrlKey)) {
+        e.preventDefault();
+        openStore();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, openStore]);
+
   useEffect(() => {
     if (!isOpen) return;
-    setQuery("");
-    setSuggestions(null);
-    setHighlightedIndex(-1);
+    // Opened from a results page: start from that search, ready to refine it.
+    const current = window.location.pathname === "/search" ? new URLSearchParams(window.location.search).get("q") ?? "" : "";
+    setQuery(current);
+    setResult(null);
+    setFailed(false);
+    setActiveIndex(-1);
     setRecentSearches(getRecentSearches());
     fetchPopularSearches()
       .then((data) => setPopularSearches(data.queries))
       .catch(() => setPopularSearches([]));
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(t);
+    // Focus at once (a delay drops the first letter of a fast typist); the prefilled search is selected once it renders.
+    inputRef.current?.focus();
+    selectPrefill.current = current.length > 0;
   }, [isOpen]);
 
+  // Typing replaces the prefilled search; the arrow keys keep it to refine.
   useEffect(() => {
-    if (!isOpen || !debouncedQuery) {
-      setSuggestions(null);
-      return;
-    }
+    if (!selectPrefill.current || !query) return;
+    selectPrefill.current = false;
+    inputRef.current?.select();
+  }, [query]);
+
+  useEffect(() => {
+    if (!isOpen || !debouncedQuery) return;
     let cancelled = false;
-    setSuggestions(null);
     fetchSearchSuggestions(debouncedQuery)
       .then((data) => {
-        if (!cancelled) setSuggestions(data);
+        if (cancelled) return;
+        setResult({ query: debouncedQuery, data });
+        setFailed(false);
       })
       .catch(() => {
-        if (!cancelled) setSuggestions({ products: [], predictions: [] });
+        if (!cancelled) setFailed(true);
       });
     return () => {
       cancelled = true;
@@ -160,23 +156,64 @@ export function SearchOverlay() {
   }, [debouncedQuery, isOpen]);
 
   useEffect(() => {
-    setHighlightedIndex(-1);
-  }, [query, suggestions, recentSearches, popularSearches]);
+    setActiveIndex(-1);
+  }, [trimmedQuery, result, recentSearches, popularSearches]);
 
-  const flatItems: FlatItem[] = useMemo(() => {
-    if (showEmptyState) {
+  const sections: Section[] = useMemo(() => {
+    let index = 0;
+    const take = (rows: Row[]) => rows.map((row) => ({ row, index: index++ }));
+    if (!typing) {
       return [
-        ...recentSearches.map((text): FlatItem => ({ type: "recent", text })),
-        ...popularSearches.map((text): FlatItem => ({ type: "popular", text })),
-      ];
+        {
+          key: "recent",
+          title: "Recent",
+          action: {
+            label: "Clear",
+            onClick: () => {
+              clearRecentSearches();
+              setRecentSearches([]);
+            },
+          },
+          rows: take(recentSearches.slice(0, 5).map((text): Row => ({ kind: "recent", text }))),
+        },
+        {
+          key: "popular",
+          title: "Popular searches",
+          rows: take(
+            popularSearches
+              .filter((text) => !recentSearches.slice(0, 5).some((r) => r.toLowerCase() === text.toLowerCase()))
+              .slice(0, 6)
+              .map((text): Row => ({ kind: "popular", text })),
+          ),
+        },
+      ].filter((s) => s.rows.length > 0);
     }
     if (!suggestions) return [];
+    const related = suggestions.matchQuality === "related";
+    const nothing = suggestions.products.length === 0 && suggestions.categories.length === 0 && suggestions.predictions.length === 0;
     return [
-      ...suggestions.predictions.map((text): FlatItem => ({ type: "prediction", text })),
-      ...suggestions.products.map((product): FlatItem => ({ type: "product", product })),
-      { type: "see-all", text: trimmedQuery },
-    ];
-  }, [showEmptyState, recentSearches, popularSearches, suggestions, trimmedQuery]);
+      { key: "predictions", rows: take(suggestions.predictions.map((text): Row => ({ kind: "prediction", text }))) },
+      ...(nothing && suggestions.didYouMean
+        ? [{ key: "did-you-mean", rows: take([{ kind: "did-you-mean", text: suggestions.didYouMean }]) }]
+        : []),
+      { key: "categories", title: "Categories", rows: take(suggestions.categories.map((c): Row => ({ kind: "category", ...c }))) },
+      {
+        key: "products",
+        title: related ? "Related products" : "Products",
+        note: related ? `No exact matches for “${trimmedQuery}”` : undefined,
+        rows: take(suggestions.products.map((product): Row => ({ kind: "product", product }))),
+      },
+      { key: "see-all", rows: take([{ kind: "see-all", text: trimmedQuery }]) },
+    ].filter((s) => s.rows.length > 0);
+  }, [typing, recentSearches, popularSearches, suggestions, trimmedQuery]);
+
+  const rows = useMemo(() => sections.flatMap((s) => s.rows.map((r) => r.row)), [sections]);
+  const optionId = (index: number) => `${listId}-option-${index}`;
+
+  useEffect(() => {
+    if (activeIndex >= 0) document.getElementById(optionId(activeIndex))?.scrollIntoView({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- optionId is derived from the stable listId
+  }, [activeIndex]);
 
   function close() {
     recognitionRef.current?.stop();
@@ -189,53 +226,64 @@ export function SearchOverlay() {
     inputRef.current?.focus();
   }
 
+  function go(href: string) {
+    closeStore();
+    router.push(href);
+  }
+
   function submitSearch(raw: string) {
     const trimmed = raw.trim();
     if (!trimmed) return;
     addRecentSearch(trimmed);
-    closeStore();
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    go(`/search?q=${encodeURIComponent(trimmed)}`);
   }
 
-  function goToProduct(product: SearchSuggestionProduct) {
-    if (trimmedQuery) addRecentSearch(trimmedQuery);
-    closeStore();
-    router.push(`/product/${product.slug}`);
+  function hrefFor(row: Row): string | null {
+    if (row.kind === "product") return `/product/${row.product.slug}`;
+    if (row.kind === "category") return `/category/${row.slug}`;
+    return null;
   }
 
-  function selectItem(item: FlatItem) {
-    if (item.type === "product") {
-      goToProduct(item.product);
-    } else {
-      submitSearch(item.text);
+  function selectRow(row: Row) {
+    const href = hrefFor(row);
+    if (href) {
+      if (trimmedQuery) addRecentSearch(trimmedQuery);
+      go(href);
+    } else if (row.kind !== "product" && row.kind !== "category") {
+      submitSearch(row.text);
     }
   }
 
-  function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "ArrowDown") {
+  function prefetchRow(row: Row) {
+    const href = hrefFor(row);
+    if (href) router.prefetch(href);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      setHighlightedIndex((i) => Math.min(i + 1, flatItems.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHighlightedIndex((i) => Math.max(i - 1, -1));
+      if (rows.length === 0) return;
+      const next = e.key === "ArrowDown" ? (activeIndex + 1) % rows.length : activeIndex <= 0 ? rows.length - 1 : activeIndex - 1;
+      setActiveIndex(next);
+      prefetchRow(rows[next]!);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const item = highlightedIndex >= 0 ? flatItems[highlightedIndex] : undefined;
-      if (item) selectItem(item);
-      else if (trimmedQuery) submitSearch(trimmedQuery);
-    } else if (e.key === "Escape") {
-      close();
+      const row = activeIndex >= 0 ? rows[activeIndex] : undefined;
+      if (row) selectRow(row);
+      else submitSearch(trimmedQuery);
     }
   }
 
-  function handleClearRecent() {
-    clearRecentSearches();
-    setRecentSearches([]);
+  /** Escape empties the field first (as on iOS), and closes search from an empty field. */
+  function handleEscape() {
+    if (query) clearQuery();
+    else close();
   }
 
-  function handleRemoveRecent(text: string) {
+  function removeRecent(text: string) {
     removeRecentSearch(text);
     setRecentSearches((prev) => prev.filter((t) => t !== text));
+    inputRef.current?.focus();
   }
 
   function startVoiceSearch() {
@@ -266,227 +314,188 @@ export function SearchOverlay() {
 
   if (!isOpen) return null;
 
+  const loadingFirst = typing && !suggestions && !failed;
+  const showList = sections.length > 0;
+
   return createPortal(
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-ink-950/40 p-4 pt-16 backdrop-blur-sm animate-fade-in"
-      onClick={close}
-    >
+    <div className="fixed inset-0 z-overlay sm:px-4 sm:pt-[12vh]">
+      <div className="ui-overlay absolute inset-0 hidden animate-fade-in sm:block" onClick={close} aria-hidden />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label="Search"
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        className="mx-auto flex w-full max-w-2xl animate-modal-in flex-col overflow-hidden rounded-2xl bg-cream-50 shadow-floatLg"
+        className="relative mx-auto flex h-full w-full animate-fade-in flex-col bg-surface outline-none sm:h-auto sm:max-h-[min(38rem,78vh)] sm:max-w-[40rem] sm:animate-modal-in sm:overflow-hidden sm:rounded-2xl sm:shadow-floatLg"
       >
-        <div className="flex items-center gap-3 px-4 py-3.5">
-          {isSearching ? (
-            <Loader2 size={19} className="shrink-0 animate-spin text-ink-300" />
-          ) : (
-            <Search size={19} className="shrink-0 text-ink-400" />
-          )}
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Search products…"
-            aria-label="Search products"
-            className="min-w-0 flex-1 rounded border-none bg-transparent text-base text-ink-900 outline-none placeholder:text-ink-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-900"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={clearQuery}
-              aria-label="Clear search"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-300 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-700"
-            >
-              <X size={15} />
-            </button>
-          )}
-          {speechSupported && (
-            <>
-              <span className="h-5 w-px shrink-0 bg-ink-200" aria-hidden />
-              <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-ink-50 p-1">
-                <button
-                  type="button"
-                  onClick={() => setLangBn((v) => !v)}
-                  aria-label="Toggle voice search language"
-                  className="shrink-0 rounded-full px-2 py-1 text-xs font-medium ui-caps text-ink-500 transition-colors duration-150 ease-smooth hover:bg-white hover:text-ink-900"
-                >
-                  {langBn ? "বাংলা" : "EN"}
-                </button>
-                <button
-                  type="button"
-                  onClick={listening ? stopVoiceSearch : startVoiceSearch}
-                  aria-label={listening ? "Stop voice search" : "Search by voice"}
-                  className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-150 ease-smooth",
-                    listening
-                      ? "bg-danger-500 text-white animate-pulse"
-                      : "text-ink-400 hover:bg-white hover:text-ink-900",
-                  )}
-                >
-                  <Mic size={15} />
-                </button>
-              </div>
-            </>
-          )}
-          <span className="h-5 w-px shrink-0 bg-ink-200" aria-hidden />
+        {/* The field — iOS-style filled search bar, with Cancel beside it on phones. */}
+        <div className="flex shrink-0 items-center gap-3 border-b border-line-subtle px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-3 sm:py-3">
+          <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-lg bg-ink-100/70 pl-3 pr-1.5 transition-shadow duration-fast ease-smooth focus-within:ring-2 focus-within:ring-accent/15 sm:h-12">
+            <Search size={18} className={cn("shrink-0 text-fg-subtle transition-opacity duration-fast", stale && "animate-pulse")} aria-hidden />
+            <input
+              ref={inputRef}
+              autoFocus
+              type="search"
+              enterKeyHint="search"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={listening ? "Listening…" : "Search products"}
+              aria-label="Search products"
+              role="combobox"
+              aria-expanded={showList}
+              aria-controls={listId}
+              aria-autocomplete="list"
+              aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
+              className="h-full min-w-0 flex-1 bg-transparent text-[17px] text-fg outline-none placeholder:text-fg-subtle sm:text-base [&::-webkit-search-cancel-button]:hidden"
+            />
+            {query ? (
+              <button
+                type="button"
+                onClick={clearQuery}
+                aria-label="Clear search"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-fg-subtle transition-colors duration-fast ease-smooth hover:text-fg"
+              >
+                <XCircle size={17} />
+              </button>
+            ) : (
+              speechSupported && (
+                <div className="flex shrink-0 items-center">
+                  <button
+                    type="button"
+                    onClick={() => setLangBn((v) => !v)}
+                    aria-label={`Voice search language: ${langBn ? "Bangla" : "English"}. Switch`}
+                    className="h-8 rounded-md px-2 text-xs font-medium text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-200/60 hover:text-fg"
+                  >
+                    {langBn ? "বাংলা" : "EN"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={listening ? stopVoiceSearch : startVoiceSearch}
+                    aria-label={listening ? "Stop voice search" : "Search by voice"}
+                    aria-pressed={listening}
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-full transition-colors duration-fast ease-smooth",
+                      listening ? "animate-pulse bg-danger-500 text-white" : "text-fg-muted hover:bg-ink-200/60 hover:text-fg",
+                    )}
+                  >
+                    <Mic size={16} />
+                  </button>
+                </div>
+              )
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={close}
+            className="shrink-0 py-2 text-[15px] font-medium text-fg transition-opacity duration-fast hover:opacity-70 sm:hidden"
+          >
+            Cancel
+          </button>
           <button
             type="button"
             onClick={close}
             aria-label="Close search"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-400 transition-colors duration-150 ease-smooth hover:bg-ink-100 hover:text-ink-900"
+            className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors duration-fast ease-smooth hover:bg-ink-100 hover:text-fg sm:flex"
           >
-            <X size={19} />
+            <X size={18} />
           </button>
         </div>
 
-        <div className="max-h-[65vh] overflow-y-auto border-t border-ink-100">
-          {showEmptyState ? (
-            <>
-              {recentSearches.length > 0 && (
-                <div className="border-b border-ink-100 px-4 py-4 last:border-b-0">
-                  <div className="flex items-center justify-between">
-                    <SectionHeading icon={Clock}>Recent</SectionHeading>
-                    <button
-                      type="button"
-                      onClick={handleClearRecent}
-                      className="text-xs text-ink-400 transition-colors duration-150 ease-smooth hover:text-ink-700"
-                    >
-                      Clear all
-                    </button>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {recentSearches.map((text, i) => (
-                      <SuggestionChip
-                        key={`recent-${text}`}
-                        text={text}
-                        icon={Clock}
-                        highlighted={highlightedIndex === i}
-                        onClick={() => submitSearch(text)}
-                        onRemove={() => handleRemoveRecent(text)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {popularSearches.length > 0 && (
-                <div className="px-4 py-4">
-                  <SectionHeading icon={TrendingUp}>Trending</SectionHeading>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {popularSearches.map((text, i) => (
-                      <SuggestionChip
-                        key={`popular-${text}`}
-                        text={text}
-                        icon={TrendingUp}
-                        highlighted={highlightedIndex === recentSearches.length + i}
-                        onClick={() => submitSearch(text)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {recentSearches.length === 0 && popularSearches.length === 0 && (
-                <div className="flex flex-col items-center gap-2 px-4 py-16 text-center">
-                  <Search size={26} className="text-ink-200" />
-                  <p className="text-sm text-ink-400">Search for products, brands and more</p>
-                </div>
-              )}
-            </>
-          ) : isSearching ? (
-            <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-ink-400">
-              <Loader2 size={15} className="animate-spin" />
-              Searching…
-            </div>
-          ) : (
-            <>
-              {suggestions!.predictions.length > 0 && (
-                <div className="flex flex-wrap gap-2 px-4 pt-4">
-                  {suggestions!.predictions.map((text, i) => (
-                    <SuggestionChip
-                      key={`prediction-${text}`}
-                      text={text}
-                      icon={Search}
-                      highlighted={highlightedIndex === i}
-                      onClick={() => submitSearch(text)}
-                    />
-                  ))}
-                </div>
-              )}
-              {suggestions!.products.length > 0 && (
-                <ul className="mt-2 px-2 pb-2">
-                  {suggestions!.products.map((product, i) => {
-                    const idx = suggestions!.predictions.length + i;
-                    const isHighlighted = highlightedIndex === idx;
-                    return (
-                      <li key={product.id}>
-                        <Link
-                          href={`/product/${product.slug}`}
-                          onClick={(e) => {
-                            // Navigate imperatively rather than relying on the anchor's default
-                            // navigation — closing the overlay unmounts this link in the same
-                            // tick, which cancels the browser's default click-to-navigate.
-                            e.preventDefault();
-                            goToProduct(product);
-                          }}
-                          className={cn(
-                            "flex items-center gap-3 rounded-xl px-2.5 py-2.5 transition-colors duration-150 ease-smooth hover:bg-ink-50",
-                            isHighlighted && "bg-ink-50",
-                          )}
-                        >
-                          <SearchSuggestionProductContent product={product} highlighted={isHighlighted} />
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {suggestions!.products.length === 0 && suggestions!.predictions.length === 0 && (
-                <div className="px-4 py-10 text-center text-sm text-ink-400">
-                  {suggestions!.didYouMean ? (
-                    <p>
-                      No matches — did you mean{" "}
-                      <button
-                        type="button"
-                        onClick={() => submitSearch(suggestions!.didYouMean!)}
-                        className="font-medium text-ink-700 underline underline-offset-2 hover:text-ink-900"
-                      >
-                        &ldquo;{suggestions!.didYouMean}&rdquo;
-                      </button>
-                      ?
-                    </p>
-                  ) : (
-                    <p>No matches yet — try &ldquo;see all results&rdquo; below.</p>
-                  )}
-                </div>
-              )}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
+          {loadingFirst ? (
+            <SuggestionSkeleton />
+          ) : typing && failed && !suggestions ? (
+            <div className="px-5 py-10 text-center">
+              <p className="text-[15px] text-fg">Suggestions aren&rsquo;t loading right now.</p>
               <button
                 type="button"
                 onClick={() => submitSearch(trimmedQuery)}
-                className={cn(
-                  "flex w-full items-center justify-between border-t border-ink-100 px-4 py-3.5 text-left text-sm font-medium text-ink-900 transition-colors duration-150 ease-smooth hover:bg-ink-50",
-                  highlightedIndex === suggestions!.predictions.length + suggestions!.products.length && "bg-ink-50",
-                )}
+                className="mt-3 text-sm font-medium text-fg underline underline-offset-4 transition-opacity hover:opacity-70"
               >
-                See all results for &ldquo;{trimmedQuery}&rdquo;
-                <ArrowUpRight size={15} />
+                Search for &ldquo;{trimmedQuery}&rdquo; anyway
               </button>
-            </>
+            </div>
+          ) : !showList ? (
+            <div className="flex flex-col items-center px-6 py-14 text-center">
+              <Search size={28} className="text-ink-300" aria-hidden />
+              <p className="mt-3 text-[15px] text-fg-muted">Search by product, category or colour.</p>
+            </div>
+          ) : (
+            <ul
+              id={listId}
+              role="listbox"
+              aria-label="Search suggestions"
+              className={cn("pb-2 transition-opacity duration-base ease-smooth", stale && "opacity-60")}
+            >
+              {sections.map((section) => (
+                <li key={section.key} role="presentation" className="pt-2 first:pt-1">
+                  {section.title && (
+                    <div className="flex items-baseline justify-between px-5 pb-1 pt-3">
+                      <span className="text-[13px] font-semibold text-fg">{section.title}</span>
+                      {section.action && (
+                        <button
+                          type="button"
+                          onClick={section.action.onClick}
+                          className="text-[13px] text-fg-muted transition-colors duration-fast hover:text-fg"
+                        >
+                          {section.action.label}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {section.note && <p className="px-5 pb-1.5 text-[13px] text-fg-muted">{section.note}</p>}
+                  <ul role="group" aria-label={section.title}>
+                    {section.rows.map(({ row, index }) => (
+                      <li key={index} role="presentation" className="group relative px-2">
+                        <div
+                          id={optionId(index)}
+                          role="option"
+                          aria-selected={activeIndex === index}
+                          onPointerMove={() => activeIndex !== index && setActiveIndex(index)}
+                          onPointerEnter={() => prefetchRow(row)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => selectRow(row)}
+                          className={cn(
+                            "flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-[15px] transition-colors duration-instant",
+                            activeIndex === index && "bg-ink-100/70",
+                            row.kind === "recent" && "pr-11",
+                          )}
+                        >
+                          <RowContent row={row} query={trimmedQuery} />
+                        </div>
+                        {row.kind === "recent" && (
+                          <button
+                            type="button"
+                            onClick={() => removeRecent(row.text)}
+                            aria-label={`Remove “${row.text}” from recent searches`}
+                            className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-fg-subtle transition-[opacity,color] duration-fast hover:text-fg focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            <X size={15} />
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 
-        <div className="hidden items-center gap-4 border-t border-ink-100 bg-ink-50/60 px-4 py-2 text-[11px] text-ink-400 sm:flex">
-          <span className="flex items-center gap-1">
-            <kbd className="rounded border border-ink-200 bg-white px-1.5 py-0.5 font-sans">↑↓</kbd> navigate
+        <div className="hidden shrink-0 items-center gap-5 border-t border-line-subtle px-5 py-2.5 text-xs text-fg-subtle sm:flex">
+          <span className="flex items-center gap-1.5">
+            <Kbd>↑</Kbd>
+            <Kbd>↓</Kbd> to move
           </span>
-          <span className="flex items-center gap-1">
-            <kbd className="rounded border border-ink-200 bg-white px-1.5 py-0.5 font-sans">↵</kbd> select
+          <span className="flex items-center gap-1.5">
+            <Kbd>↵</Kbd> to open
           </span>
-          <span className="flex items-center gap-1">
-            <kbd className="rounded border border-ink-200 bg-white px-1.5 py-0.5 font-sans">esc</kbd> close
+          <span className="flex items-center gap-1.5">
+            <Kbd>esc</Kbd> to close
           </span>
         </div>
       </div>
@@ -495,25 +504,101 @@ export function SearchOverlay() {
   );
 }
 
-/** One product row in the instant-search dropdown (the link around it belongs to the overlay). Exported so the admin
+function Kbd({ children }: { children: React.ReactNode }) {
+  return <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-line bg-surface px-1 font-sans text-xs text-fg-muted">{children}</kbd>;
+}
+
+function RowIcon({ children }: { children: React.ReactNode }) {
+  return <span className="flex w-5 shrink-0 justify-center text-fg-subtle" aria-hidden>{children}</span>;
+}
+
+function RowContent({ row, query }: { row: Row; query: string }) {
+  switch (row.kind) {
+    case "recent":
+      return (
+        <>
+          <RowIcon><Clock size={16} /></RowIcon>
+          <span className="truncate text-fg">{row.text}</span>
+        </>
+      );
+    case "popular":
+    case "prediction":
+      return (
+        <>
+          <RowIcon><Search size={16} /></RowIcon>
+          <Completion text={row.text} query={row.kind === "prediction" ? query : ""} />
+        </>
+      );
+    case "did-you-mean":
+      return (
+        <>
+          <RowIcon><SearchX size={16} /></RowIcon>
+          <span className="truncate text-fg-muted">
+            No results. Did you mean <span className="font-medium text-fg">&ldquo;{row.text}&rdquo;</span>?
+          </span>
+        </>
+      );
+    case "category":
+      return (
+        <>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[10px] bg-ink-100/70 text-fg-muted" aria-hidden>
+            <LayoutGrid size={18} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-fg">{row.name}</span>
+            <span className="block text-[13px] text-fg-muted">Category</span>
+          </span>
+          <ChevronRight size={16} className="shrink-0 text-ink-300" aria-hidden />
+        </>
+      );
+    case "product":
+      return <SearchSuggestionProductContent product={row.product} />;
+    case "see-all":
+      return (
+        <>
+          <RowIcon><ArrowRight size={16} className="text-fg" /></RowIcon>
+          <span className="truncate font-medium text-fg">Show all results for &ldquo;{row.text}&rdquo;</span>
+        </>
+      );
+  }
+}
+
+function SuggestionSkeleton() {
+  return (
+    <div className="space-y-1 px-2 py-3" aria-busy="true" aria-label="Loading suggestions">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="flex items-center gap-3 px-3 py-2">
+          <div className="ui-skeleton h-12 w-12 shrink-0 rounded-[10px]" />
+          <div className="flex-1 space-y-2">
+            <div className="ui-skeleton h-3.5" style={{ width: `${70 - i * 12}%` }} />
+            <div className="ui-skeleton h-3 w-16" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One product row in the instant-search list (the row around it belongs to the overlay). Exported so the admin
  * wizard's "Search result" preview shows the product exactly as a shopper typing its name would see it. */
-export function SearchSuggestionProductContent({ product, highlighted }: { product: SearchSuggestionProduct; highlighted: boolean }) {
+export function SearchSuggestionProductContent({ product }: { product: SearchSuggestionProduct; highlighted?: boolean }) {
   return (
     <>
       {product.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- small suggestion thumbnail, not worth next/image here
-        <img src={resolveImageUrl(product.imageUrl)} alt={product.name} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+        <img
+          src={resolveImageUrl(product.imageUrl)}
+          alt=""
+          loading="lazy"
+          className="h-12 w-12 shrink-0 rounded-[10px] bg-ink-100 object-cover"
+        />
       ) : (
-        <div className="h-12 w-12 shrink-0 rounded-lg bg-ink-100" />
+        <div className="h-12 w-12 shrink-0 rounded-[10px] bg-ink-100" />
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-ink-900">{product.name}</p>
-        <p className="text-xs text-ink-400">{formatPrice(product.price)}</p>
+        <p className="truncate text-[15px] text-fg">{product.name}</p>
+        <p className="text-[13px] tabular-nums text-fg-muted">{formatPrice(product.price)}</p>
       </div>
-      <ArrowUpRight
-        size={15}
-        className={cn("shrink-0 text-ink-300 transition-opacity duration-150 ease-smooth", highlighted ? "opacity-100" : "opacity-0")}
-      />
     </>
   );
 }
