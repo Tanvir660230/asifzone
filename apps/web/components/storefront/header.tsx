@@ -52,23 +52,23 @@ export function Header({ categories, settings }: HeaderProps) {
     monogram
   );
 
+  const phoneHome = (
+    <Link href="/" aria-label={`${settings.storeName} home`} className="flex items-center justify-center">
+      {logo}
+    </Link>
+  );
+
   return (
     <HeaderShell>
-      <div className="ui-header-bar border-b border-line-subtle bg-surface/80 backdrop-blur-xl backdrop-saturate-150 [border-bottom-width:0.5px] lg:bg-surface/95 lg:[border-bottom-width:1px]">
-        {/* Mobile: menu — centered logo — search on the tab bar's own pages; an iOS navigation bar (Back, the page's
-            name, search) on every page inside them. Account/cart/track-order live in the bottom tab bar. */}
-        <PhoneNavBar>
+      <div className="ui-header-bar border-b border-line-subtle bg-surface/95 backdrop-blur-xl backdrop-saturate-150 [border-bottom-width:0.5px] lg:[border-bottom-width:1px]">
+        {/* Mobile: menu — centred logo — search. On pages inside a tab, Back takes the menu's place and the logo stays
+            (PhoneNavBar). Account/cart/track-order live in the bottom tab bar. */}
+        <PhoneNavBar brand={phoneHome}>
           <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 lg:hidden">
             <div className="flex items-center justify-start">
               <MobileNav categories={menu} />
             </div>
-            <Link
-              href="/"
-              aria-label={`${settings.storeName} home`}
-              className="flex items-center justify-center transition-transform duration-200 ease-smooth hover:scale-[1.02]"
-            >
-              {logo}
-            </Link>
+            {phoneHome}
             <div className="flex items-center justify-end">
               <SearchTriggerButton />
             </div>

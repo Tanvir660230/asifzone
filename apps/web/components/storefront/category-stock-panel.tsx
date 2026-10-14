@@ -6,7 +6,7 @@ export function CategoryStockPanel({ overview }: { overview: CategoryStockOvervi
   const { total, subcategories } = overview;
 
   return (
-    <div className="mb-6 space-y-3">
+    <div className="space-y-3 lg:mb-6">
       <p className="text-sm text-ink-500">
         <span className="font-medium text-ink-900">{total.totalProducts}</span> product{total.totalProducts === 1 ? "" : "s"}
         {total.inStockProducts < total.totalProducts && <> · {total.inStockProducts} in stock</>}

@@ -80,14 +80,11 @@ export default async function SearchPage({ searchParams }: Props) {
         eyebrow={query ? "Search" : "Shop"}
         title={query ? <>Results for &ldquo;{query}&rdquo;</> : "All products"}
         description={countLine}
-        actions={
-          <div className="hidden lg:block">
-            <SortSelect hasQuery={Boolean(query)} />
-          </div>
-        }
+        actions={<SortSelect hasQuery={Boolean(query)} />}
+        actionsClassName="max-lg:hidden"
       />
       {/* Refine the search where the results start, at the page's left edge like every other control. */}
-      <div className="mb-8 max-w-2xl">
+      <div className="mb-4 max-w-2xl lg:mb-8">
         <SearchBox initialValue={query} />
       </div>
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-10">
