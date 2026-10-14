@@ -86,7 +86,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
   ];
 
   return (
-    <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
+    <div className="grid grid-cols-1 gap-8 lg:mt-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
       {/* From 1024px the gallery stays in view while the details beside it scroll past. */}
       <div className="lg:sticky lg:top-[calc(var(--sticky-top)+1.5rem)] lg:self-start lg:transition-[top] lg:duration-slow lg:ease-smooth">
         <ProductGallery images={galleryImages} productName={product.name} />

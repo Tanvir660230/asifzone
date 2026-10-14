@@ -293,9 +293,10 @@ const componentTokens = {
   "--media-scrim": "rgb(var(--color-ink-950) / 0.35)",
   // Primary call to action on the hero band: its fill and text (transparent = the outline style).
   "--hero-cta-fill": "transparent",
-  // Cart line items: the product thumbnail on the cart page and the quantity stepper (square in the base design).
-  "--line-item-radius": "0px",
-  "--stepper-radius": "0px",
+  // Cart line items: the product thumbnail on the cart page and the quantity stepper — rounded like the bag drawer's, so
+  // the same item looks the same in the drawer and on the bag page.
+  "--line-item-radius": "var(--radius-lg)",
+  "--stepper-radius": "9999px",
   // Product card.
   "--card-lift": "-0.25rem",
   "--card-frame-border": "rgb(var(--color-ink-100))",

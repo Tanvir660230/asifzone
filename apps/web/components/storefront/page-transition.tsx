@@ -11,16 +11,17 @@ const PHONE = "(max-width: 1023.98px)";
 // Set once the first page of the visit has shown; survives the shell remounting between layout groups.
 let shellMounted = false;
 
-/** Phones move like an iOS navigation stack: a pushed page slides in from the right while the one it leaves drifts a
- * little to the left; Back runs it the other way; a tab switch only crossfades. Larger screens keep the quiet fade. */
+/** Phones: a page opened from a link settles in from a little to the right, Back brings it from a little to the left, a
+ * tab switch only fades. A short nudge, not a full-width push: the page arrives only once its data has (there is no
+ * stand-in screen to slide), so a long slide after that wait read as lag, and the half-faded page drifting across a
+ * third of the screen looked unsteady. The page being left just fades out at once — the window has already scrolled to
+ * the top for the new one, so anything slower flashes the old page's top. Larger screens keep the quiet fade. */
+const PHONE_NUDGE = 28;
 const phone: Variants = {
   enter: (direction: NavDirection) =>
-    direction === "none" ? { opacity: 0 } : { opacity: 0, x: direction === "back" ? "-30%" : "30%" },
-  center: { opacity: 1, x: 0, transition: { duration: durations.slow, ease: easings.sheet } },
-  exit: (direction: NavDirection) =>
-    direction === "none"
-      ? { opacity: 0, transition: { duration: durations.fast, ease: easings.exit } }
-      : { opacity: 0, x: direction === "back" ? "18%" : "-18%", transition: { duration: durations.base, ease: easings.exit } },
+    direction === "none" ? { opacity: 0 } : { opacity: 0, x: direction === "back" ? -PHONE_NUDGE : PHONE_NUDGE },
+  center: { opacity: 1, x: 0, transition: { duration: durations.base, ease: easings.smooth } },
+  exit: { opacity: 0, transition: { duration: durations.instant, ease: easings.exit } },
 };
 
 const wide: Variants = {

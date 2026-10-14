@@ -716,15 +716,15 @@
       transform: scale(0.97);
     }
   }
+  /* A tapped link (or the card it is part of) while its page loads (components/storefront/navigation-progress.tsx). */
+  [data-storefront] [data-nav-pending] {
+    @apply opacity-50 transition-opacity duration-fast ease-smooth;
+  }
 
   /* Phones: on a page inside a tab (the navigation bar is showing) the header is just the bar — the Mihrab promise strip
      above it is for the tab pages, where the store introduces itself. */
   @media (max-width: 1023.98px) {
     body:has([data-nav-bar]) [data-promise-strip] {
-      display: none;
-    }
-    /* The bar's Back already says where you came from; a breadcrumb under it would be a second way back. */
-    body:has([data-nav-bar]) [data-breadcrumb] {
       display: none;
     }
   }

@@ -40,16 +40,16 @@ export function TrackingConsentBanner() {
       role="dialog"
       aria-live="polite"
       aria-label="Tracking preferences"
-      className="glass fixed inset-x-3 bottom-[calc(var(--dock-offset)+0.75rem)] z-50 mx-auto max-w-2xl rounded-2xl border border-ink-200 p-4 shadow-floatLg sm:inset-x-6 sm:bottom-[calc(var(--dock-offset)+1.5rem)]"
+      className="glass fixed inset-x-3 bottom-[calc(var(--dock-offset)+0.75rem)] z-50 mx-auto max-w-2xl rounded-2xl border border-ink-200 p-3.5 shadow-floatLg sm:inset-x-6 sm:bottom-[calc(var(--dock-offset)+1.5rem)] sm:flex sm:items-center sm:gap-4 sm:p-4"
     >
-      <p className="text-sm text-ink-700">
-        We&apos;d like to use advertising and analytics cookies (Meta, TikTok, Microsoft Clarity) to measure our ads and
-        improve the shop. They only run if you allow them.{" "}
+      {/* Short enough to stay a strip at the bottom of a phone instead of covering half the page. */}
+      <p className="text-sm text-ink-700 sm:flex-1">
+        May we use cookies (Meta, TikTok, Clarity) to measure our ads and improve the shop?{" "}
         <Link href="/privacy-policy" className="underline underline-offset-2 hover:text-ink-900">
           Privacy policy
         </Link>
       </p>
-      <div className="mt-3 flex flex-wrap justify-end gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-0 sm:flex sm:shrink-0">
         <Button variant="outline" size="sm" onClick={() => choose("denied")}>
           Decline
         </Button>

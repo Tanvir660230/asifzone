@@ -11,9 +11,10 @@ export function Breadcrumb({ trail }: { trail: Array<{ name: string; href?: stri
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdString(jsonLd) }} />
-      {/* One line at every width: the ancestors keep their size and the current page (the long product name) truncates,
-          instead of the trail wrapping into ragged lines on a phone. */}
-      <nav data-breadcrumb aria-label="Breadcrumb" className="flex h-4 min-w-0 items-center text-xs ui-caps text-ink-400">
+      {/* One line: the ancestors keep their size and the current page (the long product name) truncates. Not on phones,
+          where the header's Back is the way up — pages drop the gap under it there too (StorefrontPageHeader,
+          ProductShowcase). */}
+      <nav data-breadcrumb aria-label="Breadcrumb" className="flex h-4 min-w-0 items-center text-xs ui-caps text-ink-400 max-lg:hidden">
         <ol className="flex min-w-0 items-center gap-1.5">
           <li className="shrink-0">
             <Link href="/" className="hover:text-ink-900">Home</Link>

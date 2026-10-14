@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Heart } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ProductGrid } from "@/components/storefront/product-grid";
@@ -11,6 +12,8 @@ import { listWishlist } from "@/lib/api/wishlist";
 import { fetchProductsByIds } from "@/lib/api/storefront";
 import { useWishlistStore } from "@/store/wishlist";
 import { useOptionalCustomer } from "@/hooks/use-current-customer";
+import { EmptyState, ErrorState } from "@/components/ui/empty-state";
+import { buttonVariants } from "@/components/ui/button";
 
 // Guest-accessible, same as /cart — a signed-out shopper's wishlist lives in useWishlistStore
 // (localStorage) rather than requiring login. A logged-in customer's wishlist is server-backed as
@@ -39,7 +42,7 @@ export default function WishlistPage() {
     enabled: isLoggedIn,
   });
 
-  const { data: guestData, isLoading: guestLoading } = useQuery({
+  const { data: guestData, isLoading: guestLoading, isError: guestError, refetch: refetchGuest } = useQuery({
     queryKey: ["wishlist-guest-products", localIds],
     queryFn: () => fetchProductsByIds(localIds),
     enabled: mounted && !isLoggedIn && localIds.length > 0,
@@ -66,16 +69,23 @@ export default function WishlistPage() {
       {!isLoggedIn && (
         <>
           {(!mounted || isLoading) && localIds.length > 0 && <ProductGridSkeleton count={Math.min(localIds.length, 4)} />}
-          {mounted && !isLoading && products.length === 0 && (
-            <p className="text-ink-500">
-              Nothing saved yet.{" "}
-              <Link href="/search" className="font-medium text-fg underline underline-offset-2 hover:text-ink-700">
-                Browse the collection
-              </Link>{" "}
-              and tap the heart on anything you like.
-            </p>
+          {mounted && !isLoading && guestError && (
+            <ErrorState variant="bordered" title="Your saved items didn't load" onRetry={() => refetchGuest()} />
           )}
-          {mounted && !isLoading && products.length > 0 && <ProductGrid products={products} />}
+          {mounted && !isLoading && !guestError && products.length === 0 && (
+            <EmptyState
+              variant="bordered"
+              icon={Heart}
+              title="Nothing saved yet"
+              description="Tap the heart on anything you like and it will wait for you here."
+              action={
+                <Link href="/search" className={buttonVariants({ size: "md" })}>
+                  Browse the collection
+                </Link>
+              }
+            />
+          )}
+          {mounted && !isLoading && !guestError && products.length > 0 && <ProductGrid products={products} />}
         </>
       )}
     </StorefrontPage>

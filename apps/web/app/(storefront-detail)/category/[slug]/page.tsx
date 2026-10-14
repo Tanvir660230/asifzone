@@ -89,13 +89,8 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       <StorefrontPageHeader
         breadcrumb={categoryBreadcrumbTrail(breadcrumb, category)}
         title={category.name}
-        actions={
-          !isEmptyCategory ? (
-            <div className="hidden lg:block">
-              <SortSelect />
-            </div>
-          ) : undefined
-        }
+        actions={!isEmptyCategory ? <SortSelect /> : undefined}
+        actionsClassName="max-lg:hidden"
       />
 
       {isEmptyCategory ? (

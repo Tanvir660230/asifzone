@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
@@ -16,14 +16,13 @@ interface ProductGalleryProps {
   productName: string;
 }
 
-const SWIPE_THRESHOLD = 50;
-
 export function ProductGallery({ images, productName }: ProductGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [zoomOrigin, setZoomOrigin] = useState("50% 50%");
-  const pointerStartX = useRef<number | null>(null);
-  const didSwipe = useRef(false);
+  // Every photo sits side by side in one scroll-snapping track: on a phone it follows the finger and settles on a photo
+  // the way the Photos app does; the arrows and thumbnails scroll the same track.
+  const trackRef = useRef<HTMLDivElement>(null);
   const active = images[activeIndex];
   const hasMultiple = images.length > 1;
   // The mihrab preset keeps the thumbnails in a row under a 4:5 photograph at every width; classic moves them beside it.
@@ -39,6 +38,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   const imageKey = images.map((img) => img.id).join(",");
   useEffect(() => {
     setActiveIndex(0);
+    trackRef.current?.scrollTo({ left: 0 });
   }, [imageKey]);
 
   function handleMouseMove(e: MouseEvent<HTMLDivElement>) {
@@ -48,33 +48,24 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
     setZoomOrigin(`${x}% ${y}%`);
   }
 
+  function goTo(index: number) {
+    setActiveIndex(index);
+    const track = trackRef.current;
+    if (!track) return;
+    const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    track.scrollTo({ left: index * track.clientWidth, behavior: smooth ? "smooth" : "auto" });
+  }
+
   function step(delta: number) {
-    setActiveIndex((i) => (i + delta + images.length) % images.length);
+    goTo((activeIndex + delta + images.length) % images.length);
   }
 
-  // Swipe-to-navigate on the main image (mouse drag or touch) — distinct from the plain click
-  // that opens the lightbox, so dragging across the image doesn't also pop it open.
-  function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
-    pointerStartX.current = e.clientX;
-    didSwipe.current = false;
-  }
-
-  function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
-    if (pointerStartX.current === null) return;
-    const delta = e.clientX - pointerStartX.current;
-    pointerStartX.current = null;
-    if (hasMultiple && Math.abs(delta) > SWIPE_THRESHOLD) {
-      didSwipe.current = true;
-      step(delta > 0 ? -1 : 1);
-    }
-  }
-
-  function handleImageClick() {
-    if (didSwipe.current) {
-      didSwipe.current = false;
-      return;
-    }
-    if (active) setLightboxOpen(true);
+  // The photo the track has settled on (a swipe, or the arrows' smooth scroll) is the active one.
+  function handleScroll() {
+    const track = trackRef.current;
+    if (!track || !track.clientWidth) return;
+    const index = Math.round(track.scrollLeft / track.clientWidth);
+    if (index !== activeIndex && index >= 0 && index < images.length) setActiveIndex(index);
   }
 
   return (
@@ -92,7 +83,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
           {images.map((img, i) => (
             <button
               key={img.id}
-              onClick={() => setActiveIndex(i)}
+              onClick={() => goTo(i)}
               aria-label={`View image ${i + 1} of ${productName}`}
               aria-current={i === activeIndex}
               className={cn(
@@ -114,31 +105,37 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
         // hint anything was below. The cap only ever engages when that would happen; a normal
         // window never hits it.
         className={cn(
-          "group relative flex-1 cursor-zoom-in touch-pan-y select-none overflow-hidden rounded-xl bg-ink-100",
+          "group relative flex-1 cursor-zoom-in select-none overflow-hidden rounded-xl bg-ink-100",
           thumbsBelow ? "aspect-[4/5] max-h-[80vh]" : "aspect-square max-h-[70vh]",
         )}
         onMouseMove={handleMouseMove}
-        onClick={handleImageClick}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
+        onClick={() => active && setLightboxOpen(true)}
       >
         {active ? (
           <>
-            <Image
-              src={resolveImageUrl(active.url)}
-              alt={active.altText ?? productName}
-              fill
-              sizes="(min-width: 1024px) 50vw, 100vw"
-              className="object-cover transition-transform duration-300 ease-out group-hover:scale-150"
-              style={{ transformOrigin: zoomOrigin }}
-              priority
-            />
-            {/* The keyboard/screen-reader way in: a real button over the image (its click bubbles to the frame's handler),
-                rather than making the frame itself a button around the arrow buttons (nested interactive controls). */}
+            {/* Swipeable on touch; from 1024px it only moves by the arrows and thumbnails (overflow hidden still scrolls
+                from script), so a mouse over it zooms instead. */}
+            <div ref={trackRef} onScroll={handleScroll} className="ui-rail flex h-full w-full snap-x snap-mandatory overflow-x-auto lg:overflow-hidden">
+              {images.map((img, i) => (
+                <div key={img.id} className="relative h-full w-full shrink-0 snap-center snap-always overflow-hidden">
+                  <Image
+                    src={resolveImageUrl(img.url)}
+                    alt={img.altText ?? productName}
+                    fill
+                    sizes="(min-width: 1024px) 50vw, 100vw"
+                    className="object-cover transition-transform duration-300 ease-out lg:group-hover:scale-150"
+                    style={i === activeIndex ? { transformOrigin: zoomOrigin } : undefined}
+                    priority={i === 0}
+                  />
+                </div>
+              ))}
+            </div>
+            {/* The keyboard/screen-reader way in: a real button for the zoomed view (its click bubbles to the frame's
+                handler). Not over the photos on a phone, where it would swallow the swipe. */}
             <button
               type="button"
               aria-label={`Open zoomed view of ${productName}`}
-              className="absolute inset-0 rounded-xl focus-visible:outline-offset-[-3px]"
+              className="absolute inset-0 rounded-xl focus-visible:outline-offset-[-3px] max-lg:pointer-events-none"
             />
             {active.caption && (
               <span className="glass absolute left-3 top-3 max-w-[70%] truncate rounded-[var(--chip-radius)] px-3 py-1 text-xs text-ink-900" data-testid="image-caption">
@@ -166,7 +163,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                 step(-1);
               }}
               aria-label="Previous image"
-              className="glass glossy absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
+              className="glass glossy absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100 [@media(hover:none)]:hidden"
             >
               <ChevronLeft size={18} />
             </button>
@@ -176,7 +173,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
                 step(1);
               }}
               aria-label="Next image"
-              className="glass glossy absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100"
+              className="glass glossy absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-[var(--fab-radius)] text-ink-900 opacity-100 shadow-float transition-opacity duration-200 ease-smooth lg:opacity-0 lg:group-hover:opacity-100 [@media(hover:none)]:hidden"
             >
               <ChevronRight size={18} />
             </button>

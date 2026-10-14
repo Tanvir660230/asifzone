@@ -41,6 +41,17 @@ export function AddedToBag() {
     return () => clearTimeout(timer);
   }, [added, paused, dismiss]);
 
+  // Scrolling on means it has been seen: it gets out of the way instead of riding over the page for the full time.
+  useEffect(() => {
+    if (!added) return;
+    const start = window.scrollY;
+    const onScroll = () => {
+      if (Math.abs(window.scrollY - start) > 160) dismiss();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [added, dismiss]);
+
   const variant = added ? formatVariantLabel(added.size, added.color) : "";
 
   return (

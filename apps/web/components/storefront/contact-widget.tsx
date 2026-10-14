@@ -147,9 +147,13 @@ export function ContactWidget({ socialLinks, settings }: ContactWidgetProps) {
   const shouldHide = !open && (nearFooter || overlappingCard);
   const phoneHide = !open && scrollingDown ? "max-lg:pointer-events-none max-lg:opacity-0" : "";
   // Phones only: a product page has its own "Order on WhatsApp" and a docked add-to-cart bar, the bag and account pages
-  // are forms and lists that run edge to edge; the footer, menu and contact page still carry every way to reach the shop.
+  // are forms and lists that run edge to edge, and on the product grids (a category, search, the wishlist) the button
+  // sat over the right-hand column's wishlist hearts; the footer, menu and contact page still carry every way to reach
+  // the shop.
   const pathname = usePathname() ?? "";
-  const phoneRouteHide = ["/product", "/cart", "/account"].some((route) => pathname.startsWith(route)) ? "max-lg:hidden" : "";
+  const phoneRouteHide = ["/product", "/cart", "/account", "/category", "/search", "/wishlist"].some((route) => pathname.startsWith(route))
+    ? "max-lg:hidden"
+    : "";
   // An open menu closes on a tap outside it or Escape, like any menu.
   useEffect(() => {
     if (!open) return;
