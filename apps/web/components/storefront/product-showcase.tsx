@@ -42,7 +42,7 @@ interface ProductShowcaseProps {
  * selector — which image is currently "in focus" — since they live in separate, non-adjacent
  * parts of the two-column layout and neither can see the other's props directly. */
 export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [], orderHelp, storeName }: ProductShowcaseProps) {
-  // "Asif Zone" above every Asif Zone product says nothing the header logo doesn't; another brand's name is worth showing.
+  // The store's own name above every one of its products says nothing the header logo doesn't; another brand's name does.
   const brand = product.brand && product.brand.trim().toLowerCase() !== storeName?.trim().toLowerCase() ? product.brand : null;
   const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
