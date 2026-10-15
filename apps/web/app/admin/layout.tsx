@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { HydrationBoundary } from "@tanstack/react-query";
 import { prefetchAdminSession } from "@/lib/admin/session-prefetch";
+import { publicRuntimeConfig } from "@/lib/runtime-config";
+import { resolveThemeId, themeColorHex } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "Store Console",
@@ -9,17 +11,23 @@ export const metadata: Metadata = {
   // that's discovered some other way (an inbound link, a screenshot) from getting indexed with a
   // bare "no description available" listing. noindex is the actual guarantee.
   robots: { index: false, follow: false },
-  // Saved to an iPhone's home screen, the console opens full screen like an app, under its own name.
-  appleWebApp: { capable: true, title: "Store Console", statusBarStyle: "default" },
+  // Saved to a phone's home screen, the console is its own app — full screen, opening on the dashboard, not the shop
+  // (app/console.webmanifest/route.ts replaces the storefront's manifest on every admin page).
+  manifest: "/console.webmanifest",
+  appleWebApp: { capable: true, title: "Admin", statusBarStyle: "default" },
 };
 
 // viewport-fit=cover: the page runs edge to edge on notched phones, so env(safe-area-inset-*) reports the home
-// indicator and the tab bar sits above it (components/admin/sidebar.tsx MobileBottomNav).
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-};
+// indicator and the tab bar sits above it (components/admin/sidebar.tsx MobileBottomNav). The phone's own bars take the
+// console's navigation-bar colour, not the store's header colour from the root layout.
+export function generateViewport(): Viewport {
+  return {
+    width: "device-width",
+    initialScale: 1,
+    viewportFit: "cover",
+    themeColor: themeColorHex(resolveThemeId(publicRuntimeConfig().theme), "surface", "admin"),
+  };
+}
 
 // Admin must always be live/session-aware, never cached or statically served.
 export const dynamic = "force-dynamic";

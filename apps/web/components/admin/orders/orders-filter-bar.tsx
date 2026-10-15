@@ -79,9 +79,10 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
     return (
       // Opaque (not glass): it floats over scrolling rows, and translucency let row text bleed through its edge.
       // Sticky from sm up only: on a phone the two pill rows would pin ~40% of the screen, so there it scrolls away.
-      <div className="z-raised -mx-4 space-y-3 border-b border-line bg-canvas px-4 pb-3 pt-3 sm:sticky sm:top-chrome sm:-mx-page sm:px-page">
-        <div className="flex flex-wrap items-center gap-2.5">
+      <div className="z-raised -mx-4 space-y-2.5 border-b border-line bg-canvas px-4 pb-3 pt-1 sm:sticky sm:space-y-3 sm:pt-3 sm:top-chrome sm:-mx-page sm:px-page">
+        <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-2.5">
           {canSeeTrash && (
+            <div className="hidden sm:block">
             <SegmentedControl
               aria-label="Orders view"
               value={state.view}
@@ -91,10 +92,11 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
                 { value: "trash", label: "Trash", testId: "orders-view-trash" },
               ]}
             />
+            </div>
           )}
           <SearchInput
             ref={searchRef}
-            wrapperClassName="w-full sm:w-72 lg:w-64"
+            wrapperClassName="min-w-0 flex-1 sm:w-72 sm:flex-none lg:w-64"
             placeholder="Search order #, name, phone…"
             aria-label="Search orders"
             value={state.search}
@@ -113,12 +115,30 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
           >
             <SlidersHorizontal size={14} /> Filters
             {more.count > 0 && <span className="rounded-full bg-accent px-1.5 text-xs font-semibold leading-[18px] text-accent-fg">{more.count}</span>}
+            {!active && <span className="text-xs font-semibold text-accent sm:hidden">Trash</span>}
           </Button>
-          <div className="ml-auto">
+          <div className="ml-auto hidden sm:block">
             <PageSizeSelect value={state.pageSize} onChange={state.setPageSize} />
           </div>
 
           <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} align="start" aria-label="More filters" sheetOnPhone className="w-[min(92vw,640px)] p-4">
+            {/* Phones: the toolbar's Active/Trash switch and page size live here, out of the list's first screen. */}
+            <div className="mb-4 flex items-center justify-between gap-3 border-b border-line-subtle pb-4 sm:hidden">
+              {canSeeTrash ? (
+                <SegmentedControl
+                  aria-label="Orders view"
+                  value={state.view}
+                  onChange={state.setView}
+                  options={[
+                    { value: "active", label: "Active" },
+                    { value: "trash", label: "Trash" },
+                  ]}
+                />
+              ) : (
+                <span />
+              )}
+              <PageSizeSelect value={state.pageSize} onChange={state.setPageSize} />
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Payment status" htmlFor="f-payment-status">
                 <Select id="f-payment-status" value={more.paymentStatus} onChange={(e) => more.setPaymentStatus(e.target.value as PaymentStatus | "")}>
@@ -229,7 +249,7 @@ export const OrdersFilterBar = forwardRef<HTMLInputElement, { state: OrdersListS
 
             <HScrollShadow className="overflow-x-auto">
               <div role="group" aria-label="Quick filters" className="flex flex-nowrap items-center gap-1.5 py-0.5">
-                <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted">Views</span>
+                <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-muted max-sm:hidden">Views</span>
                 {/* Which queues have work is only known once the counts load — hold the row's place until then. */}
                 {!stats && <span className="ui-skeleton h-8 w-32 shrink-0 rounded-full" aria-hidden="true" />}
                 {shownQueues.map((id) => {

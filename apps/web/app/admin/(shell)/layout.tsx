@@ -203,7 +203,7 @@ export default function ShellLayout({ children }: { children: ReactNode }) {
             </header>
             <SectionBar bar={sectionBar} mode={sectionBarMode} />
           </div>
-          <main id="main-content" tabIndex={-1} className="flex-1 outline-none px-4 py-6 sm:px-page sm:py-8 print:p-0">
+          <main id="main-content" tabIndex={-1} className="flex-1 outline-none px-4 pb-6 pt-4 sm:px-page sm:py-8 print:p-0">
             {/* Full screen for data pages; one centered column for forms (pageWidthFor). The 2400px ceiling only matters on
                 ultra-wide monitors, where a single table row would otherwise be too long to follow. */}
             <div className={cn("mx-auto w-full", pageWidthFor(pathname) === "form" ? "max-w-[880px]" : "max-w-[2400px]")}>

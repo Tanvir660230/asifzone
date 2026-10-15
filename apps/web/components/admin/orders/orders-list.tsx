@@ -16,9 +16,11 @@ import {
   FileText,
   MoreHorizontal,
   Package,
+  Phone,
   Printer,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Trash2,
   Truck,
 } from "lucide-react";
@@ -30,7 +32,7 @@ import { Popover } from "@/components/ui/popover";
 import { DropdownMenu, type DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Table, TableCell, TableContainer, TableHead, TableHeaderCell, TableMessageRow, TableRow, TableSkeleton } from "@/components/ui/table";
 import { OrderStatusIcon } from "@/components/admin/order-status-icon";
-import { formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
+import { formatCount, formatPrice, formatStoreDate, formatStoreTime, initials, orderStatusBadgeClass, orderStatusLabel, orderStatusShortLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CourierCell, DeliveryScoreBadge, OrderStatusBadge, PaymentBadges } from "./order-badges";
 import { COURIER_PROVIDER_LABEL, nextStatusesFor, orderAttention, prefetchOrder, type OrderPermissions } from "./order-domain";
@@ -117,6 +119,30 @@ function ProductCell({ summary }: { summary: OrderListItemSummary }) {
   );
 }
 
+/** The card's line of goods: the first item's photo and name, its variant, and how many more there are. Plain text — the
+ * whole card opens the order, so it can't hold the table's link to the storefront. */
+function CardItems({ summary }: { summary: OrderListItemSummary }) {
+  if (!summary.firstItem) return null;
+  const { name, size, color, imageUrl } = summary.firstItem;
+  const extra = summary.totalItems - 1;
+  const detail = [[size, color].filter(Boolean).join(" / "), extra > 0 ? `+${extra} more` : ""].filter(Boolean).join(" · ");
+  return (
+    <span className="mt-2 flex items-center gap-2.5">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-line-subtle bg-ink-50">
+        {imageUrl ? (
+          <Thumbnail src={imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <Package size={13} className="text-ink-300" aria-hidden="true" />
+        )}
+      </span>
+      <span className="min-w-0 truncate text-[13px] text-ink-700">
+        {name}
+        {detail && <span className="text-fg-subtle"> · {detail}</span>}
+      </span>
+    </span>
+  );
+}
+
 /** The status pill doubles as the status control: it lists only the moves the shared state machine allows from here. */
 function StatusPicker({ order, commands, canManage, canCancel }: { order: AdminOrderListItem; commands: OrderCommands; canManage: boolean; canCancel: boolean }) {
   const [open, setOpen] = useState(false);
@@ -190,6 +216,9 @@ function rowActions(
     else if (order.courierConsignmentId) items.push({ label: "Sync courier status", icon: RefreshCw, onClick: () => commands.syncCourier(order) });
   } else if (perms.courierNotConnected && !courierBookingBlocker(order)) {
     items.push({ label: `Book with ${COURIER_PROVIDER_LABEL}`, icon: Truck, onClick: commands.explainCourierNotConnected });
+  }
+  if (perms.manage && perms.courierConfigured && !order.deliveryScore) {
+    items.push({ label: "Check delivery score", icon: ShieldCheck, onClick: () => commands.checkDeliveryScore([order], true) });
   }
   if (perms.trash) items.push({ label: "Move to Trash", icon: Trash2, destructive: true, onClick: () => commands.trash(order) });
   return items;
@@ -389,18 +418,18 @@ export function OrdersList(props: OrdersListProps) {
         </Table>
       </TableContainer>
 
-      <div className="mt-4 xl:hidden" aria-busy={props.isFetching || undefined}>
+      <div className="mt-3 xl:hidden" aria-busy={props.isFetching || undefined}>
         {!isLoading && items.length > 0 && (
-          <label className="mb-3 flex min-h-[44px] items-center gap-2.5 rounded-xl border border-line-subtle bg-surface px-3.5 text-sm text-ink-600 shadow-sm">
+          <label className="mb-1.5 flex min-h-[40px] items-center gap-2.5 px-1 text-[13px] text-fg-muted">
             <Checkbox checked={allSelected} onChange={onToggleAll} />
             Select all on this page
-            <span className="ml-auto text-xs tabular-nums text-fg-subtle">{props.total ?? items.length} total</span>
+            <span className="ml-auto tabular-nums text-fg-subtle">{formatCount(props.total ?? items.length)} orders</span>
           </label>
         )}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-3">
           {isLoading &&
             Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-44 rounded-xl border border-line-subtle bg-surface ui-skeleton" aria-hidden="true" />
+              <div key={i} className="h-36 rounded-xl border border-line-subtle bg-surface ui-skeleton" aria-hidden="true" />
             ))}
           {!isLoading && items.length === 0 && <div className="col-span-full rounded-xl border border-line-subtle bg-surface">{empty}</div>}
           {items.map((order) => {
@@ -413,54 +442,57 @@ export function OrdersList(props: OrdersListProps) {
                 aria-label={`Order ${order.orderNumber}`}
                 data-testid="order-card"
                 className={cn(
-                  "flex flex-col rounded-xl border border-line bg-surface p-3.5 shadow",
+                  "flex flex-col rounded-xl border border-line bg-surface p-3 shadow",
                   selected.has(order.id) && "ring-2 ring-accent/40",
                 )}
               >
-                <div className="flex items-start gap-2.5">
+                {/* A Mail-style row: who and how much, then the order and when, then what they bought. The whole block opens
+                    the order; the checkbox beside it selects for a bulk action. */}
+                <div className="flex items-start gap-1">
                   {/* 44px hit area around the 16px box: selecting cards for a bulk action is a thumb job. */}
-                  <label className="-my-2.5 -ml-3 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center">
+                  <label className="-my-2.5 -ml-2.5 flex h-11 w-10 shrink-0 cursor-pointer items-center justify-center">
                     <Checkbox checked={selected.has(order.id)} onChange={() => onToggle(order.id)} aria-label={`Select ${order.orderNumber}`} />
                   </label>
                   <button type="button" onClick={() => onOpen(order.id)} className="min-w-0 flex-1 text-left">
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5 font-medium text-ink-900">
-                        {order.orderNumber}
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-[15px] font-semibold text-fg">{order.customerName}</span>
+                      <span className="shrink-0 text-[15px] font-semibold tabular-nums text-fg">{formatPrice(order.total)}</span>
+                    </span>
+                    <span className="mt-0.5 flex items-center justify-between gap-3 text-xs text-fg-subtle">
+                      <span className="flex min-w-0 items-center gap-1">
+                        <span className="truncate">
+                          {order.orderNumber} · {formatStoreDate(order.createdAt)}, {formatStoreTime(order.createdAt)}
+                        </span>
                         <AttentionMarker order={order} />
                       </span>
-                      <span className="font-semibold tabular-nums text-ink-900">{formatPrice(order.total)}</span>
+                      <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
                     </span>
-                    <span className="mt-0.5 block text-xs text-fg-subtle">
-                      {formatStoreDate(order.createdAt)} · {formatStoreTime(order.createdAt)}
-                    </span>
+                    <CardItems summary={order.itemsSummary} />
                   </button>
                 </div>
 
-                <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-line-subtle pt-2.5">
+                {/* Where it stands, and the single most common next step one tap away; everything else in the ⋯ menu. */}
+                <div className="mt-2.5 flex items-center gap-1.5">
                   <StatusPicker order={order} commands={commands} canManage={perms.manage} canCancel={perms.cancel} />
-                  <PaymentBadges method={order.paymentMethod} status={order.paymentStatus} layout="inline" />
-                  <span className="ml-auto">
-                    <CourierCell order={order} compact />
-                  </span>
-                </div>
-
-                <div className="mt-2.5 border-t border-line-subtle pt-2.5">
-                  <ProductCell summary={order.itemsSummary} />
-                </div>
-                <div className="mt-2.5 border-t border-line-subtle pt-2.5">
-                  <CustomerCell order={order} commands={commands} perms={perms} />
-                </div>
-
-                {/* The single most common next step stays one tap away; everything else lives in the ⋯ menu. */}
-                <div className="mt-auto flex items-center justify-between gap-2 border-t border-line-subtle pt-2.5">
+                  {order.courierConsignmentId && <CourierCell order={order} compact />}
+                  {order.deliveryScore && <DeliveryScoreBadge score={order.deliveryScore} />}
+                  <span className="flex-1" />
+                  {!order.deletedAt && (
+                    <a
+                      href={`tel:${order.customerPhone}`}
+                      aria-label={`Call ${order.customerName} on ${order.customerPhone}`}
+                      title={order.customerPhone}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-accent transition-colors duration-fast hover:bg-accent/10 active:bg-accent/15"
+                    >
+                      <Phone size={16} aria-hidden="true" />
+                    </a>
+                  )}
                   {order.deletedAt ? (
                     perms.trash ? (
                       <Button variant="outline" size="sm" onClick={() => commands.restore(order)}>
                         <RotateCcw size={13} /> Restore
                       </Button>
-                    ) : (
-                      <span />
-                    )
+                    ) : null
                   ) : canConfirm ? (
                     <Button variant="outline" size="sm" onClick={() => commands.requestStatusChange([order], "CONFIRMED")}>
                       <Check size={13} /> Confirm
@@ -474,11 +506,7 @@ export function OrdersList(props: OrdersListProps) {
                     >
                       <Truck size={13} /> Book courier
                     </Button>
-                  ) : (
-                    <Button variant="ghost" size="sm" onClick={() => onOpen(order.id)}>
-                      <Eye size={13} /> View
-                    </Button>
-                  )}
+                  ) : null}
                   <RowActionsMenu order={order} commands={commands} perms={perms} onOpen={onOpen} />
                 </div>
               </article>

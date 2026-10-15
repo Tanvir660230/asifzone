@@ -179,7 +179,7 @@ export default function SmsNotificationsPage() {
                 <p className="mt-0.5 text-xs text-ink-400">{t.helpText}</p>
                 <Textarea
                   className="mt-2"
-                  rows={2}
+                  rows={4}
                   maxLength={320}
                   placeholder={DEFAULT_CUSTOMER_SMS_TEMPLATES[t.touchpoint]}
                   {...register(t.templateField)}

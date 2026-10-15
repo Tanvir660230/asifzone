@@ -107,7 +107,7 @@ export function DetailHeader({
 
       {!deleted && <OrderProgress order={order} />}
 
-      <div className="flex flex-wrap items-center gap-2" data-testid="order-actions">
+      <div data-phone-row="" className="flex flex-wrap items-center gap-2" data-testid="order-actions">
         {/* On a phone's order page the same action is pinned at the bottom (OrderPhoneActionBar) — once is enough. */}
         {primary && canPrimary && (
           <Button

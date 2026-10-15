@@ -115,7 +115,7 @@ export default function AttributesPage() {
 
       <ModuleTabs />
 
-      <p className="mb-4 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         Define reusable option types (Color, Size, Fabric, Pattern…) and their values — used to build variant
         combinations on the product form. (Product fields like &ldquo;Material&rdquo; or &ldquo;Movement&rdquo; are
         managed under Catalog setup → Attributes.)

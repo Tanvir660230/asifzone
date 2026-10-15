@@ -11,11 +11,11 @@ import { BiDateRangeProvider, useBiDateRange } from "@/components/admin/bi-date-
 function ReportPeriodBar() {
   const { range, setRange } = useBiDateRange();
   return (
-    <div className="sticky top-chrome z-raised -mx-4 -mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-canvas px-4 py-2.5 sm:-mx-page sm:-mt-8 sm:px-page">
-      <p className="text-[13px] text-fg-muted">
+    <div className="sticky top-chrome z-raised -mx-4 -mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-line bg-canvas px-4 py-2 sm:py-2.5 sm:-mx-page sm:-mt-8 sm:px-page">
+      <p className="text-[13px] text-fg-muted max-sm:hidden">
         <span className="font-medium text-fg">Report period</span> · applies to every Analytics tab
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 max-sm:w-full max-sm:justify-between">
         <ReportsSheet />
         <DateRangePicker value={range} onChange={setRange} />
       </div>

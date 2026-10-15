@@ -107,7 +107,7 @@ export default function SocialLinksPage() {
         }
       />
       <ModuleTabs />
-      <p className="mb-4 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         Shown as icons in the storefront footer, in the order below. Only active links appear on the site.
       </p>
 

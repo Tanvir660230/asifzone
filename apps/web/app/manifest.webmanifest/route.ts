@@ -4,8 +4,15 @@ import { publicRuntimeConfig } from "@/lib/runtime-config";
 import { resolveThemeId, themeColorHex } from "@/lib/theme";
 
 /** The web app manifest: lets shoppers add the store to their home screen and open it like an app. Name, icon and colours
- * come from the store's settings and its brand theme, never from one store's look. */
-export default async function manifest(): Promise<MetadataRoute.Manifest> {
+ * come from the store's settings and its brand theme, never from one store's look.
+ *
+ * A route handler linked from the root layout's metadata, not the app/manifest.ts file convention: that convention's link
+ * can't be replaced further down the tree, and the Store Console links its own (app/console.webmanifest/route.ts). */
+export async function GET() {
+  return Response.json(await manifest(), { headers: { "Content-Type": "application/manifest+json" } });
+}
+
+async function manifest(): Promise<MetadataRoute.Manifest> {
   const { settings } = await getSiteSettingsSafe();
   const theme = resolveThemeId(publicRuntimeConfig().theme);
   const canvas = themeColorHex(theme, "canvas");

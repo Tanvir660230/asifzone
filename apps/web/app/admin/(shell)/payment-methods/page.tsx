@@ -129,7 +129,7 @@ export default function PaymentMethodsPage() {
         }
       />
       <ModuleTabs />
-      <p className="mb-6 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-6 text-sm text-ink-500">
         Show payment logos two ways: upload one combined image with everything already laid out, or add each logo
         separately below for individual control (reordering, toggling one on/off).
       </p>

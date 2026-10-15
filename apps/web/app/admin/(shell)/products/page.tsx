@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArchiveX, Copy, FileSpreadsheet, ImageOff, LayoutGrid, Link2, List, MoreHorizontal, Package, Pencil, Plus, RotateCcw, Trash2, XCircle } from "lucide-react";
+import { ArchiveX, ArrowUpDown, Copy, FileSpreadsheet, ImageOff, LayoutGrid, Link2, List, MoreHorizontal, Package, Pencil, Plus, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { PRODUCT_STATUSES, type Product, type ProductListExtras, type ProductStatus } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
@@ -326,10 +326,12 @@ export default function ProductsPage() {
     <div>
       <PageHeader
         title="Products"
+        descriptionOnPhone
         description={data ? `${formatCount(data.total)} ${trash ? "in Trash" : `product${data.total === 1 ? "" : "s"}`}` : undefined}
         action={
           <div className="flex items-center gap-2">
-            <Link href="/admin/products/import">
+            {/* Phones reach Import / export from the section bar above; the header keeps the one primary action. */}
+            <Link href="/admin/products/import" className="max-sm:hidden">
               <Button variant="outline">
                 <FileSpreadsheet size={16} /> Import / export
               </Button>
@@ -371,13 +373,17 @@ export default function ProductsPage() {
           }
           actions={
             <>
-              <Select className="h-9 w-44" value={view.sort} onChange={(e) => setView({ sort: e.target.value as (typeof SORTS)[number]["value"] })} aria-label="Sort products">
+              {/* Phones: the sort is an icon-sized native picker, so Products / Trash, sort and layout share one row. */}
+              <span className="relative">
+              <ArrowUpDown size={16} aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-fg-muted sm:hidden" />
+              <Select className="h-9 w-44 max-sm:w-10 max-sm:bg-none max-sm:px-0 max-sm:text-transparent" value={view.sort} onChange={(e) => setView({ sort: e.target.value as (typeof SORTS)[number]["value"] })} aria-label="Sort products">
                 {SORTS.map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
                   </option>
                 ))}
               </Select>
+              </span>
               <SegmentedControl
                 aria-label="Layout"
                 value={view.layout}

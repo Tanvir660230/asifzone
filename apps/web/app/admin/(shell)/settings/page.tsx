@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSection } from "@/components/admin/form-section";
 import { useCapability } from "@/hooks/use-capability";
+import { Select } from "@/components/ui/select";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { HScrollShadow } from "@/components/ui/h-scroll-shadow";
 import { PageHeader } from "@/components/admin/page-header";
@@ -297,11 +298,22 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader title="Settings" />
+      <PageHeader
+        title="Settings"
+        action={
+          // Phones: the pane is a native picker on the title's line, so the section bar above stays the only tab row.
+          <Select aria-label="Settings pane" className="h-9 w-auto max-w-[13rem] sm:hidden" value={tab} onChange={(e) => setTab(e.target.value as SettingsTab)}>
+            {TABS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+        }
+      />
       <ModuleTabs />
 
-      {/* Scrolls sideways on a phone rather than spilling past the screen edge. */}
-      <HScrollShadow className="mb-6 overflow-x-auto">
+      <HScrollShadow className="mb-6 overflow-x-auto max-sm:hidden">
         <SegmentedControl aria-label="Settings pane" size="md" className="w-max" value={tab} onChange={setTab} options={TABS.map((t) => ({ value: t.value, label: t.label }))} />
       </HScrollShadow>
 

@@ -496,6 +496,10 @@
   }
   [data-surface="admin"] textarea.ui-control {
     @apply h-auto;
+    /* Grows with its text (an SMS template, a note) instead of clipping it mid-line; capped so a long one scrolls. */
+    field-sizing: content;
+    min-height: 4.5rem;
+    max-height: 50vh;
   }
   /* While the on-screen keyboard is open (hooks/use-keyboard-flag.ts), sticky bars step aside for the field. */
   @media (max-width: 1023px) {
@@ -511,6 +515,10 @@
     /* The navigation bar's back button (components/admin/mobile-nav-bar.tsx) replaces the page's own "Back to …". */
     [data-shell][data-nav-back] [data-back-link] {
       display: none;
+    }
+    /* …and leaves no gap: a stacked page (space-y-*) would still space its next block off the hidden button. */
+    [data-shell][data-nav-back] [data-back-link]:first-child + * {
+      margin-top: 0 !important;
     }
   }
   /* Phones, in the console and the store: a Modal is an iOS sheet — up from the bottom edge, its body scrolling under a
@@ -543,8 +551,108 @@
       @apply w-full;
     }
 
+    /* Page titles (components/ui/page-header.tsx) as iOS large titles: no explanatory paragraph (a page keeps a live
+       summary with `descriptionOnPhone`), the actions beside the title while they fit and on one swipeable row below
+       it when they don't — never a wrapped stack of buttons pushing the content off the first screen. */
+    [data-surface="admin"] [data-page-header] {
+      @apply flex-row flex-wrap items-center justify-between gap-x-3 gap-y-2;
+    }
+    /* The default bottom margin tightens; one a page set itself (`mb-0`) stays. */
+    [data-surface="admin"] [data-page-header]:is(.mb-8, .mb-6) {
+      @apply mb-5;
+    }
+    /* The title block dissolves into the header's row, so the actions can share the title's line while the eyebrow
+       sits above and a kept description below, each across the full width. */
+    [data-surface="admin"] [data-page-header] > div:first-child {
+      display: contents;
+    }
+    [data-surface="admin"] [data-page-header] h1 {
+      @apply min-w-0 flex-auto;
+    }
+    [data-surface="admin"] [data-page-eyebrow] {
+      @apply -order-1 -mb-1.5 basis-full;
+    }
+    [data-surface="admin"] [data-page-description] {
+      @apply order-1 -mt-1 basis-full;
+    }
+    /* …and so does a page's explanatory intro paragraph written outside PageHeader (`data-page-intro`). */
+    [data-surface="admin"] :is([data-page-description=""], [data-page-intro]) {
+      @apply hidden;
+    }
+    /* A row of buttons stays one row and swipes sideways (`data-phone-row` for rows outside a page header), instead of
+       wrapping one leftover button onto a line of its own. */
+    [data-surface="admin"] :is([data-page-actions], [data-phone-row]) {
+      @apply max-w-full flex-nowrap overflow-x-auto;
+      scrollbar-width: none;
+    }
+    [data-surface="admin"] :is([data-page-actions], [data-phone-row])::-webkit-scrollbar {
+      display: none;
+    }
+    [data-surface="admin"] [data-phone-row] > * {
+      @apply shrink-0;
+    }
+    [data-surface="admin"] [data-page-actions] > div {
+      @apply flex-nowrap;
+    }
+    [data-surface="admin"] [data-page-actions] :is(button, a) {
+      @apply shrink-0;
+    }
+
+    /* Every pixel of a phone is content: cards pad 16px (components/ui/card.tsx reads these), and stacked sections
+       sit 16px apart instead of the desktop's 24–32px. */
+    [data-surface="admin"] {
+      --card-px: 1rem;
+      --card-py: 0.875rem;
+      --card-body-py: 1rem;
+    }
+    /* The Storefront Studio preview inside the console keeps the storefront's own card padding. */
+    [data-surface="admin"] [data-surface="storefront"] {
+      --card-px: initial;
+      --card-py: initial;
+      --card-body-py: initial;
+    }
+    [data-surface="admin"] main :is(.space-y-6, .space-y-8):not([data-surface="storefront"] *) > :not([hidden]) ~ :not([hidden]) {
+      margin-top: 1rem;
+    }
+    [data-surface="admin"] main :is(.gap-6, .gap-8):not([data-surface="storefront"] *) {
+      gap: 1rem;
+    }
+    [data-surface="admin"] main .space-y-10:not([data-surface="storefront"] *) > :not([hidden]) ~ :not([hidden]) {
+      margin-top: 1.5rem;
+    }
+    /* Panels written with a flat 24px (p-6 / px-6) pad 16px at the sides on a phone — 16px more line for content on
+       each card. An axis the element sets itself (py-12 on an empty state, px-3) keeps its own value. */
+    [data-surface="admin"] :is(.p-6:not([class*="px-"]), .px-6):not([data-surface="storefront"] *) {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+    [data-surface="admin"] :is(.p-6:not([class*="py-"], [class*="pt-"], [class*="pb-"]), .py-6):not([data-surface="storefront"] *) {
+      padding-top: 1.25rem;
+      padding-bottom: 1.25rem;
+    }
+
+    /* Number tiles (StatTile, MetricCard) two to a row, whatever column count the page's grid starts from — a phone
+       showing one "Orders today: 0" card per screen-width is mostly empty card. A tile with a sparkline keeps the row. */
+    [data-surface="admin"] .grid:has(> [data-stat-tile]) {
+      @apply grid-cols-2 gap-3;
+    }
+    [data-surface="admin"] .grid > [data-stat-tile="wide"] {
+      @apply col-span-2;
+    }
+    /* An odd tile out closes the grid across the full row rather than leaving half a row empty. */
+    [data-surface="admin"] .grid:not(:has(> [data-stat-tile="wide"])) > [data-stat-tile]:last-child:nth-child(odd),
+    [data-surface="admin"] .grid > [data-stat-tile="wide"]:first-child ~ [data-stat-tile]:last-child:nth-child(even) {
+      @apply col-span-2;
+    }
+    /* A grid item's min-width defaults to its content's width, so one long line (a row of figures, a date range) can
+       stretch a single-column grid past the screen edge. On a phone nothing in a grid may be wider than the grid. */
+    [data-surface="admin"] main .grid > * {
+      min-width: 0;
+    }
+
     /* Tables as card lists (components/admin/phone-tables.tsx labels the cells): one card per row, the first column as
-       its title, every other value beside its column's name. Sort buttons stay as chips above the cards. */
+       its title, the other values flowing after it as "label value" pairs — empty ones ("—") left out, the row's
+       action buttons at the end of the last line. Sort buttons stay as chips above the cards. */
     [data-surface="admin"] table[data-stack="on"] {
       @apply block w-full;
       min-width: 0 !important;
@@ -568,24 +676,38 @@
       @apply block;
     }
     [data-surface="admin"] table[data-stack="on"] > tbody > tr {
-      @apply block px-4 py-3;
+      @apply flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3;
     }
     [data-surface="admin"] table[data-stack="on"] > tbody > tr > td {
-      @apply static flex min-w-0 items-baseline justify-between gap-4 whitespace-normal bg-transparent px-0 py-[3px] text-right;
+      @apply static inline-flex min-w-0 max-w-full items-baseline gap-1.5 whitespace-normal bg-transparent p-0 text-left text-[13px];
       overflow-wrap: anywhere;
     }
     [data-surface="admin"] table[data-stack="on"] > tbody > tr > td::before {
-      @apply shrink-0 text-left text-[13px] font-normal text-fg-muted;
+      @apply shrink-0 text-xs font-normal text-fg-subtle;
       content: attr(data-label);
     }
     [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:is([data-label=""], :not([data-label]))::before {
       content: none;
     }
-    /* The row's first column is its title. */
-    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:first-child {
-      @apply justify-start pb-1 text-left text-[15px] font-medium text-fg;
+    /* The row's title: its first column with something to read (a selection checkbox before it stays beside it). */
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:is([data-cell="title"], :first-child:not([data-cell])) {
+      @apply mb-0.5 flex-1 items-center text-[15px] font-medium text-fg;
+      min-width: calc(100% - 2.75rem);
     }
-    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:first-child::before {
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:is([data-cell="title"], [data-cell="select"], :first-child)::before {
+      content: none;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td[data-cell="select"] {
+      @apply mb-0.5 w-6 shrink-0 items-center;
+    }
+    /* Nothing to say ("—") says nothing; the row's buttons close its last line, on the right. */
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td[data-cell="empty"] {
+      @apply hidden;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td[data-cell="action"] {
+      @apply ml-auto items-center;
+    }
+    [data-surface="admin"] table[data-stack="on"] > tbody > tr > td:is([data-cell="action"], [data-cell="badge"])::before {
       content: none;
     }
     [data-surface="admin"] table[data-stack="on"] td[data-col-hidden] {

@@ -82,7 +82,9 @@ export async function generateMetadata(): Promise<Metadata> {
           apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
           shortcut: ["/favicon.ico"],
         },
-    // Saved to an iPhone's home screen, the store opens full screen like an app, under its own name.
+    // Saved to a phone's home screen, the store opens full screen like an app, under its own name
+    // (app/manifest.webmanifest/route.ts; the Store Console's layout links its own instead).
+    manifest: "/manifest.webmanifest",
     appleWebApp: { capable: true, title: settings.storeName, statusBarStyle: "default" },
     verification: settings.googleSiteVerification ? { google: settings.googleSiteVerification } : undefined,
     ...buildOpenGraph({

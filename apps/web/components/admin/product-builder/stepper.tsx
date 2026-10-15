@@ -42,7 +42,7 @@ export function Stepper({ steps, onSelect }: StepperProps) {
         {steps.map((step, i) => {
           const isCurrent = step.status === "current";
           return (
-            <li key={step.id} className="flex shrink-0 items-center">
+            <li key={step.id} className="relative flex shrink-0 items-center">
               <button
                 type="button"
                 disabled={!step.reachable}

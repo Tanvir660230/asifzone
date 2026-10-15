@@ -298,10 +298,12 @@ export default function CustomersPage() {
     );
   }
 
-  function renderRowActions(customer: (typeof items)[number]) {
+  /** `card`: the phone card, where tapping the name already opens the customer — no separate "view" button. */
+  function renderRowActions(customer: (typeof items)[number], card = false) {
     return (
       <>
         <button
+          hidden={card}
           onClick={() => setDrawer({ id: customer.id })}
           className={cn(ICON_BUTTON_HIT, "text-ink-500 hover:text-ink-900")}
           aria-label="View customer"
@@ -390,7 +392,7 @@ export default function CustomersPage() {
         {/* Search, more filters, page size — the same toolbar row as the Orders list. */}
         <div className="flex flex-wrap items-center gap-2.5">
           <SearchInput
-            wrapperClassName="w-full sm:w-72"
+            wrapperClassName="min-w-0 flex-1 basis-48 sm:w-72 sm:flex-none sm:basis-auto"
             placeholder="Search name, phone, email, order #…"
             value={search}
             onChange={(value) => {
@@ -399,12 +401,14 @@ export default function CustomersPage() {
             }}
           />
           <Button variant="outline" size="sm" onClick={() => setShowMoreFilters((v) => !v)} aria-expanded={showMoreFilters}>
-            <SlidersHorizontal size={14} /> More filters
+            <SlidersHorizontal size={14} /> <span className="sm:hidden">Filters</span>
+            <span className="max-sm:hidden">More filters</span>
             {activeMoreFiltersCount > 0 && (
               <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{activeMoreFiltersCount}</span>
             )}
           </Button>
-          <div className="ml-auto">
+          {/* Phones keep the default page size; the row stays search + Filters. */}
+          <div className="ml-auto max-sm:hidden">
             <PageSizeSelect
               value={pageSize}
               onChange={(size) => {
@@ -718,15 +722,15 @@ export default function CustomersPage() {
               <span className="shrink-0 text-right font-medium tabular-nums text-ink-900">{formatPrice(customer.totalSpent)}</span>
             </div>
 
-            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-ink-100 pt-2.5 text-xs text-ink-500">
-              <span>
+            {/* One line under the name: order history, tag, then the contact buttons — no ruled-off rows. */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 pl-[1.875rem] text-xs text-ink-500">
+              <span className="min-w-0">
                 {customer.totalOrders} order{customer.totalOrders === 1 ? "" : "s"} ·{" "}
                 {customer.lastOrderAt ? `last ${formatStoreDate(customer.lastOrderAt)}` : "no orders yet"}
               </span>
               {renderTagBadge(customer)}
+              <span className="ml-auto flex items-center gap-4 pr-1">{renderRowActions(customer, true)}</span>
             </div>
-
-            <div className="mt-2.5 flex items-center justify-end gap-3 border-t border-ink-100 pt-2.5">{renderRowActions(customer)}</div>
           </div>
         ))}
       </div>

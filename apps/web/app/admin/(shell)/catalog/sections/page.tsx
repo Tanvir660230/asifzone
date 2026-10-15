@@ -41,7 +41,7 @@ export default function PageSectionsPage() {
       <PageHeader title="Page sections" description="Define what kinds of products the store sells, and what each kind collects and shows." />
       <ModuleTabs />
 
-      <p className="mb-4 max-w-3xl text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 max-w-3xl text-sm text-ink-500">
         These are the store-wide defaults for every product page: which sections show, in what order, under what title, and the wording of the
         shared ones (Shipping &amp; returns, Warranty). A template can override them for a whole kind of product, and a single product can override
         them again — anything left on <em>Inherit</em> follows the level above. Text that is specific to one product (highlights, what&rsquo;s included, the
