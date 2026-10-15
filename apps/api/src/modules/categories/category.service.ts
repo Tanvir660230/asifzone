@@ -144,7 +144,11 @@ async function getCategoryAvailabilityStat(categoryId: string): Promise<Category
     prisma.product.count({
       where: {
         ...where,
-        OR: [{ trackInventory: false, variants: { some: { isActive: true } } }, { variants: { some: { isActive: true, stock: { gt: 0 } } } }],
+        markedSoldOut: false,
+        OR: [
+          { trackInventory: false, variants: { some: { isActive: true, markedSoldOut: false } } },
+          { variants: { some: { isActive: true, markedSoldOut: false, stock: { gt: 0 } } } },
+        ],
       },
     }),
   ]);

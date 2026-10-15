@@ -34,11 +34,13 @@ export async function listStockLevels(query: StockLevelsQuery, now: Date = new D
       color: true,
       stock: true,
       isActive: true,
+      markedSoldOut: true,
       product: {
         select: {
           id: true,
           name: true,
           trackInventory: true,
+          markedSoldOut: true,
           lowStockThreshold: true,
           images: { select: { url: true }, orderBy: { sortOrder: "asc" }, take: 1 },
         },
@@ -104,6 +106,7 @@ export async function listStockLevels(query: StockLevelsQuery, now: Date = new D
       lowStockThreshold: v.product.lowStockThreshold,
       trackInventory: v.product.trackInventory,
       active: v.isActive,
+      shownSoldOut: v.markedSoldOut || v.product.markedSoldOut,
       state,
       daysOfCover: v.product.trackInventory && perDay > 0 ? Math.floor(Math.max(v.stock, 0) / perDay) : null,
     };

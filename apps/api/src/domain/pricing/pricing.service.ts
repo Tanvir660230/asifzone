@@ -11,6 +11,7 @@ import {
   resolveUnitPrice,
   toMajor,
   variantShipsFree,
+  withMarkedSoldOut,
   type BundleRule,
   type CatalogVariant,
   type CouponRule,
@@ -172,8 +173,10 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       stock: true,
       isActive: true,
       freeDelivery: true,
+      markedSoldOut: true,
       product: {
         select: {
+          markedSoldOut: true,
           name: true,
           categoryId: true,
           basePrice: true,
@@ -203,8 +206,11 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       productCompareAt: r.product.compareAtPrice ? fromMajor(r.product.compareAtPrice.toString(), currency) : null,
       variantCompareAt: r.compareAtPrice ? fromMajor(r.compareAtPrice.toString(), currency) : null,
       purchasable: r.product.isActive && r.product.deletedAt === null && r.isActive,
-      trackInventory: r.product.trackInventory,
-      stock: r.stock,
+      // "Show as sold out" is enforced here too, so a stale cart or an old link can't buy what the shop took off sale.
+      ...(() => {
+        const forSale = withMarkedSoldOut(r.product.trackInventory, r.product.markedSoldOut, [r]);
+        return { trackInventory: forSale.trackInventory, stock: forSale.variants[0]!.stock };
+      })(),
       offers: offers.get(r.productId) ?? [],
       freeDelivery: variantShipsFree(r.product.freeDelivery, r.freeDelivery),
     });

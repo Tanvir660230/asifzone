@@ -173,6 +173,7 @@ export function StockLevels({ onAdjust, canAdjust }: { onAdjust: (prefill: Adjus
                         <span className="block max-w-[200px] truncate text-xs text-fg-subtle">
                           {[label, r.sku].filter(Boolean).join(" · ")}
                           {!r.active && " · inactive"}
+                          {r.shownSoldOut && <span className="text-danger-600"> · shown as sold out</span>}
                         </span>
                       </span>
                     </span>

@@ -29,6 +29,7 @@ export interface AuditSnapshot {
   taxRate: unknown;
   trackInventory: boolean;
   freeDelivery?: boolean;
+  markedSoldOut?: boolean;
   courierNoteRuleIds?: string[];
   lowStockThreshold: number;
   isFeatured: boolean;
@@ -57,6 +58,7 @@ export interface AuditSnapshot {
     price: unknown;
     compareAtPrice?: unknown;
     isActive?: boolean;
+    markedSoldOut?: boolean;
     images?: { imageId: string; sortOrder: number }[];
     stock: number;
   }[];
@@ -115,6 +117,7 @@ export function diffProduct(before: AuditSnapshot, after: AuditSnapshot): AuditE
       const changes: AuditChange[] = [];
       if (old.sku !== v.sku) changes.push({ field: "variant SKU", from: old.sku, to: v.sku });
       if ((old.isActive ?? true) !== (v.isActive ?? true)) changes.push({ field: `variant ${v.sku} active`, from: old.isActive ?? true, to: v.isActive ?? true });
+      if ((old.markedSoldOut ?? false) !== (v.markedSoldOut ?? false)) changes.push({ field: `variant ${v.sku} shown as sold out`, from: old.markedSoldOut ?? false, to: v.markedSoldOut ?? false });
       const gallery = (x: typeof v) => (x.images ?? []).map((i) => i.imageId).join(",");
       if (gallery(old) !== gallery(v)) {
         changes.push({ field: `variant ${v.sku} images`, from: `${old.images?.length ?? 0} image(s)`, to: `${v.images?.length ?? 0} image(s)` });
@@ -168,7 +171,7 @@ export function diffProduct(before: AuditSnapshot, after: AuditSnapshot): AuditE
     push("product.materials_updated", [{ field: "materials", from: materialSig(before).join(", ") || null, to: materialSig(after).join(", ") || null }]);
   }
 
-  push("product.details_updated", pick(before, after, ["name", "categoryId", "typeId", "brand", "brandTier", "shortDescription", "trackInventory", "freeDelivery", "courierNoteRuleIds", "lowStockThreshold", "isFeatured", "sortOrder", "tags"]));
+  push("product.details_updated", pick(before, after, ["name", "categoryId", "typeId", "brand", "brandTier", "shortDescription", "trackInventory", "freeDelivery", "markedSoldOut", "courierNoteRuleIds", "lowStockThreshold", "isFeatured", "sortOrder", "tags"]));
 
   return events;
 }

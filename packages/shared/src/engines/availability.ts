@@ -10,6 +10,27 @@ export function isAvailable(trackInventory: boolean, stock: number, quantity = 1
   return !trackInventory || stock >= quantity;
 }
 
+/**
+ * "Show as sold out" (Product.markedSoldOut / ProductVariant.markedSoldOut): the shop takes a product, or one variant,
+ * off sale while it still holds stock. Storefront and checkout see a marked variant as tracked with nothing in stock;
+ * ProductVariant.stock itself is never changed, so the admin keeps the real count and unmarking puts it straight back on
+ * sale. Apply it wherever stock is read for selling — the storefront products, the checkout catalog, the reorder check.
+ * On an untracked product a marked variant still needs tracking to read as sold out, so the others then get the line
+ * maximum (as sellable as untracked ever was).
+ */
+export function withMarkedSoldOut<V extends { stock: number; markedSoldOut?: boolean | null }>(
+  trackInventory: boolean,
+  productMarked: boolean | null | undefined,
+  variants: V[],
+): { trackInventory: boolean; variants: V[] } {
+  const marked = (v: V) => productMarked === true || v.markedSoldOut === true;
+  if (!variants.some(marked)) return { trackInventory, variants };
+  return {
+    trackInventory: true,
+    variants: variants.map((v) => ({ ...v, stock: marked(v) ? 0 : trackInventory ? v.stock : MAX_LINE_QUANTITY })),
+  };
+}
+
 /** The largest quantity a shopper may pick for one variant (0 = can't be bought now). */
 export function maxSellableQuantity(trackInventory: boolean, stock: number): number {
   return trackInventory ? Math.max(0, Math.min(stock, MAX_LINE_QUANTITY)) : MAX_LINE_QUANTITY;
