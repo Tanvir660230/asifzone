@@ -34,12 +34,16 @@ interface ProductShowcaseProps {
   /** How to get it: the store's delivery fees and its WhatsApp link (null = no active WhatsApp link). Absent in the admin
    * wizard's preview, which then shows the dates alone. */
   orderHelp?: { fees: { insideDhaka: string; elsewhere: string }; whatsappUrl: string | null };
+  /** The store's name: a product whose brand is the store itself doesn't repeat it above its title. */
+  storeName?: string;
 }
 
 /** Owns the one piece of state that needs to be shared between the gallery and the variant
  * selector — which image is currently "in focus" — since they live in separate, non-adjacent
  * parts of the two-column layout and neither can see the other's props directly. */
-export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [], orderHelp }: ProductShowcaseProps) {
+export function ProductShowcase({ product, urgencySignals, accordionItems, showSizeGuideLink, policyLines = [], orderHelp, storeName }: ProductShowcaseProps) {
+  // The store's own name above every one of its products says nothing the header logo doesn't; another brand's name does.
+  const brand = product.brand && product.brand.trim().toLowerCase() !== storeName?.trim().toLowerCase() ? product.brand : null;
   const [selection, setSelection] = useState<{ size: string | null; color: string | null }>({ size: null, color: null });
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
   const [showStickyBar, setShowStickyBar] = useState(false);
@@ -53,15 +57,15 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
     setPickerRequest({ intent, nonce: Date.now() });
   }
 
-  // Shows the mobile sticky bar only once the inline Add to Cart/Buy Now buttons have scrolled up past the top of the
-  // screen, so there's never two of the same action visible at once. Not while they're still below the fold on first
-  // load: the bar would then cover the product name and price the shopper is reading on the way down to them.
+  // The mobile sticky bar shows whenever the inline Add to Cart/Buy Now row is off screen — still below the fold on
+  // first load, or scrolled past — so the way to buy is always one tap away, and never twice on screen at once. The
+  // name and price sit above the photo's fold line on a phone, so the bar no longer covers what the shopper is reading.
   useEffect(() => {
-    const target = buttonsRef.current;
+    const target = buttonsRef.current?.querySelector("[data-inline-actions]") ?? buttonsRef.current;
     if (!target) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry) setShowStickyBar(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+        if (entry) setShowStickyBar(!entry.isIntersecting);
       },
       { rootMargin: "0px 0px -1px 0px" },
     );
@@ -86,7 +90,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:mt-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
+    <div className="grid grid-cols-1 gap-5 sm:gap-8 lg:mt-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-14">
       {/* From 1024px the gallery stays in view while the details beside it scroll past. */}
       <div className="lg:sticky lg:top-[calc(var(--sticky-top)+1.5rem)] lg:self-start lg:transition-[top] lg:duration-slow lg:ease-smooth">
         <ProductGallery images={galleryImages} productName={product.name} />
@@ -99,9 +103,9 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
               {/* The price tier is presentation a theme may hide (--product-tier-display); the brand always shows. */}
               <span className="[display:var(--product-tier-display)]">
                 {product.brandTier}
-                {product.brand ? " · " : ""}
+                {brand ? " · " : ""}
               </span>
-              {product.brand ?? ""}
+              {brand ?? ""}
             </p>
             <h1 className="ui-product-title mt-1 text-ink-900">{product.name}</h1>
           </div>
@@ -115,7 +119,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
             </span>
           </a>
         )}
-        <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 sm:mt-4">
           <span className={shown.flash ? "text-2xl font-bold tabular-nums text-ink-900" : "text-2xl font-semibold tabular-nums text-ink-900"} data-testid="product-price">
             <Money value={shown.price} />
           </span>
@@ -150,7 +154,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         <UrgencySignals signals={urgencySignals} />
         <AdminSalesBadge productId={product.id} />
 
-        <div className="mt-8" ref={buttonsRef}>
+        <div className="mt-6 sm:mt-8" ref={buttonsRef}>
           <VariantSelector
             variants={product.variants}
             productId={product.id}
@@ -179,9 +183,10 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={product.freeDelivery} />
         </div>
 
-        {policyLines.length > 0 && (
+        {/* The delivery box above already gives the delivery time and fee, so the delivery policy line would say it again. */}
+        {policyLines.some((l) => l.kind !== "delivery") && (
           <ul className="mt-6 space-y-3">
-            {policyLines.map(({ kind, label }) => {
+            {policyLines.filter((l) => l.kind !== "delivery").map(({ kind, label }) => {
               const Icon = POLICY_ICON[kind];
               return (
                 <li key={kind} className="flex items-center gap-3 text-sm text-ink-600">

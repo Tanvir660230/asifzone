@@ -1,3 +1,4 @@
+import { expandSizeFilter, groupSizeFacets } from "./size-facets";
 import { Prisma, type BrandTier } from "@prisma/client";
 import type {
   CreateProductInput,
@@ -639,11 +640,18 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
   };
   const search = searchTerms.length ? await resolveSearchFilter(searchTerms, scope) : null;
 
+  // A size chip stands for every spelling of that size ("2XL/23.5", "2XL 23.5" — see size-facets.ts).
+  const sizes = query.sizes?.length ? expandSizeFilter(query.sizes, await storedSizes()) : [];
+  // Size and colour are separate conditions (AND): as two `variants` keys the colour one used to replace the size one.
+  const variantFilters = [
+    ...(sizes.length ? [{ variants: { some: { size: { in: sizes } } } }] : []),
+    ...(query.colors?.length ? [{ variants: { some: { color: { in: query.colors } } } }] : []),
+  ];
   const where = {
     ...scope,
     ...(search ? search.filter : {}),
-    ...(query.sizes?.length ? { variants: { some: { size: { in: query.sizes } } } } : {}),
-    ...(query.colors?.length ? { variants: { some: { color: { in: query.colors } } } } : {}),
+    // The category scope carries an AND of its own (inCategoriesWhere); the variant conditions join it, not replace it.
+    ...(variantFilters.length ? { AND: [...asArray(scope.AND), ...variantFilters] } : {}),
     // The price filter matches the canonical "from" price (what the card shows), not the stored base price.
     ...sellingPriceWhere({ gte: query.minPrice, lte: query.maxPrice }),
   };
@@ -715,6 +723,16 @@ export async function listStorefrontProducts(query: StorefrontProductQuery) {
   return { items, total: resultTotal, page: query.page, pageSize: query.pageSize, didYouMean, ...(search ? { matchQuality: search.matchQuality } : {}) };
 }
 
+function asArray<T>(value: T | T[] | undefined): T[] {
+  return value === undefined ? [] : Array.isArray(value) ? value : [value];
+}
+
+/** Every distinct stored variant size — what a chosen size chip is expanded against. */
+async function storedSizes(): Promise<string[]> {
+  const rows = await prisma.productVariant.findMany({ where: { size: { not: NO_SIZE_VALUE } }, distinct: ["size"], select: { size: true } });
+  return rows.map((r) => r.size);
+}
+
 /** Available filter options (sizes/colors/price range) for the storefront's currently-scoped product set — recomputed per category/search so the panel never offers a facet with zero results. */
 export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
   await ensureFreshReadModels();
@@ -740,10 +758,10 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
   const [sizes, colors, priceRange] = await Promise.all([
     // "Standard" (no size) and blank colours are placeholders for types without that dimension — offering
     // them as filter chips would be meaningless (or an empty swatch).
-    prisma.productVariant.findMany({
+    prisma.productVariant.groupBy({
       where: { product: where, size: { not: NO_SIZE_VALUE } },
-      distinct: ["size"],
-      select: { size: true },
+      by: ["size"],
+      _count: { _all: true },
     }),
     prisma.productVariant.findMany({
       where: { product: where, color: { not: "" } },
@@ -755,7 +773,8 @@ export async function getStorefrontFacets(query: StorefrontFacetsQuery) {
   ]);
 
   return {
-    sizes: sizes.map((s) => s.size).sort(),
+    // One chip per size whatever its spelling, in size order (XS → 2XL, then numbers).
+    sizes: groupSizeFacets(sizes.map((s) => ({ size: s.size, count: s._count._all }))).map((f) => f.label),
     colors: colors.map((c) => ({ color: c.color, colorHex: c.colorHex })).sort((a, b) => a.color.localeCompare(b.color)),
     minPrice: priceRange._min.minSellingPrice ? Number(priceRange._min.minSellingPrice) : 0,
     maxPrice: priceRange._max.minSellingPrice ? Number(priceRange._max.minSellingPrice) : 0,

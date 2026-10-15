@@ -77,7 +77,9 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
         <div
           className={cn(
             "flex gap-2 overflow-x-auto pb-1",
-            !thumbsBelow && "lg:max-h-[34rem] lg:w-20 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0",
+            // Classic: below 1024px the photo is swiped and dots inside it say where you are — a thumbnail strip there
+            // only pushed the price and sizes down by another row.
+            !thumbsBelow && "max-lg:hidden lg:max-h-[34rem] lg:w-20 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0",
           )}
         >
           {images.map((img, i) => (
@@ -146,9 +148,38 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               <ZoomIn size={16} />
             </span>
             {hasMultiple && (
-              <span className="glass absolute bottom-3 left-3 rounded-[var(--chip-radius)] px-2.5 py-1 text-xs text-ink-900">
+              <span
+                className={cn(
+                  "glass absolute bottom-3 left-3 rounded-[var(--chip-radius)] px-2.5 py-1 text-xs text-ink-900",
+                  !thumbsBelow && "max-lg:hidden",
+                )}
+              >
                 {activeIndex + 1} / {images.length}
               </span>
+            )}
+            {hasMultiple && !thumbsBelow && (
+              // Where the thumbnails were on a phone: one dot per photo, the current one long. A tap on a dot jumps there.
+              <div
+                className="glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-2 lg:hidden"
+                data-testid="gallery-dots"
+              >
+                {images.map((img, i) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goTo(i);
+                    }}
+                    aria-label={`View image ${i + 1} of ${images.length}`}
+                    aria-current={i === activeIndex}
+                    className={cn(
+                      "relative h-1.5 rounded-full transition-[width,background-color] duration-200 ease-smooth after:absolute after:-inset-2.5",
+                      i === activeIndex ? "w-4 bg-ink-900" : "w-1.5 bg-ink-900/30",
+                    )}
+                  />
+                ))}
+              </div>
             )}
           </>
         ) : (

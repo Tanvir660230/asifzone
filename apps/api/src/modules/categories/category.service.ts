@@ -405,6 +405,7 @@ export async function permanentlyDeleteCategory(id: string) {
 
   await prisma.category.delete({ where: { id } });
   if (category.imageUrl) await deleteSiteImageFile(category.imageUrl);
+  if (category.wideImageUrl) await deleteSiteImageFile(category.wideImageUrl);
   if (category.bannerImageUrl) await deleteSiteImageFile(category.bannerImageUrl);
   await invalidateCache();
 }

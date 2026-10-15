@@ -12,7 +12,7 @@ import { Money } from "@/components/ui/money";
 import { resolveImageUrl } from "@/lib/image-url";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn } from "@/lib/utils";
-import { STOCK_TONE_CLASS, VariantOptionPickers, missingSelectionText, stockLine, useVariantOptions } from "./variant-option-pickers";
+import { StockBadge, VariantOptionPickers, missingSelectionText, stockLine, useVariantOptions } from "./variant-option-pickers";
 
 export type PickerIntent = "cart" | "buy";
 
@@ -170,11 +170,18 @@ export function VariantPickerDialog({
             onSelectSize={selectSize}
             onSelectColor={setColor}
             instanceId="picker"
+            lowStockThreshold={lowStockThreshold}
           />
 
-          <p aria-live="polite" className={cn("text-sm", stock ? STOCK_TONE_CLASS[stock.tone] : "text-ink-500")} data-testid="variant-picker-status">
-            {stock ? stock.text : missingSelectionText(options, size, color)}
-          </p>
+          <div aria-live="polite">
+            {stock ? (
+              <StockBadge stock={stock} testId="variant-picker-status" />
+            ) : (
+              <p className="text-sm text-ink-500" data-testid="variant-picker-status">
+                {missingSelectionText(options, size, color)}
+              </p>
+            )}
+          </div>
 
           {canConfirm && (
             <div className="flex items-center gap-3">

@@ -170,7 +170,7 @@ export function studioHealthChecks(sections: StudioSection[], now: Date, options
       checks.push({ sectionId: section.id, level: "tip", code: "missing-alt", message: "Some photos have no description (alt text)." });
     }
     if (section.type === "PROMO_BANNER" && hasImage && !text("mobileImageUrl")) {
-      checks.push({ sectionId: section.id, level: "tip", code: "wide-promo-no-mobile-image", message: "Add a portrait image for phones — a wide banner gets small on a 375px screen." });
+      checks.push({ sectionId: section.id, level: "tip", code: "wide-promo-no-mobile-image", message: "Add a phone photograph (16:9, 1200 × 675 px) — phones show a taller frame, so the wide one loses its sides." });
     }
   }
 

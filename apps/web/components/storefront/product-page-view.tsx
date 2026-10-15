@@ -93,7 +93,7 @@ function Block({ section, product, pageKeys }: { section: PublicSection; product
   const wrap = (node: React.ReactNode) => <Suspense fallback={<ProductCarouselSkeleton />}>{node}</Suspense>;
 
   if (section.key === "reviews") return <ProductReviews productId={product.id} productName={product.name} />;
-  if (section.key === "recentlyViewed") return <RecentlyViewedCarousel excludeProductId={product.id} />;
+  if (section.key === "recentlyViewed") return <RecentlyViewedCarousel excludeProductId={product.id} minProducts={2} />;
   if (section.key === "bundle") return wrap(<BundleCarousel productId={product.id} title={section.title} currency={product.pricing?.currency} />);
   if (LIST_KEYS.has(section.key)) {
     return wrap(<ListCarousel productId={product.id} listKey={section.key} pageKeys={pageKeys} title={section.title} />);
@@ -172,6 +172,7 @@ export async function ProductPageView({ product: rawProduct, mode, previewStatus
           showSizeGuideLink={showSizeGuideLink}
           policyLines={policyHighlights(policy)}
           orderHelp={orderHelp}
+          storeName={settings.storeName}
         />
       </div>
 

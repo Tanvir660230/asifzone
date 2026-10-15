@@ -72,7 +72,9 @@ test.describe("variants and media: SKU generator, per-colour galleries, captions
       { name: "white-1.png", mimeType: "image/png", buffer: PNG },
     ]);
     await expect(page.getByLabel("Image caption")).toHaveCount(3, { timeout: 30_000 });
-    await expect(page.getByText("1×1px").first()).toBeVisible();
+    // The stored size, and — a 1×1 test image being far below the product photo spec — the "too small" warning.
+    await expect(page.getByTestId("photo-fit").first()).toContainText("1 × 1 px");
+    await expect(page.getByTestId("photo-fit").first()).toHaveAttribute("data-fit", "small");
 
     // Caption the black-1 image (the input sits under its thumbnail); saving happens on blur.
     const first = page.getByLabel("Image caption").first();

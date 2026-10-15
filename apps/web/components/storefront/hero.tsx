@@ -45,6 +45,8 @@ interface HeroProps {
   secondaryCtaLabel?: string | null;
   secondaryCtaHref?: string | null;
   imageUrl?: string | null;
+  /** The phone version (under 640px, where the frame is 4:5); absent = phones show the middle of `imageUrl`. */
+  mobileImageUrl?: string | null;
   imageAltText?: string | null;
   /** The store's own choice for this section (Storefront Studio → Style); absent = the theme decides. */
   tone?: SectionAppearance["tone"];
@@ -66,6 +68,7 @@ export function Hero({
   secondaryCtaLabel,
   secondaryCtaHref,
   imageUrl,
+  mobileImageUrl,
   imageAltText,
   tone,
   layout,
@@ -158,13 +161,23 @@ export function Hero({
           className="ui-hero-media mx-auto mt-12 max-w-7xl px-4 pb-4 sm:mt-14 sm:px-6 sm:pb-6 lg:px-8 lg:pb-8"
         >
           <div className="ui-hero-media-frame relative overflow-hidden rounded-2xl bg-ink-900">
+            {mobileImageUrl && (
+              <Image
+                src={resolveImageUrl(mobileImageUrl)}
+                alt={imageAltText || headline || storeName}
+                fill
+                priority
+                sizes="(min-width: 640px) 1px, 100vw"
+                className="object-cover sm:hidden"
+              />
+            )}
             <Image
               src={resolveImageUrl(imageUrl)}
               alt={imageAltText || headline || storeName}
               fill
               priority
-              sizes="(min-width: 1280px) 1216px, 100vw"
-              className="object-cover"
+              sizes={mobileImageUrl ? "(min-width: 1280px) 1216px, (min-width: 640px) 100vw, 1px" : "(min-width: 1280px) 1216px, 100vw"}
+              className={mobileImageUrl ? "hidden object-cover sm:block" : "object-cover"}
             />
           </div>
         </motion.div>

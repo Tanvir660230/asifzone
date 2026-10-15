@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/courier-note-picker";
-import { uploadCategoryImage, uploadCategoryBannerImage } from "@/lib/api/categories";
+import { uploadCategoryImage } from "@/lib/api/categories";
 import { ImageUploadField } from "@/components/admin/image-upload-field";
 
 interface CategoryFormProps {
@@ -59,6 +59,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
           parentId: initial.parentId,
           imageUrl: initial.imageUrl,
           imageAltText: initial.imageAltText,
+          wideImageUrl: initial.wideImageUrl,
           bannerImageUrl: initial.bannerImageUrl,
           sortOrder: initial.sortOrder,
           isActive: initial.isActive,
@@ -77,7 +78,7 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
   const parentName = categories.find((c) => c.id === parentId)?.name;
 
   const imageUrl = watch("imageUrl");
-  const bannerImageUrl = watch("bannerImageUrl");
+  const wideImageUrl = watch("wideImageUrl");
 
 
 
@@ -107,26 +108,36 @@ export function CategoryForm({ categories, initial, defaultParentId, onSubmit, o
       </div>
 
       <input type="hidden" {...register("imageUrl")} />
-      <ImageUploadField
-        label="Category image"
-        upload={uploadCategoryImage}
-        value={imageUrl}
-        onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
-      />
+      {/* Homepage category tiles come in two shapes; each gets a photo made for it instead of one photo cropped twice. */}
+      <div className="space-y-4">
+        <ImageUploadField
+          label="Tall image"
+          upload={uploadCategoryImage}
+          value={imageUrl}
+          spec="categoryPortrait"
+          uploadLabel="Upload"
+          onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
+        />
+        <input type="hidden" {...register("wideImageUrl")} />
+        <ImageUploadField
+          label="Wide image (optional)"
+          upload={uploadCategoryImage}
+          value={wideImageUrl}
+          spec="categoryWide"
+          uploadLabel="Upload a wide image"
+          hint="Without it, wide tiles show the middle of the tall image."
+          onChange={(url) => setValue("wideImageUrl", url, { shouldValidate: true })}
+        />
+      </div>
 
       <div>
         <Label htmlFor="imageAltText">Image alt text (optional)</Label>
         <Input id="imageAltText" placeholder={`Defaults to "${initial?.name ?? "category name"}"`} {...register("imageAltText")} />
       </div>
 
+      {/* bannerImageUrl is kept as saved but no longer offered: no storefront page draws a category banner, so the field
+          only collected uploads that never appeared. */}
       <input type="hidden" {...register("bannerImageUrl")} />
-      <ImageUploadField
-        label="Banner image (category page hero, optional)"
-        upload={uploadCategoryBannerImage}
-        value={bannerImageUrl}
-        onChange={(url) => setValue("bannerImageUrl", url, { shouldValidate: true })}
-        uploadLabel="Click to upload a banner"
-      />
 
       <div className="grid grid-cols-2 gap-4">
         <div>

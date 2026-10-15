@@ -178,8 +178,8 @@ export async function processSocialImage(buffer: Buffer): Promise<string> {
 export const processBannerImage = (buffer: Buffer) => processSiteImage(buffer, "banners", 1920);
 /** PROMO_BANNER homepage-section images — same treatment as a banner, kept in its own folder since
  * it's managed through a separate admin surface (the homepage builder, not /admin/banners). */
-export const processHomepageImage = (buffer: Buffer) => processSiteImage(buffer, "homepage", 1600);
-export const processCategoryImage = (buffer: Buffer) => processSiteImage(buffer, "categories", 800);
+export const processHomepageImage = (buffer: Buffer) => processSiteImage(buffer, "homepage", 2100);
+export const processCategoryImage = (buffer: Buffer) => processSiteImage(buffer, "categories", 1600);
 export const processCategoryBannerImage = (buffer: Buffer) => processSiteImage(buffer, "category-banners", 1600);
 /** Rich-text-editor image inserts (product/category descriptions) — not tied to a product id, since it must also work before a new product has been saved. */
 export const processEditorImage = (buffer: Buffer) => processSiteImage(buffer, "editor", 1200);

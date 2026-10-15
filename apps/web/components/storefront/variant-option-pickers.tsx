@@ -2,11 +2,11 @@
 
 import { useMemo, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check } from "lucide-react";
+import { Check, CircleSlash, Flame } from "lucide-react";
 import { NO_SIZE_VALUE, isAvailable, variantStockState, type ProductVariant, type VariantDimension } from "@clothing-brand/shared";
 import { cn, isPaleColor } from "@/lib/utils";
 
-/** Below this many units a LOW_STOCK variant reads "Only a few left!" instead of "Limited stock" — wording only. */
+/** Below this many units a LOW_STOCK variant reads "Only a few left" instead of "Limited stock" — wording only. */
 const CRITICAL_STOCK_THRESHOLD = 3;
 
 /** Which option pickers a product needs and how to resolve a (size, color) choice to a variant — shared by the inline
@@ -45,27 +45,88 @@ export type VariantOptions = ReturnType<typeof useVariantOptions>;
 
 /** The shopper-facing stock line for a chosen variant. Deliberately no quantities: shoppers see whether they can buy it
  * (and a gentle "limited" hint), never how many units the shop holds. States come from the shared stock rule. */
-export function stockLine(trackInventory: boolean, stock: number, lowStockThreshold: number): { text: string; tone: "muted" | "warn" | "urgent" } {
+export type StockTone = "ok" | "warn" | "urgent" | "out";
+
+export function stockLine(trackInventory: boolean, stock: number, lowStockThreshold: number): { text: string; tone: StockTone } {
   const state = variantStockState(trackInventory, stock, lowStockThreshold);
-  if (state === "OUT_OF_STOCK") return { text: "Out of stock", tone: "muted" };
-  if (state === "LOW_STOCK") return stock <= CRITICAL_STOCK_THRESHOLD ? { text: "Only a few left!", tone: "urgent" } : { text: "Limited stock", tone: "warn" };
-  return { text: "In stock", tone: "muted" }; // IN_STOCK and UNLIMITED (D5)
+  if (state === "OUT_OF_STOCK") return { text: "Sold out", tone: "out" };
+  if (state === "LOW_STOCK") return stock <= CRITICAL_STOCK_THRESHOLD ? { text: "Only a few left — order soon", tone: "urgent" } : { text: "Limited stock — order soon", tone: "warn" };
+  return { text: "In stock — ready to ship", tone: "ok" }; // IN_STOCK and UNLIMITED (D5)
 }
 
-/** An option that can't be bought right now: a quiet fill, faded text and one fine diagonal across the tile (SoldOutMark),
- * so it reads as "sold out" at a glance while the value stays legible (information, not an error, so no red). */
-const UNAVAILABLE_PILL = "border-line bg-surface-muted text-ink-400";
+/** A size's state across its variants (any colour): in stock if any variant is, "few left" if only low ones are. */
+type SizeState = "in" | "low" | "out";
+
+/** How full the little stock meter is (of 5) — a feeling of scarcity without ever showing a number. */
+const METER_FILL: Record<StockTone, number> = { ok: 5, warn: 2, urgent: 1, out: 0 };
+
+/** The chosen option's stock, as a badge: a live green dot when it's in stock; a flame and a nearly empty meter when
+ * it's running low; red when it's sold out. Wording and meter only — never a quantity. */
+export function StockBadge({ stock, testId }: { stock: { text: string; tone: StockTone }; testId: string }) {
+  const { tone, text } = stock;
+  return (
+    <p
+      className={cn(
+        "inline-flex max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium",
+        tone === "ok" && "bg-success-50 text-success-700",
+        tone === "warn" && "bg-warning-50 text-warning-700",
+        tone === "urgent" && "bg-sale-50 text-sale-600",
+        tone === "out" && "bg-danger-50 text-danger-700",
+      )}
+      data-testid={testId}
+      data-tone={tone}
+    >
+      {tone === "ok" && (
+        <span aria-hidden="true" className="relative flex h-2 w-2 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-500 opacity-60 motion-reduce:hidden" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-success-500" />
+        </span>
+      )}
+      {(tone === "warn" || tone === "urgent") && <Flame size={14} aria-hidden="true" className="shrink-0" />}
+      {tone === "out" && <CircleSlash size={14} aria-hidden="true" className="shrink-0" />}
+      <span className="min-w-0">{text}</span>
+      {(tone === "warn" || tone === "urgent") && (
+        <span aria-hidden="true" className="flex shrink-0 gap-0.5">
+          {Array.from({ length: 5 }, (_, i) => (
+            <span key={i} className={cn("h-2.5 w-1 rounded-full", i < METER_FILL[tone] ? "bg-current" : "bg-current opacity-20")} />
+          ))}
+        </span>
+      )}
+    </p>
+  );
+}
+
+/** An option that can't be bought right now: a red-tinted tile crossed by one red diagonal (SoldOutMark) — the cross says
+ * "sold out" by itself, so no label repeats it; choosing the tile shows the "Sold out" badge and the back-in-stock alert. */
+const UNAVAILABLE_PILL = "border-danger-200 bg-danger-50/60 text-ink-500";
+
+/** The small "Few left" tag on a size tile's top edge while only a little of that size remains — the one state a tile
+ * can't show by itself. (Sold out is the red cross.) */
+function SizeTag({ state }: { state: SizeState }) {
+  if (state !== "low") return null;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute -top-2 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-px text-[9px] font-semibold uppercase leading-tight tracking-wide text-white shadow-sm",
+        "bg-sale-500",
+      )}
+    >
+      Few left
+    </span>
+  );
+}
 
 /** The fine corner-to-corner line across a sold-out tile; it stretches with the tile and keeps a hairline weight. */
 function SoldOutMark({ className }: { className?: string }) {
   return (
     <svg aria-hidden="true" className={cn("pointer-events-none absolute inset-0 h-full w-full", className)} preserveAspectRatio="none" viewBox="0 0 100 100">
-      <line x1="0" y1="100" x2="100" y2="0" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+      <line x1="0" y1="100" x2="100" y2="0" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
 
-export const STOCK_TONE_CLASS = { muted: "text-ink-500", warn: "font-medium text-brass-600", urgent: "font-medium text-danger-600" } as const;
+export const STOCK_TONE_CLASS: Record<StockTone, string> = { ok: "text-success-700", warn: "font-medium text-warning-700", urgent: "font-medium text-sale-600", out: "font-medium text-danger-700" };
 
 interface VariantOptionPickersProps {
   variants: ProductVariant[];
@@ -84,13 +145,21 @@ interface VariantOptionPickersProps {
   /** Sold-out choices can still be picked (they stay crossed out), so the shopper can ask to be told when one is back.
    * On for the product page; off in the buying popup, where only what can be bought is offered. */
   soldOutSelectable?: boolean;
+  /** The product's low-stock line: sizes with only low-stock variants get a "Few left" tag. */
+  lowStockThreshold?: number;
 }
 
 /** Size pills and colour swatches. Out-of-stock choices stay visible but crossed out: disabled, or (soldOutSelectable)
  * pickable for a back-in-stock alert. */
-export function VariantOptionPickers({ variants, trackInventory, options, selectedSize, selectedColor, onSelectSize, onSelectColor, instanceId, sizeHeadingExtra, suggestedSize, soldOutSelectable = false }: VariantOptionPickersProps) {
+export function VariantOptionPickers({ variants, trackInventory, options, selectedSize, selectedColor, onSelectSize, onSelectColor, instanceId, sizeHeadingExtra, suggestedSize, soldOutSelectable = false, lowStockThreshold }: VariantOptionPickersProps) {
   const sellable = (v: ProductVariant) => isAvailable(trackInventory, v.stock);
   const sizeHasStock = (size: string) => variants.some((v) => v.size === size && sellable(v));
+  const sizeState = (size: string): SizeState => {
+    const states = variants.filter((v) => v.size === size).map((v) => variantStockState(trackInventory, v.stock, lowStockThreshold ?? 0));
+    if (states.some((st) => st === "IN_STOCK" || st === "UNLIMITED")) return "in";
+    if (lowStockThreshold !== undefined && states.some((st) => st === "LOW_STOCK")) return "low";
+    return states.some((st) => st !== "OUT_OF_STOCK") ? "in" : "out";
+  };
   const comboHasStock = (size: string, color: string) => variants.some((v) => v.size === size && v.color === color && sellable(v));
   const sizeLabelOf = (size: string) => variants.find((v) => v.size === size)?.sizeLabel;
   const hasSizeLabels = options.sizes.some((s) => Boolean(sizeLabelOf(s)));
@@ -105,7 +174,8 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
           </div>
           <div
             // Sizes with a measurement ("M · 55cm") sit in an even grid of two-line tiles; bare sizes stay compact pills.
-            className={hasSizeLabels ? "grid grid-cols-3 gap-2 sm:grid-cols-4" : "flex flex-wrap gap-2"}
+            // pt-2 / gap-y-3: room for the tags that sit on a tile's top edge.
+            className={hasSizeLabels ? "grid grid-cols-3 gap-x-2 gap-y-3 pt-2 sm:grid-cols-4" : "flex flex-wrap gap-x-2 gap-y-3 pt-2"}
             role="group"
             aria-label={options.sizeLabel}
           >
@@ -114,18 +184,24 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
               const inStock = sizeHasStock(size);
               const isSelected = selectedSize === size;
               const isSuggested = suggestedSize === size && inStock;
+              const state = inStock ? sizeState(size) : "out";
               return (
+                // The wrapper carries the edge tag, which the tile's own overflow clipping would cut off.
+                <div key={size} className="relative">
+                {/* Chosen, the stock badge below says it — the tag would only repeat it. */}
+                {!isSelected && <SizeTag state={state} />}
                 <motion.button
-                  key={size}
                   type="button"
                   onClick={() => onSelectSize(size)}
                   disabled={!inStock && !soldOutSelectable}
                   aria-label={inStock ? (isSuggested ? `${size}, your usual size` : size) : `${size} — out of stock`}
+                  // "Few left" is a description, not part of the name: the size is still called by its own name.
+                  aria-description={state === "low" && !isSelected ? "Few left" : undefined}
                   aria-pressed={isSelected}
                   title={inStock ? undefined : "Out of stock"}
                   whileTap={inStock || soldOutSelectable ? { scale: 0.9 } : undefined}
                   className={cn(
-                    "relative isolate flex items-center justify-center overflow-hidden border text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
+                    "relative isolate flex w-full items-center justify-center overflow-hidden border text-sm transition-colors duration-200 ease-smooth disabled:cursor-not-allowed",
                     hasSizeLabels ? "h-14 flex-col gap-0.5 rounded-xl px-2" : "h-10 min-w-12 rounded-[var(--chip-radius)] px-3",
                     isSelected
                       ? cn("border-transparent text-cream-50", !inStock && "text-cream-50/70")
@@ -141,7 +217,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                       transition={{ type: "spring", stiffness: 500, damping: 32 }}
                     />
                   )}
-                  {!inStock && <SoldOutMark className={isSelected ? "text-cream-50/40" : "text-ink-300"} />}
+                  {!inStock && <SoldOutMark className="text-danger-400" />}
                   <span className="font-medium leading-tight">{size}</span>
                   {label && <span className={cn("text-[11px] leading-tight tabular-nums", isSelected ? "text-cream-50/70" : inStock ? "text-ink-500" : "text-ink-400")}>{label}</span>}
                   {isSuggested && !isSelected && (
@@ -149,14 +225,10 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                     <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-accent ring-2 ring-canvas" />
                   )}
                 </motion.button>
+                </div>
               );
             })}
           </div>
-          {options.sizes.some((s) => !sizeHasStock(s)) && (
-            <p className="mt-2 text-xs text-ink-500" data-testid="sold-out-legend">
-              Faded sizes are sold out{soldOutSelectable ? " — tap one to be told when it's back." : "."}
-            </p>
-          )}
         </div>
       )}
 
@@ -168,7 +240,8 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
           </p>
           <div className="flex flex-wrap gap-2" role="group" aria-label={options.colorLabel}>
             {options.colors.map((color) => {
-              const soldOut = selectedSize ? !comboHasStock(selectedSize, color) : false;
+              // With one colour only, a crossed swatch would just repeat the crossed size above it.
+              const soldOut = selectedSize && options.colors.length > 1 ? !comboHasStock(selectedSize, color) : false;
               const disabled = soldOut && !soldOutSelectable;
               const colorHex = variants.find((v) => v.color === color)?.colorHex;
               const isSelected = selectedColor === color;
@@ -193,7 +266,7 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
                           : "border-ink-200 text-ink-700 hover:border-ink-900",
                     )}
                   >
-                    {soldOut && !isSelected && <SoldOutMark className="text-ink-300" />}
+                    {soldOut && !isSelected && <SoldOutMark className="text-danger-400" />}
                     {color}
                   </motion.button>
                 );

@@ -97,6 +97,7 @@ function renderSection(section: RenderableSection, data: HomeSectionData, mihrab
         secondaryCtaLabel: config.secondaryCtaLabel,
         secondaryCtaHref: config.secondaryCtaHref,
         imageUrl: config.imageUrl,
+        mobileImageUrl: config.mobileImageUrl,
         imageAltText: config.imageAltText,
       };
       return mihrab ? <MihrabHero {...props} /> : <Hero {...props} tone={appearance?.tone} layout={appearance?.layout} />;

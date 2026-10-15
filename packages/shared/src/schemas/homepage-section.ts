@@ -137,6 +137,8 @@ export const heroConfigSchema = z.object({
   secondaryCtaHref: nullableString(300),
   /** Optional large image shown with the copy (the hero is otherwise a typographic band). */
   imageUrl: nullableMediaUrl(),
+  /** Optional phone version (4:5, under 640px), where the wide photograph would lose its sides. */
+  mobileImageUrl: nullableMediaUrl(),
   imageAltText: nullableString(200),
   appearance: heroAppearanceSchema,
 });

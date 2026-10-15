@@ -60,22 +60,23 @@ export function BannerForm({ banner, submitLabel, onSubmit, onCancel }: BannerFo
       <input type="hidden" {...register("mobileImageUrl")} />
       <div>
         <ImageUploadField
-          label="Banner image"
+          label="Computer image"
           upload={bannersApi.uploadBannerImage}
           value={imageUrl}
           onChange={(url) => setValue("imageUrl", url, { shouldValidate: true })}
-          hint="Recommended size: 1920×640px (3:1). The homepage hero is locked to this ratio so the full image — including any text baked into it — always shows edge-to-edge with no cropping, at any screen size."
+          spec="bannerDesktop"
+          hint="The hero is locked to this shape, so a picture exported at this size — including any text baked into it — shows edge to edge with nothing cut off."
         />
         {errors.imageUrl && <p className="ui-field-error">{errors.imageUrl.message}</p>}
       </div>
       <ImageUploadField
-        label="Mobile image (optional)"
+        label="Phone image (optional)"
         upload={bannersApi.uploadBannerImage}
         value={mobileImageUrl}
         onChange={(url) => setValue("mobileImageUrl", url, { shouldValidate: true })}
-        frame="square"
+        spec="bannerPhone"
         uploadLabel="Upload"
-        hint="Recommended size: 1254×1254px (square, 1:1) — the hero switches to a square frame below desktop width. Without this, phones fall back to a center-crop of the wide image above, which can cut off text baked into it."
+        hint="Phones and tablets show a square hero. Without this picture they get the middle of the wide one, which cuts off text baked into it."
       />
       <div>
         <Label htmlFor="placement">Placement</Label>

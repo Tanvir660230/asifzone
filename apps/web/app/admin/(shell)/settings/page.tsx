@@ -395,7 +395,8 @@ export default function SettingsPage() {
               <input type="hidden" {...register("ogImageUrl")} />
               <ImageUploadField
                 label="Social sharing image"
-                hint="Shown when the store is shared on Facebook, WhatsApp and similar. Cropped to 1200×630; pages with their own image (products, categories) use theirs. Empty uses the logo."
+                spec="shareImage"
+                hint="Pages with their own image (products, categories) use theirs. Empty uses the logo."
                 value={ogImageUrl}
                 upload={settingsApi.uploadSocialImage}
                 onChange={(url) => setValue("ogImageUrl", url, { shouldValidate: true })}

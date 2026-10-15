@@ -7,6 +7,7 @@ export const createCategorySchema = z.object({
   parentId: nullableCuid(),
   imageUrl: nullableMediaUrl(),
   imageAltText: nullableString(200),
+  wideImageUrl: nullableMediaUrl(),
   bannerImageUrl: nullableMediaUrl(),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),

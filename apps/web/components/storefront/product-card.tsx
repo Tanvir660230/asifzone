@@ -126,9 +126,9 @@ function ClassicProductCard({ product, priority }: ProductCardProps) {
           </span>
         )}
         {soldOut && (
-          // A quiet label where the discount badge would sit; the washed-out photo already says "not available".
+          // A red label where the discount badge would sit — the same red "Sold out" the size tiles on the product page use.
           <span
-            className="pointer-events-none absolute left-3 top-3 rounded-full bg-surface/95 px-2.5 py-1 text-[11px] font-medium ui-caps text-ink-700 shadow-sm"
+            className="pointer-events-none absolute left-3 top-3 rounded-full bg-danger-500 px-2.5 py-1 text-[11px] font-semibold ui-caps text-white shadow-sm"
             data-testid="card-sold-out"
           >
             Sold out
@@ -175,23 +175,29 @@ function ClassicProductCard({ product, priority }: ProductCardProps) {
           </button>
         )}
       </div>
-      <Link href={`/product/${product.slug}`} className="mt-3.5 block space-y-1.5">
-        <p className="text-xs ui-caps text-ink-400 [display:var(--card-tier-display)]">{product.brandTier}</p>
-        {/* Two lines, always: a one-line name reserves the second line, so prices sit on one baseline across a row. */}
-        <h3 className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 tracking-[var(--card-title-tracking)] text-ink-900 transition-colors duration-200 group-hover:text-ink-700">{product.name}</h3>
+      <Link href={`/product/${product.slug}`} className="mt-3 block space-y-1">
+        {/* Price first, right under the photo: it is what a shopper scans a grid for, and it can never drift away from
+            the photo when a name is short. Every card starts with it, so prices share one line across a row. */}
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          {/* Server-resolved "from" price — formatted, never computed here. */}
+          <span
+            className={cn("text-base tabular-nums", soldOut ? "font-medium text-ink-500" : shown.flash ? "font-bold text-ink-900" : "font-semibold text-ink-900")}
+            data-testid="card-price"
+          >
+            <Money value={shown.price} />
+          </span>
+          {!soldOut && shown.was !== null && Number(shown.was) > Number(shown.price) && (
+            <span className="text-xs tabular-nums text-fg-muted line-through"><Money value={shown.was} /></span>
+          )}
+        </div>
+        <h3 className="line-clamp-2 text-sm leading-5 tracking-[var(--card-title-tracking)] text-ink-700 transition-colors duration-200 group-hover:text-ink-900">{product.name}</h3>
+        <p className="text-[11px] ui-caps text-ink-400 [display:var(--card-tier-display)]">{product.brandTier}</p>
         {product.reviewCount > 0 && (
           <div className="flex items-center gap-1.5">
             <StarRating value={product.avgRating} size={11} />
             <span className="text-xs text-ink-400">({product.reviewCount})</span>
           </div>
         )}
-        <div className="flex items-center gap-2">
-          {/* Server-resolved "from" price — formatted, never computed here. */}
-          <span className={cn("text-sm", soldOut ? "font-medium text-ink-500" : shown.flash ? "font-bold text-ink-900" : "font-semibold text-ink-900")}><Money value={shown.price} /></span>
-          {!soldOut && shown.was !== null && Number(shown.was) > Number(shown.price) && (
-            <span className="text-xs text-fg-muted line-through"><Money value={shown.was} /></span>
-          )}
-        </div>
         {colors.length > 1 && (
           <div className="flex items-center gap-1.5 pt-0.5">
             {colors.slice(0, 5).map(([color, hex]) => (

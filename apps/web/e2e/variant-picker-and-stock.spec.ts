@@ -84,7 +84,7 @@ test("stock is shown as a state — never a quantity", async ({ page }) => {
   await selector.getByRole("group", { name: "Color" }).first().getByRole("button", { name: "Black", exact: true }).click();
   await expect(page.getByTestId("variant-stock-status")).toContainText("In stock");
   await selector.getByRole("group", { name: "Color" }).first().getByRole("button", { name: "White", exact: true }).click();
-  await expect(page.getByTestId("variant-stock-status")).toContainText("Only a few left!"); // 2 units — but never "2"
+  await expect(page.getByTestId("variant-stock-status")).toContainText("Only a few left"); // 2 units — but never "2"
   await expect(page.locator("body")).not.toContainText(QUANTITY_TEXT);
 });
 
@@ -102,7 +102,7 @@ test("Add to Cart with nothing chosen opens the options popup, and the choice is
   // L / White is sold out: its swatch is disabled in this size.
   await expect(dialog.getByRole("button", { name: /White — out of stock in this size/ })).toBeDisabled();
   await dialog.getByRole("button", { name: "Black", exact: true }).click();
-  await expect(dialog.getByTestId("variant-picker-status")).toHaveText("In stock");
+  await expect(dialog.getByTestId("variant-picker-status")).toContainText("In stock");
   await expect(dialog).not.toContainText(QUANTITY_TEXT);
   await confirm.click();
 

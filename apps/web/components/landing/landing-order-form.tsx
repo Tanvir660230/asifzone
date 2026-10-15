@@ -228,7 +228,7 @@ export function LandingOrderForm({ product, codEnabled }: { product: Product; co
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-fg">পরিমাণ</p>
-          {stock && stock.tone !== "muted" && (
+          {stock && stock.tone !== "ok" && (
             <p className={cn("mt-0.5 text-xs font-medium", stock.tone === "urgent" ? "text-danger-600" : "text-sale-600")} data-testid="landing-stock">
               {stock.tone === "urgent" ? "আর মাত্র কয়েকটি আছে" : "স্টক সীমিত, দ্রুত অর্ডার করুন"}
             </p>

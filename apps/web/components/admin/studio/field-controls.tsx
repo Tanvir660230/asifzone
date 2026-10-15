@@ -351,15 +351,17 @@ function ImageField({
   altError?: string;
 }) {
   const url = typeof config[field.key] === "string" ? (config[field.key] as string) : "";
+  // A frame from lib/image-specs.ts: the field asks for its exact size and checks the picture against it.
+  const spec = typeof field.spec === "function" ? field.spec(config) : field.spec;
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     setSize(null);
-    if (!url) return;
+    if (!url || spec) return;
     const img = new window.Image();
     img.onload = () => setSize({ w: img.naturalWidth, h: img.naturalHeight });
     img.src = resolveImageUrl(url);
-  }, [url]);
+  }, [url, spec]);
 
   const lowRes = size !== null && size.w < 1200;
   return (
@@ -369,8 +371,11 @@ function ImageField({
         value={url}
         upload={uploadHomepageSectionImage}
         onChange={(next) => onChange(setAt(config, field.key, next))}
+        spec={spec}
         hint={
-          size ? (
+          spec ? (
+            field.hint
+          ) : size ? (
             <span className={cn(lowRes && "text-warning-700")}>
               {size.w}×{size.h}px{lowRes ? " — small for a large screen; it may look soft. Use 1600px or wider." : ""}
             </span>

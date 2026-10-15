@@ -303,15 +303,18 @@ const componentTokens = {
   "--card-frame-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
   "--card-frame-shadow-hover": "0 2px 6px -1px rgba(20,20,20,0.07), 0 8px 20px -4px rgba(20,20,20,0.10)",
   "--card-image-zoom": "1.05",
-  "--card-tier-display": "block",
+  // Off on cards: every product carries a tier ("Premium"), so on a card it is a line that says nothing; the product page
+  // still shows it beside the brand (--product-tier-display).
+  "--card-tier-display": "none",
   "--product-tier-display": "inline",
   "--card-title-tracking": "0.025em",
   // Content tiles (values grid, info panels): their hairline frame.
   "--panel-border": "rgb(var(--color-ink-100))",
   "--panel-shadow": "0 1px 2px 0 rgba(20,20,20,0.06)",
   // Product page title.
-  "--product-title-size": "1.875rem",
-  "--product-title-leading": "2.25rem",
+  // Phones get a smaller title so the price and sizes reach the first screen; from ~900px it is the full 1.875rem.
+  "--product-title-size": "clamp(1.5rem, 1.2rem + 1.2vw, 1.875rem)",
+  "--product-title-leading": "1.2",
   "--product-title-weight": "500",
   "--product-title-tracking": "0.025em",
   // Section titles (carousels and other homepage/product-page rails): mobile, then ≥640px.

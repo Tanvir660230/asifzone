@@ -1,4 +1,5 @@
 import type { HomepageSectionType } from "@clothing-brand/shared";
+import { heroPhotoSpecKey, type ImageSpecKey } from "@/lib/image-specs";
 import type { StoreLayout } from "@/lib/theme-layout";
 
 /**
@@ -26,7 +27,15 @@ export type FieldDef =
   | (FieldBase & { kind: "text"; max: number })
   | (FieldBase & { kind: "textarea"; max: number; rows?: number })
   | (FieldBase & { kind: "link" })
-  | (FieldBase & { kind: "image"; altKey?: string; aspectHint?: string })
+  | (FieldBase & {
+      kind: "image";
+      altKey?: string;
+      /** Free-text shape advice, for a frame without an entry in lib/image-specs.ts. */
+      aspectHint?: string;
+      /** The storefront frame it fills (exact pixel size + fit check), or a function of the config when the section's
+       * style changes the frame. Takes precedence over aspectHint. */
+      spec?: ImageSpecKey | ((config: Record<string, unknown>) => ImageSpecKey | undefined);
+    })
   | (FieldBase & { kind: "choice"; options: ChoiceOption[]; defaultValue: string | number })
   | (FieldBase & { kind: "number"; min: number; max: number; defaultValue: number })
   | (FieldBase & { kind: "category" })
@@ -118,7 +127,23 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
       ...BUTTON("ctaLabel", "ctaHref", "Explore the collection"),
       { key: "secondaryCtaLabel", label: "Second button text", kind: "text", max: 60 },
       { key: "secondaryCtaHref", label: "Second button link", kind: "link" },
-      { key: "imageUrl", label: "Photograph", kind: "image", altKey: "imageAltText", aspectHint: "Landscape, at least 1600px wide." },
+      {
+        key: "imageUrl",
+        label: "Photograph",
+        kind: "image",
+        altKey: "imageAltText",
+        spec: (c) => heroPhotoSpecKey((c.appearance as { layout?: string } | undefined)?.layout),
+      },
+      // Phones draw the hero photo as a tall 4:5 frame — a wide photograph loses its sides there, so it gets its own.
+      {
+        key: "mobileImageUrl",
+        label: "Phone photograph (optional)",
+        kind: "image",
+        spec: "heroSectionPhone",
+        hint: "Without it, phones show the middle of the photograph above.",
+        presets: ["classic"],
+        showIf: has("imageUrl"),
+      },
     ],
     style: [
       TONE,
@@ -217,7 +242,14 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
       { key: "heading", label: "Heading", kind: "text", max: 200, hint: "Empty uses your store tagline, then the store name." },
       { key: "bodyText", label: "Text", kind: "textarea", max: 1000, rows: 4 },
       ...BUTTON("ctaLabel", "ctaHref", "Explore the collection"),
-      { key: "imageUrl", label: "Photograph", kind: "image", altKey: "imageAltText", aspectHint: "Portrait (4:5) works best beside the text; landscape for the backdrop." },
+      {
+        key: "imageUrl",
+        label: "Photograph",
+        kind: "image",
+        altKey: "imageAltText",
+        aspectHint: "Landscape, at least 1800px wide, for the backdrop.",
+        spec: (c) => ((c.appearance as { layout?: string } | undefined)?.layout === "backdrop" ? undefined : "brandStory"),
+      },
     ],
     style: [
       { ...TONE, showIf: (c) => !(c.imageUrl && (c.appearance as { layout?: string } | undefined)?.layout === "backdrop") },
@@ -280,8 +312,8 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
       { key: "bodyText", label: "Text", kind: "textarea", max: 500, rows: 2 },
       { key: "ctaLabel", label: "Button text", kind: "text", max: 60 },
       { key: "linkUrl", label: "Link", kind: "link", hint: "The whole banner links here." },
-      { key: "imageUrl", label: "Photograph (optional)", kind: "image", altKey: "imageAltText", aspectHint: "Wide — about 3:1, at least 1800px. Without a photo it is a text band." },
-      { key: "mobileImageUrl", label: "Phone photograph (optional)", kind: "image", aspectHint: "Portrait or square, for screens under 640px.", showIf: has("imageUrl") },
+      { key: "imageUrl", label: "Photograph (optional)", kind: "image", altKey: "imageAltText", spec: "promoDesktop", hint: "Without a photo it is a text band." },
+      { key: "mobileImageUrl", label: "Phone photograph (optional)", kind: "image", spec: "promoPhone", hint: "Without it, phones show the middle of the photograph above.", showIf: has("imageUrl") },
     ],
     style: [
       { ...TONE, showIf: lacks("imageUrl") },
@@ -380,7 +412,7 @@ export const SECTION_FIELDS: Record<HomepageSectionType, SectionFields> = {
         newItem: () => ({ imageUrl: "", altText: "", caption: "", linkUrl: "" }),
         summary: (item) => String(item.caption || item.altText || (item.imageUrl ? "Photo" : "New photo")),
         fields: [
-          { key: "imageUrl", label: "Photo", kind: "image", altKey: "altText", aspectHint: "Portrait (4:5) for the grid." },
+          { key: "imageUrl", label: "Photo", kind: "image", altKey: "altText", spec: "galleryPhoto" },
           { key: "caption", label: "Caption", kind: "text", max: 80 },
           { key: "linkUrl", label: "Link", kind: "link" },
         ],
