@@ -10,6 +10,7 @@ import {
   fromMajor,
   isAvailable,
   maxSellableQuantity,
+  withMarkedSoldOut,
   resolveZone,
   toMajor,
   type Quote,
@@ -647,6 +648,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
       compareAtPrice: true,
       stock: true,
       isActive: true,
+      markedSoldOut: true,
       product: {
         select: {
           id: true,
@@ -655,6 +657,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
           basePrice: true,
           compareAtPrice: true,
           trackInventory: true,
+          markedSoldOut: true,
           isActive: true,
           deletedAt: true,
           images: { take: 1, orderBy: { sortOrder: "asc" }, select: { url: true } },
@@ -675,8 +678,11 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
 
   return items.map((item) => {
     const variant = variantById.get(item.variantId);
+    // What a shopper can buy again: a variant the shop marked sold out has nothing to sell, whatever its stock.
+    const forSale = variant ? withMarkedSoldOut(variant.product.trackInventory, variant.product.markedSoldOut, [variant]) : null;
+    const sellStock = forSale?.variants[0]!.stock ?? 0;
     const available =
-      variant && variant.isActive && variant.product.isActive && !variant.product.deletedAt && isAvailable(variant.product.trackInventory, variant.stock);
+      variant && forSale && variant.isActive && variant.product.isActive && !variant.product.deletedAt && isAvailable(forSale.trackInventory, sellStock);
     const usable = opts.requireAvailable ? available : Boolean(variant);
     return {
       ...item,
@@ -688,7 +694,7 @@ async function attachLiveItemInfo<T extends { variantId: string }>(
               productName: variant.product.name,
               imageUrl: variant.product.images[0]?.url ?? null,
               price: pricing.get(variant.product.id)?.variants[variant.id]?.selling ?? Number(variant.price ?? variant.product.basePrice),
-              maxStock: maxSellableQuantity(variant.product.trackInventory, variant.stock),
+              maxStock: maxSellableQuantity(forSale!.trackInventory, sellStock),
             }
           : null,
     };

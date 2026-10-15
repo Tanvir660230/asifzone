@@ -589,10 +589,16 @@ export async function getProductBySlug(slug: string) {
 
   // Stock is overlaid live from the canonical inventory state, so `availability` (and the variant stock the page shows)
   // is never the cached copy's.
-  const liveStock = new Map(
-    (await prisma.productVariant.findMany({ where: { productId: product.id }, select: { id: true, stock: true } })).map((v) => [v.id, v.stock]),
-  );
-  const fresh = { ...product, variants: product.variants.map((v) => ({ ...v, stock: liveStock.get(v.id) ?? v.stock })) };
+  const liveRows = await prisma.productVariant.findMany({
+    where: { productId: product.id },
+    select: { id: true, stock: true, markedSoldOut: true, product: { select: { markedSoldOut: true } } },
+  });
+  const live = new Map(liveRows.map((v) => [v.id, v]));
+  const fresh = {
+    ...product,
+    markedSoldOut: liveRows[0]?.product.markedSoldOut ?? product.markedSoldOut,
+    variants: product.variants.map((v) => ({ ...v, stock: live.get(v.id)?.stock ?? v.stock, markedSoldOut: live.get(v.id)?.markedSoldOut ?? v.markedSoldOut })),
+  };
   const [presented] = await withStorefrontReadModel([fresh]);
   return presented;
 }
@@ -1854,6 +1860,20 @@ export async function updateProduct(
   }
 
   await invalidateCache({ productId: id, slug: newSlug ?? existing.slug, previousSlug: newSlug && newSlug !== existing.slug ? existing.slug : undefined });
+
+  // Turning "Show as sold out" off puts stock back on sale: customers waiting for it are told, exactly as for a restock.
+  const wasMarked = (v: { markedSoldOut?: boolean }) => existing.markedSoldOut === true || v.markedSoldOut === true;
+  if (existing.variants.some(wasMarked)) {
+    const now = await prisma.productVariant.findMany({
+      where: { productId: id, isActive: true },
+      select: { id: true, stock: true, markedSoldOut: true, product: { select: { markedSoldOut: true, trackInventory: true } } },
+    });
+    for (const v of now) {
+      const before = existing.variants.find((e) => e.id === v.id);
+      const onSaleNow = !v.product.markedSoldOut && !v.markedSoldOut && (!v.product.trackInventory || v.stock > 0);
+      if (before && wasMarked(before) && onSaleNow) replenished.push(v.id);
+    }
+  }
 
   // Fire-and-forget: real stock/price changes trigger real customer notifications — never
   // allowed to block or fail the admin's product save.

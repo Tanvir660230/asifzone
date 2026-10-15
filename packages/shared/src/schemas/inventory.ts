@@ -53,6 +53,8 @@ export interface StockLevelRow {
   lowStockThreshold: number;
   trackInventory: boolean;
   active: boolean;
+  /** Shown to shoppers as sold out whatever its stock (the variant or its whole product is marked). */
+  shownSoldOut: boolean;
   state: z.infer<typeof stockLevelStateEnum>;
   /** Available ÷ average daily units ordered over the last 30 days; null with no sales in that window or untracked. */
   daysOfCover: number | null;

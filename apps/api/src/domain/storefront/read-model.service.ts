@@ -17,7 +17,7 @@
  * same guard, and a full rebuild + drift report exist for reconciliation.
  */
 import { Prisma } from "@prisma/client";
-import { PRICING_VERSION, productAvailability, type ProductAvailability } from "@clothing-brand/shared";
+import { PRICING_VERSION, productAvailability, withMarkedSoldOut, type ProductAvailability } from "@clothing-brand/shared";
 import { prisma, type Db as AppDb } from "../../config/prisma";
 import { priceProductsForDisplay, type PriceableProduct, type ProductPricingDto } from "../pricing/pricing.service";
 import { deriveProductReadModel, type ReadModelRow } from "./read-model.derive";
@@ -181,7 +181,9 @@ export async function projectedSellingPrice(productId: string, db: Db = prisma):
 export interface StorefrontPresentable extends PriceableProduct {
   trackInventory: boolean;
   lowStockThreshold: number;
-  variants: Array<{ id: string; price: unknown; compareAtPrice?: unknown; isActive?: boolean; stock: number }>;
+  /** "Show as sold out" (withMarkedSoldOut) — absent on selects that predate it, which then sell on stock alone. */
+  markedSoldOut?: boolean;
+  variants: Array<{ id: string; price: unknown; compareAtPrice?: unknown; isActive?: boolean; stock: number; markedSoldOut?: boolean }>;
 }
 
 export type StorefrontProduct<T> = T & {
@@ -202,8 +204,12 @@ export type StorefrontProduct<T> = T & {
  * checks, recommendations and the flash-sale feed all return products through this one function. */
 export async function presentStorefrontProducts<T extends StorefrontPresentable>(products: T[], now: Date = new Date()): Promise<StorefrontProduct<T>[]> {
   const pricing = await priceProductsForDisplay(products, now);
-  return products.map((product) => {
-    const p = pricing.get(product.id)!;
+  return products.map((raw) => {
+    const p = pricing.get(raw.id)!;
+    // A product or variant the shop marked sold out reaches every shopper-facing reader with no stock to sell — its real
+    // stock stays in the database and in the admin.
+    const forSale = withMarkedSoldOut(raw.trackInventory, raw.markedSoldOut, raw.variants);
+    const product = forSale.variants === raw.variants ? raw : { ...raw, trackInventory: forSale.trackInventory, variants: forSale.variants };
     return {
       ...product,
       pricing: p,

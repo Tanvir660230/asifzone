@@ -68,6 +68,8 @@ export const createVariantSchema = z.object({
   isActive: z.boolean().optional(),
   /** Ships free, overriding the product's freeDelivery for this variant; null = follow the product. */
   freeDelivery: z.boolean().nullable().optional(),
+  /** Shown and sold as sold out whatever its stock (withMarkedSoldOut). */
+  markedSoldOut: z.boolean().optional(),
   /** Legacy single image. Sent alone (older clients) it means "this variant's gallery is exactly this image". */
   imageId: nullableCuid(),
   /** The variant's gallery in display order; the first is its primary image. Wins over `imageId` when present. */
@@ -135,6 +137,8 @@ export const baseProductSchema = z.object({
   /** Ships free. Shipping is waived only when every line of a cart is a free-delivery product (shipping engine,
    * docs/ORDER_ADJUSTMENTS.md §2) — a server-side pricing input, snapshotted per order line, never read back by old orders. */
   freeDelivery: z.boolean().default(false),
+  /** The whole product shown and sold as sold out whatever its stock (withMarkedSoldOut). */
+  markedSoldOut: z.boolean().default(false),
   /** Courier-note rules ticked on this product ("perfume — don't open"), on top of its category's. Sent whole; omit to leave
    * them alone. Read when a courier is booked, never by old bookings. */
   courierNoteRuleIds: z.array(z.string().min(1).max(40)).max(20).optional(),

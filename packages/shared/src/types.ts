@@ -122,6 +122,8 @@ export interface ProductVariant {
   isActive?: boolean;
   /** Ships free, overriding the product's freeDelivery for this variant. null/absent = follow the product. */
   freeDelivery?: boolean | null;
+  /** Shown and sold as sold out whatever its stock (withMarkedSoldOut). */
+  markedSoldOut?: boolean;
   imageId: string | null;
   /** The variant's own gallery, in display order (first = primary). */
   images?: { imageId: string; sortOrder: number }[];
@@ -193,6 +195,8 @@ export interface Product {
   trackInventory: boolean;
   /** Ships free (shipping waived when every line of a cart is free-delivery). */
   freeDelivery?: boolean;
+  /** The whole product shown and sold as sold out whatever its stock (withMarkedSoldOut). */
+  markedSoldOut?: boolean;
   /** Admin reads only: courier-note rules ticked on this product. */
   courierNoteRuleIds?: string[];
   lowStockThreshold: number;

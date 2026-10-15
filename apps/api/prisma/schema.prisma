@@ -473,6 +473,9 @@ model Product {
   /// product → the zone fee applies). Read only when pricing; each order line snapshots it (OrderItem.freeDeliverySnapshot)
   /// so changing it never touches an existing order (docs/ORDER_ADJUSTMENTS.md §2).
   freeDelivery       Boolean                  @default(false)
+  /// Shown and sold as sold out whatever its stock (a parcel on its way back, stock held for another channel…). Stock
+  /// itself is untouched; storefront and checkout treat every variant as having none (shared withMarkedSoldOut).
+  markedSoldOut      Boolean                  @default(false)
   /// CourierNoteRule ids ticked on this product ("perfume — don't open", "fragile") — on top of its category's. No FK, same
   /// as Category.courierNoteRuleIds. Read when a courier is booked (modules/courier/courier-note.ts).
   courierNoteRuleIds String[]                 @default([])
@@ -680,6 +683,8 @@ model ProductVariant {
   isActive                  Boolean                    @default(true)
   /// Ships free, overriding Product.freeDelivery for this variant (e.g. the 12ml free, the 6ml not). NULL = follow the product.
   freeDelivery              Boolean?
+  /// This variant alone shown and sold as sold out whatever its stock (the 6ml, while the 12ml sells) — see Product.markedSoldOut.
+  markedSoldOut             Boolean                    @default(false)
   /// The variant's primary image (swatch / cart thumbnail) — always the first of its `images` when it has any.
   imageId                   String?
   image                     ProductImage?              @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)

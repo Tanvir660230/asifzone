@@ -112,6 +112,7 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
       relations: [],
       trackInventory: true,
       freeDelivery: false,
+      markedSoldOut: false,
       courierNoteRuleIds: [],
       lowStockThreshold: 5,
       sortOrder: 0,
@@ -138,6 +139,7 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
     taxRate: initial.taxRate ? Number(initial.taxRate) : undefined,
     trackInventory: initial.trackInventory,
     freeDelivery: initial.freeDelivery ?? false,
+    markedSoldOut: initial.markedSoldOut ?? false,
     courierNoteRuleIds: initial.courierNoteRuleIds ?? [],
     lowStockThreshold: initial.lowStockThreshold,
     isFeatured: initial.isFeatured,
@@ -170,6 +172,7 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
       weight: v.weight ? Number(v.weight) : undefined,
       isActive: v.isActive ?? true,
       freeDelivery: v.freeDelivery ?? null,
+      markedSoldOut: v.markedSoldOut ?? false,
       imageId: v.imageId,
       // The variant's own gallery, in order (falling back to its single legacy image).
       imageIds: v.images?.length ? [...v.images].sort((a, b) => a.sortOrder - b.sortOrder).map((i) => i.imageId) : v.imageId ? [v.imageId] : [],

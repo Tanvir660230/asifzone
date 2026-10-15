@@ -30,7 +30,7 @@ export async function notifyBackInStock(variantId: string) {
   const alerts = await prisma.stockAlert.findMany({
     // Only customers with an email on file can be notified this way — phone-only guests/customers
     // just never get picked up here (no per-item try/catch below, so this must be filtered up front).
-    where: { variantId, notifiedAt: null, customer: { email: { not: null } }, variant: { isActive: true, product: PURCHASABLE_PRODUCT_WHERE } },
+    where: { variantId, notifiedAt: null, customer: { email: { not: null } }, variant: { isActive: true, markedSoldOut: false, product: { ...PURCHASABLE_PRODUCT_WHERE, markedSoldOut: false } } },
     include: {
       customer: { select: { email: true, name: true } },
       variant: { include: { product: true } },
