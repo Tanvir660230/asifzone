@@ -23,6 +23,7 @@ export const PUBLIC_VARIANT_FIELDS = {
   stock: true,
   weight: true,
   isActive: true,
+  freeDelivery: true,
   imageId: true,
   sortOrder: true,
   createdAt: true,

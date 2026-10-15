@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Banknote, RotateCcw, Truck } from "lucide-react";
-import { NO_SIZE_VALUE, pickGalleryImages, type PolicyHighlightKind, type Product, type ProductVariant } from "@clothing-brand/shared";
+import { NO_SIZE_VALUE, pickGalleryImages, variantShipsFree, type PolicyHighlightKind, type Product, type ProductVariant } from "@clothing-brand/shared";
 import { ProductGallery } from "@/components/storefront/product-gallery";
 import { StarRating } from "@/components/storefront/star-rating";
 import { VariantSelector } from "@/components/storefront/variant-selector";
@@ -84,6 +84,22 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
 
   // The options named in a WhatsApp order: whatever the shopper has chosen so far, labelled as the pickers label them.
   const dimensionLabel = (field: "size" | "color", fallback: string) => resolved?.variantDimensions.find((d) => d.targetField === field)?.label ?? fallback;
+  // Free delivery can be per variant (the 12ml ships free, the 6ml doesn't): follow the choice once there is one; before
+  // that, name the variants that ship free unless all of them do.
+  const shipsFree = (v: ProductVariant) => variantShipsFree(product.freeDelivery, v.freeDelivery);
+  const freeVariants = product.variants.filter(shipsFree);
+  const allShipFree = product.variants.length > 0 && freeVariants.length === product.variants.length;
+  const showFreeDelivery = selectedVariant ? shipsFree(selectedVariant) : freeVariants.length > 0;
+  // Named by what tells the variants apart: "L/22.5", not "L/22.5 White" when every variant is white.
+  const sizesDiffer = new Set(product.variants.map((v) => v.size)).size > 1;
+  const colorsDiffer = new Set(product.variants.map((v) => v.color)).size > 1;
+  const freeOn = !selectedVariant && !allShipFree
+    ? freeVariants
+        .map((v) => [sizesDiffer && v.size !== NO_SIZE_VALUE ? v.size : null, colorsDiffer ? v.color || null : null].filter(Boolean).join(" "))
+        .filter(Boolean)
+        .join(", ")
+    : "";
+
   const whatsappOptions = [
     ...(selection.size && selection.size !== NO_SIZE_VALUE ? [{ label: dimensionLabel("size", "Size"), value: selection.size }] : []),
     ...(selection.color ? [{ label: dimensionLabel("color", "Color"), value: selection.color }] : []),
@@ -137,7 +153,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           </p>
         )}
 
-        {product.freeDelivery && (
+        {showFreeDelivery && (
           // Informational only: the product ships free; the checkout's server quote decides the fee for the whole bag (one
           // normal-delivery item means the usual fee applies — docs/ORDER_ADJUSTMENTS.md §2).
           // One line of text beside the icon: on a phone it wraps as a sentence inside a soft box, not as two broken
@@ -145,7 +161,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
           <p className="mt-3 flex items-start gap-2 rounded-xl border border-success-200 bg-success-50 px-3 py-2 text-sm text-success-700 sm:inline-flex sm:items-center sm:rounded-full sm:py-1" data-testid="product-free-delivery">
             <Truck size={15} aria-hidden="true" className="mt-0.5 shrink-0 sm:mt-0" />
             <span>
-              <span className="font-medium">Free delivery</span>{" "}
+              <span className="font-medium">Free delivery{freeOn ? ` on ${freeOn}` : ""}</span>{" "}
               <span className="text-success-700/80">· when everything in your bag ships free</span>
             </span>
           </p>
@@ -180,7 +196,7 @@ export function ProductShowcase({ product, urgencySignals, accordionItems, showS
         )}
 
         <div className="mt-8">
-          <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={product.freeDelivery} />
+          <DeliveryEstimate fees={orderHelp?.fees} freeDelivery={selectedVariant ? shipsFree(selectedVariant) : allShipFree} />
         </div>
 
         {/* The delivery box above already gives the delivery time and fee, so the delivery policy line would say it again. */}

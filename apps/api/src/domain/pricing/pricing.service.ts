@@ -10,6 +10,7 @@ import {
   quoteMoneyToMajor,
   resolveUnitPrice,
   toMajor,
+  variantShipsFree,
   type BundleRule,
   type CatalogVariant,
   type CouponRule,
@@ -170,6 +171,7 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       compareAtPrice: true,
       stock: true,
       isActive: true,
+      freeDelivery: true,
       product: {
         select: {
           name: true,
@@ -204,7 +206,7 @@ async function loadCatalog(variantIds: string[], now: Date, currency: string, db
       trackInventory: r.product.trackInventory,
       stock: r.stock,
       offers: offers.get(r.productId) ?? [],
-      freeDelivery: r.product.freeDelivery,
+      freeDelivery: variantShipsFree(r.product.freeDelivery, r.freeDelivery),
     });
   }
   return { catalog, rows: new Map(rows.map((r) => [r.id, r as unknown as CatalogRow])) };

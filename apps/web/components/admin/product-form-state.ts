@@ -169,6 +169,7 @@ function defaultValuesFor(initial?: Product): Partial<CreateProductInput> {
       stock: v.stock,
       weight: v.weight ? Number(v.weight) : undefined,
       isActive: v.isActive ?? true,
+      freeDelivery: v.freeDelivery ?? null,
       imageId: v.imageId,
       // The variant's own gallery, in order (falling back to its single legacy image).
       imageIds: v.images?.length ? [...v.images].sort((a, b) => a.sortOrder - b.sortOrder).map((i) => i.imageId) : v.imageId ? [v.imageId] : [],

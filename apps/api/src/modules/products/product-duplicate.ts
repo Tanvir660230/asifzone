@@ -57,6 +57,7 @@ export async function duplicateProduct(sourceId: string, input: DuplicateProduct
       compareAtPrice: num(v.compareAtPrice),
       costPrice: num(v.costPrice),
       weight: num(v.weight),
+      freeDelivery: v.freeDelivery,
       isActive: v.isActive,
       stock: opts.stock ? v.stock : 0,
       attributeValueIds: v.attributeValues.map((av) => av.attributeValueId),

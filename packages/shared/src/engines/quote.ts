@@ -37,7 +37,7 @@ export interface CatalogVariant {
   trackInventory: boolean;
   stock: number;
   offers: FlashOffer[];
-  /** Product.freeDelivery (or, for a kept line of an order being modified, the line's own snapshot). Absent = false. */
+  /** variantShipsFree(product, variant) (or, for a kept line of an order being modified, the line's own snapshot). Absent = false. */
   freeDelivery?: boolean;
 }
 
