@@ -66,6 +66,8 @@ export const createVariantSchema = z.object({
   weight: nullableNumber(),
   /** An inactive variant is hidden from the storefront and refused at checkout; it keeps its history. */
   isActive: z.boolean().optional(),
+  /** Ships free, overriding the product's freeDelivery for this variant; null = follow the product. */
+  freeDelivery: z.boolean().nullable().optional(),
   /** Legacy single image. Sent alone (older clients) it means "this variant's gallery is exactly this image". */
   imageId: nullableCuid(),
   /** The variant's gallery in display order; the first is its primary image. Wins over `imageId` when present. */

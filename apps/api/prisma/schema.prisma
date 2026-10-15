@@ -678,6 +678,8 @@ model ProductVariant {
   weight                    Decimal?                   @db.Decimal(6, 2)
   /// An inactive variant is hidden from the storefront and refused at checkout, but keeps its order and stock history.
   isActive                  Boolean                    @default(true)
+  /// Ships free, overriding Product.freeDelivery for this variant (e.g. the 12ml free, the 6ml not). NULL = follow the product.
+  freeDelivery              Boolean?
   /// The variant's primary image (swatch / cart thumbnail) — always the first of its `images` when it has any.
   imageId                   String?
   image                     ProductImage?              @relation("VariantImage", fields: [imageId], references: [id], onDelete: SetNull)

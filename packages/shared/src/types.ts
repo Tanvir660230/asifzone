@@ -120,6 +120,8 @@ export interface ProductVariant {
   stock: number;
   weight: string | null;
   isActive?: boolean;
+  /** Ships free, overriding the product's freeDelivery for this variant. null/absent = follow the product. */
+  freeDelivery?: boolean | null;
   imageId: string | null;
   /** The variant's own gallery, in display order (first = primary). */
   images?: { imageId: string; sortOrder: number }[];

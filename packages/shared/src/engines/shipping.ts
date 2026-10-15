@@ -45,12 +45,17 @@ export type ShippingResult =
 /**
  * Why shipping was not charged, in precedence order (docs/ORDER_ADJUSTMENTS.md §2):
  *   COUPON         a FREE_SHIPPING coupon applied to the order
- *   FREE_DELIVERY  every line in the cart is a product marked "Free delivery" (Product.freeDelivery) — one normal
+ *   FREE_DELIVERY  every line in the cart ships free (variantShipsFree: the variant's own setting, else the product's) — one normal
  *                  product in the cart means the zone fee is charged (no partial or pro-rata waiver)
  *   FREE_OVER      merchandise after discounts reached the zone's free-over threshold (counts every line, free-delivery
  *                  lines included)
  */
 export type ShippingWaiverReason = "COUPON" | "FREE_DELIVERY" | "FREE_OVER";
+
+/** Whether one variant ships free: its own setting when it has one (the 12ml free, the 6ml not), else the product's. */
+export function variantShipsFree(productFreeDelivery: boolean | null | undefined, variantFreeDelivery: boolean | null | undefined): boolean {
+  return (variantFreeDelivery ?? productFreeDelivery) === true;
+}
 
 const SPECIFICITY: Record<ZoneMatchField, number> = { POSTCODE: 3, DISTRICT: 2, DIVISION: 1 };
 

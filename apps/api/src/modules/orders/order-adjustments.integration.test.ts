@@ -116,6 +116,44 @@ describe("product free delivery (§1)", () => {
     expect(order.shippingWaived).toBe(false);
     expect(Number(order.total)).toBe(1060);
   });
+
+  it("a variant's own setting overrides the product's: only the 12ml ships free", async () => {
+    const c = await newCustomer();
+    const { variants } = await createStockedProduct({ stocks: [5, 5], basePrice: 500 });
+    const [small, large] = variants;
+    await prisma.productVariant.update({ where: { id: large!.id }, data: { freeDelivery: true } });
+
+    const freeOnly = await orderFor(c.id, [{ variantId: large!.id, quantity: 1 }]);
+    expect(freeOnly.shippingWaived).toBe(true);
+    expect(freeOnly.items[0]!.freeDeliverySnapshot).toBe(true);
+
+    const normalOnly = await orderFor(c.id, [{ variantId: small!.id, quantity: 1 }]);
+    expect(normalOnly.shippingWaived).toBe(false);
+    expect(normalOnly.items[0]!.freeDeliverySnapshot).toBe(false);
+  });
+
+  it("a variant can opt out of a free-delivery product", async () => {
+    const c = await newCustomer();
+    const { product, variants } = await createStockedProduct({ stocks: [5], basePrice: 500 });
+    await prisma.product.update({ where: { id: product.id }, data: { freeDelivery: true } });
+    await prisma.productVariant.update({ where: { id: variants[0]!.id }, data: { freeDelivery: false } });
+    const order = await orderFor(c.id, [{ variantId: variants[0]!.id, quantity: 1 }]);
+    expect(order.shippingWaived).toBe(false);
+  });
+
+  it("the admin form saves a variant's setting, null hands it back to the product, and the storefront reads it", async () => {
+    const { product, variants } = await createStockedProduct({ stocks: [5, 5] });
+    const [small, large] = variants;
+    const owner = await asOwner();
+    await owner.patch(`/api/products/${product.id}`, { variants: [{ id: small!.id }, { id: large!.id, freeDelivery: true }] }).expect(200);
+    const pdp = await request(app).get(`/api/products/slug/${product.slug}`).expect(200);
+    const byId = new Map((pdp.body.product.variants as Array<{ id: string; freeDelivery: boolean | null }>).map((v) => [v.id, v.freeDelivery]));
+    expect(byId.get(small!.id)).toBeNull();
+    expect(byId.get(large!.id)).toBe(true);
+
+    await owner.patch(`/api/products/${product.id}`, { variants: [{ id: small!.id }, { id: large!.id, freeDelivery: null }] }).expect(200);
+    expect((await prisma.productVariant.findUniqueOrThrow({ where: { id: large!.id } })).freeDelivery).toBeNull();
+  });
 });
 
 describe("pending order modification (§2, §12, §14)", () => {

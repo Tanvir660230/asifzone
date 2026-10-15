@@ -27,6 +27,7 @@ import { ImageUploader } from "@/components/admin/image-uploader";
 import { AiGenerateButton } from "@/components/admin/ai-generate-button";
 import { buildCategoryOptions } from "@/components/admin/product-form-state";
 import { CourierNotePicker, inheritedCourierNoteIds } from "@/components/admin/courier-note-picker";
+import { FreeDeliveryField } from "@/components/admin/free-delivery-field";
 import * as aiApi from "@/lib/api/ai";
 import { uploadEditorImage } from "@/lib/api/uploads";
 import { storeCurrencyCode, stripHtml } from "@/lib/format";
@@ -357,17 +358,8 @@ export function PricingStep({ state, categories }: StepProps & { categories: Cat
         </div>
       </FormSection>
 
-      <FormSection title="Shipping" description="How delivery is charged for this product.">
-        <label className="flex items-start gap-2.5 text-sm text-ink-700">
-          <Checkbox className="mt-0.5" {...register("freeDelivery")} />
-          <span>
-            Free delivery
-            <span className="block text-xs text-fg-muted">
-              Delivery is free when every item in the cart has free delivery. If the cart also has other products, the normal delivery fee applies.
-              Orders already placed keep the delivery fee they were charged.
-            </span>
-          </span>
-        </label>
+      <FormSection title="Free delivery" description="For the whole product, or only some of its variants (e.g. the 12ml ships free, the 6ml doesn't).">
+        <FreeDeliveryField form={form} />
       </FormSection>
 
       <FormSection title="Courier note" description="Instructions printed on the parcel for the rider, e.g. পারফিউম — প্যাকেট খোলা যাবে না.">
