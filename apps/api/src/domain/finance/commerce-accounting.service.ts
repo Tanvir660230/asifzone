@@ -15,6 +15,8 @@
  * new revision supersedes the old (reversal + new journal). When a fact disappeared, a void revision reverses it.
  *
  * The books start at the Financial Opening Date: a fact dated before it is not posted (the opening balances carry it).
+ * Nothing is projected until the opening balances are posted, so choosing the date never posts a sale (and locks the
+ * date) by itself; the first sweep after posting catches every fact from the opening date up.
  * Missing costs are never invented: the line opens a MISSING_COST exception and no cost is booked for it, unless an
  * approved estimate (APPROVED_ESTIMATES policy) resolved it — then it is booked, labelled ESTIMATED.
  */
@@ -371,10 +373,17 @@ async function processAll(ids: string[]) {
   return outcomes;
 }
 
+/** Whether commerce facts reach the books yet: an opening date and posted opening balances. */
+async function booksStarted(business: FinanceContext["business"]): Promise<boolean> {
+  if (!business.openingDate) return false;
+  const batch = await prisma.openingBalanceBatch.findUnique({ where: { businessId: business.id }, select: { status: true } });
+  return batch?.status === "POSTED";
+}
+
 /** Brings one order's facts into the books (records, then posts). Idempotent. */
 export async function projectOrder(orderId: string, opts: { process?: boolean } = {}) {
   const ctx = await getFinanceContext();
-  if (!ctx.business.openingDate) return { recorded: [] as string[], outcomes: {} };
+  if (!(await booksStarted(ctx.business))) return { recorded: [] as string[], outcomes: {} };
   const [o] = await loadOrderFacts([orderId], ctx.business.baseCurrency);
   if (!o) return { recorded: [] as string[], outcomes: {} };
   const extras = await loadExtras(o, ctx);
@@ -390,7 +399,7 @@ export async function projectOrder(orderId: string, opts: { process?: boolean } 
  * deleted (the credit ledger outlives orders). */
 export async function projectCustomerCredit(entry: CustomerCreditEntry, opts: { process?: boolean } = {}) {
   const ctx = await getFinanceContext();
-  if (!ctx.business.openingDate) return { recorded: [] as string[], outcomes: {} };
+  if (!(await booksStarted(ctx.business))) return { recorded: [] as string[], outcomes: {} };
   if (entry.orderId && (await prisma.order.count({ where: { id: entry.orderId } }))) return { recorded: [] as string[], outcomes: {} };
   const c = { id: entry.id, type: entry.type, customerId: entry.customerId, amount: signedMinor(entry.amount, ctx.business.baseCurrency), at: entry.createdAt };
   const { events, exceptions } = desiredForCustomerCredit(c);
@@ -502,6 +511,7 @@ export async function syncCommerce(opts: { full?: boolean; actor?: FinanceActor 
   const ctx = await getFinanceContext();
   const stats: SyncStats = { orders: 0, customerCredits: 0, stockExceptions: 0, recorded: 0, posted: 0, failed: 0 };
   if (!ctx.business.openingDate) return { ...stats, skipped: "OPENING_DATE_NOT_SET" };
+  if (!(await booksStarted(ctx.business))) return { ...stats, skipped: "OPENING_BALANCES_NOT_POSTED" };
   const lease = await takeSweepLease(ctx.business.id);
   if (!lease) return { ...stats, skipped: "SWEEP_IN_PROGRESS" };
   try {

@@ -52,7 +52,9 @@ export default function SupplierAccountPage() {
   if (q.isLoading) return <Skeleton className="h-64 w-full" />;
   if (q.isError || !q.data) return <Alert variant="danger" title="This supplier's account couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => q.refetch()}>Retry</Button>}>{getErrorMessage(q.error, "")}</Alert>;
   const a = q.data;
-  const overdue = a.openBills.filter((b) => b.overdue).reduce((s, b) => s + b.outstanding, 0);
+  // What they were owed when the books started has no bill; it was due that day.
+  const openingDue = a.openingDue && a.openingDue.outstanding > 0 ? a.openingDue : null;
+  const overdue = a.openBills.filter((b) => b.overdue).reduce((s, b) => s + b.outstanding, 0) + (openingDue && openingDue.date < a.asOf ? openingDue.outstanding : 0);
   const sources: Source[] = [
     ...a.advances.map((x) => ({ kind: "payment" as const, id: x.paymentMovementId, label: `Payment ${x.date}${x.reference ? ` · ${x.reference}` : ""}`, left: x.unallocated })),
     ...a.unappliedCredits.map((x) => ({ kind: "credit" as const, id: x.creditNoteId, label: `${x.number} · ${x.supplierRef}`, left: x.unallocated })),
@@ -72,14 +74,21 @@ export default function SupplierAccountPage() {
       <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label={a.balance < 0 ? "The supplier owes you" : "You owe"} value={formatPrice(Math.abs(a.balance))} />
         <Stat label="Overdue" value={formatPrice(overdue)} tone={overdue > 0 ? "warning" : undefined} />
-        <Stat label="Open bills" value={String(a.openBills.length)} />
+        <Stat label="Open bills" value={String(a.openBills.length + (openingDue ? 1 : 0))} />
         <Stat label="Advances and credits" value={formatPrice(sources.reduce((s, x) => s + x.left, 0))} />
       </dl>
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold text-ink-900">Open bills</h2>
-        {a.openBills.length ? (
+        {a.openBills.length || openingDue ? (
           <Card className="divide-y divide-line p-0 text-sm" data-testid="open-bills">
+            {openingDue && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" data-testid="opening-due">
+                <span className="min-w-0"><span className="text-ink-900">Owed when the books started</span> <span className="text-ink-600">· {openingDue.date}</span>
+                  <span className="block text-xs text-ink-500">Payments not set against a bill pay this first.</span></span>
+                <span className="text-right tabular-nums"><span className="font-medium text-ink-900">{formatPrice(openingDue.outstanding)}</span><span className="block text-xs text-ink-500">of {formatPrice(openingDue.amount)}{openingDue.paid ? ` · ${formatPrice(openingDue.paid)} paid` : ""}</span></span>
+              </div>
+            )}
             {a.openBills.map((b) => (
               <div key={b.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <span className="min-w-0"><span className="font-mono text-ink-900">{b.number}</span> <span className="text-ink-600">· {b.supplierRef} · due <span className={b.overdue ? "text-danger-700" : undefined}>{b.dueDate}{b.overdue ? " (overdue)" : ""}</span></span>

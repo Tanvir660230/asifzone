@@ -7,7 +7,7 @@ const QUEUE_NAME = "finance-commerce-sync";
 
 /** Financial Core Phase 3 (docs/FINANCE_PHASE_3.md §2): every 5 minutes the commerce projector brings orders whose facts
  * changed (payments, deliveries, refunds, returns, store credit) into the books. Idempotent and serialised per business;
- * a no-op until the books have an opening date. Commerce itself is never touched. */
+ * a no-op until the opening balances are posted. Commerce itself is never touched. */
 export async function startFinanceCommerceSyncCron() {
   const queue = createQueue(QUEUE_NAME);
 

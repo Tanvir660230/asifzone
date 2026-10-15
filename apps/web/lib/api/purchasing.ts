@@ -256,6 +256,8 @@ export interface SupplierAccount {
   opening: number;
   balance: number;
   statement: Array<{ id: string; date: string; description: string; reference: string | null; kind: string; owedMore: number; owedLess: number; balance: number }>;
+  /** What they were owed when the books started (no bill behind it); payments not set against a bill pay it first. */
+  openingDue: { date: string; amount: number; paid: number; outstanding: number } | null;
   openBills: Array<{ id: string; number: string; supplierRef: string; invoiceDate: string; dueDate: string; overdue: boolean; total: number; settled: number; awaitingApproval: number; outstanding: number; allocatable: number }>;
   advances: Array<{ paymentMovementId: string; date: string; reference: string | null; from: string | null; amount: number; unallocated: number }>;
   unappliedCredits: Array<{ creditNoteId: string; number: string; supplierRef: string; date: string; total: number; unallocated: number }>;

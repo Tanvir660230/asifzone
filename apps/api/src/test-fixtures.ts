@@ -1,4 +1,5 @@
 import request from "supertest";
+import type { Prisma } from "@prisma/client";
 import type { CheckoutInput, OrderStatus } from "@clothing-brand/shared";
 import { app } from "./app";
 import { prisma } from "./config/prisma";
@@ -131,6 +132,13 @@ export async function cleanupFixtures() {
     await prisma.flashSaleItem.deleteMany({ where: { productId: { in: made.productIds } } });
     await prisma.product.deleteMany({ where: { id: { in: made.productIds } } });
   }
+}
+
+/** Marks the books started for a suite that drives the commerce projector without an opening statement: an empty POSTED
+ * opening batch on `openingDate` (the projector waits for one), audited in the caller's finance transaction. */
+export async function markOpeningPostedInTx(tx: Prisma.TransactionClient, businessId: string, openingDate: Date) {
+  const batch = await tx.openingBalanceBatch.create({ data: { businessId, openingDate, status: "POSTED", postedAt: new Date() } });
+  await tx.financeAuditEntry.create({ data: { businessId, actorType: "SYSTEM", actorLabel: "test", action: "opening.post", entityType: "OpeningBalanceBatch", entityId: batch.id } });
 }
 
 /** Financial Core test support (docs/FINANCE_PHASE_1.md §4.7): empties every finance table. The ledger refuses TRUNCATE and

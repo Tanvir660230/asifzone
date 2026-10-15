@@ -21,6 +21,7 @@ import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { FINANCE_BUSINESS_KEY, businessToday, getFinanceContext, type FinanceContext } from "./finance-context";
 import { postingRuleKeys } from "./events.service";
 import { dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
+import { supplierOpeningDues } from "./opening-balances.service";
 import { financeTransaction } from "./finance-tx";
 import { clearingBreakdown } from "./settlements.service";
 import { inventoryLedgerBridge } from "./inventory-cutover.service";
@@ -597,7 +598,7 @@ export const RECONCILIATION_CHECKS = {
   // ── Phase 4E: accounts payable ───────────────────────────────────────────────────────────────────────────────────────
   "payables.subledger": {
     label: "Payables = supplier invoices",
-    description: "The trade-payables account equals posted supplier invoices less posted credit notes less posted supplier payments plus posted supplier refunds — in total and for each supplier, which every payables posting names as its party. Unposted payables events are listed.",
+    description: "The trade-payables account equals what suppliers were owed at the opening date plus posted supplier invoices less posted credit notes less posted supplier payments plus posted supplier refunds — in total and for each supplier, which every payables posting names as its party. Unposted payables events are listed.",
     async run(ctx) {
       const cur = ctx.business.baseCurrency;
       const map = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: ctx.business.id, key: "liability.payable_trade" } } });
@@ -616,10 +617,13 @@ export const RECONCILIATION_CHECKS = {
         FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
         WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${map.accountId}
         GROUP BY l."partyId"`;
-      const expected = docs.reduce((s, d) => s + toMinor(d.v, cur), 0);
+      // What each supplier was owed at the opening date counts as a document too (it has no bill behind it).
+      const openingDues = await supplierOpeningDues(prisma, ctx.business.id, map.accountId, cur);
+      const expected = docs.reduce((s, d) => s + toMinor(d.v, cur), 0) + [...openingDues.values()].reduce((s, v) => s + v, 0);
       const actual = books.reduce((s, b) => s + toMinor(b.v, cur), 0);
       const bySupplier = new Map<string, { documents: number; books: number }>();
       for (const d of docs) bySupplier.set(d.supplierId, { documents: toMinor(d.v, cur), books: 0 });
+      for (const [supplierId, due] of openingDues) bySupplier.set(supplierId, { documents: (bySupplier.get(supplierId)?.documents ?? 0) + due, books: 0 });
       for (const b of books) {
         const key = b.supplierId ?? "(no supplier)";
         bySupplier.set(key, { documents: bySupplier.get(key)?.documents ?? 0, books: toMinor(b.v, cur) });

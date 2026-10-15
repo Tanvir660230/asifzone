@@ -77,6 +77,7 @@ export function OpeningStockEditor({ items, onChange, readOnly }: { items: Openi
                   <TableCell className="min-w-[200px]">
                     <span className="block text-sm text-fg">{i.name}</span>
                     <span className="block font-mono text-xs text-fg-subtle">{i.sku}</span>
+                    {i.notes && <span className="mt-0.5 block text-xs text-fg-muted">{i.notes}</span>}
                   </TableCell>
                   <TableCell align="right">
                     {readOnly ? (

@@ -22,6 +22,7 @@ import { MOVEMENT_INCLUDE, movementDto, requestMovementInTx } from "./treasury.s
 import { resolveMappedAccount } from "./chart.service";
 import { adminOf } from "./purchase-orders.service";
 import { invoiceNumber } from "./supplier-invoices.service";
+import { supplierOpeningDues } from "./opening-balances.service";
 
 type Db = AppTransactionClient | typeof prisma;
 
@@ -223,8 +224,8 @@ export async function releaseAllocation(id: string, reason: string, actor: Finan
 
 /**
  * A supplier's account: the statement (every posting on the payables account with the supplier as party — the ledger
- * itself, so it always agrees with the books), open bills with what is settled and outstanding, unallocated payments
- * (advances) and credit notes, and the balance.
+ * itself, so it always agrees with the books), what they were owed at the opening date, open bills with what is settled
+ * and outstanding, unallocated payments (advances) and credit notes, and the balance.
  */
 export async function supplierAccount(supplierId: string, q: { from?: string; to?: string } = {}) {
   const { business } = await getFinanceContext();
@@ -260,9 +261,16 @@ export async function supplierAccount(supplierId: string, q: { from?: string; to
     })
     .filter((b) => b.outstanding > 0 || b.awaitingApproval > 0);
   const payments = await prisma.treasuryMovement.findMany({ where: { supplierId, kind: "SUPPLIER_PAYMENT", status: "POSTED" }, include: { fromAccount: { select: { name: true } } }, orderBy: { movementDate: "asc" } });
+  // What the supplier was owed at the opening date has no bill to allocate to: payments not allocated to a bill settle it
+  // first, oldest first; only what is left over is an advance.
+  const due = business.openingDate ? ((await supplierOpeningDues(prisma, business.id, ap.id, cur, supplierId)).get(supplierId) ?? 0) : 0;
+  let dueLeft = Math.max(0, due);
   const advances = [];
   for (const p of payments) {
-    const left = await unallocated(prisma, { paymentMovementId: p.id }, toMinor(p.amount, cur), cur);
+    let left = await unallocated(prisma, { paymentMovementId: p.id }, toMinor(p.amount, cur), cur);
+    const applied = Math.min(Math.max(left, 0), dueLeft);
+    dueLeft -= applied;
+    left -= applied;
     if (left > 0) advances.push({ paymentMovementId: p.id, date: businessDateOf(p.movementDate), reference: p.reference, from: p.fromAccount?.name ?? null, amount: toMajorNumber(toMinor(p.amount, cur), cur), unallocated: toMajorNumber(left, cur) });
   }
   const credits = await prisma.supplierInvoice.findMany({ where: { supplierId, businessId: business.id, kind: "CREDIT_NOTE", status: "POSTED" }, orderBy: { invoiceDate: "asc" } });
@@ -285,5 +293,6 @@ export async function supplierAccount(supplierId: string, q: { from?: string; to
       source: a.paymentMovementId ? ("PAYMENT" as const) : ("CREDIT_NOTE" as const),
       sourceLabel: a.paymentMovement ? `Payment ${businessDateOf(a.paymentMovement.movementDate)}${a.paymentMovement.reference ? ` · ${a.paymentMovement.reference}` : ""}${a.paymentMovement.status === "PENDING_APPROVAL" ? " (awaiting approval)" : ""}` : a.creditNote ? `${invoiceNumber(a.creditNote.kind, a.creditNote.number)} · ${a.creditNote.supplierRef}` : "—",
     }));
-  return { supplier, asOf: today, opening: toMajorNumber(opening, cur), balance: toMajorNumber(running, cur), statement, openBills, advances, unappliedCredits, allocations };
+  const openingDue = due > 0 ? { date: business.openingDate!, amount: toMajorNumber(due, cur), paid: toMajorNumber(due - dueLeft, cur), outstanding: toMajorNumber(dueLeft, cur) } : null;
+  return { supplier, asOf: today, opening: toMajorNumber(opening, cur), balance: toMajorNumber(running, cur), statement, openingDue, openBills, advances, unappliedCredits, allocations };
 }

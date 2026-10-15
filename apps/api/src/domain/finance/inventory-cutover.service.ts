@@ -44,11 +44,25 @@ export interface InventoryLedgerBridge {
 }
 
 /**
+ * Orders (alias `o`) the opening inventory count carries: placed before the opening date — their stock already left the
+ * shelf — but not yet sold in the books' sense on it (the dashboard's realisation: COD at first delivery, online at the
+ * first successful payment). Their units still belong to the business on the opening date, so the count includes them
+ * and the sale, posted later, takes their cost out of inventory. Deleted orders are never sold and are not carried.
+ */
+export function carriedIntoOpeningSql(timezone: string, openingDate: string): Prisma.Sql {
+  const opening = dateColumn(openingDate);
+  const before = (column: Prisma.Sql) => Prisma.sql`(${column} AT TIME ZONE 'UTC' AT TIME ZONE ${timezone})::date < ${opening}::date`;
+  return Prisma.sql`${before(Prisma.sql`o."createdAt"`)} AND o."deletedAt" IS NULL AND NOT (CASE WHEN o."paymentMethod" = 'COD'
+    THEN EXISTS (SELECT 1 FROM "OrderStatusHistory" h WHERE h."orderId" = o.id AND h.status IN ('DELIVERED', 'PARTIALLY_DELIVERED') AND ${before(Prisma.sql`h."createdAt"`)})
+    ELSE EXISTS (SELECT 1 FROM "Payment" p WHERE p."orderId" = o.id AND p.status = 'SUCCEEDED' AND ${before(Prisma.sql`p."settledAt"`)}) END)`;
+}
+
+/**
  * The inventory account against the valuation. Invariant once costing is active:
  *   ledger = valuation + in-transit − estimated-since-activation.
- * In-transit covers orders placed on or after the Financial Opening Date (earlier orders are carried by the opening
- * count). An order is followed through the journal lines Phase 3 posts with the order as party at KNOWN cost, except
- * damaged-return write-offs (units that came back and left again, not units out to the order).
+ * In-transit covers orders placed on or after the Financial Opening Date, and earlier orders the opening count carries
+ * (see carriedIntoOpeningSql). An order is followed through the journal lines Phase 3 posts with the order as party at
+ * KNOWN cost, except damaged-return write-offs (units that came back and left again, not units out to the order).
  */
 export async function inventoryLedgerBridge(db: Db, business: Pick<FinanceBusinessInfo, "id" | "baseCurrency" | "timezone" | "openingDate">, opts: { estimatedSince?: Date | null } = {}): Promise<InventoryLedgerBridge> {
   const cur = business.baseCurrency;
@@ -63,6 +77,7 @@ export async function inventoryLedgerBridge(db: Db, business: Pick<FinanceBusine
     WITH scope AS (
       SELECT o.id FROM "Order" o
       WHERE (o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${business.timezone})::date >= ${dateColumn(opening)}::date
+         OR (${carriedIntoOpeningSql(business.timezone, opening)})
     ),
     u AS (
       SELECT i."orderId", SUM((i.quantity - i."restockedQuantity")::bigint * i."unitCostSnapshot") AS out

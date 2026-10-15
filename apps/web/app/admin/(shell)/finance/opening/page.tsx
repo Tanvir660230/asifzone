@@ -22,6 +22,7 @@ import { OpeningStockEditor, itemValue } from "@/components/admin/finance/openin
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
+import { listSuppliers, purchasingKeys } from "@/lib/api/purchasing";
 import type { ChartAccount, FinancialAccount, FinancialAccountKind, OpeningBalanceCategory, OpeningInventoryItem, OpeningLine } from "@/lib/api/finance";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -33,7 +34,7 @@ const MONEY_CATEGORIES: OpeningBalanceCategory[] = ["CASH", "BANK", "MOBILE_WALL
 /** The other balances, in plain words, with the ledger type each must be booked to and its normal side. */
 const OTHER: Array<{ category: OpeningBalanceCategory; label: string; hint: string; type: "ASSET" | "LIABILITY" | "EQUITY"; side: "DEBIT" | "CREDIT" }> = [
   { category: "RECEIVABLE", label: "Customers owe you", hint: "Unpaid customer invoices or dues", type: "ASSET", side: "DEBIT" },
-  { category: "PAYABLE", label: "You owe suppliers", hint: "Unpaid supplier bills", type: "LIABILITY", side: "CREDIT" },
+  { category: "PAYABLE", label: "You owe suppliers", hint: "One line per supplier, so paying them later settles it", type: "LIABILITY", side: "CREDIT" },
   { category: "LOAN", label: "Loan still to repay", hint: "What's left on a bank or personal loan", type: "LIABILITY", side: "CREDIT" },
   { category: "FIXED_ASSET", label: "Equipment you own", hint: "Machines, furniture, vehicles — at their current value", type: "ASSET", side: "DEBIT" },
   { category: "CAPITAL", label: "Owner's capital", hint: "Money the owners put in", type: "EQUITY", side: "CREDIT" },
@@ -43,8 +44,13 @@ const OTHER: Array<{ category: OpeningBalanceCategory; label: string; hint: stri
 ];
 const otherOf = (c: OpeningBalanceCategory) => OTHER.find((o) => o.category === c)!;
 
-type OtherRow = { key: string; category: OpeningBalanceCategory; accountId: string; amount: string; description: string };
-const blankRow = (): OtherRow => ({ key: Math.random().toString(36).slice(2), category: "RECEIVABLE", accountId: "", amount: "", description: "" });
+type OtherRow = { key: string; category: OpeningBalanceCategory; accountId: string; supplierId: string; amount: string; description: string };
+const blankRow = (): OtherRow => ({ key: Math.random().toString(36).slice(2), category: "RECEIVABLE", accountId: "", supplierId: "", amount: "", description: "" });
+/** A clearing account holds money a courier or gateway collected for you and hasn't paid out yet. */
+const CLEARING_HINT: Partial<Record<FinancialAccountKind, string>> = {
+  COURIER: "Cash on delivery the courier had collected but not yet paid you",
+  PAYMENT_GATEWAY: "Online payments the gateway had taken but not yet paid you",
+};
 const amountOk = (v: string) => v.trim() === "" || (/^\d+(\.\d{1,2})?$/.test(v.trim()) && Number(v) >= 0);
 
 /**
@@ -133,7 +139,7 @@ function DateStep({ business }: { business: financeApi.BusinessSettings }) {
   const editable = can("finance.configure") && !locked;
   return (
     <Card className="p-5 sm:p-6" data-testid="opening-date-step">
-      <StepHeading n={1} title="When do your books start?" detail="Usually the first day of a month — or of your financial year. Sales and costs before it are summed up in the opening balances, not replayed." done={Boolean(current)} />
+      <StepHeading n={1} title="When do your books start?" detail="Usually the first day of a month — or of your financial year. Sales and costs before it are summed up in the opening balances, not replayed. Nothing is recorded until you post in step 5, so you can still change the date until then." done={Boolean(current)} />
       <div className="grid gap-4 sm:grid-cols-2 lg:max-w-2xl">
         <Field htmlFor="opening-date" label="Books start on" hint={locked ? "Fixed — something has already been posted." : undefined}>
           <Input id="opening-date" type="date" value={date} disabled={!editable} onChange={(e) => setDate(e.target.value)} max={new Date().toLocaleDateString("en-CA")} />
@@ -162,6 +168,8 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
   const accounts = useQuery({ queryKey: financeApi.financeKeys.accounts(), queryFn: financeApi.listFinancialAccounts });
   const chart = useQuery({ queryKey: financeApi.ledgerKeys.chart(), queryFn: financeApi.listChart });
   const money = (accounts.data?.financialAccounts ?? []).filter((a) => a.isActive);
+  // Trade payables are kept per supplier: a balance on that account names the supplier owed.
+  const payablesAccountId = chart.data?.accounts.find((c: ChartAccount) => c.mappings.includes("liability.payable_trade"))?.id ?? null;
 
   // ── local drafts, seeded from the saved batch ──
   const seed = useMemo(() => {
@@ -169,7 +177,7 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
     const others: OtherRow[] = [];
     for (const l of batch?.lines ?? []) {
       if (MONEY_CATEGORIES.includes(l.category) && l.financialAccountId) moneyAmounts[l.financialAccountId] = String(l.amount);
-      else others.push({ key: l.id ?? Math.random().toString(36).slice(2), category: l.category, accountId: l.accountId ?? "", amount: String(l.amount), description: l.description ?? "" });
+      else others.push({ key: l.id ?? Math.random().toString(36).slice(2), category: l.category, accountId: l.accountId ?? "", supplierId: l.partyType === "Supplier" ? (l.partyId ?? "") : "", amount: String(l.amount), description: l.description ?? "" });
     }
     return { moneyAmounts, others, items: batch?.inventoryItems ?? [] };
   }, [batch]);
@@ -182,7 +190,9 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
   const itemsDirty = JSON.stringify(items) !== JSON.stringify(seed.items);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["finance"] });
 
-  const linesInvalid = Object.values(moneyAmounts).some((v) => !amountOk(v)) || others.some((r) => !amountOk(r.amount) || (Number(r.amount) > 0 && !r.accountId));
+  const needsSupplier = (r: OtherRow) => r.accountId !== "" && r.accountId === payablesAccountId;
+  const suppliers = useQuery({ queryKey: purchasingKeys.suppliers({ pageSize: 200 }), queryFn: () => listSuppliers({ pageSize: 200 }), enabled: others.some(needsSupplier) });
+  const linesInvalid = Object.values(moneyAmounts).some((v) => !amountOk(v)) || others.some((r) => !amountOk(r.amount) || (Number(r.amount) > 0 && (!r.accountId || (needsSupplier(r) && !r.supplierId))));
   const saveLines = useMutation({
     mutationFn: () => {
       const lines: Array<Omit<OpeningLine, "id">> = [
@@ -192,7 +202,7 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
         })),
         ...others.filter((r) => Number(r.amount) > 0).map((r) => ({
           category: r.category, accountId: r.accountId, financialAccountId: null, side: otherOf(r.category).side, amount: Number(r.amount),
-          brandId: null, partyType: null, partyId: null, description: r.description.trim() || otherOf(r.category).label,
+          brandId: null, partyType: needsSupplier(r) ? "Supplier" : null, partyId: needsSupplier(r) ? r.supplierId : null, description: r.description.trim() || otherOf(r.category).label,
         })),
       ];
       return financeApi.saveOpeningLines({ lines });
@@ -202,7 +212,7 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
   });
   const prefill = useMutation({
     mutationFn: financeApi.prefillOpeningInventory,
-    onSuccess: (b) => { refresh(); toast.success(`${b.inventoryItems.length} item(s) filled from current stock`); },
+    onSuccess: (b) => { refresh(); toast.success(`${b.inventoryItems.length} item(s) filled from your stock records`); },
     onError: (err) => toast.error(getErrorMessage(err, "Couldn't fill the stock count")),
   });
   const saveItems = useMutation({
@@ -253,6 +263,7 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
               <li key={a.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center">
                 <label htmlFor={`money-${a.id}`} className="min-w-0 flex-1 text-sm text-fg">
                   {a.name}
+                  {CLEARING_HINT[a.kind] && <span className="block text-xs text-fg-muted">{CLEARING_HINT[a.kind]}</span>}
                   {a.openingBalance > 0 && <span className="block text-xs text-warning-700">Already has an opening balance of {formatPrice(a.openingBalance)} — leave this empty so it isn&apos;t counted twice.</span>}
                 </label>
                 <Input id={`money-${a.id}`} inputMode="decimal" placeholder="0" disabled={!canEdit} className="w-full text-right tabular-nums sm:w-40" value={moneyAmounts[a.id] ?? ""} aria-invalid={!amountOk(moneyAmounts[a.id] ?? "")} onChange={(e) => setMoneyAmounts((m) => ({ ...m, [a.id]: e.target.value }))} />
@@ -274,7 +285,7 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
               return (
                 <div key={r.key} className="grid gap-2 rounded-lg border border-line-subtle p-3 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1fr)_8rem_auto] sm:items-end" data-testid="opening-other-row">
                   <Field htmlFor={`oc-${r.key}`} label="What" hint={meta.hint}>
-                    <Select id={`oc-${r.key}`} value={r.category} disabled={!canEdit} onChange={(e) => setOthers((rows) => rows.map((x, i) => (i === idx ? { ...x, category: e.target.value as OpeningBalanceCategory, accountId: "" } : x)))}>
+                    <Select id={`oc-${r.key}`} value={r.category} disabled={!canEdit} onChange={(e) => { const category = e.target.value as OpeningBalanceCategory; setOthers((rows) => rows.map((x, i) => (i === idx ? { ...x, category, accountId: category === "PAYABLE" && payablesAccountId ? payablesAccountId : "", supplierId: "" } : x))); }}>
                       {OTHER.map((o) => <option key={o.category} value={o.category}>{o.label}</option>)}
                     </Select>
                   </Field>
@@ -290,7 +301,23 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
                   <Field htmlFor={`ov-${r.key}`} label="Amount" error={amountOk(r.amount) ? undefined : "Check the amount"}>
                     <Input id={`ov-${r.key}`} inputMode="decimal" className="text-right tabular-nums" value={r.amount} disabled={!canEdit} onChange={(e) => setOthers((rows) => rows.map((x, i) => (i === idx ? { ...x, amount: e.target.value } : x)))} />
                   </Field>
-                  {canEdit && <IconButton aria-label="Remove this line" variant="ghost" onClick={() => setOthers((rows) => rows.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></IconButton>}
+                  {canEdit && <IconButton aria-label="Remove this line" variant="ghost" className="max-sm:order-last" onClick={() => setOthers((rows) => rows.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></IconButton>}
+                  {needsSupplier(r) && (
+                    <div className="sm:col-span-full sm:max-w-md">
+                      <Field htmlFor={`os-${r.key}`} label="Supplier" hint="Paying them later settles this first." error={Number(r.amount) > 0 && !r.supplierId ? "Choose the supplier you owed" : undefined}>
+                        {suppliers.isError ? (
+                          <Alert variant="danger" title="Suppliers couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => suppliers.refetch()}>Retry</Button>} />
+                        ) : !suppliers.isLoading && !suppliers.data?.suppliers.length ? (
+                          <p className="text-sm text-fg-muted">No suppliers yet — <Link href="/admin/finance/suppliers" className="text-accent hover:underline">add them</Link>, then come back.</p>
+                        ) : (
+                          <Select id={`os-${r.key}`} value={r.supplierId} disabled={!canEdit || suppliers.isLoading} onChange={(e) => setOthers((rows) => rows.map((x, i) => (i === idx ? { ...x, supplierId: e.target.value } : x)))} data-testid="opening-supplier">
+                            <option value="">{suppliers.isLoading ? "Loading…" : "Choose…"}</option>
+                            {(suppliers.data?.suppliers ?? []).map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                          </Select>
+                        )}
+                      </Field>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -307,11 +334,11 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
 
       {/* 4 — stock */}
       <Card className="p-5 sm:p-6" data-testid="opening-stock-step">
-        <StepHeading n={4} title="Stock on hand" detail="Count of every item on that day and what each cost you. Start from today's stock and the cost prices in your catalog, then correct anything that's off." done={items.length > 0} />
+        <StepHeading n={4} title="Stock on hand" detail={`Count of every item you owned at the start of ${formatBookDate(openingDate)} and what each cost you — including items on orders not yet delivered. Start from your stock records for that day and the cost prices in your catalog, then correct anything that's off.`} done={items.length > 0} />
         <div className="mb-4 flex flex-wrap items-center gap-3">
           {canEdit && (
-            <Button size="sm" variant={items.length ? "outline" : "primary"} loading={prefill.isPending} onClick={async () => { if (!items.length || (await confirm("Replace the current count with today's stock and catalog costs?", { confirmLabel: "Replace", tone: "default", title: "Fill from current stock" }))) prefill.mutate(); }} data-testid="prefill-opening-stock">
-              {items.length ? "Refill from current stock" : "Fill from current stock"}
+            <Button size="sm" variant={items.length ? "outline" : "primary"} loading={prefill.isPending} onClick={async () => { if (!items.length || (await confirm(`Replace the current count with your stock records for ${formatBookDate(openingDate)} and catalog costs?`, { confirmLabel: "Replace", tone: "default", title: "Fill from stock records" }))) prefill.mutate(); }} data-testid="prefill-opening-stock">
+              {items.length ? "Refill from stock records" : "Fill from stock records"}
             </Button>
           )}
           {items.length > 0 && (
