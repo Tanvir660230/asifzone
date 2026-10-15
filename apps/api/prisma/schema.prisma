@@ -379,8 +379,11 @@ model Category {
   id                 String                   @id @default(cuid())
   name               String
   slug               String                   @unique
+  /// Portrait (4:5) photo: half-width category tiles.
   imageUrl           String?
   imageAltText       String?
+  /// Optional wide (16:10) photo for wide category tiles; they fall back to imageUrl.
+  wideImageUrl       String?
   bannerImageUrl     String?
   sortOrder          Int                      @default(0)
   isActive           Boolean                  @default(true)

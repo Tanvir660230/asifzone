@@ -162,6 +162,24 @@ export function ProductReviews({ productId, productName }: { productId: string; 
     setFormOpen(true);
   }
 
+  // No reviews yet: one compact row (the invitation and its button) instead of a full two-column section with a big empty
+  // column — on a phone that empty section was a screen of scrolling between the product and its recommendations.
+  if (breakdown && breakdown.count === 0 && !myReview && !formOpen) {
+    return (
+      <section id="reviews" className="mx-auto max-w-7xl scroll-mt-20 px-4 pt-8 sm:px-6 sm:pt-12 lg:px-8" data-testid="reviews-empty">
+        <div className="flex flex-col gap-3 rounded-2xl border border-ink-100 bg-surface px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="min-w-0">
+            <h2 className="text-base font-medium text-ink-900">Customer reviews</h2>
+            <p className="mt-0.5 text-sm text-ink-500">No reviews yet — be the first to review {productName}.</p>
+          </div>
+          <Button type="button" variant="outline" onClick={handleWriteReviewClick} className="shrink-0 sm:w-auto">
+            Write a review
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section id="reviews" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-4 pt-10 sm:px-6 sm:pb-16 sm:pt-16 lg:px-8">
       <h2 className="ui-section-heading mb-8 font-display text-ink-900">Customer Reviews</h2>

@@ -19,7 +19,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { X, Upload, Sparkles, Star, GripVertical, RotateCw } from "lucide-react";
+import { X, Upload, Sparkles, Star, GripVertical, RotateCw, Ruler, CircleCheck, TriangleAlert } from "lucide-react";
 import type { ProductImage } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ import { toast } from "@/components/ui/toast";
 import { useCurrentAdmin } from "@/hooks/use-current-admin";
 import { adminCan } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { checkFit, imageSpec, ratioLabel, shapeName, type ImageSpec } from "@/lib/image-specs";
 
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp";
 
@@ -225,11 +226,26 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
     }
   }
 
+  // Product photos fill the installed theme's card/gallery frame (square in classic, 4:5 in mihrab); the thumbnails here
+  // take that shape too, so what is cut off is visible before it reaches the store.
+  const spec = imageSpec("productPhoto");
+  const thumbAspect = `${spec.ratio[0]} / ${spec.ratio[1]}`;
+
   const sortableIds = staticMode ? staged.map((s) => s.key) : images.map((img) => img.id);
   const count = sortableIds.length + (staticMode ? 0 : queue.length);
 
   return (
     <div>
+      {/* The one shape every product photo is shown in — said up front, so photos are exported for it, not cropped. */}
+      <p className="mb-3 flex items-start gap-2 rounded-xl bg-surface-muted px-3 py-2.5 text-xs text-fg-muted" data-testid="product-photo-spec">
+        <Ruler size={14} className="mt-px shrink-0 text-fg" aria-hidden="true" />
+        <span>
+          <span className="font-medium tabular-nums text-fg">
+            {spec.width} × {spec.height} px · {ratioLabel(spec.ratio)} {shapeName(spec.ratio)}
+          </span>{" "}
+          — {spec.usedIn} show every photo in this shape; other shapes get cut to fit. Use at least {spec.minWidth} px wide.
+        </span>
+      </p>
       <div
         className={cn(
           "mb-4 grid grid-cols-2 gap-3 rounded-2xl border-2 border-dashed p-2 transition-colors duration-base sm:grid-cols-3 lg:grid-cols-4",
@@ -249,7 +265,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
           <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
             {staticMode
               ? staged.map((item, index) => (
-                  <SortableThumb key={item.key} id={item.key} isMain={index === 0} onSetMain={() => setMain(index)}>
+                  <SortableThumb key={item.key} id={item.key} aspect={thumbAspect} isMain={index === 0} onSetMain={() => setMain(index)}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
                     <button
@@ -263,7 +279,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                 ))
               : images.map((img, index) => (
                   <div key={img.id} className="space-y-1">
-                    <SortableThumb id={img.id} isMain={index === 0} onSetMain={() => setMain(index)}>
+                    <SortableThumb id={img.id} aspect={thumbAspect} isMain={index === 0} onSetMain={() => setMain(index)}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={resolveImageUrl(img.url)}
@@ -313,11 +329,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
                         if (value !== (img.caption ?? "")) captionMutation.mutate({ imageId: img.id, caption: value });
                       }}
                     />
-                    {img.width && img.height && (
-                      <p className="text-[10px] text-fg-subtle">
-                        {img.width}×{img.height}px
-                      </p>
-                    )}
+                    {img.width && img.height && <PhotoFit spec={spec} width={img.width} height={img.height} />}
                   </div>
                 ))}
           </SortableContext>
@@ -325,7 +337,7 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
 
         {!staticMode &&
           queue.map((item) => (
-            <div key={item.key} className="relative aspect-square overflow-hidden rounded-xl border border-line-subtle" data-testid="upload-item" data-status={item.status}>
+            <div key={item.key} style={{ aspectRatio: thumbAspect }} className="relative overflow-hidden rounded-xl border border-line-subtle" data-testid="upload-item" data-status={item.status}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={item.previewUrl} alt="" className={cn("h-full w-full object-cover", item.status !== "failed" && "opacity-50")} />
               {item.status === "failed" ? (
@@ -363,6 +375,9 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
             </span>
             <span className="text-sm font-medium text-fg">Drop photos here, or browse</span>
             <span className="text-xs text-fg-muted">JPEG, PNG or WebP · up to 8 MB each · stored as optimised WebP</span>
+            <span className="text-xs font-medium tabular-nums text-fg">
+              Best at {spec.width} × {spec.height} px ({ratioLabel(spec.ratio)}, {shapeName(spec.ratio)})
+            </span>
           </button>
         )}
       </div>
@@ -403,21 +418,23 @@ export function ImageUploader({ productId, images = [], staged = [], onStagedCha
 
 interface SortableThumbProps {
   id: string;
+  /** CSS aspect-ratio of the store's product photo frame. */
+  aspect: string;
   isMain: boolean;
   onSetMain: () => void;
   children: React.ReactNode;
 }
 
-function SortableThumb({ id, isMain, onSetMain, children }: SortableThumbProps) {
+function SortableThumb({ id, aspect, isMain, onSetMain, children }: SortableThumbProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style = { transform: CSS.Transform.toString(transform), transition };
+  const style = { transform: CSS.Transform.toString(transform), transition, aspectRatio: aspect };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group relative aspect-square overflow-hidden rounded-xl border border-line-subtle bg-surface-muted",
+        "group relative overflow-hidden rounded-xl border border-line-subtle bg-surface-muted",
         isDragging && "z-10 shadow-floatLg ring-2 ring-accent/20",
       )}
     >
@@ -445,5 +462,24 @@ function SortableThumb({ id, isMain, onSetMain, children }: SortableThumbProps) 
         </button>
       )}
     </div>
+  );
+}
+
+/** Under a saved photo: its size, and whether it fits the store's product photo frame (or what gets cut off). */
+function PhotoFit({ spec, width, height }: { spec: ImageSpec; width: number; height: number }) {
+  const verdict = checkFit(spec, width, height);
+  if (verdict.kind === "ok") {
+    return (
+      <p className="flex items-center gap-1 text-[10px] tabular-nums text-fg-subtle" data-testid="photo-fit" data-fit="ok">
+        <CircleCheck size={11} className="shrink-0 text-success-600" aria-hidden="true" />
+        {width} × {height} px
+      </p>
+    );
+  }
+  return (
+    <p className="flex items-start gap-1 text-[10px] leading-snug text-warning-700" data-testid="photo-fit" data-fit={verdict.kind} title={verdict.message}>
+      <TriangleAlert size={11} className="mt-px shrink-0" aria-hidden="true" />
+      {verdict.short}
+    </p>
   );
 }

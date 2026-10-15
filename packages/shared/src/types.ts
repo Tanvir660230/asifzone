@@ -45,6 +45,8 @@ export interface Category {
   slug: string;
   imageUrl: string | null;
   imageAltText: string | null;
+  /** Wide (16:10) photo for wide category tiles; null = they use imageUrl. */
+  wideImageUrl: string | null;
   bannerImageUrl: string | null;
   sortOrder: number;
   isActive: boolean;

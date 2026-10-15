@@ -9,6 +9,30 @@ import { Reveal } from "./reveal";
 
 /** Desktop row heights stay equal whatever a tile's width: its aspect ratio is its column span (of 12) over this. */
 const ROW_UNITS = 3.75;
+/** A tile at least this much wider than tall takes the category's wide (16:10) photo; narrower ones the tall (4:5) one. */
+const WIDE_TILE = 1.2;
+
+const IMAGE_CLASS = "object-cover transition-transform duration-700 ease-smooth group-hover:scale-[1.04]";
+
+/** The category photo made for this tile's shape at each width (lib/image-specs.ts categoryPortrait / categoryWide), each
+ * falling back to the other. When phones and computers need different photos, both are in the page and CSS shows one;
+ * the hidden one's `sizes` is 1px so the browser doesn't fetch it at full size. */
+function TileImage({ cat, phoneWide, desktopWide, sizesDesktop }: { cat: CategoryTreeNode; phoneWide: boolean; desktopWide: boolean; sizesDesktop: string }) {
+  const pick = (wide: boolean) => (wide ? cat.wideImageUrl || cat.imageUrl : cat.imageUrl || cat.wideImageUrl)!;
+  const phone = pick(phoneWide);
+  const desktop = pick(desktopWide);
+  const alt = cat.imageAltText || cat.name;
+  const phoneSizes = phoneWide ? "100vw" : "50vw";
+  if (phone === desktop) {
+    return <Image src={resolveImageUrl(phone)} alt={alt} fill sizes={`(min-width: 1024px) ${sizesDesktop}, ${phoneSizes}`} className={IMAGE_CLASS} />;
+  }
+  return (
+    <>
+      <Image src={resolveImageUrl(phone)} alt={alt} fill sizes={`(min-width: 1024px) 1px, ${phoneSizes}`} className={`${IMAGE_CLASS} lg:hidden`} />
+      <Image src={resolveImageUrl(desktop)} alt={alt} fill sizes={`(min-width: 1024px) ${sizesDesktop}, 1px`} className={`${IMAGE_CLASS} max-lg:hidden`} />
+    </>
+  );
+}
 
 export function CategoryGrid({
   categories,
@@ -51,14 +75,8 @@ export function CategoryGrid({
                   className="group relative block overflow-hidden rounded-xl focus-visible:outline-offset-4"
                 >
                   <div className="relative overflow-hidden rounded-[var(--tile-media-radius)] bg-ink-100 [aspect-ratio:var(--tile-aspect-sm)] lg:[aspect-ratio:var(--tile-aspect-lg)]">
-                    {cat.imageUrl ? (
-                      <Image
-                        src={resolveImageUrl(cat.imageUrl)}
-                        alt={cat.imageAltText || cat.name}
-                        fill
-                        sizes={lg >= 6 ? "(min-width: 1024px) 50vw, 100vw" : "(min-width: 1024px) 25vw, 50vw"}
-                        className="object-cover transition-transform duration-700 ease-smooth group-hover:scale-[1.04]"
-                      />
+                    {cat.imageUrl || cat.wideImageUrl ? (
+                      <TileImage cat={cat} phoneWide={sm === 2} desktopWide={lg / ROW_UNITS >= WIDE_TILE} sizesDesktop={lg >= 6 ? "50vw" : "25vw"} />
                     ) : (
                       // No category photo yet: a flat ink tile reads as a deliberate placeholder, not a broken image.
                       <div className="h-full bg-ink-950" />

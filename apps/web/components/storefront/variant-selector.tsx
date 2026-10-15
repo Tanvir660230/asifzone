@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { isAvailable, maxSellableQuantity, type Product, type ProductVariant, type SizeGuideData, type VariantDimension } from "@clothing-brand/shared";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import { trackFunnelEvent } from "@/lib/analytics";
 import { useAddToCart } from "@/hooks/use-add-to-cart";
@@ -12,7 +11,7 @@ import { readSizeMemory, recordSize, suggestSize } from "@/lib/size-memory";
 import { WishlistButton } from "./wishlist-button";
 import { StockAlertButton } from "./stock-alert-button";
 import { SizeGuideModal } from "./size-guide-modal";
-import { STOCK_TONE_CLASS, VariantOptionPickers, missingSelectionText, stockLine, useVariantOptions } from "./variant-option-pickers";
+import { StockBadge, VariantOptionPickers, missingSelectionText, stockLine, useVariantOptions } from "./variant-option-pickers";
 import { VariantPickerDialog, type PickerIntent } from "./variant-picker-dialog";
 
 interface VariantSelectorProps {
@@ -161,6 +160,7 @@ export function VariantSelector({
         instanceId="inline"
         suggestedSize={suggestedSize}
         soldOutSelectable
+        lowStockThreshold={lowStockThreshold}
         sizeHeadingExtra={showSizeGuide ? <SizeGuideModal sizeGuide={sizeGuide} /> : undefined}
       />
 
@@ -174,11 +174,9 @@ export function VariantSelector({
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
             >
-              {/* Stock is shown as a state, never a quantity. */}
-              <p className={cn("text-sm", STOCK_TONE_CLASS[stock.tone])} data-testid="variant-stock-status">
-                {stock.text} · SKU {selectedVariant.sku}
-              </p>
-              {maxQty === 0 && restockDate && <p className="mt-1 text-sm text-ink-500">Expected back in stock: {formatDate(restockDate)}</p>}
+              {/* Stock is shown as a state (and a meter), never a quantity. The SKU is the shop’s code, not the shopper’s. */}
+              <StockBadge stock={stock} testId="variant-stock-status" />
+              {maxQty === 0 && restockDate && <p className="mt-2 text-sm text-ink-500">Expected back in stock: {formatDate(restockDate)}</p>}
               {maxQty === 0 && <StockAlertButton variantId={selectedVariant.id} />}
             </motion.div>
           ) : (
@@ -245,10 +243,11 @@ export function VariantSelector({
         )}
       </AnimatePresence>
 
-      <div>
+      {/* data-inline-actions: the product page watches this row to show its sticky bar while the row is off screen. */}
+      <div data-inline-actions>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="lg" className="flex-1" disabled={soldOut} onClick={handleAddToCart}>
-            {soldOut ? "Sold out" : "Add to Cart"}
+            Add to Cart
           </Button>
           <Button variant="primary" size="lg" className="flex-1" disabled={soldOut} onClick={handleBuyNow}>
             Buy Now

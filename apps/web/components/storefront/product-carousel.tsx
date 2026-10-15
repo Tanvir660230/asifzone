@@ -105,9 +105,18 @@ function useGridPages(count: number) {
     requestAnimationFrame(() => listRef.current?.querySelector<HTMLAnchorElement>(`[data-grid-item="${firstNew}"] a`)?.focus({ preventScroll: true }));
   }
 
+  // Once everything is shown, a last card alone on its row (3 cards on a 2-column phone, 4 on a 3-column tablet) reads as
+  // a leftover: that one card is left out on that screen. A section never shrinks to nothing — one card stays one card.
+  const loneOnPhone = (i: number) => count > 1 && count % 2 === 1 && i === count - 1 && count <= phoneShown;
+  const loneOnTablet = (i: number) => count > 3 && count % 3 === 1 && i === count - 1 && count <= tabletShown;
+
   /** Below 1024px: hidden until "Show more" reaches it; cards past the first page fade in as they are revealed. */
   const itemClass = (i: number) =>
-    cn(i >= GRID_STEP.phone && "animate-fade-in", i >= phoneShown && "max-sm:hidden", i >= tabletShown && "sm:max-lg:hidden");
+    cn(
+      i >= GRID_STEP.phone && "animate-fade-in",
+      (i >= phoneShown || loneOnPhone(i)) && "max-sm:hidden",
+      (i >= tabletShown || loneOnTablet(i)) && "sm:max-lg:hidden",
+    );
 
   return { listRef, showMore, itemClass, phoneMore: count > phoneShown, tabletMore: count > tabletShown };
 }
