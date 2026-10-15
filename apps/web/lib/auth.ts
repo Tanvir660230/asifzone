@@ -110,8 +110,9 @@ export function listAdminInvites() {
   return apiFetch<{ invites: AdminInvite[] }>("/api/auth/admin-invites");
 }
 
+/** `acceptUrl` is the invite link, for passing on by hand — the only way in when `emailSent` is false. */
 export function createAdminInvite(input: CreateAdminInviteInput) {
-  return apiFetch<{ message: string }>("/api/auth/admin-invites", { method: "POST", body: input });
+  return apiFetch<{ message: string; emailSent: boolean; acceptUrl: string }>("/api/auth/admin-invites", { method: "POST", body: input });
 }
 
 export function revokeAdminInvite(id: string) {

@@ -10,6 +10,8 @@ import { renderEmailLayout } from "../../lib/email-template";
 import { hashToken } from "../../lib/token-hash";
 import { env } from "../../config/env";
 import { getProviders } from "../../providers/registry";
+import { MailProviderError } from "../../providers/errors";
+import { captureError } from "../../lib/observability/error-capture";
 
 
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -269,7 +271,10 @@ export async function listAdminInvites() {
   });
 }
 
-export async function createAdminInvite(input: CreateAdminInviteInput, invitedById: string) {
+/** Creates the invite and emails its link. The link is also returned: the inviter may pass it on themselves (WhatsApp),
+ * and must when the email can't go out — a mail provider rejecting the message (e.g. a sending domain that isn't verified
+ * yet, so only the account owner's address is accepted) leaves a valid invite, not a 500. Other errors still throw. */
+export async function createAdminInvite(input: CreateAdminInviteInput, invitedById: string): Promise<{ acceptUrl: string; emailSent: boolean }> {
   const email = input.email.trim().toLowerCase();
   if (await prisma.adminUser.findUnique({ where: { email } })) {
     throw AppError.conflict("An admin account with this email already exists");
@@ -288,13 +293,24 @@ export async function createAdminInvite(input: CreateAdminInviteInput, invitedBy
   });
 
   const acceptUrl = `${env.webOrigin}/admin/accept-invite?token=${token}`;
+  try {
+    await sendInviteEmail(email, input.role, acceptUrl);
+  } catch (err) {
+    if (!(err instanceof MailProviderError)) throw err;
+    captureError(err, { msg: "[auth] admin invite email not sent — the link is shown to the inviter instead" });
+    return { acceptUrl, emailSent: false };
+  }
+  return { acceptUrl, emailSent: true };
+}
+
+async function sendInviteEmail(email: string, role: AdminRoleName, acceptUrl: string) {
   await getProviders().email.send({
     to: email,
     subject: "You've been invited to the admin console",
     html: await renderEmailLayout({
       bodyHtml: `
         <p style="margin:0 0 8px;font-size:18px;font-weight:600;">You're invited</p>
-        <p style="margin:0;">You've been invited as ${input.role === "OWNER" ? "an owner" : "a staff member"} on the admin console. Set your password to get started — this link expires in 7 days.</p>
+        <p style="margin:0;">You've been invited as ${role === "OWNER" ? "an owner" : "a staff member"} on the admin console. Set your password to get started — this link expires in 7 days.</p>
       `,
       ctaLabel: "Accept invite",
       ctaUrl: acceptUrl,

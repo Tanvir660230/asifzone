@@ -127,8 +127,8 @@ export const listAdminInvites = asyncHandler(async (_req: Request, res: Response
 });
 
 export const createAdminInvite = asyncHandler(async (req: Request, res: Response) => {
-  await authService.createAdminInvite(req.body, req.admin!.adminId);
-  res.status(201).json({ message: "Invite sent." });
+  const { acceptUrl, emailSent } = await authService.createAdminInvite(req.body, req.admin!.adminId);
+  res.status(201).json({ message: emailSent ? "Invite sent." : "Invite created, but the email couldn't be sent.", emailSent, acceptUrl });
 });
 
 export const revokeAdminInvite = asyncHandler(async (req: Request, res: Response) => {

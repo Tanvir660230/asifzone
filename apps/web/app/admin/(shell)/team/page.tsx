@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ShieldOff, ShieldCheck, Pencil, KeyRound } from "lucide-react";
+import { Plus, Trash2, ShieldOff, ShieldCheck, Pencil, KeyRound, Copy, Check } from "lucide-react";
 import {
   createAdminInviteSchema,
   updateAdminSchema,
@@ -181,6 +181,49 @@ const ROLE_LABEL: Record<string, string> = {
   FINANCE_VIEWER: "Finance viewer",
 };
 
+/** After an invite: its link, to send by WhatsApp or any chat. When the email couldn't go out it's the only way in, and
+ * the panel says why. */
+function InviteLinkPanel({ result, onDone }: { result: { email: string; emailSent: boolean; acceptUrl: string }; onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(result.acceptUrl);
+      setCopied(true);
+      toast.success("Invite link copied");
+    } catch {
+      toast.error("Couldn't copy — select the link and copy it");
+    }
+  }
+  return (
+    <div className="space-y-4" data-testid="invite-link-panel">
+      {result.emailSent ? (
+        <p className="text-sm text-ink-600">
+          We emailed an invite to <strong className="font-medium text-ink-900">{result.email}</strong>. You can also send them this link yourself.
+        </p>
+      ) : (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-sm text-warning-700" role="status">
+          The invite is ready, but the email to <strong className="font-medium">{result.email}</strong> couldn&rsquo;t be sent (the store&rsquo;s email
+          sending isn&rsquo;t fully set up). Send them this link on WhatsApp or another chat — it works for 7 days.
+        </div>
+      )}
+      <div>
+        <Label htmlFor="invite-link">Invite link</Label>
+        <div className="mt-1 flex gap-2">
+          <Input id="invite-link" readOnly value={result.acceptUrl} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
+          <Button type="button" variant="outline" onClick={copy} className="shrink-0">
+            {copied ? <Check size={16} /> : <Copy size={16} />} {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      </div>
+      <div className="flex justify-end">
+        <Button type="button" variant="brass" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminTeamPage() {
   const queryClient = useQueryClient();
   const { data: currentAdmin } = useCurrentAdmin();
@@ -190,6 +233,7 @@ export default function AdminTeamPage() {
     queryFn: authApi.listAdminInvites,
   });
   const [inviting, setInviting] = useState(false);
+  const [inviteResult, setInviteResult] = useState<{ email: string; emailSent: boolean; acceptUrl: string } | null>(null);
   const [editingAdmin, setEditingAdmin] = useState<authApi.AdminAccount | null>(null);
   const [passwordAdmin, setPasswordAdmin] = useState<authApi.AdminAccount | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -197,9 +241,9 @@ export default function AdminTeamPage() {
 
   const inviteMutation = useMutation({
     mutationFn: authApi.createAdminInvite,
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin-invites"] });
-      toast.success("Invite sent");
+      if (result.emailSent) toast.success("Invite sent");
     },
   });
   const activeMutation = useMutation({
@@ -235,8 +279,9 @@ export default function AdminTeamPage() {
   async function handleInvite(values: CreateAdminInviteInput) {
     setError(null);
     try {
-      await inviteMutation.mutateAsync(values);
+      const result = await inviteMutation.mutateAsync(values);
       setInviting(false);
+      setInviteResult({ email: values.email, emailSent: result.emailSent, acceptUrl: result.acceptUrl });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to send invite");
     }
@@ -386,6 +431,10 @@ export default function AdminTeamPage() {
       <Modal open={inviting} onClose={() => setInviting(false)} title="Invite admin">
         {error && <p className="mb-3 text-sm text-danger-600">{error}</p>}
         <InviteForm onSubmit={handleInvite} onCancel={() => setInviting(false)} />
+      </Modal>
+
+      <Modal open={Boolean(inviteResult)} onClose={() => setInviteResult(null)} title={inviteResult?.emailSent ? "Invite sent" : "Send this invite link"}>
+        {inviteResult && <InviteLinkPanel result={inviteResult} onDone={() => setInviteResult(null)} />}
       </Modal>
 
       <Modal open={Boolean(editingAdmin)} onClose={() => setEditingAdmin(null)} title="Edit team member">
