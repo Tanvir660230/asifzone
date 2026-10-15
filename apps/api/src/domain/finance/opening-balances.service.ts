@@ -16,6 +16,7 @@ import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
 import { financeTransaction } from "./finance-tx";
 import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { resolveMappedAccount } from "./chart.service";
+import { carriedIntoOpeningSql } from "./inventory-cutover.service";
 import { postJournalInTx, journalDto, type JournalLineSpec } from "./journal.service";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 
@@ -119,6 +120,7 @@ export async function saveOpeningLines(input: { notes?: string | null; lines: Op
   const cur = business.baseCurrency;
   return inTransaction(async (tx) => {
     const before = await lockDraftBatch(tx, business, actor);
+    const payablesAccountId = (await tx.accountMapping.findUnique({ where: { businessId_key: { businessId: business.id, key: "liability.payable_trade" } }, select: { accountId: true } }))?.accountId ?? null;
     const rows: Prisma.OpeningBalanceLineCreateManyInput[] = [];
     for (const [i, l] of input.lines.entries()) {
       const at = `Line ${i + 1}`;
@@ -135,6 +137,12 @@ export async function saveOpeningLines(input: { notes?: string | null; lines: Op
       const account = await tx.ledgerAccount.findFirst({ where: { id: accountId, businessId: business.id } });
       if (!account || !account.isPostable || !account.isActive) throw financeError(400, "ACCOUNT_NOT_POSTABLE", `${at}: the account can't take postings`);
       if (account.type !== CATEGORY_TYPE[l.category]) throw financeError(400, "OPENING_CATEGORY_TYPE", `${at}: a ${l.category} balance belongs on a ${CATEGORY_TYPE[l.category]} account`);
+      // What is owed to a supplier sits on their payables account, so their statement, ageing and payments see it.
+      if (l.partyType === "Supplier") {
+        if (!l.partyId || !(await tx.supplier.findFirst({ where: { id: l.partyId, businessId: business.id }, select: { id: true } }))) throw financeError(400, "SUPPLIER_NOT_FOUND", `${at}: choose a supplier`);
+      } else if (accountId === payablesAccountId) {
+        throw financeError(400, "OPENING_SUPPLIER_REQUIRED", `${at}: say which supplier is owed — trade payables are kept per supplier`);
+      }
       rows.push({ batchId: before.id, lineNo: i + 1, category: l.category, accountId, financialAccountId: l.financialAccountId ?? null, side: l.side, amount: toDecimal(toMinor(l.amount, cur), cur), brandId: l.brandId ?? null, partyType: l.partyType ?? null, partyId: l.partyId ?? null, description: l.description ?? null });
     }
     await tx.openingBalanceLine.deleteMany({ where: { batchId: before.id } });
@@ -196,36 +204,65 @@ export async function saveOpeningInventory(items: OpeningInventoryInput[], actor
 }
 
 /**
- * Starts the count from what the system knows today: every variant with stock on hand, valued at the catalog's typed cost
- * price as an ESTIMATE (it is not backed by a supplier document), or MISSING when no cost price exists. The owner then
- * corrects quantities and costs before posting.
+ * Starts the count from the stock records, as they stood at the start of the opening date: today's stock with every
+ * movement since then undone, plus the units out on orders the count carries (placed before the date, not yet sold on it
+ * — see carriedIntoOpeningSql), which still belong to the business. Each is valued at the catalog's typed cost price as an
+ * ESTIMATE (it is not backed by a supplier document), or MISSING when no cost price exists. The owner then corrects
+ * quantities and costs before posting.
  */
 export async function prefillOpeningInventory(actor: FinanceActor) {
   const { business, brand } = await getFinanceContext();
+  if (!business.openingDate) throw financeError(409, "OPENING_DATE_NOT_SET", "Set the Financial Opening Date first");
   const cur = business.baseCurrency;
+  const tz = business.timezone;
+  const opening = business.openingDate;
   const today = businessToday(business);
-  const variants = await prisma.productVariant.findMany({
-    where: { stock: { gt: 0 }, product: { deletedAt: null } },
-    select: { id: true, sku: true, size: true, color: true, stock: true, costPrice: true, product: { select: { name: true, costPrice: true } } },
-    orderBy: { sku: "asc" },
-  });
-  const items: OpeningInventoryInput[] = variants.map((v) => {
+  const [variants, since, carried] = await Promise.all([
+    prisma.productVariant.findMany({
+      where: { product: { deletedAt: null } },
+      select: { id: true, sku: true, size: true, color: true, stock: true, costPrice: true, product: { select: { name: true, costPrice: true } } },
+      orderBy: { sku: "asc" },
+    }),
+    prisma.$queryRaw<Array<{ variantId: string; change: bigint }>>`
+      SELECT m."variantId", SUM(m.change)::bigint AS change FROM "StockMovement" m
+      WHERE (m."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${tz})::date >= ${dateColumn(opening)}::date
+      GROUP BY m."variantId"`,
+    prisma.$queryRaw<Array<{ variantId: string; units: bigint; orders: bigint }>>`
+      SELECT m."variantId", (-SUM(m.change))::bigint AS units, COUNT(DISTINCT m."orderId")::bigint AS orders
+      FROM "StockMovement" m JOIN "Order" o ON o.id = m."orderId"
+      WHERE (m."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${tz})::date < ${dateColumn(opening)}::date
+        AND ${carriedIntoOpeningSql(tz, opening)}
+      GROUP BY m."variantId"`,
+  ]);
+  const movedSince = new Map(since.map((r) => [r.variantId, Number(r.change)]));
+  const outOnOrders = new Map(carried.map((r) => [r.variantId, { units: Math.max(0, Number(r.units)), orders: Number(r.orders) }]));
+  const items: OpeningInventoryInput[] = [];
+  for (const v of variants) {
+    const onShelf = Math.max(0, v.stock - (movedSince.get(v.id) ?? 0));
+    const out = outOnOrders.get(v.id) ?? { units: 0, orders: 0 };
+    const quantity = onShelf + out.units;
+    if (quantity <= 0) continue;
     const cost = v.costPrice ?? v.product.costPrice;
     const costed = cost !== null && toMinor(cost, cur) > 0;
-    return {
+    const notes = [
+      ...(onShelf !== v.stock ? [`${onShelf} on the shelf on ${opening} (${v.stock} today)`] : []),
+      ...(out.units ? [`includes ${out.units} ${out.units === 1 ? "unit" : "units"} on ${out.orders === 1 ? "an order" : `${out.orders} orders`} not yet delivered or paid on ${opening}`] : []),
+    ].join("; ");
+    items.push({
       variantId: v.id,
       sku: v.sku,
       name: `${v.product.name} — ${v.size} / ${v.color}`.slice(0, 200),
-      quantity: v.stock,
+      quantity,
       unitCost: costed ? toMajorNumber(toMinor(cost, cur), cur) : null,
       valuationStatus: costed ? "ESTIMATED" : "MISSING",
       valuationMethod: costed ? "CATALOG_COST_PRICE" : "NONE",
       valuationSource: costed ? `${v.costPrice !== null ? "Variant" : "Product"} cost price in the catalog on ${today} (typed, not purchase-verified)` : "No cost price recorded in the catalog",
       valuationDate: today,
       confidence: costed ? "LOW" : null,
+      notes: notes || null,
       brandId: brand.id,
-    };
-  });
+    });
+  }
   return inTransaction(async (tx) => {
     const before = await lockDraftBatch(tx, business, actor);
     return replaceInventory(tx, business, before, inventoryRows(before.id, items, cur), actor, "opening.prefill_inventory");
@@ -272,4 +309,17 @@ export async function postOpeningBalances(actor: FinanceActor) {
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "opening.post", entityType: "OpeningBalanceBatch", entityId: batch.id, before: { status: batch.status }, after: { status: after.status, journalEntryId: entry.id, summary } });
     return { batch: batchDto(after, cur), journal: journalDto(entry) };
   });
+}
+
+/** What each supplier was owed in the posted opening balances (minor units, credit positive): the opening lines on the
+ * trade-payables account that name the supplier. Their statement, the payables ageing and the subledger check count it
+ * like a bill dated on the opening date. */
+export async function supplierOpeningDues(db: AppTransactionClient | typeof prisma, businessId: string, payablesAccountId: string, currency: string, supplierId?: string): Promise<Map<string, number>> {
+  const lines = await db.openingBalanceLine.findMany({
+    where: { accountId: payablesAccountId, partyType: "Supplier", ...(supplierId ? { partyId: supplierId } : {}), batch: { businessId, status: "POSTED" } },
+    select: { partyId: true, side: true, amount: true },
+  });
+  const out = new Map<string, number>();
+  for (const l of lines) out.set(l.partyId!, (out.get(l.partyId!) ?? 0) + (l.side === "CREDIT" ? 1 : -1) * toMinor(l.amount, currency));
+  return out;
 }

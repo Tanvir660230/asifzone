@@ -7,7 +7,9 @@ import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { installId } from "../../config/installation";
 import { signAccessToken } from "../../lib/jwt";
+import { PERMISSIONS } from "@clothing-brand/shared";
 import { ownerId, purgeFinanceTables, RUN } from "../../test-fixtures";
+import { createSupplier } from "./suppliers.service";
 import { OUTBOX_CONSUMERS } from "../outbox/consumers";
 import { getFinanceContext } from "./finance-context";
 import { processFinancialEvent, recordFinancialEvent, registerPostingRule, unregisterPostingRuleForTests } from "./events.service";
@@ -124,12 +126,17 @@ describe("financial core — opening balances", () => {
   });
 
   it("posts one balanced OPENING_BALANCE journal; MISSING inventory is never given a cost", async () => {
+    // What a supplier is owed sits on trade payables under their name — a line there without one is refused.
+    const payable = { category: "PAYABLE", accountId: acc["2110"], side: "CREDIT", amount: 3000 };
+    const unnamed = await owner.put("/opening-balances/lines", { lines: [payable] });
+    expect(unnamed.body.details.code).toBe("OPENING_SUPPLIER_REQUIRED");
+    const supplierId = (await createSupplier({ legalName: `Opening supplier ${RUN}`, paymentTermsDays: 30 } as never, { type: "ADMIN", adminId: await ownerId(), label: "owner", permissions: [...PERMISSIONS] })).id;
     const saved = await owner.put("/opening-balances/lines", {
       notes: "Statement at opening",
       lines: [
         { category: "CASH", financialAccountId: cashFa.id, side: "DEBIT", amount: 10000 },
         { category: "MOBILE_WALLET", financialAccountId: walletFa.id, side: "DEBIT", amount: 5000 },
-        { category: "PAYABLE", accountId: acc["2110"], side: "CREDIT", amount: 3000, partyType: "SUPPLIER", partyId: "sup-1" },
+        { ...payable, partyType: "Supplier", partyId: supplierId },
         { category: "LOAN", accountId: acc["2510"], side: "CREDIT", amount: 4000 },
         { category: "CAPITAL", accountId: acc["3100"], side: "CREDIT", amount: 6000 },
       ],

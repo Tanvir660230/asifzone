@@ -30,6 +30,7 @@ import { recordFinancialEvent } from "./events.service";
 import { activeCostingInTx, divRound, revalueForDocumentInTx } from "./costing.service";
 import { PAYABLES_EVENT_TYPES, PAYABLES_POSTING_KEYS, type InvoicePostedPayload } from "./payables-posting-rules";
 import { adminOf, docNumber } from "./purchase-orders.service";
+import { supplierOpeningDues } from "./opening-balances.service";
 
 type PayablesKey = (typeof PAYABLES_POSTING_KEYS)[number];
 export const invoiceNumber = (kind: SupplierInvoiceKind, n: number) => docNumber(kind === "INVOICE" ? "BILL" : "CN", n);
@@ -534,8 +535,9 @@ export async function supplierOpenItems(supplierId: string) {
   };
 }
 
-/** Accounts payable ageing: each supplier's outstanding bills by days past due, less credit notes and payments not yet
- * allocated to a bill (advances). The balance equals the supplier's payables account. */
+/** Accounts payable ageing: each supplier's outstanding bills (and what they were owed at the opening date) by days past
+ * due, less credit notes and payments not yet allocated to a bill (advances). The balance equals the supplier's payables
+ * account. */
 export async function payablesAgeing() {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
@@ -566,6 +568,27 @@ export async function payablesAgeing() {
     const row = rowOf(p.supplier!);
     row.advances += toMinor(p.amount, cur) - sum(p.supplierAllocations) - sum(p.refunds);
     by.set(p.supplier!.id, row);
+  }
+  // What a supplier was owed at the opening date ages like a bill due that day; payments not allocated to a bill settle it
+  // first (an opening due has no bill to allocate to).
+  const ap = await prisma.accountMapping.findUnique({ where: { businessId_key: { businessId: business.id, key: "liability.payable_trade" } }, select: { accountId: true } });
+  const dues = ap && business.openingDate ? await supplierOpeningDues(prisma, business.id, ap.accountId, cur) : new Map<string, number>();
+  if (dues.size) {
+    const owed = await prisma.supplier.findMany({ where: { id: { in: [...dues.keys()] } }, select: { id: true, code: true, displayName: true } });
+    const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${business.openingDate}T00:00:00Z`)) / 86_400_000);
+    const b = days <= 0 ? "current" : days <= 30 ? "d1_30" : days <= 60 ? "d31_60" : days <= 90 ? "d61_90" : "d90_plus";
+    for (const s of owed) {
+      const row = rowOf(s);
+      const due = dues.get(s.id)!;
+      if (due < 0) row.advances -= due;
+      else {
+        const applied = Math.max(0, Math.min(due, row.advances));
+        row.advances -= applied;
+        if (due > applied) row.invoices += 1;
+        row.buckets[b] += due - applied;
+      }
+      by.set(s.id, row);
+    }
   }
   const major = (n: number) => toMajorNumber(n, cur);
   const figures = (buckets: Row["buckets"], credits: number, advances: number) => {

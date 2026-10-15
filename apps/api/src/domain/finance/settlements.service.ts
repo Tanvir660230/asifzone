@@ -12,7 +12,7 @@
  */
 import { createHash } from "node:crypto";
 import type { ClearingSettlement, ClearingSettlementLine, FinancialAccount, Prisma } from "@prisma/client";
-import { CLEARING_ACCOUNTS, type AccountMappingKey } from "@clothing-brand/shared";
+import { CLEARING_ACCOUNTS, businessDate, type AccountMappingKey } from "@clothing-brand/shared";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { parseCsv, unguardCell } from "../../lib/csv";
 import { recordFinanceAudit, type FinanceActor, type FinanceAuditInput } from "./finance-audit";
@@ -246,6 +246,21 @@ async function lockSettlement(tx: AppTransactionClient, businessId: string, id: 
   return tx.clearingSettlement.findUniqueOrThrow({ where: { id }, include: INCLUDE });
 }
 
+/** Orders among `orderIds` whose money reached clearing only before the Financial Opening Date: every successful payment
+ * settled before it. The books never posted those payments (the opening balance of clearing carries them). */
+async function paidBeforeTheBooks(tx: AppTransactionClient, business: FinanceBusinessInfo, orderIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!business.openingDate || !orderIds.length) return out;
+  const payments = await tx.payment.findMany({ where: { orderId: { in: [...new Set(orderIds)] }, status: "SUCCEEDED" }, select: { orderId: true, settledAt: true } });
+  const latest = new Map<string, string>();
+  for (const p of payments) {
+    const d = businessDate(p.settledAt, business.timezone);
+    if (d > (latest.get(p.orderId!) ?? "")) latest.set(p.orderId!, d);
+  }
+  for (const [orderId, d] of latest) if (d < business.openingDate) out.add(orderId);
+  return out;
+}
+
 /** Posts a DRAFT settlement: one journal through journal.service; clearing is credited per order line, so the clearing
  * account reconciles order by order. Idempotent: a posted settlement is returned as it is. */
 export async function postSettlement(id: string, actor: FinanceActor) {
@@ -269,7 +284,14 @@ export async function postSettlement(id: string, actor: FinanceActor) {
       lines.push(adj > 0 ? { accountId: adjAccount, debit: adj, credit: 0, memo: s.adjustmentReason } : { accountId: adjAccount, debit: 0, credit: -adj, memo: s.adjustmentReason });
     }
     if (s.lines.length) {
-      for (const l of s.lines) lines.push({ accountId: clearing.ledgerAccountId, debit: 0, credit: signed(l.amount, cur), memo: l.externalRef ?? l.orderNumber, ...(l.orderId ? { partyType: "Order", partyId: l.orderId } : {}) });
+      const before = await paidBeforeTheBooks(tx, business, s.lines.flatMap((l) => (l.orderId ? [l.orderId] : [])));
+      for (const l of s.lines) {
+        // Money an order paid in before the opening date is in clearing's opening balance (no order named), not under the
+        // order — so the payout comes out of that balance, and the order is not shown as settled for more than it paid.
+        const old = l.orderId !== null && before.has(l.orderId);
+        const memo = old ? `${l.externalRef ?? l.orderNumber ?? ""} (paid in before the books started)`.trim() : l.externalRef ?? l.orderNumber;
+        lines.push({ accountId: clearing.ledgerAccountId, debit: 0, credit: signed(l.amount, cur), memo, ...(l.orderId && !old ? { partyType: "Order", partyId: l.orderId } : {}) });
+      }
     } else lines.push({ accountId: clearing.ledgerAccountId, debit: 0, credit: gross, memo: s.reference });
     const { entry } = await postJournalInTx(tx, business, {
       entryDate: businessDateOf(s.settlementDate),

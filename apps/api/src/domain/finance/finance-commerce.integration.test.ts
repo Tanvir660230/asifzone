@@ -6,7 +6,7 @@ import { listRoutes, routePermission } from "../../test-routes";
 import { app } from "../../app";
 import { prisma } from "../../config/prisma";
 import { signAccessToken } from "../../lib/jwt";
-import { checkout, cleanupFixtures, createStockedProduct, ownerId, placeOrder, purgeFinanceTables, RUN, trackOrder } from "../../test-fixtures";
+import { checkout, cleanupFixtures, createStockedProduct, ownerId, markOpeningPostedInTx, placeOrder, purgeFinanceTables, RUN, trackOrder } from "../../test-fixtures";
 import { createOrder, updateOrderStatus } from "../../modules/orders/order.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
 import { settlePaymentSession } from "../../modules/payments/payment.service";
@@ -93,6 +93,7 @@ beforeAll(async () => {
   await financeTransaction(async (tx) => {
     await tx.financeBusiness.update({ where: { id: ctx.business.id }, data: { openingDate: new Date("2026-01-01T00:00:00Z") } });
     await tx.financeAuditEntry.create({ data: { businessId: ctx.business.id, actorType: "SYSTEM", actorLabel: "test", action: "business.update", entityType: "FinanceBusiness", entityId: ctx.business.id } });
+    await markOpeningPostedInTx(tx, ctx.business.id, new Date("2026-01-01T00:00:00Z"));
   });
   expect((await syncCommerce()).skipped).toBeUndefined();
 });

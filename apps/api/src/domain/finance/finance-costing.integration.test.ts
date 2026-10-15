@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { prisma } from "../../config/prisma";
-import { cleanupFixtures, createStockedProduct, ownerId, placeOrder, purgeFinanceTables, trackOrder, checkout } from "../../test-fixtures";
+import { cleanupFixtures, createStockedProduct, ownerId, placeOrder, markOpeningPostedInTx, purgeFinanceTables, trackOrder, checkout } from "../../test-fixtures";
 import { createOrder, deleteOrder, deriveOrderPricing, insertOrderRecord, restoreOrder, updateOrderStatus } from "../../modules/orders/order.service";
 import { ensureCommerceAccounting } from "./commerce-setup.service";
 import { recordItemReturn } from "../../modules/orders/order-adjustments.service";
@@ -91,6 +91,7 @@ beforeAll(async () => {
   await financeTransaction(async (tx) => {
     await tx.financeBusiness.update({ where: { id: ctx.business.id }, data: { openingDate: new Date("2026-01-01T00:00:00Z") } });
     await tx.financeAuditEntry.create({ data: { businessId: ctx.business.id, actorType: "SYSTEM", actorLabel: "test", action: "business.update", entityType: "FinanceBusiness", entityId: ctx.business.id } });
+    await markOpeningPostedInTx(tx, ctx.business.id, new Date("2026-01-01T00:00:00Z"));
   });
   // The pool: variants as they exist before 4C cuts them over.
   for (const [name, stock] of [["A", 100], ["B", 5], ["C", 2], ["D", 10], ["E", 20], ["E2", 10], ["F", 10], ["G", 10], ["H", 10], ["I", 10], ["J", 10], ["K", 3], ["M1", 50], ["M2", 50], ["R", 40], ["X1", 10], ["X2", 10]] as const) await preActivationVariant(name, stock, { catalogCost: 999 });

@@ -163,16 +163,28 @@ Errors use the standard envelope with a stable `details.code`, e.g. `JOURNAL_INV
 ## 8. Opening balances
 
 There is one batch per business. It is edited as a DRAFT, then posted once as a single OPENING_BALANCE journal dated
-on the opening date. After that, the batch and the opening date are frozen.
+on the opening date. After that, the batch and the opening date are frozen. The commerce projector records nothing
+until the batch is posted, so setting the date alone never posts a sale or locks the date; the first sweep after posting
+catches up every fact from the opening date.
 
 - **Lines** cover cash, bank and mobile-wallet/payment accounts (each must name its financial account), receivables,
   payables, loans, fixed assets, capital and other assets, liabilities or equity. Each line has a side, amount,
   optional party and brand. The category must match the account type.
+  - A line on trade payables must name its supplier (`partyType = "Supplier"`). The supplier's statement shows it as
+    "owed when the books started", payments not allocated to a bill settle it first, the payables ageing ages it from
+    the opening date, and `payables.subledger` counts it as a document.
+  - COD the courier held (and gateway money not yet paid out) is the opening balance of that clearing account. A later
+    settlement line for an order whose every payment settled before the opening date credits clearing without the
+    order as party, so it draws on that balance rather than over-settling the order.
 - **Opening inventory** is one row per SKU with quantity, unit cost or valuation amount, valuation status
   (KNOWN / ESTIMATED / MISSING), method, source, valuation date, confidence and notes. MISSING items are valued at 0,
   can't carry a cost, and are reported as unvalued quantity.
-  - The prefill starts from current stock and the catalog's typed cost price, marked **ESTIMATED / LOW** confidence
-    (not purchase-verified), or MISSING when there is no cost.
+  - The prefill starts from the stock records as they stood at the start of the opening date (today's stock with every
+    movement since undone), plus units out on orders placed before the date but not yet realised on it (COD not yet
+    delivered, online not yet paid) — they still belong to the business, and their later sale takes the cost out of
+    inventory. The cutover's in-transit bridge carries the same orders (`carriedIntoOpeningSql`). Costs come from the
+    catalog's typed cost price, marked **ESTIMATED / LOW** confidence (not purchase-verified), or MISSING when there is
+    no cost.
   - The valued total posts to `asset.inventory` with valuation status OPENING_BALANCE.
 - The difference goes to **Opening balance equity**, so the journal balances by construction.
 

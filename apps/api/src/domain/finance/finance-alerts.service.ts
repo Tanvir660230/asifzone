@@ -65,7 +65,7 @@ export async function financeAlerts() {
 
   // Until the opening balances are posted the books record nothing — every other finance page reads empty.
   if (!business.openingDate) add({ key: "books.not_started", severity: "critical", title: "The books haven't started", detail: "Choose the date your books start — nothing is recorded in Finance until then.", count: 1, href: "/admin/finance/opening", action: "Start the books" });
-  else if (openingBatch?.status !== "POSTED") add({ key: "books.not_started", severity: "warning", title: "Opening balances not posted", detail: `Books start on ${business.openingDate}. Enter what you had and owed that day, then post it.`, count: 1, href: "/admin/finance/opening", action: "Finish starting the books" });
+  else if (openingBatch?.status !== "POSTED") add({ key: "books.not_started", severity: "warning", title: "Opening balances not posted", detail: `Books start on ${business.openingDate}. Enter what you had and owed that day, then post it — sales are recorded from then on.`, count: 1, href: "/admin/finance/opening", action: "Finish starting the books" });
   add({ key: "events.failed", severity: "critical", title: "Financial events failed to post", detail: "These sales, receipts or stock movements are not in the books yet. Open them to see the error and retry.", count: failedEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
   add({ key: "events.waiting", severity: "warning", title: "Financial events waiting to post", detail: "Received more than 15 minutes ago and still not posted.", count: waitingEvents, href: "/admin/finance/activity?view=events", action: "Review events" });
 
