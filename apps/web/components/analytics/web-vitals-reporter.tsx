@@ -20,6 +20,10 @@ interface Sample {
 
 const MAX_BATCH = 10;
 const queue: Sample[] = [];
+/** The page this visit loaded on. LCP, CLS and INP are reported late (on the first tap, or when the tab is hidden) —
+ * often after the shopper has moved to another page in the app — but they describe the page that was loaded, so that
+ * is the page they are filed under (the same way Google's field data attributes them). */
+const landingPath = typeof window !== "undefined" ? window.location.pathname : "/";
 
 function flush() {
   if (queue.length === 0) return;
@@ -31,7 +35,7 @@ const isMetric = (name: string): name is WebVitalMetric => (WEB_VITAL_METRICS as
 export function WebVitalsReporter() {
   useReportWebVitals((metric) => {
     if (!isMetric(metric.name) || !Number.isFinite(metric.value)) return;
-    const pageKind = pageKindFromPath(window.location.pathname);
+    const pageKind = pageKindFromPath(landingPath);
     if (!pageKind) return;
     const device: DeviceKind = window.matchMedia("(max-width: 767px)").matches ? "mobile" : "desktop";
     queue.push({ metric: metric.name, value: Math.min(Math.max(metric.value, 0), metric.name === "CLS" ? 10 : 60_000), pageKind, device });

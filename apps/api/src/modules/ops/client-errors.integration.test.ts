@@ -36,6 +36,14 @@ describe("POST /api/v1/client-errors", () => {
     expect(row.sampleStack).toContain("_next/static/chunks");
   });
 
+  it("keeps the top frame of a Safari / Firefox stack", async () => {
+    const safari = { ...valid, message: `${RUN} safari crash`, stack: "renderCard@https://asifzone.com/_next/static/chunks/app/page-abc.js:1:20\nouter@https://asifzone.com/_next/static/chunks/main.js:1:5" };
+    await request(app).post("/api/v1/client-errors").send(safari).expect(204);
+    await store.flush();
+    const row = await prisma.errorGroup.findFirstOrThrow({ where: { title: { contains: `${RUN} safari crash` } } });
+    expect(row.sampleStack).toContain("renderCard@");
+  });
+
   it("works without a CSRF token (it is sent with sendBeacon)", async () => {
     await request(app).post("/api/v1/client-errors").set("Cookie", "customer_access_token=stale").send(valid).expect(204);
   });
@@ -51,7 +59,7 @@ describe("POST /api/v1/client-errors", () => {
   // Last: it uses up this IP's budget.
   it("rate-limits one visitor", async () => {
     const statuses: number[] = [];
-    for (let i = 0; i < 25; i++) statuses.push((await request(app).post("/api/v1/client-errors").send(valid)).status);
+    for (let i = 0; i < 65; i++) statuses.push((await request(app).post("/api/v1/client-errors").send(valid)).status);
     expect(statuses).toContain(429);
   });
 });

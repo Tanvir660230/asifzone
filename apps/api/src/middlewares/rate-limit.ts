@@ -98,11 +98,21 @@ export const trackingRateLimit = rateLimit({
   message: { error: "Too many requests" },
 });
 
-/** Site health beacons (crash reports, speed samples). A page sends a handful at most; 20 a minute per visitor is far
- * above that and keeps a looping script from filling the tables. */
-export const clientReportRateLimit = rateLimit({
+/** Site health beacons, one budget each so a crashing page can't use up the speed samples' share. Keyed by IP, and
+ * Bangladeshi mobile carriers put many shoppers behind one IP (CGNAT), so the ceilings are per-crowd, not per-visitor:
+ * high enough for a busy evening, low enough that a looping script can't fill the tables (errors are grouped anyway;
+ * speed samples are deleted after 30 days). */
+export const clientErrorRateLimit = rateLimit({
   windowMs: 60 * 1000,
-  limit: 20,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests" },
+});
+
+export const vitalsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests" },

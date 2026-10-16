@@ -40,6 +40,14 @@ function stackOf(c: CapturedError): string | null {
   return stack ? maskText(stack.split("\n").slice(0, 8).join("\n")) : null;
 }
 
+/** What finds this occurrence in the logs: the request's correlation id — or, for a website crash from a server render,
+ * Next.js's digest (the web server logs the real error under it; the beacon request's own id would lead nowhere). */
+function supportCodeOf(c: CapturedError): string | null {
+  const digest = c.context?.digest;
+  if (typeof digest === "string" && /^[\w-]{1,64}$/.test(digest)) return `digest ${digest}`;
+  return c.correlationId;
+}
+
 function pathOf(c: CapturedError): string | null {
   const queue = typeof c.context?.queue === "string" ? `Background job: ${c.context.queue}` : undefined;
   const raw = c.context?.route ?? c.context?.path ?? queue ?? c.operation;
@@ -51,7 +59,9 @@ export function createErrorStoreReporter(opts: { flushIntervalMs?: number; maxGr
   const flushIntervalMs = opts.flushIntervalMs ?? 5000;
   const maxGroups = opts.maxGroups ?? 200;
   let pending = new Map<string, Pending>();
-  let flushing: Promise<void> | null = null;
+  // Writes run one batch at a time, in order; every flush() waits for all of them, so a shutdown or crash flush
+  // never returns while an earlier timer flush is still writing.
+  let writes: Promise<void> = Promise.resolve();
 
   const report: ErrorReporter = (captured) => {
     const fingerprint = fingerprintError(captured);
@@ -64,38 +74,41 @@ export function createErrorStoreReporter(opts: { flushIntervalMs?: number; maxGr
     }
   };
 
+  /** One upsert per group; a group that fails to save is skipped, the rest are still written. */
   async function write(batch: Map<string, Pending>): Promise<void> {
     const now = new Date();
+    let failed = 0;
+    let lastFailure = "";
     for (const [fingerprint, { count, latest }] of batch) {
       const fields = {
         errorClass: latest.errorClass,
         title: titleOf(latest),
         sampleStack: stackOf(latest),
         lastPath: pathOf(latest),
-        lastCorrelationId: latest.correlationId,
+        lastCorrelationId: supportCodeOf(latest),
         lastSeenAt: now,
       };
-      await prisma.errorGroup.upsert({
-        where: { fingerprint },
-        create: { fingerprint, source: errorSource(latest), count, ...fields },
-        update: { count: { increment: count }, resolvedAt: null, ...fields },
-      });
+      try {
+        await prisma.errorGroup.upsert({
+          where: { fingerprint },
+          create: { fingerprint, source: errorSource(latest), count, ...fields },
+          update: { count: { increment: count }, resolvedAt: null, ...fields },
+        });
+      } catch (err) {
+        failed += 1;
+        lastFailure = err instanceof Error ? err.message : String(err);
+      }
     }
+    if (failed) logger.warn(`[error-store] could not save ${failed} of ${batch.size} error group(s); those are dropped`, { detail: lastFailure });
   }
 
   async function flush(): Promise<void> {
-    if (flushing) await flushing;
-    if (pending.size === 0) return;
-    const batch = pending;
-    pending = new Map();
-    flushing = write(batch)
-      .catch((err: unknown) => {
-        logger.warn("[error-store] could not save errors; this batch is dropped", { detail: err instanceof Error ? err.message : String(err) });
-      })
-      .finally(() => {
-        flushing = null;
-      });
-    await flushing;
+    if (pending.size > 0) {
+      const batch = pending;
+      pending = new Map();
+      writes = writes.then(() => write(batch));
+    }
+    await writes;
   }
 
   const timer = setInterval(() => void flush(), flushIntervalMs);

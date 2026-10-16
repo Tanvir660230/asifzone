@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { DEVICE_KINDS, PAGE_KINDS, WEB_VITAL_METRICS } from "@clothing-brand/shared";
 import { validate } from "../../middlewares/validate";
-import { clientReportRateLimit } from "../../middlewares/rate-limit";
+import { vitalsRateLimit } from "../../middlewares/rate-limit";
 import { asyncHandler } from "../../lib/async-handler";
 import { recordVitalSamples } from "./web-vitals.service";
 
@@ -27,7 +27,7 @@ const vitalsSchema = z.object({ samples: z.array(sampleSchema).min(1).max(10) })
 export const vitalsRouter = Router();
 vitalsRouter.post(
   "/",
-  clientReportRateLimit,
+  vitalsRateLimit,
   validate(vitalsSchema),
   asyncHandler(async (req, res) => {
     if (!NOT_A_VISITOR.test(req.get("user-agent") ?? "")) {

@@ -91,6 +91,36 @@ describe("error store reporter", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("still saves the other groups when one fails", async () => {
+    const r = reporter();
+    const real = prisma.errorGroup.upsert.bind(prisma.errorGroup);
+    let calls = 0;
+    vi.spyOn(prisma.errorGroup, "upsert").mockImplementation(((args: Parameters<typeof real>[0]) => (++calls === 1 ? Promise.reject(new Error("deadlock")) : real(args))) as never);
+    r.report(occurrence("first"));
+    r.report(occurrence("second"));
+    r.report(occurrence("third"));
+    await r.flush();
+    expect(await prisma.errorGroup.count({ where: { title: { contains: RUN } } })).toBe(2);
+  });
+
+  it("a flush waits for a write already in progress (shutdown never cuts the last save short)", async () => {
+    const r = reporter();
+    r.report(occurrence("inflight"));
+    const timerFlush = r.flush();
+    r.report(occurrence("crash"));
+    await r.flush(); // the shutdown/crash flush
+    expect(await prisma.errorGroup.count({ where: { title: { contains: RUN } } })).toBe(2);
+    await timerFlush;
+  });
+
+  it("files a server-render website crash under its digest", async () => {
+    const r = reporter();
+    r.report(occurrence("digest", { source: "web", path: "/", digest: "2162485606" }));
+    await r.flush();
+    const row = await prisma.errorGroup.findFirstOrThrow({ where: { title: { contains: RUN } } });
+    expect(row.lastCorrelationId).toBe("digest 2162485606");
+  });
+
   it("names a message-less connection error by its code, and a background job by its queue", async () => {
     const r = reporter();
     const err = Object.assign(new AggregateError([new Error(`connect ECONNREFUSED 127.0.0.1:6379 ${RUN}`)], ""), { code: "ECONNREFUSED" });
