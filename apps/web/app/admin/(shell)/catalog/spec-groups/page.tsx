@@ -68,7 +68,7 @@ export default function SpecGroupsPage() {
       <PageHeader title="Spec groups" description="Define what kinds of products the store sells, and what each kind collects and shows." />
       <ModuleTabs />
 
-      <p className="mb-4 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         A spec group is a titled block on the product page (&ldquo;Watch Details&rdquo;, &ldquo;Warranty &amp; Support&rdquo;). In a template you
         choose which attributes appear in which group.
       </p>

@@ -145,6 +145,7 @@ export default function OrdersPage() {
     <div>
       <PageHeader
         title="Orders"
+        descriptionOnPhone
         description={
           stats
             ? `${formatCount(stats.pending)} pending or confirmed · ${formatCount(stats.needsAttention)} need attention · ${formatCount(stats.todayOrders)} placed today`
@@ -155,8 +156,15 @@ export default function OrdersPage() {
         action={
           <div className="flex flex-wrap items-center gap-2">
             {perms.exportCsv && (
-              <Button variant="outline" loading={exporting} onClick={exportCsv} title="Export the current filtered list as CSV">
-                {!exporting && <Download size={16} />} Export CSV
+              <Button
+                variant="outline"
+                loading={exporting}
+                onClick={exportCsv}
+                title="Export the current filtered list as CSV"
+                aria-label="Export CSV"
+                className="max-sm:w-10 max-sm:px-0"
+              >
+                {!exporting && <Download size={16} />} <span className="max-sm:hidden">Export CSV</span>
               </Button>
             )}
             {perms.manage && (

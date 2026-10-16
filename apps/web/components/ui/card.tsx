@@ -26,8 +26,10 @@ export function Card({ className, variant, interactive, ...props }: CardProps) {
   return <div className={cn(cardVariants({ variant, interactive }), className)} {...props} />;
 }
 
+/* Padding reads --card-px / --card-py, falling back to the default look; the Store Console sets them tighter on phones
+   (globals.css). A className override (p-0, px-4…) still replaces them via tailwind-merge. */
 export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("border-b border-line-subtle px-6 py-5 sm:px-8", className)} {...props} />;
+  return <div className={cn("border-b border-line-subtle px-[var(--card-px,1.5rem)] py-[var(--card-py,1.25rem)] sm:px-8", className)} {...props} />;
 }
 
 export function CardTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
@@ -39,9 +41,9 @@ export function CardDescription({ className, ...props }: HTMLAttributes<HTMLPara
 }
 
 export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("px-6 py-6 sm:px-8", className)} {...props} />;
+  return <div className={cn("px-[var(--card-px,1.5rem)] py-[var(--card-body-py,1.5rem)] sm:px-8", className)} {...props} />;
 }
 
 export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex items-center justify-end gap-2 border-t border-line-subtle px-6 py-4 sm:px-8", className)} {...props} />;
+  return <div className={cn("flex items-center justify-end gap-2 border-t border-line-subtle px-[var(--card-px,1.5rem)] py-4 sm:px-8", className)} {...props} />;
 }

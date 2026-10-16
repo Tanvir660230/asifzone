@@ -54,12 +54,13 @@ export function FilterBar({
       <div className="flex flex-wrap items-center gap-2">
         {leading}
         {onSearchChange && (
-          <SearchInput value={search ?? ""} onChange={onSearchChange} placeholder={searchPlaceholder} data-page-search="" wrapperClassName="w-full sm:w-72" />
+          <SearchInput value={search ?? ""} onChange={onSearchChange} placeholder={searchPlaceholder} data-page-search="" wrapperClassName="min-w-0 flex-1 basis-48 max-sm:order-first sm:w-72 sm:flex-none sm:basis-auto" />
         )}
         {more.length > 0 && (
           <>
-            <Button ref={moreRef} variant="outline" size="sm" onClick={() => setMoreOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={moreOpen}>
-              <SlidersHorizontal size={14} /> More filters
+            <Button ref={moreRef} variant="outline" size="sm" className="max-sm:order-first" onClick={() => setMoreOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={moreOpen}>
+              <SlidersHorizontal size={14} /> <span className="sm:hidden">Filters</span>
+              <span className="max-sm:hidden">More filters</span>
               {moreCount > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold leading-[18px] text-accent-fg">{moreCount}</span>}
             </Button>
             <Popover open={moreOpen} onClose={() => setMoreOpen(false)} anchorRef={moreRef} sheetOnPhone aria-label="More filters" className="w-80 space-y-3 p-4">
@@ -73,12 +74,13 @@ export function FilterBar({
       </div>
 
       {quick.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        // Phones: one swipeable row of chips (data-phone-row), every group on it, instead of loose lines of words.
+        <div data-phone-row="" className="flex items-center gap-x-3 gap-y-1 sm:flex-wrap">
           {quick.map((def, i) => (
-            <div key={def.key} role="group" aria-label={def.label} className="flex flex-wrap items-center gap-1">
-              {i > 0 && <span className="mr-2 hidden h-4 w-px bg-ink-900/[0.1] sm:block" aria-hidden="true" />}
+            <div key={def.key} role="group" aria-label={def.label} className="flex items-center gap-1 sm:flex-wrap">
+              {i > 0 && <span className="mr-2 h-4 w-px shrink-0 bg-ink-900/[0.1]" aria-hidden="true" />}
               {/* A visible name for the group, so "Draft · Ready" and "Running low" read as filters, not text. */}
-              <span className="mr-1 text-[13px] font-medium text-fg-subtle" aria-hidden="true">
+              <span className="mr-1 shrink-0 text-[13px] font-medium text-fg-subtle" aria-hidden="true">
                 {def.label}
               </span>
               {filterOptions(def, values).map((option) => {
@@ -92,7 +94,7 @@ export function FilterBar({
                 aria-pressed={on}
                 onClick={() => onChange(setFilterPatch(defs, def.key, next))}
                 className={cn(
-                  "flex h-8 items-center rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                  "flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-[13px] font-medium transition-colors duration-fast ease-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
                   on ? "bg-ink-900/[0.08] text-fg" : "text-fg-muted hover:bg-ink-900/[0.04] hover:text-fg",
                 )}
               >

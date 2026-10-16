@@ -136,7 +136,8 @@ export default function ExecutiveOverviewPage() {
 
   return (
     <div className="space-y-8">
-      <div>
+      {/* On a phone the page's own large title already says this. */}
+      <div className="max-sm:hidden">
         <h2 className="text-lg font-semibold tracking-tight text-fg">Executive Overview</h2>
         <p className="mt-1 text-sm text-ink-500">
           The business at a glance across every BI domain — updated roughly every minute. Sections below respond to the date range above;

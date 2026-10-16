@@ -314,7 +314,7 @@ export default function AdminTeamPage() {
         }
       />
       <ModuleTabs />
-      <p className="mb-4 -mt-2 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 -mt-2 text-sm text-ink-500">
         Admin accounts only ever come from an invite sent here — there&rsquo;s no public sign-up for the console.
       </p>
 

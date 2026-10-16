@@ -132,7 +132,7 @@ export default function AdminRedirectsPage() {
         }
       />
       <ModuleTabs />
-      <p className="mb-4 -mt-2 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 -mt-2 text-sm text-ink-500">
         Old URLs (e.g. after a product or category slug change) that should send visitors and search engines to a new location.
       </p>
 

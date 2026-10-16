@@ -74,15 +74,16 @@ export function ProductBuilder({ categories, initial }: ProductBuilderProps) {
         <div className="min-w-0 space-y-4">
           {/* Sticky glass header: where you are, whether it's saved, and the step track. */}
           <div className="glass-panel space-y-3 rounded-2xl p-3 sm:p-4 lg:sticky lg:top-chrome lg:z-sticky">
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-1">
-              <div className="min-w-0">
-                <p className="truncate font-display text-lg tracking-tight text-fg">{b.productName || "New product"}</p>
+            <div className="flex items-start justify-between gap-x-3 px-1 sm:items-center sm:gap-x-4">
+              <div className="min-w-0 flex-1">
+                {/* On a phone in edit mode the page title above already names the product. */}
+                <p className={cn("truncate font-display text-lg tracking-tight text-fg", b.mode === "edit" && "max-sm:hidden")}>{b.productName || "New product"}</p>
                 <SaveIndicator controller={b} lastStepLabel={lastStep.label} />
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5">
                 {b.mode === "edit" && (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowHistory((v) => !v)} aria-expanded={showHistory}>
-                    <History size={15} aria-hidden="true" /> History
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowHistory((v) => !v)} aria-expanded={showHistory} aria-label="History">
+                    <History size={15} aria-hidden="true" /> <span className="hidden sm:inline">History</span>
                   </Button>
                 )}
                 <Button

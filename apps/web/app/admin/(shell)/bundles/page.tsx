@@ -96,7 +96,7 @@ export default function BundlesPage() {
 
       <ModuleTabs />
 
-      <p className="mb-4 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         Cross-sell rules — buying from an anchor category (e.g. Panjabi) suggests products from the categories
         below it and unlocks a discount once enough of them are in the cart.
       </p>

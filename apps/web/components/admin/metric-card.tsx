@@ -29,11 +29,14 @@ export function MetricCard({ label, value, detail, trendPct, trendLabel, sparkli
   const hasTrend = trendPct !== null && trendPct !== undefined && Number.isFinite(trendPct);
   const up = hasTrend && trendPct! >= 0;
   const interactive = Boolean(href || onClick);
+  // A card with a sparkline takes the full width of a phone's two-column tile grid (globals.css).
+  const tileKind = sparkline && sparkline.length > 1 ? "wide" : "";
 
   const body = (
     <div
+      data-stat-tile={tileKind}
       className={cn(
-        "group flex h-full flex-col rounded-xl border border-line bg-surface p-5 shadow transition-colors duration-fast ease-smooth",
+        "group flex h-full flex-col rounded-xl border border-line bg-surface p-4 shadow sm:p-5 transition-colors duration-fast ease-smooth",
         interactive && "hover:border-line-strong",
         className,
       )}
@@ -43,7 +46,7 @@ export function MetricCard({ label, value, detail, trendPct, trendLabel, sparkli
         <p className="truncate text-[13px] font-medium text-fg-muted">{label}</p>
         {interactive && <ChevronRight size={14} className="ml-auto shrink-0 text-ink-300 transition-colors group-hover:text-ink-500" aria-hidden />}
       </div>
-      <p className="mt-2 truncate text-[28px] font-semibold leading-none tracking-tight tabular-nums text-fg">{value}</p>
+      <p className="mt-2 truncate text-[24px] font-semibold sm:text-[28px] leading-none tracking-tight tabular-nums text-fg">{value}</p>
       {(hasTrend || detail) && (
         <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-fg-muted">
           {hasTrend && (
@@ -54,7 +57,7 @@ export function MetricCard({ label, value, detail, trendPct, trendLabel, sparkli
             </span>
           )}
           {hasTrend && trendLabel && <span>{trendLabel}</span>}
-          {detail && <span className="min-w-0 truncate">{detail}</span>}
+          {detail && <span className="line-clamp-2 min-w-0 sm:line-clamp-none sm:truncate">{detail}</span>}
         </div>
       )}
       {sparkline && sparkline.length > 1 && <Sparkline data={sparkline} className="mt-auto h-10 w-full pt-3 text-accent" />}
@@ -63,14 +66,14 @@ export function MetricCard({ label, value, detail, trendPct, trendLabel, sparkli
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} aria-label={`${label}: ${value}`} className="block h-full w-full rounded-xl text-left">
+      <button type="button" onClick={onClick} aria-label={`${label}: ${value}`} data-stat-tile={tileKind} className="block h-full w-full rounded-xl text-left">
         {body}
       </button>
     );
   }
   if (href) {
     return (
-      <Link href={href} aria-label={`${label}: ${value}`} className="block h-full rounded-xl">
+      <Link data-stat-tile={tileKind} href={href} aria-label={`${label}: ${value}`} className="block h-full rounded-xl">
         {body}
       </Link>
     );
@@ -81,7 +84,7 @@ export function MetricCard({ label, value, detail, trendPct, trendLabel, sparkli
 /** Same footprint as a MetricCard, so the grid doesn't jump when data arrives. */
 export function MetricCardSkeleton({ className }: { className?: string }) {
   return (
-    <div className={cn("rounded-xl border border-line bg-surface p-5", className)} aria-hidden>
+    <div data-stat-tile="" className={cn("rounded-xl border border-line bg-surface p-4 sm:p-5", className)} aria-hidden>
       <div className="h-3.5 w-24 rounded ui-skeleton" />
       <div className="mt-3 h-7 w-28 rounded ui-skeleton" />
       <div className="mt-3 h-3 w-20 rounded ui-skeleton" />

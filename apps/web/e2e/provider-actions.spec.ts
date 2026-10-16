@@ -45,7 +45,8 @@ test.describe("provider actions follow provider availability (D-4)", () => {
     await expect(steadfast.getByLabel("API key")).toBeVisible();
     await expect(steadfast.getByRole("button", { name: "Save" })).toBeDisabled();
     // A gateway that can't work can't be switched on, and says where to fix it.
-    await page.getByRole("button", { name: "Checkout, tax & rewards" }).click();
+    // By URL: the pane switch is buttons on desktop but a picker on phones.
+    await page.goto("/admin/settings?pane=shipping");
     await expect(page.getByRole("link", { name: "add its keys in Integrations" }).first()).toBeVisible();
   });
 

@@ -166,7 +166,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
             </div>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div data-phone-row="" className="flex flex-wrap items-center gap-2">
           {customer.phone && (
             <>
               <a href={`tel:${customer.phone}`}>
@@ -220,7 +220,7 @@ export function CustomerDetailPanel({ customerId: id, onClose, variant = "page",
           <CardTitle>Purchase Analytics</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-3 sm:gap-4">
             {[
               { label: "Total orders", value: String(customer.purchaseAnalytics.totalOrders) },
               { label: "Delivered", value: String(customer.purchaseAnalytics.deliveredOrders) },

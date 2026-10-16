@@ -12,14 +12,16 @@ let warnedAbout: string | null = null;
 
 /** A token colour as a hex literal, as the theme resolves it (its overrides over the base variables, following
  * `var(--…)` references) — for the few places outside CSS that need a literal colour: the web app manifest and the
- * offline page. `name` is a colour variable without its prefix: "canvas", "ink-900". */
-export function themeColorHex(themeId: ThemeId, name: string): string {
+ * offline page. `name` is a colour variable without its prefix: "canvas", "ink-900". With `surface`, as that region
+ * (`[data-surface="admin"]`, the Store Console) resolves it — its variables win over the theme's. */
+export function themeColorHex(themeId: ThemeId, name: string, surface?: keyof typeof tokens.surfaces): string {
   const overrides = tokens.themes[themeId]?.cssVariables ?? {};
+  const region: Record<string, string> = surface ? tokens.surfaces[surface].cssVariables : {};
   let value: string | undefined = `var(--color-${name})`;
   for (let hops = 0; hops < 8 && value; hops += 1) {
     const ref = /^var\((--[\w-]+)\)$/.exec(value.trim());
     if (!ref) break;
-    value = overrides[ref[1]!] ?? tokens.cssVariables[ref[1]!];
+    value = region[ref[1]!] ?? overrides[ref[1]!] ?? tokens.cssVariables[ref[1]!];
   }
   const channels = value?.trim().match(/^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/);
   if (!channels) return "#ffffff";

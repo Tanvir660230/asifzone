@@ -83,7 +83,7 @@ export default function SkuSettingsPage() {
       <PageHeader title="SKUs" description="Define what kinds of products the store sells, and what each kind collects and shows." />
       <ModuleTabs />
 
-      <p className="mb-4 text-sm text-ink-500">
+      <p data-page-intro="" className="mb-4 text-sm text-ink-500">
         SKUs are generated from a pattern when you click <strong>Generate</strong> next to a variant&rsquo;s SKU. Numbers are counted per product type and never
         reused, so two products can&rsquo;t end up with the same SKU. Existing SKUs are never changed.
       </p>

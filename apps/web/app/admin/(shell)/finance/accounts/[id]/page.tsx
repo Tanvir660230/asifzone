@@ -71,6 +71,7 @@ export default function FinanceAccountPage() {
       <PageHeader
         title={a?.name ?? "Money account"}
         eyebrow={a ? `${financeApi.ACCOUNT_KIND_LABEL[a.kind]}${a.provider ? ` · ${a.provider}` : ""}${a.accountReference ? ` · ${a.accountReference}` : ""}` : undefined}
+        descriptionOnPhone
         description={a?.accountTitle ? `${a.accountTitle}${a.branch ? ` · ${a.branch} branch` : ""}` : undefined}
         action={
           <div className="flex flex-wrap gap-2">

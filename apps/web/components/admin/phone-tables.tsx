@@ -34,11 +34,19 @@ export function PhoneTables() {
               continue;
             }
             let column = 0;
+            let titled = false;
             for (const cell of Array.from(row.cells)) {
               const label = columns.labels[column] ?? "";
               if (cell.dataset.label !== label) cell.dataset.label = label;
-              if (columns.hidden.includes(column)) cell.dataset.colHidden = "";
+              const hidden = columns.hidden.includes(column);
+              if (hidden) cell.dataset.colHidden = "";
               column += cell.colSpan;
+              if (hidden) continue;
+              const kind = cellKind(cell, label, titled);
+              if (kind === "title") titled = true;
+              if (kind) {
+                if (cell.dataset.cell !== kind) cell.dataset.cell = kind;
+              } else if (cell.dataset.cell) delete cell.dataset.cell;
             }
           }
         }
@@ -55,6 +63,26 @@ export function PhoneTables() {
     };
   }, [phone]);
 
+  return null;
+}
+
+const EMPTY_VALUES = new Set(["", "—", "–", "-"]);
+
+/** How a cell sits in its card: the leading selection checkbox, the title (the first cell with something to read), a
+ * value with nothing in it ("—", left out), the row's buttons (closing the last line), a status pill that names itself
+ * (no "State" / "Active" label before it), or a plain "label value" pair. */
+function cellKind(cell: HTMLTableCellElement, label: string, titled: boolean): "select" | "title" | "empty" | "action" | "badge" | null {
+  const text = (cell.textContent ?? "").replace(/\s+/g, " ").trim();
+  const media = cell.querySelector("img, picture, svg, canvas");
+  const control = cell.querySelector("button, a[href], [role='button'], select, input:not([type='checkbox'])");
+  if (!titled) {
+    if (!text && !control && cell.querySelector("input[type='checkbox']")) return "select";
+    if (text || media) return "title";
+  }
+  if (EMPTY_VALUES.has(text) && !media && !control) return "empty";
+  if (control && (!label || /^actions?$/i.test(label) || !text)) return "action";
+  const pills = Array.from(cell.querySelectorAll(".rounded-full"));
+  if (!control && pills.some((pill) => (pill.textContent ?? "").replace(/\s+/g, " ").trim() === text)) return "badge";
   return null;
 }
 
@@ -101,8 +129,9 @@ function unstack(table: HTMLTableElement) {
   delete table.dataset.stack;
   delete table.dataset.stackLabels;
   delete table.dataset.stackHidden;
-  table.querySelectorAll<HTMLElement>("[data-label], [data-col-hidden], [data-stack-full]").forEach((cell) => {
+  table.querySelectorAll<HTMLElement>("[data-label], [data-col-hidden], [data-stack-full], [data-cell]").forEach((cell) => {
     delete cell.dataset.label;
+    delete cell.dataset.cell;
     delete cell.dataset.colHidden;
     delete cell.dataset.stackFull;
   });

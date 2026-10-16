@@ -120,7 +120,7 @@ export default function StoragePage() {
       {dialog}
       <PageHeader title="Storage" />
       <ModuleTabs />
-      <p className="-mt-3 mb-4 max-w-3xl text-sm text-ink-500">
+      <p data-page-intro="" className="-mt-3 mb-4 max-w-3xl text-sm text-ink-500">
         Images uploaded to the site that nothing uses any more — an old banner, a replaced category image, a photo removed
         from a description, or an upload that was never saved. A file counts as in use if it appears anywhere in the store&apos;s
         data, including past orders and email campaigns. Uploads from the last {report?.graceDays ?? 7} days are never listed.
