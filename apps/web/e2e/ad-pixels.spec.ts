@@ -221,6 +221,17 @@ test("Search fires once per query with search_string", async ({ page }) => {
   expect(beacons.find((b) => b.event === "Search")!.properties).toMatchObject({ search_string: "shirt" });
 });
 
+test("a TikTok ad click id is kept for the server-side Purchase", async ({ page }) => {
+  await interceptPixels(page);
+  await page.goto("/?ttclid=E.C.P.e2eClick123");
+  await expect
+    .poll(async () => (await page.context().cookies()).find((c) => c.name === "ttclid")?.value, { timeout: 15_000 })
+    .toBe("E.C.P.e2eClick123");
+  const cookie = (await page.context().cookies()).find((c) => c.name === "ttclid")!;
+  expect(cookie.sameSite).toBe("Lax");
+  expect(cookie.expires - Date.now() / 1000).toBeGreaterThan(6 * 24 * 60 * 60);
+});
+
 test("consent: nothing loads or fires before the shopper allows it; Decline keeps it off; Allow starts it", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();

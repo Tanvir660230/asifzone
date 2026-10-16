@@ -8,6 +8,7 @@ import { prisma } from "../../config/prisma";
 import { deliverAdminOrderAlertSms, deliverCustomerOrderSms } from "../../lib/order-sms";
 import { deliverPaymentConfirmationEmail } from "../../lib/order-mailer";
 import { processMetaPurchase } from "../../lib/meta/purchase";
+import { processTikTokPurchase } from "../../lib/tiktok/purchase";
 import { getProviders } from "../../providers/registry";
 import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
 import { deliverConversationReply } from "../../lib/conversation-reply";
@@ -101,6 +102,18 @@ export const OUTBOX_CONSUMERS = {
       return "sent";
     },
     // The shopper's IP / user agent / click ids are only needed for the send.
+    scrub: ({ orderId }) => ({ orderId }),
+  } satisfies OutboxConsumer<{ orderId: string; context: Record<string, unknown> }>,
+
+  "tiktok-events-purchase": {
+    eventTypes: ["order.placed.v1"],
+    payload: orderIdPayload.extend({ context: z.record(z.string(), z.unknown()) }),
+    idempotency: "Outbox row claim + TikTok event_id purchase_<orderNumber> (TikTok keeps one event per pixel + event + id for 48 h).",
+    async handle({ orderId, context }) {
+      if (!getProviders().tiktokServerEvents.enabled()) return "disabled";
+      await processTikTokPurchase({ orderId, context });
+      return "sent";
+    },
     scrub: ({ orderId }) => ({ orderId }),
   } satisfies OutboxConsumer<{ orderId: string; context: Record<string, unknown> }>,
 

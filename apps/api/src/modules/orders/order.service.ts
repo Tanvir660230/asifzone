@@ -461,6 +461,9 @@ export async function insertOrderRecord(
     if (opts.metaContext && getProviders().serverEvents.enabled()) {
       intents.push({ ...placed, consumer: "meta-capi-purchase", eventKey: `order:${created.id}`, payload: { orderId: created.id, context: { ...opts.metaContext } } });
     }
+    if (opts.metaContext && getProviders().tiktokServerEvents.enabled()) {
+      intents.push({ ...placed, consumer: "tiktok-events-purchase", eventKey: `order:${created.id}`, payload: { orderId: created.id, context: { ...opts.metaContext } } });
+    }
     await recordOutboxEvents(tx, intents);
 
     return opts.gatewaySettlement || opts.markPaidByAdminId || opts.reservedStoreCredit || paidFromBalance

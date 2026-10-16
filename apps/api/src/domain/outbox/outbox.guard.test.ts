@@ -38,16 +38,16 @@ describe("outbox — architecture guards", () => {
 
   it("business-transaction modules never call an SMS/email/Meta provider or deliverer directly", () => {
     const BUSINESS = ["modules/orders/order.service.ts", "modules/payments/payment.service.ts", "domain/payments/payment-ledger.service.ts", "modules/return-requests/return-request.service.ts", "modules/inventory/inventory.service.ts"];
-    const SENDERS = /\.(sms|email|push)\.send\(|serverEvents\.send\(|\b(sendSms|sendMail|deliverCustomerOrderSms|deliverAdminOrderAlertSms|deliverPaymentConfirmationEmail|sendMetaEvent|processMetaPurchase|enqueueMetaPurchase|sendCustomerOrderSms|sendAdminOrderAlertSms|sendPaymentConfirmationEmail)\b/;
+    const SENDERS = /\.(sms|email|push)\.send\(|[sS]erverEvents\.send\(|\b(sendSms|sendMail|deliverCustomerOrderSms|deliverAdminOrderAlertSms|deliverPaymentConfirmationEmail|sendMetaEvent|processMetaPurchase|enqueueMetaPurchase|sendTikTokEvent|processTikTokPurchase|sendCustomerOrderSms|sendAdminOrderAlertSms|sendPaymentConfirmationEmail)\b/;
     const offenders = BUSINESS.filter((f) => SENDERS.test(code(join(SRC, f))));
     expect(offenders).toEqual([]);
   });
 
   it("only the outbox consumers call the order-side-effect deliverers", () => {
-    const DELIVERERS = /\b(deliverCustomerOrderSms|deliverAdminOrderAlertSms|deliverPaymentConfirmationEmail|processMetaPurchase)\(/;
+    const DELIVERERS = /\b(deliverCustomerOrderSms|deliverAdminOrderAlertSms|deliverPaymentConfirmationEmail|processMetaPurchase|processTikTokPurchase)\(/;
     const callers = ALL.filter((f) => DELIVERERS.test(code(f))).map(rel).sort();
     // lib files define them; jobs/meta-capi-worker only drains jobs queued before Phase 8.
-    expect(callers).toEqual(["domain/outbox/consumers.ts", "jobs/meta-capi-worker.ts", "lib/meta/purchase.ts", "lib/order-mailer.ts", "lib/order-sms.ts"].sort());
+    expect(callers).toEqual(["domain/outbox/consumers.ts", "jobs/meta-capi-worker.ts", "lib/meta/purchase.ts", "lib/tiktok/purchase.ts", "lib/order-mailer.ts", "lib/order-sms.ts"].sort());
   });
 
   it("outbox code never writes business truth (only OutboxEvent rows)", () => {
