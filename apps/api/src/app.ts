@@ -20,6 +20,7 @@ import { paymentLinkRouter } from "./modules/payments/payment-link.routes";
 import { metricsRouter } from "./modules/metrics/metrics.routes";
 import { outboxRouter } from "./modules/outbox/outbox.routes";
 import { opsRouter } from "./modules/ops/ops.routes";
+import { clientErrorsRouter } from "./modules/ops/client-errors.routes";
 import { paymentMethodRouter } from "./modules/payment-methods/payment-method.routes";
 import { flashSaleRouter } from "./modules/flash-sales/flash-sale.routes";
 import { bannerRouter } from "./modules/banners/banner.routes";
@@ -151,6 +152,8 @@ app.get(
   }),
 );
 app.use("/api/v1/ops", opsRouter);
+// Site health: the browser's own crash reports (public beacon).
+app.use("/api/v1/client-errors", clientErrorsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

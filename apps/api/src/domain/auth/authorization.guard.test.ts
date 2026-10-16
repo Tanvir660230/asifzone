@@ -108,6 +108,8 @@ const PUBLIC_ROUTES = [
   "POST /api/courier/steadfast/webhook",
   "POST /api/v1/checkout/quote",
   "POST /api/v1/checkout/quote/best-coupon",
+  "POST /api/v1/client-errors/", // Site health: browser crash beacon, rate-limited
+
 ];
 
 /** Self-service admin routes: own session and own notifications — no permission, by design. */

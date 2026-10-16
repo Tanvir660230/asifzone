@@ -1,4 +1,5 @@
 import { apiBaseUrl } from "./runtime-config";
+import { sendBeaconJson } from "./beacon";
 
 const COOKIE_NAME = "az_session";
 const VISITOR_COOKIE_NAME = "az_visitor";
@@ -128,15 +129,7 @@ export async function trackPageView(path: string): Promise<string | null> {
  * a page unload; fetch's `keepalive` (used elsewhere in this file) is the fallback for the rare
  * browser without sendBeacon support. */
 export function sendPageExit(id: string, payload: { durationMs: number; scrollDepthPct: number; clickCount: number }): void {
-  const url = `${apiBaseUrl()}/api/analytics/pageview/${id}/exit`;
-  const body = JSON.stringify(payload);
-
-  if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
-    navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
-    return;
-  }
-
-  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+  sendBeaconJson(`${apiBaseUrl()}/api/analytics/pageview/${id}/exit`, payload);
 }
 
 export type FunnelEventType = "VARIANT_SELECTED" | "ADD_TO_CART" | "REMOVE_FROM_CART";

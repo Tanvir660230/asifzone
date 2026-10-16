@@ -98,6 +98,16 @@ export const trackingRateLimit = rateLimit({
   message: { error: "Too many requests" },
 });
 
+/** Site health beacons (crash reports, speed samples). A page sends a handful at most; 20 a minute per visitor is far
+ * above that and keeps a looping script from filling the tables. */
+export const clientReportRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests" },
+});
+
 /** AI generation calls a real, metered Claude API — already admin-only, but still capped so a
  * compromised admin session or a buggy retry loop can't run up an unbounded bill. */
 export const aiRateLimit = rateLimit({
