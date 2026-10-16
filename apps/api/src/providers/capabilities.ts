@@ -6,12 +6,13 @@
  * - payment gateways have no refund API (refunds are ledger-only), SSLCommerz validates by val_id, EPS verifies by
  *   merchant transaction id;
  * - the courier has no cancel and no lookup-by-invoice;
- * - the server-event sink sends only Meta Purchase events.
+ * - the server-event sinks send only Purchase events (Meta Conversions API, TikTok Events API).
  *
  * Provider-shaped types (Steadfast's consignment, the gateways' validation results) are re-exported as types only:
  * they describe data, they do not couple a caller to an implementation.
  */
 import type { MetaServerEvent } from "../lib/meta/capi";
+import type { TikTokServerEvent } from "./events/tiktok-events";
 import type { CreateConsignmentInput, SteadfastBulkResultItem, SteadfastConsignment, SteadfastFraudCheck } from "./courier/steadfast";
 import type { MailInput } from "./email/resend";
 import type { EpsValidationResult, InitEpsSessionParams } from "./payment/eps";
@@ -60,6 +61,15 @@ export interface ServerEventSink {
   /** Configured and allowed to send from this environment (Meta's own gate, unchanged). */
   enabled(): boolean;
   send(event: MetaServerEvent): Promise<{ eventsReceived: number }>;
+}
+
+export type { TikTokServerEvent };
+
+export interface TikTokServerEventSink {
+  readonly id: "tiktok";
+  /** Configured and allowed to send from this environment (same rule as Meta). */
+  enabled(): boolean;
+  send(event: TikTokServerEvent): Promise<void>;
 }
 
 // ── Payment gateways ───────────────────────────────────────────────────────────────────────────
@@ -122,6 +132,7 @@ export interface Providers {
   push: PushSender;
   courier: CourierProvider;
   serverEvents: ServerEventSink;
+  tiktokServerEvents: TikTokServerEventSink;
   payments: PaymentGateways;
 }
 

@@ -29,6 +29,18 @@ export class MailProviderError extends Error {
   }
 }
 
+/** A failed TikTok Events API send. `retryable` is true for network failures, HTTP 5xx/429 and TikTok's rate-limit code;
+ * any other TikTok error code (bad token, bad payload) is permanent. */
+export class TikTokApiError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "TikTokApiError";
+  }
+}
+
 /** Thrown for a failed send. `retryable` separates "try again later" (network, timeout, 5xx, 429,
  * Meta's own is_transient flag) from a payload/credential problem that no retry will ever fix. */
 export class MetaApiError extends Error {
