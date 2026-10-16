@@ -1,3 +1,4 @@
+import type { DeviceKind, PageKind, VitalRating, WebVitalMetric } from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 /** GET /api/v1/ops/reliability (ops.read) — what is stuck, failed or inconsistent. Read-only. */
@@ -69,4 +70,20 @@ export function resolveError(id: string) {
 /** Re-queues a FAILED outbox event (ops.repair — consumers are idempotent). */
 export function retryOutboxEvent(id: string) {
   return apiFetch<void>(`/api/v1/outbox/${id}/retry`, { method: "POST" });
+}
+
+/** Site health › Site speed: 75th-percentile Core Web Vitals per metric × page kind × device (GET /api/v1/ops/vitals, ops.read). */
+export interface VitalRow {
+  metric: WebVitalMetric;
+  pageKind: PageKind;
+  device: DeviceKind;
+  p75: number;
+  samples: number;
+  rating: VitalRating;
+}
+
+export const vitalsKeys = { all: ["ops-vitals"] as const, window: (days: number) => ["ops-vitals", days] as const };
+
+export function getVitals(days: number) {
+  return apiFetch<{ days: number; rows: VitalRow[] }>(`/api/v1/ops/vitals?days=${days}`);
 }

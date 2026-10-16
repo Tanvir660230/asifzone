@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "framer-motion";
 import { ClientErrorListener } from "@/components/system/client-error-listener";
+import { WebVitalsReporter } from "@/components/analytics/web-vitals-reporter";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -18,6 +19,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ClientErrorListener />
+      <WebVitalsReporter />
       <MotionConfig reducedMotion="user">{children}</MotionConfig>
     </QueryClientProvider>
   );
