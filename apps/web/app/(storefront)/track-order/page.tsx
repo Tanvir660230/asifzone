@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageCircle, PackageSearch, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,13 @@ export default function TrackOrderPage() {
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+
+  // ?order=… — the QR on a shipping label opens this page with the order number filled in; the phone stays the
+  // customer's to type, so a label alone never shows anyone the order. Read after mount (no Suspense boundary needed).
+  useEffect(() => {
+    const fromLink = new URLSearchParams(window.location.search).get("order")?.trim();
+    if (fromLink) setOrderNumber((current) => current || fromLink.slice(0, 64));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

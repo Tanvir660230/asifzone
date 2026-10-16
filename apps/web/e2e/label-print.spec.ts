@@ -87,6 +87,19 @@ async function checkTemplate(page: Page, template: (typeof LABEL_TEMPLATES)[numb
 
     const problems = await findProblems(page);
 
+    // Every label carries a QR — booked or not — and no order / parcel / date table (the owner's layout).
+    const parts = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>("[data-testid=label-capture-host] [data-label-order]")].map((label) => ({
+        order: label.dataset.labelOrder,
+        qr: label.querySelectorAll("[data-label-qr] svg").length,
+        table: /(PARCEL|COURIER)/i.test(label.innerText) || /^ORDER$/im.test(label.innerText),
+      })),
+    );
+    for (const part of parts) {
+      expect(part.qr, `${template.id} ${part.order}: QR on the label`).toBe(1);
+      expect(part.table, `${template.id} ${part.order}: no order/parcel/date table`).toBe(false);
+    }
+
     // The captured images themselves, for review.
     const dir = path.join(outDir, runName, template.id);
     mkdirSync(dir, { recursive: true });
@@ -298,6 +311,14 @@ test.describe("shipping label printing", () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(path.join(outDir, "report.json"), JSON.stringify(report, null, 2));
     expectNoProblems(report);
+  });
+
+  test("the QR on an unbooked order's label opens Track order with the order number filled in", async ({ page }, info) => {
+    test.skip(info.project.name !== "desktop", "one pass is enough");
+    const unbooked = orders.find((o) => !o.courierConsignmentId)!;
+    await page.goto(`/track-order?order=${encodeURIComponent(unbooked.orderNumber)}`);
+    await expect(page.getByLabel("Order number")).toHaveValue(unbooked.orderNumber);
+    await expect(page.getByLabel("Phone number")).toHaveValue("");
   });
 
   test("a store without a logo, and a non-thermal printer, print just as whole", async ({ page }, info) => {
