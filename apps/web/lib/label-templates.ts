@@ -6,6 +6,7 @@ export type LabelTemplateId =
   | "a4-8up"
   | "sticker-100x150"
   | "sticker-76x76"
+  | "sticker-51x76"
   | "sticker-80x50"
   | "sticker-60x40"
   | "sticker-50x30";
@@ -125,6 +126,20 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     name: "Sticker — 76 × 76mm (3 × 3\")",
     kind: "sticker",
     pageWmm: 76.2,
+    pageHmm: 76.2,
+    columns: 1,
+    rows: 1,
+    defaultMarginMm: 2,
+    orientationSwappable: false,
+    compact: false,
+  },
+  {
+    // 2"x3" portrait thermal roll (2" across, 3" down the feed). Same 76.2mm height as the 3x3 square,
+    // so it renders ShippingLabelSquare in its narrow layout rather than a scaled-down ShippingLabel.
+    id: "sticker-51x76",
+    name: "Sticker — 51 × 76mm (2 × 3\")",
+    kind: "sticker",
+    pageWmm: 50.8,
     pageHmm: 76.2,
     columns: 1,
     rows: 1,

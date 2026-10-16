@@ -85,11 +85,16 @@ export function LabelCaptureHost({ orders, store, template, geometry, onReady }:
           }}
           style={{ width: `${geometry.cellWmm}mm`, height: `${geometry.cellHmm}mm`, background: "#fff", overflow: "hidden" }}
         >
-          {template.id === "sticker-76x76" ? (
+          {template.id === "sticker-76x76" || template.id === "sticker-51x76" ? (
             // Own component, native-size render (no LabelScaleWrapper) — see ShippingLabelSquare's
             // own doc comment for why this size gets a dedicated, non-scaled design rather than
-            // reusing ShippingLabel through the scale wrapper below.
-            <ShippingLabelSquare order={order} store={store} onBarcodeReady={() => markOrderReady(order.id)} />
+            // reusing ShippingLabel through the scale wrapper below. The 2x3" sticker is its narrow layout.
+            <ShippingLabelSquare
+              order={order}
+              store={store}
+              narrow={template.id === "sticker-51x76"}
+              onBarcodeReady={() => markOrderReady(order.id)}
+            />
           ) : isCompactTemplateId(template.id) ? (
             <ShippingLabelCompact
               order={order}

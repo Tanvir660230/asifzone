@@ -11,6 +11,9 @@ interface ShippingLabelSquareProps {
   /** Forwarded to the internal BarcodeSvg — the label-printing capture pipeline uses this to know
    * when it's safe to rasterize this label (JsBarcode draws in an effect, after mount). */
   onBarcodeReady?: () => void;
+  /** The 2"x3" portrait sticker (50.8mm wide, same 76.2mm height): same layout, smaller name/phone/logo/QR and
+   * shorter COD/not-booked captions so every row still fits the narrower width. */
+  narrow?: boolean;
 }
 
 /** However many items an order has, the packing list only ever shows the first 2 (plus a "+N more"
@@ -21,6 +24,8 @@ interface ShippingLabelSquareProps {
  * order) numerically verified to still leave the barcode and Parcel ID caption on the label — see
  * this file's own top comment for the actual numbers. */
 const MAX_ITEMS_SHOWN = 2;
+/** The narrow 2x3" label wraps the address onto more lines, so it trades the second packing-list line for a third address line. */
+const MAX_ITEMS_SHOWN_NARROW = 1;
 
 /** The 3"x3" (76.2mm square) sticker's own label — same editorial design language as ShippingLabel
  * (logo, serif recipient name, QR beside it, double-rule COD box, hairline rules, thin barcode
@@ -64,10 +69,10 @@ const MAX_ITEMS_SHOWN = 2;
  * hidden` box in label-capture-host.tsx — content that runs past its bottom edge doesn't get cut off
  * from view, it gets cut out of the actual captured image, which is what silently disappeared the
  * Parcel ID line in an earlier version of this component that budgeted for a single-line address.) */
-export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLabelSquareProps) {
+export function ShippingLabelSquare({ order, store, onBarcodeReady, narrow = false }: ShippingLabelSquareProps) {
   const booked = Boolean(order.courierConsignmentId);
   const barcodeValue = booked && order.trackingNumber ? order.trackingNumber : order.orderNumber;
-  const shownItems = order.items.slice(0, MAX_ITEMS_SHOWN);
+  const shownItems = order.items.slice(0, narrow ? MAX_ITEMS_SHOWN_NARROW : MAX_ITEMS_SHOWN);
   const extraItemCount = order.items.length - shownItems.length;
 
   return (
@@ -80,7 +85,7 @@ export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLa
           <StoreLogoImage
             src={store.logoUrl}
             alt={store.storeName}
-            className="h-9 w-32 shrink-0"
+            className={narrow ? "h-7 w-24 shrink-0" : "h-9 w-32 shrink-0"}
             fallback={<span className="text-[12px] font-bold uppercase tracking-wide">{store.storeName}</span>}
           />
         ) : (
@@ -97,18 +102,18 @@ export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLa
           two lines instead wrap — see this file's own top comment for why that field never truncates. */}
       <div className="mt-1.5 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[18px] font-bold leading-tight text-ink-900">{order.customerName}</p>
-          <p className="truncate text-[15px] font-semibold leading-tight tabular-nums text-ink-800">
+          <p className={`truncate font-bold leading-tight text-ink-900 ${narrow ? "text-[15px]" : "text-[18px]"}`}>{order.customerName}</p>
+          <p className={`truncate font-semibold leading-tight tabular-nums text-ink-800 ${narrow ? "text-[13px]" : "text-[15px]"}`}>
             {order.customerPhone}
           </p>
-          <p className="mt-[3px] line-clamp-2 text-[9.5px] leading-snug text-ink-800">{order.shippingAddressLine}</p>
+          <p className={`mt-[3px] text-[9.5px] leading-snug text-ink-800 ${narrow ? "line-clamp-3" : "line-clamp-2"}`}>{order.shippingAddressLine}</p>
           <p className="truncate text-[9.5px] leading-snug text-ink-800">
             {order.shippingArea}, {order.shippingDistrict}, {order.shippingDivision}
           </p>
         </div>
         {booked && order.courierTrackingLink && (
           <div className="shrink-0 pt-0.5">
-            <QrCodeSvg value={order.courierTrackingLink} size={44} />
+            <QrCodeSvg value={order.courierTrackingLink} size={narrow ? 34 : 44} />
           </div>
         )}
       </div>
@@ -121,16 +126,16 @@ export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLa
       {order.payment.codToCollect > 0 ? (
         <div className="mt-1.5 flex items-baseline justify-between border-y-2 border-ink-900 py-[3px]">
           <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-ink-700">
-            Cash on delivery
+            {narrow ? "COD" : "Cash on delivery"}
           </span>
-          <span className="text-[21px] font-extrabold leading-none tabular-nums text-ink-900">
+          <span className={`font-extrabold leading-none tabular-nums text-ink-900 ${narrow ? "text-[18px]" : "text-[21px]"}`}>
             {formatPrice(order.payment.codToCollect)}
           </span>
         </div>
       ) : (
         <div className="mt-1.5 flex items-baseline justify-between border-y border-ink-200 py-[3px]">
           <span className="text-[9px] font-semibold uppercase tracking-[0.15em] text-ink-700">Payment</span>
-          <span className="text-[12px] font-semibold text-ink-800">
+          <span className={`truncate font-semibold text-ink-800 ${narrow ? "text-[10px]" : "text-[12px]"}`}>
             {order.paymentMethod === "COD" ? "Paid — collect nothing" : order.paymentStatus === "PAID" ? "Paid online" : `Online — ${paymentStatusLabel(order.paymentStatus)}`}
           </span>
         </div>
@@ -139,7 +144,8 @@ export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLa
       {/* The courier note (Catalog → Courier notes, e.g. "পারফিউম — প্যাকেট খোলা যাবে না") — the rider reads the parcel more than
           the app, so it's printed here too: bold, marked by a black rule, clamped so it can't push the barcode off. */}
       {order.courierNoteForLabel && (
-        <p lang="bn" className="mt-1.5 line-clamp-2 border-l-2 border-ink-900 pl-1.5 text-[9.5px] font-bold leading-snug text-ink-900">
+        // shrink-0: in a full label the flex column squeezed this note away first; the packing list below gives way instead.
+        <p lang="bn" className="mt-1.5 line-clamp-2 shrink-0 border-l-2 border-ink-900 pl-1.5 text-[9.5px] font-bold leading-snug text-ink-900">
           {order.courierNoteForLabel}
         </p>
       )}
@@ -148,19 +154,24 @@ export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLa
           own comment). Each item line still truncates rather than wraps: unlike the address, an item
           name getting cut is a labeling inconvenience, not an undeliverable parcel, and letting it
           wrap would blow the vertical budget the same way an unclamped address did before. */}
-      <div className="mt-[3px]">
+      {/* min-h-0 + overflow-hidden: if an outlier still runs out of height, this list gives way, never the note or barcode. */}
+      <div className="mt-[3px] min-h-0 overflow-hidden">
         {shownItems.map((item) => (
-          <p key={item.id} className="truncate text-[8px] leading-[1.2] text-ink-700">
-            <span className="font-semibold text-ink-900">{item.quantity}×</span> {item.productNameSnapshot}
-            {(item.sizeSnapshot || item.colorSnapshot) && (
-              <span className="text-ink-700">
-                {" "}
-                ({[item.sizeSnapshot, item.colorSnapshot].filter(Boolean).join(", ")})
-              </span>
-            )}
+          <p key={item.id} className="flex gap-1 text-[8px] leading-[1.2] text-ink-700">
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-semibold text-ink-900">{item.quantity}×</span> {item.productNameSnapshot}
+              {(item.sizeSnapshot || item.colorSnapshot) && (
+                <span className="text-ink-700">
+                  {" "}
+                  ({[item.sizeSnapshot, item.colorSnapshot].filter(Boolean).join(", ")})
+                </span>
+              )}
+            </span>
+            {/* Narrow: the "+N more" rides on the item's own line, so the list is always exactly one line tall. */}
+            {narrow && extraItemCount > 0 && <span className="shrink-0 font-medium">+{extraItemCount} more</span>}
           </p>
         ))}
-        {extraItemCount > 0 && (
+        {!narrow && extraItemCount > 0 && (
           <p className="text-[7px] font-medium text-ink-700">
             +{extraItemCount} more item{extraItemCount === 1 ? "" : "s"}
           </p>
@@ -172,13 +183,13 @@ export function ShippingLabelSquare({ order, store, onBarcodeReady }: ShippingLa
           of overflowing if the encoded value happens to be long — see its own comment for why. */}
       <div className="mt-auto flex flex-col items-center border-t border-ink-200 pt-px text-center">
         <div className="flex w-full justify-center">
-          <BarcodeSvg value={barcodeValue} height={46} width={1.3} fontSize={9} onReady={onBarcodeReady} />
+          <BarcodeSvg value={barcodeValue} height={narrow ? 32 : 46} width={narrow ? 1 : 1.3} fontSize={9} onReady={onBarcodeReady} />
         </div>
         {booked ? (
           <p className="mt-0.5 truncate text-[9px] text-ink-700">Parcel ID: {order.courierConsignmentId}</p>
         ) : (
           <p className="mt-0.5 inline-block rounded border border-ink-900 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ink-900">
-            Not booked with courier yet
+            {narrow ? "Not booked yet" : "Not booked with courier yet"}
           </p>
         )}
       </div>
