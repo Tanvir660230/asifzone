@@ -24,8 +24,6 @@ export interface LabelTemplate {
   defaultMarginMm: number;
   /** False for sticker templates — rotating a die-cut/roll label is a printer setting, not a layout one. */
   orientationSwappable: boolean;
-  /** True for the three cramped sticker sizes that can't fit the full ShippingLabel design even scaled down. */
-  compact: boolean;
 }
 
 // Gap between cells on an A4 multi-up sheet — matches the spacing already proven out in the old
@@ -44,7 +42,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 10,
     orientationSwappable: true,
-    compact: false,
   },
   {
     id: "a4-2up",
@@ -56,7 +53,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 2,
     defaultMarginMm: 10,
     orientationSwappable: true,
-    compact: false,
   },
   {
     id: "a4-4up",
@@ -68,7 +64,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 2,
     defaultMarginMm: 10,
     orientationSwappable: true,
-    compact: false,
   },
   {
     id: "a4-6up",
@@ -80,7 +75,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 3,
     defaultMarginMm: 10,
     orientationSwappable: true,
-    compact: false,
   },
   {
     id: "a4-8up",
@@ -92,7 +86,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 4,
     defaultMarginMm: 10,
     orientationSwappable: true,
-    compact: false,
   },
   {
     id: "sticker-100x150",
@@ -104,24 +97,12 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 2,
     orientationSwappable: false,
-    compact: false,
   },
   {
     // 3"x3" thermal sticker rolls (common on GP-3120TUC-class printers) — 76.2mm is the exact
     // inch-to-mm conversion (3 * 25.4), not rounded to 76, since even a fraction of a mm of drift
     // compounds into a visibly cropped edge on a roll this small once the printer's own paper-size
     // setting has to match it exactly (see the sticker guidance banner on the print-labels page).
-    //
-    // Neither `compact` value actually fits this template — it gets its own dedicated component,
-    // ShippingLabelSquare, special-cased directly by id in label-capture-host.tsx rather than
-    // through this flag. Two things were tried and rejected first: the full ShippingLabel scaled
-    // down via LabelScaleWrapper (its own doc comment explains why — the packing list and QR came
-    // out too fine for a thermal head at the resulting ~76% scale), and ShippingLabelCompact's
-    // stripped-down style (rejected on the merchant's own design feedback: they wanted the original
-    // editorial look — logo, serif name, QR beside it, double-rule COD box — just bigger, not a
-    // plainer redesign). ShippingLabelSquare keeps that look, drops only the packing list to free
-    // enough room, and uses font sizes tuned directly for 76.2mm instead of a scaled-down value.
-    // `compact: false` here is nominal, not load-bearing — see ShippingLabelSquare's own comment.
     id: "sticker-76x76",
     name: "Sticker — 76 × 76mm (3 × 3\")",
     kind: "sticker",
@@ -131,11 +112,9 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 2,
     orientationSwappable: false,
-    compact: false,
   },
   {
-    // 2"x3" portrait thermal roll (2" across, 3" down the feed). Same 76.2mm height as the 3x3 square,
-    // so it renders ShippingLabelSquare in its narrow layout rather than a scaled-down ShippingLabel.
+    // 2"x3" portrait thermal roll: 2" across, 3" down the feed.
     id: "sticker-51x76",
     name: "Sticker — 51 × 76mm (2 × 3\")",
     kind: "sticker",
@@ -145,7 +124,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 2,
     orientationSwappable: false,
-    compact: false,
   },
   {
     id: "sticker-80x50",
@@ -157,7 +135,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 1.5,
     orientationSwappable: false,
-    compact: true,
   },
   {
     id: "sticker-60x40",
@@ -169,7 +146,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 1.5,
     orientationSwappable: false,
-    compact: true,
   },
   {
     id: "sticker-50x30",
@@ -181,7 +157,6 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
     rows: 1,
     defaultMarginMm: 1,
     orientationSwappable: false,
-    compact: true,
   },
 ];
 

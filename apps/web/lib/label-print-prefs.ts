@@ -7,7 +7,17 @@ export interface StoredPrintPrefs {
   orientation: "portrait" | "landscape";
   marginMm: number;
   copies: number;
+  /** Thermal sticker printer: pure black-and-white output at the head's resolution. */
+  thermal: boolean;
+  printerDpi: PrinterDpi;
+  /** Printer nudge (see PrintOffset in label-pdf.ts). */
+  offsetXmm: number;
+  offsetYmm: number;
 }
+
+export type PrinterDpi = 203 | 300;
+export const PRINTER_DPIS: readonly PrinterDpi[] = [203, 300];
+export const MAX_OFFSET_MM = 5;
 
 function isLabelTemplateId(value: unknown): value is LabelTemplateId {
   return typeof value === "string" && LABEL_TEMPLATES.some((t) => t.id === value);
@@ -40,6 +50,13 @@ export function loadStoredPrintPrefs(): Partial<StoredPrintPrefs> {
     }
     if (typeof parsed.copies === "number" && Number.isInteger(parsed.copies) && parsed.copies >= 1 && parsed.copies <= 20) {
       prefs.copies = parsed.copies;
+    }
+
+    if (typeof parsed.thermal === "boolean") prefs.thermal = parsed.thermal;
+    if (parsed.printerDpi === 203 || parsed.printerDpi === 300) prefs.printerDpi = parsed.printerDpi;
+    for (const key of ["offsetXmm", "offsetYmm"] as const) {
+      const v = parsed[key];
+      if (typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= MAX_OFFSET_MM) prefs[key] = v;
     }
 
     return prefs;

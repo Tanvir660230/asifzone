@@ -1,4 +1,4 @@
-import { toJpeg } from "html-to-image";
+import { getFontEmbedCSS, toCanvas } from "html-to-image";
 import { jsPDF } from "jspdf";
 import type { LabelTemplate } from "./label-templates";
 import { resolveGeometry } from "./label-templates";
@@ -64,43 +64,71 @@ export function buildPageLayout({ orderIds, template, orientation, marginMm }: B
 }
 
 export interface CaptureOptions {
-  /** Supersampling factor for html-to-image — higher for physically small labels, where the same mm
-   * area needs more source pixels to keep the barcode/text crisp. */
+  /** Supersampling factor for html-to-image — see pixelRatioFor. */
   pixelRatio: number;
+  /** Thermal printers: threshold every pixel to pure black or white (see toThermal). */
+  mono: boolean;
   onProgress?: (progress: CaptureProgress) => void;
   /** Yield to the browser (via requestAnimationFrame) after every N captures, so a large batch never
    * freezes the tab. Defaults to yielding after every capture. */
   yieldEvery?: number;
 }
 
+/** Thermal printers print dots, not greys: a 203-dpi head has exactly 8 dots per mm. Rendering at exactly twice the
+ * head's resolution (an even multiple, so the driver's downscale lands on whole dots) keeps text edges and barcode
+ * bars on the dot grid instead of smearing them across two. A4 sheets on an ordinary printer keep 3×. */
+export function pixelRatioFor(kind: "a4" | "sticker", printerDpi: number): number {
+  return kind === "sticker" ? (printerDpi * 2) / 96 : 3;
+}
+
 function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-/** Rasterizes each order's off-screen label node to a JPEG data URL — exactly once per unique order,
- * regardless of how many page-slots or copies that order occupies (the caller reuses the same data
- * URL for every repeated slot). Deliberately sequential (not Promise.all): html-to-image captures are
- * CPU-heavy, and a sequential loop with a per-capture rAF yield is what keeps a 50-500 order batch
- * from freezing the tab, while giving the progress callback real per-item granularity.
+/** Threshold to pure black and white. A thermal driver otherwise dithers every anti-aliased edge and every dark-grey
+ * pixel into a scatter of dots — the "broken", faint-looking text and fuzzy barcode edges on real prints. 160 (of 255)
+ * keeps thin Bangla strokes whole while dropping JPEG-style haze; the result is also a small two-colour PNG. */
+export function thresholdPixels(px: Uint8ClampedArray, cutoff = 160): void {
+  for (let i = 0; i < px.length; i += 4) {
+    const luma = 0.299 * px[i]! + 0.587 * px[i + 1]! + 0.114 * px[i + 2]!;
+    const v = luma < cutoff ? 0 : 255;
+    px[i] = px[i + 1] = px[i + 2] = v;
+    px[i + 3] = 255;
+  }
+}
+
+function toThermal(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return canvas;
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  thresholdPixels(image.data);
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/** Rasterizes each order's off-screen label node — exactly once per unique order, however many page slots or copies
+ * it occupies (the caller reuses the image for every repeated slot). Sequential with a per-capture rAF yield, so a
+ * 50-500 order batch never freezes the tab and progress moves per label.
  *
- * JPEG, not PNG: a first pass used lossless PNG and produced a ~35MB PDF for just 22 labels (4 pages)
- * — anti-aliased text/barcode edges and the embedded logo photo compress terribly under PNG's
- * lossless scheme, and that cost scales linearly with batch size, so a realistic 500-order run would
- * have produced a document in the hundreds of MB, impractical to generate, download, or print. JPEG
- * at quality 0.92 keeps barcodes reliably scannable (verified — bars are large flat black/white
- * regions, not fine detail JPEG artifacts damage) while cutting file size by roughly an order of
- * magnitude. */
+ * Fonts: the web-font CSS is built once and handed to every capture. Before, html-to-image re-fetched and re-inlined
+ * every font file for every label (cacheBust made each fetch miss the cache) — slow, and a fetch that failed
+ * mid-batch silently drew that label in a fallback font whose wider glyphs no longer fit the layout.
+ *
+ * Output: thermal labels → thresholded PNG (crisp, and small because it's two colours); A4 → JPEG 0.92 (a full colour
+ * sheet with a logo photo is ~10× smaller as JPEG, and an office printer handles greys fine). */
 export async function captureOrderImages(
   nodesByOrderId: Map<string, HTMLElement>,
-  { pixelRatio, onProgress, yieldEvery = 1 }: CaptureOptions,
+  { pixelRatio, mono, onProgress, yieldEvery = 1 }: CaptureOptions,
 ): Promise<Map<string, string>> {
   const result = new Map<string, string>();
   const entries = Array.from(nodesByOrderId.entries());
+  if (entries.length === 0) return result;
+  const fontEmbedCSS = await getFontEmbedCSS(entries[0]![1]);
 
   for (let i = 0; i < entries.length; i++) {
     const [orderId, node] = entries[i]!;
-    const dataUrl = await toJpeg(node, { pixelRatio, quality: 0.92, backgroundColor: "#ffffff", cacheBust: true });
-    result.set(orderId, dataUrl);
+    const canvas = await toCanvas(node, { pixelRatio, backgroundColor: "#ffffff", fontEmbedCSS });
+    result.set(orderId, mono ? toThermal(canvas).toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.92));
     onProgress?.({ done: i + 1, total: entries.length });
     if ((i + 1) % yieldEvery === 0) await yieldToBrowser();
   }
@@ -115,7 +143,16 @@ function pageOrientation(page: PageLayout): "p" | "l" {
 /** Builds the actual PDF: one addImage call per slot, reusing whichever capture (there is exactly
  * one per unique order) that slot's orderId maps to. A slot whose image is missing (a capture that
  * failed) is skipped rather than throwing, so one bad label can't take down the whole batch's PDF. */
-export function assemblePdf(pages: PageLayout[], imagesByOrderId: Map<string, string>): jsPDF {
+/** Printer nudge, in mm: a printer that lands every sticker a little off (gap sensor, roll guide) is corrected by
+ * moving the whole image the other way — read off the test page (buildTestPagePdf). Positive = right / down. */
+export interface PrintOffset {
+  xMm: number;
+  yMm: number;
+}
+
+export const NO_OFFSET: PrintOffset = { xMm: 0, yMm: 0 };
+
+export function assemblePdf(pages: PageLayout[], imagesByOrderId: Map<string, string>, offset: PrintOffset = NO_OFFSET): jsPDF {
   if (pages.length === 0) throw new Error("Cannot build a PDF with zero pages");
   const first = pages[0]!;
   const doc = new jsPDF({ unit: "mm", format: [first.wMm, first.hMm], orientation: pageOrientation(first), compress: true });
@@ -125,7 +162,9 @@ export function assemblePdf(pages: PageLayout[], imagesByOrderId: Map<string, st
     for (const slot of page.slots) {
       const src = imagesByOrderId.get(slot.orderId);
       if (!src) continue;
-      doc.addImage(src, "JPEG", slot.xMm, slot.yMm, slot.wMm, slot.hMm);
+      const format = src.startsWith("data:image/png") ? "PNG" : "JPEG";
+      // The alias makes jsPDF embed each order's image once, however many copies/slots reuse it.
+      doc.addImage(src, format, slot.xMm + offset.xMm, slot.yMm + offset.yMm, slot.wMm, slot.hMm, slot.orderId, "FAST");
     }
   });
 
@@ -134,8 +173,52 @@ export function assemblePdf(pages: PageLayout[], imagesByOrderId: Map<string, st
 
 /** "Print current page only" is just a 1-page slice through the same assembly path — not a separate
  * PDF builder, so it can never drift from the real multi-page output. */
-export function assembleSinglePagePdf(page: PageLayout, imagesByOrderId: Map<string, string>): jsPDF {
-  return assemblePdf([{ ...page, pageIndex: 0 }], imagesByOrderId);
+export function assembleSinglePagePdf(page: PageLayout, imagesByOrderId: Map<string, string>, offset: PrintOffset = NO_OFFSET): jsPDF {
+  return assemblePdf([{ ...page, pageIndex: 0 }], imagesByOrderId, offset);
+}
+
+/** One page at the label's exact size that shows what the printer really does with it: a frame 1mm inside every edge,
+ * corner marks, mm rulers along the top and left, and a centre cross. On the real roll, a missing frame edge is the
+ * side being cut (paper size set wrong, or the sticker drifting) and the rulers read off by how much — the number for
+ * the offset fields. Vector with Latin text only, so no fonts or capture are involved. */
+export function buildTestPagePdf(wMm: number, hMm: number, offset: PrintOffset = NO_OFFSET): jsPDF {
+  const doc = new jsPDF({ unit: "mm", format: [wMm, hMm], orientation: wMm > hMm ? "l" : "p", compress: true });
+  const { xMm: ox, yMm: oy } = offset;
+  doc.setDrawColor(0);
+  doc.setTextColor(0);
+  doc.setLineWidth(0.3);
+  doc.rect(ox + 1, oy + 1, wMm - 2, hMm - 2);
+  doc.setLineWidth(0.6);
+  const corners: Array<[number, number, number, number]> = [
+    [0, 0, 1, 1],
+    [wMm, 0, -1, 1],
+    [0, hMm, 1, -1],
+    [wMm, hMm, -1, -1],
+  ];
+  for (const [cx, cy, dx, dy] of corners) {
+    doc.line(ox + cx + dx * 2, oy + cy + dy * 2, ox + cx + dx * 8, oy + cy + dy * 2);
+    doc.line(ox + cx + dx * 2, oy + cy + dy * 2, ox + cx + dx * 2, oy + cy + dy * 8);
+  }
+  doc.setLineWidth(0.2);
+  doc.setFontSize(5);
+  for (let x = 0; x <= Math.floor(wMm); x++) {
+    const tick = x % 10 === 0 ? 3 : x % 5 === 0 ? 2 : 1;
+    doc.line(ox + x, oy + 1, ox + x, oy + 1 + tick);
+    if (x % 10 === 0 && x > 0 && x < wMm - 3) doc.text(String(x), ox + x, oy + 6.2, { align: "center" });
+  }
+  for (let y = 0; y <= Math.floor(hMm); y++) {
+    const tick = y % 10 === 0 ? 3 : y % 5 === 0 ? 2 : 1;
+    doc.line(ox + 1, oy + y, ox + 1 + tick, oy + y);
+    if (y % 10 === 0 && y > 0 && y < hMm - 3) doc.text(String(y), ox + 5, oy + y + 0.9);
+  }
+  doc.line(ox + wMm / 2 - 4, oy + hMm / 2, ox + wMm / 2 + 4, oy + hMm / 2);
+  doc.line(ox + wMm / 2, oy + hMm / 2 - 4, ox + wMm / 2, oy + hMm / 2 + 4);
+  doc.setFontSize(Math.max(6, Math.min(11, wMm / 6)));
+  doc.text("PRINTER TEST", ox + wMm / 2, oy + hMm / 2 - 7, { align: "center" });
+  doc.setFontSize(Math.max(5, Math.min(8, wMm / 8)));
+  doc.text(`${wMm} x ${hMm} mm`, ox + wMm / 2, oy + hMm / 2 + 8, { align: "center" });
+  doc.text("All 4 frame edges must print", ox + wMm / 2, oy + hMm / 2 + 12, { align: "center", maxWidth: wMm - 10 });
+  return doc;
 }
 
 /** Opens the generated PDF in a hidden iframe and calls native print on it — the OS print dialog is
@@ -167,7 +250,7 @@ export function downloadPdf(doc: jsPDF, filename: string): void {
  * origin, with no confirmed CORS/crossOrigin handling — rasterizing that directly risks either a
  * silently blank logo or a tainted-canvas exception). Returns null on any failure (missing URL,
  * network error, non-OK response) — the caller then omits the logo for the whole batch, falling back
- * to ShippingLabel's existing text-wordmark path, rather than letting one bad image block generation. */
+ * to LabelCard's text-wordmark header, rather than letting one bad image block generation. */
 export async function resolveLogoDataUrl(logoUrl: string | null): Promise<string | null> {
   if (!logoUrl) return null;
   try {

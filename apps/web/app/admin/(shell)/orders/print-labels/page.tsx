@@ -9,17 +9,20 @@ import * as settingsApi from "@/lib/api/settings";
 import { DEFAULT_TEMPLATE_ID, getTemplate, resolveGeometry } from "@/lib/label-templates";
 import {
   buildPageLayout,
+  buildTestPagePdf,
   captureOrderImages,
   assemblePdf,
   assembleSinglePagePdf,
+  pixelRatioFor,
   printPdf,
   downloadPdf,
   resolveLogoDataUrl,
   type PageLayout,
 } from "@/lib/label-pdf";
+import { LABEL_RENDER_SCALE, gradeFit, type FitResult } from "@/lib/label-fit";
 import { LabelCaptureHost } from "@/components/orders/label-capture-host";
 import { PrintLabelPreview } from "@/components/orders/print-label-preview";
-import { PrintLabelOptions, type PrintOptions, type CaptureState } from "@/components/orders/print-label-options";
+import { PrintLabelOptions, type PrintOptions, type CaptureState, type FitReport } from "@/components/orders/print-label-options";
 import { loadStoredPrintPrefs, saveStoredPrintPrefs } from "@/lib/label-print-prefs";
 
 function buildFilename(orderCount: number): string {
@@ -56,6 +59,10 @@ export default function PrintLabelsPage() {
     orientation: "portrait",
     marginMm: getTemplate(DEFAULT_TEMPLATE_ID).defaultMarginMm,
     copies: 1,
+    thermal: true,
+    printerDpi: 203,
+    offsetXmm: 0,
+    offsetYmm: 0,
     selectedOrderIds: new Set<string>(),
   }));
 
@@ -81,6 +88,10 @@ export default function PrintLabelsPage() {
         orientation: nextTemplate.orientationSwappable && stored.orientation ? stored.orientation : "portrait",
         marginMm: stored.marginMm ?? nextTemplate.defaultMarginMm,
         copies: stored.copies ?? prev.copies,
+        thermal: stored.thermal ?? prev.thermal,
+        printerDpi: stored.printerDpi ?? prev.printerDpi,
+        offsetXmm: stored.offsetXmm ?? prev.offsetXmm,
+        offsetYmm: stored.offsetYmm ?? prev.offsetYmm,
       };
     });
     setPrefsLoaded(true);
@@ -99,8 +110,12 @@ export default function PrintLabelsPage() {
       orientation: options.orientation,
       marginMm: options.marginMm,
       copies: options.copies,
+      thermal: options.thermal,
+      printerDpi: options.printerDpi,
+      offsetXmm: options.offsetXmm,
+      offsetYmm: options.offsetYmm,
     });
-  }, [prefsLoaded, options.templateId, options.orientation, options.marginMm, options.copies]);
+  }, [prefsLoaded, options.templateId, options.orientation, options.marginMm, options.copies, options.thermal, options.printerDpi, options.offsetXmm, options.offsetYmm]);
 
   // Default to "every loaded order selected" exactly once — a ref guard (not a size===0 check) so
   // intentionally deselecting everything later doesn't get silently re-selected on the next render.
@@ -124,11 +139,21 @@ export default function PrintLabelsPage() {
 
   // Identifies a capture "generation" — LabelCaptureHost is mounted under this key (see its own doc
   // comment for why a key-based remount, not an internal reset effect, is what makes resets race-free).
-  // Margin/orientation are deliberately excluded: those only resize the already-captured content
-  // (handled by the host's geometry-driven re-fire), not which labels need to redraw from scratch.
+  // The cell size is in it because every label lays itself out for its cell (margin and orientation
+  // change the layout, not just the scale); thermal/dpi are in it because they change the image.
+  // Offsets and copies are not: they only move or repeat finished images in the PDF.
   const captureKey = useMemo(
-    () => `${template.id}:${selectedOrders.map((o) => o.id).join(",")}`,
-    [template.id, selectedOrders],
+    () =>
+      `${template.id}:${geometry.cellWmm.toFixed(2)}x${geometry.cellHmm.toFixed(2)}:${options.thermal}:${options.printerDpi}:${selectedOrders.map((o) => o.id).join(",")}`,
+    [template.id, geometry.cellWmm, geometry.cellHmm, options.thermal, options.printerDpi, selectedOrders],
+  );
+  // One "Printed …" time per batch, fixed for the generation so a recapture can't print two different times.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a new time per capture generation, on purpose
+  const printedAt = useMemo(() => new Date(), [captureKey]);
+  const mono = template.kind === "sticker" && options.thermal;
+  const offset = useMemo(
+    () => (template.kind === "sticker" ? { xMm: options.offsetXmm, yMm: options.offsetYmm } : { xMm: 0, yMm: 0 }),
+    [template.kind, options.offsetXmm, options.offsetYmm],
   );
 
   function handleOptionsChange(patch: Partial<PrintOptions>) {
@@ -198,32 +223,55 @@ export default function PrintLabelsPage() {
       return;
     }
     setCaptureState({ phase: "capturing", progress: { done: 0, total: selectedOrders.length } });
-  }, [options.templateId, options.orientation, options.marginMm, selectedOrders]);
+    setFitReport(null);
+  }, [captureKey, selectedOrders.length]);
 
   function buildLayoutFor(copies: number): PageLayout[] {
     const orderIdSequence = selectedOrders.flatMap((o) => Array<string>(copies).fill(o.id));
     return buildPageLayout({ orderIds: orderIdSequence, template, orientation: options.orientation, marginMm: options.marginMm });
   }
 
-  async function handleHostReady(nodes: Map<string, HTMLElement>) {
+  const [fitReport, setFitReport] = useState<FitReport | null>(null);
+  // The generation a capture belongs to — a capture that finishes after the options changed is dropped, not shown.
+  const generation = useRef(captureKey);
+  generation.current = captureKey;
+
+  async function handleHostReady(nodes: Map<string, HTMLElement>, fits: Map<string, FitResult>) {
     if (nodes.size === 0) {
       setImagesByOrderId(new Map());
       setPages([]);
       setCaptureState({ phase: "idle" });
       return;
     }
+    const startedFor = captureKey;
     try {
       const images = await captureOrderImages(nodes, {
-        pixelRatio: template.kind === "sticker" ? 4 : 3,
-        onProgress: (progress) => setCaptureState({ phase: "capturing", progress }),
+        // The labels are laid out at LABEL_RENDER_SCALE× (see label-fit.ts) — divide it back out of the pixel ratio.
+        pixelRatio: pixelRatioFor(template.kind, options.printerDpi) / LABEL_RENDER_SCALE,
+        mono,
+        onProgress: (progress) => generation.current === startedFor && setCaptureState({ phase: "capturing", progress }),
       });
+      if (generation.current !== startedFor) return;
+      const report: FitReport = { full: 0, shortened: [], overflow: [] };
+      for (const order of selectedOrders) {
+        const fit = fits.get(order.id);
+        const grade = fit ? gradeFit(fit, order.items.length) : "overflow";
+        if (grade === "full") report.full++;
+        else report[grade].push(order);
+      }
+      setFitReport(report);
       setImagesByOrderId(images);
       setPages(buildLayoutFor(options.copies));
       setCurrentPageIndex(0);
       setCaptureState({ phase: "ready" });
     } catch (err) {
+      if (generation.current !== startedFor) return;
       setCaptureState({ phase: "error", message: err instanceof Error ? err.message : "Failed to render labels" });
     }
+  }
+
+  function handlePrintTestPage() {
+    printPdf(buildTestPagePdf(geometry.pageWmm, geometry.pageHmm, offset));
   }
 
   // Copies-only rebuild — reuses whatever's already captured; only proceeds once a real capture has
@@ -238,18 +286,18 @@ export default function PrintLabelsPage() {
 
   function handlePrintAllPages() {
     if (pages.length === 0) return;
-    printPdf(assemblePdf(pages, imagesByOrderId));
+    printPdf(assemblePdf(pages, imagesByOrderId, offset));
   }
 
   function handlePrintCurrentPage() {
     const page = pages[currentPageIndex];
     if (!page) return;
-    printPdf(assembleSinglePagePdf(page, imagesByOrderId));
+    printPdf(assembleSinglePagePdf(page, imagesByOrderId, offset));
   }
 
   function handleDownload() {
     if (pages.length === 0) return;
-    downloadPdf(assemblePdf(pages, imagesByOrderId), buildFilename(selectedOrders.length));
+    downloadPdf(assemblePdf(pages, imagesByOrderId, offset), buildFilename(selectedOrders.length));
   }
 
   if (ids === null || (ids.length > 0 && isLoading)) {
@@ -336,6 +384,8 @@ export default function PrintLabelsPage() {
               onPrintAllPages={handlePrintAllPages}
               onPrintCurrentPage={handlePrintCurrentPage}
               onDownload={handleDownload}
+              onPrintTestPage={handlePrintTestPage}
+              fitReport={fitReport}
             />
           </div>
 
@@ -362,8 +412,8 @@ export default function PrintLabelsPage() {
           key={captureKey}
           orders={selectedOrders}
           store={storeForRender}
-          template={template}
           geometry={geometry}
+          printedAt={printedAt}
           onReady={handleHostReady}
         />
       )}

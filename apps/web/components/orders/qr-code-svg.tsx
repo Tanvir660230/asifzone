@@ -16,6 +16,6 @@ interface QrCodeSvgProps {
  * 18004 spec's recommended 4-module quiet zone rather than a smaller compromise, since on a small,
  * possibly slightly-blurred thermal print, scan reliability matters far more than the few extra mm
  * saved by shaving the margin down. */
-export function QrCodeSvg({ value, size = 68 }: QrCodeSvgProps) {
-  return <QRCodeSVG value={value} size={size} level="M" marginSize={4} />;
+export function QrCodeSvg({ value, size = 68, fill = false }: QrCodeSvgProps & { /** Fill the parent box (the label engine sizes it). */ fill?: boolean }) {
+  return <QRCodeSVG value={value} size={size} level="M" marginSize={4} style={fill ? { display: "block", width: "100%", height: "100%" } : undefined} />;
 }
