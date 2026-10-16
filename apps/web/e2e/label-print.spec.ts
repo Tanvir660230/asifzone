@@ -22,6 +22,10 @@ const outDir = path.join("test-results", "label-print");
 const orders = buildLabelOrders();
 const VIEWPORT = { width: 3000, height: 4300 };
 const api = process.env.E2E_API_URL ?? "http://localhost:4000";
+/** Measured with the row-density metric below: at the real 8× layout scale the worst label differs by 0.8% of rows
+ * (Windows); with the layout drift the 8× scale fixes (layout at 1×), several labels reach 2.5-4%. 2% sits between,
+ * with room for Linux CI rendering a little differently. */
+const MAX_LINE_DRIFT = 0.02;
 const LOGO_URL = `${api}/__e2e/label-logo.png`;
 
 /** Whether this template's cell, at the 8× layout size, fits the test viewport for an element screenshot. */
@@ -178,10 +182,14 @@ async function checkTemplate(page: Page, template: (typeof LABEL_TEMPLATES)[numb
           // differently (an extra or missing line, or the lines after it moved) shows up as bands that don't line
           // up. Horizontal drift inside a line — the capture's text runs a little narrower than on screen — leaves
           // the bands where they are, and can only ever mean fewer lines in print, never more.
+          // A row counts as ink only past a small density: the anti-aliased fringe at the top and bottom of a line
+          // differs between two rasterizers (and between Windows and Linux) by a pixel or two, while a real text line
+          // is dense — so the fringe stops counting as drift and a moved or extra line still does.
+          const minInk = Math.max(2, Math.round(w * 0.004));
           const rows = (px: Uint8Array) => Array.from({ length: h }, (_, y) => {
             let n = 0;
             for (let x = 0; x < w; x++) n += px[y * w + x]!;
-            return n > 0;
+            return n > minInk;
           });
           const ra = rows(pa);
           const rb = rows(pb);
@@ -207,8 +215,12 @@ async function checkTemplate(page: Page, template: (typeof LABEL_TEMPLATES)[numb
         },
         { shot, src },
       );
-      if (mismatch >= 0.03) writeFileSync(path.join(dir, `DIFF-${id.replace("label-fixture-", "")}.png`), Buffer.from(diff.split(",")[1]!, "base64"));
-      expect(mismatch, `${template.id} ${order.orderNumber}: printed lines sit differently from the on-screen label in ${(mismatch * 100).toFixed(1)}% of rows`).toBeLessThan(0.03);
+      console.log(`line drift ${template.id} ${order.orderNumber}: ${(mismatch * 100).toFixed(2)}%`);
+      if (mismatch >= MAX_LINE_DRIFT) {
+        // Into the HTML report (CI keeps it as an artifact), so a failure there can be seen, not guessed at.
+        await test.info().attach(`line drift ${template.id} ${order.orderNumber}`, { body: Buffer.from(diff.split(",")[1]!, "base64"), contentType: "image/png" });
+      }
+      expect(mismatch, `${template.id} ${order.orderNumber}: printed lines sit differently from the on-screen label in ${(mismatch * 100).toFixed(1)}% of rows`).toBeLessThan(MAX_LINE_DRIFT);
     }
     await page.evaluate(() => {
       const host = document.querySelector<HTMLElement>("[data-testid=label-capture-host]")!;
