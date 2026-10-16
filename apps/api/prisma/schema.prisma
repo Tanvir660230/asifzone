@@ -5344,3 +5344,20 @@ model ErrorGroup {
 
   @@index([resolvedAt, lastSeenAt])
 }
+
+/// One Core Web Vitals reading from a real storefront visit (Site health › Site speed). Anonymous by design: no visitor,
+/// session, IP or user agent — only which kind of page, which kind of device and the number. Written by POST /api/v1/vitals,
+/// summarised as 75th percentiles by modules/ops/web-vitals.service.ts, deleted after 30 days (jobs/site-health-retention-cron.ts).
+model WebVitalSample {
+  id        String   @id @default(cuid())
+  /// "LCP" | "INP" | "CLS" | "FCP" | "TTFB" (packages/shared web-vitals.ts)
+  metric    String
+  value     Float
+  /// PageKind: "home" | "category" | "product" | …
+  pageKind  String
+  /// "mobile" | "desktop"
+  device    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt, metric])
+}

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { validate } from "../../middlewares/validate";
 import { recordAudit } from "../../lib/audit";
 import { getErrorGroup, listErrorGroups, resolveErrorGroup } from "./errors.service";
+import { summarizeVitals } from "./web-vitals.service";
 
 /** Phase 9: GET /api/v1/ops/reliability — what is stuck, failed or inconsistent (read-only). */
 export const opsRouter = Router();
@@ -64,5 +65,15 @@ opsRouter.post(
     await resolveErrorGroup(id);
     recordAudit({ adminId: req.admin?.adminId ?? null, action: "ops.error.resolve", entityType: "ErrorGroup", entityId: id, ipAddress: req.ip ?? null });
     res.status(204).end();
+  }),
+);
+
+/** Site health: GET /api/v1/ops/vitals?days=7 — real-visitor speed, 75th percentile per metric × page kind × device. ops.read. */
+const vitalsQuery = z.object({ days: z.coerce.number().int().min(1).max(30).default(7) });
+opsRouter.get(
+  "/vitals", requirePermission("ops.read"), validate(vitalsQuery, "query"),
+  asyncHandler(async (req, res) => {
+    const { days } = req.query as unknown as z.infer<typeof vitalsQuery>;
+    res.json({ days, rows: await summarizeVitals(days) });
   }),
 );

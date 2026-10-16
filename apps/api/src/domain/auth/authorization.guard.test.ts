@@ -109,6 +109,7 @@ const PUBLIC_ROUTES = [
   "POST /api/v1/checkout/quote",
   "POST /api/v1/checkout/quote/best-coupon",
   "POST /api/v1/client-errors/", // Site health: browser crash beacon, rate-limited
+  "POST /api/v1/vitals/", // Site health: real-visitor speed beacon, rate-limited
 
 ];
 

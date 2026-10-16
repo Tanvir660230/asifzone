@@ -9,6 +9,7 @@ import { startCampaignSchedulerCron } from "./jobs/campaign-scheduler-cron";
 import { startCourierStatusCron } from "./jobs/courier-status-cron";
 import { startPaymentReconciliationCron } from "./jobs/payment-reconciliation-cron";
 import { startStorageTrashCron } from "./jobs/storage-trash-cron";
+import { startSiteHealthRetentionCron } from "./jobs/site-health-retention-cron";
 import { startMetaCapiWorker } from "./jobs/meta-capi-worker";
 import { startOutboxWorker } from "./jobs/outbox-worker";
 import { warmCustomerFacts } from "./modules/customers/customer-facts.service";
@@ -81,6 +82,7 @@ async function main() {
     startPaymentReconciliationCron().catch((err) => captureError(err, { msg: "[payment-reconciliation-cron] failed to start:" }));
   }
   startStorageTrashCron().catch((err) => captureError(err, { msg: "[storage-trash-cron] failed to start:" }));
+  startSiteHealthRetentionCron().catch((err) => captureError(err, { msg: "[site-health-retention] failed to start:" }));
   startMetaCapiWorker().catch((err) => captureError(err, { msg: "[meta-capi] worker failed to start:" }));
   startOutboxWorker().catch((err) => captureError(err, { msg: "[outbox] worker failed to start:" }));
   // The customer list's read model (Blueprint V2 PERF-01): built here in the background, so the first list read after a
