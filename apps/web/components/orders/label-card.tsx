@@ -158,6 +158,11 @@ function buildView(order: LabelOrder, store: StoreSettings | undefined, printedA
   };
 }
 
+/** The QR's side in em: its full size, or ~80% of it once the fit engine trades QR size for text. */
+function qrEm(detail: DetailLevel, full: number): number {
+  return detail.qr === "small" ? Math.round(full * 0.8 * 10) / 10 : full;
+}
+
 interface PartProps {
   view: LabelView;
   detail: DetailLevel;
@@ -174,8 +179,11 @@ function StackLabel({ view, detail, onBarcodeReady }: PartProps) {
 
       {detail.infoTable ? (
         <div className="mt-[0.4em] flex border-y-[0.09em] border-ink-900 py-[0.35em]">
-          {detail.qr && order.courierTrackingLink && (
-            <div className="mr-[0.45em] h-[5.4em] w-[5.4em] shrink-0 border-r-[0.09em] border-ink-900 pr-[0.45em]">
+          {detail.qr !== "none" && order.courierTrackingLink && (
+            <div
+              className="mr-[0.45em] shrink-0 border-r-[0.09em] border-ink-900 pr-[0.45em]"
+              style={{ width: `${qrEm(detail, 5.4)}em`, height: `${qrEm(detail, 5.4)}em` }}
+            >
               <QrCodeSvg value={order.courierTrackingLink} size={128} fill />
             </div>
           )}
@@ -225,8 +233,8 @@ function WideLabel({ view, detail, onBarcodeReady }: PartProps) {
         </div>
         <div className="flex w-[38%] shrink-0 flex-col gap-[0.35em]">
           <Payment view={view} amountEm={1.45} stacked />
-          {detail.qr && order.courierTrackingLink && (
-            <div className="h-[4.6em] w-[4.6em] self-center">
+          {detail.qr !== "none" && order.courierTrackingLink && (
+            <div className="self-center" style={{ width: `${qrEm(detail, 4.6)}em`, height: `${qrEm(detail, 4.6)}em` }}>
               <QrCodeSvg value={order.courierTrackingLink} size={128} fill />
             </div>
           )}
@@ -254,10 +262,8 @@ function Header({ view, logoEm, rightText }: { view: LabelView; logoEm: number; 
       {store?.logoUrl && logoEm > 0 ? (
         <>
           <StoreLogoImage src={store.logoUrl} alt={name} className="shrink-0 [&_img]:object-left" style={{ height: `${logoEm}em`, width: `${logoEm * 2.4}em` }} fallback={wordmark} />
-          <div className="min-w-0 text-right">
-            <p className="text-[1.05em] font-bold leading-tight">{name}</p>
-            {right && <p className="whitespace-nowrap text-[0.78em] font-semibold tabular-nums">{right}</p>}
-          </div>
+          {/* The logo artwork already carries the store name, so only the phone (or order number) sits beside it. */}
+          {right && <p className="whitespace-nowrap text-right text-[0.9em] font-semibold tabular-nums">{right}</p>}
         </>
       ) : (
         <>

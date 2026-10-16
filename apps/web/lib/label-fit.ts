@@ -7,11 +7,12 @@
  * level wins at whatever size fits, and only if even the smallest legible size doesn't fit is the label flagged
  * `overflow` (the print page then asks for a bigger label size instead of printing a cut one).
  *
- * Name, phone, the full address, COD and the courier note are never dropped or shortened. The levels only give up, in
- * order: one line per item (the products then run inline, still all named), the footer, the QR code, the info table,
- * the names of all but the first products, then a bare count, the logo image (a wordmark instead), and last some of
- * the barcode's height. The DOM measuring lives in LabelCard; this
- * module is the pure part (layout pick, size bounds, level ladder, search), unit-tested on its own.
+ * Name, phone, the full address, COD and the courier note are never dropped or shortened. The store's logo and the
+ * courier QR are kept almost to the end too (the owner's call: a label without them doesn't look like the store's).
+ * The levels give up, in order: one line per item (the products then run inline, still all named), the footer, some
+ * of the QR's size, the names of all but the first products, a bare count instead of names, then the QR (with its
+ * info table), the logo image (a wordmark instead), and last some of the barcode's height. The DOM measuring lives in
+ * LabelCard; this module is the pure part (layout pick, size bounds, level ladder, search), unit-tested on its own.
  */
 
 export type LabelLayout = "stack" | "wide";
@@ -22,8 +23,9 @@ export interface DetailLevel {
    * "N items · M pcs" line. */
   items: number | "inline" | "summary";
   footer: boolean;
-  qr: boolean;
-  /** The ORDER / PARCEL / COURIER / DATE table. Off → one compact "order · parcel" line instead. */
+  /** The courier's tracking QR (booked orders): full size, a smaller one, or none. */
+  qr: "full" | "small" | "none";
+  /** The ORDER / PARCEL / COURIER / DATE table beside the QR. Off → one compact "order · parcel" line instead. */
   infoTable: boolean;
   /** The store's logo image in the header. Off → the store name as a small wordmark. */
   logo: boolean;
@@ -32,20 +34,21 @@ export interface DetailLevel {
 }
 
 /** Richest first. A label takes the first level that fits at a comfortable size. Every product named (one per line,
- * then all of them inline) comes before anything else is given up; a capped list ("2 named + N more") only once even
- * the inline run doesn't fit, and a bare count last. */
-const RICH = { footer: true, qr: true, infoTable: true, logo: true, slimBarcode: false } as const;
+ * then all of them inline) comes first; then the QR shrinks before the product names are trimmed; the QR and the logo
+ * go only once the products are already down to a count. */
+const RICH = { footer: true, qr: "full", infoTable: true, logo: true, slimBarcode: false } as const;
+const LEAN = { ...RICH, footer: false, qr: "small" } as const;
 export const DETAIL_LEVELS: readonly DetailLevel[] = [
   { ...RICH, items: Number.POSITIVE_INFINITY },
   { ...RICH, items: "inline" },
   { ...RICH, items: "inline", footer: false },
-  { ...RICH, items: "inline", footer: false, qr: false },
-  { ...RICH, items: "inline", footer: false, qr: false, infoTable: false },
-  { ...RICH, items: 2, footer: false, qr: false, infoTable: false },
-  { ...RICH, items: 1, footer: false, qr: false, infoTable: false },
-  { ...RICH, items: "summary", footer: false, qr: false, infoTable: false },
-  { ...RICH, items: "summary", footer: false, qr: false, infoTable: false, logo: false },
-  { ...RICH, items: "summary", footer: false, qr: false, infoTable: false, logo: false, slimBarcode: true },
+  { ...LEAN, items: "inline" },
+  { ...LEAN, items: 2 },
+  { ...LEAN, items: 1 },
+  { ...LEAN, items: "summary" },
+  { ...LEAN, items: "summary", qr: "none", infoTable: false },
+  { ...LEAN, items: "summary", qr: "none", infoTable: false, logo: false },
+  { ...LEAN, items: "summary", qr: "none", infoTable: false, logo: false, slimBarcode: true },
 ];
 
 /** CSS px per mm (96 dpi), the unit the capture renders in. */
@@ -133,5 +136,5 @@ export function gradeFit(fit: FitResult, itemCount: number): FitGrade {
   const level = DETAIL_LEVELS[fit.level]!;
   // Every product named (one per line, or all inline) counts as full; a capped list or a bare count does not.
   const allItems = level.items === "inline" || (typeof level.items === "number" && level.items >= itemCount);
-  return allItems && level.qr && level.infoTable ? "full" : "shortened";
+  return allItems && level.qr !== "none" && level.infoTable ? "full" : "shortened";
 }
