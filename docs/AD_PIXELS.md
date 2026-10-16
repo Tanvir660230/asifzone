@@ -53,19 +53,30 @@ uses `search_string`. Currency comes from store settings (`getStoreConfig()`), n
      fires for orders older than 24h.
 - Gateway callbacks and webhooks never fire browser events; only the confirmation page does.
 
-## Event ids and server-side tracking (future)
+## Event ids and server-side tracking
 
 Every business event carries one id shared by all platforms (Meta `eventID`, TikTok `event_id`). TikTok and Meta
 dedupe a browser event against a server event with the same event name and id within 48h.
 
-To add the **TikTok Events API** later:
+Both platforms also get a server-side **Purchase** for every storefront order (COD and settled online payments), written
+as an outbox intent in the order's own transaction and sent with `event_id: metaPurchaseEventId(order.orderNumber)`
+(platform-neutral despite the name), so the browser and server copies collapse into one:
 
-1. Add `apps/api/src/lib/tiktok/` alongside `lib/meta/`, sending `Purchase` at order creation/settlement, as Meta's
-   Conversions API already does.
-2. Use `event_id: metaPurchaseEventId(order.orderNumber)` (it's platform-neutral despite the name) so the browser
-   and server copies collapse into one.
-3. Hashed matching keys (SHA-256 of trimmed, lower-cased email; E.164 phone) belong there, server-side, per TikTok's
-   spec. The browser TikTok pixel doesn't call `ttq.identify`.
+| Platform | Code | Outbox consumer | Matching keys sent |
+|---|---|---|---|
+| Meta Conversions API | `apps/api/src/lib/meta/`, `providers/events/meta-capi.ts` | `meta-capi-purchase` | hashed email, phone, name, city, customer id; IP, user agent, `_fbp`, `_fbc` |
+| TikTok Events API | `apps/api/src/lib/tiktok/`, `providers/events/tiktok-events.ts` | `tiktok-events-purchase` | SHA-256 of trimmed lowercase email and E.164 phone, hashed customer id; IP, user agent, `_ttp`, `ttclid` |
+
+`ttclid` (TikTok's ad click id) is kept by the storefront for 7 days in a first-party `ttclid` cookie when a shopper lands
+from a TikTok ad (`?ttclid=…`, only after tracking consent); the API reads it from the checkout request.
+
+**Turning on the TikTok Events API** (each store, Settings › Integrations › TikTok Pixel):
+
+1. TikTok Ads Manager › Tools › Events › Web events › your pixel › **Settings** › Events API › **Generate access token**.
+2. Paste it as *Events API access token*. The pixel id field must already hold the same pixel the browser uses.
+3. To test first: copy the code from Events Manager › *Test events*, paste it as *Test event code*, place a test order,
+   and check that a server `Purchase` appears. Clear the test code afterwards. Outside production the API sends only
+   while a test code is set.
 
 For other events, pass the browser's id to the server (for example in the checkout payload) and reuse it.
 
