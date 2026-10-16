@@ -10,6 +10,7 @@ import { ErrorState } from "@/components/ui/empty-state";
 import { toast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/admin/page-header";
 import { ModuleTabs } from "@/components/admin/module-tabs";
+import { ErrorsSection } from "@/components/admin/system-health/errors-section";
 import { useCapability } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as opsApi from "@/lib/api/ops";
@@ -310,6 +311,9 @@ export default function SystemHealthPage() {
           </p>
         </div>
       )}
+      <div className="mt-10 space-y-10">
+        <ErrorsSection />
+      </div>
     </div>
   );
 }

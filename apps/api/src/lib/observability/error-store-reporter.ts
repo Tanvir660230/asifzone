@@ -20,9 +20,18 @@ interface Pending {
 const TITLE_MAX = 200;
 const PATH_MAX = 300;
 
+/** Network errors (an AggregateError from a refused connection) often carry no message — the code is what says what
+ * happened, then the first inner error's message. */
+function messageOf(err: Error): string {
+  if (err.message) return err.message;
+  const code = (err as { code?: unknown }).code;
+  const inner = err instanceof AggregateError ? (err.errors[0] as { message?: unknown } | undefined)?.message : undefined;
+  return [typeof code === "string" ? code : null, typeof inner === "string" ? inner : null].filter(Boolean).join(" — ") || "(no message)";
+}
+
 function titleOf(c: CapturedError): string {
   const err = c.error instanceof Error ? c.error : null;
-  const text = err ? `${err.name}: ${err.message}` : `Thrown ${typeof c.error}: ${String(c.error)}`;
+  const text = err ? `${err.name}: ${messageOf(err)}` : `Thrown ${typeof c.error}: ${String(c.error)}`;
   return maskText(text).slice(0, TITLE_MAX);
 }
 
@@ -32,7 +41,8 @@ function stackOf(c: CapturedError): string | null {
 }
 
 function pathOf(c: CapturedError): string | null {
-  const raw = c.context?.route ?? c.context?.path ?? c.operation;
+  const queue = typeof c.context?.queue === "string" ? `Background job: ${c.context.queue}` : undefined;
+  const raw = c.context?.route ?? c.context?.path ?? queue ?? c.operation;
   if (typeof raw !== "string" || !raw) return null;
   return maskText(raw.split(/[?#]/)[0]!).slice(0, PATH_MAX);
 }

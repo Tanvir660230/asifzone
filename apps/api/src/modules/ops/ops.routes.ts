@@ -3,6 +3,10 @@ import { requireAdmin, requirePermission } from "../../middlewares/require-admin
 import { asyncHandler } from "../../lib/async-handler";
 import { reliabilityReport } from "./ops.service";
 import { capabilities, providerStatus } from "../../providers/registry";
+import { z } from "zod";
+import { validate } from "../../middlewares/validate";
+import { recordAudit } from "../../lib/audit";
+import { getErrorGroup, listErrorGroups, resolveErrorGroup } from "./errors.service";
 
 /** Phase 9: GET /api/v1/ops/reliability — what is stuck, failed or inconsistent (read-only). */
 export const opsRouter = Router();
@@ -30,5 +34,35 @@ opsRouter.get(
   "/capabilities", requirePermission("ops.read"),
   asyncHandler(async (_req, res) => {
     res.json({ capabilities: capabilities() });
+  }),
+);
+
+/** Site health: GET /api/v1/ops/errors — grouped production errors (server and website), newest first. The list never
+ * carries stacks; GET /errors/:id does, for support. ops.read. */
+const errorListQuery = z.object({
+  status: z.enum(["open", "resolved"]).default("open"),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+opsRouter.get(
+  "/errors", requirePermission("ops.read"), validate(errorListQuery, "query"),
+  asyncHandler(async (req, res) => {
+    const { status, limit } = req.query as unknown as z.infer<typeof errorListQuery>;
+    res.json({ items: await listErrorGroups(status, limit) });
+  }),
+);
+opsRouter.get(
+  "/errors/:id", requirePermission("ops.read"),
+  asyncHandler(async (req, res) => {
+    res.json(await getErrorGroup(req.params.id as string));
+  }),
+);
+/** "Mark fixed" — hides the group until it happens again. ops.repair (owner), audited. */
+opsRouter.post(
+  "/errors/:id/resolve", requirePermission("ops.repair"),
+  asyncHandler(async (req, res) => {
+    const id = req.params.id as string;
+    await resolveErrorGroup(id);
+    recordAudit({ adminId: req.admin?.adminId ?? null, action: "ops.error.resolve", entityType: "ErrorGroup", entityId: id, ipAddress: req.ip ?? null });
+    res.status(204).end();
   }),
 );

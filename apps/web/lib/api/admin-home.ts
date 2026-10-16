@@ -10,6 +10,8 @@ export interface AdminAttention {
   pendingReviews: number | null;
   unreadFeedback: number | null;
   unreadNotifications: number;
+  /** Open errors seen in the last 24 h (Site health) — null without ops.read. */
+  openErrors: number | null;
 }
 
 export function getAttention() {

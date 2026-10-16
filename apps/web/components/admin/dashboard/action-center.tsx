@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   AlertOctagon,
   BookOpen,
+  Bug,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -51,12 +52,14 @@ interface ActionCenterProps {
   lowStockCount?: number;
   /** Finance alerts (docs/FINANCE_ALERTS.md) by severity — only for roles that read the books. */
   financeAlerts?: { critical: number; warning: number };
+  /** Open errors from the last 24 h (Site health) — only for roles with ops.read. */
+  openErrors?: number;
   loading: boolean;
 }
 
 /** Everything waiting on an admin, as a to-do list: only non-zero items show, most urgent first, each one a link straight
  * to the filtered list where it gets done. An empty list is the goal — it renders as an explicit "all clear". */
-export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, loading }: ActionCenterProps) {
+export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedback, lowStockCount, financeAlerts, openErrors, loading }: ActionCenterProps) {
   const q = orderStats?.queueCounts;
   // The overview's failure list reaches back weeks; only the last day's are still worth chasing.
   const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -88,6 +91,15 @@ export function ActionCenter({ orderStats, payments, pendingReviews, unreadFeedb
       href: "/admin/payments/overview",
       severity: "critical",
       icon: CreditCard,
+    },
+    {
+      key: "site-errors",
+      label: "Site errors (24h)",
+      hint: "Something broke on the server or in a visitor's browser",
+      count: openErrors ?? 0,
+      href: "/admin/system-health#errors",
+      severity: "warning",
+      icon: Bug,
     },
     {
       key: "follow-up",

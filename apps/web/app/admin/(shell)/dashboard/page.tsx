@@ -170,6 +170,7 @@ export default function DashboardPage() {
         unreadFeedback={attention.unreadFeedback}
         lowStockCount={summary?.lowStockCount}
         financeAlerts={attention.financeAlertCounts}
+        openErrors={attention.openErrors}
         loading={attention.loading}
       />
 

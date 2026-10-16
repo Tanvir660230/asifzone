@@ -91,6 +91,16 @@ describe("error store reporter", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("names a message-less connection error by its code, and a background job by its queue", async () => {
+    const r = reporter();
+    const err = Object.assign(new AggregateError([new Error(`connect ECONNREFUSED 127.0.0.1:6379 ${RUN}`)], ""), { code: "ECONNREFUSED" });
+    r.report({ error: err, errorClass: "unexpected", correlationId: null, operation: null, context: { queue: "campaign-send" } });
+    await r.flush();
+    const row = await prisma.errorGroup.findFirstOrThrow({ where: { title: { contains: RUN } } });
+    expect(row.title).toBe(`AggregateError: ECONNREFUSED — connect ECONNREFUSED 127.0.0.1:6379 ${RUN}`);
+    expect(row.lastPath).toBe("Background job: campaign-send");
+  });
+
   it("returns from report without waiting for the database", () => {
     const r = reporter();
     const upsert = vi.spyOn(prisma.errorGroup, "upsert");
