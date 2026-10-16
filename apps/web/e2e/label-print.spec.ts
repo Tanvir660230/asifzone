@@ -22,10 +22,13 @@ const outDir = path.join("test-results", "label-print");
 const orders = buildLabelOrders();
 const VIEWPORT = { width: 3000, height: 4300 };
 const api = process.env.E2E_API_URL ?? "http://localhost:4000";
-/** Measured with the row-density metric below: at the real 8× layout scale the worst label differs by 0.8% of rows
- * (Windows); with the layout drift the 8× scale fixes (layout at 1×), several labels reach 2.5-4%. 2% sits between,
- * with room for Linux CI rendering a little differently. */
-const MAX_LINE_DRIFT = 0.02;
+/** Bars for the screen-vs-print line check (row-density metric below). The capture draws text a hair narrower than
+ * the screen does (exact vs hinted glyph advances), so the print can only ever wrap into the same or fewer lines.
+ * Measured: at the real 8× layout, extra ≤ 0.14% and short ≤ 0.07% of rows (Windows); on Linux CI one extreme label
+ * wraps a line shorter (short ≈ 3.2%). Extra ink — print text where the screen had none, i.e. text landing on the
+ * next element — is the failure that matters and gets the tight bar; short (a little blank space) a loose one. */
+const MAX_EXTRA_INK = 0.01;
+const MAX_SHORT_INK = 0.05;
 const LOGO_URL = `${api}/__e2e/label-logo.png`;
 
 /** Whether this template's cell, at the 8× layout size, fits the test viewport for an element screenshot. */
@@ -154,7 +157,7 @@ async function checkTemplate(page: Page, template: (typeof LABEL_TEMPLATES)[numb
         host.querySelectorAll<HTMLElement>("[data-label-order]").forEach((el) => (el.style.display = el.dataset.labelOrder === orderNumber ? "" : "none"));
       }, order.orderNumber);
       const shot = (await page.locator(`[data-testid=label-capture-host] [data-label-order="${order.orderNumber}"]`).screenshot()).toString("base64");
-      const { mismatch, diff } = await page.evaluate(
+      const { extra, short, diff } = await page.evaluate(
         async ({ shot, src }) => {
           const load = async (url: string) => {
             const img = new Image();
@@ -198,8 +201,15 @@ async function checkTemplate(page: Page, template: (typeof LABEL_TEMPLATES)[numb
             for (let d = -slack; d <= slack; d++) if (r[y + d] === v) return true;
             return false;
           };
-          let missed = 0;
-          for (let y = 0; y < h; y++) if (!near(rb, y, ra[y]!) || !near(ra, y, rb[y]!)) missed++;
+          // extra: the print has ink in a row where the screen had none nearby — text the image laid out longer than
+          // the fit measured, which lands on whatever comes next (the dangerous direction). short: the screen had ink
+          // the print doesn't — the image wrapped into fewer lines, leaving a little blank (safe).
+          let extra = 0;
+          let short = 0;
+          for (let y = 0; y < h; y++) {
+            if (rb[y] && !near(ra, y, true)) extra++;
+            if (ra[y] && !near(rb, y, true)) short++;
+          }
           // A diff picture for the failure report: red = only on screen, blue = only in the captured image.
           const c = document.createElement("canvas");
           c.width = w;
@@ -211,16 +221,17 @@ async function checkTemplate(page: Page, template: (typeof LABEL_TEMPLATES)[numb
             out.data.set([...rgb, 255], i * 4);
           }
           ctx.putImageData(out, 0, 0);
-          return { mismatch: missed / h, diff: c.toDataURL("image/png") };
+          return { extra: extra / h, short: short / h, diff: c.toDataURL("image/png") };
         },
         { shot, src },
       );
-      console.log(`line drift ${template.id} ${order.orderNumber}: ${(mismatch * 100).toFixed(2)}%`);
-      if (mismatch >= MAX_LINE_DRIFT) {
+      console.log(`line drift ${template.id} ${order.orderNumber}: extra ${(extra * 100).toFixed(2)}%, short ${(short * 100).toFixed(2)}%`);
+      if (extra >= MAX_EXTRA_INK || short >= MAX_SHORT_INK) {
         // Into the HTML report (CI keeps it as an artifact), so a failure there can be seen, not guessed at.
         await test.info().attach(`line drift ${template.id} ${order.orderNumber}`, { body: Buffer.from(diff.split(",")[1]!, "base64"), contentType: "image/png" });
       }
-      expect(mismatch, `${template.id} ${order.orderNumber}: printed lines sit differently from the on-screen label in ${(mismatch * 100).toFixed(1)}% of rows`).toBeLessThan(MAX_LINE_DRIFT);
+      expect(extra, `${template.id} ${order.orderNumber}: the print has text where the on-screen label had none in ${(extra * 100).toFixed(1)}% of rows`).toBeLessThan(MAX_EXTRA_INK);
+      expect(short, `${template.id} ${order.orderNumber}: the print lost ${(short * 100).toFixed(1)}% of the on-screen label's text rows`).toBeLessThan(MAX_SHORT_INK);
     }
     await page.evaluate(() => {
       const host = document.querySelector<HTMLElement>("[data-testid=label-capture-host]")!;

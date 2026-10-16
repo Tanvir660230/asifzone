@@ -107,7 +107,10 @@ export function LabelCard({ order, store, wMm, hMm, printedAt, onReady }: LabelC
       data-fit-overflow={fit ? String(fit.overflow) : undefined}
       // p-[0.15em]: a glyph's ascent/descent reaches past its line box when line-height is tight — the padding keeps the
       // first and last line's ink inside the cell (and inside the fit check), so a bottom descender is never cut off.
-      className="flex flex-col overflow-hidden bg-white p-[0.15em] font-sans leading-[1.22] text-ink-900 [overflow-wrap:anywhere] [&>*]:shrink-0"
+      // geometricPrecision: on screen Chrome hints glyph advances even at the 8× layout size, while the capture draws
+      // exact ones — on Linux CI a long Bangla address took 4 lines on screen and 3 in the image. Unhinted advances on
+      // screen too, so the layout the fit measures is the one that prints.
+      className="flex flex-col overflow-hidden bg-white p-[0.15em] font-sans leading-[1.22] text-ink-900 [overflow-wrap:anywhere] [text-rendering:geometricPrecision] [&>*]:shrink-0"
       style={{ width: `${wMm * LABEL_RENDER_SCALE}mm`, height: `${hMm * LABEL_RENDER_SCALE}mm` }}
     >
       {layout === "stack" ? (
