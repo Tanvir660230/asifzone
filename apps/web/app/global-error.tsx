@@ -1,11 +1,18 @@
 "use client";
 
+import { useEffect } from "react";
+import { reportClientError } from "@/lib/report-client-error";
+
 /** Last-resort boundary for an error that escapes every other error.tsx — without this, an
  * uncaught client error unmounts the whole tree and the visitor gets a blank white page with no
  * way forward. Must render its own <html>/<body> (it replaces the root layout entirely) and stay
  * dependency-free, since whatever broke the app might have taken shared providers/components
- * down with it. */
-export default function GlobalError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+ * down with it — the one import, the crash reporter, is self-contained and never throws. */
+export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    reportClientError(error, "boundary", error.digest);
+  }, [error]);
+
   return (
     <html lang="en">
       <body>

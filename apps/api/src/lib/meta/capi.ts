@@ -18,6 +18,10 @@ export interface MetaRequestContext {
   fbp?: string;
   /** `_fbc` cookie — the ad click id, set by the Pixel when the shopper landed from a Meta ad (?fbclid=). */
   fbc?: string;
+  /** `_ttp` cookie — the TikTok pixel's browser id (lib/tiktok/purchase.ts). */
+  ttp?: string;
+  /** `ttclid` cookie — TikTok's ad click id, kept by the storefront from the landing URL (?ttclid=). */
+  ttclid?: string;
 }
 
 /** Hashed fields are arrays per Meta's spec; client_* / fbp / fbc are sent unhashed, as required. */
@@ -84,7 +88,16 @@ export function metaContextFromRequest(req: Request): MetaRequestContext {
     clientUserAgent: userAgent ? userAgent.slice(0, 512) : undefined,
     fbp: cleanFbCookie(cookies._fbp),
     fbc: cleanFbCookie(cookies._fbc),
+    ttp: cleanTikTokCookie(cookies._ttp),
+    ttclid: cleanTikTokCookie(cookies.ttclid),
   };
+}
+
+// TikTok's browser id and click id are opaque tokens; anything that isn't one is dropped rather than forwarded.
+const TIKTOK_COOKIE_PATTERN = /^[\w.-]{8,500}$/;
+
+function cleanTikTokCookie(value: unknown): string | undefined {
+  return typeof value === "string" && TIKTOK_COOKIE_PATTERN.test(value) ? value : undefined;
 }
 
 export interface MetaCustomerInfo {

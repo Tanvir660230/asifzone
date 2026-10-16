@@ -57,14 +57,14 @@ export function gatewaySelectionOffenders(sources: Source[]): string[] {
   return sources.filter((s) => !inProviders(s.path) && GATEWAY_TERNARY.test(s.text)).map((s) => s.path);
 }
 
-const CREDENTIAL_READ = /\benv\.(bulkSmsBd|resend|steadfast|sslcommerz|eps|webPush)\.(apiKey|senderId|secretKey|storeId|storePassword|username|password|hashKey|merchantId|publicKey|privateKey)\b|\benv\.meta\.accessToken\b/;
+const CREDENTIAL_READ = /\benv\.(bulkSmsBd|resend|steadfast|sslcommerz|eps|webPush)\.(apiKey|senderId|secretKey|storeId|storePassword|username|password|hashKey|merchantId|publicKey|privateKey)\b|\benv\.(meta|tiktok)\.accessToken\b/;
 /** 4: provider credentials are read only by config/env.ts and providers/**. */
 export function credentialReadOffenders(sources: Source[]): string[] {
   return sources.filter((s) => !inProviders(s.path) && s.path !== "apps/api/src/config/env.ts" && CREDENTIAL_READ.test(s.text)).map((s) => s.path);
 }
 
 const LOGGED_CREDENTIAL =
-  /logger\.\w+\([^;]*\benv\.(bulkSmsBd|resend|steadfast|sslcommerz|eps|webPush|meta)(\s*[,)}]|\.(apiKey|senderId|secretKey|storeId|storePassword|username|password|hashKey|merchantId|privateKey|accessToken)\b)|logger\.\w+\([^;]*\b(params\.toString\(\)|BULKSMSBD_ENDPOINT)/;
+  /logger\.\w+\([^;]*\benv\.(bulkSmsBd|resend|steadfast|sslcommerz|eps|webPush|meta|tiktok)(\s*[,)}]|\.(apiKey|senderId|secretKey|storeId|storePassword|username|password|hashKey|merchantId|privateKey|accessToken)\b)|logger\.\w+\([^;]*\b(params\.toString\(\)|BULKSMSBD_ENDPOINT)/;
 /** 8: nothing logs a provider env block or a credential-bearing request URL. */
 export function loggedCredentialOffenders(sources: Source[]): string[] {
   return sources.filter((s) => LOGGED_CREDENTIAL.test(s.text)).map((s) => s.path);
@@ -178,6 +178,8 @@ describe("provider boundary — the guards catch planted violations (mutation ch
 
   it("credential read / logged credential / web secret / schema column", () => {
     expect(credentialReadOffenders(at("apps/api/src/modules/x.ts", "const k = env.bulkSmsBd.apiKey;"))).toHaveLength(1);
+    expect(credentialReadOffenders(at("apps/api/src/lib/x.ts", "const t = env.tiktok.accessToken;"))).toHaveLength(1);
+    expect(loggedCredentialOffenders(at("apps/api/src/x.ts", "logger.warn('x', { cfg: env.tiktok });"))).toHaveLength(1);
     expect(loggedCredentialOffenders(at("apps/api/src/providers/sms/bulksmsbd.ts", 'logger.info("url", { u: params.toString() });'))).toHaveLength(1);
     expect(loggedCredentialOffenders(at("apps/api/src/x.ts", "logger.error('x', { cfg: env.steadfast });"))).toHaveLength(1);
     expect(loggedCredentialOffenders(at("apps/api/src/x.ts", "logger.error(`k=${env.resend.apiKey}`);"))).toHaveLength(1);

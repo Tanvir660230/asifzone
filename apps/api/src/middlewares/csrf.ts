@@ -32,6 +32,10 @@ const CSRF_EXEMPT_PATHS = new Set([
   "/api/customers/otp/request",
   "/api/customers/otp/verify",
   "/api/analytics/funnel-event",
+  // Site health beacons: public, rate-limited, sent with navigator.sendBeacon (which cannot carry X-CSRF-Token); a
+  // forged call can only add a row any visitor could add.
+  "/api/v1/client-errors",
+  "/api/v1/vitals",
 ]);
 
 /** Same trust model as CSRF_EXEMPT_PREFIX below: a public, rate-limited, fire-and-forget beacon

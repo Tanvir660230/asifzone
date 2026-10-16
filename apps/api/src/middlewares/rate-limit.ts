@@ -98,6 +98,26 @@ export const trackingRateLimit = rateLimit({
   message: { error: "Too many requests" },
 });
 
+/** Site health beacons, one budget each so a crashing page can't use up the speed samples' share. Keyed by IP, and
+ * Bangladeshi mobile carriers put many shoppers behind one IP (CGNAT), so the ceilings are per-crowd, not per-visitor:
+ * high enough for a busy evening, low enough that a looping script can't fill the tables (errors are grouped anyway;
+ * speed samples are deleted after 30 days). */
+export const clientErrorRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests" },
+});
+
+export const vitalsRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests" },
+});
+
 /** AI generation calls a real, metered Claude API — already admin-only, but still capped so a
  * compromised admin session or a buggy retry loop can't run up an unbounded bill. */
 export const aiRateLimit = rateLimit({

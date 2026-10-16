@@ -150,9 +150,13 @@ export const INTEGRATIONS: readonly IntegrationDefinition[] = [
     id: "tiktok",
     name: "TikTok Pixel",
     group: "marketing",
-    description: "TikTok ads conversion tracking.",
-    docsHint: "TikTok Ads Manager › Tools › Events › Web events",
-    fields: [{ key: "TIKTOK_PIXEL_ID", label: "Pixel ID", kind: "text", required: true }],
+    description: "Pixel in the browser plus server-side purchase events (Events API).",
+    docsHint: "TikTok Ads Manager › Tools › Events › Web events › your pixel › Settings",
+    fields: [
+      { key: "TIKTOK_PIXEL_ID", label: "Pixel ID", kind: "text", required: true },
+      { key: "TIKTOK_ACCESS_TOKEN", label: "Events API access token", kind: "secret", help: "Optional. Adds server-side purchase events (Settings › Events API › Generate access token)." },
+      { key: "TIKTOK_TEST_EVENT_CODE", label: "Test event code", kind: "text", help: "Only while testing in Events Manager › Test events. Leave blank otherwise." },
+    ],
   },
   {
     id: "clarity",

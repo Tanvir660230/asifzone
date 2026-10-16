@@ -68,4 +68,12 @@ describe("metaContextFromRequest", () => {
     expect(ctx.fbp).toBeUndefined();
     expect(ctx.fbc).toBeUndefined();
   });
+
+  it("forwards TikTok's browser id and click id, and only token-shaped values", () => {
+    const ctx = metaContextFromRequest(req({ _ttp: "2AbCdEfGhIjKlMnOp", ttclid: "E.C.P.abc123" }));
+    expect(ctx).toMatchObject({ ttp: "2AbCdEfGhIjKlMnOp", ttclid: "E.C.P.abc123" });
+    const bad = metaContextFromRequest(req({ _ttp: "<img src=x>", ttclid: "short" }));
+    expect(bad.ttp).toBeUndefined();
+    expect(bad.ttclid).toBeUndefined();
+  });
 });

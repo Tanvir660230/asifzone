@@ -13,11 +13,9 @@ import { publicRuntimeConfig } from "../runtime-config";
  *
  * `event_id` (third ttq.track argument) is what TikTok deduplicates a browser event against an Events API event with:
  * same pixel + event name + event_id within 48h counts once. Purchase's id is deterministic per order (see
- * purchaseEventId in ./index.ts), so a future server-side TikTok Events API sender only has to reuse it.
+ * purchaseEventId in ./index.ts), which the server-side Events API sender (apps/api lib/tiktok/purchase.ts) reuses.
  *
- * Advanced matching (ttq.identify with hashed email/phone) is not used here yet — the browser would have to hash PII
- * client-side (Meta's pixel hashes it itself; see ./meta.ts). If it's added, it belongs server-side in the Events API sender,
- * SHA-256 of trimmed lowercase email / E.164 phone per TikTok's spec — never passwords or payment data.
+ * Advanced matching (hashed email/phone) happens server-side in that sender, never in the browser.
  *
  * Inert (every call a no-op, nothing downloaded) until this installation's TIKTOK_PIXEL_ID is set (runtime configuration). */
 
@@ -123,6 +121,23 @@ function installStub(): void {
   window.ttq = ttq as unknown as Ttq;
 }
 
+/** TikTok's click id (`?ttclid=` on an ad link), kept 7 days in a first-party cookie so the API can attach it to the
+ * server-side Purchase — the browser pixel matches clicks by itself, the server copy needs it handed over. Only reached
+ * once tracking consent is given and the pixel is configured. */
+const CLICK_ID = /^[\w.-]{8,500}$/;
+const CLICK_ID_DAYS = 7;
+
+function rememberClickId(): void {
+  try {
+    const id = new URLSearchParams(window.location.search).get("ttclid");
+    if (!id || !CLICK_ID.test(id)) return;
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `ttclid=${id}; Max-Age=${CLICK_ID_DAYS * 24 * 60 * 60}; Path=/; SameSite=Lax${secure}`;
+  } catch {
+    // tracking is best-effort
+  }
+}
+
 let loaded = false;
 
 /** Installs the queueing stub and loads events.js exactly once per page load — events tracked before the script arrives
@@ -160,7 +175,10 @@ function send(event: PixelEvent, ctx: PixelEventContext): void {
       // events.js also detects SPA history changes by itself and counts one Pageview per URL, deduplicating an explicit
       // page() for a URL it already counted (verified in e2e/ad-pixels.spec.ts) — so this is exactly one Pageview per
       // page either way, and still correct if that auto-detection is ever off for the pixel.
-      if (ensureLoaded()) window.ttq!.page();
+      if (ensureLoaded()) {
+        rememberClickId();
+        window.ttq!.page();
+      }
       return;
     case "ViewContent": {
       const { id, name, price } = event.product;

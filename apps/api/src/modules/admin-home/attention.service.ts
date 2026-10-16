@@ -4,6 +4,7 @@ import { getOrderStats } from "../orders/order.service";
 import { getPaymentsOverview } from "../payments/payments-overview.service";
 import { countUnreadNotifications } from "../notifications/notification.service";
 import { countOpenConversations } from "../inbox/inbox.service";
+import { countOpenErrors } from "../ops/errors.service";
 
 /**
  * Everything waiting on an admin, in one response (Blueprint V2 PERF-03, §I4) — the sidebar badges, the bell and Home's
@@ -13,14 +14,15 @@ import { countOpenConversations } from "../inbox/inbox.service";
  */
 export async function adminAttention(identity: AdminIdentity) {
   const content = can(identity, "content.manage");
-  const [orders, payments, pendingReviews, unreadFeedback, unreadNotifications] = await Promise.all([
+  const [orders, payments, pendingReviews, unreadFeedback, unreadNotifications, openErrors] = await Promise.all([
     can(identity, "orders.read") ? getOrderStats() : null,
     can(identity, "payments.read") ? getPaymentsOverview() : null,
     content ? prisma.productReview.count({ where: { status: "PENDING" } }) : null,
     content ? countOpenConversations() : null,
     countUnreadNotifications(identity),
+    can(identity, "ops.read") ? countOpenErrors() : null,
   ]);
-  return { orders, payments, pendingReviews, unreadFeedback, unreadNotifications };
+  return { orders, payments, pendingReviews, unreadFeedback, unreadNotifications, openErrors };
 }
 
 export type AdminAttention = Awaited<ReturnType<typeof adminAttention>>;

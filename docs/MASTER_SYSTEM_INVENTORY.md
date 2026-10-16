@@ -981,18 +981,18 @@ No runtime-crash bugs were confirmed by reading code. Behavioral verification (r
 
 | # | Feature | What exists | What's missing |
 |---|---|---|---|
-| INC-01 | **Abandoned-cart recovery** | `Cart` mirror, `Cart.reminderSentAt` column, abandonment analytics (1h threshold), client-side reminder banner | The recovery job/email was **removed** (commit `a67edd6`); `reminderSentAt` is never written |
-| INC-02 | **Zone-based shipping** | Full engine + `ShippingZone`/`Match`/`Rate` tables with priority and `freeOverAmount` | No admin CRUD; only the two legacy fees are editable |
+| INC-01 | **Abandoned-cart recovery** | Cart mirror, abandonment analytics, staff-sent reminders (`POST /api/analytics/abandoned-carts/remind` stamps `reminderSentAt`) | **Done** (verified 2026-10-16); no automatic reminder job |
+| INC-02 | **Zone-based shipping** | Engine + `ShippingZone`/`Match`/`Rate` tables | **Done** (verified 2026-10-16): Settings › Delivery zones edits zones and rates |
 | INC-03 | **Tax configuration** | `TaxSetting` with INCLUSIVE/EXCLUSIVE mode and a shipping rate | Mode and shipping rate aren't exposed in settings |
 | INC-04 | **Campaign segments** | `Segment.filter` JSON designed for arbitrary filters | Only 4 hardcoded segment types; no segment builder; segments aren't reusable (one is created per campaign) |
-| INC-05 | **Ad-pixel consent** | Single gate `hasAdTrackingConsent()` | Always returns `true`; there is no consent banner/CMP |
-| INC-06 | **PWA** | Service worker for push | No web manifest, no offline caching |
-| INC-07 | **TikTok server-side events** | Browser pixel | No TikTok Events API (Meta has CAPI) |
+| INC-05 | **Ad-pixel consent** | `hasAdTrackingConsent()` reads the shopper's choice; `tracking-consent-banner.tsx` asks | **Done** (verified 2026-10-16) |
+| INC-06 | **PWA** | Service worker for push, `app/manifest.ts`, `app/offline` | **Done** (verified 2026-10-16) |
+| INC-07 | **TikTok server-side events** | Browser pixel + TikTok Events API Purchase (`lib/tiktok/`, outbox `tiktok-events-purchase`) | **Done** 2026-10-16 (feat/site-health); owner pastes the access token per store |
 | INC-08 | **Payment refunds via gateway** | Manual refund records | No gateway refund API calls (documented limitation) |
-| INC-09 | **Ops/repair tooling** | API endpoints for outbox status/retry, ledger drift/repair, read-model drift/rebuild, pricing-config drift, metrics consistency, reliability report | No admin UI; these need curl or scripts |
+| INC-09 | **Ops/repair tooling** | Admin › System health shows the reliability report, retries failed outbox jobs, and (2026-10-16) lists production errors and real-visitor site speed | Ledger repair, read-model rebuild and pricing-config drift still need the API endpoints |
 | INC-10 | **Legacy-to-new migrations** (expand/contract) | `Product.productType` + `typeId`; `isActive` + `status`; `StoreSetting` tax/shipping mirrors + `TaxSetting`/`ShippingZone`; deprecated `Order.paymentSessionKey/paymentTransactionId/trackingNumber/carrier` | The "contract" phase (dropping legacy columns) hasn't happened |
 | INC-11 | **Newsletter management** | Subscriber capture + unsubscribe cleanup | No admin list/export; guests can't be emailed |
-| INC-12 | **Error reporting** | `registerErrorReporter` hook | No external reporter registered (Needs Verification) |
+| INC-12 | **Error reporting** | `ErrorGroup` store registered in `server.ts` (grouped, masked) + browser crash beacon; Admin › System health › Errors; Home attention count | **Done** 2026-10-16 (feat/site-health). No external tracker — none needed |
 | INC-13 | **Customer order emails** | Payment receipt email | Status-change emails (SMS only) |
 | INC-14 | **Brand entity** | `Product.brand` free text, `brandTier` enum | No Brand model; brand analytics key off free text |
 
@@ -1029,7 +1029,7 @@ No runtime-crash bugs were confirmed by reading code. Behavioral verification (r
 | DEAD-02 | Web API wrappers never called: `getCompleteYourLook`, `getFrequentlyBoughtTogether`, `getUpgradeOptions`, `getActiveHomepageSectionsSafe`, `getCampaign`, `getFlashSale`, `scheduleCampaign`, `listMyPushSubscriptions`, `listRefunds` (payments-admin), `listAdminSessions`; and `getVisitorId`, `getSessionAttribution` are only used inside `lib/analytics.ts` | usage scan |
 | DEAD-03 | Legacy public endpoints `POST /api/coupons/validate`, `POST /api/coupons/best` (pricing moved to `/api/v1/checkout/quote`) | no web caller |
 | DEAD-04 | Product rail endpoints `/:id/similar`, `/frequently-bought-together`, `/complete-your-look`, `/upgrade-options` (still used internally as rail fallbacks, but the HTTP endpoints have no caller) | §20.2 |
-| DEAD-05 | `Cart.reminderSentAt` column (never written) | INC-01 |
+| DEAD-05 | ~~`Cart.reminderSentAt` column (never written)~~ | Written by staff reminders since INC-01 was rebuilt — not dead |
 | DEAD-06 | Deprecated `Order.paymentSessionKey`, `paymentTransactionId`; likely `trackingNumber`/`carrier` (Steadfast fields replaced them; Needs Verification) | schema comments |
 | DEAD-07 | `meta-capi-worker.ts`: drains a pre-outbox queue; nothing new writes to it | job comment |
 | DEAD-08 | `SHARED/config/product-types.ts` hardcoded legacy product types (8). Types moved to the DB; this remains a fallback/seed source (Needs Verification of remaining readers). | file |

@@ -11,6 +11,7 @@ import { installId } from "../config/installation";
 import * as steadfast from "./courier/steadfast";
 import * as resend from "./email/resend";
 import * as metaCapi from "./events/meta-capi";
+import * as tiktokEvents from "./events/tiktok-events";
 import * as eps from "./payment/eps";
 import * as sslcommerz from "./payment/sslcommerz";
 import * as webPush from "./push/web-push";
@@ -39,6 +40,7 @@ import type {
   PushSender,
   ServerEventSink,
   SmsSender,
+  TikTokServerEventSink,
   SslcommerzGateway,
 } from "./capabilities";
 
@@ -133,6 +135,12 @@ const serverEvents: ServerEventSink = {
   send: (event) => metaCapi.sendMetaEvent(event),
 };
 
+const tiktokServerEvents: TikTokServerEventSink = {
+  id: "tiktok",
+  enabled: () => tiktokEvents.isTikTokEventsEnabled(),
+  send: (event) => tiktokEvents.sendTikTokEvent(event),
+};
+
 // ── Registry ───────────────────────────────────────────────────────────────────────────────────
 
 export function buildProviders(selection: ProviderSelection): Providers {
@@ -142,6 +150,7 @@ export function buildProviders(selection: ProviderSelection): Providers {
     push: pushSender(selection.push),
     courier: courierProvider(selection.courier),
     serverEvents,
+    tiktokServerEvents,
     payments: buildPayments(selection.paymentGateways),
   };
 }
@@ -253,6 +262,14 @@ export function providerStatus(): ProviderStatusEntry[] {
       enabled: metaCapi.isMetaCapiEnabled(),
       credentialsPresent: Boolean(env.meta.pixelId && env.meta.accessToken),
       available: metaCapi.isMetaCapiEnabled(),
+      missingCredentials: [],
+    },
+    {
+      capability: "serverEvents",
+      provider: "tiktok",
+      enabled: tiktokEvents.isTikTokEventsEnabled(),
+      credentialsPresent: Boolean(env.tiktok.pixelId && env.tiktok.accessToken),
+      available: tiktokEvents.isTikTokEventsEnabled(),
       missingCredentials: [],
     },
   ];

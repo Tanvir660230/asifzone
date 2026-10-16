@@ -73,6 +73,7 @@ export * from "./format";
 export * from "./installation";
 export * from "./media";
 export * from "./runtime-config";
+export * from "./web-vitals";
 export * from "./integrations";
 
 export * from "./types";

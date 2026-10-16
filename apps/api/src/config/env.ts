@@ -118,6 +118,14 @@ export const env = {
     get apiVersion() { return integrationSetting("META_API_VERSION") || "v24.0"; },
     get testEventCode() { return integrationSetting("META_TEST_EVENT_CODE"); },
   },
+  // Optional — TikTok Events API (server-side Purchase, see lib/tiktok/). Same gate as Meta: inert until pixelId and
+  // accessToken are set, and outside production it sends only with testEventCode (Events Manager › Test events).
+  // The pixel id is the same one the browser pixel uses. The access token is server-only.
+  tiktok: {
+    get pixelId() { return integrationSetting("TIKTOK_PIXEL_ID"); },
+    get accessToken() { return integrationSetting("TIKTOK_ACCESS_TOKEN"); },
+    get testEventCode() { return integrationSetting("TIKTOK_TEST_EVENT_CODE"); },
+  },
   // Optional — without an API key, "Book with Steadfast" returns a clear "not configured" error
   // instead of faking a booking. webhookToken is a shared secret of our own choosing (not issued
   // by Steadfast) since their delivery-status webhook carries no signature — it must be pasted
