@@ -1,9 +1,10 @@
 "use client";
 
-import { Download, Printer, FileText } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileText, Printer, Ruler } from "lucide-react";
 import type { Order } from "@clothing-brand/shared";
 import { LABEL_TEMPLATES, getTemplate, type LabelTemplateId } from "@/lib/label-templates";
 import type { CaptureProgress } from "@/lib/label-progress";
+import { MAX_OFFSET_MM, PRINTER_DPIS, type PrinterDpi } from "@/lib/label-print-prefs";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,7 +15,20 @@ export interface PrintOptions {
   orientation: "portrait" | "landscape";
   marginMm: number;
   copies: number;
+  thermal: boolean;
+  printerDpi: PrinterDpi;
+  offsetXmm: number;
+  offsetYmm: number;
   selectedOrderIds: Set<string>;
+}
+
+/** How the layout engine fared on this batch (see gradeFit in lib/label-fit.ts). */
+export interface FitReport {
+  full: number;
+  /** Fit by showing fewer item lines / dropping the QR or info table — everything the courier needs is still there. */
+  shortened: Order[];
+  /** Doesn't fit even at the smallest legible text — would print cut. */
+  overflow: Order[];
 }
 
 export type CaptureState =
@@ -33,6 +47,8 @@ interface PrintLabelOptionsProps {
   onPrintAllPages: () => void;
   onPrintCurrentPage: () => void;
   onDownload: () => void;
+  onPrintTestPage: () => void;
+  fitReport: FitReport | null;
 }
 
 const A4_TEMPLATES = LABEL_TEMPLATES.filter((t) => t.kind === "a4");
@@ -48,6 +64,8 @@ export function PrintLabelOptions({
   onPrintAllPages,
   onPrintCurrentPage,
   onDownload,
+  onPrintTestPage,
+  fitReport,
 }: PrintLabelOptionsProps) {
   const template = getTemplate(options.templateId);
   const allSelected = orders.length > 0 && options.selectedOrderIds.size === orders.length;
@@ -57,8 +75,9 @@ export function PrintLabelOptions({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <label className="mb-1 block text-xs font-medium text-ink-500">Label template</label>
+        <label htmlFor="label-template" className="mb-1 block text-xs font-medium text-ink-500">Label template</label>
         <Select
+          id="label-template"
           value={options.templateId}
           onChange={(e) => onOptionsChange({ templateId: e.target.value as LabelTemplateId })}
         >
@@ -125,6 +144,8 @@ export function PrintLabelOptions({
         </div>
       </div>
 
+      {template.kind === "sticker" && <PrinterSettings options={options} onOptionsChange={onOptionsChange} onPrintTestPage={onPrintTestPage} />}
+
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <label className="text-xs font-medium text-ink-500">Print selected orders</label>
@@ -169,6 +190,8 @@ export function PrintLabelOptions({
 
       {captureState.phase === "error" && <p className="text-xs text-danger-600">{captureState.message}</p>}
 
+      {captureState.phase === "ready" && fitReport && <FitSummary report={fitReport} />}
+
       <div className="flex flex-col gap-2 border-t border-ink-100 pt-4">
         <Button variant="brass" size="sm" disabled={actionsDisabled} onClick={onPrintAllPages}>
           <Printer size={14} /> Print all pages
@@ -182,4 +205,91 @@ export function PrintLabelOptions({
       </div>
     </div>
   );
+}
+
+/** Thermal mode, printer resolution, and the position nudge the test page measures. Sticker templates only — an A4
+ * sheet goes through an ordinary printer that handles greys and has its own margins. */
+function PrinterSettings({ options, onOptionsChange, onPrintTestPage }: Pick<PrintLabelOptionsProps, "options" | "onOptionsChange" | "onPrintTestPage">) {
+  const clampOffset = (v: string) => Math.round(Math.min(MAX_OFFSET_MM, Math.max(-MAX_OFFSET_MM, Number(v) || 0)) * 2) / 2;
+  return (
+    <fieldset className="space-y-3 rounded-lg border border-ink-200 p-3">
+      <legend className="px-1 text-xs font-medium text-ink-500">Sticker printer</legend>
+      <label className="flex items-start gap-2 text-sm text-ink-700">
+        <Checkbox checked={options.thermal} onChange={(e) => onOptionsChange({ thermal: e.target.checked })} />
+        <span>
+          Thermal printer
+          <span className="block text-xs text-ink-500">Sharp black and white, no grey dots. Turn off for a colour or inkjet printer.</span>
+        </span>
+      </label>
+      {options.thermal && (
+        <div>
+          <label htmlFor="printer-dpi" className="mb-1 block text-xs font-medium text-ink-500">
+            Printer resolution
+          </label>
+          <Select id="printer-dpi" value={String(options.printerDpi)} onChange={(e) => onOptionsChange({ printerDpi: Number(e.target.value) as PrinterDpi })}>
+            {PRINTER_DPIS.map((dpi) => (
+              <option key={dpi} value={dpi}>
+                {dpi} dpi{dpi === 203 ? " (most printers)" : ""}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="offset-x" className="mb-1 block text-xs font-medium text-ink-500">
+            Move right (mm)
+          </label>
+          <Input id="offset-x" type="number" min={-MAX_OFFSET_MM} max={MAX_OFFSET_MM} step={0.5} value={options.offsetXmm} onChange={(e) => onOptionsChange({ offsetXmm: clampOffset(e.target.value) })} />
+        </div>
+        <div>
+          <label htmlFor="offset-y" className="mb-1 block text-xs font-medium text-ink-500">
+            Move down (mm)
+          </label>
+          <Input id="offset-y" type="number" min={-MAX_OFFSET_MM} max={MAX_OFFSET_MM} step={0.5} value={options.offsetYmm} onChange={(e) => onOptionsChange({ offsetYmm: clampOffset(e.target.value) })} />
+        </div>
+      </div>
+      <Button variant="outline" size="sm" className="w-full" onClick={onPrintTestPage}>
+        <Ruler size={14} /> Print a test sticker
+      </Button>
+      <p className="text-xs leading-relaxed text-ink-500">
+        All four edges of the test frame should print. If one side is missing, set the printer&apos;s paper size to this template&apos;s size;
+        if the frame is shifted, read the shift off the ruler and enter it above (negative moves left / up).
+      </p>
+    </fieldset>
+  );
+}
+
+function FitSummary({ report }: { report: FitReport }) {
+  const total = report.full + report.shortened.length + report.overflow.length;
+  return (
+    <div className="space-y-2 rounded-lg border border-ink-200 p-3 text-xs" data-testid="label-fit-report">
+      {report.overflow.length === 0 && report.shortened.length === 0 && (
+        <p className="flex items-center gap-1.5 text-success-700">
+          <CheckCircle2 size={14} /> All {total} label{total === 1 ? "" : "s"} fit in full.
+        </p>
+      )}
+      {report.shortened.length > 0 && (
+        <div>
+          <p className="flex items-center gap-1.5 font-medium text-ink-700">
+            <CheckCircle2 size={14} className="text-success-700" /> {report.shortened.length} label{report.shortened.length === 1 ? "" : "s"} fit with a shorter item list
+          </p>
+          <p className="mt-0.5 text-ink-500">Name, phone, full address, COD and the courier note are all there. {orderList(report.shortened)}</p>
+        </div>
+      )}
+      {report.overflow.length > 0 && (
+        <div className="text-danger-600">
+          <p className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle size={14} /> {report.overflow.length} label{report.overflow.length === 1 ? "" : "s"} too long for this size
+          </p>
+          <p className="mt-0.5">{orderList(report.overflow)} — pick a bigger label size, or shorten the address on the order.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function orderList(orders: Order[]): string {
+  const shown = orders.slice(0, 4).map((o) => o.orderNumber);
+  return orders.length > 4 ? `${shown.join(", ")} +${orders.length - 4} more` : shown.join(", ");
 }

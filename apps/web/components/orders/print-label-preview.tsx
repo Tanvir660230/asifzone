@@ -98,7 +98,7 @@ export function PrintLabelPreview({ pages, imagesByOrderId, currentPageIndex, on
         </div>
       </div>
 
-      <div ref={containerRef} className="overflow-auto rounded-lg border border-ink-200 bg-ink-50/60 p-4">
+      <div ref={containerRef} data-testid="print-preview" className="overflow-auto rounded-lg border border-ink-200 bg-ink-50/60 p-4">
         <div style={{ width: page.wMm * CSS_PX_PER_MM * zoom, height: page.hMm * CSS_PX_PER_MM * zoom }}>
           <div
             className="relative bg-white shadow-sm"
@@ -119,7 +119,7 @@ export function PrintLabelPreview({ pages, imagesByOrderId, currentPageIndex, on
                 >
                   {src ? (
                     // eslint-disable-next-line @next/next/no-img-element -- data URL, not a Next-optimizable asset
-                    <img src={src} alt="" className="h-full w-full object-contain" />
+                    <img src={src} alt="" data-order-id={slot.orderId} className="h-full w-full object-contain" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-[10px] text-danger-500">Failed to render</div>
                   )}
