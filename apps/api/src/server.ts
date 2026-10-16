@@ -17,14 +17,20 @@ import { startFinanceCommerceSyncCron } from "./jobs/finance-commerce-sync-cron"
 import { syncFlashSaleActivation } from "./modules/flash-sales/flash-sale.service";
 import { installNetworkGuard, liveProvidersEnabled } from "./lib/provider-guard";
 import { logger } from "./lib/observability/logger";
-import { captureError } from "./lib/observability/error-capture";
+import { captureError, registerErrorReporter } from "./lib/observability/error-capture";
+import { createErrorStoreReporter } from "./lib/observability/error-store-reporter";
 import { validateProviderConfig } from "./providers/registry";
 import { loadIntegrationOverrides, startIntegrationRefresh } from "./modules/settings/integrations.service";
 
 let shuttingDown = false;
 
+// Site health: production failures are grouped into ErrorGroup rows for Admin › System health. Registered once the
+// database is reachable; until then captureError still logs.
+const errorStore = createErrorStoreReporter();
+
 async function main() {
   await prisma.$connect();
+  registerErrorReporter(errorStore.report);
   // Demo mirror guard (docs/DEMO_DATA.md §5): refuses a half-built or mislabeled demo database.
   const database = await verifyDatabaseRole(prisma, env.nodeEnv);
   if (database.role === "demo") {
@@ -94,6 +100,8 @@ async function main() {
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 10_000));
     await Promise.race([closeServer, timeout]);
 
+    errorStore.stop();
+    await errorStore.flush();
     await prisma.$disconnect();
     process.exit(0);
   }
@@ -117,5 +125,7 @@ process.on("unhandledRejection", (reason) => {
 
 process.on("uncaughtException", (err) => {
   captureError(err, { msg: "[uncaughtException]" });
-  process.exit(1);
+  // Give the error store a moment to save this one — a crash is the error the owner most needs to see.
+  setTimeout(() => process.exit(1), 2000).unref();
+  void errorStore.flush().finally(() => process.exit(1));
 });

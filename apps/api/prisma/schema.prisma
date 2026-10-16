@@ -5318,3 +5318,29 @@ model IntegrationSetting {
   updatedAt   DateTime @updatedAt
   updatedById String?
 }
+
+/// One kind of production failure (Site health, docs/superpowers/plans/2026-10-16-site-health.md). Rows are written only
+/// by lib/observability/error-store-reporter.ts — grouped by `fingerprint` (lib/observability/error-fingerprint.ts) so
+/// a failure that repeats a thousand times is one row with count 1000. Text is masked (maskText) before it is stored.
+/// Never business truth: deleting every row loses nothing but history.
+model ErrorGroup {
+  id                String    @id @default(cuid())
+  fingerprint       String    @unique
+  /// "api" | "web"
+  source            String
+  errorClass        String
+  /// "<ErrorName>: <masked message>", at most 200 characters.
+  title             String
+  /// Masked, first 8 stack lines of the latest occurrence.
+  sampleStack       String?
+  /// API route ("POST /api/orders/") or the website path of the latest occurrence.
+  lastPath          String?
+  lastCorrelationId String?
+  count             Int       @default(0)
+  firstSeenAt       DateTime  @default(now())
+  lastSeenAt        DateTime
+  /// Set by "Mark fixed"; a new occurrence clears it again.
+  resolvedAt        DateTime?
+
+  @@index([resolvedAt, lastSeenAt])
+}
