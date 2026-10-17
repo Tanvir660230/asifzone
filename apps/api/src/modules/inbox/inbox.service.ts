@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import {
   normalizeBdPhone,
+  replyWindow,
   type ConversationDetail,
   type ConversationListQuery,
   type ConversationListRow,
@@ -45,6 +46,7 @@ export async function listConversations(query: ConversationListQuery, adminId?: 
   const where: Prisma.ConversationWhereInput = {
     ...(query.status === "open" ? { status: "OPEN" } : query.status === "handled" ? { status: "HANDLED" } : {}),
     ...(query.mine === "true" && adminId ? { assignedToId: adminId } : {}),
+    ...(query.channel ? { channel: query.channel } : {}),
     ...(query.search
       ? {
           OR: [
@@ -88,8 +90,9 @@ export async function listConversations(query: ConversationListQuery, adminId?: 
   return { ...page, items };
 }
 
-function deliveryOf(status: string | undefined): MessageDelivery {
-  if (status === "PROCESSED") return "sent";
+/** A reply sent from outside the Inbox (a PHONE echo) has no outbox row — Meta already delivered it. */
+function deliveryOf(status: string | undefined, externalId: string | null): MessageDelivery {
+  if (status === "PROCESSED" || (status === undefined && externalId)) return "sent";
   if (status === "FAILED") return "failed";
   return "sending";
 }
@@ -101,6 +104,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
       customer: { select: { id: true, name: true } },
       assignedTo: { select: { id: true, name: true } },
       messages: { orderBy: { createdAt: "asc" }, include: { admin: { select: { name: true } } } },
+      draft: { select: { body: true, intent: true } },
     },
   });
   if (!c) throw AppError.notFound("Conversation not found");
@@ -111,12 +115,13 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
   const byKey = new Map(events.map((e) => [e.eventKey, e]));
   const messages: ConversationMessageRow[] = c.messages.map((m) => {
     const event = m.direction === "OUT" ? byKey.get(m.id) : undefined;
-    const delivery = m.direction === "OUT" ? deliveryOf(event?.status) : null;
+    const delivery = m.direction === "OUT" ? deliveryOf(event?.status, m.externalId) : null;
     return {
       id: m.id,
       direction: m.direction,
       channel: m.channel,
       body: m.body,
+      author: m.author,
       createdAt: m.createdAt.toISOString(),
       by: m.admin?.name ?? null,
       delivery,
@@ -136,6 +141,8 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     customer: c.customer,
     assignedTo: c.assignedTo,
     messages,
+    draft: c.draft,
+    replyWindow: replyWindow(c.channel, c.lastInboundAt, new Date()),
   };
 }
 
@@ -147,7 +154,7 @@ export async function replyToConversation(id: string, input: ConversationReplyIn
     if (input.channel === "EMAIL" && !c.email) throw AppError.badRequest("This customer left no email address — reply by SMS", { code: "NO_EMAIL" });
     if (input.channel === "SMS" && !c.phone) throw AppError.badRequest("This customer left no phone number — reply by email", { code: "NO_PHONE" });
     const m = await tx.conversationMessage.create({
-      data: { conversationId: id, direction: "OUT", channel: input.channel, body: input.body, adminId },
+      data: { conversationId: id, direction: "OUT", channel: input.channel, body: input.body, adminId, author: "STAFF" },
       include: { admin: { select: { name: true } } },
     });
     await tx.conversation.update({ where: { id }, data: { status: "HANDLED", lastMessageAt: m.createdAt } });
@@ -161,6 +168,7 @@ export async function replyToConversation(id: string, input: ConversationReplyIn
     direction: "OUT",
     channel: message.channel,
     body: message.body,
+    author: message.author,
     createdAt: message.createdAt.toISOString(),
     by: message.admin?.name ?? null,
     delivery: "sending",

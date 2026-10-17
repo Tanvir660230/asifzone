@@ -1885,6 +1885,17 @@ enum ConversationChannel {
   SMS
   WHATSAPP
   MESSENGER
+  INSTAGRAM
+  /// A comment on a Facebook post or ad; a reply goes back as a comment (or as a private Messenger reply).
+  FB_COMMENT
+}
+
+/// Who wrote a message. PHONE = staff replying outside the Inbox (WhatsApp app / Page inbox), seen as a webhook echo.
+enum MessageAuthor {
+  CUSTOMER
+  STAFF
+  AI
+  PHONE
 }
 
 enum ConversationStatus {
@@ -1916,15 +1927,24 @@ model Conversation {
   createdAt     DateTime              @default(now())
   /// The Feedback row this thread was backfilled from (provenance only).
   feedbackId    String?               @unique
+  /// The thread's id at Meta: WhatsApp number (wa_id), Messenger PSID, Instagram IGSID, or the top-level comment id.
+  externalThreadId String?
+  /// The customer's last message — Meta's reply window counts from it (shared replyWindow()).
+  lastInboundAt DateTime?
+  /// FB_COMMENT: the post (or ad post) the comment is on.
+  postId        String?
   messages      ConversationMessage[]
+  draft         ConversationDraft?
 
+  @@unique([channel, externalThreadId])
   @@index([status, lastMessageAt])
   @@index([lastMessageAt])
   @@index([assignedToId])
 }
 
 /// One message in a conversation. An OUT message is sent by the `conversation-reply` outbox consumer (eventKey = this id);
-/// its delivery state is that outbox row's status — never written here.
+/// its delivery state is that outbox row's status. The consumer writes back only `externalId` (Meta's id for what it
+/// sent), so the webhook echo of our own send is recognised as a duplicate.
 model ConversationMessage {
   id             String              @id @default(cuid())
   conversationId String
@@ -1935,9 +1955,25 @@ model ConversationMessage {
   body           String
   adminId        String?
   admin          AdminUser?          @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  author         MessageAuthor       @default(CUSTOMER)
+  /// Meta's message id (wamid / mid / comment id): a webhook delivered twice is stored once.
+  externalId     String?             @unique
   createdAt      DateTime            @default(now())
 
   @@index([conversationId, createdAt])
+}
+
+/// The AI's suggested reply to a conversation's latest message (one per conversation; a newer one replaces it).
+/// Staff send it as-is or edit it; any reply removes it.
+model ConversationDraft {
+  id               String       @id @default(cuid())
+  conversationId   String       @unique
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  body             String
+  /// What the customer asked, as the AI classified it (price, stock, delivery_charge, order_status, how_to_order, other).
+  intent           String
+  basedOnMessageId String
+  createdAt        DateTime     @default(now())
 }
 
 model WishlistItem {

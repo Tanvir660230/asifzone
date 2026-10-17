@@ -29,6 +29,7 @@ export * from "./schemas/payment-method";
 export * from "./schemas/refund";
 export * from "./schemas/saved-view";
 export * from "./schemas/conversation";
+export * from "./reply-window";
 export * from "./schemas/shipping-zone";
 export * from "./schemas/order-adjustments";
 export * from "./schemas/metrics";
