@@ -27,7 +27,7 @@ import * as settingsApi from "@/lib/api/settings";
 const QUERY_KEY = ["settings-integrations"];
 const GROUPS = Object.keys(INTEGRATION_GROUP_LABELS) as IntegrationGroup[];
 
-/** A random token for the Steadfast webhook — our own shared secret, not issued by Steadfast. */
+/** A random token for a webhook (Steadfast, Meta) — our own shared secret, not issued by them. */
 function randomToken(): string {
   const bytes = new Uint8Array(24);
   crypto.getRandomValues(bytes);
@@ -41,13 +41,65 @@ function sourceNote(field: IntegrationFieldState, secret: boolean): string | nul
   return null;
 }
 
-function IntegrationCard({ definition, state, steadfastWebhookUrl }: { definition: IntegrationDefinition; state: IntegrationState; steadfastWebhookUrl: string }) {
+function copy(text: string, what: string) {
+  navigator.clipboard.writeText(text).then(
+    () => toast.success(`${what} copied`),
+    () => toast.error("Couldn't copy"),
+  );
+}
+
+/** The two values the owner pastes into their Meta app › Webhooks, and the events to subscribe to. */
+function MetaWebhookHelp({ url, token, unsaved, onGenerate }: { url: string; token: string | null; unsaved: boolean; onGenerate: () => void }) {
+  return (
+    <div className="space-y-3 rounded-lg bg-ink-50 p-3 text-xs text-ink-600">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-medium text-ink-800">For your Meta app › Webhooks</p>
+        <Button type="button" size="sm" variant="ghost" onClick={onGenerate}>
+          <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
+          Generate verify token
+        </Button>
+      </div>
+      <div>
+        <p className="text-ink-500">Callback URL</p>
+        <div className="mt-0.5 flex items-start justify-between gap-2">
+          <p className="min-w-0 break-all font-mono text-[11px] text-ink-700">{url}</p>
+          <Button type="button" size="sm" variant="link" className="shrink-0 text-xs" onClick={() => copy(url, "Callback URL")}>
+            <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+            Copy
+          </Button>
+        </div>
+      </div>
+      <div>
+        <p className="text-ink-500">Verify token</p>
+        {token ? (
+          <div className="mt-0.5 flex items-start justify-between gap-2">
+            <p className="min-w-0 break-all font-mono text-[11px] text-ink-700">{token}</p>
+            <Button type="button" size="sm" variant="link" className="shrink-0 text-xs" onClick={() => copy(token, "Verify token")}>
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              {unsaved ? "Copy — save first" : "Copy"}
+            </Button>
+          </div>
+        ) : (
+          <p className="mt-0.5">The saved token stays hidden. Generate a new one to see it.</p>
+        )}
+      </div>
+      <p>
+        Subscribe to — Page: <span className="font-mono">messages, message_echoes, feed</span> · Instagram: <span className="font-mono">messages</span> ·
+        WhatsApp: <span className="font-mono">messages, smb_message_echoes</span>
+      </p>
+    </div>
+  );
+}
+
+function IntegrationCard({ definition, state, view }: { definition: IntegrationDefinition; state: IntegrationState; view: IntegrationsView }) {
+  const { steadfastWebhookUrl } = view;
   const queryClient = useQueryClient();
   const { confirm, dialog } = useConfirmDialog();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   /** A webhook token generated in this visit stays visible after saving, so its Notify URL can still be copied. */
   const [savedToken, setSavedToken] = useState<string | null>(null);
+  const [savedVerifyToken, setSavedVerifyToken] = useState<string | null>(null);
   const fieldState = (key: string) => state.fields.find((f) => f.key === key)!;
   const anyUnreadable = state.fields.some((f) => f.unreadable);
 
@@ -60,6 +112,7 @@ function IntegrationCard({ definition, state, steadfastWebhookUrl }: { definitio
     onSuccess: (view, values) => {
       onSaved(view);
       if (values.STEADFAST_WEBHOOK_TOKEN !== undefined) setSavedToken(values.STEADFAST_WEBHOOK_TOKEN);
+      if (values.META_WEBHOOK_VERIFY_TOKEN !== undefined) setSavedVerifyToken(values.META_WEBHOOK_VERIFY_TOKEN);
       setDraft({});
       toast.success(`${definition.name} saved`);
     },
@@ -201,6 +254,15 @@ function IntegrationCard({ definition, state, steadfastWebhookUrl }: { definitio
             </div>
           )}
 
+          {definition.id === "meta-app" && (
+            <MetaWebhookHelp
+              url={view.metaWebhookUrl}
+              token={draft.META_WEBHOOK_VERIFY_TOKEN?.trim() || savedVerifyToken}
+              unsaved={Boolean(draft.META_WEBHOOK_VERIFY_TOKEN?.trim())}
+              onGenerate={() => setDraft((d) => ({ ...d, META_WEBHOOK_VERIFY_TOKEN: randomToken() }))}
+            />
+          )}
+
           {definition.id === "webpush" && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink-50 p-3 text-xs text-ink-600">
               <p>Creates a new key pair for this store.</p>
@@ -271,7 +333,7 @@ export function IntegrationsPane() {
             <ul className="space-y-3">
               {definitions.map((definition) => {
                 const state = data.integrations.find((s) => s.id === definition.id);
-                return state ? <IntegrationCard key={definition.id} definition={definition} state={state} steadfastWebhookUrl={data.steadfastWebhookUrl} /> : null;
+                return state ? <IntegrationCard key={definition.id} definition={definition} state={state} view={data} /> : null;
               })}
             </ul>
           </FormSection>
