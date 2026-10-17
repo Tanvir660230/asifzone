@@ -1,7 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import {
   normalizeBdPhone,
+  replyChannelsFor,
   replyWindow,
+  type ReplyChannel,
   type ConversationDetail,
   type ConversationListQuery,
   type ConversationListRow,
@@ -143,25 +145,57 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     messages,
     draft: c.draft,
     replyWindow: replyWindow(c.channel, c.lastInboundAt, new Date()),
+    replyChannels: replyChannelsFor(c),
   };
 }
 
 /** Records a reply and its send intent in one transaction; replying marks the conversation handled. */
+/** Records one reply and its send intent (outbox `conversation-reply`) inside the caller's transaction; the thread
+ * becomes handled and its AI draft, now answered, is removed. Shared by staff replies and the AI's own answers. */
+export async function queueReply(
+  tx: Prisma.TransactionClient,
+  input: { conversationId: string; channel: ReplyChannel; body: string; adminId: string | null; author: "STAFF" | "AI" },
+) {
+  const m = await tx.conversationMessage.create({
+    data: { conversationId: input.conversationId, direction: "OUT", channel: input.channel, body: input.body, adminId: input.adminId, author: input.author },
+    include: { admin: { select: { name: true } } },
+  });
+  await tx.conversation.update({ where: { id: input.conversationId }, data: { status: "HANDLED", lastMessageAt: m.createdAt } });
+  await tx.conversationDraft.deleteMany({ where: { conversationId: input.conversationId } });
+  await recordOutboxEvents(tx, [
+    {
+      eventType: "conversation.reply_requested.v1",
+      consumer: REPLY_CONSUMER,
+      eventKey: m.id,
+      aggregateType: "conversation",
+      aggregateId: input.conversationId,
+      payload: { messageId: m.id },
+    },
+  ]);
+  return m;
+}
+
+const WINDOW_CLOSED: Partial<Record<ReplyChannel, string>> = {
+  WHATSAPP: "WhatsApp only allows replies within 24 hours of the customer's last message — reply by SMS instead.",
+  MESSENGER: "Messenger only allows replies within 7 days of the customer's last message.",
+  INSTAGRAM: "Instagram only allows replies within 7 days of the customer's last message.",
+};
+
 export async function replyToConversation(id: string, input: ConversationReplyInput, adminId: string): Promise<ConversationMessageRow> {
   const message = await prisma.$transaction(async (tx) => {
-    const c = await tx.conversation.findUnique({ where: { id }, select: { id: true, email: true, phone: true } });
+    const c = await tx.conversation.findUnique({ where: { id }, select: { id: true, channel: true, email: true, phone: true, lastInboundAt: true } });
     if (!c) throw AppError.notFound("Conversation not found");
     if (input.channel === "EMAIL" && !c.email) throw AppError.badRequest("This customer left no email address — reply by SMS", { code: "NO_EMAIL" });
     if (input.channel === "SMS" && !c.phone) throw AppError.badRequest("This customer left no phone number — reply by email", { code: "NO_PHONE" });
-    const m = await tx.conversationMessage.create({
-      data: { conversationId: id, direction: "OUT", channel: input.channel, body: input.body, adminId, author: "STAFF" },
-      include: { admin: { select: { name: true } } },
-    });
-    await tx.conversation.update({ where: { id }, data: { status: "HANDLED", lastMessageAt: m.createdAt } });
-    await recordOutboxEvents(tx, [
-      { eventType: "conversation.reply_requested.v1", consumer: REPLY_CONSUMER, eventKey: m.id, aggregateType: "conversation", aggregateId: id, payload: { messageId: m.id } },
-    ]);
-    return m;
+    if (!replyChannelsFor(c).includes(input.channel)) {
+      throw AppError.badRequest("This conversation can't be answered on that channel", { code: "WRONG_CHANNEL" });
+    }
+    // A private reply to a comment opens a Messenger chat; the comment itself has no window.
+    const windowChannel = c.channel === "FB_COMMENT" ? "FB_COMMENT" : input.channel;
+    if (!replyWindow(windowChannel, c.lastInboundAt, new Date()).open) {
+      throw AppError.badRequest(WINDOW_CLOSED[input.channel] ?? "The reply window has closed", { code: "WINDOW_CLOSED" });
+    }
+    return queueReply(tx, { conversationId: id, channel: input.channel, body: input.body, adminId, author: "STAFF" });
   });
   return {
     id: message.id,
@@ -190,6 +224,11 @@ export async function updateConversation(id: string, input: { status?: "OPEN" | 
   });
 }
 
+/** Staff threw the AI's suggestion away. */
+export async function discardDraft(id: string) {
+  await prisma.conversationDraft.deleteMany({ where: { conversationId: id } });
+}
+
 export async function deleteConversation(id: string) {
   const deleted = await prisma.conversation.deleteMany({ where: { id } });
   if (deleted.count === 0) throw AppError.notFound("Conversation not found");
@@ -200,10 +239,21 @@ export function countOpenConversations() {
   return prisma.conversation.count({ where: { status: "OPEN" } });
 }
 
-/** What the `conversation-reply` consumer needs at send time (read, never written). */
+/** What the `conversation-reply` consumer needs at send time. */
 export function replyFacts(messageId: string) {
   return prisma.conversationMessage.findUnique({
     where: { id: messageId },
-    select: { body: true, channel: true, direction: true, conversation: { select: { subject: true, contactName: true, email: true, phone: true } } },
+    select: {
+      body: true,
+      channel: true,
+      direction: true,
+      externalId: true,
+      conversation: { select: { subject: true, contactName: true, email: true, phone: true, channel: true, externalThreadId: true, lastInboundAt: true } },
+    },
   });
+}
+
+/** The consumer's one write: Meta's id for the message it just sent, so the webhook echo of it is a known duplicate. */
+export async function recordSentExternalId(messageId: string, externalId: string) {
+  await prisma.conversationMessage.update({ where: { id: messageId }, data: { externalId } });
 }

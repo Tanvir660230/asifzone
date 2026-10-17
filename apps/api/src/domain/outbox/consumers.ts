@@ -87,7 +87,7 @@ export const OUTBOX_CONSUMERS = {
     eventTypes: ["conversation.reply_requested.v1"],
     payload: z.object({ messageId: z.string().min(1) }),
     idempotency:
-      "Outbox row claim (one row per reply message — eventKey is the message id); EMAIL also passes the outbox event id as the Resend idempotencyKey. SMS has no provider key, so a crash after the provider accepted can resend once the lease expires (at-least-once).",
+      "Outbox row claim (one row per reply message — eventKey is the message id); EMAIL also passes the outbox event id as the Resend idempotencyKey. Meta channels record Meta's message id on the message after sending and skip a message that already has one. SMS has no provider key, and a crash between Meta accepting and the id being saved can resend, once the lease expires (at-least-once).",
     async handle({ messageId }, event) {
       return deliverConversationReply(messageId, event.id);
     },

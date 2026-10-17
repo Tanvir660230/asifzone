@@ -3,7 +3,7 @@ import { conversationListQuerySchema, conversationReplySchema, updateConversatio
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { validate } from "../../middlewares/validate";
 import { asyncHandler } from "../../lib/async-handler";
-import { deleteConversation, getConversation, listConversations, replyToConversation, updateConversation } from "./inbox.service";
+import { deleteConversation, discardDraft, getConversation, listConversations, replyToConversation, updateConversation } from "./inbox.service";
 
 /** /api/v1/admin/conversations — Messages › Inbox (R2). Reading and triage: content.manage (as the contact form was);
  * replying to a customer: customers.message. */
@@ -32,6 +32,13 @@ inboxRouter.delete(
   "/:id", requirePermission("content.manage"),
   asyncHandler(async (req, res) => {
     await deleteConversation(req.params.id!);
+    res.status(204).send();
+  }),
+);
+inboxRouter.delete(
+  "/:id/draft", requirePermission("customers.message"),
+  asyncHandler(async (req, res) => {
+    await discardDraft(req.params.id!);
     res.status(204).send();
   }),
 );

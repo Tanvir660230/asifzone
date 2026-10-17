@@ -1,4 +1,12 @@
-import type { ConversationChannelName } from "./schemas/conversation";
+import type { ConversationChannelName, ReplyChannel } from "./schemas/conversation";
+
+/** The channels staff can answer a conversation on: the one the customer wrote from (a comment can also be answered
+ * privately on Messenger), plus email / SMS when the customer left an address. */
+export function replyChannelsFor(c: { channel: ConversationChannelName; email: string | null; phone: string | null }): ReplyChannel[] {
+  const own: ReplyChannel[] =
+    c.channel === "FB_COMMENT" ? ["FB_COMMENT", "MESSENGER"] : c.channel === "WHATSAPP" || c.channel === "MESSENGER" || c.channel === "INSTAGRAM" ? [c.channel] : [];
+  return [...own, ...(c.email ? (["EMAIL"] as const) : []), ...(c.phone ? (["SMS"] as const) : [])];
+}
 
 /** Whether staff can still reply on a conversation's channel, per Meta's messaging policy:
  * - WhatsApp: free-form replies only within 24 hours of the customer's last message (after that only paid templates).

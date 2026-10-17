@@ -16,6 +16,7 @@ import * as eps from "./payment/eps";
 import * as sslcommerz from "./payment/sslcommerz";
 import * as webPush from "./push/web-push";
 import * as bulksmsbd from "./sms/bulksmsbd";
+import * as metaGraph from "./social/meta-graph";
 import { ProviderNotConfiguredError } from "./errors";
 import {
   capabilityAvailability,
@@ -40,6 +41,7 @@ import type {
   PushSender,
   ServerEventSink,
   SmsSender,
+  SocialMessenger,
   TikTokServerEventSink,
   SslcommerzGateway,
 } from "./capabilities";
@@ -141,10 +143,19 @@ const tiktokServerEvents: TikTokServerEventSink = {
   send: (event) => tiktokEvents.sendTikTokEvent(event),
 };
 
+const social: SocialMessenger = {
+  whatsApp: (to, body) => metaGraph.postGraph(metaGraph.whatsAppTextRequest(to, body)),
+  direct: (recipientId, body, { humanAgentTag }) => metaGraph.postGraph(metaGraph.pageMessageRequest(recipientId, body, humanAgentTag)),
+  commentReply: (commentId, body) => metaGraph.postGraph(metaGraph.commentReplyRequest(commentId, body)),
+  privateReply: (commentId, body) => metaGraph.postGraph(metaGraph.privateReplyRequest(commentId, body)),
+  profileName: (channel, userId) => metaGraph.fetchProfileName(channel, userId),
+};
+
 // ── Registry ───────────────────────────────────────────────────────────────────────────────────
 
 export function buildProviders(selection: ProviderSelection): Providers {
   return {
+    social,
     sms: smsSender(selection.sms),
     email: emailSender(selection.email),
     push: pushSender(selection.push),

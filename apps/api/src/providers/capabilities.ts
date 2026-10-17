@@ -124,9 +124,22 @@ export function gatewayIdForPaymentMethod(paymentMethod: string): OnlineGatewayI
   return paymentMethod === "EPS_PG" ? "EPS_PG" : "SSLCOMMERZ";
 }
 
+/** Social Inbox replies through Meta (WhatsApp Cloud API, Messenger, Instagram, Page comments). Each send returns Meta's
+ * id for the message it created. */
+export interface SocialMessenger {
+  whatsApp(to: string, body: string): Promise<string>;
+  /** Messenger or Instagram (both through the Facebook Page). */
+  direct(recipientId: string, body: string, opts: { humanAgentTag: boolean }): Promise<string>;
+  commentReply(commentId: string, body: string): Promise<string>;
+  privateReply(commentId: string, body: string): Promise<string>;
+  /** Never throws; null when unknown. */
+  profileName(channel: "MESSENGER" | "INSTAGRAM", userId: string): Promise<string | null>;
+}
+
 // ── The bundle the registry hands out ─────────────────────────────────────────────────────────
 
 export interface Providers {
+  social: SocialMessenger;
   sms: SmsSender;
   email: EmailSender;
   push: PushSender;

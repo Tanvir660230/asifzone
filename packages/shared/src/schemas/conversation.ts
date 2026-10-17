@@ -70,4 +70,6 @@ export interface ConversationDetail extends Omit<ConversationListRow, "preview" 
   /** The AI's suggested reply to the latest message, waiting for staff. */
   draft: { body: string; intent: string } | null;
   replyWindow: ReplyWindow;
+  /** Where a reply can go (shared replyChannelsFor). */
+  replyChannels: ReplyChannel[];
 }
