@@ -3,6 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env";
+import { META_WEBHOOK_PATH, metaWebhookRouter, type RawBodyRequest } from "./modules/social-inbox/meta-webhook.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { categoryRouter } from "./modules/categories/category.routes";
 import { attributeRouter } from "./modules/attributes/attribute.routes";
@@ -71,7 +72,15 @@ app.set("trust proxy", 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: env.webOrigin, credentials: true }));
-app.use(express.json({ limit: "2mb" }));
+app.use(
+  express.json({
+    limit: "2mb",
+    // Meta signs the exact bytes it sent (X-Hub-Signature-256); keep them for the webhook only.
+    verify: (req, _res, buf) => {
+      if (req.url?.startsWith(META_WEBHOOK_PATH)) (req as RawBodyRequest).rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true })); // SSLCommerz posts callbacks as form-encoded
 app.use(cookieParser());
 // Phase 11: correlation ID + one structured line per request (replaces morgan). After the parsers — see the middleware.
@@ -137,6 +146,7 @@ app.use("/api/v1/storefront/read-model", storefrontReadModelRouter);
 app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/outbox", outboxRouter);
 app.use("/api/v1/admin/conversations", inboxRouter);
+app.use(META_WEBHOOK_PATH, metaWebhookRouter);
 app.use("/api/v1/admin", adminHomeRouter);
 // Financial Core (docs/FINANCE_PHASE_1.md §6): the books of the business — OWNER-only finance.* permissions.
 app.use("/api/v1/finance", financeRouter);

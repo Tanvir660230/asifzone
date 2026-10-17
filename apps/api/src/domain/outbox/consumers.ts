@@ -12,6 +12,7 @@ import { processTikTokPurchase } from "../../lib/tiktok/purchase";
 import { getProviders } from "../../providers/registry";
 import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
 import { deliverConversationReply } from "../../lib/conversation-reply";
+import { assistInboundMessage } from "../../modules/social-inbox/assist/assist.consumer";
 import { processFinancialEvent } from "../finance/events.service";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
@@ -89,6 +90,18 @@ export const OUTBOX_CONSUMERS = {
       "Outbox row claim (one row per reply message — eventKey is the message id); EMAIL also passes the outbox event id as the Resend idempotencyKey. SMS has no provider key, so a crash after the provider accepted can resend once the lease expires (at-least-once).",
     async handle({ messageId }, event) {
       return deliverConversationReply(messageId, event.id);
+    },
+  } satisfies OutboxConsumer<{ messageId: string }>,
+
+  // Social Inbox: the AI reads a new customer message and either answers a factual question itself (as a
+  // `conversation-reply` intent) or leaves a draft for staff.
+  "conversation-assist": {
+    eventTypes: ["conversation.inbound_received.v1"],
+    payload: z.object({ messageId: z.string().min(1) }),
+    idempotency:
+      "Outbox row claim (one row per inbound message — eventKey is the message id). A repeat run re-checks the thread first: it skips once a newer customer message or any reply exists, and a draft is an upsert (one per conversation).",
+    async handle({ messageId }) {
+      return assistInboundMessage(messageId);
     },
   } satisfies OutboxConsumer<{ messageId: string }>,
 
