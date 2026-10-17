@@ -21,6 +21,8 @@ export const PLACEHOLDER_NAME: Record<InboundEvent["channel"], string> = {
   FB_COMMENT: "Facebook user",
 };
 
+const OWN_ECHO_WINDOW_MS = 10 * 60_000;
+
 const isUniqueViolation = (err: unknown) => err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 
 /**
@@ -56,6 +58,27 @@ async function ingestOne(event: InboundEvent): Promise<string | null> {
     const existing = await tx.conversation.findUnique({ where, select: { id: true, contactName: true, lastInboundAt: true } });
     const inbound = event.direction === "IN";
     const name = event.name?.trim() || null;
+
+    // Meta can echo a reply we sent before the sender has saved Meta's id for it: the same text, sent from here in the
+    // last few minutes and still without an id, is that reply — claim the id instead of adding a "from the phone" copy.
+    if (!inbound && existing) {
+      const ours = await tx.conversationMessage.findFirst({
+        where: {
+          conversationId: existing.id,
+          direction: "OUT",
+          author: { in: ["STAFF", "AI"] },
+          externalId: null,
+          body: event.body,
+          createdAt: { gte: new Date(event.at.getTime() - OWN_ECHO_WINDOW_MS) },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (ours) {
+        await tx.conversationMessage.update({ where: { id: ours.id }, data: { externalId: event.externalId } });
+        return null;
+      }
+    }
 
     let conversationId: string;
     if (existing) {

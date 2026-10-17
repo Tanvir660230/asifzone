@@ -43,6 +43,12 @@ export function toBdInternationalDigits(phone: string): string {
   return `88${normalizeBdPhone(phone)}`;
 }
 
+/** An international number as WhatsApp gives it (digits, no "+", e.g. "8801812345678") → "01812345678" for a
+ * Bangladeshi number, "+<digits>" for any other country (kept intact, never folded into a local form). */
+export function phoneFromInternationalDigits(digits: string): string {
+  return digits.startsWith("880") ? normalizeBdPhone(digits) : `+${digits}`;
+}
+
 /** The loose "01 + 9 digits" shape Meta CAPI accepted before Phase 12 (kept as is: stricter PHONE_REGEX would drop
  * numbers Meta matched before). */
 export function isBdMobileLocal(local: string): boolean {

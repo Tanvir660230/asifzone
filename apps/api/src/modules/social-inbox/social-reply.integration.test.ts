@@ -156,6 +156,23 @@ describe("replying on social channels", () => {
     expect(await prisma.conversationMessage.count({ where: { conversationId: c.id, direction: "OUT" } })).toBe(1);
   });
 
+  it("an echo that beats the saved id is recognised as our own reply, not a phone reply (and is never sent twice)", async () => {
+    const c = await thread("WHATSAPP", 1 * H);
+    const res = await reply(c.id, "WHATSAPP", "Ji, L size ache");
+    const echo = fx.waEcho({ id: `wamid.race.${RUN}`, body: "Ji, L size ache" });
+    (echo.entry[0]!.changes[0]!.value as unknown as { message_echoes: Array<{ to: string; timestamp: string }> }).message_echoes[0]!.to = c.externalThreadId!;
+    (echo.entry[0]!.changes[0]!.value as unknown as { message_echoes: Array<{ to: string; timestamp: string }> }).message_echoes[0]!.timestamp = String(Math.floor(Date.now() / 1000));
+    const raw = JSON.stringify(echo);
+    const sig = `sha256=${createHmac("sha256", `s-${RUN}`).update(raw).digest("hex")}`;
+    await request(app).post("/api/v1/webhooks/meta").set("Content-Type", "application/json").set("X-Hub-Signature-256", sig).send(raw);
+
+    const outs = await prisma.conversationMessage.findMany({ where: { conversationId: c.id, direction: "OUT" } });
+    expect(outs).toHaveLength(1);
+    expect(outs[0]).toMatchObject({ id: res.body.id, author: "STAFF", externalId: `wamid.race.${RUN}` });
+    expect(await deliver(res.body.id)).toMatchObject({ result: "skipped" });
+    expect(sent).toHaveLength(0);
+  });
+
   it("a reply whose window closed while queued fails with a clear error instead of reaching Meta", async () => {
     const c = await thread("WHATSAPP", 1 * H);
     const res = await reply(c.id, "WHATSAPP");

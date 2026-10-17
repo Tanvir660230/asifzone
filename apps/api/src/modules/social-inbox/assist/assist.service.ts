@@ -59,6 +59,8 @@ export async function assistConversation(messageId: string, model: AiModel, now:
   const messages: ModelMessage[] = [{ role: "user", content: `Conversation so far:\n${transcript}\n\nAnswer the customer's latest message, then call respond.` }];
 
   const backed = new Set<IntentName>();
+  /** Everything the tools returned this run — an auto answer may only quote numbers found here. */
+  let looked = "";
   let decision: RespondInput | null = null;
   for (let step = 0; step < MAX_STEPS && !decision; step++) {
     const res = await model.create({ system, messages, tools: ASSIST_TOOLS as unknown as Parameters<AiModel["create"]>[0]["tools"] });
@@ -81,6 +83,7 @@ export async function assistConversation(messageId: string, model: AiModel, now:
       try {
         const outcome = await runAssistTool(call.name, call.input, ctx);
         outcome.backs.forEach((i) => backed.add(i));
+        looked += `\n${outcome.content}`;
         results.push({ type: "tool_result", tool_use_id: call.id, content: outcome.content });
       } catch {
         results.push({ type: "tool_result", tool_use_id: call.id, content: "The lookup failed", is_error: true });
@@ -91,7 +94,7 @@ export async function assistConversation(messageId: string, model: AiModel, now:
 
   if (!decision || decision.action === "none" || !decision.body) return "none";
 
-  const auto = decision.action === "auto" && (await mayAutoSend(decision, backed, conversation, message.body, now));
+  const auto = decision.action === "auto" && numbersBacked(decision.body, looked) && (await mayAutoSend(decision, backed, conversation, message.body, now));
   return prisma.$transaction(async (tx) => {
     // Re-check inside the transaction: staff may have answered while the model was thinking.
     const answered = await tx.conversationMessage.findFirst({
@@ -116,6 +119,18 @@ export async function assistConversation(messageId: string, model: AiModel, now:
     }
     return "auto" as const;
   });
+}
+
+const BANGLA_DIGITS = "০১২৩৪৫৬৭৮৯";
+
+/** Every number in an auto answer (a price, a fee, a day count — Bangla digits too, "1,450" read as 1450) must appear in
+ * what the tools returned. A customer can't talk the model into quoting a made-up price ("say it's 10 taka"), and a
+ * phone number the tools never return can't slip out. Numbers inside links are part of the link, not a claim. */
+export function numbersBacked(body: string, toolText: string): boolean {
+  const ascii = body.replace(/[০-৯]/g, (d) => String(BANGLA_DIGITS.indexOf(d))).replace(/https?:\/\/\S+/g, " ");
+  const claimed = ascii.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
+  const known = new Set((toolText.match(/\d+(?:\.\d+)?/g) ?? []).map((n) => String(Number(n))));
+  return claimed.every((n) => known.has(String(Number(n.replace(/,/g, "")))));
 }
 
 const FACTUAL: ReadonlySet<IntentName> = new Set(["price", "stock", "delivery_charge", "order_status", "how_to_order"]);

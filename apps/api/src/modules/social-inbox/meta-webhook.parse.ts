@@ -1,4 +1,4 @@
-import { normalizeBdPhone } from "@clothing-brand/shared";
+import { phoneFromInternationalDigits } from "@clothing-brand/shared";
 
 /** One customer message (IN) or one reply sent outside the Inbox (OUT echo), read from a Meta webhook. */
 export interface InboundEvent {
@@ -64,9 +64,7 @@ export function parseMetaWebhook(body: unknown, ids: { pageId: string; igAccount
   return events;
 }
 
-function whatsAppPhone(waId: string): string {
-  return waId.startsWith("880") ? normalizeBdPhone(waId) : `+${waId}`;
-}
+const whatsAppPhone = phoneFromInternationalDigits;
 
 function whatsAppBody(m: Obj): string | null {
   const type = str(m.type);

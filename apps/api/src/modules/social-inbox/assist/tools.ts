@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizeBdPhone } from "@clothing-brand/shared";
+import { BD_DELIVERY_TIME_TEXT, normalizeBdPhone } from "@clothing-brand/shared";
 import { prisma } from "../../../config/prisma";
 import { env } from "../../../config/env";
 import { priceProductsForDisplay } from "../../../domain/pricing/pricing.service";
@@ -97,7 +97,7 @@ async function deliveryCharges(): Promise<ToolOutcome> {
       ...(z.isDefault ? { appliesTo: "everywhere not covered by another zone" } : {}),
     })),
     cashOnDelivery: settings.codEnabled,
-    deliveryTime: "Not recorded — do not promise a number of days; leave a draft if the customer asks how long.",
+    deliveryTime: `${BD_DELIVERY_TIME_TEXT} An estimate, not a promise.`,
     currency: "BDT (taka)",
   };
   return { content: JSON.stringify(content), backs: priced.length ? ["delivery_charge"] : [] };
@@ -184,7 +184,7 @@ export const ASSIST_TOOLS = [
   },
   {
     name: "delivery_charges",
-    description: "Delivery fee per area, the free-delivery threshold if any, and whether cash on delivery is available.",
+    description: "Delivery fee per area, the free-delivery threshold if any, how many days delivery usually takes, and whether cash on delivery is available.",
     input_schema: { type: "object", properties: {} },
   },
   {
