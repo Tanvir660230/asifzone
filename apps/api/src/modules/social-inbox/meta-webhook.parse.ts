@@ -4,7 +4,7 @@ import { phoneFromInternationalDigits } from "@clothing-brand/shared";
 export interface InboundEvent {
   channel: "WHATSAPP" | "MESSENGER" | "INSTAGRAM" | "FB_COMMENT";
   direction: "IN" | "OUT";
-  /** WhatsApp: the customer's wa_id; Messenger: PSID; Instagram: IGSID; comments: the top-level comment id. */
+  /** WhatsApp: the customer's wa_id; Messenger: PSID; Instagram: IGSID; comments: "<top-level comment id>|<author id>". */
   threadId: string;
   /** wamid / mid / comment id — the same message delivered twice has the same id. */
   externalId: string;
@@ -36,16 +36,31 @@ const PLACEHOLDER: Record<string, string> = {
   story_mention: "[Story mention]",
 };
 
+/** This store's own Meta assets. One Meta app can serve several Pages / numbers (e.g. both stores), so an event for an
+ * asset that isn't this store's is skipped. An id left blank (not configured) accepts its kind of event. */
+export interface StoreAssets {
+  pageId: string;
+  igAccountId: string;
+  waPhoneNumberId?: string;
+}
+
+const mine = (configured: string | undefined, seen: unknown) => !configured || str(seen) === configured;
+
 /** Parses one Meta webhook body (WhatsApp Cloud API, Messenger, Instagram, Page feed) into events. Never throws: anything
  * it does not recognise — statuses, receipts, reactions, edits, the Page's own comments — is skipped. */
-export function parseMetaWebhook(body: unknown, ids: { pageId: string; igAccountId: string }): InboundEvent[] {
+export function parseMetaWebhook(body: unknown, ids: StoreAssets): InboundEvent[] {
   if (!isObj(body)) return [];
   const events: InboundEvent[] = [];
   for (const entry of arr(body.entry)) {
     if (!isObj(entry)) continue;
     if (body.object === "whatsapp_business_account") {
-      for (const change of arr(entry.changes)) if (isObj(change) && isObj(change.value)) events.push(...whatsApp(change.field, change.value));
+      for (const change of arr(entry.changes)) {
+        if (!isObj(change) || !isObj(change.value)) continue;
+        if (!mine(ids.waPhoneNumberId, isObj(change.value.metadata) ? change.value.metadata.phone_number_id : undefined)) continue;
+        events.push(...whatsApp(change.field, change.value));
+      }
     } else if (body.object === "page") {
+      if (!mine(ids.pageId, entry.id)) continue;
       for (const m of arr(entry.messaging)) {
         const e = directMessage("MESSENGER", m, ids.pageId);
         if (e) events.push(e);
@@ -55,6 +70,7 @@ export function parseMetaWebhook(body: unknown, ids: { pageId: string; igAccount
         if (e) events.push(e);
       }
     } else if (body.object === "instagram") {
+      if (!mine(ids.igAccountId, entry.id)) continue;
       for (const m of arr(entry.messaging)) {
         const e = directMessage("INSTAGRAM", m, ids.igAccountId);
         if (e) events.push(e);
@@ -147,10 +163,13 @@ function feedComment(value: Obj, pageId: string): InboundEvent | null {
   const text = str(value.message);
   if (!from || !commentId || !postId || !text || str(from.id) === pageId) return null;
   const parent = str(value.parent_id);
+  const top = parent && parent !== postId ? parent : commentId;
   return {
     channel: "FB_COMMENT",
     direction: "IN",
-    threadId: parent && parent !== postId ? parent : commentId,
+    // One thread per person under one top-level comment: someone else replying under it is a different customer.
+    // Replies go to the person's latest comment in the thread (its message's externalId).
+    threadId: `${top}|${str(from.id)}`,
     externalId: commentId,
     name: str(from.name),
     phone: null,

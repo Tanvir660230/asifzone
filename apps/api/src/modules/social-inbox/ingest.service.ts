@@ -34,6 +34,7 @@ const isUniqueViolation = (err: unknown) => err instanceof Prisma.PrismaClientKn
  */
 export async function ingestInbound(events: InboundEvent[]): Promise<string[]> {
   const created: string[] = [];
+  const failures: unknown[] = [];
   for (const event of events) {
     // Two deliveries of the same webhook can race: the loser hits a unique index and is simply a duplicate. A thread
     // created concurrently by another message is found on the retry.
@@ -43,10 +44,13 @@ export async function ingestInbound(events: InboundEvent[]): Promise<string[]> {
         if (id) created.push(id);
         break;
       } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
+        if (isUniqueViolation(err) && attempt === 0) continue;
+        if (!isUniqueViolation(err)) failures.push(err); // one bad event doesn't stop the rest of the batch
+        break;
       }
     }
   }
+  if (failures.length) throw new AggregateError(failures, `${failures.length} of ${events.length} webhook events were not stored`);
   return created;
 }
 
@@ -55,9 +59,11 @@ async function ingestOne(event: InboundEvent): Promise<string | null> {
     if (await tx.conversationMessage.findUnique({ where: { externalId: event.externalId }, select: { id: true } })) return null;
 
     const where = { channel_externalThreadId: { channel: event.channel, externalThreadId: event.threadId } };
-    const existing = await tx.conversation.findUnique({ where, select: { id: true, contactName: true, lastInboundAt: true } });
+    const existing = await tx.conversation.findUnique({ where, select: { id: true, contactName: true, lastInboundAt: true, lastMessageAt: true } });
     const inbound = event.direction === "IN";
     const name = event.name?.trim() || null;
+    // Webhooks can arrive out of order: a delayed phone reply must not close a thread the customer has written in since.
+    const answersLatest = !inbound && (!existing?.lastInboundAt || event.at >= existing.lastInboundAt);
 
     // Meta can echo a reply we sent before the sender has saved Meta's id for it: the same text, sent from here in the
     // last few minutes and still without an id, is that reply — claim the id instead of adding a "from the phone" copy.
@@ -71,7 +77,8 @@ async function ingestOne(event: InboundEvent): Promise<string | null> {
           body: event.body,
           createdAt: { gte: new Date(event.at.getTime() - OWN_ECHO_WINDOW_MS) },
         },
-        orderBy: { createdAt: "desc" },
+        // Echoes come in send order, so two identical queued replies are claimed oldest first.
+        orderBy: { createdAt: "asc" },
         select: { id: true },
       });
       if (ours) {
@@ -86,8 +93,8 @@ async function ingestOne(event: InboundEvent): Promise<string | null> {
       await tx.conversation.update({
         where: { id: existing.id },
         data: {
-          status: inbound ? "OPEN" : "HANDLED",
-          lastMessageAt: event.at,
+          ...(inbound ? { status: "OPEN" as const } : answersLatest ? { status: "HANDLED" as const } : {}),
+          ...(event.at > existing.lastMessageAt ? { lastMessageAt: event.at } : {}),
           ...(inbound && (!existing.lastInboundAt || existing.lastInboundAt < event.at) ? { lastInboundAt: event.at } : {}),
           ...(name && existing.contactName === PLACEHOLDER_NAME[event.channel] ? { contactName: name } : {}),
         },
@@ -141,8 +148,8 @@ async function ingestOne(event: InboundEvent): Promise<string | null> {
           payload: { messageId: message.id },
         },
       ]);
-    } else {
-      // Someone answered from the phone: an AI draft for the earlier question is stale.
+    } else if (answersLatest) {
+      // Someone answered the latest question from the phone: an AI draft for it is stale.
       await tx.conversationDraft.deleteMany({ where: { conversationId } });
     }
     return message.id;

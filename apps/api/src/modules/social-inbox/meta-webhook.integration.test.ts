@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import request from "supertest";
 import { app } from "../../app";
@@ -134,9 +134,21 @@ describe("Meta webhook — storing messages", () => {
     const commentId = uid("888000111_top");
     await post(fx.feedComment({ commentId }));
     await post(fx.feedComment({ commentId: uid("888000111_reply"), parentId: commentId, message: "inbox plz" }));
-    const c = (await thread("FB_COMMENT", commentId))!;
+    const c = (await thread("FB_COMMENT", `${commentId}|5001002003004005`))!;
     expect(c).toMatchObject({ postId: `${fx.PAGE_ID}_888000111`, contactName: "Karim Ahmed", subject: "Comment on a post" });
     expect(c.messages.map((m) => m.body)).toEqual(["price?", "inbox plz"]);
+  });
+
+  it("if storing fails, Meta gets a 500 (so it redelivers) and the redelivery is stored once", async () => {
+    const body = fx.waText({ waId: WA_ID, id: uid("wamid.DBDOWN"), body: "Ache?" });
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection pool timeout"));
+    try {
+      expect((await post(body)).status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await post(body)).status).toBe(200);
+    expect(await prisma.conversationMessage.count({ where: { externalId: uid("wamid.DBDOWN") } })).toBe(1);
   });
 
   it("receipts and statuses are acknowledged and ignored", async () => {

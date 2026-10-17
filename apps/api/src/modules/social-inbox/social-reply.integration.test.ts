@@ -17,6 +17,8 @@ import { prisma } from "../../config/prisma";
 import { overrideIntegrationsForTests } from "../../config/integration-overrides";
 import { asOwner } from "../../test-fixtures";
 import { processOutboxEvent } from "../../domain/outbox/processor";
+import { queueReply } from "../inbox/inbox.service";
+import { postGraph } from "../../providers/social/meta-graph";
 import * as fx from "./meta-webhook.fixtures";
 
 // Social Inbox: staff answer WhatsApp / Messenger / comment threads from the Inbox, within Meta's reply windows.
@@ -27,7 +29,7 @@ const conversationIds: string[] = [];
 let restore: () => void;
 
 beforeAll(() => {
-  restore = overrideIntegrationsForTests({ META_APP_SECRET: `s-${RUN}`, META_PAGE_ID: fx.PAGE_ID, META_PAGE_ACCESS_TOKEN: "page-token", WHATSAPP_PHONE_NUMBER_ID: "555666", WHATSAPP_ACCESS_TOKEN: "wa-token" });
+  restore = overrideIntegrationsForTests({ META_APP_SECRET: `s-${RUN}`, META_PAGE_ID: fx.PAGE_ID, META_PAGE_ACCESS_TOKEN: "page-token", WHATSAPP_PHONE_NUMBER_ID: fx.WA_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN: "wa-token" });
 });
 beforeEach(() => {
   sent.length = 0;
@@ -48,11 +50,21 @@ async function thread(channel: "WHATSAPP" | "MESSENGER" | "INSTAGRAM" | "FB_COMM
       contactName: "Rahim",
       phone: channel === "WHATSAPP" ? "01812345678" : null,
       lastInboundAt: new Date(Date.now() - lastInboundAgoMs),
-      messages: { create: { direction: "IN", channel, body: "Dam koto?", author: "CUSTOMER" } },
+      messages: {
+        create: {
+          direction: "IN",
+          channel,
+          body: "Dam koto?",
+          author: "CUSTOMER",
+          externalId: `in-${channel}-${RUN}-${conversationIds.length}`,
+          createdAt: new Date(Date.now() - lastInboundAgoMs),
+        },
+      },
     },
+    include: { messages: true },
   });
   conversationIds.push(c.id);
-  return c;
+  return { ...c, commentId: c.messages[0]!.externalId! };
 }
 
 async function reply(id: string, channel: string, body = "1450 taka") {
@@ -72,7 +84,7 @@ describe("replying on social channels", () => {
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ author: "STAFF", delivery: "sending" });
     expect(await deliver(res.body.id)).toMatchObject({ outcome: "processed", result: "sent" });
-    expect(sent).toEqual([expect.objectContaining({ path: "/555666/messages", body: expect.objectContaining({ to: c.externalThreadId, text: { body: "1450 taka", preview_url: true } }) })]);
+    expect(sent).toEqual([expect.objectContaining({ path: `/${fx.WA_PHONE_NUMBER_ID}/messages`, body: expect.objectContaining({ to: c.externalThreadId, text: { body: "1450 taka", preview_url: true } }) })]);
     const m = await prisma.conversationMessage.findUniqueOrThrow({ where: { id: res.body.id } });
     expect(m.externalId).toMatch(/^sent_/);
   });
@@ -106,14 +118,56 @@ describe("replying on social channels", () => {
     expect(sent[0]).toMatchObject({ path: `/${fx.PAGE_ID}/messages`, body: { messaging_type: "RESPONSE" } });
   });
 
-  it("a comment can be answered publicly or privately", async () => {
-    const c = await thread("FB_COMMENT", 200 * H);
+  it("a comment can be answered publicly and once privately — both to the customer's own comment", async () => {
+    const c = await thread("FB_COMMENT", 2 * H);
     const pub = await reply(c.id, "FB_COMMENT", "Inbox-e details pathiyechi");
     await deliver(pub.body.id);
     const priv = await reply(c.id, "MESSENGER", "Dam 1450 taka");
     await deliver(priv.body.id);
-    expect(sent.map((s) => s.path)).toEqual([`/${c.externalThreadId}/comments`, `/${fx.PAGE_ID}/messages`]);
-    expect(sent[1]!.body).toMatchObject({ recipient: { comment_id: c.externalThreadId } });
+    expect(sent.map((s) => s.path)).toEqual([`/${c.commentId}/comments`, `/${fx.PAGE_ID}/messages`]);
+    expect(sent[1]!.body).toMatchObject({ recipient: { comment_id: c.commentId } });
+
+    const again = await reply(c.id, "MESSENGER", "Arekta kotha");
+    expect([again.status, again.body.details?.code]).toEqual([400, "PRIVATE_REPLY_USED"]);
+    const detail = await (await asOwner()).get(`/api/v1/admin/conversations/${c.id}`);
+    expect(detail.body.replyChannels).toEqual(["FB_COMMENT"]);
+    expect((await reply(c.id, "FB_COMMENT", "Public is still fine")).status).toBe(201);
+  });
+
+  it("a private reply to a comment older than 7 days is refused; a public one is not", async () => {
+    const c = await thread("FB_COMMENT", 8 * 24 * H);
+    const priv = await reply(c.id, "MESSENGER", "Dam 1450 taka");
+    expect([priv.status, priv.body.details?.code]).toEqual([400, "WINDOW_CLOSED"]);
+    expect((await reply(c.id, "FB_COMMENT", "Dhonnobad")).status).toBe(201);
+  });
+
+  it("an AI answer that waited past 24 hours is never sent under the human-agent tag", async () => {
+    const c = await thread("MESSENGER", 30 * H);
+    const m = await prisma.$transaction((tx) => queueReply(tx, { conversationId: c.id, channel: "MESSENGER", body: "Dam 1450 taka", adminId: null, author: "AI" }));
+    await deliver(m.id);
+    expect(sent).toHaveLength(0);
+    const agent = await asOwner();
+    const detail = await agent.get(`/api/v1/admin/conversations/${c.id}`);
+    expect(detail.body.messages.at(-1)).toMatchObject({ author: "AI", delivery: "failed", deliveryError: expect.stringContaining("24-hour") });
+  });
+
+  it("the echo of a private reply (a new Messenger thread) doesn't leave a phantom 'phone reply' conversation", async () => {
+    const c = await thread("FB_COMMENT", 1 * H);
+    const priv = await reply(c.id, "MESSENGER", "Dam 1450 taka");
+    // Meta echoes the private reply on the commenter's Messenger thread before the sender saved its id…
+    const psid = `77${Date.now()}`;
+    const mid = `m_priv_${RUN}`;
+    const raw = JSON.stringify(fx.messengerEcho({ mid }))
+      .replace(/"7001002003004005"/g, `"${psid}"`);
+    const sig = `sha256=${createHmac("sha256", `s-${RUN}`).update(raw).digest("hex")}`;
+    await request(app).post("/api/v1/webhooks/meta").set("Content-Type", "application/json").set("X-Hub-Signature-256", sig).send(raw);
+    const phantom = await prisma.conversation.findUnique({ where: { channel_externalThreadId: { channel: "MESSENGER", externalThreadId: psid } } });
+    expect(phantom).not.toBeNull();
+    // …then the sender gets the same id back from Meta and claims it.
+    vi.mocked(postGraph).mockResolvedValueOnce(mid);
+    await deliver(priv.body.id);
+    expect(await prisma.conversation.findUnique({ where: { id: phantom!.id } })).toBeNull();
+    expect((await prisma.conversationMessage.findUniqueOrThrow({ where: { id: priv.body.id } })).externalId).toBe(mid);
   });
 
   it("a channel that doesn't fit the thread is refused", async () => {

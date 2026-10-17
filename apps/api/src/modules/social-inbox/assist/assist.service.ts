@@ -3,7 +3,8 @@ import { prisma } from "../../../config/prisma";
 import { env } from "../../../config/env";
 import type { AiModel, ModelMessage } from "../../../domain/ai/chat.service";
 import { getSettings } from "../../settings/settings.service";
-import { queueReply } from "../../inbox/inbox.service";
+import type { Prisma } from "@prisma/client";
+import { latestComment, lockConversation, queueReply } from "../../inbox/inbox.service";
 import { ASSIST_TOOLS, respondInput, runAssistTool, type AssistContext, type IntentName, type RespondInput } from "./tools";
 import { COMMENT_ACK, assistSystemPrompt } from "./prompt";
 
@@ -36,11 +37,7 @@ export async function assistConversation(messageId: string, model: AiModel, now:
   });
 
   // A burst of messages is answered once, for the latest; a thread someone already answered is left alone.
-  const later = await prisma.conversationMessage.findFirst({
-    where: { conversationId: conversation.id, id: { not: message.id }, createdAt: { gte: message.createdAt } },
-    select: { direction: true },
-  });
-  if (later) return "skipped";
+  if (await prisma.conversationMessage.findFirst({ where: laterThan(message), select: { id: true } })) return "skipped";
 
   const history = await prisma.conversationMessage.findMany({
     where: { conversationId: conversation.id },
@@ -94,14 +91,12 @@ export async function assistConversation(messageId: string, model: AiModel, now:
 
   if (!decision || decision.action === "none" || !decision.body) return "none";
 
-  const auto = decision.action === "auto" && numbersBacked(decision.body, looked) && (await mayAutoSend(decision, backed, conversation, message.body, now));
+  const autoWanted = decision.action === "auto" && numbersBacked(decision.body, looked);
   return prisma.$transaction(async (tx) => {
-    // Re-check inside the transaction: staff may have answered while the model was thinking.
-    const answered = await tx.conversationMessage.findFirst({
-      where: { conversationId: conversation.id, createdAt: { gte: message.createdAt }, id: { not: message.id } },
-      select: { id: true },
-    });
-    if (answered) return "skipped" as const;
+    // Locked like a staff reply, then re-checked: staff (or the customer) may have written while the model was thinking.
+    await lockConversation(tx, conversation.id);
+    if (await tx.conversationMessage.findFirst({ where: laterThan(message), select: { id: true } })) return "skipped" as const;
+    const auto = autoWanted && (await mayAutoSend(tx, decision!, backed, conversation, message.body, now));
     if (!auto) {
       await tx.conversationDraft.upsert({
         where: { conversationId: conversation.id },
@@ -135,8 +130,18 @@ export function numbersBacked(body: string, toolText: string): boolean {
 
 const FACTUAL: ReadonlySet<IntentName> = new Set(["price", "stock", "delivery_charge", "order_status", "how_to_order"]);
 
-/** Every condition an AI answer must meet to go out without a person. */
+/** Messages after `m` in its thread (same-second ties broken by id — WhatsApp timestamps are whole seconds). */
+function laterThan(m: { id: string; conversationId: string; createdAt: Date }): Prisma.ConversationMessageWhereInput {
+  return {
+    conversationId: m.conversationId,
+    id: { not: m.id },
+    OR: [{ createdAt: { gt: m.createdAt } }, { createdAt: m.createdAt, id: { gt: m.id } }],
+  };
+}
+
+/** Every condition an AI answer must meet to go out without a person (read inside the locked transaction). */
 async function mayAutoSend(
+  db: Prisma.TransactionClient,
   decision: RespondInput,
   backed: Set<IntentName>,
   conversation: { id: string; channel: AssistContext["channel"]; lastInboundAt: Date | null },
@@ -152,12 +157,16 @@ async function mayAutoSend(
     const window = replyWindow(conversation.channel, conversation.lastInboundAt, now);
     if (!window.open || window.humanAgentTag) return false; // the HUMAN_AGENT tag is for people only
   }
-  const [human, aiToday, privateReplied] = await Promise.all([
-    prisma.conversationMessage.count({ where: { conversationId: conversation.id, author: { in: ["STAFF", "PHONE"] }, createdAt: { gte: new Date(now.getTime() - HUMAN_QUIET_MS) } } }),
-    prisma.conversationMessage.count({ where: { conversationId: conversation.id, author: "AI", createdAt: { gte: new Date(now.getTime() - 24 * HOUR) } } }),
+  const human = await db.conversationMessage.count({
+    where: { conversationId: conversation.id, author: { in: ["STAFF", "PHONE"] }, createdAt: { gte: new Date(now.getTime() - HUMAN_QUIET_MS) } },
+  });
+  const aiToday = await db.conversationMessage.count({ where: { conversationId: conversation.id, author: "AI", createdAt: { gte: new Date(now.getTime() - 24 * HOUR) } } });
+  let privateReplied = 0;
+  if (conversation.channel === "FB_COMMENT") {
     // Meta allows one private reply per comment.
-    conversation.channel === "FB_COMMENT" ? prisma.conversationMessage.count({ where: { conversationId: conversation.id, direction: "OUT", channel: "MESSENGER" } }) : 0,
-  ]);
+    const comment = await latestComment(db, conversation.id);
+    privateReplied = comment ? await db.conversationMessage.count({ where: { conversationId: conversation.id, direction: "OUT", channel: "MESSENGER", createdAt: { gte: comment.createdAt } } }) : 1;
+  }
   return human === 0 && aiToday < MAX_AUTO_PER_DAY && privateReplied === 0;
 }
 

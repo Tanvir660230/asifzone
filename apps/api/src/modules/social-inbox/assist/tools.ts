@@ -143,7 +143,8 @@ async function orderStatus(input: unknown, ctx: AssistContext): Promise<ToolOutc
   } else {
     return {
       content: JSON.stringify({ error: "verify", ask: "Ask the customer for their order number and the phone number the order was placed with." }),
-      backs: ["order_status"],
+      // Nothing was looked up, so nothing backs a status — whatever the model writes waits for staff.
+      backs: [],
     };
   }
 

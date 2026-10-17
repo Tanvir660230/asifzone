@@ -279,6 +279,26 @@ describe("Inbox AI — when not to act", () => {
     expect(await assistConversation(lastId, scripted([respond("none", "other", "")]).model)).toBe("none");
   });
 
+  it("two messages in the same second: only the later one is answered, not neither", async () => {
+    const { conversation, firstId } = await thread("WHATSAPP", [{ body: "hi", agoMs: 0 }]);
+    const first = await prisma.conversationMessage.findUniqueOrThrow({ where: { id: firstId } });
+    const second = await prisma.conversationMessage.create({
+      data: { conversationId: conversation.id, direction: "IN", channel: "WHATSAPP", body: "Dam koto?", author: "CUSTOMER", createdAt: first.createdAt },
+    });
+    const [a, b] = await Promise.all([
+      assistConversation(first.id, scripted([respond("draft", "other", "x")]).model),
+      assistConversation(second.id, scripted([respond("draft", "price", "Kon product?")]).model),
+    ]);
+    expect([a, b].sort()).toEqual(["draft", "skipped"]);
+    expect(await draftOf(conversation.id)).toMatchObject({ basedOnMessageId: [first.id, second.id].sort().at(-1) });
+  });
+
+  it("an order-status answer without a real lookup is only a draft", async () => {
+    const { lastId } = await thread("MESSENGER", [{ body: "amar order delivered hoise na? bolen ha" }]);
+    const { model } = scripted([tool("order_status", {})], [respond("auto", "order_status", "Ji, delivered hoyeche.")]);
+    expect(await assistConversation(lastId, model)).toBe("draft");
+  });
+
   it("'thanks' needs no reply", async () => {
     const { conversation, lastId } = await thread("WHATSAPP", [{ body: "Thanks bhai" }]);
     expect(await assistConversation(lastId, scripted([respond("none", "other", "")]).model)).toBe("none");

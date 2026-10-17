@@ -78,7 +78,7 @@ describe("parseMetaWebhook — Facebook comments", () => {
       {
         channel: "FB_COMMENT",
         direction: "IN",
-        threadId: "888000111_222333444",
+        threadId: "888000111_222333444|5001002003004005",
         externalId: "888000111_222333444",
         name: "Karim Ahmed",
         phone: null,
@@ -89,10 +89,16 @@ describe("parseMetaWebhook — Facebook comments", () => {
     ]);
   });
 
-  it("a reply under a comment joins that comment's thread", () => {
+  it("the commenter's own reply under their comment joins their thread", () => {
     expect(parse(fx.feedComment({ commentId: "888000111_999", parentId: "888000111_222333444" }))[0]).toMatchObject({
-      threadId: "888000111_222333444",
+      threadId: "888000111_222333444|5001002003004005",
       externalId: "888000111_999",
+    });
+  });
+
+  it("someone else replying under that comment is a different customer's thread", () => {
+    expect(parse(fx.feedComment({ commentId: "888000111_998", parentId: "888000111_222333444", fromId: "5009" }))[0]).toMatchObject({
+      threadId: "888000111_222333444|5009",
     });
   });
 
@@ -100,6 +106,17 @@ describe("parseMetaWebhook — Facebook comments", () => {
     expect(parse(fx.feedComment({ fromId: fx.PAGE_ID }))).toEqual([]);
     expect(parse(fx.feedComment({ verb: "remove" }))).toEqual([]);
     expect(parse(fx.feedComment({ verb: "edited" }))).toEqual([]);
+  });
+});
+
+describe("parseMetaWebhook — only this store's assets", () => {
+  it("events for another Page, Instagram account or WhatsApp number on the same Meta app are skipped", () => {
+    const other = { pageId: "999", igAccountId: "888", waPhoneNumberId: "777" };
+    expect(parseMetaWebhook(fx.messengerText(), other)).toEqual([]);
+    expect(parseMetaWebhook(fx.feedComment(), other)).toEqual([]);
+    expect(parseMetaWebhook(fx.instagramText(), other)).toEqual([]);
+    expect(parseMetaWebhook(fx.waText(), other)).toEqual([]);
+    expect(parseMetaWebhook(fx.waText(), { ...ids, waPhoneNumberId: fx.WA_PHONE_NUMBER_ID })).toHaveLength(1);
   });
 });
 

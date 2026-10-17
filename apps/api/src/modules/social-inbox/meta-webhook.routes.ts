@@ -44,12 +44,19 @@ metaWebhookRouter.post(
       res.status(401).json({ error: "Invalid signature" });
       return;
     }
+    const events = parseMetaWebhook(req.body, {
+      pageId: env.metaInbox.pageId,
+      igAccountId: env.metaInbox.igAccountId,
+      waPhoneNumberId: env.whatsapp.phoneNumberId,
+    });
     try {
-      await ingestInbound(parseMetaWebhook(req.body, { pageId: env.metaInbox.pageId, igAccountId: env.metaInbox.igAccountId }));
+      await ingestInbound(events);
     } catch (err) {
-      // Meta retries a non-2xx for hours and then disables the subscription; a failure here is ours to fix, not theirs
-      // to repeat. It is reported, and the customer's message is still in WhatsApp / the Page inbox.
+      // Storing is idempotent (Meta's message id), so a 500 is safe: Meta redelivers the batch and what was already
+      // stored is skipped. Answering 200 here would lose the customer's message for good.
       captureError(err, { msg: "[meta-webhook] failed to store:" });
+      res.status(500).json({ error: "Not stored — Meta will retry" });
+      return;
     }
     res.status(200).json({ received: true });
   }),

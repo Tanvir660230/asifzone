@@ -147,7 +147,10 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     messages,
     draft: c.draft,
     replyWindow: replyWindow(c.channel, c.lastInboundAt, new Date()),
-    replyChannels: replyChannelsFor(c),
+    replyChannels:
+      c.channel === "FB_COMMENT" && !(await privateReplyOpen(prisma, c.id, new Date()))
+        ? replyChannelsFor(c).filter((ch) => ch !== "MESSENGER")
+        : replyChannelsFor(c),
   };
 }
 
@@ -183,8 +186,46 @@ const WINDOW_CLOSED: Partial<Record<ReplyChannel, string>> = {
   INSTAGRAM: "Instagram only allows replies within 7 days of the customer's last message.",
 };
 
+/** Serialises replies to one conversation (staff and the AI): whoever comes second sees the first one's reply. NO KEY
+ * UPDATE, so the webhook can still add customer messages meanwhile. */
+export async function lockConversation(tx: Prisma.TransactionClient, id: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`SELECT "id" FROM "Conversation" WHERE "id" = ${id} FOR NO KEY UPDATE`;
+  return rows.length > 0;
+}
+
+const PRIVATE_REPLY_MS = 7 * 24 * 3_600_000;
+
+/** The comment a reply on a FB_COMMENT thread answers: the customer's latest one. */
+export function latestComment(tx: Prisma.TransactionClient | typeof prisma, conversationId: string) {
+  return tx.conversationMessage.findFirst({
+    where: { conversationId, direction: "IN" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, externalId: true, createdAt: true },
+  });
+}
+
+/** Whether the customer's latest comment can still get its one private reply (for the composer's options). */
+async function privateReplyOpen(db: Prisma.TransactionClient | typeof prisma, conversationId: string, now: Date): Promise<boolean> {
+  const comment = await latestComment(db, conversationId);
+  if (!comment || now.getTime() - comment.createdAt.getTime() > PRIVATE_REPLY_MS) return false;
+  return (await db.conversationMessage.count({ where: { conversationId, direction: "OUT", channel: "MESSENGER", createdAt: { gte: comment.createdAt } } })) === 0;
+}
+
+/** Meta allows one private reply per comment, within 7 days of it. */
+async function assertPrivateReplyAllowed(tx: Prisma.TransactionClient, conversationId: string, now: Date) {
+  const comment = await latestComment(tx, conversationId);
+  if (!comment || now.getTime() - comment.createdAt.getTime() > PRIVATE_REPLY_MS) {
+    throw AppError.badRequest("A private message can only be sent within 7 days of the comment — reply publicly instead.", { code: "WINDOW_CLOSED" });
+  }
+  const used = await tx.conversationMessage.count({ where: { conversationId, direction: "OUT", channel: "MESSENGER", createdAt: { gte: comment.createdAt } } });
+  if (used > 0) {
+    throw AppError.badRequest("This comment already got its one private message — reply publicly, or wait for them to write in Messenger.", { code: "PRIVATE_REPLY_USED" });
+  }
+}
+
 export async function replyToConversation(id: string, input: ConversationReplyInput, adminId: string): Promise<ConversationMessageRow> {
   const message = await prisma.$transaction(async (tx) => {
+    if (!(await lockConversation(tx, id))) throw AppError.notFound("Conversation not found");
     const c = await tx.conversation.findUnique({ where: { id }, select: { id: true, channel: true, email: true, phone: true, lastInboundAt: true } });
     if (!c) throw AppError.notFound("Conversation not found");
     if (input.channel === "EMAIL" && !c.email) throw AppError.badRequest("This customer left no email address — reply by SMS", { code: "NO_EMAIL" });
@@ -192,9 +233,10 @@ export async function replyToConversation(id: string, input: ConversationReplyIn
     if (!replyChannelsFor(c).includes(input.channel)) {
       throw AppError.badRequest("This conversation can't be answered on that channel", { code: "WRONG_CHANNEL" });
     }
-    // A private reply to a comment opens a Messenger chat; the comment itself has no window.
-    const windowChannel = c.channel === "FB_COMMENT" ? "FB_COMMENT" : input.channel;
-    if (!replyWindow(windowChannel, c.lastInboundAt, new Date()).open) {
+    if (c.channel === "FB_COMMENT") {
+      // A public reply has no window; a private one has Meta's own rule.
+      if (input.channel === "MESSENGER") await assertPrivateReplyAllowed(tx, id, new Date());
+    } else if (!replyWindow(input.channel, c.lastInboundAt, new Date()).open) {
       throw AppError.badRequest(WINDOW_CLOSED[input.channel] ?? "The reply window has closed", { code: "WINDOW_CLOSED" });
     }
     return queueReply(tx, { conversationId: id, channel: input.channel, body: input.body, adminId, author: "STAFF" });
@@ -249,13 +291,34 @@ export function replyFacts(messageId: string) {
       body: true,
       channel: true,
       direction: true,
+      author: true,
       externalId: true,
+      conversationId: true,
       conversation: { select: { subject: true, contactName: true, email: true, phone: true, channel: true, externalThreadId: true, lastInboundAt: true } },
     },
   });
 }
 
-/** The consumer's one write: Meta's id for the message it just sent, so the webhook echo of it is a known duplicate. */
+/**
+ * The consumer's one write: Meta's id for the message it just sent, so the webhook echo of it is a known duplicate.
+ * Never fails on the id being taken — that would retry, i.e. send again — because the echo can win the race:
+ * - stored as a "from the phone" copy (e.g. a private reply's echo lands on a new Messenger thread) → that copy is ours,
+ *   so it goes (with its thread, if nothing else is in it);
+ * - claimed by an identical reply of ours queued alongside → the id is handed over.
+ */
 export async function recordSentExternalId(messageId: string, externalId: string) {
-  await prisma.conversationMessage.update({ where: { id: messageId }, data: { externalId } });
+  await prisma.$transaction(async (tx) => {
+    const holder = await tx.conversationMessage.findUnique({ where: { externalId }, select: { id: true, author: true, conversationId: true } });
+    if (holder && holder.id !== messageId) {
+      if (holder.author === "PHONE") {
+        await tx.conversationMessage.delete({ where: { id: holder.id } });
+        if ((await tx.conversationMessage.count({ where: { conversationId: holder.conversationId } })) === 0) {
+          await tx.conversation.delete({ where: { id: holder.conversationId } });
+        }
+      } else {
+        await tx.conversationMessage.update({ where: { id: holder.id }, data: { externalId: null } });
+      }
+    }
+    await tx.conversationMessage.update({ where: { id: messageId }, data: { externalId } });
+  });
 }
