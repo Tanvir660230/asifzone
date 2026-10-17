@@ -48,6 +48,8 @@ export interface ConversationListRow {
   preview: string;
   messageCount: number;
   assignedTo: { id: string; name: string } | null;
+  /** The AI has a reply waiting for staff. */
+  hasDraft: boolean;
 }
 
 export interface ConversationMessageRow {
@@ -63,7 +65,7 @@ export interface ConversationMessageRow {
   deliveryError: string | null;
 }
 
-export interface ConversationDetail extends Omit<ConversationListRow, "preview" | "messageCount"> {
+export interface ConversationDetail extends Omit<ConversationListRow, "preview" | "messageCount" | "hasDraft"> {
   createdAt: string;
   customer: { id: string; name: string } | null;
   messages: ConversationMessageRow[];

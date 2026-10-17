@@ -72,6 +72,7 @@ export async function listConversations(query: ConversationListQuery, adminId?: 
           messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true } },
           _count: { select: { messages: true } },
           assignedTo: { select: { id: true, name: true } },
+          draft: { select: { id: true } },
         },
       }),
     () => prisma.conversation.count({ where }),
@@ -88,6 +89,7 @@ export async function listConversations(query: ConversationListQuery, adminId?: 
     preview: (c.messages[0]?.body ?? "").split("\n")[0]!.slice(0, 160),
     messageCount: c._count.messages,
     assignedTo: c.assignedTo,
+    hasDraft: c.draft !== null,
   }));
   return { ...page, items };
 }
