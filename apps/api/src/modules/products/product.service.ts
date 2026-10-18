@@ -1112,7 +1112,25 @@ export async function getTrendingProducts({
     return true;
   });
 
-  return filtered.slice(0, limit);
+  const ranked = filtered.slice(0, limit);
+  if (ranked.length >= limit) return ranked;
+  return [...ranked, ...(await trendingTopUp({ minPrice, maxPrice, exclude: ranked.map((p) => p.id), count: limit - ranked.length }))];
+}
+
+/** A store with few recent sales (a new one) has too short a trending list — one lone card under "Trending products".
+ * The rest of it: in-stock products in the same price range, featured first, then the newest. Not cached: it only runs
+ * while sales are thin. */
+async function trendingTopUp({ minPrice, maxPrice, exclude, count }: { minPrice?: number; maxPrice?: number; exclude: string[]; count: number }) {
+  if (minPrice !== undefined || maxPrice !== undefined) await ensureFreshReadModels();
+  const candidates = await prisma.product.findMany({
+    where: { isActive: true, deletedAt: null, id: { notIn: exclude }, ...sellingPriceWhere({ gte: minPrice, lte: maxPrice }) },
+    select: PUBLIC_PRODUCT_SELECT,
+    orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+    // Room for the sold-out ones dropped below.
+    take: count * 3,
+  });
+  const presented = await withStorefrontReadModel(candidates);
+  return presented.filter((p) => p.availability.inStock).slice(0, count);
 }
 
 /** Plain category-scoped pick (newest/featured first) — used both for "Recommended For You" (fed the
