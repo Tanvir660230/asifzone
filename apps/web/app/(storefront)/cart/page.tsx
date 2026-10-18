@@ -190,7 +190,8 @@ export default function CartPage() {
                       <Link href={`/product/${item.productSlug}`} className="text-sm text-ink-900 hover:text-brass-500">
                         {item.productName}
                       </Link>
-                      <p className="mt-1 text-xs text-ink-400">{[formatVariantLabel(item.size, item.color), `SKU ${item.sku}`].filter(Boolean).join(" · ")}</p>
+                      {/* The SKU is the shop's code, not the shopper's — the bag drawer and the product page don't show it either. */}
+                      {formatVariantLabel(item.size, item.color) && <p className="mt-1 text-xs text-ink-400">{formatVariantLabel(item.size, item.color)}</p>}
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center overflow-hidden rounded-[var(--stepper-radius)] border border-ink-200">

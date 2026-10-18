@@ -2,6 +2,7 @@
 
 import { useBottomDockState } from "@/hooks/use-bottom-dock";
 import { cn } from "@/lib/utils";
+import { storeLayout } from "@/lib/theme-layout";
 
 /** MobileBottomNav and StickyCartBar are both `fixed` at the bottom of the viewport, so they're
  * out of normal document flow and would otherwise sit on top of the footer's last section. This
@@ -18,13 +19,15 @@ export function StickyBottomBarSpacer() {
   // Nothing is docked at the bottom of the checkout (components/storefront/mobile-bottom-nav.tsx).
   if (onCheckoutPage) return null;
 
-  // Painted as the footer's own band (same classes, same data-band), so the space under it continues the footer instead of
-  // showing a strip of page background beneath it, in whichever colour the theme gives the footer.
+  // Painted as the footer, so the space under it continues the footer instead of showing a strip of another colour beneath
+  // it: the classic footer's own band (same classes, same data-band, in whichever colour the theme gives it), or the
+  // mihrab footer's sand.
+  const mihrab = storeLayout() === "mihrab";
   return (
     <div
       aria-hidden
-      data-band="footer"
-      className={cn("ui-band-inverse bg-ink-950", showCartBarOnPhone || onProductPage ? "h-[calc(var(--dock-offset)+4rem)]" : "h-[var(--dock-offset)]", showCartBar ? "lg:h-16" : "lg:h-0")}
+      data-band={mihrab ? undefined : "footer"}
+      className={cn(mihrab ? "bg-cream-200" : "ui-band-inverse bg-ink-950", showCartBarOnPhone || onProductPage ? "h-[calc(var(--dock-offset)+4rem)]" : "h-[var(--dock-offset)]", showCartBar ? "lg:h-16" : "lg:h-0")}
     />
   );
 }

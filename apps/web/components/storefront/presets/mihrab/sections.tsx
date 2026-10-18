@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import type { FlashSale, Product } from "@clothing-brand/shared";
 import { DEFAULT_TRUST_STRIP_ITEMS, DEFAULT_VALUES_GRID_ITEMS } from "@clothing-brand/shared";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { resolveImageUrl } from "@/lib/image-url";
 import { resolveHomepageIcon } from "@/lib/homepage-icons";
+import { cn } from "@/lib/utils";
 import { ProductGrid } from "../../product-grid";
 import { CountdownTimer } from "../../countdown-timer";
 import { Arch } from "./arch";
@@ -15,7 +17,8 @@ import { MihrabSectionHead } from "./section-head";
    (components/storefront/*), composed differently: left-aligned, read like a catalogue, with the arch framing the
    photography. Never invent copy — every string is the store's, or a neutral fallback the classic section also uses. */
 
-const SECTION = "mx-auto max-w-7xl px-4 py-[calc(3.5rem*var(--section-rhythm))] sm:px-6 lg:px-8";
+// Phones get a shorter rhythm: at the desktop spacing two sections were separated by most of a phone screen of nothing.
+const SECTION = "mx-auto max-w-7xl px-4 py-[calc(2.5rem*var(--section-rhythm))] sm:px-6 sm:py-[calc(3.5rem*var(--section-rhythm))] lg:px-8";
 const PRIMARY_ACTION =
   "inline-flex h-12 items-center justify-center rounded bg-accent px-7 text-sm font-medium text-accent-fg transition-colors duration-200 ease-smooth hover:bg-accent-hover";
 const TEXT_ACTION =
@@ -88,10 +91,53 @@ export function MihrabHero({
   );
 }
 
+/** A store with only a few categories: they share the width — arches side by side on phones, and from 1024px a sand panel
+ * each, the arch beside the name — rather than a shelf or a row of small arches that stops halfway across. */
+function FewCategoryArches({ categories }: { categories: CategoryTreeNode[] }) {
+  return (
+    <ul className={cn("grid gap-4 sm:gap-6", ["grid-cols-1", "grid-cols-2", "grid-cols-3"][categories.length - 1])}>
+      {categories.map((cat) => (
+        <li key={cat.id} className={categories.length === 1 ? "mx-auto w-full max-w-sm lg:max-w-none" : undefined}>
+          <Link href={`/category/${cat.slug}`} className="group flex flex-col lg:flex-row lg:items-center lg:gap-10 lg:rounded-md lg:bg-cream-200 lg:p-8">
+            <Arch className="aspect-[4/5] w-full lg:w-[42%] lg:max-w-[16rem] lg:shrink-0">
+              {cat.imageUrl && (
+                <Image
+                  src={resolveImageUrl(cat.imageUrl)}
+                  alt={cat.imageAltText || cat.name}
+                  fill
+                  sizes="(min-width: 1024px) 16rem, 50vw"
+                  className="object-cover transition-transform duration-500 ease-smooth group-hover:scale-[1.04]"
+                />
+              )}
+            </Arch>
+            <span className="mt-3 block text-center lg:mt-0 lg:text-left">
+              <span className="block text-sm font-medium text-fg group-hover:text-[color:var(--nav-hover)] lg:font-display lg:text-[2rem] lg:font-normal lg:leading-tight lg:group-hover:text-fg">
+                {cat.name}
+              </span>
+              <span className="mt-5 hidden items-center gap-2 text-sm font-medium text-fg underline decoration-line-strong underline-offset-[6px] transition-colors duration-200 ease-smooth group-hover:decoration-fg lg:inline-flex">
+                Shop now
+                <ArrowRight size={16} aria-hidden className="transition-transform duration-200 ease-smooth group-hover:translate-x-0.5" />
+              </span>
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Categories as a row of arches — a scrolling shelf on phones, one line on desktop. */
 export function MihrabCategoryArches({ categories, heading, subtitle }: { categories: CategoryTreeNode[]; heading?: string | null; subtitle?: string | null }) {
   if (categories.length === 0) return null;
   const columns = Math.min(categories.length, 8);
+  if (categories.length <= 3) {
+    return (
+      <section className={SECTION}>
+        <MihrabSectionHead title={heading || "Shop by category"} subtitle={subtitle} link={{ href: "/search", label: "All products" }} />
+        <FewCategoryArches categories={categories} />
+      </section>
+    );
+  }
   return (
     <section className={SECTION}>
       <MihrabSectionHead title={heading || "Shop by category"} subtitle={subtitle} link={{ href: "/search", label: "All products" }} />

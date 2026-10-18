@@ -25,7 +25,7 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const active = images[activeIndex];
   const hasMultiple = images.length > 1;
-  // The mihrab preset keeps the thumbnails in a row under a 4:5 photograph at every width; classic moves them beside it.
+  // From 1024px the mihrab preset keeps the thumbnails in a row under a 4:5 photograph; classic moves them beside it.
   const thumbsBelow = storeLayout() === "mihrab";
   // The only overlay in the storefront that previously had no role="dialog", no Escape handling,
   // and no focus management at all — every other modal/drawer in the app has this.
@@ -76,10 +76,10 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
       {hasMultiple && (
         <div
           className={cn(
-            "flex gap-2 overflow-x-auto pb-1",
-            // Classic: below 1024px the photo is swiped and dots inside it say where you are — a thumbnail strip there
-            // only pushed the price and sizes down by another row.
-            !thumbsBelow && "max-lg:hidden lg:max-h-[34rem] lg:w-20 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0",
+            // Below 1024px the photo is swiped and dots inside it say where you are — a thumbnail strip there only pushed the
+            // price and sizes down by another row.
+            "flex gap-2 overflow-x-auto pb-1 max-lg:hidden",
+            !thumbsBelow && "lg:max-h-[34rem] lg:w-20 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:overflow-y-auto lg:pb-0",
           )}
         >
           {images.map((img, i) => (
@@ -148,16 +148,11 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
               <ZoomIn size={16} />
             </span>
             {hasMultiple && (
-              <span
-                className={cn(
-                  "glass absolute bottom-3 left-3 rounded-[var(--chip-radius)] px-2.5 py-1 text-xs text-ink-900",
-                  !thumbsBelow && "max-lg:hidden",
-                )}
-              >
+              <span className="glass absolute bottom-3 left-3 rounded-[var(--chip-radius)] px-2.5 py-1 text-xs text-ink-900 max-lg:hidden">
                 {activeIndex + 1} / {images.length}
               </span>
             )}
-            {hasMultiple && !thumbsBelow && (
+            {hasMultiple && (
               // Where the thumbnails were on a phone: one dot per photo, the current one long. A tap on a dot jumps there.
               <div
                 className="glass absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full px-3 py-2 lg:hidden"
