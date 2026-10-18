@@ -23,9 +23,9 @@ describe("resolveSections", () => {
     // The page-level blocks keep their old order and titles too.
     const blocks = all.filter((s) => s.area === "block" && s.enabled);
     expect(blocks.map((b) => [b.key, b.title])).toEqual([
-      ["reviews", "Reviews"], ["bundle", "Complete the Bundle"], ["related", "Best Match"], ["frequentlyBought", "Customers Also Bought"],
-      ["crossSell", "Pairs Well With"], ["upsell", "Upgrade Option"], ["budget", "Budget Alternative"], ["premium", "More Premium Options"],
-      ["recommended", "Trending Now"], ["recentlyViewed", "Recently Viewed"],
+      ["reviews", "Reviews"], ["bundle", "Complete the bundle"], ["related", "Best match"], ["frequentlyBought", "Customers also bought"],
+      ["crossSell", "Pairs well with"], ["upsell", "Upgrade option"], ["budget", "Budget alternative"], ["premium", "More premium options"],
+      ["recommended", "Trending now"], ["recentlyViewed", "Recently viewed"],
     ]);
     expect(all.every((s) => s.source.enabled === "default" && s.source.order === "default")).toBe(true);
   });

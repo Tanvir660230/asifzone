@@ -20,7 +20,7 @@ interface RecentlyViewedCarouselProps {
   minProducts?: number;
 }
 
-export function RecentlyViewedCarousel({ excludeProductId, title = "Recently Viewed", emptyState = null, minProducts = 1 }: RecentlyViewedCarouselProps) {
+export function RecentlyViewedCarousel({ excludeProductId, title = "Recently viewed", emptyState = null, minProducts = 1 }: RecentlyViewedCarouselProps) {
   // null = not resolved yet — reserves the carousel's height via a skeleton for the window
   // between "we know there's viewing history" (synchronous, from localStorage) and "the actual
   // products came back" (async fetch), instead of popping the whole section in once the fetch
