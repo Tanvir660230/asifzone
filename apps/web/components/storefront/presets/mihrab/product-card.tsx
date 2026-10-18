@@ -115,7 +115,7 @@ export function MihrabProductCard({ product, priority }: { product: Product; pri
 
         <WishlistButton
           productId={product.id}
-          className="absolute right-1 top-1 z-10 h-10 w-10 rounded-sm bg-transparent bg-none text-fg shadow-none backdrop-blur-none hover:scale-100 hover:text-sale-500"
+          className="absolute right-1 top-1 z-10 h-10 w-10 rounded-sm bg-transparent bg-none text-fg shadow-none backdrop-blur-none backdrop-saturate-100 hover:scale-100 hover:text-sale-500"
         />
 
         {!soldOut && (

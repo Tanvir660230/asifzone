@@ -112,10 +112,10 @@ for (const role of Object.keys(semantic)) colors[role] = ref(role);
 /* ───────────────────────────── typography ───────────────────────────── */
 
 const fontFamily = {
-  // --font-bn follows the Latin font so the browser falls back per glyph (৳, Bengali text).
-  sans: ["var(--font-body-family)", "var(--font-bn)", "ui-sans-serif", "system-ui", "sans-serif"],
+  // --font-taka (just ৳) and --font-bn (Bengali text) follow the Latin font, so the browser falls back per glyph.
+  sans: ["var(--font-body-family)", "var(--font-taka)", "var(--font-bn)", "ui-sans-serif", "system-ui", "sans-serif"],
   // `--font-display-family` (set below) is the title face; a theme can swap it, e.g. to the sans face.
-  display: ["var(--font-display-family)", "var(--font-bn)", "ui-serif", "Georgia", "serif"],
+  display: ["var(--font-display-family)", "var(--font-taka)", "var(--font-bn)", "ui-serif", "Georgia", "serif"],
 };
 
 /** Typography variables at :root. "Ampersand Fix" (globals.css) swaps only U+0026 — Playfair's "&" swash reads as broken. */
@@ -366,7 +366,7 @@ const componentTokens = {
   // The photograph's own corner radius (0: the tile's rounded clip shapes it, as in the base design).
   "--tile-media-radius": "0px",
   // Product page title face (the title face by default; a theme may set product data in the UI face).
-  "--product-title-family": "var(--font-display-family), var(--font-bn), ui-serif, Georgia, serif",
+  "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-serif, Georgia, serif",
   // Brand story image: its maximum width, and its height from 640px.
   "--story-media-max-w": "28rem",
   "--story-media-h-sm": "18rem",
@@ -473,7 +473,7 @@ const themeDefinitions = {
       "--panel-border": "rgb(var(--color-ink-200))",
       "--panel-shadow": "none",
       // The product name in the heading serif, like every other title.
-      "--product-title-family": "var(--font-display-family), var(--font-bn), ui-serif, Georgia, serif",
+      "--product-title-family": "var(--font-display-family), var(--font-taka), var(--font-bn), ui-serif, Georgia, serif",
       "--product-title-size": "clamp(1.75rem, 1.5rem + 0.8vw, 2.25rem)",
       "--product-title-leading": "1.15",
       "--product-title-weight": "500",

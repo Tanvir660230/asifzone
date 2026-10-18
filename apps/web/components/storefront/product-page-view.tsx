@@ -92,7 +92,7 @@ async function ListCarousel({ productId, listKey, pageKeys, title }: { productId
 function Block({ section, product, pageKeys }: { section: PublicSection; product: Product; pageKeys: string }) {
   const wrap = (node: React.ReactNode) => <Suspense fallback={<ProductCarouselSkeleton />}>{node}</Suspense>;
 
-  if (section.key === "reviews") return <ProductReviews productId={product.id} productName={product.name} />;
+  if (section.key === "reviews") return <ProductReviews productId={product.id} productName={product.name} productType={product.productType} />;
   if (section.key === "recentlyViewed") return <RecentlyViewedCarousel excludeProductId={product.id} minProducts={2} />;
   if (section.key === "bundle") return wrap(<BundleCarousel productId={product.id} title={section.title} currency={product.pricing?.currency} />);
   if (LIST_KEYS.has(section.key)) {

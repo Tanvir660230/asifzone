@@ -86,18 +86,23 @@ export function FacetFilters({ facets, toolbarExtra }: { facets: StorefrontFacet
 
   if (facets.sizes.length === 0 && facets.colors.length === 0) return null;
 
+  const evenSizeRows = facets.sizes.length > 4 && facets.sizes.some((s) => s.length > 3);
+
   const panel = (
     <div className="space-y-8">
       {facets.sizes.length > 0 && (
         <div>
           <h3 className="mb-3 text-xs ui-caps text-ink-500">Size</h3>
-          <div className="flex flex-wrap gap-2">
+          {/* Many wide sizes ("XL 23", "2XL 23.5") wrapped five-and-one, the last alone on its row: an even three-column grid
+              instead, in the phone sheet and the narrow desktop sidebar alike. Short sizes stay a row of chips. */}
+          <div className={evenSizeRows ? "grid grid-cols-3 gap-2" : "flex flex-wrap gap-2"}>
             {facets.sizes.map((size) => (
               <button
                 key={size}
                 onClick={() => toggleListParam("sizes", size)}
                 className={cn(
-                  "h-9 min-w-9 rounded-[var(--chip-radius)] border px-2.5 text-sm transition-all duration-200 ease-smooth active:scale-95",
+                  "h-9 min-w-9 rounded-[var(--chip-radius)] border text-sm transition-all duration-200 ease-smooth active:scale-95",
+                  evenSizeRows ? "whitespace-nowrap px-1" : "px-2.5",
                   activeSizes.includes(size)
                     ? "glossy border-ink-900 bg-ink-900 text-cream-50 shadow-sm"
                     : "border-ink-200 hover:border-ink-900",

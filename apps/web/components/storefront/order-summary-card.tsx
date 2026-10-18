@@ -3,6 +3,7 @@ import type { Order } from "@clothing-brand/shared";
 import { Badge } from "@/components/ui/badge";
 import { orderStatusBadgeClass, orderStatusLabel } from "@/lib/format";
 import { Money } from "@/components/ui/money";
+import { orderShippingCharged } from "@/lib/order-shipping";
 
 export function OrderSummaryCard({ order }: { order: Order }) {
   return (
@@ -36,7 +37,7 @@ export function OrderSummaryCard({ order }: { order: Order }) {
         )}
         <div className="flex justify-between text-ink-600">
           <span>Shipping</span>
-          <span><Money value={order.shippingFee} /></span>
+          <span>{orderShippingCharged(order) > 0 ? <Money value={orderShippingCharged(order)} /> : "Free"}</span>
         </div>
         <div className="flex justify-between border-t border-ink-100 pt-1 text-base text-ink-900">
           <span>Total</span>

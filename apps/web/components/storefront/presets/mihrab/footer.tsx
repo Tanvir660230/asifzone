@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { PaymentMethodOption, SocialLink, StoreSettings } from "@clothing-brand/shared";
 import type { CategoryTreeNode } from "@/lib/api/storefront";
 import { trackingConfigured } from "@/lib/pixels";
@@ -54,9 +55,36 @@ export function MihrabFooter({ categories = [], settings, socialLinks = [], paym
   const design = settings.storefrontDesign?.footer;
   const extraLinks = design?.links ?? [];
   const showNewsletter = design?.showNewsletter !== false;
+  // At the checkout only the legal line: a newsletter and a page of links under the order button are ways out of it.
+  const atCheckout = usePathname()?.startsWith("/checkout") ?? false;
+
+  if (atCheckout) {
+    return (
+      <footer className="mt-12 bg-cream-200 text-fg">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 text-xs text-fg-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <p>
+            © {new Date().getFullYear()} {settings.storeName}
+          </p>
+          <ul className="flex flex-wrap gap-x-5 gap-y-2">
+            {[
+              { href: "/shipping-returns", label: "Delivery and returns" },
+              { href: "/privacy-policy", label: "Privacy" },
+              { href: "/terms", label: "Terms" },
+            ].map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} className={LINK}>
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </footer>
+    );
+  }
 
   return (
-    <footer className="mt-24 bg-cream-200 text-fg">
+    <footer className="mt-12 bg-cream-200 text-fg sm:mt-20">
       <div className="mx-auto max-w-7xl px-4 pb-10 pt-14 sm:px-6 sm:pt-20 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-8">
           <div className="lg:col-span-5">

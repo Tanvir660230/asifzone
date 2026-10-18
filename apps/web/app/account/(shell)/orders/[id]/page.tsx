@@ -28,6 +28,7 @@ import { formatPrice, formatStoreDateTime, orderStatusLabel } from "@/lib/format
 import { productDisplayPrice } from "@/lib/pricing-display";
 import { variantAvailabilityOf } from "@/lib/availability-display";
 import { ApiError } from "@/lib/api-client";
+import { orderShippingCharged } from "@/lib/order-shipping";
 
 const RETURN_REASONS = [
   "Wrong item received",
@@ -328,7 +329,7 @@ export default function AccountOrderDetailPage() {
               )}
               <div className="flex justify-between text-ink-600">
                 <dt>Delivery</dt>
-                <dd className="tabular-nums">{Number(order.shippingFee) > 0 ? formatPrice(order.shippingFee) : "Free"}</dd>
+                <dd className="tabular-nums">{orderShippingCharged(order) > 0 ? formatPrice(orderShippingCharged(order)) : "Free"}</dd>
               </div>
               <div className="flex justify-between border-t border-line-subtle pt-3 text-base font-semibold text-fg">
                 <dt>Total</dt>

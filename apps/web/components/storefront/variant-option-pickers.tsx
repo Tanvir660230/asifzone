@@ -163,6 +163,11 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
   const comboHasStock = (size: string, color: string) => variants.some((v) => v.size === size && v.color === color && sellable(v));
   const sizeLabelOf = (size: string) => variants.find((v) => v.size === size)?.sizeLabel;
   const hasSizeLabels = options.sizes.some((s) => Boolean(sizeLabelOf(s)));
+  // Many wide pills ("XS/21" … "2XL/23.5") wrapped five-and-one on a phone, the last size alone on its own row: there they
+  // share an even grid of rows instead. Short sizes (S, M, L …) still fit on one line as pills.
+  const sizeCount = options.sizes.length;
+  const evenPhoneRows = !hasSizeLabels && sizeCount > 4 && options.sizes.some((s) => s.length > 3);
+  const phoneColumns = sizeCount % 3 === 0 || sizeCount === 5 ? "grid-cols-3" : "grid-cols-4";
 
   return (
     <>
@@ -175,7 +180,13 @@ export function VariantOptionPickers({ variants, trackInventory, options, select
           <div
             // Sizes with a measurement ("M · 55cm") sit in an even grid of two-line tiles; bare sizes stay compact pills.
             // pt-2 / gap-y-3: room for the tags that sit on a tile's top edge.
-            className={hasSizeLabels ? "grid grid-cols-3 gap-x-2 gap-y-3 pt-2 sm:grid-cols-4" : "flex flex-wrap gap-x-2 gap-y-3 pt-2"}
+            className={
+              hasSizeLabels
+                ? "grid grid-cols-3 gap-x-2 gap-y-3 pt-2 sm:grid-cols-4"
+                : evenPhoneRows
+                  ? cn("grid gap-x-2 gap-y-3 pt-2 sm:flex sm:flex-wrap", phoneColumns)
+                  : "flex flex-wrap gap-x-2 gap-y-3 pt-2"
+            }
             role="group"
             aria-label={options.sizeLabel}
           >

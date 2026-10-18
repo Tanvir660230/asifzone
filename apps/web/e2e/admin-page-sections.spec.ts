@@ -203,7 +203,7 @@ test.describe("page sections: store → template → product, FAQ, video, hand-p
     await expect(page.getByText(STORE_WARRANTY)).toBeVisible();
 
     // The hand-picked list replaces the automatic one, under the section's own title.
-    await expect(page.getByRole("heading", { name: "Best Match" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Best match" })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("link", { name: new RegExp(PRODUCT_A) }).first()).toBeVisible();
 
     // A draft is not on the public storefront.

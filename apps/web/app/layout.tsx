@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Inter, Instrument_Sans, Newsreader, Playfair_Display, Noto_Sans_Bengali } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { Providers } from "./providers";
 import { getSiteSettingsSafe } from "@/lib/api/storefront";
@@ -50,13 +51,25 @@ const instrumentSans = Instrument_Sans({
   weight: "variable",
 });
 
-// Covers Bengali text/glyphs (e.g. the ৳ sign) that Inter and Playfair Display don't,
-// so the browser falls back to it per-glyph instead of an inconsistent system font.
+// Covers Bengali text that the Latin faces don't, so the browser falls back to it per glyph instead of an inconsistent
+// system font. Not preloaded (105 KB): it is fetched only on a page that shows Bengali text — the landing pages
+// preload it themselves. The ৳ on every price comes from takaSign below, not from this file.
 const notoSansBengali = Noto_Sans_Bengali({
   subsets: ["bengali"],
   variable: "--font-bn",
   display: "swap",
+  preload: false,
   weight: "variable",
+});
+
+// Just the ৳ sign, cut from the same Noto Sans Bengali file (1.3 KB, same outlines and metrics, SIL OFL), so a price
+// never pulls in the whole Bengali font. Listed before --font-bn in every stack (ui-tokens).
+const takaSign = localFont({
+  src: "./fonts/taka-sign.woff2",
+  variable: "--font-taka",
+  display: "swap",
+  weight: "100 900",
+  declarations: [{ prop: "unicode-range", value: "U+09F3" }],
 });
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -127,7 +140,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html
       lang="en"
       data-brand={themeId}
-      className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${notoSansBengali.variable}`}
+      className={`${inter.variable} ${playfairDisplay.variable} ${newsreader.variable} ${instrumentSans.variable} ${notoSansBengali.variable} ${takaSign.variable}`}
     >
       <body>
         {/* The store's own design choices (Storefront Studio → Site design): token re-values only, validated on publish.
