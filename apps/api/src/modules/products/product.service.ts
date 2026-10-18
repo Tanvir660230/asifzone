@@ -479,6 +479,7 @@ async function findDidYouMean(query: string): Promise<string | undefined> {
  * site below) — passed in rather than recomputed here, so a zero-result search never pays for a
  * second trigram lookup. */
 async function logSearch(query: string, resultCount: number, suggestion?: string) {
+  if (!isRealSearchQuery(query)) return;
   try {
     await prisma.searchLog.create({ data: { query: query.trim().toLowerCase(), resultCount, suggestion: suggestion ?? null } });
   } catch {
@@ -909,6 +910,13 @@ export async function suggestSearch(query: string, limit = 6) {
   };
 }
 
+/** Something a shopper typed: at least two characters, and not a URL template — crawlers fetch the JSON-LD SearchAction's
+ * `{search_term_string}` placeholder literally, which used to top live Nasihamart's "Popular searches". */
+function isRealSearchQuery(query: string): boolean {
+  const q = query.trim();
+  return q.length >= 2 && !/[{}]/.test(q);
+}
+
 const POPULAR_SEARCHES_CACHE_KEY = `${CACHE_PREFIX}popular-searches`;
 const POPULAR_SEARCHES_TTL_SECONDS = 600;
 const POPULAR_SEARCHES_LOOKBACK_DAYS = 30;
@@ -921,16 +929,17 @@ export async function getPopularSearches(limit = 8) {
 
   // Business-time window + utcInstant: a bare bound Date against the naive-UTC column was 6 h off (METRICS_REGISTRY §1).
   const window = await resolveLegacyWindow(POPULAR_SEARCHES_LOOKBACK_DAYS);
+  // Shown as suggestions to tap, so only searches that found products: a no-result search ("zzzzqq") leads nowhere.
   const rows = await prisma.$queryRaw<Array<{ query: string; count: bigint }>>`
     SELECT lower(query) AS query, COUNT(*)::bigint AS count
     FROM "SearchLog"
-    WHERE "createdAt" >= ${utcInstant(window.startUtc)}
+    WHERE "createdAt" >= ${utcInstant(window.startUtc)} AND "resultCount" > 0
     GROUP BY lower(query)
     ORDER BY count DESC
     LIMIT 50
   `;
 
-  const popular = rows.map((r) => r.query);
+  const popular = rows.map((r) => r.query).filter(isRealSearchQuery);
   await cacheSet(POPULAR_SEARCHES_CACHE_KEY, popular, POPULAR_SEARCHES_TTL_SECONDS);
   return popular.slice(0, limit);
 }
