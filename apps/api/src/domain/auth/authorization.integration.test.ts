@@ -429,8 +429,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // = 347 on the 2026-10-09 production release + 234 (Financial Core / ERP / manufacturing)
     // +5: courier notes (4 Catalog → Courier notes routes + the order's courier-note view)
     // +6: Storefront Studio (homepage draft, save, discard, publish, revisions, restore)
-    // +4: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates)
-    expect(routes).toHaveLength(603);
+    // +8: Social Inbox (discard an AI draft, Connect WhatsApp, import past chats, WhatsApp templates, 4 saved-answer routes)
+    expect(routes).toHaveLength(607);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

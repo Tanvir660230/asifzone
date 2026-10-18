@@ -1960,9 +1960,65 @@ model ConversationMessage {
   externalId     String?             @unique
   /// A WhatsApp template reply (outside the 24-hour window): { name, language, params, named }. `body` holds its text.
   template       Json?
+  /// Sent from the saved-answer library (no AI call) — counted as "answered without AI".
+  savedAnswerId  String?
   createdAt      DateTime            @default(now())
 
   @@index([conversationId, createdAt])
+  @@index([savedAnswerId, createdAt])
+}
+
+enum SavedAnswerStatus {
+  /// Learned from repeated replies; waits for a person to approve it.
+  SUGGESTED
+  /// Answers matching questions without the AI.
+  APPROVED
+  DISMISSED
+}
+
+/// The Inbox's answer library: a question customers keep asking and the reply that answers it. Learned from replies staff
+/// (and the AI) send again and again; once approved it answers the same question — however it is typed — without an AI
+/// call. `answer` may hold live placeholders ({delivery_charges}, {delivery_time}, {cod}, {website}, {store_name}, {name}).
+model SavedAnswer {
+  id           String            @id @default(cuid())
+  status       SavedAnswerStatus @default(SUGGESTED)
+  /// A representative question, shown as the answer's name.
+  title        String
+  answer       String
+  /// Send on its own (still subject to the Inbox AI's auto-send switch and guards); otherwise a draft for staff.
+  autoSend     Boolean           @default(false)
+  /// Times it answered (sent automatically, or its draft was sent unchanged).
+  hits         Int               @default(0)
+  /// Times staff rewrote its draft before sending — enough of these pauses auto-send.
+  corrections  Int               @default(0)
+  lastHitAt    DateTime?
+  /// Set when corrections paused auto-send by themselves.
+  autoPausedAt DateTime?
+  approvedAt   DateTime?
+  approvedById String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  examples     AnswerExample[]
+
+  @@index([status])
+}
+
+/// One customer question and the reply that answered it (the material saved answers are learned from).
+model AnswerExample {
+  id            String        @id @default(cuid())
+  question      String
+  /// The question's canonical words (answers/text-match.ts normalizeQuestion), space-separated.
+  normalized    String
+  answer        String
+  source        MessageAuthor
+  /// The reply message this was learned from.
+  messageId     String        @unique
+  savedAnswerId String?
+  savedAnswer   SavedAnswer?  @relation(fields: [savedAnswerId], references: [id], onDelete: SetNull)
+  createdAt     DateTime      @default(now())
+
+  @@index([savedAnswerId])
+  @@index([createdAt])
 }
 
 /// The AI's suggested reply to a conversation's latest message (one per conversation; a newer one replaces it).
@@ -1975,6 +2031,8 @@ model ConversationDraft {
   /// What the customer asked, as the AI classified it (price, stock, delivery_charge, order_status, how_to_order, other).
   intent           String
   basedOnMessageId String
+  /// The draft came from a saved answer (not the AI) — staff rewriting it counts as a correction.
+  savedAnswerId    String?
   createdAt        DateTime     @default(now())
 }
 

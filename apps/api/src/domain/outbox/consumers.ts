@@ -14,6 +14,7 @@ import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
 import { deliverConversationReply } from "../../lib/conversation-reply";
 import { assistInboundMessage } from "../../modules/social-inbox/assist/assist.consumer";
 import { importPastChats } from "../../modules/social-inbox/history-import";
+import { learnFromReply } from "../../modules/social-inbox/answers/saved-answers.service";
 import { processFinancialEvent } from "../finance/events.service";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
@@ -116,6 +117,16 @@ export const OUTBOX_CONSUMERS = {
       return "sent";
     },
   } satisfies OutboxConsumer<{ days: number }>,
+
+  // Social Inbox answer library: each chat reply teaches it which answer a question gets (Messages › Saved answers).
+  "answer-learning": {
+    eventTypes: ["conversation.reply_recorded.v1"],
+    payload: z.object({ messageId: z.string().min(1) }),
+    idempotency: "One example per reply message (AnswerExample.messageId is unique, written with an upsert); a repeat only re-checks the grouping.",
+    async handle({ messageId }) {
+      return (await learnFromReply(messageId)) === "skipped" ? "skipped" : "sent";
+    },
+  } satisfies OutboxConsumer<{ messageId: string }>,
 
   "meta-capi-purchase": {
     eventTypes: ["order.placed.v1"],

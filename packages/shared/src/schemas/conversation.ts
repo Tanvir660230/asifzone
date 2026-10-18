@@ -95,6 +95,8 @@ export interface ConversationMessageRow {
   body: string;
   createdAt: string;
   author: MessageAuthor;
+  /** Sent from the saved-answer library (no AI call). */
+  fromLibrary: boolean;
   /** The admin who wrote an OUT message. */
   by: string | null;
   delivery: MessageDelivery | null;
@@ -106,7 +108,7 @@ export interface ConversationDetail extends Omit<ConversationListRow, "preview" 
   customer: { id: string; name: string } | null;
   messages: ConversationMessageRow[];
   /** The AI's suggested reply to the latest message, waiting for staff. */
-  draft: { body: string; intent: string } | null;
+  draft: { body: string; intent: string; fromLibrary: boolean } | null;
   replyWindow: ReplyWindow;
   /** Where a reply can go (shared replyChannelsFor). */
   replyChannels: ReplyChannel[];

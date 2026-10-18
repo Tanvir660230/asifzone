@@ -5,8 +5,8 @@ import { anthropicAssistantModel, isAiConfigured } from "../../ai/ai.service";
 import { PLACEHOLDER_NAME } from "../ingest.service";
 import { assistConversation } from "./assist.service";
 
-/** Outbox consumer `conversation-assist`: put a name on a new Messenger / Instagram contact, then let the AI answer or
- * draft. A model failure throws, so the outbox retries it. */
+/** Outbox consumer `conversation-assist`: put a name on a new Messenger / Instagram contact, then let the answer library
+ * or the AI answer or draft. A model failure throws, so the outbox retries it. */
 export async function assistInboundMessage(messageId: string): Promise<ConsumerResult> {
   const message = await prisma.conversationMessage.findUnique({
     where: { id: messageId },
@@ -18,7 +18,8 @@ export async function assistInboundMessage(messageId: string): Promise<ConsumerR
     const name = await getProviders().social.profileName(c.channel, c.externalThreadId);
     if (name) await prisma.conversation.update({ where: { id: c.id }, data: { contactName: name } });
   }
-  if (!isAiConfigured()) return "disabled";
-  const outcome = await assistConversation(messageId, anthropicAssistantModel());
+  // Without a Claude key the answer library still answers the questions it knows.
+  const outcome = await assistConversation(messageId, isAiConfigured() ? anthropicAssistantModel() : null);
+  if (outcome === "no-model") return "disabled";
   return outcome === "auto" || outcome === "draft" ? "sent" : "skipped";
 }

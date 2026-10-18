@@ -4,6 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { env } from "./config/env";
 import { META_WEBHOOK_PATH, metaWebhookRouter, type RawBodyRequest } from "./modules/social-inbox/meta-webhook.routes";
+import { savedAnswersRouter } from "./modules/social-inbox/answers/saved-answers.routes";
 import { authRouter } from "./modules/auth/auth.routes";
 import { categoryRouter } from "./modules/categories/category.routes";
 import { attributeRouter } from "./modules/attributes/attribute.routes";
@@ -147,6 +148,7 @@ app.use("/api/v1/metrics", metricsRouter);
 app.use("/api/v1/outbox", outboxRouter);
 app.use("/api/v1/admin/conversations", inboxRouter);
 app.use(META_WEBHOOK_PATH, metaWebhookRouter);
+app.use("/api/v1/admin/saved-answers", savedAnswersRouter);
 app.use("/api/v1/admin", adminHomeRouter);
 // Financial Core (docs/FINANCE_PHASE_1.md §6): the books of the business — OWNER-only finance.* permissions.
 app.use("/api/v1/finance", financeRouter);

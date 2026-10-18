@@ -18,6 +18,7 @@ import { paginate } from "../../lib/paginate";
 import { recordOutboxEvents } from "../../domain/outbox/outbox";
 import type { TemplateSend } from "../../providers/social/meta-graph";
 import { resolveTemplateReply } from "../social-inbox/templates.service";
+import { recordDraftOutcome } from "../social-inbox/answers/saved-answers.service";
 
 /**
  * Admin V2 Inbox R2 (DR-4, owner 2026-10-08). A conversation is one thread with a customer; staff reply by email or SMS.
@@ -110,7 +111,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
       customer: { select: { id: true, name: true } },
       assignedTo: { select: { id: true, name: true } },
       messages: { orderBy: { createdAt: "asc" }, include: { admin: { select: { name: true } } } },
-      draft: { select: { body: true, intent: true } },
+      draft: { select: { body: true, intent: true, savedAnswerId: true } },
     },
   });
   if (!c) throw AppError.notFound("Conversation not found");
@@ -128,6 +129,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
       channel: m.channel,
       body: m.body,
       author: m.author,
+      fromLibrary: m.savedAnswerId !== null,
       createdAt: m.createdAt.toISOString(),
       by: m.admin?.name ?? null,
       delivery,
@@ -147,7 +149,7 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
     customer: c.customer,
     assignedTo: c.assignedTo,
     messages,
-    draft: c.draft,
+    draft: c.draft ? { body: c.draft.body, intent: c.draft.intent, fromLibrary: c.draft.savedAnswerId !== null } : null,
     replyWindow: replyWindow(c.channel, c.lastInboundAt, new Date()),
     replyChannels:
       c.channel === "FB_COMMENT" && !(await privateReplyOpen(prisma, c.id, new Date()))
@@ -161,7 +163,16 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
  * becomes handled and its AI draft, now answered, is removed. Shared by staff replies and the AI's own answers. */
 export async function queueReply(
   tx: Prisma.TransactionClient,
-  input: { conversationId: string; channel: ReplyChannel; body: string; adminId: string | null; author: "STAFF" | "AI"; template?: TemplateSend },
+  input: {
+    conversationId: string;
+    channel: ReplyChannel;
+    body: string;
+    adminId: string | null;
+    author: "STAFF" | "AI";
+    template?: TemplateSend;
+    /** Sent from the saved-answer library (no AI call). */
+    savedAnswerId?: string;
+  },
 ) {
   const m = await tx.conversationMessage.create({
     data: {
@@ -172,11 +183,14 @@ export async function queueReply(
       adminId: input.adminId,
       author: input.author,
       ...(input.template ? { template: input.template as unknown as Prisma.InputJsonValue } : {}),
+      ...(input.savedAnswerId ? { savedAnswerId: input.savedAnswerId } : {}),
     },
     include: { admin: { select: { name: true } } },
   });
   await tx.conversation.update({ where: { id: input.conversationId }, data: { status: "HANDLED", lastMessageAt: m.createdAt } });
   await tx.conversationDraft.deleteMany({ where: { conversationId: input.conversationId } });
+  // A chat reply written fresh (not a template, not the library's own answer) teaches the answer library.
+  const learnable = LEARNING_CHANNELS.has(input.channel) && !input.template && !input.savedAnswerId;
   await recordOutboxEvents(tx, [
     {
       eventType: "conversation.reply_requested.v1",
@@ -186,9 +200,15 @@ export async function queueReply(
       aggregateId: input.conversationId,
       payload: { messageId: m.id },
     },
+    ...(learnable
+      ? [{ eventType: "conversation.reply_recorded.v1", consumer: LEARNING_CONSUMER, eventKey: m.id, aggregateType: "conversation", aggregateId: input.conversationId, payload: { messageId: m.id } }]
+      : []),
   ]);
   return m;
 }
+
+export const LEARNING_CONSUMER = "answer-learning" as const;
+const LEARNING_CHANNELS: ReadonlySet<ReplyChannel> = new Set(["WHATSAPP", "MESSENGER", "INSTAGRAM", "FB_COMMENT"]);
 
 const WINDOW_CLOSED: Partial<Record<ReplyChannel, string>> = {
   WHATSAPP: "WhatsApp only allows replies within 24 hours of the customer's last message — reply by SMS instead.",
@@ -253,7 +273,18 @@ export async function replyToConversation(id: string, input: ConversationReply, 
       // An approved template may be sent any time; free text only inside the window.
       throw AppError.badRequest(WINDOW_CLOSED[input.channel] ?? "The reply window has closed", { code: "WINDOW_CLOSED" });
     }
-    return queueReply(tx, { conversationId: id, channel: input.channel, body, adminId, author: "STAFF", ...(template ? { template: template.send } : {}) });
+    // A saved answer's draft sent (nearly) unchanged is the library answering; a rewrite is a correction it learns from.
+    const draft = await tx.conversationDraft.findUnique({ where: { conversationId: id }, select: { body: true, savedAnswerId: true } });
+    const fromLibrary = !template && draft?.savedAnswerId ? await recordDraftOutcome(tx, draft.savedAnswerId, draft.body, body) : false;
+    return queueReply(tx, {
+      conversationId: id,
+      channel: input.channel,
+      body,
+      adminId,
+      author: "STAFF",
+      ...(template ? { template: template.send } : {}),
+      ...(fromLibrary ? { savedAnswerId: draft!.savedAnswerId! } : {}),
+    });
   });
   return {
     id: message.id,
@@ -261,6 +292,7 @@ export async function replyToConversation(id: string, input: ConversationReply, 
     channel: message.channel,
     body: message.body,
     author: message.author,
+    fromLibrary: message.savedAnswerId !== null,
     createdAt: message.createdAt.toISOString(),
     by: message.admin?.name ?? null,
     delivery: "sending",

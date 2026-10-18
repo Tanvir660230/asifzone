@@ -5,8 +5,9 @@ import type { AiModel, ModelMessage } from "../../../domain/ai/chat.service";
 import { getSettings } from "../../settings/settings.service";
 import type { Prisma } from "@prisma/client";
 import { latestComment, lockConversation, queueReply } from "../../inbox/inbox.service";
-import { ASSIST_TOOLS, respondInput, runAssistTool, type AssistContext, type IntentName, type RespondInput } from "./tools";
+import { ASSIST_TOOLS, respondInput, runAssistTool, type AssistContext, type IntentName } from "./tools";
 import { COMMENT_ACK, assistSystemPrompt } from "./prompt";
+import { matchSavedAnswer, recordHit, renderSavedAnswer } from "../answers/saved-answers.service";
 
 /**
  * The Inbox AI (Social Inbox, owner 2026-10-17): it reads a new customer message, looks things up with read-only tools,
@@ -23,9 +24,15 @@ const HUMAN_QUIET_MS = 12 * HOUR;
 const MAX_AUTO_PER_DAY = 3;
 const MEDIA_ONLY = /^\[[^\]]+\]$/;
 
-export type AssistOutcome = "auto" | "draft" | "none" | "skipped";
+export type AssistOutcome = "auto" | "draft" | "none" | "skipped" | "no-model";
 
-export async function assistConversation(messageId: string, model: AiModel, now: Date = new Date()): Promise<AssistOutcome> {
+type Decision = { action: "auto" | "draft" | "none"; intent: string; body: string };
+
+/**
+ * `model` null = no Claude key: only the answer library can help. The library is asked first anyway — a question it
+ * knows is answered from there, without an AI call (Messages › Saved answers).
+ */
+export async function assistConversation(messageId: string, model: AiModel | null, now: Date = new Date()): Promise<AssistOutcome> {
   const message = await prisma.conversationMessage.findUnique({
     where: { id: messageId },
     select: { id: true, direction: true, body: true, createdAt: true, conversationId: true },
@@ -33,12 +40,63 @@ export async function assistConversation(messageId: string, model: AiModel, now:
   if (!message || message.direction !== "IN") return "skipped";
   const conversation = await prisma.conversation.findUniqueOrThrow({
     where: { id: message.conversationId },
-    select: { id: true, channel: true, phone: true, lastInboundAt: true },
+    select: { id: true, channel: true, phone: true, lastInboundAt: true, contactName: true },
   });
 
   // A burst of messages is answered once, for the latest; a thread someone already answered is left alone.
   if (await prisma.conversationMessage.findFirst({ where: laterThan(message), select: { id: true } })) return "skipped";
 
+  const saved = MEDIA_ONLY.test(message.body.trim()) ? null : await matchSavedAnswer(message.body, now.getTime());
+  let result: { decision: Decision | null; backed: Set<IntentName>; looked: string };
+  if (saved) {
+    result = {
+      decision: { action: saved.autoSend ? "auto" : "draft", intent: "saved", body: await renderSavedAnswer(saved.answer, { contactName: conversation.contactName }) },
+      backed: new Set(),
+      looked: "",
+    };
+  } else if (!model) {
+    return "no-model";
+  } else {
+    result = await askModel(model, conversation, now);
+  }
+  const { decision, backed, looked } = result;
+  if (!decision || decision.action === "none" || !decision.body) return "none";
+
+  // The library's numbers come from live data ({delivery_charges}…), the model's must come from its tools.
+  const autoWanted = decision.action === "auto" && (saved !== null || numbersBacked(decision.body, looked));
+  return prisma.$transaction(async (tx) => {
+    // Locked like a staff reply, then re-checked: staff (or the customer) may have written while the model was thinking.
+    await lockConversation(tx, conversation.id);
+    if (await tx.conversationMessage.findFirst({ where: laterThan(message), select: { id: true } })) return "skipped" as const;
+    const auto = autoWanted && (await mayAutoSend(tx, decision, backed, conversation, message.body, now, saved !== null));
+    const savedAnswerId = saved?.id ?? null;
+    if (!auto) {
+      await tx.conversationDraft.upsert({
+        where: { conversationId: conversation.id },
+        create: { conversationId: conversation.id, body: decision.body, intent: decision.intent, basedOnMessageId: message.id, savedAnswerId },
+        update: { body: decision.body, intent: decision.intent, basedOnMessageId: message.id, savedAnswerId, createdAt: now },
+      });
+      return "draft" as const;
+    }
+    const via = savedAnswerId ? { savedAnswerId } : {};
+    if (conversation.channel === "FB_COMMENT") {
+      // The answer goes privately (prices in public invite haggling under the post); the comment gets a pointer to it.
+      await queueReply(tx, { conversationId: conversation.id, channel: "MESSENGER", body: decision.body, adminId: null, author: "AI", ...via });
+      await queueReply(tx, { conversationId: conversation.id, channel: "FB_COMMENT", body: COMMENT_ACK, adminId: null, author: "AI", ...via });
+    } else {
+      await queueReply(tx, { conversationId: conversation.id, channel: conversation.channel as "WHATSAPP" | "MESSENGER" | "INSTAGRAM", body: decision.body, adminId: null, author: "AI", ...via });
+    }
+    if (savedAnswerId) await recordHit(tx, savedAnswerId, now);
+    return "auto" as const;
+  });
+}
+
+/** The Claude half: the conversation, read-only tools, and a decision. */
+async function askModel(
+  model: AiModel,
+  conversation: { id: string; channel: AssistContext["channel"]; phone: string | null },
+  now: Date,
+): Promise<{ decision: Decision | null; backed: Set<IntentName>; looked: string }> {
   const history = await prisma.conversationMessage.findMany({
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "desc" },
@@ -58,7 +116,7 @@ export async function assistConversation(messageId: string, model: AiModel, now:
   const backed = new Set<IntentName>();
   /** Everything the tools returned this run — an auto answer may only quote numbers found here. */
   let looked = "";
-  let decision: RespondInput | null = null;
+  let decision: Decision | null = null;
   for (let step = 0; step < MAX_STEPS && !decision; step++) {
     const res = await model.create({ system, messages, tools: ASSIST_TOOLS as unknown as Parameters<AiModel["create"]>[0]["tools"] });
     messages.push({ role: "assistant", content: res.content });
@@ -88,32 +146,7 @@ export async function assistConversation(messageId: string, model: AiModel, now:
     }
     messages.push({ role: "user", content: results });
   }
-
-  if (!decision || decision.action === "none" || !decision.body) return "none";
-
-  const autoWanted = decision.action === "auto" && numbersBacked(decision.body, looked);
-  return prisma.$transaction(async (tx) => {
-    // Locked like a staff reply, then re-checked: staff (or the customer) may have written while the model was thinking.
-    await lockConversation(tx, conversation.id);
-    if (await tx.conversationMessage.findFirst({ where: laterThan(message), select: { id: true } })) return "skipped" as const;
-    const auto = autoWanted && (await mayAutoSend(tx, decision!, backed, conversation, message.body, now));
-    if (!auto) {
-      await tx.conversationDraft.upsert({
-        where: { conversationId: conversation.id },
-        create: { conversationId: conversation.id, body: decision!.body, intent: decision!.intent, basedOnMessageId: message.id },
-        update: { body: decision!.body, intent: decision!.intent, basedOnMessageId: message.id, createdAt: now },
-      });
-      return "draft" as const;
-    }
-    if (conversation.channel === "FB_COMMENT") {
-      // The answer goes privately (prices in public invite haggling under the post); the comment gets a pointer to it.
-      await queueReply(tx, { conversationId: conversation.id, channel: "MESSENGER", body: decision!.body, adminId: null, author: "AI" });
-      await queueReply(tx, { conversationId: conversation.id, channel: "FB_COMMENT", body: COMMENT_ACK, adminId: null, author: "AI" });
-    } else {
-      await queueReply(tx, { conversationId: conversation.id, channel: conversation.channel as "WHATSAPP" | "MESSENGER" | "INSTAGRAM", body: decision!.body, adminId: null, author: "AI" });
-    }
-    return "auto" as const;
-  });
+  return { decision, backed, looked };
 }
 
 const BANGLA_DIGITS = "০১২৩৪৫৬৭৮৯";
@@ -142,15 +175,19 @@ function laterThan(m: { id: string; conversationId: string; createdAt: Date }): 
 /** Every condition an AI answer must meet to go out without a person (read inside the locked transaction). */
 async function mayAutoSend(
   db: Prisma.TransactionClient,
-  decision: RespondInput,
+  decision: Decision,
   backed: Set<IntentName>,
   conversation: { id: string; channel: AssistContext["channel"]; lastInboundAt: Date | null },
   latestBody: string,
   now: Date,
+  /** An approved saved answer marked auto-send: a person already vouched for it, so intent/tool checks don't apply. */
+  approvedAnswer = false,
 ): Promise<boolean> {
   if (env.inboxAi.autoReply !== "factual") return false;
-  if (!FACTUAL.has(decision.intent)) return false;
-  if (decision.intent !== "how_to_order" && !backed.has(decision.intent)) return false;
+  if (!approvedAnswer) {
+    if (!FACTUAL.has(decision.intent as IntentName)) return false;
+    if (decision.intent !== "how_to_order" && !backed.has(decision.intent as IntentName)) return false;
+  }
   if (MEDIA_ONLY.test(latestBody.trim())) return false;
   if (conversation.channel !== "WHATSAPP" && conversation.channel !== "MESSENGER" && conversation.channel !== "INSTAGRAM" && conversation.channel !== "FB_COMMENT") return false;
   if (conversation.channel !== "FB_COMMENT") {
