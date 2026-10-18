@@ -22,6 +22,7 @@ import {
   type Product,
   type QuoteDto,
   type QuoteRequestInput,
+  variantShipsFree,
 } from "@clothing-brand/shared";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,6 +92,10 @@ export function LandingOrderForm({ product, codEnabled }: { product: Product; co
   const qty = Math.max(1, Math.min(quantity, maxQty || 1));
   const soldOut = Boolean(variant) && maxQty === 0;
   const shown = variantDisplayPrice(product, variant?.id);
+  // Free delivery is the product's (or the chosen variant's) own setting, so it can be said before the district is known.
+  const shipsFree = variant
+    ? variantShipsFree(product.freeDelivery, variant.freeDelivery)
+    : product.variants.length > 0 && product.variants.every((v) => variantShipsFree(product.freeDelivery, v.freeDelivery));
   const stock = variant && !soldOut ? stockLine(product.trackInventory, variant.stock, product.lowStockThreshold) : null;
   const colorImageId = color ? product.variants.find((v) => v.color === color && v.imageId)?.imageId : undefined;
   const summaryImage = product.images.find((i) => i.id === (variant?.imageId ?? colorImageId)) ?? product.images[0];
@@ -355,7 +360,7 @@ export function LandingOrderForm({ product, codEnabled }: { product: Product; co
           <div className="flex justify-between gap-4">
             <dt className="text-fg-muted">ডেলিভারি চার্জ</dt>
             <dd className="tabular-nums text-fg">
-              {!shipping?.resolved ? <span className="text-fg-muted">জেলা দিলে দেখাবে</span> : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
+              {!shipping?.resolved ? (shipsFree ? <span className="font-semibold text-success-700">ফ্রি</span> : <span className="text-fg-muted">জেলা দিলে দেখাবে</span>) : shipping.waived ? <span className="font-semibold text-success-700">ফ্রি</span> : formatPrice(shipping.charged)}
             </dd>
           </div>
           {savings > 0 && (
@@ -366,9 +371,17 @@ export function LandingOrderForm({ product, codEnabled }: { product: Product; co
           )}
           <div className="flex items-baseline justify-between gap-4 pt-2 text-fg">
             <dt className="text-base font-semibold">সর্বমোট</dt>
-            <dd className={cn("text-xl font-bold tabular-nums transition-opacity duration-base", quoting && "opacity-50")} data-testid="landing-total">
-              {quote && shipping?.resolved ? formatPrice(quote.total) : "-"}
-            </dd>
+            {quote && shipping?.resolved ? (
+              <dd className={cn("text-xl font-bold tabular-nums transition-opacity duration-base", quoting && "opacity-50")} data-testid="landing-total">
+                {formatPrice(quote.total)}
+              </dd>
+            ) : (
+              // Until the district is known: the products' price and that delivery comes on top — not a bare dash.
+              <dd className="text-sm tabular-nums text-fg-muted">
+                {formatPrice(quote ? quote.subtotal : Number(shown.price) * qty)}
+                {!shipsFree && " + ডেলিভারি"}
+              </dd>
+            )}
           </div>
         </dl>
       </div>
