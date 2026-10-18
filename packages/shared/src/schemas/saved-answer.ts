@@ -5,8 +5,8 @@ export const SAVED_ANSWER_PLACEHOLDERS = [
   { key: "delivery_charges", label: "Delivery charges", example: "Dhaka: 60 taka, Outside Dhaka: 120 taka" },
   { key: "delivery_time", label: "Delivery time", example: "Dhakar bhetore 1–2 din, Dhakar baire 3–5 din" },
   { key: "cod", label: "Cash on delivery", example: "Cash on delivery ache" },
-  { key: "website", label: "Website", example: "https://asifzone.com" },
-  { key: "store_name", label: "Store name", example: "Asif Zone" },
+  { key: "website", label: "Website", example: "your website address" },
+  { key: "store_name", label: "Store name", example: "your store name" },
   { key: "name", label: "Customer's name", example: "Rahim" },
 ] as const;
 
