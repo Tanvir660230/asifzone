@@ -151,6 +151,31 @@ describe("Meta webhook — storing messages", () => {
     expect(await prisma.conversationMessage.count({ where: { externalId: uid("wamid.DBDOWN") } })).toBe(1);
   });
 
+  it("WhatsApp history sync: old chats are stored once, as handled threads, without waking the AI", async () => {
+    const customer = `88019${String(Date.now()).slice(-8)}`;
+    const body = fx.waHistory({ customer, prefix: uid("wamid.H") });
+    expect((await post(body)).status).toBe(200);
+    expect((await post(body)).status).toBe(200); // Meta redelivers a chunk
+    const c = (await thread("WHATSAPP", customer))!;
+    expect(c.status).toBe("HANDLED");
+    expect(c.messages.map((m) => [m.direction, m.author, m.body])).toEqual([
+      ["IN", "CUSTOMER", "Panjabi ta ki ache?"],
+      ["OUT", "PHONE", "Ji ache, 1450 taka"],
+      ["IN", "CUSTOMER", "[Media]"],
+    ]);
+    expect(await assistJobs(c.id)).toBe(0);
+    await prisma.outboxEvent.deleteMany({ where: { aggregateId: c.id } });
+    await prisma.conversation.delete({ where: { id: c.id } });
+  });
+
+  it("history for a thread that is open keeps it open", async () => {
+    const before = (await thread("WHATSAPP", WA_ID))!;
+    await post(fx.waHistory({ customer: WA_ID, prefix: uid("wamid.H2") }));
+    const after = (await thread("WHATSAPP", WA_ID))!;
+    expect(after.status).toBe(before.status);
+    expect(after.messages.length).toBe(before.messages.length + 3);
+  });
+
   it("receipts and statuses are acknowledged and ignored", async () => {
     const before = await prisma.conversationMessage.count();
     expect((await post(fx.messengerDeliveryAndRead())).status).toBe(200);

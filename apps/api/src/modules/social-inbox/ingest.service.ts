@@ -54,6 +54,80 @@ export async function ingestInbound(events: InboundEvent[]): Promise<string[]> {
   return created;
 }
 
+/**
+ * Old messages imported once (WhatsApp history sync, Messenger / Instagram import): stored in bulk per thread, each
+ * message once (Meta's id). They give staff and the AI the conversation so far, but a thread they create starts as
+ * handled, an existing thread keeps its status, and no AI job is queued. Returns how many messages were new.
+ */
+export async function ingestHistory(events: InboundEvent[]): Promise<number> {
+  const threads = new Map<string, InboundEvent[]>();
+  for (const e of events) {
+    const key = `${e.channel}\u0000${e.threadId}`;
+    threads.set(key, [...(threads.get(key) ?? []), e]);
+  }
+  let stored = 0;
+  for (const list of threads.values()) {
+    const first = list[0]!;
+    const times = list.map((e) => e.at.getTime());
+    const inbound = list.filter((e) => e.direction === "IN").map((e) => e.at.getTime());
+    const lastAt = new Date(Math.max(...times));
+    const lastIn = inbound.length ? new Date(Math.max(...inbound)) : null;
+    const name = list.find((e) => e.direction === "IN" && e.name)?.name ?? null;
+    stored += await prisma.$transaction(async (tx) => {
+      const where = { channel_externalThreadId: { channel: first.channel, externalThreadId: first.threadId } };
+      const existing = await tx.conversation.findUnique({ where, select: { id: true, lastMessageAt: true, lastInboundAt: true, contactName: true } });
+      let conversationId: string;
+      if (existing) {
+        conversationId = existing.id;
+        await tx.conversation.update({
+          where: { id: existing.id },
+          data: {
+            ...(lastAt > existing.lastMessageAt ? { lastMessageAt: lastAt } : {}),
+            ...(lastIn && (!existing.lastInboundAt || lastIn > existing.lastInboundAt) ? { lastInboundAt: lastIn } : {}),
+            ...(name && existing.contactName === PLACEHOLDER_NAME[first.channel] ? { contactName: name } : {}),
+          },
+        });
+      } else {
+        const customer = first.phone
+          ? await tx.customer.findFirst({ where: { phone: first.phone, phoneVerifiedAt: { not: null } }, select: { id: true } })
+          : null;
+        conversationId = (
+          await tx.conversation.create({
+            data: {
+              channel: first.channel,
+              externalThreadId: first.threadId,
+              subject: SUBJECT[first.channel],
+              contactName: name ?? PLACEHOLDER_NAME[first.channel],
+              phone: first.phone,
+              customerId: customer?.id ?? null,
+              status: "HANDLED",
+              lastMessageAt: lastAt,
+              lastInboundAt: lastIn,
+              postId: first.postId ?? null,
+              createdAt: new Date(Math.min(...times)),
+            },
+            select: { id: true },
+          })
+        ).id;
+      }
+      const { count } = await tx.conversationMessage.createMany({
+        data: list.map((e) => ({
+          conversationId,
+          direction: e.direction,
+          channel: e.channel,
+          body: e.body,
+          author: e.direction === "IN" ? ("CUSTOMER" as const) : ("PHONE" as const),
+          externalId: e.externalId,
+          createdAt: e.at,
+        })),
+        skipDuplicates: true,
+      });
+      return count;
+    });
+  }
+  return stored;
+}
+
 async function ingestOne(event: InboundEvent): Promise<string | null> {
   return prisma.$transaction(async (tx) => {
     if (await tx.conversationMessage.findUnique({ where: { externalId: event.externalId }, select: { id: true } })) return null;

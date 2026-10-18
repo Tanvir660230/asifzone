@@ -42,6 +42,22 @@ describe("parseMetaWebhook — WhatsApp", () => {
   });
 });
 
+describe("parseMetaWebhook — WhatsApp history sync", () => {
+  it("each message is historical, the customer's IN and the business's OUT, media as a placeholder", () => {
+    const events = parse(fx.waHistory());
+    expect(events.map((e) => [e.direction, e.body, e.historical, e.threadId])).toEqual([
+      ["IN", "Panjabi ta ki ache?", true, "8801812345678"],
+      ["OUT", "Ji ache, 1450 taka", true, "8801812345678"],
+      ["IN", "[Media]", true, "8801812345678"],
+    ]);
+    expect(events[0]).toMatchObject({ phone: "01812345678", at: new Date(1_752_000_000 * 1000) });
+  });
+
+  it("history the business declined to share carries no messages", () => {
+    expect(parse(fx.waHistoryDeclined())).toEqual([]);
+  });
+});
+
 describe("parseMetaWebhook — Messenger", () => {
   it("a text message is IN on the sender's PSID", () => {
     expect(parse(fx.messengerText())).toEqual([

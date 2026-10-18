@@ -14,6 +14,9 @@ export interface InboundEvent {
   body: string;
   at: Date;
   postId?: string;
+  /** An old message imported once (WhatsApp history sync, Messenger/Instagram import) — stored for context only:
+   * it neither reopens a thread nor wakes the AI. */
+  historical?: true;
 }
 
 type Obj = Record<string, unknown>;
@@ -121,6 +124,35 @@ function whatsApp(field: unknown, value: Obj): InboundEvent[] {
       const text = whatsAppBody(m);
       if (!to || !id || text === null) continue;
       events.push({ channel: "WHATSAPP", direction: "OUT", threadId: to, externalId: id, name: null, phone: whatsAppPhone(to), body: text, at: seconds(m.timestamp) });
+    }
+  } else if (field === "history") {
+    // Coexistence: the WhatsApp Business app's last 180 days, once, in chunks (any order, possibly thousands of messages).
+    // A thread's id is the customer's number; a message from anyone else is the business's own (sent from the phone).
+    for (const chunk of arr(value.history)) {
+      if (!isObj(chunk)) continue;
+      for (const thread of arr(chunk.threads)) {
+        if (!isObj(thread)) continue;
+        const customer = str(thread.id);
+        if (!customer) continue;
+        for (const m of arr(thread.messages)) {
+          if (!isObj(m)) continue;
+          const id = str(m.id);
+          const text = m.type === "media_placeholder" ? "[Media]" : whatsAppBody(m);
+          if (!id || text === null) continue;
+          const fromCustomer = str(m.from) === customer;
+          events.push({
+            channel: "WHATSAPP",
+            direction: fromCustomer ? "IN" : "OUT",
+            threadId: customer,
+            externalId: id,
+            name: null,
+            phone: whatsAppPhone(customer),
+            body: text,
+            at: seconds(m.timestamp),
+            historical: true,
+          });
+        }
+      }
     }
   }
   return events;

@@ -79,6 +79,39 @@ export function waEcho(opts: { id?: string; body?: string } = {}) {
   );
 }
 
+/** Coexistence history sync: one chunk with one customer's thread (a message each way and a photo placeholder). */
+export function waHistory(opts: { customer?: string; prefix?: string } = {}) {
+  const customer = opts.customer ?? "8801812345678";
+  const p = opts.prefix ?? "wamid.HIST";
+  return wa(
+    {
+      history: [
+        {
+          metadata: { phase: 0, chunk_order: 1, progress: 55 },
+          threads: [
+            {
+              id: customer,
+              messages: [
+                { from: customer, id: `${p}.1`, timestamp: "1752000000", type: "text", text: { body: "Panjabi ta ki ache?" }, history_context: { status: "READ" } },
+                { from: WA_BUSINESS_NUMBER, to: customer, id: `${p}.2`, timestamp: "1752000100", type: "text", text: { body: "Ji ache, 1450 taka" }, history_context: { status: "READ" } },
+                { from: customer, id: `${p}.3`, timestamp: "1752000200", type: "media_placeholder", history_context: { status: "READ" } },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    "history",
+  );
+}
+
+export function waHistoryDeclined() {
+  return wa(
+    { history: [{ errors: [{ code: 2593109, title: "History sync is turned off by the business from the WhatsApp Business App", error_data: { details: "History sharing is turned off by the business" } }] }] },
+    "history",
+  );
+}
+
 const page = (messaging: unknown[]) => ({ object: "page", entry: [{ id: PAGE_ID, time: 1_760_700_000_000, messaging }] });
 
 export function messengerText(opts: { psid?: string; mid?: string; text?: string } = {}) {

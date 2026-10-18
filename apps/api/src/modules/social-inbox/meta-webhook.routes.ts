@@ -5,7 +5,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { constantTimeEqual } from "../../lib/token-hash";
 import { captureError } from "../../lib/observability/error-capture";
 import { parseMetaWebhook } from "./meta-webhook.parse";
-import { ingestInbound } from "./ingest.service";
+import { ingestHistory, ingestInbound } from "./ingest.service";
 
 export const META_WEBHOOK_PATH = "/api/v1/webhooks/meta";
 
@@ -50,7 +50,9 @@ metaWebhookRouter.post(
       waPhoneNumberId: env.whatsapp.phoneNumberId,
     });
     try {
-      await ingestInbound(events);
+      await ingestInbound(events.filter((e) => !e.historical));
+      const history = events.filter((e) => e.historical);
+      if (history.length) await ingestHistory(history);
     } catch (err) {
       // Storing is idempotent (Meta's message id), so a 500 is safe: Meta redelivers the batch and what was already
       // stored is skipped. Answering 200 here would lose the customer's message for good.
