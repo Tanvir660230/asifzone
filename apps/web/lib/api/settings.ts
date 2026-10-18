@@ -119,6 +119,11 @@ export function connectWhatsApp(input: WhatsAppConnectInput) {
   return apiFetch<WhatsAppConnectResult>("/api/settings/integrations/whatsapp/connect", { method: "POST", body: input });
 }
 
+/** Import past chats: queues a copy of the last `days` of Messenger / Instagram conversations into the Inbox. */
+export function importPastChats(days: number) {
+  return apiFetch<{ queued: true }>("/api/settings/integrations/meta/import-history", { method: "POST", body: { days } });
+}
+
 export function generateWebPushKeys() {
   return apiFetch<IntegrationsView>("/api/settings/integrations/webpush/generate-keys", { method: "POST" });
 }

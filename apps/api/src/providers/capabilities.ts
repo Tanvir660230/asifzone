@@ -19,6 +19,7 @@ import type { EpsValidationResult, InitEpsSessionParams } from "./payment/eps";
 import type { InitSessionParams, SslValidationResult } from "./payment/sslcommerz";
 import type { PushInput } from "./push/web-push";
 import type { SmsInput } from "./sms/bulksmsbd";
+import type { PageConversation } from "./social/meta-graph";
 import type { CourierProviderId, EmailProviderId, PaymentGatewayKey, PushProviderId, SmsProviderId } from "./selection";
 
 export type { CreateConsignmentInput, SteadfastBulkResultItem, SteadfastConsignment, SteadfastFraudCheck };
@@ -134,6 +135,8 @@ export interface SocialMessenger {
   privateReply(commentId: string, body: string): Promise<string>;
   /** Never throws; null when unknown. */
   profileName(channel: "MESSENGER" | "INSTAGRAM", userId: string): Promise<string | null>;
+  /** Import past chats: the Page's Messenger / Instagram conversations updated since a date (20 latest messages each). */
+  pageConversations(platform: "messenger" | "instagram", since: Date): Promise<PageConversation[]>;
   /** Connect WhatsApp: the server-side half of Meta's Embedded Signup. */
   whatsAppSignup: {
     exchangeCode(code: string): Promise<string>;

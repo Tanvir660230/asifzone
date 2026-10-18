@@ -13,6 +13,7 @@ import { getProviders } from "../../providers/registry";
 import { deliverPaymentLinkMessage } from "../../lib/payment-link-messages";
 import { deliverConversationReply } from "../../lib/conversation-reply";
 import { assistInboundMessage } from "../../modules/social-inbox/assist/assist.consumer";
+import { importPastChats } from "../../modules/social-inbox/history-import";
 import { processFinancialEvent } from "../finance/events.service";
 
 export type ConsumerResult = "sent" | "disabled" | "skipped";
@@ -104,6 +105,17 @@ export const OUTBOX_CONSUMERS = {
       return assistInboundMessage(messageId);
     },
   } satisfies OutboxConsumer<{ messageId: string }>,
+
+  // Social Inbox: Settings › Integrations › Import past chats — copies recent Messenger / Instagram conversations in.
+  "meta-history-import": {
+    eventTypes: ["meta.history_import_requested.v1"],
+    payload: z.object({ days: z.number().int().min(1).max(90) }),
+    idempotency: "Every imported message is stored once by Meta's message id (createMany skipDuplicates), so a repeated run only adds what is new.",
+    async handle({ days }) {
+      await importPastChats(days);
+      return "sent";
+    },
+  } satisfies OutboxConsumer<{ days: number }>,
 
   "meta-capi-purchase": {
     eventTypes: ["order.placed.v1"],

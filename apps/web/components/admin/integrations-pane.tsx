@@ -14,6 +14,7 @@ import {
 } from "@clothing-brand/shared";
 import { FormSection } from "@/components/admin/form-section";
 import { ConnectWhatsApp } from "@/components/admin/inbox/connect-whatsapp";
+import { ImportPastChats } from "@/components/admin/inbox/import-past-chats";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -263,6 +264,8 @@ function IntegrationCard({ definition, state, view }: { definition: IntegrationD
               onGenerate={() => setDraft((d) => ({ ...d, META_WEBHOOK_VERIFY_TOKEN: randomToken() }))}
             />
           )}
+
+          {definition.id === "meta-messages" && state.configured && <ImportPastChats />}
 
           {definition.id === "whatsapp" &&
             (() => {

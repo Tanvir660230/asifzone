@@ -1,6 +1,14 @@
 import { Router } from "express";
-import { createShippingZoneSchema, updateIntegrationsSchema, updateShippingZoneSchema, updateSettingsSchema, whatsAppConnectSchema } from "@clothing-brand/shared";
+import {
+  createShippingZoneSchema,
+  metaHistoryImportSchema,
+  updateIntegrationsSchema,
+  updateShippingZoneSchema,
+  updateSettingsSchema,
+  whatsAppConnectSchema,
+} from "@clothing-brand/shared";
 import { connectWhatsApp } from "./whatsapp-connect.service";
+import { requestPastChatsImport } from "../social-inbox/history-import";
 import { asyncHandler } from "../../lib/async-handler";
 import { createShippingZone, deleteShippingZone, listShippingZones, updateShippingZone } from "./shipping-zones.service";
 import { validate } from "../../middlewares/validate";
@@ -54,6 +62,14 @@ settingsRouter.post(
       metadata: { keys: ["WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_ACCESS_TOKEN", "WHATSAPP_WABA_ID"], whatsappConnect: { coexistence: req.body.coexistence } },
     });
     res.json({ view: getIntegrationsView(), phoneNumber, warnings });
+  }),
+);
+// Import past chats (Social Inbox): queues a background copy of recent Messenger / Instagram conversations.
+settingsRouter.post(
+  "/integrations/meta/import-history", requireAdmin, requirePermission("settings.manage"), validate(metaHistoryImportSchema),
+  asyncHandler(async (req, res) => {
+    await requestPastChatsImport(req.body.days);
+    res.status(202).json({ queued: true });
   }),
 );
 settingsRouter.post(

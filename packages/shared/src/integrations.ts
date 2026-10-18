@@ -303,6 +303,10 @@ export const updateIntegrationsSchema = z.object({
 
 export type UpdateIntegrationsInput = z.infer<typeof updateIntegrationsSchema>;
 
+/** Import past chats: how far back to copy Messenger / Instagram conversations into the Inbox. */
+export const metaHistoryImportSchema = z.object({ days: z.number().int().min(1).max(90) });
+export type MetaHistoryImportInput = z.infer<typeof metaHistoryImportSchema>;
+
 /** What Meta's Embedded Signup hands the browser (Settings › Integrations › Connect WhatsApp). `coexistence` = the number
  * stays on the WhatsApp Business app; a coexistence finish carries only the WABA id, so the phone number id is optional. */
 export const whatsAppConnectSchema = z.object({

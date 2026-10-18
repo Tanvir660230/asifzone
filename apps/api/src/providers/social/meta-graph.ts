@@ -108,6 +108,55 @@ export async function postGraph(req: GraphRequest): Promise<string> {
   return id;
 }
 
+// ── Past Messenger / Instagram chats (Import past chats) ───────────────────────────────────────
+
+export interface PageConversation {
+  id: string;
+  updatedTime: string;
+  participants: Array<{ id: string; name: string | null }>;
+  /** Meta details only the 20 most recent messages of a conversation. */
+  messages: Array<{ id: string; createdTime: string; fromId: string; text: string | null; hasAttachment: boolean }>;
+}
+
+const MAX_IMPORT_CONVERSATIONS = 500;
+
+/** The Page's Messenger or Instagram conversations updated since `since`, newest first (at most 500). */
+export async function fetchPageConversations(platform: "messenger" | "instagram", since: Date): Promise<PageConversation[]> {
+  const token = tokenFor("page");
+  if (!liveProvidersEnabled()) return [];
+  type Raw = {
+    data?: Array<{
+      id?: string;
+      updated_time?: string;
+      participants?: { data?: Array<{ id?: string; name?: string; username?: string }> };
+      messages?: { data?: Array<{ id?: string; created_time?: string; message?: string; from?: { id?: string }; attachments?: { data?: unknown[] } }> };
+    }>;
+    paging?: { cursors?: { after?: string }; next?: string };
+  };
+  const fields = "id,updated_time,participants,messages.limit(20){id,created_time,message,from,attachments}";
+  const out: PageConversation[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const query = new URLSearchParams({ platform, fields, limit: "25", ...(after ? { after } : {}) });
+    const json = (await graphFetch("GET", `/${env.metaInbox.pageId}/conversations?${query.toString()}`, token)) as Raw;
+    for (const c of json.data ?? []) {
+      if (!c.id || !c.updated_time) continue;
+      if (new Date(c.updated_time) < since) return out;
+      out.push({
+        id: c.id,
+        updatedTime: c.updated_time,
+        participants: (c.participants?.data ?? []).filter((p) => p.id).map((p) => ({ id: p.id!, name: p.name ?? (p.username ? `@${p.username}` : null) })),
+        messages: (c.messages?.data ?? [])
+          .filter((m) => m.id && m.created_time && m.from?.id)
+          .map((m) => ({ id: m.id!, createdTime: m.created_time!, fromId: m.from!.id!, text: m.message?.trim() || null, hasAttachment: Boolean(m.attachments?.data?.length) })),
+      });
+      if (out.length >= MAX_IMPORT_CONVERSATIONS) return out;
+    }
+    after = json.paging?.next ? json.paging.cursors?.after : undefined;
+    if (!after) return out;
+  }
+}
+
 // ── WhatsApp Embedded Signup (Connect WhatsApp) ─────────────────────────────────────────────────
 // Server-to-server steps after Meta's signup popup, with the customer's business token. Outside production nothing is
 // called: a made-up token and number come back so the flow can be exercised locally.
