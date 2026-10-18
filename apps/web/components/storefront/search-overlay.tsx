@@ -102,7 +102,8 @@ export function SearchOverlay() {
   // "/" or Ctrl/⌘+K opens search from anywhere in the store (not while the shopper is typing in a field).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (isOpen || e.defaultPrevented) return;
+      // `!e.key`: Chrome's autofill fires keydown events with no key — it threw here on every autofilled checkout field.
+      if (isOpen || e.defaultPrevented || !e.key) return;
       const target = e.target as HTMLElement | null;
       const inField = !!target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
       if ((e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) || (e.key === "/" && !inField && !e.metaKey && !e.ctrlKey)) {

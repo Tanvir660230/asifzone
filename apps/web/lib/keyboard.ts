@@ -12,6 +12,8 @@ export function isTypingTarget(el: EventTarget | null): boolean {
  * `mod+k`, `mod+enter`, `shift+?`→`?`, `arrowup`. `mod` is Ctrl on Windows/Linux and ⌘ on macOS (either counts).
  */
 export function comboOf(event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): string {
+  // Chrome's autofill dispatches keydown events with no `key` at all: no combo, rather than a TypeError.
+  if (!event.key) return "";
   const key = event.key.toLowerCase();
   const parts: string[] = [];
   if (event.ctrlKey || event.metaKey) parts.push("mod");
