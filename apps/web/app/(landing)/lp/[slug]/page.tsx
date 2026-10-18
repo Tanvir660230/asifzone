@@ -232,7 +232,7 @@ export default async function ProductLandingPage({ params }: Props) {
 
           {product.reviewCount > 0 && (
             <section id="reviews" className="scroll-mt-16">
-              <ProductReviews productId={product.id} productName={product.name} />
+              <ProductReviews productId={product.id} productName={product.name} productType={product.productType} />
             </section>
           )}
         </div>

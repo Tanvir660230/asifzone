@@ -42,7 +42,15 @@ function RatingBar({ star, count, total }: { star: number; count: number; total:
   );
 }
 
-function WriteReviewForm({ productId, onDone }: { productId: string; onDone: () => void }) {
+/** What to write about, by kind of product — "fit" means nothing for an attar. */
+function reviewPrompt(productType?: string | null): string {
+  if (productType === "FRAGRANCE") return "What did you like or dislike? How does it smell, and how long does it last?";
+  if (productType === "WATCH" || productType === "HOME" || productType === "ISLAMIC_PRODUCT" || productType === "COSMETICS") return "What did you like or dislike? How was the quality?";
+  // Clothing, shoes, accessories, and a store's own (custom) types: the original wording.
+  return "What did you like or dislike? How was the fit and quality?";
+}
+
+function WriteReviewForm({ productId, productType, onDone }: { productId: string; productType?: string | null; onDone: () => void }) {
   const queryClient = useQueryClient();
   const [rating, setRating] = useState(0);
   const [title, setTitle] = useState("");
@@ -101,7 +109,7 @@ function WriteReviewForm({ productId, onDone }: { productId: string; onDone: () 
             maxLength={2000}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="What did you like or dislike? How was the fit and quality?"
+            placeholder={reviewPrompt(productType)}
           />
         </div>
         <div>
@@ -127,7 +135,7 @@ const MY_STATUS_LABEL: Record<string, string> = {
   REJECTED: "Not published — this review didn't meet our guidelines.",
 };
 
-export function ProductReviews({ productId, productName }: { productId: string; productName: string }) {
+export function ProductReviews({ productId, productName, productType }: { productId: string; productName: string; productType?: string | null }) {
   const router = useRouter();
   const pathname = usePathname();
   // "Load more" grows pageSize on a fixed page=1 fetch instead of paging forward — appending a
@@ -182,7 +190,7 @@ export function ProductReviews({ productId, productName }: { productId: string; 
 
   return (
     <section id="reviews" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-4 pt-10 sm:px-6 sm:pb-16 sm:pt-16 lg:px-8">
-      <h2 className="ui-section-heading mb-8 font-display text-ink-900">Customer Reviews</h2>
+      <h2 className="ui-section-heading mb-8 font-display text-ink-900">Customer reviews</h2>
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[280px_1fr]">
         <div>
@@ -226,7 +234,7 @@ export function ProductReviews({ productId, productName }: { productId: string; 
         <div>
           {formOpen && !myReview && (
             <div className="mb-8">
-              <WriteReviewForm productId={productId} onDone={() => setFormOpen(false)} />
+              <WriteReviewForm productId={productId} productType={productType} onDone={() => setFormOpen(false)} />
             </div>
           )}
 
