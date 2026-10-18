@@ -117,7 +117,15 @@ export function ProductGallery({ images, productName }: ProductGalleryProps) {
           <>
             {/* Swipeable on touch; from 1024px it only moves by the arrows and thumbnails (overflow hidden still scrolls
                 from script), so a mouse over it zooms instead. */}
-            <div ref={trackRef} onScroll={handleScroll} className="ui-rail flex h-full w-full snap-x snap-mandatory overflow-x-auto lg:overflow-hidden">
+            {/* Focusable, so a keyboard can scroll the photos too (WCAG scrollable-region-focusable). */}
+            <div
+              ref={trackRef}
+              onScroll={handleScroll}
+              role="region"
+              aria-label={`Photos of ${productName}`}
+              tabIndex={0}
+              className="ui-rail flex h-full w-full snap-x snap-mandatory overflow-x-auto focus-visible:outline-offset-[-3px] lg:overflow-hidden"
+            >
               {images.map((img, i) => (
                 <div key={img.id} className="relative h-full w-full shrink-0 snap-center snap-always overflow-hidden">
                   <Image
