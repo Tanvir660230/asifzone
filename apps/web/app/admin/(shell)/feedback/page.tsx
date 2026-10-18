@@ -17,6 +17,7 @@ import {
 } from "@clothing-brand/shared";
 import { CHANNEL_FILTERS, CHANNEL_META, ChannelIcon, INTENT_LABEL, replyChannelLabel, timeUntil } from "@/components/admin/inbox/channel";
 import { Select } from "@/components/ui/select";
+import { TemplatePicker } from "@/components/admin/inbox/template-picker";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -129,7 +130,7 @@ function WindowNote({ thread, channel }: { thread: ConversationDetail; channel: 
       <p className="flex items-start gap-1.5 rounded-lg bg-warning-50 px-3 py-2 text-[13px] text-warning-800">
         <Clock size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
         {channel === "WHATSAPP"
-          ? `WhatsApp only allows replies within 24 hours of the customer's last message.${thread.phone ? " Reply by SMS instead, or wait for them to write again." : " Wait for them to write again."}`
+          ? `More than 24 hours since their last message — WhatsApp now allows only an approved template.${thread.phone ? " Or reply by SMS." : ""}`
           : `${CHANNEL_META[channel].label} only allows replies within 7 days of the customer's last message.`}
       </p>
     );
@@ -232,39 +233,45 @@ function Composer({ thread }: { thread: ConversationDetail }) {
         )}
       </div>
       <WindowNote thread={thread} channel={channel} />
-      <div aria-live="polite">
-        {draft && (
-          <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
-            <span className="flex items-center gap-1 font-medium text-accent">
-              <Sparkles size={12} aria-hidden="true" /> AI draft · {INTENT_LABEL[draft.intent] ?? draft.intent}
-              <span className="font-normal text-fg-subtle">— check it, then send</span>
-            </span>
-            <button type="button" className="font-medium text-fg-muted hover:text-fg hover:underline" disabled={discard.isPending} onClick={() => discard.mutate()}>
-              Discard draft
-            </button>
+      {closed && channel === "WHATSAPP" ? (
+        <TemplatePicker thread={thread} onSent={refresh} />
+      ) : (
+        <>
+          <div aria-live="polite">
+            {draft && (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                <span className="flex items-center gap-1 font-medium text-accent">
+                  <Sparkles size={12} aria-hidden="true" /> AI draft · {INTENT_LABEL[draft.intent] ?? draft.intent}
+                  <span className="font-normal text-fg-subtle">— check it, then send</span>
+                </span>
+                <button type="button" className="font-medium text-fg-muted hover:text-fg hover:underline" disabled={discard.isPending} onClick={() => discard.mutate()}>
+                  Discard draft
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <label htmlFor="inbox-reply" className="sr-only">
-        Your reply
-      </label>
-      <Textarea
-        id="inbox-reply"
-        rows={4}
-        value={body}
-        disabled={closed}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={`Write to ${thread.contactName.split(" ")[0]}…`}
-      />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className={cn("text-[12px]", tooLong ? "text-danger-600" : "text-fg-subtle")}>
-          {tooLong ? `${formatCount(body.trim().length)}/${max} — too long` : deliveryHint(channel, thread, body.trim().length)}
-        </p>
-        <Button type="submit" size="sm" disabled={!ready}>
-          {send.isPending ? "Sending…" : "Send reply"}
-        </Button>
-      </div>
+          <label htmlFor="inbox-reply" className="sr-only">
+            Your reply
+          </label>
+          <Textarea
+            id="inbox-reply"
+            rows={4}
+            value={body}
+            disabled={closed}
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={`Write to ${thread.contactName.split(" ")[0]}…`}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className={cn("text-[12px]", tooLong ? "text-danger-600" : "text-fg-subtle")}>
+              {tooLong ? `${formatCount(body.trim().length)}/${max} — too long` : deliveryHint(channel, thread, body.trim().length)}
+            </p>
+            <Button type="submit" size="sm" disabled={!ready}>
+              {send.isPending ? "Sending…" : "Send reply"}
+            </Button>
+          </div>
+        </>
+      )}
     </form>
   );
 }

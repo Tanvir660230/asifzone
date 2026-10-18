@@ -6,6 +6,7 @@ import { prisma } from "../config/prisma";
 import { latestComment, recordSentExternalId, replyFacts } from "../modules/inbox/inbox.service";
 import { getProviders } from "../providers/registry";
 import { MetaApiError } from "../providers/errors";
+import type { TemplateSend } from "../providers/social/meta-graph";
 
 /** Delivers one Inbox reply (outbox consumer `conversation-reply`). "skipped" when the message is gone, isn't a reply,
  * was already sent, or the customer has no address for its channel; throws on a provider failure so the outbox retries
@@ -21,7 +22,10 @@ export async function deliverConversationReply(messageId: string, eventId: strin
     if (!threadId) return "skipped";
     const social = getProviders().social;
     let externalId: string;
-    if (conversation.channel === "FB_COMMENT") {
+    if (facts.template && facts.channel === "WHATSAPP") {
+      // An approved template is allowed outside the 24-hour window — that's what it is for.
+      externalId = await social.whatsAppTemplate(threadId, facts.template as unknown as TemplateSend);
+    } else if (conversation.channel === "FB_COMMENT") {
       // A comment thread is one person under one comment; the answer goes to their latest comment.
       const comment = await latestComment(prisma, facts.conversationId);
       if (!comment?.externalId) return "skipped";

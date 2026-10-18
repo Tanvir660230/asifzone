@@ -8,7 +8,7 @@ import {
   type ConversationListQuery,
   type ConversationListRow,
   type ConversationMessageRow,
-  type ConversationReplyInput,
+  type ConversationReply,
   type CreateFeedbackInput,
   type MessageDelivery,
 } from "@clothing-brand/shared";
@@ -16,6 +16,8 @@ import { prisma } from "../../config/prisma";
 import { AppError } from "../../lib/app-error";
 import { paginate } from "../../lib/paginate";
 import { recordOutboxEvents } from "../../domain/outbox/outbox";
+import type { TemplateSend } from "../../providers/social/meta-graph";
+import { resolveTemplateReply } from "../social-inbox/templates.service";
 
 /**
  * Admin V2 Inbox R2 (DR-4, owner 2026-10-08). A conversation is one thread with a customer; staff reply by email or SMS.
@@ -159,10 +161,18 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
  * becomes handled and its AI draft, now answered, is removed. Shared by staff replies and the AI's own answers. */
 export async function queueReply(
   tx: Prisma.TransactionClient,
-  input: { conversationId: string; channel: ReplyChannel; body: string; adminId: string | null; author: "STAFF" | "AI" },
+  input: { conversationId: string; channel: ReplyChannel; body: string; adminId: string | null; author: "STAFF" | "AI"; template?: TemplateSend },
 ) {
   const m = await tx.conversationMessage.create({
-    data: { conversationId: input.conversationId, direction: "OUT", channel: input.channel, body: input.body, adminId: input.adminId, author: input.author },
+    data: {
+      conversationId: input.conversationId,
+      direction: "OUT",
+      channel: input.channel,
+      body: input.body,
+      adminId: input.adminId,
+      author: input.author,
+      ...(input.template ? { template: input.template as unknown as Prisma.InputJsonValue } : {}),
+    },
     include: { admin: { select: { name: true } } },
   });
   await tx.conversation.update({ where: { id: input.conversationId }, data: { status: "HANDLED", lastMessageAt: m.createdAt } });
@@ -223,7 +233,10 @@ async function assertPrivateReplyAllowed(tx: Prisma.TransactionClient, conversat
   }
 }
 
-export async function replyToConversation(id: string, input: ConversationReplyInput, adminId: string): Promise<ConversationMessageRow> {
+export async function replyToConversation(id: string, input: ConversationReply, adminId: string): Promise<ConversationMessageRow> {
+  // A WhatsApp template is looked up before the transaction (it may ask Meta); its text becomes the message body.
+  const template = input.template ? await resolveTemplateReply(input.template) : null;
+  const body = template?.body ?? input.body;
   const message = await prisma.$transaction(async (tx) => {
     if (!(await lockConversation(tx, id))) throw AppError.notFound("Conversation not found");
     const c = await tx.conversation.findUnique({ where: { id }, select: { id: true, channel: true, email: true, phone: true, lastInboundAt: true } });
@@ -236,10 +249,11 @@ export async function replyToConversation(id: string, input: ConversationReplyIn
     if (c.channel === "FB_COMMENT") {
       // A public reply has no window; a private one has Meta's own rule.
       if (input.channel === "MESSENGER") await assertPrivateReplyAllowed(tx, id, new Date());
-    } else if (!replyWindow(input.channel, c.lastInboundAt, new Date()).open) {
+    } else if (!template && !replyWindow(input.channel, c.lastInboundAt, new Date()).open) {
+      // An approved template may be sent any time; free text only inside the window.
       throw AppError.badRequest(WINDOW_CLOSED[input.channel] ?? "The reply window has closed", { code: "WINDOW_CLOSED" });
     }
-    return queueReply(tx, { conversationId: id, channel: input.channel, body: input.body, adminId, author: "STAFF" });
+    return queueReply(tx, { conversationId: id, channel: input.channel, body, adminId, author: "STAFF", ...(template ? { template: template.send } : {}) });
   });
   return {
     id: message.id,
@@ -293,6 +307,7 @@ export function replyFacts(messageId: string) {
       direction: true,
       author: true,
       externalId: true,
+      template: true,
       conversationId: true,
       conversation: { select: { subject: true, contactName: true, email: true, phone: true, channel: true, externalThreadId: true, lastInboundAt: true } },
     },

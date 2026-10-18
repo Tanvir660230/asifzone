@@ -51,7 +51,23 @@ a second — far above a shop's needs. Do the Connect step in production (the de
 *If you prefer a separate new number instead:* choose **New number** in the same card. The store registers it and
 keeps its two-step PIN (shown only as "saved").
 
-## 7. Turn on the AI
+## 7. Past chats
+- **WhatsApp:** Connect WhatsApp (current number) copies the app's last 180 days once — they show up in the Inbox as
+  handled chats. Group chats aren't included, and photos/voice notes show as "[Media]".
+- **Messenger & Instagram:** *Facebook & Instagram messages* card › **Import past chats** (7, 30 or 90 days). Meta shares
+  the latest 20 messages of each chat. Running it again only adds what's new.
+- The AI never answers old messages.
+
+## 8. WhatsApp after 24 hours — templates
+WhatsApp lets a business write freely only within 24 hours of the customer's last message. After that the Inbox offers
+**approved templates** (Meta charges for each):
+1. WhatsApp Manager › **Message templates** › Create — category **Utility**, language e.g. Bengali, body with blanks,
+   e.g. `Assalamu alaikum {{1}}, apnar order {{2}} er bepare kotha bolte chai. Ekhane reply korun.`
+2. Once Meta approves it (minutes to a day), it appears in the Inbox composer: pick it, fill the blanks, send.
+3. When the customer replies, the 24-hour window opens again.
+Templates with an image/video header or blanks in a button link aren't offered (the Inbox fills text only).
+
+## 9. Turn on the AI
 1. The *Claude (Anthropic)* card under AI assistant must have an API key.
 2. *AI replies* starts on **Drafts only**: every message gets a suggested reply in the Inbox; staff check and send it.
 3. After a few days of good drafts, switch it to **Auto-send price, stock, delivery and order-status answers**.

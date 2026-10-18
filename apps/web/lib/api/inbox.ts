@@ -1,4 +1,4 @@
-import type { ConversationChannelName, ConversationDetail, ConversationListRow, ConversationMessageRow, ConversationReplyInput, PaginatedResult } from "@clothing-brand/shared";
+import type { ConversationChannelName, ConversationDetail, ConversationListRow, WhatsAppTemplate, ConversationMessageRow, ConversationReplyInput, PaginatedResult } from "@clothing-brand/shared";
 import { apiFetch, type FetchSignal } from "../api-client";
 
 /** Messages › Inbox (Blueprint V2 R2): conversations with customers. */
@@ -30,6 +30,11 @@ export function replyToConversation(id: string, input: ConversationReplyInput) {
 /** Handled ↔ new, and/or take it (assignedToMe: true) or let it go (false). */
 export function updateConversation(id: string, input: { status?: "OPEN" | "HANDLED"; assignedToMe?: boolean }) {
   return apiFetch<{ id: string; status: string; assignedTo: { id: string; name: string } | null }>(`/api/v1/admin/conversations/${id}`, { method: "PATCH", body: input });
+}
+
+/** The WhatsApp account's approved templates (replies after the 24-hour window). */
+export function listWhatsAppTemplates() {
+  return apiFetch<{ templates: WhatsAppTemplate[] }>("/api/v1/admin/conversations/whatsapp-templates");
 }
 
 /** Throws the AI's suggested reply away. */

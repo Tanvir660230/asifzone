@@ -1958,6 +1958,8 @@ model ConversationMessage {
   author         MessageAuthor       @default(CUSTOMER)
   /// Meta's message id (wamid / mid / comment id): a webhook delivered twice is stored once.
   externalId     String?             @unique
+  /// A WhatsApp template reply (outside the 24-hour window): { name, language, params, named }. `body` holds its text.
+  template       Json?
   createdAt      DateTime            @default(now())
 
   @@index([conversationId, createdAt])

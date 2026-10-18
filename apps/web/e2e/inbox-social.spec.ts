@@ -49,7 +49,15 @@ async function webhook(request: APIRequestContext, body: unknown) {
   expect(res.status()).toBe(200);
 }
 
-const META_KEYS = { META_APP_SECRET: SECRET, META_PAGE_ID: PAGE_ID, META_PAGE_ACCESS_TOKEN: `e2e-page-${RUN}`, WHATSAPP_PHONE_NUMBER_ID: "555666", WHATSAPP_ACCESS_TOKEN: `e2e-wa-${RUN}` };
+const META_KEYS = {
+  META_APP_SECRET: SECRET,
+  META_PAGE_ID: PAGE_ID,
+  META_PAGE_ACCESS_TOKEN: `e2e-page-${RUN}`,
+  WHATSAPP_PHONE_NUMBER_ID: "555666",
+  WHATSAPP_ACCESS_TOKEN: `e2e-wa-${RUN}`,
+  WHATSAPP_WABA_ID: "2000001",
+};
+const OLD_WA_ID = `88016${String(Date.now()).slice(-8)}`;
 
 test.describe.configure({ mode: "serial" });
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -63,6 +71,10 @@ test.beforeAll(async ({ browser, request }) => {
   await webhook(request, {
     object: "whatsapp_business_account",
     entry: [{ id: "1", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { display_phone_number: "8801711000000", phone_number_id: "555666" }, contacts: [{ profile: { name: `Rahim ${RUN}` }, wa_id: WA_ID }], messages: [{ from: WA_ID, id: `wamid.e2e.${RUN}`, timestamp: String(nowSec()), type: "text", text: { body: "Bhai kalo panjabi tar dam koto?" } }] } }] }],
+  });
+  await webhook(request, {
+    object: "whatsapp_business_account",
+    entry: [{ id: "1", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { display_phone_number: "8801711000000", phone_number_id: "555666" }, contacts: [{ profile: { name: `Old ${RUN}` }, wa_id: OLD_WA_ID }], messages: [{ from: OLD_WA_ID, id: `wamid.e2e.old.${RUN}`, timestamp: String(nowSec() - 30 * 3600), type: "text", text: { body: "Ami kalke order korbo" } }] } }] }],
   });
   await webhook(request, {
     object: "page",
@@ -131,6 +143,16 @@ test("a post comment can be answered publicly or privately", async ({ page }) =>
   await expect(choice.getByRole("button", { name: "Public reply" })).toBeVisible();
   await choice.getByRole("button", { name: "Private message" }).click();
   await expect(page.getByText("Opens a Messenger chat with them — once per comment")).toBeVisible();
+});
+
+test("WhatsApp after 24 hours offers an approved template instead of free text", async ({ page }) => {
+  await adminLogin(page);
+  await page.goto("/admin/feedback?channel=WHATSAPP&status=all");
+  await page.getByRole("button", { name: new RegExp(`Old ${RUN}`) }).click();
+  await expect(page.getByText(/WhatsApp now allows only an approved template/)).toBeVisible();
+  // This test store never calls Meta, so the account has no templates — the composer says how to add one.
+  await expect(page.getByText(/No approved templates yet/)).toBeVisible();
+  await expect(page.getByLabel("Your reply")).toHaveCount(0);
 });
 
 test("the Inbox fits a 375px phone with a thread open", async ({ page }) => {

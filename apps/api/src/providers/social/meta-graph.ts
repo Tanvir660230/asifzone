@@ -108,6 +108,59 @@ export async function postGraph(req: GraphRequest): Promise<string> {
   return id;
 }
 
+// ── WhatsApp templates (replies after the 24-hour window) ──────────────────────────────────────
+
+export interface TemplateSend {
+  name: string;
+  language: string;
+  params: string[];
+  /** Named placeholders ({{order_number}}) are sent with their names; positional ones ({{1}}) in order. */
+  paramNames: string[] | null;
+}
+
+export function whatsAppTemplateRequest(to: string, t: TemplateSend): GraphRequest {
+  const parameters = t.params.map((text, i) => ({ type: "text", text, ...(t.paramNames ? { parameter_name: t.paramNames[i] } : {}) }));
+  return {
+    path: `/${env.whatsapp.phoneNumberId}/messages`,
+    token: "whatsapp",
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "template",
+      template: { name: t.name, language: { code: t.language }, ...(parameters.length ? { components: [{ type: "body", parameters }] } : {}) },
+    },
+  };
+}
+
+export interface RawTemplate {
+  name: string;
+  language: string;
+  category: string;
+  parameterFormat: "POSITIONAL" | "NAMED";
+  components: Array<{ type: string; format?: string; text?: string; buttons?: Array<{ type?: string; url?: string; example?: unknown }> }>;
+}
+
+/** The WhatsApp account's approved templates (needs WHATSAPP_WABA_ID — Connect WhatsApp saves it). */
+export async function fetchApprovedTemplates(): Promise<RawTemplate[]> {
+  const token = tokenFor("whatsapp");
+  const wabaId = env.whatsapp.wabaId;
+  if (!wabaId) throw new ProviderNotConfiguredError("WhatsApp templates", "WHATSAPP_WABA_ID");
+  if (!liveProvidersEnabled()) return [];
+  type Raw = { data?: Array<{ name?: string; language?: string; category?: string; status?: string; parameter_format?: string; components?: RawTemplate["components"] }> };
+  const query = new URLSearchParams({ fields: "name,language,category,status,parameter_format,components", status: "APPROVED", limit: "200" });
+  const json = (await graphFetch("GET", `/${wabaId}/message_templates?${query.toString()}`, token)) as Raw;
+  return (json.data ?? [])
+    .filter((t) => t.name && t.language && t.status === "APPROVED")
+    .map((t) => ({
+      name: t.name!,
+      language: t.language!,
+      category: t.category ?? "UTILITY",
+      parameterFormat: t.parameter_format === "NAMED" ? "NAMED" : "POSITIONAL",
+      components: t.components ?? [],
+    }));
+}
+
 // ── Past Messenger / Instagram chats (Import past chats) ───────────────────────────────────────
 
 export interface PageConversation {

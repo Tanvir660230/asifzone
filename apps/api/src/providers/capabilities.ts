@@ -19,7 +19,7 @@ import type { EpsValidationResult, InitEpsSessionParams } from "./payment/eps";
 import type { InitSessionParams, SslValidationResult } from "./payment/sslcommerz";
 import type { PushInput } from "./push/web-push";
 import type { SmsInput } from "./sms/bulksmsbd";
-import type { PageConversation } from "./social/meta-graph";
+import type { PageConversation, RawTemplate, TemplateSend } from "./social/meta-graph";
 import type { CourierProviderId, EmailProviderId, PaymentGatewayKey, PushProviderId, SmsProviderId } from "./selection";
 
 export type { CreateConsignmentInput, SteadfastBulkResultItem, SteadfastConsignment, SteadfastFraudCheck };
@@ -135,6 +135,10 @@ export interface SocialMessenger {
   privateReply(commentId: string, body: string): Promise<string>;
   /** Never throws; null when unknown. */
   profileName(channel: "MESSENGER" | "INSTAGRAM", userId: string): Promise<string | null>;
+  /** A WhatsApp approved-template message (the only kind allowed after the 24-hour window). Returns Meta's id. */
+  whatsAppTemplate(to: string, template: TemplateSend): Promise<string>;
+  /** The WhatsApp account's approved templates. */
+  approvedTemplates(): Promise<RawTemplate[]>;
   /** Import past chats: the Page's Messenger / Instagram conversations updated since a date (20 latest messages each). */
   pageConversations(platform: "messenger" | "instagram", since: Date): Promise<PageConversation[]>;
   /** Connect WhatsApp: the server-side half of Meta's Embedded Signup. */

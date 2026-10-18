@@ -96,6 +96,7 @@ export const env = {
   whatsapp: {
     get phoneNumberId() { return integrationSetting("WHATSAPP_PHONE_NUMBER_ID"); },
     get accessToken() { return integrationSetting("WHATSAPP_ACCESS_TOKEN"); },
+    get wabaId() { return integrationSetting("WHATSAPP_WABA_ID"); },
   },
   inboxAi: {
     /** "factual" = the AI may send price / stock / delivery / order-status answers on its own; anything else = drafts only. */

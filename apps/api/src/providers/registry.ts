@@ -150,6 +150,8 @@ const social: SocialMessenger = {
   privateReply: (commentId, body) => metaGraph.postGraph(metaGraph.privateReplyRequest(commentId, body)),
   profileName: (channel, userId) => metaGraph.fetchProfileName(channel, userId),
   pageConversations: (platform, since) => metaGraph.fetchPageConversations(platform, since),
+  whatsAppTemplate: (to, template) => metaGraph.postGraph(metaGraph.whatsAppTemplateRequest(to, template)),
+  approvedTemplates: () => metaGraph.fetchApprovedTemplates(),
   whatsAppSignup: {
     exchangeCode: (code) => metaGraph.exchangeSignupCode(code),
     phoneNumbers: (wabaId, token) => metaGraph.businessPhoneNumbers(wabaId, token),
