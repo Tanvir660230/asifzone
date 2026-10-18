@@ -92,7 +92,8 @@ export function ItemsSection({ order, detail, perms }: { order: Order; detail: O
       <dl className="ml-auto mt-4 max-w-sm space-y-1.5 border-t border-line-subtle pt-3 text-sm">
         <Row label="Subtotal" value={formatPrice(order.subtotal)} />
         {Number(order.discount) > 0 && <Row label="Discount" value={`−${formatPrice(order.discount)}`} tone="success" />}
-        <Row label="Shipping" value={formatPrice(order.shippingFee)} />
+        {/* A waived delivery keeps the zone's fee on the order; the total doesn't include it. */}
+        <Row label="Shipping" value={order.shippingWaived ? `Free · ${formatPrice(order.shippingFee)} waived` : formatPrice(order.shippingFee)} />
         {adjustment !== 0 && !draft && (
           <Row label="Price adjustment" value={`${adjustment > 0 ? "+" : "−"}${formatPrice(Math.abs(adjustment))}`} tone={adjustment < 0 ? "success" : undefined} />
         )}

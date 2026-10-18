@@ -632,6 +632,9 @@ export interface Order {
   subtotal: string;
   discount: string;
   shippingFee: string;
+  /** Delivery was waived (free delivery, a coupon, free over an amount): `shippingFee` keeps the zone's fee, the customer
+   * paid none of it. Null on orders from before it was recorded. */
+  shippingWaived?: boolean | null;
   priceAdjustment: string;
   total: string;
   couponId: string | null;

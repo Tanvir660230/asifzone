@@ -1,6 +1,7 @@
 import { formatVariantSuffix } from "@clothing-brand/shared";
 import type { Order, StoreSettings } from "@clothing-brand/shared";
 import { formatPrice, formatStoreDate } from "@/lib/format";
+import { orderShippingCharged } from "@/lib/order-shipping";
 
 interface InvoiceDocumentProps {
   order: Order;
@@ -85,7 +86,7 @@ export function InvoiceDocument({ order, store }: InvoiceDocumentProps) {
         )}
         <div className="flex justify-between text-ink-600">
           <span>Shipping</span>
-          <span>{formatPrice(order.shippingFee)}</span>
+          <span>{orderShippingCharged(order) > 0 ? formatPrice(orderShippingCharged(order)) : "Free"}</span>
         </div>
         <div className="flex justify-between border-t border-ink-200 pt-1.5 text-base font-medium text-ink-900">
           <span>Total</span>
