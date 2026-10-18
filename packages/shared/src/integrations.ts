@@ -191,8 +191,9 @@ export const INTEGRATIONS: readonly IntegrationDefinition[] = [
     name: "Meta app (webhook)",
     group: "inbox",
     description: "Lets WhatsApp, Messenger, Instagram and Facebook comments reach the Inbox. Needed for every channel below.",
-    docsHint: "developers.facebook.com › your app › App settings › Basic (app secret)",
+    docsHint: "developers.facebook.com › your app › App settings › Basic (app ID and app secret)",
     fields: [
+      { key: "META_APP_ID", label: "App ID", kind: "text", help: "Needed for Connect WhatsApp." },
       { key: "META_APP_SECRET", label: "App secret", kind: "secret", required: true, help: "Proves each message really comes from Meta." },
       {
         key: "META_WEBHOOK_VERIFY_TOKEN",
@@ -220,10 +221,18 @@ export const INTEGRATIONS: readonly IntegrationDefinition[] = [
     name: "WhatsApp",
     group: "inbox",
     description: "Your WhatsApp Business number in the Inbox. The WhatsApp Business app on the phone keeps working.",
-    docsHint: "WhatsApp Manager › Phone numbers (phone number ID); a permanent system-user token",
+    docsHint: "Meta app › WhatsApp › Embedded Signup (configuration ID) — then press Connect WhatsApp; the rest fills itself in",
     fields: [
-      { key: "WHATSAPP_PHONE_NUMBER_ID", label: "Phone number ID", kind: "text", required: true, help: "Not the phone number itself — the ID Meta shows next to it." },
-      { key: "WHATSAPP_ACCESS_TOKEN", label: "Access token", kind: "secret", required: true },
+      {
+        key: "WHATSAPP_SIGNUP_CONFIG_ID",
+        label: "Embedded Signup configuration ID",
+        kind: "text",
+        help: "From your Meta app › WhatsApp › Embedded Signup. With it (and the app ID above), Connect WhatsApp links your number.",
+      },
+      { key: "WHATSAPP_PHONE_NUMBER_ID", label: "Phone number ID", kind: "text", required: true, help: "Filled in by Connect WhatsApp. Not the phone number itself." },
+      { key: "WHATSAPP_ACCESS_TOKEN", label: "Access token", kind: "secret", required: true, help: "Filled in by Connect WhatsApp." },
+      { key: "WHATSAPP_WABA_ID", label: "WhatsApp Business account ID", kind: "text", help: "Filled in by Connect WhatsApp." },
+      { key: "WHATSAPP_PIN", label: "Two-step verification PIN", kind: "secret", help: "Set by Connect WhatsApp for a new number. Keep it — Meta asks for it if the number moves." },
     ],
   },
   {
@@ -293,6 +302,23 @@ export const updateIntegrationsSchema = z.object({
 });
 
 export type UpdateIntegrationsInput = z.infer<typeof updateIntegrationsSchema>;
+
+/** What Meta's Embedded Signup hands the browser (Settings › Integrations › Connect WhatsApp). `coexistence` = the number
+ * stays on the WhatsApp Business app; a coexistence finish carries only the WABA id, so the phone number id is optional. */
+export const whatsAppConnectSchema = z.object({
+  code: z.string().trim().min(1).max(4096),
+  wabaId: z.string().regex(/^\d{5,30}$/, "Invalid WhatsApp Business account ID"),
+  phoneNumberId: z.string().regex(/^\d{5,30}$/).optional(),
+  coexistence: z.boolean(),
+});
+export type WhatsAppConnectInput = z.infer<typeof whatsAppConnectSchema>;
+
+export interface WhatsAppConnectResult {
+  view: IntegrationsView;
+  phoneNumber: string | null;
+  /** Steps that didn't complete but don't block messaging (e.g. the one-time history sync was refused). */
+  warnings: string[];
+}
 
 /** Where a field's effective value comes from. */
 export type IntegrationValueSource = "dashboard" | "server" | "none";

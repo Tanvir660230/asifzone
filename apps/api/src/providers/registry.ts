@@ -149,6 +149,13 @@ const social: SocialMessenger = {
   commentReply: (commentId, body) => metaGraph.postGraph(metaGraph.commentReplyRequest(commentId, body)),
   privateReply: (commentId, body) => metaGraph.postGraph(metaGraph.privateReplyRequest(commentId, body)),
   profileName: (channel, userId) => metaGraph.fetchProfileName(channel, userId),
+  whatsAppSignup: {
+    exchangeCode: (code) => metaGraph.exchangeSignupCode(code),
+    phoneNumbers: (wabaId, token) => metaGraph.businessPhoneNumbers(wabaId, token),
+    subscribe: (wabaId, token) => metaGraph.subscribeAppToWaba(wabaId, token),
+    register: (phoneNumberId, token, pin) => metaGraph.registerPhoneNumber(phoneNumberId, token, pin),
+    syncBusinessApp: (phoneNumberId, token, syncType) => metaGraph.syncBusinessApp(phoneNumberId, token, syncType),
+  },
 };
 
 // ── Registry ───────────────────────────────────────────────────────────────────────────────────

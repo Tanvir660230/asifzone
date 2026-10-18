@@ -108,6 +108,54 @@ export async function postGraph(req: GraphRequest): Promise<string> {
   return id;
 }
 
+// ── WhatsApp Embedded Signup (Connect WhatsApp) ─────────────────────────────────────────────────
+// Server-to-server steps after Meta's signup popup, with the customer's business token. Outside production nothing is
+// called: a made-up token and number come back so the flow can be exercised locally.
+
+/** Trades the signup's one-time code (30-second lifetime) for the business's token. */
+export async function exchangeSignupCode(code: string): Promise<string> {
+  const { appId, appSecret } = env.metaInbox;
+  if (!appId) throw new ProviderNotConfiguredError("Meta app", "META_APP_ID");
+  if (!appSecret) throw new ProviderNotConfiguredError("Meta app", "META_APP_SECRET");
+  if (!liveProvidersEnabled()) return `dev_token_${randomUUID()}`;
+  // Meta documents this exchange as a GET; the URL is never logged or put in an error.
+  const query = new URLSearchParams({ client_id: appId, client_secret: appSecret, code });
+  let res: Response;
+  try {
+    res = await fetch(`${GRAPH}/oauth/access_token?${query.toString()}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch (err) {
+    throw new MetaApiError(`token exchange failed: ${err instanceof Error ? err.message : String(err)}`, true);
+  }
+  const json = (await res.json().catch(() => ({}))) as GraphBody & { access_token?: string };
+  if (!res.ok || !json.access_token) throw new MetaApiError(json.error?.message ?? `token exchange failed (HTTP ${res.status})`, false);
+  return json.access_token;
+}
+
+export async function businessPhoneNumbers(wabaId: string, token: string): Promise<Array<{ id: string; display: string | null }>> {
+  if (!liveProvidersEnabled()) return [{ id: "100000000000001", display: "+880 1711-000000" }];
+  const json = (await graphFetch("GET", `/${wabaId}/phone_numbers?fields=id,display_phone_number`, token)) as { data?: Array<{ id?: string; display_phone_number?: string }> };
+  return (json.data ?? []).filter((p) => p.id).map((p) => ({ id: p.id!, display: p.display_phone_number ?? null }));
+}
+
+/** Sends the business account's webhooks (messages, echoes) to this app. */
+export async function subscribeAppToWaba(wabaId: string, token: string): Promise<void> {
+  if (!liveProvidersEnabled()) return;
+  await graphFetch("POST", `/${wabaId}/subscribed_apps`, token);
+}
+
+/** A new number (not on the WhatsApp Business app) must be registered, with a 6-digit two-step PIN. */
+export async function registerPhoneNumber(phoneNumberId: string, token: string, pin: string): Promise<void> {
+  if (!liveProvidersEnabled()) return;
+  await graphFetch("POST", `/${phoneNumberId}/register`, token, { messaging_product: "whatsapp", pin });
+}
+
+/** Coexistence: the one-time syncs of the business app's contacts and then its chat history (within 24 hours of
+ * signup, once each — Meta refuses a repeat). */
+export async function syncBusinessApp(phoneNumberId: string, token: string, syncType: "smb_app_state_sync" | "history"): Promise<void> {
+  if (!liveProvidersEnabled()) return;
+  await graphFetch("POST", `/${phoneNumberId}/smb_app_data`, token, { messaging_product: "whatsapp", sync_type: syncType });
+}
+
 /** The customer's display name on Messenger / Instagram, or null (unknown, private, or not configured). Never throws. */
 export async function fetchProfileName(channel: "MESSENGER" | "INSTAGRAM", userId: string): Promise<string | null> {
   const token = env.metaInbox.pageAccessToken;

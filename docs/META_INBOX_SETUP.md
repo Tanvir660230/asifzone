@@ -12,7 +12,7 @@ document) with the same business name and address. Meta replies in 1–5 working
 ## 2. Create the Meta app
 1. developers.facebook.com › My apps › **Create app** › type **Business**, owned by your business portfolio.
 2. Add the products **Messenger**, **Instagram** and **WhatsApp**, and **Webhooks**.
-3. App settings › Basic: copy the **App secret** → Settings › Integrations › *Meta app (webhook)* › App secret.
+3. App settings › Basic: copy the **App ID** and **App secret** → Settings › Integrations › *Meta app (webhook)*.
 4. In the same card press **Generate verify token**, then **Save**.
 
 ## 3. Webhook
@@ -20,7 +20,7 @@ In the Meta app › Webhooks (and WhatsApp › Configuration), paste the **Callb
 *Meta app (webhook)* card, then subscribe:
 - Page: `messages`, `message_echoes`, `feed`
 - Instagram: `messages`
-- WhatsApp Business Account: `messages`, `smb_message_echoes`
+- WhatsApp Business Account: `messages`, `smb_message_echoes`, `history`, `smb_app_state_sync`
 
 ## 4. Facebook Page and Instagram
 1. Business settings › Users › **System users** › add one (Admin) › assign the Page (and the Instagram account) with full control.
@@ -38,17 +38,18 @@ and a reply going out. Until approved, only people with a role on the app can te
 Your number stays on the WhatsApp Business app on the phone **and** comes into the Inbox. Meta allows this only through
 its **Embedded Signup** flow, run by an app that is a **Tech Provider**:
 1. In the Meta app › WhatsApp › get started as a **Tech Provider** (no extra verification since Oct 2025).
-2. WhatsApp › Embedded Signup › create a configuration (Cloud API, coexistence on) → note its **Configuration ID**.
-3. **Tell Claude the Configuration ID** — the store then gets a *Connect WhatsApp* button that runs Meta's signup on
-   your phone (scan, confirm, chat history syncs), and fills in the phone number ID and token itself. This last piece
-   is built once the configuration exists, because it can only be tested against your real app.
+2. WhatsApp › Embedded Signup › create a configuration (Cloud API, WhatsApp Business app onboarding on) → copy its
+   **Configuration ID** into the *WhatsApp* card and **Save**. App settings › Basic › add your store's domain
+   (`asifzone.com`) to **App domains**, and Facebook Login for Business › **Allowed domains** for the JavaScript SDK.
+3. The card now shows **Connect WhatsApp**. Choose **Current number**, press it, sign in to Meta in the popup, pick the
+   number and confirm on the phone. The store fills in the phone number ID, token and account ID itself, and copies
+   the app's contacts and last 180 days of chats once (Meta allows this only once, within 24 hours).
 
 Needs WhatsApp Business app **2.24.17 or newer** on the phone. While both are in use the number sends up to 20 messages
-a second — far above a shop's needs.
+a second — far above a shop's needs. Do the Connect step in production (the dev/test store never calls Meta).
 
-*If you prefer a separate new number instead:* WhatsApp › API Setup › add the number, then paste its **Phone number
-ID** and a system-user token (permissions `whatsapp_business_messaging`, `whatsapp_business_management`) into the
-*WhatsApp* card. No Embedded Signup needed.
+*If you prefer a separate new number instead:* choose **New number** in the same card. The store registers it and
+keeps its two-step PIN (shown only as "saved").
 
 ## 7. Turn on the AI
 1. The *Claude (Anthropic)* card under AI assistant must have an API key.

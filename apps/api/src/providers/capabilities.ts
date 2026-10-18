@@ -134,6 +134,14 @@ export interface SocialMessenger {
   privateReply(commentId: string, body: string): Promise<string>;
   /** Never throws; null when unknown. */
   profileName(channel: "MESSENGER" | "INSTAGRAM", userId: string): Promise<string | null>;
+  /** Connect WhatsApp: the server-side half of Meta's Embedded Signup. */
+  whatsAppSignup: {
+    exchangeCode(code: string): Promise<string>;
+    phoneNumbers(wabaId: string, token: string): Promise<Array<{ id: string; display: string | null }>>;
+    subscribe(wabaId: string, token: string): Promise<void>;
+    register(phoneNumberId: string, token: string, pin: string): Promise<void>;
+    syncBusinessApp(phoneNumberId: string, token: string, syncType: "smb_app_state_sync" | "history"): Promise<void>;
+  };
 }
 
 // ── The bundle the registry hands out ─────────────────────────────────────────────────────────

@@ -86,6 +86,7 @@ export const env = {
   // Optional — the Social Inbox. Without the app secret every Meta webhook is refused (401); without a page / WhatsApp
   // token replies on that channel can't be sent (Settings › Integrations shows which is missing).
   metaInbox: {
+    get appId() { return integrationSetting("META_APP_ID"); },
     get appSecret() { return integrationSetting("META_APP_SECRET"); },
     get webhookVerifyToken() { return integrationSetting("META_WEBHOOK_VERIFY_TOKEN"); },
     get pageId() { return integrationSetting("META_PAGE_ID"); },

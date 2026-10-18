@@ -13,6 +13,7 @@ import {
   type IntegrationsView,
 } from "@clothing-brand/shared";
 import { FormSection } from "@/components/admin/form-section";
+import { ConnectWhatsApp } from "@/components/admin/inbox/connect-whatsapp";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -262,6 +263,20 @@ function IntegrationCard({ definition, state, view }: { definition: IntegrationD
               onGenerate={() => setDraft((d) => ({ ...d, META_WEBHOOK_VERIFY_TOKEN: randomToken() }))}
             />
           )}
+
+          {definition.id === "whatsapp" &&
+            (() => {
+              const appId = view.integrations.find((i) => i.id === "meta-app")?.fields.find((f) => f.key === "META_APP_ID")?.value;
+              const configId = fieldState("WHATSAPP_SIGNUP_CONFIG_ID").value;
+              return appId && configId ? (
+                <ConnectWhatsApp appId={appId} configId={configId} onConnected={onSaved} />
+              ) : (
+                <p className="rounded-lg bg-ink-50 p-3 text-xs text-ink-600">
+                  To connect your number in one step, save the App ID (Meta app card) and the Embedded Signup configuration ID here — a
+                  Connect WhatsApp button then appears.
+                </p>
+              );
+            })()}
 
           {definition.id === "webpush" && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-ink-50 p-3 text-xs text-ink-600">

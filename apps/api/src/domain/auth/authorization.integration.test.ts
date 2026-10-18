@@ -124,6 +124,7 @@ const OWNER_ONLY_ROUTES = [
   "GET /api/settings/integrations",
   "PATCH /api/settings/integrations",
   "POST /api/settings/integrations/webpush/generate-keys",
+  "POST /api/settings/integrations/whatsapp/connect",
   "GET /api/sms-settings/",
   "PATCH /api/sms-settings/",
   "POST /api/ai/generate",
@@ -427,8 +428,8 @@ describe("the role matrix — every admin route, every identity", () => {
     // = 347 on the 2026-10-09 production release + 234 (Financial Core / ERP / manufacturing)
     // +5: courier notes (4 Catalog → Courier notes routes + the order's courier-note view)
     // +6: Storefront Studio (homepage draft, save, discard, publish, revisions, restore)
-    // +1: Social Inbox (discard an AI draft)
-    expect(routes).toHaveLength(600);
+    // +2: Social Inbox (discard an AI draft, Connect WhatsApp)
+    expect(routes).toHaveLength(601);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

@@ -1,4 +1,13 @@
-import type { CreateShippingZoneInput, IntegrationsView, ShippingZoneRow, StoreSettings, UpdateSettingsInput, UpdateShippingZoneInput } from "@clothing-brand/shared";
+import type {
+  CreateShippingZoneInput,
+  IntegrationsView,
+  ShippingZoneRow,
+  StoreSettings,
+  UpdateSettingsInput,
+  UpdateShippingZoneInput,
+  WhatsAppConnectInput,
+  WhatsAppConnectResult,
+} from "@clothing-brand/shared";
 import { apiFetch } from "../api-client";
 
 export function getSettings() {
@@ -103,6 +112,11 @@ export function getIntegrations() {
 /** `null` removes the dashboard value (the server's environment value, if any, applies again). */
 export function updateIntegrations(values: Record<string, string | null>) {
   return apiFetch<IntegrationsView>("/api/settings/integrations", { method: "PATCH", body: { values } });
+}
+
+/** Connect WhatsApp: relays Meta's Embedded Signup result; the API finishes the connection server-side. */
+export function connectWhatsApp(input: WhatsAppConnectInput) {
+  return apiFetch<WhatsAppConnectResult>("/api/settings/integrations/whatsapp/connect", { method: "POST", body: input });
 }
 
 export function generateWebPushKeys() {
