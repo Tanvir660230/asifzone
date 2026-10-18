@@ -25,6 +25,7 @@ describe("questionSimilarity", () => {
     same("cash on delivery ache?", "COD hobe?");
     same("Chittagong e delivery koto din lage", "ctg te koto din lagbe delivery");
     same("apnader shop kothay", "dokan ta kothay");
+    same("size chart diben", "size chart ta pathan plz");
   });
 
   it("different questions don't", () => {

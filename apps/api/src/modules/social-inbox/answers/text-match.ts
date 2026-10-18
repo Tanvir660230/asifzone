@@ -44,7 +44,8 @@ const STOPWORDS = new Set(
     "koto kto ki kii ta to ti e te er r ar and a an the is are i me my ami amar amake apni apnar apnader apnara amader tumi " +
     "vai bhai bro apu apa sir madam mam vaiya bhaiya plz pls please assalamu assalamualaikum alaikum salam salaam hi hello hlw ok okay " +
     "jante chai chaisi bolen bolben bolun janaben jabe hobe ache ase korbo korte kori kora korar korben korlam do does can will of in on for " +
-    "with gula gulo ekta akta ei eta oi ota na naki kina ke jodi tahole niye nite dite dao den deben pabo pai kemon ace hoy hoi"
+    "with gula gulo ekta akta ei eta oi ota na naki kina ke jodi tahole niye nite dite dao den deben diben dio pathan pathaben pathiye " +
+    "pathao send pabo pai kemon ace hoy hoi"
   )
     .split(" ")
     .map(fold),

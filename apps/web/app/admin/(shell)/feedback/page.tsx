@@ -75,6 +75,7 @@ function DeliveryState({ message }: { message: ConversationMessageRow }) {
 
 function outLabel(message: ConversationMessageRow, thread: ConversationDetail["channel"]): string {
   const via = replyChannelLabel(message.channel as ReplyChannel, thread);
+  if (message.fromLibrary) return message.author === "AI" ? `Saved answer · auto · ${via}` : `${message.by ?? "Staff"} · saved answer · ${via}`;
   if (message.author === "AI") return `AI auto-reply · ${via}`;
   if (message.author === "PHONE") return `Replied from the phone · ${via}`;
   return `${message.by ?? "Staff"} · ${via}`;
@@ -241,7 +242,7 @@ function Composer({ thread }: { thread: ConversationDetail }) {
             {draft && (
               <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
                 <span className="flex items-center gap-1 font-medium text-accent">
-                  <Sparkles size={12} aria-hidden="true" /> AI draft · {INTENT_LABEL[draft.intent] ?? draft.intent}
+                  <Sparkles size={12} aria-hidden="true" /> {draft.fromLibrary ? "Saved answer" : `AI draft · ${INTENT_LABEL[draft.intent] ?? draft.intent}`}
                   <span className="font-normal text-fg-subtle">— check it, then send</span>
                 </span>
                 <button type="button" className="font-medium text-fg-muted hover:text-fg hover:underline" disabled={discard.isPending} onClick={() => discard.mutate()}>

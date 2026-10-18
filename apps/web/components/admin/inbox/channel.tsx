@@ -60,4 +60,5 @@ export const INTENT_LABEL: Record<string, string> = {
   order_status: "Order status",
   how_to_order: "How to order",
   other: "Needs you",
+  saved: "Saved answer",
 };
