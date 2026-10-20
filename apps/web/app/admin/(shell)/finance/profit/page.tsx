@@ -75,6 +75,7 @@ export default function ProfitPage() {
               <Line label="Payment gateway fees" value={-r.totals.gateway} />
               <Line label="Ads" value={-r.totals.ads} href="/admin/finance/ads" />
               <Line label="Left after each sale's costs" value={r.totals.contribution} strong />
+              {r.totals.outsideSales !== 0 && <Line label="Sales outside the website (sent straight through Steadfast)" value={r.totals.outsideSales} />}
               <Line label="Running costs (rent, salaries, hosting …)" value={-r.totals.otherCosts} href="/admin/finance/expenses" />
               <Line label="Net profit" value={r.totals.netProfit} strong />
             </dl>

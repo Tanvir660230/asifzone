@@ -45,6 +45,7 @@ import * as landed from "../../domain/finance/landed-costs.service";
 import * as refill from "../../domain/manufacturing/quick-refill.service";
 import * as profit from "../../domain/finance/profit.service";
 import * as claims from "../../domain/finance/courier-claims.service";
+import { markUnmatchedAsOutsideSales } from "../../domain/finance/settlements.service";
 
 /**
  * The owner's-books API (docs/FINANCE_OWNER_BOOKS.md), mounted beside the finance router at /api/v1/finance. Every route
@@ -148,3 +149,4 @@ ownerBooksRouter.get("/courier/claims", requirePermission("finance.read"), async
 ownerBooksRouter.post("/courier/claims", requirePermission("finance.transact"), validate(courierClaimCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await claims.openClaim(req.body, await actorOf(req)))));
 ownerBooksRouter.post("/courier/claims/:id/settle", requirePermission("finance.transact"), validate(courierClaimSettleSchema), asyncHandler(async (req, res) => res.json(await claims.settleClaim(id(req), req.body, await actorOf(req), idempotencyKeyOf(req)))));
 ownerBooksRouter.post("/landed-costs/:id/cancel", requirePermission("finance.post"), validate(landedCostCancelSchema), asyncHandler(async (req, res) => res.json(await landed.cancelLandedCost(id(req), req.body.reason, await actorOf(req)))));
+ownerBooksRouter.post("/settlements/:id/outside-sales", requirePermission("finance.transact"), asyncHandler(async (req, res) => res.json(await markUnmatchedAsOutsideSales(id(req), await actorOf(req)))));

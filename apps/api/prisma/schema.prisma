@@ -4046,6 +4046,9 @@ model ClearingSettlementLine {
   fee          Decimal             @default(0) @db.Decimal(18, 2)
   adjustment   Decimal             @default(0) @db.Decimal(18, 2)
   matchStatus  SettlementLineMatch
+  /// Owner's books: a parcel booked straight on the courier's panel, never an order on the site — counted as a sale outside
+  /// the website (revenue.outside_sales) instead of money owed for an order.
+  outsideSale  Boolean             @default(false)
   note         String?
 
   @@unique([settlementId, lineNo])

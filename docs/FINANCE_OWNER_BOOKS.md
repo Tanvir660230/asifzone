@@ -282,10 +282,11 @@ mapping keys), all reconciliation checks MATCHED, browser QA at 1440/375, its ow
 ### Verified
 API 1640+ tests (new: custody 11, charges 10, ads/prepaid/packaging 7, landed/refill 5, unit 22); web lint/tsc/unit 116; browser QA on a copy of production data at 1440 and 375 px (owner and manager).
 
-### Not done / to verify live
-- Steadfast's payout API fields are known only from a third-party SDK — the import parses defensively; check the first real import's draft before posting it. The payout-file import stays as the fallback.
+### Steadfast payout API — checked live 2026-10-21
+- `GET /payments` gives each payout's `amount` (collected), `due_bills` (delivery charges), `charges` (COD charge), `total` (paid out) and `paid_at`; `GET /payments/:id` lists `consignments` with `invoice` (our order number), booked `cod_amount` and `status`. There is no per-parcel charge, so the import spreads the payout's charges by each parcel's rate-card estimate and refuses a payout whose totals don't add up. Three real payouts (26, 55, 176 parcels) imported with exact totals on a copy of production.
 
 ### Added 2026-10-21 (second pass)
 - **Courier claims (§3.5):** `CourierClaim` — open (Dr 1540 / Cr 5200), settle by money received (Treasury deposit against 1540), inside a payout (Dr 6950 / Cr 1540) or write-off (Dr 5200 / Cr 1540). "Claim" on stale parcels and a Claims section in Steadfast check. The goods leave through the order (cancel) and Inventory (lost).
 - **Cancelling a landed cost (§7.1):** one transaction — payment reversed (`treasury.reverseMovementInTx`), value taken back off the goods (negative revaluation), posting reversed (`finance.landed_cost.reversed`). Once only (database guard).
 - **Approvals list:** a handover waiting for its receiver shows that, not an Approve button.
+- **Sales outside the website:** parcels booked straight on Steadfast's panel (no invoice, never an order on the site — the first sales before the website) show as unmatched. **Outside sales** on a draft payout marks them `outsideSale`; posting credits 4150 *Sales outside the website* (`revenue.outside_sales`) instead of an order's clearing, their exceptions are acknowledged, the clearing check no longer counts them, and the profit report shows them as their own line. Found in the real payouts: Aug 11 parcels ৳9,169, Sep 6 ৳2,601, Oct 18 ৳3,370.

@@ -102,6 +102,7 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.advertising",
   "expense.cash_over_short",
   "liability.owner_reimbursable",
+  "revenue.outside_sales",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -166,7 +167,7 @@ export const PAYROLL_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.sa
  * estimates, ad spend, prepaid costs, packaging used and landed costs. */
 export const OWNER_BOOKS_MAPPING_KEYS: readonly AccountMappingKey[] = [
   "group.ad_platform", "asset.prepaid", "asset.courier_claims", "liability.courier_charges_accrued", "liability.gateway_fees_accrued",
-  "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "expense.courier_fees",
+  "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "revenue.outside_sales", "expense.courier_fees",
   "expense.gateway_fees", "asset.inventory", "cogs.cost_adjustments", "cogs.inventory_shrinkage",
 ];
 
@@ -259,6 +260,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "4000", name: "Revenue", type: "REVENUE", group: true },
   { code: "4100", name: "Merchandise sales", type: "REVENUE", parent: "4000", mapping: "revenue.merchandise" },
   { code: "4200", name: "Shipping income", type: "REVENUE", parent: "4000", mapping: "revenue.shipping" },
+  { code: "4150", name: "Sales outside the website", type: "REVENUE", parent: "4000", mapping: "revenue.outside_sales" },
   { code: "4250", name: "Price adjustments", type: "REVENUE", parent: "4000", mapping: "revenue.price_adjustments" },
   { code: "4300", name: "Sales returns & refunds", type: "REVENUE", parent: "4000", normalBalance: "DEBIT", mapping: "revenue.returns_refunds" },
   { code: "4310", name: "Shipping & other refunds", type: "REVENUE", parent: "4000", normalBalance: "DEBIT", mapping: "revenue.other_refunds" },

@@ -87,6 +87,8 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
   // Ad spend of the period (from the books), shared over orders by sales.
   const adsAccount = maps.find((m) => m.key === "expense.advertising");
   const adSpend = adsAccount ? await sumAccount(business.id, adsAccount.accountId, from, to, cur) : 0;
+  const outsideMap = await prisma.accountMapping.findFirst({ where: { businessId: business.id, key: "revenue.outside_sales" } });
+  const outsideSales = outsideMap ? -(await sumAccount(business.id, outsideMap.accountId, from, to, cur)) : 0;
   const lines: OrderRow[] = [];
   for (const [orderId, a] of byOrder) {
     const o = ordersById.get(orderId);
@@ -128,8 +130,10 @@ export async function profitReport(q: { from?: string; to?: string }, viewer: Fi
     totals: {
       orders: lines.length, sales: m(sum("sales")), cogs: m(sum("cogs")), packaging: m(sum("packaging")), courier: m(sum("courier")), gateway: m(sum("gateway")), ads: m(adSpend),
       contribution: m(contribution), contributionPct: sum("sales") ? Math.round((contribution / sum("sales")) * 10_000) / 100 : null,
-      /** Everything else the books carry for the period (rent, salaries, hosting, cash over/short, …) — so contribution − this = net profit. */
-      otherCosts: Math.round((m(contribution) - net) * 100) / 100,
+      /** Parcels sold straight through the courier, never orders on the site. */
+      outsideSales: m(outsideSales),
+      /** Everything else the books carry for the period (rent, salaries, hosting, cash over/short, …) — so contribution + outside sales − this = net profit. */
+      otherCosts: Math.round((m(contribution + outsideSales) - net) * 100) / 100,
       netProfit: net,
     },
     orders: lines.sort((a, b) => a.contribution - b.contribution).map((l) => ({ ...l, sales: m(l.sales), cogs: m(l.cogs), packaging: m(l.packaging), courier: m(l.courier), gateway: m(l.gateway), ads: m(l.ads), contribution: m(l.contribution) })),

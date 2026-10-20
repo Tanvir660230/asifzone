@@ -155,7 +155,7 @@ export const quickRefill = (body: { variantId: string; quantity: number; used?: 
 
 export interface ProfitReport {
   period: { from: string; to: string };
-  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; otherCosts: number; netProfit: number };
+  totals: { orders: number; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number; contributionPct: number | null; outsideSales: number; otherCosts: number; netProfit: number };
   orders: Array<{ orderId: string; orderNumber: string; date: string; sales: number; cogs: number; packaging: number; courier: number; gateway: number; ads: number; contribution: number }>;
   products: Array<{ name: string; units: number; sales: number; costs: number; contribution: number; marginPct: number | null }>;
 }
@@ -175,3 +175,6 @@ export const openClaim = (body: { orderId: string; amount: number; reason: strin
 export const settleClaim = (id: string, body: { kind: "MONEY" | "PAYOUT" | "WRITE_OFF"; amount: number; financialAccountId?: string | null; note?: string | null }, idempotencyKey: string) =>
   apiFetch<CourierClaim>(`${BASE}/courier/claims/${id}/settle`, { method: "POST", body, idempotencyKey });
 export const cancelLandedCost = (id: string, reason: string) => apiFetch<LandedCost>(`${BASE}/landed-costs/${id}/cancel`, { method: "POST", body: { reason } });
+
+/** A draft payout's parcels that match no order on the site are counted as sales outside the website. */
+export const markOutsideSales = (settlementId: string) => apiFetch<{ id: string; unmatchedLines: number; outsideSaleLines: number }>(`${BASE}/settlements/${settlementId}/outside-sales`, { method: "POST", body: {} });

@@ -350,7 +350,7 @@ export const RECONCILIATION_CHECKS = {
           settledWithoutOrder: toMajorNumber(-unattributed.reduce((s, x) => s + x.balance, 0), cur),
         });
       }
-      const unmatchedLines = await prisma.clearingSettlementLine.count({ where: { matchStatus: "UNMATCHED", settlement: { businessId: ctx.business.id, status: "POSTED" } } });
+      const unmatchedLines = await prisma.clearingSettlementLine.count({ where: { matchStatus: "UNMATCHED", outsideSale: false, settlement: { businessId: ctx.business.id, status: "POSTED" } } });
       return { status: problems || unmatchedLines ? "DIFFERENCE" : "MATCHED", expected: null, actual: null, details: { accounts, unmatchedSettlementLines: unmatchedLines } };
     },
   },

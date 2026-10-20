@@ -237,3 +237,29 @@ describe("courier claims for lost parcels", () => {
     expect(checks.body.results[0].status).toBe("MATCHED");
   });
 });
+
+describe("parcels booked straight on Steadfast (never orders on the site)", () => {
+  it("a payout's unmatched parcel is counted as a sale outside the website — the clearing check stays clean", async () => {
+    const order = await deliveredParcel(`CN-${RUN}-SITE`);
+    const total = Number(order.total);
+    const payment = { payment_id: "SFC-9002", amount: total + 500, due_bills: 120, charges: 15, total: total + 500 - 135, method: "Bkash", status_label: "paid", created_at: "2026-10-18 10:00:00", paid_at: "2026-10-18 16:00:00" };
+    payouts.list = [payment];
+    payouts.detail["SFC-9002"] = { status: 200, payment: { ...payment, consignments: [
+      { consignment_id: `CN-${RUN}-SITE`, invoice: order.orderNumber, cod_amount: total, status: "delivered" },
+      { consignment_id: `CN-${RUN}-DIRECT`, invoice: "", cod_amount: 500, status: "delivered" },
+    ] } };
+    const imp = await owner().post("/courier/payouts/import", { destinationFinancialAccountId: bank });
+    const s = imp.body.imported[0];
+    expect(s).toMatchObject({ unmatchedLines: 1, grossAmount: total + 500, netAmount: total + 365 });
+    const marked = await owner().post(`/settlements/${s.id}/outside-sales`);
+    expect(marked.status, JSON.stringify(marked.body)).toBe(200);
+    expect(marked.body).toMatchObject({ unmatchedLines: 0, outsideSaleLines: 1 });
+    expect((await owner().post(`/settlements/${s.id}/post`)).status).toBe(200);
+    expect(await net("revenue.outside_sales")).toBe(-500);
+    const checks = await owner().post("/reconciliation/run", { checks: ["ledger.integrity", "charges.accrued"] });
+    expect(checks.body.results.map((x: { status: string }) => x.status)).toEqual(["MATCHED", "MATCHED"]);
+    const profit = (await owner().get("/profit?from=2026-01-01&to=2099-12-31")).body;
+    expect(profit.totals.outsideSales).toBe(500);
+    expect(Math.round((profit.totals.contribution + profit.totals.outsideSales - profit.totals.otherCosts) * 100) / 100).toBe(profit.totals.netProfit);
+  });
+});

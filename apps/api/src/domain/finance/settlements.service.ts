@@ -24,6 +24,7 @@ import { financeTransaction } from "./finance-tx";
 import { parseStatementAmount } from "./statement-parser";
 import { upsertException } from "./finance-exceptions.service";
 import { projectOrder } from "./commerce-accounting.service";
+import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 
 const adminId = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 const FEE_ACCOUNT: Record<string, AccountMappingKey> = { COURIER: "expense.courier_fees", PAYMENT_GATEWAY: "expense.gateway_fees", OTHER: "expense.settlement_adjustments" };
@@ -69,8 +70,9 @@ export function settlementDto(s: Row, cur: string) {
     grossAmount: m(s.grossAmount), netAmount: m(s.netAmount), feeAmount: m(s.feeAmount), adjustmentAmount: m(s.adjustmentAmount), adjustmentReason: s.adjustmentReason,
     journalEntryId: s.journalEntryId, reversalJournalEntryId: s.reversalJournalEntryId,
     postedAt: s.postedAt, reversedAt: s.reversedAt, reversalReason: s.reversalReason, createdAt: s.createdAt,
-    lines: s.lines.map((l: ClearingSettlementLine) => ({ id: l.id, lineNo: l.lineNo, orderId: l.orderId, orderNumber: l.orderNumber, externalRef: l.externalRef, amount: m(l.amount), fee: m(l.fee), adjustment: m(l.adjustment), matchStatus: l.matchStatus, note: l.note })),
-    unmatchedLines: s.lines.filter((l) => l.matchStatus === "UNMATCHED").length,
+    lines: s.lines.map((l: ClearingSettlementLine) => ({ id: l.id, lineNo: l.lineNo, orderId: l.orderId, orderNumber: l.orderNumber, externalRef: l.externalRef, amount: m(l.amount), fee: m(l.fee), adjustment: m(l.adjustment), matchStatus: l.matchStatus, outsideSale: l.outsideSale, note: l.note })),
+    unmatchedLines: s.lines.filter((l) => l.matchStatus === "UNMATCHED" && !l.outsideSale).length,
+    outsideSaleLines: s.lines.filter((l) => l.outsideSale).length,
   };
 }
 
@@ -310,8 +312,14 @@ async function postSettlementOnly(id: string, actor: FinanceActor) {
     }
     if (s.lines.length) {
       const before = await paidBeforeTheBooks(tx, business, s.lines.flatMap((l) => (l.orderId ? [l.orderId] : [])));
+      const outside = s.lines.some((l) => l.outsideSale) ? (await resolveMappedAccount(tx, business.id, "revenue.outside_sales")).id : null;
       for (const l of s.lines) {
         if (signed(l.amount, cur) === 0) continue; // a charge-only line takes nothing out of clearing
+        if (l.outsideSale) {
+          // A parcel the courier delivered that was never an order on the site: its cash is a sale outside the website.
+          lines.push({ accountId: outside!, debit: 0, credit: signed(l.amount, cur), memo: `Sold outside the website · ${l.externalRef ?? l.orderNumber ?? ""}`.trim() });
+          continue;
+        }
         // Money an order paid in before the opening date is in clearing's opening balance (no order named), not under the
         // order — so the payout comes out of that balance, and the order is not shown as settled for more than it paid.
         const old = l.orderId !== null && before.has(l.orderId);
@@ -426,4 +434,33 @@ export async function clearingPosition(financialAccountId: string) {
     .filter((p) => p.open !== 0)
     .sort((a, b) => b.open - a.open);
   return { account: { id: fa.id, name: fa.name, kind: fa.kind }, balance: positions.reduce((s, p) => s + p.open, 0), openOrders: positions.filter((p) => p.orderId && p.open > 0), oversettled: positions.filter((p) => p.open < 0), unattributed: positions.filter((p) => !p.orderId) };
+}
+
+/**
+ * Owner's books: a draft courier payout's lines that match no order on the site (parcels booked straight on the courier's
+ * panel) are counted as sales outside the website — posting credits them to revenue.outside_sales, not to an order's money
+ * in clearing — and their "no known order" exceptions are acknowledged with that reason.
+ */
+export async function markUnmatchedAsOutsideSales(id: string, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  return financeTransaction(async (tx) => {
+    const s = await lockSettlement(tx, business.id, id);
+    if (s.status !== "DRAFT") throw financeError(409, "SETTLEMENT_NOT_DRAFT", "Only a draft settlement's lines can change");
+    await ensureOwnerBooksSetupInTx(tx, business, actor);
+    const targets = s.lines.filter((l) => l.matchStatus === "UNMATCHED" && !l.outsideSale);
+    for (const l of targets) {
+      await tx.clearingSettlementLine.update({ where: { id: l.id }, data: { outsideSale: true } });
+      const ex = await tx.financeException.findFirst({ where: { businessId: business.id, key: `settlement-line:${l.id}`, status: "OPEN" } });
+      if (ex) {
+        await tx.financeException.update({ where: { id: ex.id }, data: { status: "ACKNOWLEDGED", resolution: "ACKNOWLEDGED", resolutionNote: "Sold outside the website (booked straight on the courier's panel)", resolvedByAdminId: adminId(actor), resolvedAt: new Date() } });
+        await recordFinanceAudit(tx, { businessId: business.id, actor, action: "exception.acknowledge", entityType: "FinanceException", entityId: ex.id, before: { status: "OPEN" }, after: { status: "ACKNOWLEDGED" }, reason: "Sold outside the website" });
+      }
+    }
+    await recordFinanceAudit(tx, [
+      { businessId: business.id, actor, action: "settlement.outside_sales", entityType: "ClearingSettlement", entityId: s.id, after: { lines: targets.map((l) => l.lineNo) } },
+      ...targets.map((l) => ({ businessId: business.id, actor, action: "settlement_line.outside_sale", entityType: "ClearingSettlementLine", entityId: l.id, before: { outsideSale: false }, after: { outsideSale: true } })),
+    ]);
+    return settlementDto(await tx.clearingSettlement.findUniqueOrThrow({ where: { id }, include: INCLUDE }), cur);
+  });
 }

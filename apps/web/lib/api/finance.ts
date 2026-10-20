@@ -329,7 +329,7 @@ export interface FinanceException {
 export interface Settlement {
   id: string;
   status: "DRAFT" | "POSTED" | "REVERSED";
-  source: "MANUAL" | "CSV_IMPORT";
+  source: "MANUAL" | "CSV_IMPORT" | "API_IMPORT";
   reference: string;
   evidence: string | null;
   settlementDate: string;
@@ -341,7 +341,8 @@ export interface Settlement {
   adjustmentAmount: number;
   adjustmentReason: string | null;
   unmatchedLines: number;
-  lines: Array<{ id: string; lineNo: number; orderId: string | null; orderNumber: string | null; externalRef: string | null; amount: number; fee: number; adjustment: number; matchStatus: "MATCHED" | "UNMATCHED" }>;
+  lines: Array<{ id: string; lineNo: number; orderId: string | null; orderNumber: string | null; externalRef: string | null; amount: number; fee: number; adjustment: number; matchStatus: "MATCHED" | "UNMATCHED"; outsideSale?: boolean }>;
+  outsideSaleLines?: number;
 }
 export interface CheckResult {
   id: string;
