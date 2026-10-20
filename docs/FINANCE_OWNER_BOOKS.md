@@ -284,5 +284,8 @@ API 1640+ tests (new: custody 11, charges 10, ads/prepaid/packaging 7, landed/re
 
 ### Not done / to verify live
 - Steadfast's payout API fields are known only from a third-party SDK — the import parses defensively; check the first real import's draft before posting it. The payout-file import stays as the fallback.
-- A landed cost can't be reversed yet (enter a correcting journal if one is wrong).
-- Lost-parcel claims (§3.5) are listed (stale parcels) but not yet booked as a claim receivable; account 1540 exists for it.
+
+### Added 2026-10-21 (second pass)
+- **Courier claims (§3.5):** `CourierClaim` — open (Dr 1540 / Cr 5200), settle by money received (Treasury deposit against 1540), inside a payout (Dr 6950 / Cr 1540) or write-off (Dr 5200 / Cr 1540). "Claim" on stale parcels and a Claims section in Steadfast check. The goods leave through the order (cancel) and Inventory (lost).
+- **Cancelling a landed cost (§7.1):** one transaction — payment reversed (`treasury.reverseMovementInTx`), value taken back off the goods (negative revaluation), posting reversed (`finance.landed_cost.reversed`). Once only (database guard).
+- **Approvals list:** a handover waiting for its receiver shows that, not an Approve button.

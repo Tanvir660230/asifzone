@@ -394,7 +394,12 @@ export async function rejectMovement(id: string, reason: string, actor: FinanceA
 /** Reverses a posted movement with a mirror journal. Refused while a statement line is matched to it (unmatch first). */
 export async function reverseMovement(id: string, input: { reason: string; reversalDate?: string }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
-  return financeTransaction(async (tx) => {
+  return financeTransaction((tx) => reverseMovementInTx(tx, business, id, input, actor));
+}
+
+/** reverseMovement in the caller's transaction (a landed cost's cancellation reverses its payment with the rest of it). */
+export async function reverseMovementInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, input: { reason: string; reversalDate?: string }, actor: FinanceActor) {
+  {
     const m = await lockMovement(tx, business.id, id);
     if (m.status === "REVERSED") return { movement: movementDto(m), replayed: true };
     if (m.status !== "POSTED") throw financeError(409, "MOVEMENT_NOT_POSTED", `A ${m.status.toLowerCase()} movement has nothing to reverse`);
@@ -413,7 +418,7 @@ export async function reverseMovement(id: string, input: { reason: string; rever
     });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "movement.reverse", entityType: "TreasuryMovement", entityId: id, before: { status: m.status }, after: { status: after.status, reversalJournalEntryId: reversal.id }, reason: input.reason, sourceRef: reversal.id });
     return { movement: movementDto(after), replayed: false };
-  });
+  }
 }
 
 export async function getMovement(id: string) {

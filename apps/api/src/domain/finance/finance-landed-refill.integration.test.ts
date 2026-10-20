@@ -163,3 +163,23 @@ describe("quick refill", () => {
     expect(Number(s._sum.debit) - Number(s._sum.credit)).toBe(0);
   });
 });
+
+describe("cancelling a landed cost", () => {
+  it("puts the money back, takes the value back off the goods and leaves the books as before", async () => {
+    const before = await avg(oil);
+    const bankBefore = (await api().get(`/financial-accounts/${bank}`)).body.currentBalance;
+    const r = await api().post("/landed-costs", { description: "Wrong van bill", amount: 200, method: "QUANTITY", goodsReceiptIds: [oilGrn], fromFinancialAccountId: bank }, `lc2-${RUN}`);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(await avg(oil)).toBeGreaterThan(before);
+    const c = await api().post(`/landed-costs/${r.body.landedCost.id}/cancel`, { reason: "Entered twice" });
+    expect(c.status, JSON.stringify(c.body)).toBe(200);
+    expect(c.body.reversedAt).toBeTruthy();
+    expect(await avg(oil)).toBe(before);
+    expect((await api().get(`/financial-accounts/${bank}`)).body.currentBalance).toBe(bankBefore);
+    expect((await api().post(`/landed-costs/${r.body.landedCost.id}/cancel`, { reason: "again" })).status).toBe(200); // once only — a repeat changes nothing
+    await expect(prisma.landedCost.update({ where: { id: r.body.landedCost.id }, data: { description: "x" } })).rejects.toThrow(/history/);
+    await postPending();
+    const checks = await runReconciliation({ checks: ["inventory.valuation_vs_ledger", "ledger.integrity", "events.unposted"] }, OWNER);
+    expect(checks.results.map((x) => x.status)).toEqual(["MATCHED", "MATCHED", "MATCHED"]);
+  });
+});

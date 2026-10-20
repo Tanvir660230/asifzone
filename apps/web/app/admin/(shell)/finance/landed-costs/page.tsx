@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Plus, Truck } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export default function LandedCostsPage() {
   const list = useQuery({ queryKey: booksApi.booksKeys.landed(), queryFn: booksApi.listLandedCosts, enabled: allowed });
   const business = useQuery({ queryKey: financeApi.businessKeys.settings(), queryFn: financeApi.getBusiness, enabled: allowed });
   const [adding, setAdding] = useState(false);
+  const [cancelling, setCancelling] = useState<booksApi.LandedCost | null>(null);
   const costing = Boolean(business.data?.inventoryCostingActivatedAt);
 
   if (ready && !allowed) return <div><ModuleTabs /><EmptyState icon={Truck} title="Landed costs aren't available to your role" /></div>;
@@ -64,8 +66,12 @@ export default function LandedCostsPage() {
                   <p className="font-medium text-fg">{l.description}</p>
                   <p className="text-xs text-fg-muted">{l.number} · {formatBookDate(l.costDate)}{l.payee ? ` · ${l.payee}` : ""}{l.paidFrom ? ` · from ${l.paidFrom.name}` : ""} · spread by {l.method === "QUANTITY" ? "quantity" : "value"}</p>
                 </div>
-                <span className="font-semibold tabular-nums text-fg">{formatPrice(l.amount)}</span>
+                <span className="flex items-center gap-2">
+                  {l.reversedAt ? <Badge>cancelled</Badge> : can("finance.post") && <Button size="sm" variant="ghost" onClick={() => setCancelling(l)}>Cancel</Button>}
+                  <span className={l.reversedAt ? "font-semibold tabular-nums text-fg-muted line-through" : "font-semibold tabular-nums text-fg"}>{formatPrice(l.amount)}</span>
+                </span>
               </div>
+              {l.reversedAt && l.reversalReason && <p className="text-xs text-fg-muted">Cancelled: {l.reversalReason}</p>}
               <ul className="divide-y divide-line-subtle text-sm">
                 {l.allocations.map((a) => (
                   <li key={a.variantId} className="flex justify-between gap-3 py-1.5">
@@ -78,6 +84,7 @@ export default function LandedCostsPage() {
           ))}
         </div>
       ))}
+      {cancelling && <CancelModal landed={cancelling} onClose={() => setCancelling(null)} onDone={() => { setCancelling(null); void queryClient.invalidateQueries({ queryKey: ["finance"] }); }} />}
       {adding && <LandedModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); void queryClient.invalidateQueries({ queryKey: ["finance"] }); }} />}
     </div>
   );
@@ -138,6 +145,21 @@ function LandedModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
           <Field htmlFor="lc-payee" label="Paid to" className="sm:col-span-2"><Input id="lc-payee" value={payee} onChange={(e) => setPayee(e.target.value)} maxLength={200} /></Field>
         </div>
       </div>
+    </Modal>
+  );
+}
+
+function CancelModal({ landed, onClose, onDone }: { landed: booksApi.LandedCost; onClose: () => void; onDone: () => void }) {
+  const [reason, setReason] = useState("");
+  const save = useMutation({
+    mutationFn: () => booksApi.cancelLandedCost(landed.id, reason.trim()),
+    onSuccess: () => { toast.success(`${landed.number} cancelled — the money is back and the goods' cost is as before`); onDone(); },
+    onError: (e) => toast.error(getErrorMessage(e, "It couldn't be cancelled")),
+  });
+  return (
+    <Modal open onClose={onClose} title={`Cancel ${landed.number}?`} description={`${formatPrice(landed.amount)} goes back to ${landed.paidFrom?.name ?? "the account"} and comes off the goods' cost. It can't be undone — enter a new one if the right figure is different.`} widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Keep it</Button><Button variant="destructive" disabled={reason.trim().length < 3} loading={save.isPending} onClick={() => save.mutate()} data-testid="confirm-cancel-landed">Cancel it</Button></>}>
+      <Field htmlFor="lc-reason" label="Why" required><Input id="lc-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Entered twice" maxLength={500} /></Field>
     </Modal>
   );
 }

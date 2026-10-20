@@ -212,3 +212,26 @@ describe("the courier's side of the books", () => {
     expect(checks.body.results.map((x: { status: string }) => x.status)).toEqual(["MATCHED", "MATCHED"]);
   });
 });
+
+describe("courier claims for lost parcels", () => {
+  it("a claim is booked as owed by Steadfast; paid partly into the bank, partly inside a payout, the rest written off", async () => {
+    const lost = await deliveredParcel(`CN-${RUN}-LOST`);
+    const open = await owner().post("/courier/claims", { orderId: lost.id, amount: 1000, reason: "Parcel lost in transit" });
+    expect(open.status, JSON.stringify(open.body)).toBe(201);
+    expect(open.body).toMatchObject({ number: "CLM-000001", amount: 1000, outstanding: 1000, status: "OPEN" });
+    expect(await net("asset.courier_claims")).toBe(1000);
+    expect((await owner().post("/courier/claims", { orderId: lost.id, amount: 5, reason: "again" })).body.details?.code).toBe("CLAIM_EXISTS");
+    const k = key("claim-money");
+    const paid = await owner().post(`/courier/claims/${open.body.id}/settle`, { kind: "MONEY", amount: 600, financialAccountId: bank }, k);
+    expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+    expect((await owner().post(`/courier/claims/${open.body.id}/settle`, { kind: "MONEY", amount: 600, financialAccountId: bank }, k)).body.outstanding).toBe(400); // same key: once
+    expect((await owner().post(`/courier/claims/${open.body.id}/settle`, { kind: "PAYOUT", amount: 500 }, key("too-much"))).body.details?.code).toBe("CLAIM_TOO_MUCH");
+    await owner().post(`/courier/claims/${open.body.id}/settle`, { kind: "PAYOUT", amount: 300 }, key("claim-payout"));
+    const done = await owner().post(`/courier/claims/${open.body.id}/settle`, { kind: "WRITE_OFF", amount: 100, note: "Steadfast refused the rest" }, key("claim-wo"));
+    expect(done.body).toMatchObject({ status: "SETTLED", outstanding: 0, received: 900 });
+    expect(await net("asset.courier_claims")).toBe(0);
+    expect((await owner().get("/courier/claims")).body.totals.outstanding).toBe(0);
+    const checks = await owner().post("/reconciliation/run", { checks: ["ledger.integrity"] });
+    expect(checks.body.results[0].status).toBe("MATCHED");
+  });
+});

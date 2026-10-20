@@ -140,7 +140,7 @@ export const syncOwnerBooks = () => apiFetch<{ packaging: { parcels: number; mov
 
 // ── landed costs & quick refills ──────────────────────────────────────────────────────────────────────────────────────
 
-export interface LandedCost { id: string; number: string; costDate: string; description: string; payee: string | null; method: "QUANTITY" | "VALUE"; amount: number; allocations: Array<{ variantId: string; sku: string; qty: number; amount: number }>; paidFrom: { id: string; name: string } | null; paymentStatus: Movement["status"] }
+export interface LandedCost { id: string; number: string; costDate: string; description: string; payee: string | null; method: "QUANTITY" | "VALUE"; amount: number; allocations: Array<{ variantId: string; sku: string; qty: number; amount: number }>; paidFrom: { id: string; name: string } | null; paymentStatus: Movement["status"]; reversedAt: string | null; reversalReason: string | null }
 export interface ReceiptChoice { id: string; number: string; receiptDate: string; supplier: string | null; units: number; value: number; lines: Array<{ sku: string; name: string; qty: number; unitCost: number }> }
 export const listLandedCosts = () => apiFetch<{ landedCosts: LandedCost[] }>(`${BASE}/landed-costs`);
 export const receiptsForLandedCost = () => apiFetch<{ receipts: ReceiptChoice[] }>(`${BASE}/landed-costs/receipts`);
@@ -162,3 +162,16 @@ export interface ProfitReport {
 export const getProfit = (q: { from?: string; to?: string }) => apiFetch<ProfitReport>(`${BASE}/profit${qs(q)}`);
 export interface LaunchReport { period: { from: string; to: string }; estimate: true; orders: { delivered: number; returned: number }; sales: number; cogs: number; courier: number; ads: number; contribution: number; courierRateCard: boolean; missingCost: Array<{ name: string; units: number }> }
 export const getLaunchReport = (q: { from?: string; to?: string }) => apiFetch<LaunchReport>(`${BASE}/profit/launch${qs(q)}`);
+
+// ── courier claims; cancelling a landed cost ──────────────────────────────────────────────────────────────────────────
+
+export interface CourierClaim {
+  id: string; number: string; orderId: string; orderNumber: string; consignmentId: string | null; claimDate: string; amount: number; received: number; outstanding: number; reason: string; status: "OPEN" | "SETTLED";
+  settlements: Array<{ kind: "MONEY" | "PAYOUT" | "WRITE_OFF"; amount: number; date: string; note: string | null }>;
+}
+export const claimKeys = { all: ["finance", "books", "claims"] as const };
+export const listClaims = () => apiFetch<{ claims: CourierClaim[]; totals: { outstanding: number } }>(`${BASE}/courier/claims`);
+export const openClaim = (body: { orderId: string; amount: number; reason: string }) => apiFetch<CourierClaim>(`${BASE}/courier/claims`, { method: "POST", body });
+export const settleClaim = (id: string, body: { kind: "MONEY" | "PAYOUT" | "WRITE_OFF"; amount: number; financialAccountId?: string | null; note?: string | null }, idempotencyKey: string) =>
+  apiFetch<CourierClaim>(`${BASE}/courier/claims/${id}/settle`, { method: "POST", body, idempotencyKey });
+export const cancelLandedCost = (id: string, reason: string) => apiFetch<LandedCost>(`${BASE}/landed-costs/${id}/cancel`, { method: "POST", body: { reason } });

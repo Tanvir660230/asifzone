@@ -112,3 +112,58 @@ registerPostingRule(LANDED_COST_EVENT, 1, {
     ],
   }),
 });
+
+export const LANDED_COST_REVERSED_EVENT = "finance.landed_cost.reversed";
+registerPostingRule(LANDED_COST_REVERSED_EVENT, 1, {
+  payload: landedPayload,
+  build: (p) => ({
+    description: `Landed cost ${p.number} cancelled — taken back off the goods`,
+    reference: p.number,
+    lines: [
+      { account: "liability.landed_cost_clearing", debit: p.amount, credit: 0, partyType: "LandedCost", partyId: p.landedCostId },
+      { account: "asset.inventory", debit: 0, credit: p.amount, valuationStatus: "KNOWN", partyType: "LandedCost", partyId: p.landedCostId },
+    ],
+  }),
+});
+
+// ── courier claims for lost parcels (§3.5) ────────────────────────────────────────────────────────────────────────────
+
+export const COURIER_CLAIM_EVENTS = {
+  opened: "finance.courier_claim.opened",
+  viaPayout: "finance.courier_claim.paid_in_payout",
+  writtenOff: "finance.courier_claim.written_off",
+} as const;
+const claimPayload = z.object({ claimId: z.string(), number: z.string(), orderId: z.string(), orderNumber: z.string(), amount: minor });
+registerPostingRule(COURIER_CLAIM_EVENTS.opened, 1, {
+  payload: claimPayload,
+  build: (p) => ({
+    description: `Courier claim ${p.number} — lost parcel, order ${p.orderNumber}`,
+    reference: p.number,
+    lines: [
+      { account: "asset.courier_claims", debit: p.amount, credit: 0, partyType: "Order", partyId: p.orderId },
+      { account: "cogs.inventory_shrinkage", debit: 0, credit: p.amount, partyType: "Order", partyId: p.orderId, memo: "Recovery claimed for goods lost in delivery" },
+    ],
+  }),
+});
+registerPostingRule(COURIER_CLAIM_EVENTS.viaPayout, 1, {
+  payload: claimPayload,
+  build: (p) => ({
+    description: `Courier claim ${p.number} paid inside a payout — order ${p.orderNumber}`,
+    reference: p.number,
+    lines: [
+      { account: "expense.settlement_adjustments", debit: p.amount, credit: 0, memo: "The payout's extra was this claim" },
+      { account: "asset.courier_claims", debit: 0, credit: p.amount, partyType: "Order", partyId: p.orderId },
+    ],
+  }),
+});
+registerPostingRule(COURIER_CLAIM_EVENTS.writtenOff, 1, {
+  payload: claimPayload,
+  build: (p) => ({
+    description: `Courier claim ${p.number} not paid — written off (order ${p.orderNumber})`,
+    reference: p.number,
+    lines: [
+      { account: "cogs.inventory_shrinkage", debit: p.amount, credit: 0, partyType: "Order", partyId: p.orderId, memo: "Part of a courier claim never paid" },
+      { account: "asset.courier_claims", debit: 0, credit: p.amount, partyType: "Order", partyId: p.orderId },
+    ],
+  }),
+});

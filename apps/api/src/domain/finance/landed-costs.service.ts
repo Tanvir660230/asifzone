@@ -14,11 +14,11 @@ import { businessToday, getFinanceContext } from "./finance-context";
 import { financeTransaction } from "./finance-tx";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { resolveMappedAccount } from "./chart.service";
-import { movementDto, requestMovementInTx } from "./treasury.service";
+import { movementDto, requestMovementInTx, reverseMovementInTx } from "./treasury.service";
 import { nextFinanceSequence } from "./suppliers.service";
 import { activeCostingInTx, revalueForDocumentInTx } from "./costing.service";
 import { processFinancialEvent, recordFinancialEvent } from "./events.service";
-import { LANDED_COST_EVENT } from "./owner-books-posting-rules";
+import { LANDED_COST_EVENT, LANDED_COST_REVERSED_EVENT } from "./owner-books-posting-rules";
 import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
@@ -56,6 +56,7 @@ function dto(r: Row, cur: string) {
   return {
     id: r.id, number: landedNumber(r.number), costDate: businessDateOf(r.costDate), description: r.description, payee: r.payee, method: r.method,
     amount: toMajorNumber(toMinor(r.amount, cur), cur), goodsReceiptIds: r.goodsReceiptIds, allocations: r.allocations, paidFrom: r.movement.fromAccount, paymentStatus: r.movement.status, createdAt: r.createdAt,
+    reversedAt: r.reversedAt, reversalReason: r.reversalReason,
   };
 }
 
@@ -143,4 +144,41 @@ export async function receiptsForLandedCost() {
       lines: g.lines.map((l) => ({ sku: l.variant.sku, name: l.variant.product.name, qty: l.qtyAccepted, unitCost: toMajorNumber(toMinor(l.unitCost, cur), cur) })),
     })),
   };
+}
+
+/**
+ * Cancels a landed cost entered by mistake — in one transaction: its payment is reversed (the money is back in the
+ * account), the value it added is taken back off the goods (the units still held, the sold share back out of 5150), and
+ * its posting is reversed. A landed cost is cancelled once; enter a new one if the right figure is different.
+ */
+export async function cancelLandedCost(id: string, reason: string, actor: FinanceActor) {
+  const { business } = await getFinanceContext();
+  const cur = business.baseCurrency;
+  const result = await financeTransaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "LandedCost" WHERE id = ${id} AND "businessId" = ${business.id} FOR UPDATE`;
+    if (!locked) throw financeError(404, "LANDED_COST_NOT_FOUND", "Landed cost not found");
+    const row = await tx.landedCost.findUniqueOrThrow({ where: { id }, include: INCLUDE });
+    if (row.reversedAt) return { row, eventId: null as string | null };
+    if (row.movement.status === "PENDING_APPROVAL") throw financeError(409, "PAYMENT_PENDING", "Its payment still waits for approval — reject it in Money accounts first");
+    const scope = await activeCostingInTx(tx);
+    if (!scope) throw financeError(409, "COSTING_NOT_ACTIVE", "Inventory costing isn't active");
+    const today = businessToday(business);
+    if (row.movement.status === "POSTED") {
+      await reverseMovementInTx(tx, business, row.movementId, { reason: `Landed cost ${landedNumber(row.number)} cancelled: ${reason}` }, actor);
+    }
+    const allocations = row.allocations as unknown as Array<{ variantId: string; qty: number; amount: number }>;
+    await revalueForDocumentInTx(tx, { scope, sourceType: "LandedCostReversal", sourceId: row.id, financialDate: today, note: `Landed cost ${landedNumber(row.number)} cancelled`, items: allocations.map((a) => ({ variantId: a.variantId, deltaMinor: -toMinor(a.amount, cur), qty: a.qty })) });
+    const { event } = await recordFinancialEvent(tx, {
+      contract: "finance.event", contractVersion: 1, businessKey: scope.business.key, brandKey: scope.brand.key,
+      source: { installId, system: "finance", entityType: "LandedCost", entityId: row.id },
+      event: { type: LANDED_COST_REVERSED_EVENT, version: 1, key: `landed:${row.id}#reversed`, occurredAt: new Date().toISOString() },
+      financialDate: today, currency: cur,
+      payload: { landedCostId: row.id, number: landedNumber(row.number), amount: toMinor(row.amount, cur) },
+    });
+    const after = await tx.landedCost.update({ where: { id }, data: { reversedAt: new Date(), reversalReason: reason, reversedByAdminId: adminOf(actor) }, include: INCLUDE });
+    await recordFinanceAudit(tx, { businessId: business.id, actor, action: "landed_cost.cancel", entityType: "LandedCost", entityId: id, before: dto(row, cur), after: dto(after, cur), reason });
+    return { row: after, eventId: event.id };
+  });
+  if (result.eventId) await processFinancialEvent(result.eventId);
+  return dto(result.row, cur);
 }

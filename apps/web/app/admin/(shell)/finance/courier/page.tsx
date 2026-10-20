@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/table";
@@ -23,6 +25,7 @@ import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { CourierOrderRow } from "@/lib/api/finance-books";
 import { formatBookDate, formatPrice } from "@/lib/format";
+import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
 
 /** Owner's books §3.6: the courier's side of the books on one page — what the books expect from Steadfast next to its own
@@ -34,6 +37,10 @@ export default function CourierCheckPage() {
   const rec = useQuery({ queryKey: booksApi.booksKeys.courier(), queryFn: booksApi.getCourierReconciliation, enabled: allowed });
   const accounts = useQuery({ queryKey: financeApi.financeKeys.accounts(), queryFn: financeApi.listFinancialAccounts, enabled: allowed });
   const [dest, setDest] = useState("");
+  const claims = useQuery({ queryKey: booksApi.claimKeys.all, queryFn: booksApi.listClaims, enabled: allowed });
+  const [claimFor, setClaimFor] = useState<CourierOrderRow | null>(null);
+  const [settling, setSettling] = useState<booksApi.CourierClaim | null>(null);
+  const refreshClaims = () => { void queryClient.invalidateQueries({ queryKey: booksApi.claimKeys.all }); void queryClient.invalidateQueries({ queryKey: ["finance"] }); };
   const payInto = (accounts.data?.financialAccounts ?? []).filter((a) => a.isActive && ["BANK", "MOBILE_WALLET", "CASH"].includes(a.kind));
   const destination = dest || rec.data?.settings.payoutAccountId || "";
   const imp = useMutation({
@@ -97,16 +104,93 @@ export default function CourierCheckPage() {
           </Card>
 
           <OrderList title={`Delivered, not paid out after ${d.settings.unsettledDays} days`} hint="Ask Steadfast about these, or look for them in a payout not imported yet." rows={d.unsettled} testId="unsettled" />
-          <OrderList title={`On the way more than ${d.settings.staleDays} days`} hint="Possibly lost — check the parcel on Steadfast; claim it if it's lost." rows={d.stale} testId="stale" />
+          <OrderList title={`On the way more than ${d.settings.staleDays} days`} hint="Possibly lost — check the parcel on Steadfast; claim it if it's lost." rows={d.stale} testId="stale" action={can("finance.transact") ? (o) => <Button size="sm" variant="outline" onClick={() => setClaimFor(o)}>Claim</Button> : undefined} />
           <OrderList title="Order status and Steadfast disagree" hint="Delivered here but not at Steadfast, or the other way round. Fix the order, or mark it delivered outside the courier." rows={d.statusMismatch} testId="mismatch" />
+          <section className="space-y-2" data-testid="claims">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-lg font-semibold text-fg">Claims for lost parcels</h2>
+              {claims.data && <span className="text-sm tabular-nums text-fg-muted">{formatPrice(claims.data.totals.outstanding)} still to come</span>}
+            </div>
+            <p className="text-sm text-fg-muted">What Steadfast owes you for parcels it lost. Cancel the order and record the items as lost in Inventory; the claim is the money side.</p>
+            {claims.data && (claims.data.claims.length === 0 ? <p className="text-sm text-fg-muted">No claims.</p> : (
+              <Card className="divide-y divide-line p-0 text-sm">
+                {claims.data.claims.map((c) => (
+                  <div key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" data-testid="claim-row">
+                    <span className="min-w-0">
+                      <span className="block text-fg">{c.number} · <Link href={`/admin/orders/${c.orderId}`} className="text-accent hover:underline">{c.orderNumber}</Link></span>
+                      <span className="block text-xs text-fg-muted">{formatBookDate(c.claimDate)} · {c.reason} · received {formatPrice(c.received)} of {formatPrice(c.amount)}</span>
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {c.status === "SETTLED" ? <Badge variant="success">settled</Badge> : <Badge variant="warning">{formatPrice(c.outstanding)} open</Badge>}
+                      {c.status === "OPEN" && can("finance.transact") && <Button size="sm" variant="outline" onClick={() => setSettling(c)}>Settle</Button>}
+                    </span>
+                  </div>
+                ))}
+              </Card>
+            ))}
+          </section>
           <OrderList title="Partly delivered" hint="Record which items came back on the order, so revenue, stock and the payout agree." rows={d.partialDeliveries} testId="partial" badge={(o) => ("reconciled" in o && o.reconciled ? <Badge variant="success">items reconciled</Badge> : <Badge variant="warning">to reconcile</Badge>)} />
         </>
       )}
+      {claimFor && <ClaimModal order={claimFor} onClose={() => setClaimFor(null)} onDone={() => { setClaimFor(null); refreshClaims(); }} />}
+      {settling && <SettleModal claim={settling} accounts={payInto} onClose={() => setSettling(null)} onDone={() => { setSettling(null); refreshClaims(); }} />}
     </div>
   );
 }
 
-function OrderList({ title, hint, rows, testId, badge }: { title: string; hint: string; rows: CourierOrderRow[]; testId: string; badge?: (o: CourierOrderRow) => React.ReactNode }) {
+function ClaimModal({ order, onClose, onDone }: { order: CourierOrderRow; onClose: () => void; onDone: () => void }) {
+  const [amount, setAmount] = useState(String(order.total));
+  const [reason, setReason] = useState("Parcel lost in transit");
+  const save = useMutation({
+    mutationFn: () => booksApi.openClaim({ orderId: order.id, amount: Number(amount), reason: reason.trim() }),
+    onSuccess: (c) => { toast.success(`${c.number} opened — ${formatPrice(c.amount)} owed by Steadfast`); onDone(); },
+    onError: (e) => toast.error(getErrorMessage(e, "The claim couldn't be opened")),
+  });
+  return (
+    <Modal open onClose={onClose} title={`Claim for ${order.orderNumber}`} description="What you claim from Steadfast for the lost parcel." widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!(Number(amount) > 0) || reason.trim().length < 3} loading={save.isPending} onClick={() => save.mutate()} data-testid="confirm-claim">Open claim</Button></>}>
+      <div className="grid gap-3">
+        <Field htmlFor="cl-amount" label="Amount claimed" required><Input id="cl-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field htmlFor="cl-reason" label="Reason" required><Input id="cl-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function SettleModal({ claim, accounts, onClose, onDone }: { claim: booksApi.CourierClaim; accounts: financeApi.FinancialAccount[]; onClose: () => void; onDone: () => void }) {
+  const [kind, setKind] = useState<"MONEY" | "PAYOUT" | "WRITE_OFF">("MONEY");
+  const [amount, setAmount] = useState(String(claim.outstanding));
+  const [accountId, setAccountId] = useState("");
+  const body = { kind, amount: Number(amount), financialAccountId: kind === "MONEY" ? accountId : null };
+  const save = useMutation({
+    mutationFn: () => booksApi.settleClaim(claim.id, body, idempotencyKeyFor(`claim-${claim.id}`, body)),
+    onSuccess: (c) => { settleIdempotencyKey(`claim-${claim.id}`); toast.success(c.status === "SETTLED" ? `${c.number} settled` : `${formatPrice(c.outstanding)} still open`); onDone(); },
+    onError: (e) => toast.error(getErrorMessage(e, "Couldn't record it")),
+  });
+  return (
+    <Modal open onClose={onClose} title={`Settle ${claim.number}`} description={`${formatPrice(claim.outstanding)} is still open.`} widthClassName="max-w-md"
+      footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!(Number(amount) > 0) || (kind === "MONEY" && !accountId)} loading={save.isPending} onClick={() => save.mutate()} data-testid="confirm-settle-claim">Record</Button></>}>
+      <div className="grid gap-3">
+        <Field htmlFor="st-kind" label="What happened">
+          <Select id="st-kind" value={kind} onChange={(e) => setKind(e.target.value as "MONEY" | "PAYOUT" | "WRITE_OFF")}>
+            <option value="MONEY">Steadfast paid it into an account</option>
+            <option value="PAYOUT">It came inside a COD payout</option>
+            <option value="WRITE_OFF">They won’t pay this part — write it off</option>
+          </Select>
+        </Field>
+        {kind === "MONEY" && (
+          <Field htmlFor="st-acc" label="Into" required>
+            <Select id="st-acc" value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">Choose…</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>
+          </Field>
+        )}
+        {kind === "PAYOUT" && <p className="text-xs text-fg-muted">Post that payout with the extra as a settlement adjustment; this moves it onto the claim.</p>}
+        <Field htmlFor="st-amount" label="Amount" required><Input id="st-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function OrderList({ title, hint, rows, testId, badge, action }: { title: string; hint: string; rows: CourierOrderRow[]; testId: string; badge?: (o: CourierOrderRow) => React.ReactNode; action?: (o: CourierOrderRow) => React.ReactNode }) {
   return (
     <section className="space-y-2" data-testid={testId}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -125,6 +209,7 @@ function OrderList({ title, hint, rows, testId, badge }: { title: string; hint: 
                 <TableHeaderCell>Steadfast</TableHeaderCell>
                 <TableHeaderCell>Booked</TableHeaderCell>
                 <TableHeaderCell align="right">Total</TableHeaderCell>
+                {action && <TableHeaderCell />}
               </tr>
             </TableHead>
             <tbody>
@@ -136,6 +221,7 @@ function OrderList({ title, hint, rows, testId, badge }: { title: string; hint: 
                   <TableCell>{o.courierStatus ?? "—"}</TableCell>
                   <TableCell>{o.bookedOn ? formatBookDate(o.bookedOn) : "—"}</TableCell>
                   <TableCell align="right" className="tabular-nums">{formatPrice(o.total)}</TableCell>
+                  {action && <TableCell align="right">{action(o)}</TableCell>}
                 </TableRow>
               ))}
             </tbody>

@@ -2961,6 +2961,7 @@ model FinanceBusiness {
   adCampaigns                 AdCampaign[]
   prepaidCosts                PrepaidCost[]
   landedCosts                 LandedCost[]
+  courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
   suppliers                   Supplier[]
   taxCodes                    TaxCode[]
@@ -3277,8 +3278,43 @@ model LandedCost {
   movement         TreasuryMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
   createdByAdminId String?
   createdAt        DateTime         @default(now())
+  /// Cancelled: its payment reversed, the goods' value taken back off, its posting reversed — all in one step.
+  reversedAt       DateTime?
+  reversalReason   String?
+  reversedByAdminId String?
 
   @@unique([businessId, number])
+}
+
+enum CourierClaimStatus {
+  OPEN
+  SETTLED
+}
+
+/// Owner's books §3.5: a parcel the courier lost (or damaged), claimed back. Opening it books what Steadfast should pay
+/// (Dr 1540 courier claims / Cr 5200 — the recovery of the goods written off as lost). It is settled by money received
+/// (a Treasury deposit against 1540), by a Steadfast payout that included it (the payout's extra moved from settlement
+/// adjustments into the claim), and whatever is never paid is written off (back to 5200).
+model CourierClaim {
+  id               String             @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  number           Int
+  orderId          String
+  orderNumber      String
+  consignmentId    String?
+  claimDate        DateTime           @db.Date
+  amount           Decimal            @db.Decimal(18, 2)
+  reason           String
+  status           CourierClaimStatus @default(OPEN)
+  /// [{ kind: MONEY | PAYOUT | WRITE_OFF, amount, date, movementId?, eventId?, note }]
+  settlements      Json               @default("[]")
+  createdByAdminId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([businessId, number])
+  @@index([orderId])
 }
 
 enum PackingRuleScope {

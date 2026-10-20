@@ -178,3 +178,11 @@ export const quickRefillSchema = z.object({
 // ── profit (§8) ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export const profitQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional() });
+
+// ── courier claims (§3.5) and cancelling a landed cost (§7.1) ─────────────────────────────────────────────────────────
+
+export const courierClaimCreateSchema = z.object({ orderId: id, amount: positive, reason: z.string().trim().min(3).max(300), claimDate: businessDate.optional() });
+export const courierClaimSettleSchema = z
+  .object({ kind: z.enum(["MONEY", "PAYOUT", "WRITE_OFF"]), amount: positive, date: businessDate.optional(), financialAccountId: id.optional().nullable(), note: optionalText(300) })
+  .refine((v) => v.kind !== "MONEY" || Boolean(v.financialAccountId), { message: "Choose the account the money came into", path: ["financialAccountId"] });
+export const landedCostCancelSchema = z.object({ reason: z.string().trim().min(3).max(500) });

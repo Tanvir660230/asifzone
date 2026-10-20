@@ -24,6 +24,9 @@ import {
   landedCostCreateSchema,
   quickRefillSchema,
   profitQuerySchema,
+  courierClaimCreateSchema,
+  courierClaimSettleSchema,
+  landedCostCancelSchema,
 } from "@clothing-brand/shared";
 import { requireAdmin, requirePermission } from "../../middlewares/require-admin";
 import { validate } from "../../middlewares/validate";
@@ -41,6 +44,7 @@ import { syncOwnerBooks } from "../../domain/finance/owner-books-sync";
 import * as landed from "../../domain/finance/landed-costs.service";
 import * as refill from "../../domain/manufacturing/quick-refill.service";
 import * as profit from "../../domain/finance/profit.service";
+import * as claims from "../../domain/finance/courier-claims.service";
 
 /**
  * The owner's-books API (docs/FINANCE_OWNER_BOOKS.md), mounted beside the finance router at /api/v1/finance. Every route
@@ -138,3 +142,9 @@ ownerBooksRouter.post("/quick-refills", requirePermission("manufacturing.approve
 // ── profit (§8) and the launch weeks before the books (§9) ──────────────────────────────────────────────────────────
 ownerBooksRouter.get("/profit", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.profitReport(req.query as never, viewerOf(req)))));
 ownerBooksRouter.get("/profit/launch", requirePermission("finance.read"), validate(profitQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await profit.launchReport(req.query as never))));
+
+// ── courier claims for lost parcels (§3.5); cancelling a landed cost (§7.1) ─────────────────────────────────────────
+ownerBooksRouter.get("/courier/claims", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json(await claims.listClaims())));
+ownerBooksRouter.post("/courier/claims", requirePermission("finance.transact"), validate(courierClaimCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await claims.openClaim(req.body, await actorOf(req)))));
+ownerBooksRouter.post("/courier/claims/:id/settle", requirePermission("finance.transact"), validate(courierClaimSettleSchema), asyncHandler(async (req, res) => res.json(await claims.settleClaim(id(req), req.body, await actorOf(req), idempotencyKeyOf(req)))));
+ownerBooksRouter.post("/landed-costs/:id/cancel", requirePermission("finance.post"), validate(landedCostCancelSchema), asyncHandler(async (req, res) => res.json(await landed.cancelLandedCost(id(req), req.body.reason, await actorOf(req)))));
