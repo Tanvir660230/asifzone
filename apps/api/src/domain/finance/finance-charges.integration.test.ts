@@ -17,7 +17,7 @@ import { projectOrder, syncCommerce } from "./commerce-accounting.service";
 const payouts = vi.hoisted(() => ({ list: [] as unknown[], detail: {} as Record<string, unknown>, balance: 0 }));
 vi.mock("../../providers/courier/steadfast", async (orig) => ({
   ...(await orig<typeof import("../../providers/courier/steadfast")>()),
-  getSteadfastPayments: async () => ({ status: 200, data: payouts.list }),
+  getSteadfastPayments: async () => ({ status: 200, alertClass: "success", message: "ok", payments: payouts.list }),
   getSteadfastPayment: async (id: string) => payouts.detail[id],
   getSteadfastBalance: async () => payouts.balance,
 }));
@@ -121,14 +121,16 @@ describe("courier charges: estimate on delivery, actual at the payout", () => {
 
   it("Steadfast's payout comes in as a draft matched by consignment; posting it books the actual charge and withdraws the estimate", async () => {
     const total = Number(order.total);
-    payouts.list = [{ id: 9001, amount: total - 75, created_at: "2026-10-15 10:00:00" }];
-    payouts.detail["9001"] = { status: 200, data: { id: 9001, amount: total - 75, consignments: [{ consignment_id: `CN-${RUN}-1`, invoice: order.orderNumber, cod_amount: total, delivery_charge: 65, cod_charge: 10 }] } };
+    // The live API's shape: amount (collected) − due_bills (delivery & return) − charges (COD) = total (paid).
+    const payment = { payment_id: "SFC-9001", amount: total, due_bills: 65, charges: 10, total: total - 75, method: "Bkash", status_label: "paid", created_at: "2026-10-15 10:00:00", paid_at: "2026-10-15 16:00:00" };
+    payouts.list = [payment];
+    payouts.detail["SFC-9001"] = { status: 200, alertClass: "success", message: "ok", payment: { ...payment, consignments: [{ consignment_id: `CN-${RUN}-1`, invoice: order.orderNumber, cod_amount: total, status: "delivered" }] } };
     const imp = await owner().post("/courier/payouts/import", { destinationFinancialAccountId: bank });
     expect(imp.status, JSON.stringify(imp.body)).toBe(200);
     expect(imp.body.problems).toEqual([]);
     expect(imp.body.imported).toHaveLength(1);
     const s = imp.body.imported[0];
-    expect(s).toMatchObject({ status: "DRAFT", source: "API_IMPORT", reference: "steadfast:9001", feeAmount: 75, netAmount: total - 75, unmatchedLines: 0 });
+    expect(s).toMatchObject({ status: "DRAFT", source: "API_IMPORT", reference: "steadfast:SFC-9001", settlementDate: "2026-10-15", feeAmount: 75, netAmount: total - 75, unmatchedLines: 0 });
     expect(s.lines[0]).toMatchObject({ orderId: order.id, matchStatus: "MATCHED" });
     // a second import records nothing new
     expect((await owner().post("/courier/payouts/import", { destinationFinancialAccountId: bank })).body).toMatchObject({ alreadyRecorded: 1, imported: [] });
@@ -140,7 +142,7 @@ describe("courier charges: estimate on delivery, actual at the payout", () => {
   });
 
   it("reversing the payout restores the estimate", async () => {
-    const s = await prisma.clearingSettlement.findFirstOrThrow({ where: { reference: "steadfast:9001" } });
+    const s = await prisma.clearingSettlement.findFirstOrThrow({ where: { reference: "steadfast:SFC-9001" } });
     expect((await owner().post(`/settlements/${s.id}/reverse`, { reason: "Wrong bank" })).status).toBe(200);
     expect(await net("liability.courier_charges_accrued", order.id)).toBeLessThan(0);
   });
