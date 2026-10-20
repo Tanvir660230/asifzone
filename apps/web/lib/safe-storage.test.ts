@@ -11,14 +11,16 @@ describe("session storage that never throws", () => {
     expect(sessionGet("k")).toBe("v");
   });
 
-  it("reads null and writes nothing when the browser blocks storage (SecurityError: Access is denied)", () => {
+  it("keeps values in memory when the browser blocks storage (SecurityError: Access is denied)", () => {
     // Blocked site data / some in-app browsers: even touching window.sessionStorage throws.
     vi.stubGlobal("window", {
       get sessionStorage(): Storage {
         throw new DOMException("Access is denied for this document.", "SecurityError");
       },
     });
-    expect(() => sessionSet("k", "v")).not.toThrow();
-    expect(sessionGet("k")).toBeNull();
+    expect(sessionGet("blocked-key")).toBeNull();
+    expect(() => sessionSet("blocked-key", "01812345678")).not.toThrow();
+    // Checkout → confirmation is an in-app navigation: the phone it remembered is still there.
+    expect(sessionGet("blocked-key")).toBe("01812345678");
   });
 });
