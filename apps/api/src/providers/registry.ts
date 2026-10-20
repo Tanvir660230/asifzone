@@ -9,6 +9,7 @@
 import { env } from "../config/env";
 import { installId } from "../config/installation";
 import * as steadfast from "./courier/steadfast";
+import * as metaInsights from "./ads/meta-insights";
 import * as resend from "./email/resend";
 import * as metaCapi from "./events/meta-capi";
 import * as tiktokEvents from "./events/tiktok-events";
@@ -117,7 +118,7 @@ function pushSender(id: ProviderSelection["push"]): PushSender {
 function courierProvider(id: ProviderSelection["courier"]): CourierProvider {
   if (id === "none") {
     const off = async (): Promise<never> => Promise.reject(new ProviderNotConfiguredError("Courier", "COURIER_PROVIDER"));
-    return { id, createShipment: off, createShipments: off, statusByConsignment: off, balance: off, deliveryScore: off };
+    return { id, createShipment: off, createShipments: off, statusByConsignment: off, balance: off, deliveryScore: off, payouts: off, payout: off };
   }
   return {
     id,
@@ -126,6 +127,8 @@ function courierProvider(id: ProviderSelection["courier"]): CourierProvider {
     statusByConsignment: (consignmentId) => steadfast.getSteadfastStatusByConsignmentId(consignmentId),
     balance: () => steadfast.getSteadfastBalance(),
     deliveryScore: (phone) => steadfast.getSteadfastFraudCheck(phone),
+    payouts: () => steadfast.getSteadfastPayments(),
+    payout: (paymentId) => steadfast.getSteadfastPayment(paymentId),
   };
 }
 
@@ -152,6 +155,12 @@ export function buildProviders(selection: ProviderSelection): Providers {
     serverEvents,
     tiktokServerEvents,
     payments: buildPayments(selection.paymentGateways),
+    adSpend: {
+      id: "meta",
+      configured: () => metaInsights.metaAdsConfig().configured,
+      adAccounts: () => metaInsights.metaAdsConfig().accounts,
+      campaignDays: (adAccountId, since, until) => metaInsights.fetchMetaCampaignSpend(adAccountId, since, until),
+    },
   };
 }
 

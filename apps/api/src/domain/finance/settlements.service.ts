@@ -23,6 +23,7 @@ import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toM
 import { financeTransaction } from "./finance-tx";
 import { parseStatementAmount } from "./statement-parser";
 import { upsertException } from "./finance-exceptions.service";
+import { projectOrder } from "./commerce-accounting.service";
 
 const adminId = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
 const FEE_ACCOUNT: Record<string, AccountMappingKey> = { COURIER: "expense.courier_fees", PAYMENT_GATEWAY: "expense.gateway_fees", OTHER: "expense.settlement_adjustments" };
@@ -93,13 +94,22 @@ async function matchOrder(tx: AppTransactionClient, line: SettlementLineInput): 
     if (o) return { orderId: o.id, orderNumber: o.orderNumber };
   }
   if (line.externalRef) {
-    const p = await tx.payment.findFirst({ where: { providerTransactionId: line.externalRef.trim(), orderId: { not: null } }, select: { order: { select: { id: true, orderNumber: true } } } });
+    const ref = line.externalRef.trim();
+    const p = await tx.payment.findFirst({ where: { providerTransactionId: ref, orderId: { not: null } }, select: { order: { select: { id: true, orderNumber: true } } } });
     if (p?.order) return { orderId: p.order.id, orderNumber: p.order.orderNumber };
+    // Owner's books §3.2: a courier statement names the parcel — its consignment id or tracking code.
+    const o = await tx.order.findFirst({ where: { OR: [{ courierConsignmentId: ref }, { trackingNumber: ref }] }, select: { id: true, orderNumber: true } });
+    if (o) return { orderId: o.id, orderNumber: o.orderNumber };
   }
   return { orderId: null, orderNumber: line.orderNumber?.trim() || null };
 }
 
-async function createInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, input: SettlementInput, actor: FinanceActor, key: string, source: "MANUAL" | "CSV_IMPORT", fileHash: string | null) {
+/** Creates a DRAFT settlement in the caller's transaction (manual entry, a statement file, or a courier's payout API). */
+export async function createSettlementInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, input: SettlementInput, actor: FinanceActor, key: string, source: "MANUAL" | "CSV_IMPORT" | "API_IMPORT", fileHash: string | null) {
+  return createInTx(tx, business, input, actor, key, source, fileHash);
+}
+
+async function createInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, input: SettlementInput, actor: FinanceActor, key: string, source: "MANUAL" | "CSV_IMPORT" | "API_IMPORT", fileHash: string | null) {
   const cur = business.baseCurrency;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`finance-settlement:${business.id}:${key}`}))`;
   const existing = await tx.clearingSettlement.findUnique({ where: { businessId_idempotencyKey: { businessId: business.id, idempotencyKey: key } }, include: INCLUDE });
@@ -129,7 +139,10 @@ async function createInTx(tx: AppTransactionClient, business: FinanceBusinessInf
   const lines = input.lines ?? [];
   const resolved = [];
   for (const [i, l] of lines.entries()) {
-    if (!(l.amount > 0)) throw financeError(400, "SETTLEMENT_LINE_AMOUNT", `Line ${i + 1}: the amount must be more than zero`);
+    // A line collects money, or (a returned parcel) only carries the charge deducted for it.
+    if (!(l.amount > 0) && !(l.amount === 0 && ((l.fee ?? 0) > 0 || (l.adjustment ?? 0) !== 0))) {
+      throw financeError(400, "SETTLEMENT_LINE_AMOUNT", `Line ${i + 1}: the amount must be more than zero (or zero with a charge)`);
+    }
     resolved.push({ ...l, ...(await matchOrder(tx, l)), amountMinor: toMinor(l.amount, cur), feeMinor: toMinor(l.fee ?? 0, cur), adjMinor: toMinorSigned(l.adjustment ?? 0, cur) });
   }
   if (resolved.length) {
@@ -264,6 +277,18 @@ async function paidBeforeTheBooks(tx: AppTransactionClient, business: FinanceBus
 /** Posts a DRAFT settlement: one journal through journal.service; clearing is credited per order line, so the clearing
  * account reconciles order by order. Idempotent: a posted settlement is returned as it is. */
 export async function postSettlement(id: string, actor: FinanceActor) {
+  const result = await postSettlementOnly(id, actor);
+  if (!result.alreadyPosted) await reprojectOrders(result.settlement.lines);
+  return result;
+}
+
+/** Owner's books §3.3: a posted (or reversed) settlement withdraws (or restores) the charge estimates of its orders. */
+async function reprojectOrders(lines: Array<{ orderId: string | null }>) {
+
+  for (const orderId of new Set(lines.map((l) => l.orderId).filter((x): x is string => Boolean(x)))) await projectOrder(orderId);
+}
+
+async function postSettlementOnly(id: string, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   return financeTransaction(async (tx) => {
@@ -286,6 +311,7 @@ export async function postSettlement(id: string, actor: FinanceActor) {
     if (s.lines.length) {
       const before = await paidBeforeTheBooks(tx, business, s.lines.flatMap((l) => (l.orderId ? [l.orderId] : [])));
       for (const l of s.lines) {
+        if (signed(l.amount, cur) === 0) continue; // a charge-only line takes nothing out of clearing
         // Money an order paid in before the opening date is in clearing's opening balance (no order named), not under the
         // order — so the payout comes out of that balance, and the order is not shown as settled for more than it paid.
         const old = l.orderId !== null && before.has(l.orderId);
@@ -311,6 +337,12 @@ export async function postSettlement(id: string, actor: FinanceActor) {
 }
 
 export async function reverseSettlement(id: string, reason: string, actor: FinanceActor) {
+  const result = await reverseSettlementOnly(id, reason, actor);
+  if (!result.replayed) await reprojectOrders(result.settlement.lines);
+  return result;
+}
+
+async function reverseSettlementOnly(id: string, reason: string, actor: FinanceActor) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   return financeTransaction(async (tx) => {

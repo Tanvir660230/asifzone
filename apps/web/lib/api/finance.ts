@@ -10,7 +10,7 @@ const qs = (params: Record<string, string | number | undefined | null>) => {
   return s ? `?${s}` : "";
 };
 
-export type FinancialAccountKind = "CASH" | "BANK" | "MOBILE_WALLET" | "PAYMENT_GATEWAY" | "COURIER" | "OTHER";
+export type FinancialAccountKind = "CASH" | "BANK" | "MOBILE_WALLET" | "PAYMENT_GATEWAY" | "COURIER" | "OTHER" | "AD_PLATFORM";
 
 export interface FinancialAccount {
   id: string;
@@ -28,6 +28,8 @@ export interface FinancialAccount {
   isActive: boolean;
   status: "ACTIVE" | "INACTIVE";
   ledgerAccount: { id: string; code: string; name: string };
+  /** Owner's books §2: who holds this cash (cash accounts only). */
+  custodian?: { id: string; name: string; email: string } | null;
   currentBalance: number;
   openingBalance: number;
   reconciliationStartDate: string | null;
@@ -69,6 +71,8 @@ export interface Movement {
   approvedByAdminId: string | null;
   rejectionReason: string | null;
   reversalReason: string | null;
+  /** Owner's books §2: a handover waits for this person to confirm the cash reached them. */
+  receiverAdminId?: string | null;
   createdAt: string;
 }
 
@@ -291,6 +295,7 @@ export const ACCOUNT_KIND_LABEL: Record<FinancialAccountKind, string> = {
   MOBILE_WALLET: "Mobile wallet",
   PAYMENT_GATEWAY: "Payment gateway",
   COURIER: "Courier COD",
+  AD_PLATFORM: "Ad account",
   OTHER: "Other",
 };
 

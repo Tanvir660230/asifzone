@@ -29,7 +29,7 @@ const CATEGORY_TYPE: Record<OpeningBalanceCategory, "ASSET" | "LIABILITY" | "EQU
 };
 /** Money-holding categories must name the financial account the money is in. */
 const MONEY_CATEGORY_KINDS: Partial<Record<OpeningBalanceCategory, string[]>> = {
-  CASH: ["CASH"], BANK: ["BANK"], MOBILE_WALLET: ["MOBILE_WALLET"], PAYMENT_ACCOUNT: ["PAYMENT_GATEWAY", "COURIER", "OTHER"],
+  CASH: ["CASH"], BANK: ["BANK"], MOBILE_WALLET: ["MOBILE_WALLET"], PAYMENT_ACCOUNT: ["PAYMENT_GATEWAY", "COURIER", "OTHER", "AD_PLATFORM"],
 };
 
 const inTransaction = <T>(fn: (tx: AppTransactionClient) => Promise<T>) => financeTransaction(fn, { timeout: 60_000 });

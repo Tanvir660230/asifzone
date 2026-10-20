@@ -22,13 +22,13 @@ const payload = z.object({
   reason: z.string(),
   orderId: z.string().nullable(),
   bookMinor: z.number().int(),
-  counterKey: z.enum(["cogs.inventory_shrinkage", "cogs.count_adjustments"]).nullable(),
+  counterKey: z.enum(["cogs.inventory_shrinkage", "cogs.count_adjustments", "cogs.packaging"]).nullable(),
   costAdjustmentMinor: z.number().int(),
   status: z.enum(FINANCE_VALUATION_STATUSES),
 });
 
 /** Inventory up by `amount` (down when negative) against `other`. */
-function inventoryAgainst(other: "cogs.inventory_shrinkage" | "cogs.count_adjustments" | "cogs.cost_adjustments", amount: number, status: PostingRuleLine["valuationStatus"], memo: string): PostingRuleLine[] {
+function inventoryAgainst(other: "cogs.inventory_shrinkage" | "cogs.count_adjustments" | "cogs.cost_adjustments" | "cogs.packaging", amount: number, status: PostingRuleLine["valuationStatus"], memo: string): PostingRuleLine[] {
   if (amount === 0) return [];
   const up = amount > 0;
   const a = Math.abs(amount);

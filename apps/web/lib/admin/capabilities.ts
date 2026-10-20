@@ -43,6 +43,8 @@ export const CAPABILITIES = {
   "finance.reconcile": { permission: "finance.reconcile" },
   "finance.period_close": { permission: "finance.period_close" },
   "finance.sensitive": { permission: "finance.sensitive" },
+  // owner's books (docs/FINANCE_OWNER_BOOKS.md §2): the cash a person holds
+  "finance.custody": { permission: "finance.custody" },
   // purchasing, suppliers / AP and inventory costing (docs/FINANCE_PHASE_4.md §23)
   "suppliers.view": { permission: "suppliers.read" },
   "suppliers.manage": { permission: "suppliers.manage" },

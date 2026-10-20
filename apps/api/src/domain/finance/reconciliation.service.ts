@@ -757,6 +757,50 @@ export const RECONCILIATION_CHECKS = {
       };
     },
   },
+
+  // ── Owner's books §3–§4: what is accrued until a payout is exactly the live estimates ────────────────────────────────
+  "charges.accrued": {
+    label: "Courier & gateway charges accrued = live estimates",
+    description: "Each order's courier charge (and gateway fee) waiting in the accrued accounts equals its current estimate; once the courier's or gateway's payout for the order is posted, nothing is left accrued for it.",
+    async run(ctx) {
+      const cur = ctx.business.baseCurrency;
+      const maps = await prisma.accountMapping.findMany({ where: { businessId: ctx.business.id, key: { in: ["liability.courier_charges_accrued", "liability.gateway_fees_accrued"] } } });
+      const [cards, rates] = await Promise.all([prisma.courierRateCard.count({ where: { businessId: ctx.business.id } }), prisma.gatewayFeeRate.count({ where: { businessId: ctx.business.id } })]);
+      if (!maps.length || (!cards && !rates)) return { status: "NOT_APPLICABLE", details: { reason: "no courier rate card or gateway fee rate yet" } };
+      const signedMinor = (v: Prisma.Decimal) => (v.isNegative() ? -toMinor(v.abs(), cur) : toMinor(v, cur));
+      const differences: Array<{ account: string; orderId: string | null; accrued: number; estimate: number }> = [];
+      let expected = 0;
+      let actual = 0;
+      for (const m of maps) {
+        const type = m.key === "liability.courier_charges_accrued" ? "finance.courier.charge_estimated" : "finance.gateway.fee_estimated";
+        const rows = await prisma.$queryRaw<Array<{ partyId: string | null; bal: Prisma.Decimal }>>`
+          SELECT l."partyId", COALESCE(SUM(l.credit - l.debit), 0) AS bal FROM "JournalLine" l JOIN "JournalEntry" e ON e.id = l."entryId"
+          WHERE e."businessId" = ${ctx.business.id} AND e.status = 'POSTED' AND l."accountId" = ${m.accountId} GROUP BY l."partyId"`;
+        const accrued = new Map(rows.map((r) => [r.partyId, signedMinor(r.bal)]));
+        const events = await prisma.financialEvent.findMany({ where: { businessId: ctx.business.id, eventType: type, status: "POSTED" }, select: { eventKey: true, payload: true } });
+        const latest = new Map<string, { rev: number; payload: { orderId?: string | null; void?: boolean; total?: number; fee?: number } }>();
+        for (const e of events) {
+          const [sk, r] = e.eventKey.split("#r");
+          const rev = Number(r ?? 0);
+          if ((latest.get(sk!)?.rev ?? -1) < rev) latest.set(sk!, { rev, payload: e.payload as never });
+        }
+        const estimate = new Map<string | null, number>();
+        for (const { payload } of latest.values()) {
+          if (payload.void) continue;
+          const k = payload.orderId ?? null;
+          estimate.set(k, (estimate.get(k) ?? 0) + (payload.total ?? payload.fee ?? 0));
+        }
+        for (const k of new Set([...accrued.keys(), ...estimate.keys()])) {
+          const a = accrued.get(k) ?? 0;
+          const est = estimate.get(k) ?? 0;
+          expected += est;
+          actual += a;
+          if (a !== est) differences.push({ account: m.key, orderId: k, accrued: toMajorNumber(a, cur), estimate: toMajorNumber(est, cur) });
+        }
+      }
+      return { status: differences.length ? "DIFFERENCE" : "MATCHED", expected, actual, details: { differences: differences.slice(0, 100) } };
+    },
+  },
 } satisfies Record<string, ReconciliationCheck>;
 
 export type ReconciliationCheckKey = keyof typeof RECONCILIATION_CHECKS;

@@ -49,6 +49,8 @@ import "./purchasing-posting-rules";
 // Manufacturing: production documents.
 import "./manufacturing-posting-rules";
 import "./payables-posting-rules";
+// Owner's books: courier / gateway charge estimates, ad spend, prepaid costs.
+import "./owner-books-posting-rules";
 
 // ── recording ──────────────────────────────────────────────────────────────────────────────────────────────────────
 

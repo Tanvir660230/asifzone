@@ -45,7 +45,7 @@ export const ledgerAccountUpdateSchema = z
 
 export const accountMappingUpdateSchema = z.object({ accountId: id, reason: optionalText(500) });
 
-export const FINANCIAL_ACCOUNT_KINDS = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_GATEWAY", "COURIER", "OTHER"] as const;
+export const FINANCIAL_ACCOUNT_KINDS = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_GATEWAY", "COURIER", "OTHER", "AD_PLATFORM"] as const;
 export type FinancialAccountKindName = (typeof FINANCIAL_ACCOUNT_KINDS)[number];
 
 export const financialAccountCreateSchema = z.object({

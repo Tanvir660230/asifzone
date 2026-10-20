@@ -369,6 +369,31 @@ export async function zeroVariantStock(tx: Tx, variantIds: string[], actor: Acto
   }
 }
 
+// --- packaging a parcel used (owner's books §6.2) ----------------------------------------------------
+
+/**
+ * Packaging material a parcel used, recorded once per order and material (sourceType "OrderPackaging", sourceId the
+ * order), valued at the running average and booked to packaging & fulfilment by the costing service. Never below zero:
+ * a material that isn't in stock is skipped and reported (the next run takes it once stock is there).
+ */
+export async function recordPackagingUse(tx: Tx, orderId: string, items: Array<{ variantId: string; quantity: number }>, actor: Actor = {}) {
+  const written: MovementRow[] = [];
+  const short: Array<{ variantId: string; quantity: number }> = [];
+  for (const it of [...items].sort((a, b) => (a.variantId < b.variantId ? -1 : 1))) {
+    if (!Number.isSafeInteger(it.quantity) || it.quantity <= 0) continue;
+    const done = await tx.stockMovement.findFirst({ where: { sourceType: "OrderPackaging", sourceId: orderId, variantId: it.variantId }, select: { id: true } });
+    if (done) continue;
+    const after = await applyDelta(tx, it.variantId, -it.quantity, true);
+    if (after === null) {
+      short.push(it);
+      continue;
+    }
+    written.push(await tx.stockMovement.create({ data: { ...movement(it.variantId, -it.quantity, "PACKAGING_USE", actor), sourceType: "OrderPackaging", sourceId: orderId } }));
+  }
+  if (written.length) await value(tx, written.map((mv) => ({ movement: mv, basis: { kind: "AVERAGE" as const }, ledger: "MOVEMENT" as const })));
+  return { written, short };
+}
+
 // --- manual adjustments -------------------------------------------------------------------------
 
 /** Admin stock adjustment (Inventory → Adjust). Never below zero; DAMAGED/LOST must reduce stock, RESTOCK must

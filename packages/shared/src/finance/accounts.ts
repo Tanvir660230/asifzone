@@ -90,6 +90,18 @@ export const ACCOUNT_MAPPING_KEYS = [
   "expense.salaries",
   "liability.payroll_deductions",
   "expense.employer_contributions",
+  // Owner's books (docs/FINANCE_OWNER_BOOKS.md) — ad-platform balances, prepaid costs, courier claims, charges accrued
+  // until the payout statement replaces them, landed costs waiting to be allocated, packaging used, ads, cash over/short
+  "group.ad_platform",
+  "asset.prepaid",
+  "asset.courier_claims",
+  "liability.courier_charges_accrued",
+  "liability.gateway_fees_accrued",
+  "liability.landed_cost_clearing",
+  "cogs.packaging",
+  "expense.advertising",
+  "expense.cash_over_short",
+  "liability.owner_reimbursable",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -150,6 +162,14 @@ export const LOAN_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.loans
 /** Every key payroll posts to by default (each pay component can name its own accounts). */
 export const PAYROLL_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.salaries_payable", "expense.salaries", "liability.payroll_deductions", "expense.employer_contributions"];
 
+/** Every key the owner's-books features post to (docs/FINANCE_OWNER_BOOKS.md): cash counts, courier and gateway charge
+ * estimates, ad spend, prepaid costs, packaging used and landed costs. */
+export const OWNER_BOOKS_MAPPING_KEYS: readonly AccountMappingKey[] = [
+  "group.ad_platform", "asset.prepaid", "asset.courier_claims", "liability.courier_charges_accrued", "liability.gateway_fees_accrued",
+  "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "expense.courier_fees",
+  "expense.gateway_fees", "asset.inventory", "cogs.cost_adjustments", "cogs.inventory_shrinkage",
+];
+
 /**
  * Mapping keys whose ledger figure is reconciled against an existing authoritative business figure (the metrics registry,
  * docs/METRICS_REGISTRY.md). Revenue: the dashboard's realised net sales = merchandise sales − merchandise refunds, both
@@ -184,16 +204,18 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "1400", name: "Payment gateway clearing", type: "ASSET", parent: "1000", group: true, mapping: "group.payment_gateway" },
   { code: "1450", name: "Courier COD clearing", type: "ASSET", parent: "1000", group: true, mapping: "group.courier" },
   { code: "1480", name: "Other money accounts", type: "ASSET", parent: "1000", group: true, mapping: "group.other_money" },
+  { code: "1490", name: "Ad platform balances", type: "ASSET", parent: "1000", group: true, mapping: "group.ad_platform" },
   { code: "1500", name: "Receivables", type: "ASSET", parent: "1000", group: true },
   { code: "1510", name: "Trade receivables", type: "ASSET", parent: "1500", mapping: "asset.receivable_trade" },
   { code: "1520", name: "Employee advances", type: "ASSET", parent: "1500" },
   { code: "1530", name: "Asset sale proceeds receivable", type: "ASSET", parent: "1500", mapping: "asset.disposal_receivable" },
+  { code: "1540", name: "Courier claims receivable", type: "ASSET", parent: "1500", mapping: "asset.courier_claims" },
   { code: "1600", name: "Inventory", type: "ASSET", parent: "1000", group: true },
   { code: "1610", name: "Merchandise inventory", type: "ASSET", parent: "1600", mapping: "asset.inventory" },
   { code: "1630", name: "Work in progress (production)", type: "ASSET", parent: "1600", mapping: "asset.wip" },
   { code: "1700", name: "Other current assets", type: "ASSET", parent: "1000", group: true },
   { code: "1710", name: "VAT input recoverable", type: "ASSET", parent: "1700", mapping: "asset.vat_input" },
-  { code: "1720", name: "Prepaid expenses", type: "ASSET", parent: "1700" },
+  { code: "1720", name: "Prepaid expenses", type: "ASSET", parent: "1700", mapping: "asset.prepaid" },
   { code: "1800", name: "Fixed assets", type: "ASSET", parent: "1000", group: true },
   { code: "1810", name: "Equipment & machinery", type: "ASSET", parent: "1800", mapping: "asset.fixed_assets" },
   { code: "1820", name: "Furniture & fixtures", type: "ASSET", parent: "1800" },
@@ -206,7 +228,10 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "2110", name: "Trade payables (suppliers)", type: "LIABILITY", parent: "2100", mapping: "liability.payable_trade" },
   { code: "2115", name: "Goods received not invoiced", type: "LIABILITY", parent: "2100", mapping: "liability.grni", aliases: ["liability.supplier_returns"] },
   { code: "2116", name: "Production costs accrued, not invoiced", type: "LIABILITY", parent: "2100", mapping: "liability.production_accrual" },
-  { code: "2120", name: "Owner paid on behalf of business", type: "LIABILITY", parent: "2100" },
+  { code: "2117", name: "Landed costs to allocate", type: "LIABILITY", parent: "2100", mapping: "liability.landed_cost_clearing" },
+  { code: "2120", name: "Owner paid on behalf of business", type: "LIABILITY", parent: "2100", mapping: "liability.owner_reimbursable" },
+  { code: "2140", name: "Courier charges accrued", type: "LIABILITY", parent: "2100", mapping: "liability.courier_charges_accrued" },
+  { code: "2145", name: "Gateway fees accrued", type: "LIABILITY", parent: "2100", mapping: "liability.gateway_fees_accrued" },
   { code: "2200", name: "Customer liabilities", type: "LIABILITY", parent: "2000", group: true },
   { code: "2210", name: "Customer deposits", type: "LIABILITY", parent: "2200", mapping: "liability.customer_deposits" },
   { code: "2220", name: "Store credit liability", type: "LIABILITY", parent: "2200", mapping: "liability.store_credit" },
@@ -246,6 +271,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "5200", name: "Inventory shrinkage & write-offs", type: "COGS", parent: "5000", mapping: "cogs.inventory_shrinkage" },
   { code: "5210", name: "Inventory count adjustments", type: "COGS", parent: "5000", mapping: "cogs.count_adjustments" },
   { code: "5220", name: "Production losses & abnormal waste", type: "COGS", parent: "5000", mapping: "cogs.production_losses" },
+  { code: "5300", name: "Packaging & fulfilment", type: "COGS", parent: "5000", mapping: "cogs.packaging" },
 
   { code: "6000", name: "Operating expenses", type: "EXPENSE", group: true },
   { code: "6100", name: "Rent", type: "EXPENSE", parent: "6000" },
@@ -253,7 +279,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "6210", name: "Employer payroll contributions", type: "EXPENSE", parent: "6000", sensitive: true, mapping: "expense.employer_contributions" },
   { code: "6300", name: "Utilities", type: "EXPENSE", parent: "6000" },
   { code: "6400", name: "Internet, software & hosting", type: "EXPENSE", parent: "6000" },
-  { code: "6500", name: "Marketing & advertising", type: "EXPENSE", parent: "6000" },
+  { code: "6500", name: "Marketing & advertising", type: "EXPENSE", parent: "6000", mapping: "expense.advertising" },
   { code: "6600", name: "Delivery & courier", type: "EXPENSE", parent: "6000", mapping: "expense.courier_fees" },
   { code: "6650", name: "Freight-in & purchase charges", type: "EXPENSE", parent: "6000", mapping: "expense.freight_in" },
   { code: "6700", name: "Payment gateway fees", type: "EXPENSE", parent: "6000", mapping: "expense.gateway_fees" },
@@ -262,6 +288,7 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "6900", name: "Other operating expenses", type: "EXPENSE", parent: "6000", mapping: "expense.purchases_other" },
   { code: "6950", name: "Settlement adjustments", type: "EXPENSE", parent: "6000", mapping: "expense.settlement_adjustments" },
   { code: "6960", name: "Non-recoverable purchase tax", type: "EXPENSE", parent: "6000", mapping: "expense.non_recoverable_tax" },
+  { code: "6970", name: "Cash over / short", type: "EXPENSE", parent: "6000", mapping: "expense.cash_over_short" },
 
   { code: "7000", name: "Other income", type: "OTHER_INCOME", group: true },
   { code: "7100", name: "Interest income", type: "OTHER_INCOME", parent: "7000" },

@@ -19,6 +19,7 @@ import type { EpsValidationResult, InitEpsSessionParams } from "./payment/eps";
 import type { InitSessionParams, SslValidationResult } from "./payment/sslcommerz";
 import type { PushInput } from "./push/web-push";
 import type { SmsInput } from "./sms/bulksmsbd";
+import type { MetaCampaignDay } from "./ads/meta-insights";
 import type { CourierProviderId, EmailProviderId, PaymentGatewayKey, PushProviderId, SmsProviderId } from "./selection";
 
 export type { CreateConsignmentInput, SteadfastBulkResultItem, SteadfastConsignment, SteadfastFraudCheck };
@@ -52,6 +53,9 @@ export interface CourierProvider {
   statusByConsignment(consignmentId: string): Promise<string>;
   balance(): Promise<number>;
   deliveryScore(phone: string): Promise<SteadfastFraudCheck>;
+  /** Owner's books §3.2: the courier's payouts, and one payout with its parcels — raw, parsed by the finance side. */
+  payouts(): Promise<unknown>;
+  payout(id: string): Promise<unknown>;
 }
 
 // ── Server-side analytics events ───────────────────────────────────────────────────────────────
@@ -126,6 +130,15 @@ export function gatewayIdForPaymentMethod(paymentMethod: string): OnlineGatewayI
 
 // ── The bundle the registry hands out ─────────────────────────────────────────────────────────
 
+/** Owner's books §5.2: an ad platform's daily spend per campaign (read-only). */
+export interface AdSpendSource {
+  readonly id: "meta";
+  configured(): boolean;
+  /** The connected ad account ids (act_…). */
+  adAccounts(): string[];
+  campaignDays(adAccountId: string, since: string, until: string): Promise<MetaCampaignDay[]>;
+}
+
 export interface Providers {
   sms: SmsSender;
   email: EmailSender;
@@ -134,6 +147,7 @@ export interface Providers {
   serverEvents: ServerEventSink;
   tiktokServerEvents: TikTokServerEventSink;
   payments: PaymentGateways;
+  adSpend: AdSpendSource;
 }
 
 /** OWNER view for admin/ops: booleans and credential variable NAMES only (never a value). */

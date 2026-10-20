@@ -20,6 +20,7 @@ import { useCapabilities } from "@/hooks/use-capability";
 import { useCreateParam } from "@/hooks/use-create-param";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
+import * as booksApi from "@/lib/api/finance-books";
 import type { Commitment, CommitmentFrequency, CommitmentPeriod, CostBehaviour } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 
@@ -167,11 +168,16 @@ function ExpenseModal({ preset, onClose, onDone }: { preset: { commitment?: Comm
   const [description, setDescription] = useState(c && preset.period ? `${c.name} — ${preset.period.periodKey}` : "");
   const [payee, setPayee] = useState(c?.payee ?? "");
   const [reference, setReference] = useState("");
+  // Owner's books §2: paid from the owner's own pocket — owed back to them, or added as their capital.
+  const [pocket, setPocket] = useState<"" | "REIMBURSE" | "CAPITAL">("");
   const [key] = useState(newKey);
   const value = Number(amount);
-  const valid = Boolean(accountId) && Boolean(fromId) && value > 0 && (Boolean(c) || description.trim().length > 0);
+  const cashAccounts = paying.filter((a) => a.kind === "CASH");
+  const valid = Boolean(accountId) && Boolean(fromId) && value > 0 && (Boolean(c) || description.trim().length > 0) && (!pocket || cashAccounts.some((a) => a.id === fromId));
   const save = useMutation({
-    mutationFn: () => financeApi.recordExpense({
+    mutationFn: () => pocket
+      ? booksApi.ownerPaidExpense({ cashFinancialAccountId: fromId, expenseAccountId: accountId, amount: value, expenseDate: date, description: description.trim() || (c ? c.name : "Expense"), payee: payee.trim() || null, reference: reference.trim() || null, funding: pocket }, key)
+      : financeApi.recordExpense({
       expenseDate: date, expenseAccountId: accountId, amount: value, fromFinancialAccountId: fromId, costBehaviour: behaviour, description: description.trim() || null, payee: payee.trim() || null, reference: reference.trim() || null,
       ...(c && preset.period ? { commitmentId: c.id, periodKey: preset.period.periodKey } : {}),
     }, key),
@@ -190,10 +196,19 @@ function ExpenseModal({ preset, onClose, onDone }: { preset: { commitment?: Comm
         </Field>
         <Field htmlFor="ex-amount" label="Amount" required><Input id="ex-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         <Field htmlFor="ex-date" label="Date"><Input id="ex-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-        <Field htmlFor="ex-from-acc" label="Paid from" required>
+        {!c && (
+          <Field htmlFor="ex-pocket" label="Whose money" className="sm:col-span-2" hint={pocket ? "It passes through the cash account you choose — the owner's money in, the expense out" : undefined}>
+            <Select id="ex-pocket" value={pocket} onChange={(e) => { setPocket(e.target.value as "" | "REIMBURSE" | "CAPITAL"); setFromId(""); }} data-testid="expense-pocket">
+              <option value="">The business’s</option>
+              <option value="REIMBURSE">The owner’s own pocket — repay later</option>
+              <option value="CAPITAL">The owner’s own pocket — keep it in the business</option>
+            </Select>
+          </Field>
+        )}
+        <Field htmlFor="ex-from-acc" label={pocket ? "Through cash account" : "Paid from"} required>
           <Select id="ex-from-acc" value={fromId} onChange={(e) => setFromId(e.target.value)}>
             <option value="">Choose…</option>
-            {paying.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {(pocket ? cashAccounts : paying).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </Select>
         </Field>
         <Field htmlFor="ex-beh" label="Cost behaviour" hint="Fixed costs don't change with sales">

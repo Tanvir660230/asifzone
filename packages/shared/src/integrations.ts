@@ -147,6 +147,17 @@ export const INTEGRATIONS: readonly IntegrationDefinition[] = [
     ],
   },
   {
+    id: "meta_ads",
+    name: "Meta ad spend (for the books)",
+    group: "marketing",
+    description: "Brings each campaign's daily spend into Finance, so profit after ads is exact. Read-only.",
+    docsHint: "Meta Business Settings › Users › System users › Generate token (ads_read). Ad account id: Ads Manager, top left (act_…)",
+    fields: [
+      { key: "META_ADS_ACCESS_TOKEN", label: "Access token (ads_read)", kind: "secret", required: true },
+      { key: "META_ADS_ACCOUNT_IDS", label: "Ad account ids", kind: "text", required: true, placeholder: "act_1234567890", help: "One or more, separated by commas. Add each as an Ad platform account in Finance › Money accounts with this id as its reference." },
+    ],
+  },
+  {
     id: "tiktok",
     name: "TikTok Pixel",
     group: "marketing",

@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 /** Which opening category a money account's balance belongs to (the API checks the account's kind against it). */
-const MONEY_CATEGORY: Record<FinancialAccountKind, OpeningBalanceCategory> = { CASH: "CASH", BANK: "BANK", MOBILE_WALLET: "MOBILE_WALLET", PAYMENT_GATEWAY: "PAYMENT_ACCOUNT", COURIER: "PAYMENT_ACCOUNT", OTHER: "PAYMENT_ACCOUNT" };
+const MONEY_CATEGORY: Record<FinancialAccountKind, OpeningBalanceCategory> = { CASH: "CASH", BANK: "BANK", MOBILE_WALLET: "MOBILE_WALLET", PAYMENT_GATEWAY: "PAYMENT_ACCOUNT", COURIER: "PAYMENT_ACCOUNT", OTHER: "PAYMENT_ACCOUNT", AD_PLATFORM: "PAYMENT_ACCOUNT" };
 const MONEY_CATEGORIES: OpeningBalanceCategory[] = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_ACCOUNT"];
 /** The other balances, in plain words, with the ledger type each must be booked to and its normal side. */
 const OTHER: Array<{ category: OpeningBalanceCategory; label: string; hint: string; type: "ASSET" | "LIABILITY" | "EQUITY"; side: "DEBIT" | "CREDIT" }> = [
