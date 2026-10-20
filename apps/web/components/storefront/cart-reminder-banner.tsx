@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X, ShoppingBag } from "lucide-react";
 import { useCartStore } from "@/store/cart";
 import { useCartDrawerStore } from "@/store/cart-drawer";
+import { sessionGet, sessionSet } from "@/lib/safe-storage";
 
 const REMINDER_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes of inactivity
 const DISMISSED_KEY = "cart-reminder-dismissed";
@@ -21,14 +22,14 @@ export function CartReminderBanner() {
     // `lastActivityAt` start out as the default empty state and update once real data loads —
     // this effect must re-run on that update, not just once at mount.
     if (items.length === 0) return;
-    if (window.sessionStorage.getItem(DISMISSED_KEY)) return;
+    if (sessionGet(DISMISSED_KEY)) return;
     if (Date.now() - lastActivityAt < REMINDER_THRESHOLD_MS) return;
     setVisible(true);
   }, [items.length, lastActivityAt]);
 
   function dismiss() {
     setVisible(false);
-    window.sessionStorage.setItem(DISMISSED_KEY, "1");
+    sessionSet(DISMISSED_KEY, "1");
   }
 
   function viewCart() {

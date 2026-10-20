@@ -56,3 +56,14 @@ describe("apiFetch session refresh", () => {
     expect(calls).toEqual(["GET /api/customers/me", "POST /api/customers/refresh", "GET /api/customers/me"]);
   });
 });
+
+describe("apiFetch with a body that isn't JSON", () => {
+  it("rejects a 200 whose body isn't JSON instead of resolving to {} (an HTML page from a captive portal or proxy, a cut-off response)", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/product/x" } });
+    vi.stubGlobal("document", { cookie: "" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Login to Wi-Fi</html>", { status: 200, headers: { "Content-Type": "text/html" } })));
+    const { apiFetch, ApiError } = await import("./api-client");
+    const result = apiFetch("/api/reviews?productId=x");
+    await expect(result).rejects.toBeInstanceOf(ApiError);
+  });
+});

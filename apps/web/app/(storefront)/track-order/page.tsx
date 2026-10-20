@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { trackOrder } from "@/lib/api/orders";
 import { StorefrontPage, StorefrontPageHeader } from "@/components/storefront/storefront-page";
 import { ApiError } from "@/lib/api-client";
+import { sessionSet } from "@/lib/safe-storage";
 
 export default function TrackOrderPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function TrackOrderPage() {
     setChecking(true);
     try {
       await trackOrder(orderNumber.trim(), phone);
-      sessionStorage.setItem("lastOrderPhone", phone);
+      sessionSet("lastOrderPhone", phone);
       router.push(`/order-confirmation/${encodeURIComponent(orderNumber.trim())}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not find this order");
