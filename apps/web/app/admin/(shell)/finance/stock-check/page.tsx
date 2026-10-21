@@ -156,13 +156,13 @@ export default function StockCheckPage() {
                 <Table>
                   <TableHead>
                     <tr>
-                      <TableHeaderCell>Product</TableHeaderCell>
-                      <TableHeaderCell align="right" className="hidden sm:table-cell">Delivered</TableHeaderCell>
-                      <TableHeaderCell align="right" className="hidden md:table-cell">On the way / waiting</TableHeaderCell>
-                      <TableHeaderCell align="right">In stock</TableHeaderCell>
-                      <TableHeaderCell align="right">Through the site</TableHeaderCell>
-                      <TableHeaderCell align="right" className="hidden lg:table-cell">Typed in, no document</TableHeaderCell>
-                      <TableHeaderCell align="right">Counted</TableHeaderCell>
+                      <TableHeaderCell className="min-w-[15rem]">Product</TableHeaderCell>
+                      <TableHeaderCell align="right" className="hidden whitespace-nowrap sm:table-cell">Delivered</TableHeaderCell>
+                      <TableHeaderCell align="right" className="hidden whitespace-nowrap md:table-cell" title="On the way, waiting to ship or partly delivered">On the way</TableHeaderCell>
+                      <TableHeaderCell align="right" className="whitespace-nowrap">In stock</TableHeaderCell>
+                      <TableHeaderCell align="right" className="whitespace-nowrap" title="Still out on orders + in stock">Through site</TableHeaderCell>
+                      <TableHeaderCell align="right" className="hidden whitespace-nowrap lg:table-cell" title="Stock typed in without a purchase or goods receipt">Typed in</TableHeaderCell>
+                      <TableHeaderCell align="right" className="whitespace-nowrap">Counted</TableHeaderCell>
                     </tr>
                   </TableHead>
                   <tbody>
@@ -180,7 +180,11 @@ export default function StockCheckPage() {
                                 onClick={() => setOpen((s) => { const n = new Set(s); if (n.has(g.productId)) n.delete(g.productId); else n.add(g.productId); return n; })}
                               >
                                 {isOpen ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-fg-muted" /> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-fg-muted" />}
-                                <span>{g.product}<span className="block text-xs font-normal text-fg-muted">{g.variants.length} variant{g.variants.length === 1 ? "" : "s"}{g.returned ? ` · ${g.returned} returned` : ""}{g.edits ? ` · ${g.edits} stock edits without a reason` : ""}</span></span>
+                                <span className="min-w-0">
+                                  {g.product}
+                                  <span className="block text-xs font-normal text-fg-muted">{g.variants.length} variant{g.variants.length === 1 ? "" : "s"}{g.returned ? ` · ${g.returned} returned` : ""}</span>
+                                  {g.edits > 0 && <span className="mt-0.5 flex items-center gap-1 text-xs font-normal text-warning-700"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-500" aria-hidden />{g.edits} stock edit{g.edits === 1 ? "" : "s"} without a reason</span>}
+                                </span>
                               </button>
                             </TableCell>
                             <TableCell align="right" className="hidden tabular-nums sm:table-cell">{num(g.delivered)}</TableCell>
@@ -191,7 +195,7 @@ export default function StockCheckPage() {
                             <TableCell align="right">
                               {one ? (
                                 <CountCell count={one.count} onCount={canRecord ? () => setCounting({ variantId: one.variantId, label: g.product, stock: one.stock, unit: "pcs" }) : undefined} />
-                              ) : g.counted !== null ? <CountValue counted={g.counted} diff={g.countDiff ?? 0} /> : <span className="text-xs text-fg-subtle">per variant</span>}
+                              ) : g.counted !== null ? <CountValue counted={g.counted} diff={g.countDiff ?? 0} /> : <button type="button" className="whitespace-nowrap text-xs font-medium text-accent hover:underline" onClick={() => setOpen((s) => new Set(s).add(g.productId))} hidden={isOpen}>Count by size</button>}
                             </TableCell>
                           </TableRow>
                           {isOpen && g.variants.map((v) => (

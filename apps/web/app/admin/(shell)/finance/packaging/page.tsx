@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Package, Plus, RefreshCw } from "lucide-react";
@@ -19,6 +18,7 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
+import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
 import { ProductPicker } from "@/components/admin/product-picker";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
@@ -57,7 +57,7 @@ export default function PackagingPage() {
         action={(
           <div className="flex flex-wrap gap-2" data-phone-row>
             {can("finance.reconcile") && <Button size="sm" variant="outline" loading={run.isPending} onClick={() => run.mutate()}><RefreshCw className="h-4 w-4" /> Run now</Button>}
-            {can("finance.configure") && <Button size="sm" onClick={() => setAdding(true)} disabled={!d?.materials.length} data-testid="new-packing-rule"><Plus className="h-4 w-4" /> Rule</Button>}
+            {can("finance.configure") && Boolean(d?.materials.length) && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-packing-rule"><Plus className="h-4 w-4" /> Rule</Button>}
           </div>
         )}
       />
@@ -65,16 +65,21 @@ export default function PackagingPage() {
       {data.isError && <Alert variant="danger" title="Packaging couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => data.refetch()}>Retry</Button>}>{getErrorMessage(data.error, "")}</Alert>}
       {d && (
         <>
-          {d.materials.length === 0 && (
-            <Alert variant="info" title="Add your packaging as materials first">
-              In <Link href="/admin/manufacturing/materials" className="text-accent hover:underline">Inventory › Materials</Link> (e.g. “Poly bag 10×14”, unit pcs), then buy it on a purchase order so it has a real cost.
-            </Alert>
+          {(d.materials.length === 0 || d.rules.length === 0) && (
+            <SetupChecklist
+              title="Set up packaging"
+              description="Two steps, once. After that every parcel takes its packaging by itself."
+              testId="packaging-setup"
+              steps={[
+                { done: d.materials.length > 0, title: "Add your packaging as materials", detail: "In Inventory › Materials — e.g. “Poly bag 10×14”, unit pcs — then buy it on a purchase order so it has a real cost.", href: "/admin/manufacturing/materials", cta: "Open Materials" },
+                { done: d.rules.length > 0, title: "Add a rule", detail: "Start with “every parcel: 1 poly bag”, then one per product that needs its own box.", onSelect: d.materials.length > 0 && can("finance.configure") ? () => setAdding(true) : undefined, cta: "Add rule" },
+              ]}
+            />
           )}
+          {d.rules.length > 0 && (
           <section className="space-y-2">
             <h2 className="text-lg font-semibold text-fg">Rules</h2>
-            {d.rules.length === 0 ? (
-              <p className="text-sm text-fg-muted">No rules yet. Start with “every parcel: 1 poly bag”, then add one per product that needs its own box.</p>
-            ) : (
+            {(
               <Card className="divide-y divide-line p-0 text-sm">
                 {d.rules.map((r) => (
                   <div key={r.id} className={cn("flex flex-wrap items-center justify-between gap-3 px-4 py-3", !r.isActive && "opacity-60")} data-testid="packing-rule">
@@ -88,6 +93,7 @@ export default function PackagingPage() {
               </Card>
             )}
           </section>
+          )}
           {d.materials.length > 0 && (
             <section className="space-y-2">
               <h2 className="text-lg font-semibold text-fg">Materials and how long they last</h2>

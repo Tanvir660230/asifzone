@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +17,7 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
+import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
@@ -46,18 +46,22 @@ export default function LandedCostsPage() {
       <PageHeader
         title="Landed costs"
         description="The van, the porter or customs that brought a delivery in — added to those goods, so 500 caps cost what they really cost."
-        action={can("finance.transact") && <Button size="sm" onClick={() => setAdding(true)} disabled={!costing} data-testid="new-landed-cost"><Plus className="h-4 w-4" /> Landed cost</Button>}
+        action={can("finance.transact") && costing && <Button size="sm" onClick={() => setAdding(true)} data-testid="new-landed-cost"><Plus className="h-4 w-4" /> Landed cost</Button>}
       />
-      {business.data && !costing && (
-        <Alert variant="info" title="Confirm your stock's value first">
-          Landed costs change the value of stock, so they work once stock is valued — <Link href="/admin/finance/inventory-cutover" className="text-accent hover:underline">Valuation cutover</Link>.
-        </Alert>
-      )}
       {list.isLoading && <Skeleton className="h-32 w-full" />}
       {list.isError && <Alert variant="danger" title="Landed costs couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => list.refetch()}>Retry</Button>}>{getErrorMessage(list.error, "")}</Alert>}
-      {list.data && (list.data.landedCosts.length === 0 ? (
-        <EmptyState icon={Truck} title="No landed costs yet" description="When you pay to bring a delivery in, add it here against its goods receipt." />
-      ) : (
+      {list.data && business.data && list.data.landedCosts.length === 0 && (
+        <SetupChecklist
+          title="Before the first landed cost"
+          description="A landed cost changes what the goods in stock are worth, so stock needs a value first."
+          testId="landed-setup"
+          steps={[
+            { done: costing, title: "Confirm the value of your stock", detail: "One time: the cost of each item you already had.", href: "/admin/finance/inventory-cutover", cta: "Valuation cutover" },
+            { done: false, title: "Add what it cost to bring a delivery in", detail: "The van, the porter or customs — against its goods receipt, spread over the pieces.", onSelect: costing && can("finance.transact") ? () => setAdding(true) : undefined, cta: "Add landed cost" },
+          ]}
+        />
+      )}
+      {list.data && list.data.landedCosts.length > 0 && (
         <div className="space-y-3">
           {list.data.landedCosts.map((l) => (
             <Card key={l.id} className="space-y-2 p-4 sm:p-5" data-testid="landed-cost">
@@ -83,7 +87,7 @@ export default function LandedCostsPage() {
             </Card>
           ))}
         </div>
-      ))}
+      )}
       {cancelling && <CancelModal landed={cancelling} onClose={() => setCancelling(null)} onDone={() => { setCancelling(null); void queryClient.invalidateQueries({ queryKey: ["finance"] }); }} />}
       {adding && <LandedModal onClose={() => setAdding(false)} onDone={() => { setAdding(false); void queryClient.invalidateQueries({ queryKey: ["finance"] }); }} />}
     </div>
