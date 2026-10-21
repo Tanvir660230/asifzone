@@ -7,12 +7,15 @@
  * through an ad account. Sales that went out without a cost get the cost per piece from his list (caps ৳587, attar by
  * recipe), booked on the day of each sale, so every month's profit — and Mehedi Hasan's 20% — is right.
  *
- *   DATABASE_URL=… INSTALL_ID=… npx tsx scripts/finance/asif-zone-owner-history.ts --as <owner admin email>    # dry run
+ *   pnpm --filter api owner-history:asif-zone --as <owner admin email>    # dry run (locally)
+ *   In production (compiled into the api image), from /opt/asifzone:
+ *   docker compose -f docker/docker-compose.yml --env-file docker/.env exec api node dist/cli/asif-zone-owner-history.js --as <email>
  *   … --apply                      everything above (idempotent: a second run changes nothing)
  *   … --apply --ads-to 2026-10-21  the day the $557 Meta total runs to (default today)
  *   … --apply --autopilot          then switch on the autopilot (payouts into his bKash, kept by him; monthly shares)
  *                                  and run it once — this books the shares of finished months, which can't be undone
  */
+import "../../src/config/env";
 import { prisma } from "../../src/config/prisma";
 import { resolveAdminIdentity } from "../../src/domain/auth/authorization";
 import type { FinanceActor } from "../../src/domain/finance/finance-audit";
@@ -89,7 +92,9 @@ const value = (f: string) => (args.includes(f) ? args[args.indexOf(f) + 1] : und
 const APPLY = flag("--apply");
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const taka = (n: number) => `৳${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-const say = (s: string) => console.log(s);
+// Operator output goes straight to the terminal, not the JSON logger.
+const say = (s: string) => process.stdout.write(`${s}
+`);
 
 function unitCost(sku: string, product: string, size: string, category: string): number | null {
   if (MATERIAL[sku] !== undefined) return MATERIAL[sku]!;
