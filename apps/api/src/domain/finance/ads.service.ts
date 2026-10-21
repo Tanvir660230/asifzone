@@ -499,12 +499,17 @@ export async function importMetaSpend(input: { days?: number; since?: string }, 
     try {
       const rows = await source.campaignDays(act, since, today);
       const meta = (fa.metadata ?? {}) as Record<string, unknown>;
-      const rate = Number(meta.fxRate);
+      // The account's own rate, else the books' default USD rate (Finance Center › Settings).
+      const rate = Number(meta.fxRate) || Number((await prisma.financeBusiness.findUniqueOrThrow({ where: { id: business.id }, select: { defaultUsdRate: true } })).defaultUsdRate ?? 0);
+      // Days the owner already gave as part of a period total (from Ads Manager) keep it: Meta's figure for them is the
+      // same money, so it is not booked again.
+      const periodDays = new Set((await prisma.adSpendDay.findMany({ where: { source: "PERIOD", campaign: { financialAccountId: fa.id }, date: { gte: dateColumn(since), lte: dateColumn(today) } }, select: { date: true } })).map((d) => businessDateOf(d.date)));
       const touched = new Set<string>();
       await financeTransaction(async (tx) => {
         for (const r of rows) {
+          if (periodDays.has(r.date)) continue;
           const foreign = r.currency && r.currency !== cur;
-          if (foreign && !(rate > 0)) throw financeError(409, "AD_ACCOUNT_RATE", `${fa.name} spends in ${r.currency} — add its rate (taka per ${r.currency}) as fxRate in the account's details`);
+          if (foreign && !(rate > 0)) throw financeError(409, "AD_ACCOUNT_RATE", `${fa.name} spends in ${r.currency} — set the default taka per ${r.currency} in Finance Center › Settings, or fxRate in the account's details`);
           const amount = toMinor(foreign ? Math.round(r.spend * rate * 100) / 100 : r.spend, cur);
           let campaign = await tx.adCampaign.findUnique({ where: { financialAccountId_externalId: { financialAccountId: fa.id, externalId: r.campaignId } } });
           if (!campaign) {

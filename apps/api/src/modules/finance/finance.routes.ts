@@ -322,7 +322,7 @@ financeRouter.get("/opening-balances", requirePermission("finance.read"), asyncH
 financeRouter.put("/opening-balances/lines", requirePermission("finance.transact"), validate(openingBalanceLinesSchema), asyncHandler(async (req, res) => res.json(await opening.saveOpeningLines(req.body, await actorOf(req)))));
 financeRouter.put("/opening-balances/inventory", requirePermission("finance.transact"), validate(openingInventoryItemsSchema), asyncHandler(async (req, res) => res.json(await opening.saveOpeningInventory(req.body.items, await actorOf(req)))));
 financeRouter.post("/opening-balances/inventory/prefill", requirePermission("finance.transact"), asyncHandler(async (req, res) => res.json(await opening.prefillOpeningInventory(await actorOf(req)))));
-financeRouter.post("/opening-balances/post", requirePermission("finance.post"), asyncHandler(async (req, res) => res.json(await opening.postOpeningBalances(await actorOf(req)))));
+financeRouter.post("/opening-balances/post", requirePermission("finance.post"), asyncHandler(async (req, res) => res.json(await opening.postOpeningBalances(await actorOf(req), { nothingHeld: req.body?.nothingHeld === true }))));
 
 // ── reconciliation ──────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/reconciliation/checks", requirePermission("finance.read"), asyncHandler(async (_req, res) => res.json({ checks: reconciliation.listReconciliationChecks() })));

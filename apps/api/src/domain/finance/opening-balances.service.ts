@@ -269,12 +269,22 @@ export async function prefillOpeningInventory(actor: FinanceActor) {
   });
 }
 
-export async function postOpeningBalances(actor: FinanceActor) {
+/** `nothingHeld`: the business held nothing on the opening date (it started later) — the batch is posted with no lines and
+ * no journal, so the books start and everything after is entered on its own day. Refused when the batch has any line or
+ * valued stock. */
+export async function postOpeningBalances(actor: FinanceActor, opts: { nothingHeld?: boolean } = {}) {
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   return inTransaction(async (tx) => {
     const batch = await lockDraftBatch(tx, business, actor);
     if (businessDateOf(batch.openingDate) !== business.openingDate) throw financeError(409, "OPENING_DATE_MISMATCH", "The batch date differs from the business opening date");
+    if (opts.nothingHeld) {
+      const s = summarise(batch, cur);
+      if (batch.lines.length || s.inventory.valuedTotal > 0) throw financeError(409, "OPENING_NOT_EMPTY", "These opening balances have lines or valued stock — post them as they are");
+      const after = await tx.openingBalanceBatch.update({ where: { id: batch.id }, data: { status: "POSTED", postedAt: new Date(), postedByAdminId: actor.type === "ADMIN" ? actor.adminId : null }, include: BATCH_INCLUDE });
+      await recordFinanceAudit(tx, { businessId: business.id, actor, action: "opening.post_nothing_held", entityType: "OpeningBalanceBatch", entityId: batch.id, before: { status: batch.status }, after: { status: after.status, nothingHeld: true } });
+      return { batch: batchDto(after, cur), journal: null };
+    }
     const lines: JournalLineSpec[] = batch.lines.map((l) => ({
       accountId: l.accountId,
       debit: l.side === "DEBIT" ? toMinor(l.amount, cur) : 0,

@@ -187,6 +187,9 @@ catches up every fact from the opening date.
     no cost.
   - The valued total posts to `asset.inventory` with valuation status OPENING_BALANCE.
 - The difference goes to **Opening balance equity**, so the journal balances by construction.
+- **Nothing held** (2026-10-21): a business that started after its opening date posts the batch with `nothingHeld: true`
+  — refused when it has any line or valued stock. The batch is POSTED with no journal, the books start, and what came
+  later is entered on its own day ("Start with nothing held" on the Start the books page).
 
 ## 9. Reconciliation
 

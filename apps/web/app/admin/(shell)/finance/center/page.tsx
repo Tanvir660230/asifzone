@@ -376,6 +376,7 @@ const SKIPPED: Record<string, string> = {
   LIVE_PROVIDERS_OFF: "Not on this copy (live connections are off)",
   META_NOT_CONNECTED: "Meta isn't connected",
   BOOKS_NOT_STARTED: "Waits until the books are started",
+  NO_ASSETS: "No assets yet",
 };
 
 function stepLine(step: booksApi.AutopilotStep, done: (s: booksApi.AutopilotStep) => string) {
@@ -411,6 +412,7 @@ function Autopilot({ canEdit }: { canEdit: boolean }) {
         { label: "Steadfast payouts", ...stepLine(last.payouts, (s) => `${s.imported ?? 0} new, ${s.posted?.length ?? 0} posted${s.waiting?.length ? ` · ${s.waiting.length} waiting for a look` : ""}`) },
         { label: "Owner's withdrawals", ...stepLine(last.ownerDrawings, (s) => (s.taken ? `${s.taken} payout(s), ${formatPrice(s.amount ?? 0)}` : "Nothing new")) },
         { label: "Meta ad spend", ...stepLine(last.adSpend, (s) => `${s.days ?? 0} campaign-day(s) read`) },
+        ...(last.depreciation ? [{ label: "Depreciation", ...stepLine(last.depreciation, (s) => (s.months?.length ? s.months.join(", ") : "Nothing new")) }] : []),
         { label: "Partners' shares", ...stepLine(last.profitShares, (s) => (s.shared?.length ? s.shared.map((x) => `${x.partner} ${x.period}: ${formatPrice(x.amount)}`).join(" · ") : "Nothing new")) },
       ]
     : [];

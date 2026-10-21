@@ -160,6 +160,17 @@ describe("ad spend", () => {
     expect((await api().put(`/ads/campaigns/${c.body.id}/period-spend`, { from: "2026-09-30", to: "2026-10-04", amount: 1500 })).body.details?.code).toBe("PERIOD_OUTSIDE_CAMPAIGN");
     expect(await balanceOf("expense.advertising")).toBe(before + 1500);
   });
+
+  it("Meta's figure for a day already given as part of a period total is not booked again; later days are", async () => {
+    const before = await balanceOf("expense.advertising");
+    meta.rows = [
+      { campaignId: "cmp-10", campaignName: "Caps October", date: "2026-10-03", spend: 400, currency: "BDT", impressions: 1, clicks: 1, purchases: 0 },
+      { campaignId: "cmp-10", campaignName: "Caps October", date: "2026-10-12", spend: 250, currency: "BDT", impressions: 1, clicks: 1, purchases: 0 },
+    ];
+    const r = await api().post("/ads/import-meta", { since: "2026-10-01" });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(await balanceOf("expense.advertising")).toBe(before + 250);
+  });
 });
 
 describe("prepaid costs", () => {

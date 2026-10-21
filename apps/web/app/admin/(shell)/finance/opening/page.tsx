@@ -226,7 +226,7 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
   });
   const post = useMutation({
     mutationFn: financeApi.postOpeningBalances,
-    onSuccess: (r) => { refresh(); toast.success(`The books have started — opening journal #${r.journal.number ?? ""} posted`); },
+    onSuccess: (r) => { refresh(); toast.success(r.journal ? `The books have started — opening journal #${r.journal.number ?? ""} posted` : "The books have started, with nothing held on the start date"); },
     onError: (err) => toast.error(getErrorMessage(err, "The opening balances couldn't be posted")),
   });
 
@@ -235,15 +235,17 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
   const stockValue = items.reduce((t, i) => t + itemValue(i), 0);
   const missing = items.filter((i) => i.valuationStatus === "MISSING");
   const s = batch?.summary;
+  // A business that started after its opening date held nothing on it: the books can start with nothing.
+  const nothingHeld = Boolean(batch) && batch!.lines.length === 0 && (s?.inventory.valuedTotal ?? 0) === 0;
 
   async function confirmPost() {
-    const ok = await confirm(`Post the opening balances dated ${formatBookDate(openingDate)}?`, {
+    const ok = await confirm(nothingHeld ? `Start the books on ${formatBookDate(openingDate)} with nothing held?` : `Post the opening balances dated ${formatBookDate(openingDate)}?`, {
       title: "Start the books",
       confirmLabel: "Post and start",
       tone: "default",
-      details: <p className="text-sm text-fg-muted">After this the start date and these balances are fixed. A later correction is a journal entry.</p>,
+      details: <p className="text-sm text-fg-muted">{nothingHeld ? "For a business that started after this date: no money, stock or debts on it. Everything after is entered on its own day." : "After this the start date and these balances are fixed. A later correction is a journal entry."}</p>,
     });
-    if (ok) post.mutate();
+    if (ok) post.mutate({ nothingHeld });
   }
 
   return (
@@ -374,7 +376,7 @@ function BalancesSteps({ openingDate, batch }: { openingDate: string; batch: fin
         {(linesDirty || itemsDirty) && <Alert variant="warning" title="Save your changes first" className="mt-4">The totals and posting use what&apos;s saved.</Alert>}
         {can("finance.post") ? (
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Button disabled={!s || linesDirty || itemsDirty} loading={post.isPending} onClick={confirmPost} data-testid="post-opening"><CalendarCheck className="h-4 w-4" /> Post and start the books</Button>
+            <Button disabled={(!s && !nothingHeld) || linesDirty || itemsDirty} loading={post.isPending} onClick={confirmPost} data-testid="post-opening"><CalendarCheck className="h-4 w-4" /> {nothingHeld ? "Start with nothing held" : "Post and start the books"}</Button>
             <span className="text-sm text-fg-muted">This can&apos;t be undone; later corrections are journal entries.</span>
           </div>
         ) : (

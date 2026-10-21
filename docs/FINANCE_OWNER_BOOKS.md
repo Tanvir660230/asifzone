@@ -139,6 +139,8 @@ unique per (campaign, date, basis).
   more than the bank rate; empty = the default rate, marked an estimate; "taka charged" wins over the rate). Days that
   already have their own figure keep it and are subtracted; the rest is shared evenly over the other days. Entering
   the period again replaces only its shared days, so a month typed exactly later narrows the shared total.
+- Meta's import skips days that already carry a period total on the same ad account (the owner's Ads Manager figure is
+  the same money), and converts USD at the account's fxRate, else the default USD rate (Finance Center › Settings).
 
 ### 5.3 Postings
 | Moment | Journal |
@@ -308,6 +310,7 @@ The owner asked for everything that can run by itself to run by itself. `autopil
 | Steadfast payouts | the account Steadfast pays into (`autoPayoutAccountId`) | Imports new payouts (§3.2). A draft is posted when every parcel is matched to its order, or has no invoice number (booked straight on Steadfast → marked a sale outside the website). A parcel carrying our invoice number that matches no order keeps the payout in draft for a person (Steadfast check). |
 | Owner's withdrawals | `autoPayoutsToOwner` | Every posted payout into that account becomes the owner's drawing on the payout's day (`markPayoutsTaken`, once per payout). |
 | Meta ad spend | Meta connected in Settings › Integrations | Reads the last 7 days (§5.2). |
+| Depreciation | an asset in use | Runs every finished month not yet run, in order, so the month's profit has it. |
 | Partners' shares | `autoProfitShares` | `runProfitShares` once the books have started: each finished month is shared once (§8 of FINANCE_EQUITY.md). |
 
 Live calls are made only when live providers are on (`LIVE_PROVIDERS`); on a copy the payout and Meta steps say so.

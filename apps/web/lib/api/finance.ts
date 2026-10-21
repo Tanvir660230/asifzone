@@ -407,7 +407,8 @@ export const getOpeningBalances = () => apiFetch<{ openingDate: string | null; b
 export const saveOpeningLines = (body: { notes?: string | null; lines: Array<Omit<OpeningLine, "id">> }) => apiFetch<OpeningBatch>(`${BASE}/opening-balances/lines`, { method: "PUT", body });
 export const saveOpeningInventory = (items: OpeningInventoryItem[]) => apiFetch<OpeningBatch>(`${BASE}/opening-balances/inventory`, { method: "PUT", body: { items } });
 export const prefillOpeningInventory = () => apiFetch<OpeningBatch>(`${BASE}/opening-balances/inventory/prefill`, { method: "POST", body: {} });
-export const postOpeningBalances = () => apiFetch<{ batch: OpeningBatch; journal: { id: string; number: number | null } }>(`${BASE}/opening-balances/post`, { method: "POST", body: {} });
+/** `nothingHeld`: the business held nothing on the opening date — the books start with no opening journal. */
+export const postOpeningBalances = (body: { nothingHeld?: boolean } = {}) => apiFetch<{ batch: OpeningBatch; journal: { id: string; number: number | null } | null }>(`${BASE}/opening-balances/post`, { method: "POST", body });
 
 // ── account mapping: which ledger account each kind of posting uses (docs/FINANCE_PHASE_1.md §3) ───────────────────────
 export interface AccountMapping { key: string; account: { id: string; code: string; name: string } | null }

@@ -231,8 +231,8 @@ export const getCenterSettings = () => apiFetch<CenterSettings>(`${BASE}/center/
 export const updateCenterSettings = (body: Partial<CenterSettings>) => apiFetch<CenterSettings>(`${BASE}/center/settings`, { method: "PATCH", body });
 
 /** Autopilot (docs/FINANCE_OWNER_BOOKS.md §15): what runs by itself every morning and evening. */
-export interface AutopilotStep { ok: boolean; skipped?: string; error?: string; imported?: number; posted?: string[]; waiting?: Array<{ reference: string; parcels: number }>; problems?: Array<{ payoutId: string; message: string }>; taken?: number; amount?: number; days?: number; shared?: Array<{ partner: string; period: string; amount: number }> }
-export interface AutopilotRun { at: string; payouts: AutopilotStep; ownerDrawings: AutopilotStep; adSpend: AutopilotStep; profitShares: AutopilotStep }
+export interface AutopilotStep { ok: boolean; skipped?: string; error?: string; imported?: number; posted?: string[]; waiting?: Array<{ reference: string; parcels: number }>; problems?: Array<{ payoutId: string; message: string }>; taken?: number; amount?: number; days?: number; shared?: Array<{ partner: string; period: string; amount: number }>; months?: string[] }
+export interface AutopilotRun { at: string; payouts: AutopilotStep; ownerDrawings: AutopilotStep; adSpend: AutopilotStep; depreciation?: AutopilotStep; profitShares: AutopilotStep }
 export interface AutopilotSettings { payoutAccount: { id: string; name: string; kind: string } | null; payoutsToOwner: boolean; profitShares: boolean; metaConnected: boolean; lastRun: AutopilotRun | null }
 export const getAutopilot = () => apiFetch<AutopilotSettings>(`${BASE}/center/autopilot`);
 export const updateAutopilot = (body: { payoutAccountId?: string | null; payoutsToOwner?: boolean; profitShares?: boolean }) => apiFetch<AutopilotSettings>(`${BASE}/center/autopilot`, { method: "PATCH", body });

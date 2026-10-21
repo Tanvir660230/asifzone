@@ -6,7 +6,9 @@
  *    a sale outside the website). A parcel with our invoice number that matches no order waits for a person.
  * 2. The owner keeps the payouts: each posted payout into that account becomes his drawing on the payout's day.
  * 3. Meta ad spend: the last 7 days are read again when Meta is connected (Meta revises recent days).
- * 4. Partners' profit shares: every finished month is shared once the books have started.
+ * 4. Depreciation: every finished month not yet run, in order, from the first asset's start.
+ * 5. Partners' profit shares: every finished month is shared once the books have started (after the steps above, so
+ *    the month's profit has its costs).
  *
  * Each step runs on its own: one failing never stops the others. Every step is idempotent, so a run can be repeated.
  */
@@ -20,6 +22,7 @@ import { importCourierPayouts } from "./courier-payouts.service";
 import { getSettlement, markUnmatchedAsOutsideSales, postSettlement } from "./settlements.service";
 import { markPayoutsTaken, runProfitShares } from "./partner-profit.service";
 import { importMetaSpend } from "./ads.service";
+import { runDepreciation } from "./fixed-assets.service";
 import { getProviders } from "../../providers/registry";
 import { liveProvidersEnabled } from "../../lib/provider-guard";
 
@@ -28,7 +31,7 @@ export const AUTOPILOT_ACTOR: FinanceActor = { type: "SYSTEM", label: "system:au
 const PAYING_KINDS = ["BANK", "MOBILE_WALLET", "CASH"];
 
 type Step = { ok: boolean; skipped?: string; error?: string; [k: string]: unknown };
-export interface AutopilotRun { at: string; payouts: Step; ownerDrawings: Step; adSpend: Step; profitShares: Step }
+export interface AutopilotRun { at: string; payouts: Step; ownerDrawings: Step; adSpend: Step; depreciation: Step; profitShares: Step }
 
 export async function getAutopilotSettings() {
   const { business } = await getFinanceContext();
@@ -127,6 +130,29 @@ async function adStep(actor: FinanceActor): Promise<Step> {
   }
 }
 
+const nextMonth = (m: string) => {
+  const [y, mo] = m.split("-").map(Number) as [number, number];
+  return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
+};
+
+async function depreciationStep(actor: FinanceActor): Promise<Step> {
+  try {
+    const { business } = await getFinanceContext();
+    const first = await prisma.fixedAsset.findFirst({ where: { businessId: business.id, status: "IN_USE" }, orderBy: { depreciationStart: "asc" }, select: { depreciationStart: true } });
+    if (!first) return { ok: true, skipped: "NO_ASSETS" };
+    const latest = await prisma.depreciationRun.findFirst({ where: { businessId: business.id, status: "POSTED" }, orderBy: { periodKey: "desc" }, select: { periodKey: true } });
+    const now = new Date().toISOString().slice(0, 7);
+    const months: string[] = [];
+    for (let m = latest ? nextMonth(latest.periodKey) : first.depreciationStart; m < now; m = nextMonth(m)) {
+      await runDepreciation(m, actor);
+      months.push(m);
+    }
+    return { ok: true, months };
+  } catch (err) {
+    return failed(err);
+  }
+}
+
 async function shareStep(on: boolean, actor: FinanceActor): Promise<Step> {
   if (!on) return { ok: true, skipped: "OFF" };
   try {
@@ -145,8 +171,9 @@ export async function runAutopilot(actor: FinanceActor = AUTOPILOT_ACTOR): Promi
   const payouts = await payoutStep(b.autoPayoutAccountId, actor);
   const ownerDrawings = await ownerStep(b.autoPayoutAccountId, b.autoPayoutsToOwner, actor);
   const adSpend = await adStep(actor);
+  const depreciation = await depreciationStep(actor);
   const profitShares = await shareStep(b.autoProfitShares, actor);
-  const run: AutopilotRun = { at: new Date().toISOString(), payouts, ownerDrawings, adSpend, profitShares };
+  const run: AutopilotRun = { at: new Date().toISOString(), payouts, ownerDrawings, adSpend, depreciation, profitShares };
   await financeTransaction(async (tx) => {
     await tx.financeBusiness.update({ where: { id: business.id }, data: { autopilotLastRun: run as never } });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "finance_autopilot.run", entityType: "FinanceBusiness", entityId: business.id, after: run });
