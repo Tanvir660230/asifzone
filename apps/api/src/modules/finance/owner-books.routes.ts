@@ -38,9 +38,11 @@ import {
   materialRollFinishSchema,
   financeCenterSettingsSchema,
   financeAutopilotSchema,
+  ownerHomeQuerySchema,
 } from "@clothing-brand/shared";
 import * as center from "../../domain/finance/finance-center.service";
 import * as autopilot from "../../domain/finance/autopilot.service";
+import { ownerHome } from "../../domain/finance/owner-home.service";
 import * as stockCheck from "../../domain/finance/stock-check.service";
 import { prisma } from "../../config/prisma";
 import { getFinanceContext } from "../../domain/finance/finance-context";
@@ -79,6 +81,7 @@ const id = (req: Request) => req.params.id!;
 const viewerOf = (req: Request): FinanceViewer => ({ sensitive: req.admin!.permissions.includes("finance.sensitive") });
 
 // ── who holds the money (§2) ────────────────────────────────────────────────────────────────────────────────────────
+ownerBooksRouter.get("/owner-home", requirePermission("finance.read"), validate(ownerHomeQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await ownerHome(req.query as never, viewerOf(req)))));
 ownerBooksRouter.get("/money-map", requirePermission("finance.read"), validate(moneyMapQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await custody.moneyMap(req.query as never, viewerOf(req)))));
 ownerBooksRouter.put("/financial-accounts/:id/custodian", requirePermission("finance.configure"), validate(custodianUpdateSchema), asyncHandler(async (req, res) => res.json(await custody.setCustodian(id(req), req.body, await actorOf(req)))));
 ownerBooksRouter.get("/custody/me", requirePermission("finance.custody"), asyncHandler(async (req, res) => res.json(await custody.myCustody(await actorOf(req)))));

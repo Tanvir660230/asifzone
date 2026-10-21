@@ -219,6 +219,9 @@ export const financeAutopilotSchema = z
   .object({ payoutAccountId: id.nullable().optional(), payoutsToOwner: z.boolean().optional(), profitShares: z.boolean().optional() })
   .refine((v) => Object.keys(v).length > 0, "Nothing to change");
 
+/** The owner's home (docs/FINANCE_OWNER_HOME.md): one month, YYYY-MM (default: this month). */
+export const ownerHomeQuerySchema = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "A month as YYYY-MM").optional() });
+
 // ── stock check: counts and rolls (docs/FINANCE_CENTER.md §7) ─────────────────────────────────────────────────────────
 
 export const stockCountSchema = z.object({ variantId: id, counted: z.number().int().min(0).max(10_000_000), countDate: businessDate.optional(), note: optionalText(300) });

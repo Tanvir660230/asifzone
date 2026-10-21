@@ -27,12 +27,16 @@ test.beforeAll(async ({ browser }) => {
   owner = await login(browser);
 });
 
-test("the Finance module opens on its Overview, with every group in the map", async () => {
+test("the Finance module opens on the owner's home; every other page is in the folded map", async () => {
   await owner.goto("/admin/finance");
   await expect(owner.getByRole("heading", { name: "Finance", level: 1 })).toBeVisible(NAV);
-  await expect(owner.getByRole("link", { name: /Money you have now/ })).toHaveAttribute("href", "/admin/finance/accounts");
-  await expect(owner.getByTestId("overview-month").or(owner.getByText("Profit and loss couldn't be loaded"))).toBeVisible(NAV);
-  await expect(owner.getByTestId("overview-alerts").or(owner.getByTestId("overview-alerts-empty"))).toBeVisible(NAV);
+  await expect(owner.getByTestId("owner-month")).toBeVisible(NAV);
+  await expect(owner.getByTestId("owner-money").getByRole("link", { name: /Cash, bank and bKash/ })).toHaveAttribute("href", "/admin/finance/accounts");
+  await expect(owner.getByTestId("owner-todo").or(owner.getByTestId("owner-todo-empty"))).toBeVisible(NAV);
+  await owner.getByTestId("owner-add").click();
+  await expect(owner.getByTestId("quick-add-choices")).toBeVisible(NAV);
+  await owner.keyboard.press("Escape");
+  await owner.getByTestId("finance-map-fold").locator("summary").click();
   const map = owner.getByTestId("finance-map");
   for (const group of ["Money", "Sales & payments", "Purchasing", "Reports & books", "Payroll & partners", "Setup & checks"]) {
     await expect(map.getByRole("heading", { name: group, exact: true })).toBeVisible();
