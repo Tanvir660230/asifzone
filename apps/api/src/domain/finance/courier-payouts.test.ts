@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPayoutLines, parsePayoutDetail, parsePayoutList } from "./courier-payouts.service";
+import { buildPayoutLines, invoiceOf, parsePayoutDetail, parsePayoutList } from "./courier-payouts.service";
 
 // Steadfast's payout responses, as the live API sends them (checked 2026-10-21; field names only, figures invented in the
 // same relation the real ones have: amount − due_bills − charges = total).
@@ -29,6 +29,11 @@ describe("payout list and detail (the live shape)", () => {
     const d = parsePayoutDetail(detail);
     expect(d.payout).toMatchObject({ id: "SFC-1", net: 2020, gross: 2300 });
     expect(d.lines.map((l) => [l.consignmentId, l.invoice, l.booked, l.status])).toEqual([["11", "ORD-1", 1000, "delivered"], ["12", "ORD-2", 900, "partial_delivered"], ["13", "ORD-3", 800, "cancelled"], ["14", "ORD-4", 700, "delivered"]]);
+  });
+  it("a parcel booked straight on Steadfast has no invoice, even when Steadfast sends the text \"null\"", () => {
+    const lines = parsePayoutDetail({ payment: { consignments: [{ consignment_id: 282831187, invoice: "null", cod_amount: 2200, status: "delivered" }, { consignment_id: 7, invoice: " ORD-7 ", cod_amount: 500, status: "delivered" }] } }).lines;
+    expect(lines.map((l) => l.invoice)).toEqual([null, "ORD-7"]);
+    expect([invoiceOf("NULL"), invoiceOf(""), invoiceOf(null), invoiceOf("-"), invoiceOf("ORD-1")]).toEqual([null, null, null, null, "ORD-1"]);
   });
   it("still reads an older shape with one amount and a charge per parcel; refuses one it can't read", () => {
     expect(parsePayoutList([{ id: 2, amount: 10 }]).payouts).toEqual([{ id: "2", net: 10, gross: null, deliveryCharges: null, codCharges: null, date: null }]);

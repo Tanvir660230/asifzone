@@ -16,12 +16,14 @@ import { toast } from "@/components/ui/toast";
 import { EmptyState } from "@/components/admin/empty-state";
 import { ModuleTabs } from "@/components/admin/module-tabs";
 import { PageHeader } from "@/components/admin/page-header";
+import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as booksApi from "@/lib/api/finance-books";
 import * as mfgApi from "@/lib/api/manufacturing";
 import { formatBookDate, formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
+import { cn } from "@/lib/utils";
 
 /** Owner's books §7.2: refill attar into bottles in one step — the recipe's oil and bottles leave stock, the bottles arrive
  * with their exact cost. Runs the production engine start to finish (Inventory › Manufacturing shows each refill). */
@@ -72,7 +74,15 @@ export default function QuickRefillPage() {
       {boms.isLoading && <Skeleton className="h-40 w-full" />}
       {boms.isError && <Alert variant="danger" title="Recipes couldn't be loaded" action={<Button size="sm" variant="outline" onClick={() => boms.refetch()}>Retry</Button>}>{getErrorMessage(boms.error, "")}</Alert>}
       {boms.data && recipes.length === 0 && (
-        <EmptyState icon={Droplets} title="Add a recipe first" description="Each attar needs its recipe once — e.g. 6 ml bottle: 6 ml oil + 1 bottle + 1 label." action={<Link href="/admin/manufacturing/boms" className="text-sm font-medium text-accent hover:underline">Bills of materials</Link>} />
+        <SetupChecklist
+          title="Before the first refill"
+          description="A refill takes the oil and bottles out of stock by its recipe, so each attar needs one."
+          testId="refill-setup"
+          steps={[
+            { done: false, title: "Approve a recipe for each attar", detail: "Once per attar — e.g. 6 ml bottle: 6 ml oil + 1 bottle + 1 label.", href: "/admin/manufacturing/boms", cta: "Bills of materials" },
+            { done: false, title: "Refill here", detail: "Pick the attar, the bottle size and how many you filled — stock and cost update in one step." },
+          ]}
+        />
       )}
       {recipes.length > 0 && (
         <Card className="space-y-4 p-4 sm:p-5">
@@ -115,7 +125,7 @@ export default function QuickRefillPage() {
           )}
         </Card>
       )}
-      <section className="space-y-2">
+      <section className={cn("space-y-2", boms.data && recipes.length === 0 && refills.data?.refills.length === 0 && "hidden")}>
         <h2 className="text-lg font-semibold text-fg">Recent refills</h2>
         {refills.isLoading && <Skeleton className="h-24 w-full" />}
         {refills.data && (refills.data.refills.length === 0 ? (
