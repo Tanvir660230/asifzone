@@ -100,20 +100,22 @@ test("payroll: a component and an employee through the UI; payslips print", asyn
   }
 });
 
-test("partners & equity: a partner gets their own accounts; equity equals the balance sheet", async () => {
+test("owner & partners: a working partner gets their own accounts and a monthly share; equity equals the balance sheet", async () => {
   await owner.goto("/admin/finance/equity");
-  await expect(owner.getByRole("heading", { name: "Partners & equity" })).toBeVisible(NAV);
+  await expect(owner.getByRole("heading", { name: "Owner & partners" })).toBeVisible(NAV);
   await owner.getByTestId("new-partner").click();
   await owner.locator("#pt-name").fill(`QA Partner ${RUN}`);
   await owner.locator("#pt-joined").fill("2026-01-01");
-  await owner.locator("#pt-share").fill("10");
+  await owner.locator("#pt-pct").fill("10");
   await owner.getByTestId("save-partner").click();
   const card = owner.getByTestId("partner-card").filter({ hasText: `QA Partner ${RUN}` });
   await expect(card).toBeVisible(NAV);
-  await expect(card).toContainText("unconfirmed");
-  await expect(card.getByRole("link", { name: /^31\d\d ledger$/ })).toBeVisible();
-  await expect(card.getByRole("link", { name: /^32\d\d ledger$/ })).toBeVisible();
+  await expect(card).toContainText("10% of monthly profit");
   const e = (await api(owner, "GET", "/equity")).body;
+  const p = e.partners.find((x: { name: string }) => x.name === `QA Partner ${RUN}`);
+  expect(p).toMatchObject({ role: "WORKING", profitSharePct: 10, shareConfirmed: true });
+  expect(p.capitalAccount.code).toMatch(/^31\d\d$/);
+  expect(p.currentAccount.code).toMatch(/^32\d\d$/);
   const bs = (await api(owner, "GET", `/statements/balance-sheet?asOf=${e.asOf}`)).body;
   expect(e.equity.total).toBe(bs.sections.find((s: { key: string }) => s.key === "equity").total);
 });
