@@ -105,6 +105,8 @@ export const ACCOUNT_MAPPING_KEYS = [
   "revenue.outside_sales",
   "expense.unallocated",
   "expense.sms",
+  "equity.owner_drawings",
+  "equity.profit_shared",
 ] as const;
 /**
  * Clearing accounts (Phase 3): money the business has been paid that has not reached a bank or cash account yet — COD
@@ -170,7 +172,7 @@ export const PAYROLL_MAPPING_KEYS: readonly AccountMappingKey[] = ["liability.sa
 export const OWNER_BOOKS_MAPPING_KEYS: readonly AccountMappingKey[] = [
   "group.ad_platform", "asset.prepaid", "asset.courier_claims", "liability.courier_charges_accrued", "liability.gateway_fees_accrued",
   "liability.landed_cost_clearing", "cogs.packaging", "expense.advertising", "expense.cash_over_short", "liability.owner_reimbursable", "revenue.outside_sales", "expense.unallocated", "expense.sms", "expense.courier_fees",
-  "expense.gateway_fees", "asset.inventory", "cogs.cost_adjustments", "cogs.inventory_shrinkage",
+  "expense.gateway_fees", "asset.inventory", "cogs.cost_adjustments", "cogs.inventory_shrinkage", "equity.owner_capital", "equity.owner_drawings", "equity.profit_shared",
 ];
 
 /**
@@ -255,7 +257,8 @@ export const DEFAULT_CHART_OF_ACCOUNTS: readonly ChartTemplateAccount[] = [
   { code: "3000", name: "Equity", type: "EQUITY", group: true },
   { code: "3100", name: "Owner capital", type: "EQUITY", parent: "3000", mapping: "equity.owner_capital", sensitive: true },
   { code: "3200", name: "Partner current accounts", type: "EQUITY", parent: "3000", sensitive: true },
-  { code: "3300", name: "Drawings", type: "EQUITY", parent: "3000", normalBalance: "DEBIT", sensitive: true },
+  { code: "3300", name: "Drawings", type: "EQUITY", parent: "3000", normalBalance: "DEBIT", mapping: "equity.owner_drawings", sensitive: true },
+  { code: "3350", name: "Profit shared with partners", type: "EQUITY", parent: "3000", normalBalance: "DEBIT", mapping: "equity.profit_shared", sensitive: true },
   { code: "3400", name: "Retained earnings", type: "EQUITY", parent: "3000", mapping: "equity.retained_earnings" },
   { code: "3900", name: "Opening balance equity", type: "EQUITY", parent: "3000", mapping: "equity.opening_balance" },
 

@@ -61,6 +61,11 @@ import {
   payRunReverseSchema,
   partnerCreateSchema,
   partnerUpdateSchema,
+  profitShareRunSchema,
+  profitSharePaySchema,
+  ownerMoneySchema,
+  payoutsTakenSchema,
+  partnerActivityQuerySchema,
   equityQuerySchema,
   loanCreateSchema,
   loanRepaymentSchema,
@@ -110,6 +115,7 @@ import * as budgets from "../../domain/finance/budgets.service";
 import * as alerts from "../../domain/finance/finance-alerts.service";
 import * as payroll from "../../domain/finance/payroll.service";
 import * as equity from "../../domain/finance/equity.service";
+import * as partnerProfit from "../../domain/finance/partner-profit.service";
 import * as events from "../../domain/finance/events.service";
 import * as opening from "../../domain/finance/opening-balances.service";
 import * as reconciliation from "../../domain/finance/reconciliation.service";
@@ -292,6 +298,20 @@ financeRouter.post("/payroll/remittances", requirePermission("finance.transact")
 financeRouter.get("/equity", SENSITIVE, validate(equityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await equity.equityOverview(req.query as never))));
 financeRouter.post("/equity/partners", requirePermission("finance.configure"), validate(partnerCreateSchema), asyncHandler(async (req, res) => res.status(201).json(await equity.createPartner(req.body, await actorOf(req)))));
 financeRouter.patch("/equity/partners/:id", requirePermission("finance.configure"), validate(partnerUpdateSchema), asyncHandler(async (req, res) => res.json(await equity.updatePartner(id(req), req.body, await actorOf(req)))));
+// the owner and the partners: monthly profit shares, paying them, the owner putting in and taking out (docs/FINANCE_EQUITY.md §8–§10) — owner-only
+financeRouter.get("/equity/profit-shares", SENSITIVE, asyncHandler(async (_req, res) => res.json(await partnerProfit.profitShareOverview())));
+financeRouter.post("/equity/profit-shares/run", SENSITIVE, validate(profitShareRunSchema), asyncHandler(async (req, res) => res.json(await partnerProfit.runProfitShares(req.body, await actorOf(req)))));
+financeRouter.get("/equity/partners/:id/activity", SENSITIVE, validate(partnerActivityQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await partnerProfit.partnerActivity(id(req), req.query as never))));
+financeRouter.post("/equity/partners/:id/pay", SENSITIVE, validate(profitSharePaySchema), asyncHandler(async (req, res) => {
+  const r = await partnerProfit.payPartner(id(req), req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.post("/equity/owner/money", SENSITIVE, validate(ownerMoneySchema), asyncHandler(async (req, res) => {
+  const r = await partnerProfit.ownerMoney(req.body, await actorOf(req), idempotencyKeyOf(req));
+  res.status(r.replayed ? 200 : 201).json(r);
+}));
+financeRouter.get("/equity/owner/payouts", SENSITIVE, asyncHandler(async (_req, res) => res.json(await partnerProfit.ownerPayouts())));
+financeRouter.post("/equity/owner/payouts-taken", SENSITIVE, validate(payoutsTakenSchema), asyncHandler(async (req, res) => res.json(await partnerProfit.markPayoutsTaken(req.body.settlementIds, await actorOf(req)))));
 
 // ── financial events ────────────────────────────────────────────────────────────────────────────────────────────────
 financeRouter.get("/events", requirePermission("finance.read"), validate(financialEventListQuerySchema, "query"), asyncHandler(async (req, res) => res.json(await events.listFinancialEvents(req.query as never))));

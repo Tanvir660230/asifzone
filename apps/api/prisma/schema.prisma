@@ -2999,6 +2999,7 @@ model FinanceBusiness {
   payRuns                     PayRun[]
   payrollRemittances          PayrollRemittance[]
   partners                    Partner[]
+  profitShares                ProfitShare[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -5672,6 +5673,16 @@ model Partner {
   /// The share the partners have discussed — UNCONFIRMED until the signed agreement (B-2); nothing is computed from it.
   agreedSharePct     Decimal?        @db.Decimal(7, 4)
   agreementReference String?
+  /// OWNER: the business's owner — capital is 3100 Owner capital, the current account is 3300 Drawings (one per business).
+  /// WORKING: shares profit for their work and puts in no capital. INVESTOR: a partner with capital.
+  role               PartnerRole     @default(INVESTOR)
+  /// The CONFIRMED share of each month's net profit (docs/FINANCE_EQUITY.md §8) — profit shares are computed from it.
+  profitSharePct     Decimal?        @db.Decimal(7, 4)
+  shareFrom          DateTime?       @db.Date
+  lossRule           ProfitShareLossRule @default(ZERO_IN_LOSS_MONTHS)
+  shareConfirmedAt   DateTime?
+  shareConfirmedNote String?
+  profitShares       ProfitShare[]
   capitalAccountId   String          @unique
   capitalAccount     LedgerAccount   @relation("PartnerCapital", fields: [capitalAccountId], references: [id], onDelete: Restrict)
   currentAccountId   String          @unique
@@ -5775,4 +5786,48 @@ model MaterialRoll {
   updatedAt         DateTime        @updatedAt
 
   @@index([materialVariantId, openedOn])
+}
+
+enum PartnerRole {
+  OWNER
+  WORKING
+  INVESTOR
+}
+
+enum ProfitShareLossRule {
+  /// A loss month shares nothing; the next month shares its whole profit (losses are not carried).
+  ZERO_IN_LOSS_MONTHS
+  /// Losses are made good from later profit before anything is shared.
+  CARRY_LOSSES
+}
+
+/// One partner's share of one finished month's net profit (docs/FINANCE_EQUITY.md §8). Posted once (Dr 3350 profit shared,
+/// Cr the partner's current account) and never recomputed: a later change to that month's profit is settled in the next
+/// month's share as a correction line.
+model ProfitShare {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  partnerId        String
+  partner          Partner         @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  /// YYYY-MM
+  period           String
+  periodStart      DateTime        @db.Date
+  periodEnd        DateTime        @db.Date
+  /// The month's net profit when it was shared (negative = a loss).
+  netProfit        Decimal         @db.Decimal(18, 2)
+  sharePct         Decimal         @db.Decimal(7, 4)
+  /// pct × the month's profit under the loss rule.
+  monthShare       Decimal         @db.Decimal(18, 2)
+  /// [{ period, amount, note }] — differences from earlier months whose profit changed, and any amount carried.
+  corrections      Json            @default("[]")
+  /// What was credited to the partner: monthShare + corrections, never below 0 (a negative rest is carried).
+  amount           Decimal         @db.Decimal(18, 2)
+  carried          Decimal         @default(0) @db.Decimal(18, 2)
+  eventId          String?
+  createdByAdminId String?
+  createdAt        DateTime        @default(now())
+
+  @@unique([partnerId, period])
+  @@index([businessId, period])
 }

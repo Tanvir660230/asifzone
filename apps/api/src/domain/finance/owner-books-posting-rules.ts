@@ -186,3 +186,19 @@ registerPostingRule(EXPENSE_ALLOCATED_EVENT, 1, {
       { account: "expense.unallocated" as const, debit: 0, credit: p.lines.reduce((s, l) => s + l.amount, 0), partyType: "Expense", partyId: p.expenseId },
     ], p.number),
 });
+
+// ── a partner's share of a month's profit (docs/FINANCE_EQUITY.md §8) ─────────────────────────────────────────────────
+
+export const PROFIT_SHARE_EVENT = "finance.partner.profit_shared";
+const profitSharePayload = z.object({ partnerId: z.string(), partnerName: z.string(), period: z.string(), amount: minor, currentAccountId: z.string() });
+registerPostingRule(PROFIT_SHARE_EVENT, 1, {
+  payload: profitSharePayload,
+  build: (p) => ({
+    description: `Profit share ${p.period} — ${p.partnerName}`,
+    reference: `PS-${p.period}`,
+    lines: [
+      { account: "equity.profit_shared", debit: p.amount, credit: 0, partyType: "Partner", partyId: p.partnerId },
+      { account: { accountId: p.currentAccountId }, debit: 0, credit: p.amount, partyType: "Partner", partyId: p.partnerId, memo: "Owed to the partner until paid" },
+    ],
+  }),
+});

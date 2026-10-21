@@ -881,15 +881,15 @@ export const NAV_NODES: readonly NavNode[] = [
   },
   {
     id: "finance.equity",
-    label: "Partners & equity",
+    label: "Owner & partners",
     kind: "page",
     parent: "finance.people",
     domain: "manage",
     route: "/admin/finance/equity",
     capability: "finance.sensitive",
     order: 1,
-    description: "Each partner's investment, drawings and share of profit.",
-    keywords: ["partner", "capital", "owner", "drawings", "equity", "investment", "share", "current account"],
+    description: "What the owner put in and took out, and each partner's monthly profit share — earned, paid and owed.",
+    keywords: ["partner", "capital", "owner", "drawings", "equity", "investment", "invest", "withdraw", "share", "profit share", "20%", "pay partner", "current account"],
   },
 
   // Setup & checks
