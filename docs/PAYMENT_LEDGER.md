@@ -191,7 +191,8 @@ whole total as "Still due".
   through `refundDue`. `PARTIALLY_DELIVERED` has `codToCollect` 0, since the courier is done.
 - **Dashboard** (`positionTotals`): position facts carry `returnedValue` (approved returns' line values), the same
   `returned` the ledger uses. Outstanding COD and amount due now agree with the order pages.
-- **Old orders:** `pnpm --filter api partial-returns:backfill` (dry run) / `--apply` values the return records
+- **Old orders:** `pnpm --filter api partial-returns:backfill` (dry run) / `--apply` — in production
+  `node dist/cli/partial-returns-backfill.js [--apply]` inside the api container — values the return records
   reconciled before this release, then refreshes their payment projection. Orders whose customer kept nothing but are
   still Partly delivered are listed for staff to mark Returned.
 
