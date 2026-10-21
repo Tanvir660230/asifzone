@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, BellRing, CheckCircle2, ChevronRight, Circle, Landmark, Scale, Truck, Wallet } from "lucide-react";
+import { ArrowUpRight, BellRing, CheckCircle2, ChevronRight, Landmark, Scale, Truck, Wallet } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/admin/page-header";
+import { SetupChecklist } from "@/components/admin/finance/setup-checklist";
 import { StatTile, StatTileSkeleton } from "@/components/admin/stat-tile";
 import { useCapabilities } from "@/hooks/use-capability";
 import { useNavAccess } from "@/hooks/use-nav-access";
@@ -234,34 +235,8 @@ function SetupSteps({ business, accounts }: { business: financeApi.BusinessSetti
     { done: business.openingBalancesStatus === "POSTED", title: "Enter what you had and owed on that date", detail: "Money in each account, stock on hand, supplier dues, loans and capital.", href: "/admin/finance/opening" },
     { done: Boolean(business.inventoryCostingActivatedAt), title: "Confirm the value of your stock", detail: "So every sale's cost and profit is worked out from real costs.", href: "/admin/finance/inventory-cutover" },
   ];
-  const left = steps.filter((s) => !s.done).length;
-  if (left === 0) return null;
-  const next = steps.findIndex((s) => !s.done);
-  return (
-    <Card className="p-5 sm:p-6" data-testid="overview-setup">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[17px] font-semibold tracking-tight text-fg">Finish setting up your books</h2>
-        <p className="text-sm text-fg-muted">{steps.length - left} of {steps.length} done</p>
-      </div>
-      <ol className="space-y-1">
-        {steps.map((s, i) => (
-          <li key={s.title}>
-            <Link
-              href={s.href}
-              className={cn("-mx-2 flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.04]", i === next && "bg-accent/[0.06] hover:bg-accent/[0.09]")}
-            >
-              {s.done ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success-600" aria-label="Done" /> : <Circle className={cn("mt-0.5 h-5 w-5 shrink-0", i === next ? "text-accent" : "text-ink-300")} aria-label="To do" />}
-              <span className="min-w-0 flex-1">
-                <span className={cn("block text-sm font-medium", s.done ? "text-fg-muted" : "text-fg")}>{i + 1}. {s.title}</span>
-                <span className="block text-xs text-fg-muted">{s.detail}</span>
-              </span>
-              {i === next && <span className="mt-0.5 shrink-0 text-sm font-medium text-accent">Start</span>}
-            </Link>
-          </li>
-        ))}
-      </ol>
-    </Card>
-  );
+  if (steps.every((s) => s.done)) return null;
+  return <SetupChecklist title="Finish setting up your books" steps={steps} testId="overview-setup" />;
 }
 
 /** Every finance page this admin can open, grouped as in the sidebar, each with one plain sentence on what it's for. */

@@ -24,7 +24,9 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import * as booksApi from "@/lib/api/finance-books";
 import type { CourierOrderRow } from "@/lib/api/finance-books";
-import { formatBookDate, formatPrice } from "@/lib/format";
+import type { OrderStatus } from "@clothing-brand/shared";
+import { OrderStatusBadge } from "@/components/admin/orders/order-badges";
+import { courierStatusBadgeClass, courierStatusDescription, courierStatusLabel, formatBookDate, formatPrice } from "@/lib/format";
 import { idempotencyKeyFor, settleIdempotencyKey } from "@/lib/idempotency";
 import { cn } from "@/lib/utils";
 
@@ -65,12 +67,24 @@ export default function CourierCheckPage() {
         <>
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Balances">
             <StatTile label="Steadfast should pay you" value={formatPrice(Math.round(d.books.expectedFromCourier))} icon={<Truck />} tone="accent" />
-            <StatTile label="Steadfast's own balance" value={d.courier.balance === null ? "—" : formatPrice(Math.round(d.courier.balance))} icon={<Wallet />} />
-            <StatTile label="Difference" value={d.courier.difference === null ? "—" : formatPrice(Math.round(d.courier.difference))} tone={d.courier.difference ? "warning" : "default"} icon={<Scale />} />
+            {d.courier.balance === null ? (
+              <Card className="flex items-start gap-3 p-3.5 sm:col-span-2 sm:p-5" data-testid="courier-balance-unknown">
+                <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-ink-400" aria-hidden />
+                <div className="min-w-0 text-sm">
+                  <p className="font-medium text-fg">Steadfast&apos;s own balance couldn&apos;t be read right now</p>
+                  <p className="mt-0.5 text-fg-muted">Open the Steadfast panel and compare its balance with {formatPrice(Math.round(d.books.expectedFromCourier))}. This page tries again each time it opens.</p>
+                </div>
+              </Card>
+            ) : (
+              <>
+                <StatTile label="Steadfast's own balance" value={formatPrice(Math.round(d.courier.balance))} icon={<Wallet />} />
+                <StatTile label="Difference" value={d.courier.difference === null ? "—" : formatPrice(Math.round(d.courier.difference))} tone={d.courier.difference ? "warning" : "default"} icon={<Scale />} />
+              </>
+            )}
           </section>
           <p className="text-xs text-fg-muted">
             Collected and not yet paid out {formatPrice(d.books.codClearing)}, less charges booked against it {formatPrice(d.books.chargesAccrued)}.
-            {d.courier.error ? " Steadfast's balance couldn't be read right now — check its panel." : " A difference usually means a payout not posted yet, a partial delivery not settled, or a charge the rate card got wrong."}
+            {d.courier.balance !== null && " A difference usually means a payout not posted yet, a partial delivery not settled, or a charge the rate card got wrong."}
           </p>
 
           <Card className="space-y-3 p-4 sm:p-5">
@@ -80,7 +94,7 @@ export default function CourierCheckPage() {
             </div>
             {can("finance.transact") && (
               <div className="flex flex-wrap items-end gap-3">
-                <Field htmlFor="payout-dest" label="Steadfast pays into" className="w-full sm:w-72">
+                <Field htmlFor="payout-dest" label="Steadfast pays into" className="w-full sm:w-72" hint={destination ? undefined : "Choose the account first — payouts are recorded into it"}>
                   <Select id="payout-dest" value={destination} onChange={(e) => setDest(e.target.value)}>
                     <option value="">Choose…</option>
                     {payInto.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -191,6 +205,7 @@ function SettleModal({ claim, accounts, onClose, onDone }: { claim: booksApi.Cou
 }
 
 function OrderList({ title, hint, rows, testId, badge, action }: { title: string; hint: string; rows: CourierOrderRow[]; testId: string; badge?: (o: CourierOrderRow) => React.ReactNode; action?: (o: CourierOrderRow) => React.ReactNode }) {
+  const [all, setAll] = useState(false);
   return (
     <section className="space-y-2" data-testid={testId}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -213,20 +228,24 @@ function OrderList({ title, hint, rows, testId, badge, action }: { title: string
               </tr>
             </TableHead>
             <tbody>
-              {rows.slice(0, 50).map((o) => (
+              {(all ? rows : rows.slice(0, 20)).map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell><Link href={`/admin/orders/${o.id}`} className="font-medium text-accent hover:underline">{o.orderNumber}</Link></TableCell>
-                  <TableCell>{o.customerName}</TableCell>
-                  <TableCell><span className="flex flex-wrap items-center gap-1.5">{o.status.toLowerCase().replace(/_/g, " ")}{badge?.(o)}</span></TableCell>
-                  <TableCell>{o.courierStatus ?? "—"}</TableCell>
-                  <TableCell>{o.bookedOn ? formatBookDate(o.bookedOn) : "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap"><Link href={`/admin/orders/${o.id}`} className="font-medium text-accent hover:underline">{o.orderNumber}</Link></TableCell>
+                  <TableCell className="whitespace-nowrap">{o.customerName}</TableCell>
+                  <TableCell><span className="flex flex-wrap items-center gap-1.5"><OrderStatusBadge status={o.status as OrderStatus} short />{badge?.(o)}</span></TableCell>
+                  <TableCell>{o.courierStatus ? <Badge className={courierStatusBadgeClass(o.courierStatus)} title={courierStatusDescription(o.courierStatus)}>{courierStatusLabel(o.courierStatus)}</Badge> : <span className="text-fg-subtle">—</span>}</TableCell>
+                  <TableCell className="whitespace-nowrap">{o.bookedOn ? formatBookDate(o.bookedOn) : "—"}</TableCell>
                   <TableCell align="right" className="tabular-nums">{formatPrice(o.total)}</TableCell>
                   {action && <TableCell align="right">{action(o)}</TableCell>}
                 </TableRow>
               ))}
             </tbody>
           </Table>
-          {rows.length > 50 && <p className="px-4 py-2 text-xs text-fg-subtle">and {rows.length - 50} more</p>}
+          {rows.length > 20 && (
+            <div className="border-t border-line-subtle px-2 py-1.5">
+              <Button size="sm" variant="ghost" onClick={() => setAll((v) => !v)}>{all ? "Show fewer" : `Show all ${rows.length}`}</Button>
+            </div>
+          )}
         </Card>
       )}
     </section>
