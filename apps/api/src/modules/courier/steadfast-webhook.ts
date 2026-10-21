@@ -2,8 +2,8 @@
  * Steadfast's webhook body, read defensively (docs/PAYMENT_LEDGER.md §5b). Steadfast's own Laravel package requires
  * consignment_id, invoice, status, cod_amount and updated_at; panel accounts also send `notification_type`
  * (delivery_status | tracking_update | …) with `delivery_charge` and `tracking_message`, and a body without one is a
- * delivery_status push. Statuses are lower-cased as sent; amounts may be numbers or numeric strings, anything else is
- * null (never 0). Nothing here is trusted on its own — see handleSteadfastWebhook.
+ * delivery_status push. Statuses are lower-cased, spaces / hyphens as underscores; amounts may be numbers or numeric
+ * strings, anything else is null (never 0). Nothing here is trusted on its own — see handleSteadfastWebhook.
  */
 export interface SteadfastWebhookEvent {
   notificationType: string;
@@ -34,7 +34,8 @@ export function parseSteadfastWebhook(body: unknown): SteadfastWebhookEvent {
     notificationType: (text(b.notification_type, 64) ?? "delivery_status").toLowerCase(),
     consignmentId: consignment && /^\d+$/.test(consignment) ? consignment : null,
     invoice: text(b.invoice, 120),
-    status: text(b.status, 64)?.toLowerCase() ?? null,
+    // "Partial Delivered" / "partial-delivered" / "partial_delivered" → the status API's own spelling.
+    status: text(b.status, 64)?.toLowerCase().replace(/[\s-]+/g, "_") ?? null,
     codAmount: amount(b.cod_amount),
     deliveryCharge: amount(b.delivery_charge),
     trackingMessage: text(b.tracking_message),

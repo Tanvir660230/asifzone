@@ -59,6 +59,7 @@ describe("Steadfast webhook body", () => {
     expect(parseSteadfastWebhook({ consignment_id: "123", status: "Partial_Delivered", cod_amount: "100.50" })).toMatchObject({
       notificationType: "delivery_status", consignmentId: "123", status: "partial_delivered", codAmount: 100.5,
     });
+    expect(parseSteadfastWebhook({ consignment_id: 7, status: "Partial Delivered" })).toMatchObject({ consignmentId: "7", status: "partial_delivered" });
     expect(parseSteadfastWebhook({ consignment_id: "1; drop", cod_amount: "abc", delivery_charge: -5 })).toMatchObject({ consignmentId: null, codAmount: null, deliveryCharge: null });
     expect(parseSteadfastWebhook(null)).toMatchObject({ consignmentId: null, notificationType: "delivery_status" });
   });
@@ -147,6 +148,10 @@ describe("HTTP — POST /api/courier/steadfast/webhook", () => {
       expect((await request(app).post("/api/courier/steadfast/webhook").set("Authorization", "Bearer nope").send(body)).status).toBe(401);
       expect((await request(app).post("/api/courier/steadfast/webhook?token=nope").send(body)).status).toBe(401);
       expect(await prisma.courierWebhookEvent.count({ where: { consignmentId, idempotencyKey: `h-${consignmentId}` } })).toBe(1);
+      // A busy day: Steadfast's authenticated pushes are never rate-limited (only refused calls count).
+      for (let i = 0; i < 35; i++) {
+        expect((await request(app).post("/api/courier/steadfast/webhook").set("Authorization", "Bearer wh-secret-123").send({ notification_type: "tracking_update" })).status).toBe(200);
+      }
     } finally {
       restore();
     }
