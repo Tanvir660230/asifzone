@@ -15,7 +15,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "read-model:rebuild": "tsx scripts/read-model-rebuild.ts",
     "payment-ledger:reconcile": "tsx scripts/payment-ledger-reconcile.ts",
-    "partial-returns:backfill": "tsx scripts/backfill-partial-delivery-returns.ts",
+    "partial-returns:backfill": "tsx src/cli/partial-returns-backfill.ts",
     "media:normalize": "tsx src/cli/media-normalize.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:presets": "tsx prisma/seed-presets.ts",
