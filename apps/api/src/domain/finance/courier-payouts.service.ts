@@ -60,6 +60,11 @@ const num = (v: unknown): number | null => {
   return null;
 };
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : typeof v === "number" ? String(v) : null);
+/** A parcel booked straight on the courier's panel has no invoice — and Steadfast sends that as the text "null" too. */
+export const invoiceOf = (v: unknown): string | null => {
+  const s = str(v);
+  return s && !["null", "undefined", "n/a", "-"].includes(s.toLowerCase()) ? s : null;
+};
 const first = (o: Record<string, unknown>, keys: string[]) => keys.map((k) => o[k]).find((v) => v !== undefined && v !== null);
 const listOf = (data: unknown): unknown[] | null => {
   if (Array.isArray(data)) return data;
@@ -117,7 +122,7 @@ export function parsePayoutDetail(data: unknown): { payout: ParsedPayout | null;
   for (const r of rows) {
     const o = (r ?? {}) as Record<string, unknown>;
     const consignmentId = str(first(o, ["consignment_id", "cid", "consignmentId"]));
-    const invoice = str(first(o, ["invoice", "invoice_id", "merchant_invoice"]));
+    const invoice = invoiceOf(first(o, ["invoice", "invoice_id", "merchant_invoice"]));
     const booked = num(first(o, ["cod_amount", "collected_amount", "collected", "amount"]));
     const total = num(first(o, ["total_charge", "total_fee", "charge"]));
     const parts = ["delivery_charge", "delivery_fee", "cod_charge", "cod_fee", "return_charge", "return_fee"].map((k) => num(o[k])).filter((x): x is number => x !== null);
