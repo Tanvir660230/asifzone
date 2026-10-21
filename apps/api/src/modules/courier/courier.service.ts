@@ -4,8 +4,11 @@ import { AppError } from "../../lib/app-error";
 import { notify } from "../../lib/notify";
 import { changeOrderStatus, getOrderById, updateOrderStatus } from "../orders/order.service";
 import { checkAndUpdateDeliveryScore } from "../customers/customer.service";
-import { codToCollectFor } from "../../domain/payments/payment-ledger.service";
+import type { Prisma } from "@prisma/client";
+import { codToCollectFor, settleCourierCollected } from "../../domain/payments/payment-ledger.service";
 import { buildCourierNotes, effectiveCourierNote } from "./courier-note";
+import { parseSteadfastWebhook } from "./steadfast-webhook";
+import { getCurrency } from "../../domain/config/commerce-settings";
 import { logger } from "../../lib/observability/logger";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
@@ -527,18 +530,71 @@ export async function unlinkCourierBooking(orderId: string) {
  * callback body" pattern (providers/payment/sslcommerz.ts). Silently no-ops on an unrecognized
  * consignment_id or malformed payload — Steadfast doesn't require (or check) a response body, and
  * there is nothing useful to do with a webhook we can't tie back to one of our orders. */
-export async function handleSteadfastWebhook(payload: { consignment_id?: number | string }) {
-  const consignmentId = payload.consignment_id != null ? String(payload.consignment_id) : null;
-  if (!consignmentId) return;
+export async function handleSteadfastWebhook(payload: unknown, meta: { idempotencyKey?: string | null } = {}) {
+  const event = parseSteadfastWebhook(payload);
+  const idempotencyKey = meta.idempotencyKey?.trim().slice(0, 200) || null;
+  // Steadfast sends the same Idempotency-Key on every retry of one event: the first one is the one that counts.
+  if (idempotencyKey && (await prisma.courierWebhookEvent.findUnique({ where: { idempotencyKey }, select: { id: true } }))) return "DUPLICATE";
 
-  const order = await prisma.order.findFirst({
-    where: { courierConsignmentId: consignmentId },
-    select: { id: true, orderNumber: true, status: true },
-  });
-  if (!order) return;
+  let orderId: string | null = null;
+  let outcome = "NO_CONSIGNMENT";
+  try {
+    if (!event.consignmentId) return outcome;
+    const order = await prisma.order.findFirst({
+      where: { courierConsignmentId: event.consignmentId },
+      select: { id: true, orderNumber: true, status: true, courierCollectedAmount: true },
+    });
+    outcome = "NO_ORDER";
+    if (!order) return outcome;
+    orderId = order.id;
 
-  const status = await getProviders().courier.statusByConsignment(consignmentId);
-  await applyCourierStatus(order, status);
+    const status = await getProviders().courier.statusByConsignment(event.consignmentId);
+    await applyCourierStatus(order, status);
+    // What the rider collected on a partial delivery (PAYMENT_LEDGER §5b) — the body's cod_amount is accepted only when
+    // Steadfast's own status API also says partial_delivered, so a mistyped or replayed body can't put money on an order.
+    if (status === "partial_delivered" && event.status === "partial_delivered" && event.codAmount !== null) {
+      await recordCourierCollected(order, event.codAmount);
+    }
+    outcome = "APPLIED";
+    return outcome;
+  } catch (err) {
+    outcome = "FAILED";
+    throw err;
+  } finally {
+    await prisma.courierWebhookEvent
+      .create({
+        data: {
+          idempotencyKey,
+          notificationType: event.notificationType,
+          consignmentId: event.consignmentId,
+          orderId,
+          status: event.status,
+          codAmount: event.codAmount,
+          deliveryCharge: event.deliveryCharge,
+          trackingMessage: event.trackingMessage,
+          payload: (payload && typeof payload === "object" ? payload : { body: String(payload) }) as Prisma.InputJsonValue,
+          outcome,
+        },
+      })
+      .catch((err) => captureError(err, { msg: "[steadfast-webhook] could not log the event:" }));
+  }
+}
+
+/** Keeps Steadfast's reported collection on the order (with a timeline line when it changes), then settles it as the
+ * return charge if the customer kept nothing (settleCourierCollected decides; it waits for the reconciliation otherwise). */
+async function recordCourierCollected(order: { id: string; courierCollectedAmount: Prisma.Decimal | null }, collected: number) {
+  if (order.courierCollectedAmount === null || !order.courierCollectedAmount.equals(collected)) {
+    const [current, currency] = await Promise.all([prisma.order.findUniqueOrThrow({ where: { id: order.id }, select: { status: true } }), getCurrency()]);
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        courierCollectedAmount: collected,
+        courierCollectedAt: new Date(),
+        statusHistory: { create: { status: current.status, note: `Steadfast: the rider collected ${currency} ${collected.toFixed(2)} on this partial delivery` } },
+      },
+    });
+  }
+  await settleCourierCollected(order.id);
 }
 
 /** Called every 15 minutes by jobs/courier-status-cron.ts — catches deliveries whose webhook was

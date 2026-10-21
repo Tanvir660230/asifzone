@@ -40,6 +40,7 @@ import { resolveImageUrl } from "@/lib/image-url";
 import { pixelAddPaymentInfo, pixelIdentify, pixelInitiateCheckout, type PixelLineItem } from "@/lib/pixels";
 import { variantDisplayPrice } from "@/lib/pricing-display";
 import { cn, isPaleColor } from "@/lib/utils";
+import { sessionSet } from "@/lib/safe-storage";
 
 // The landing page's own field messages, in Bangla; the server still validates the same fields with checkoutSchema.
 const formSchema = z.object({
@@ -171,7 +172,7 @@ export function LandingOrderForm({ product, codEnabled }: { product: Product; co
     try {
       const { order } = await createOrder(payload, idempotencyKeyFor("landing", payload));
       settleIdempotencyKey("landing");
-      sessionStorage.setItem("lastOrderPhone", values.customerPhone);
+      sessionSet("lastOrderPhone", values.customerPhone);
       pixelIdentify({
         phone: values.customerPhone,
         fullName: values.customerName,

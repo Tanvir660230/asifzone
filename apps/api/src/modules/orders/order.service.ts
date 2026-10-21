@@ -72,11 +72,14 @@ import {
   recordGatewaySettlement,
   recordMarkedPaid,
   payWithStoreCredit,
+  refreshPaymentStatus,
+  settleCourierCollected,
   settleReservedStoreCredit,
   summarizeOrderPayments,
 } from "../../domain/payments/payment-ledger.service";
 import type { MetaRequestContext } from "../../lib/meta/capi";
 import { getCurrency, getTimezone } from "../../domain/config/commerce-settings";
+import { valueItemReturn } from "./order-adjustments.service";
 import { captureError } from "../../lib/observability/error-capture";
 import { getProviders } from "../../providers/registry";
 
@@ -1314,6 +1317,11 @@ export async function runTransitionSideEffects(outcome: OrderTransitionOutcome) 
   notifyReplenished(outcome.replenished);
 }
 
+/** settleCourierCollected after the change it follows has committed — a failure is logged, never undoes that change. */
+async function settleCollectedQuietly(orderId: string) {
+  await settleCourierCollected(orderId).catch((err) => captureError(err, { msg: `[ledger] courier collection for order ${orderId} not settled:` }));
+}
+
 /** The one command every status change goes through (admin picker, bulk, courier, returns): its own transaction +
  * post-commit side effects. Throws 400 for a transition the matrix doesn't allow. */
 export async function updateOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string, opts: { quietNoop?: boolean } = {}) {
@@ -1325,6 +1333,8 @@ export async function updateOrderStatus(id: string, input: UpdateOrderStatusInpu
 export async function changeOrderStatus(id: string, input: UpdateOrderStatusInput, changedByAdminId?: string, opts: { quietNoop?: boolean } = {}) {
   const outcome = await prisma.$transaction((tx) => applyOrderTransition(tx, id, input, { adminId: changedByAdminId, quietNoop: opts.quietNoop }));
   await runTransitionSideEffects(outcome);
+  // A refused parcel now back: what Steadfast reported the rider collected becomes its return charge (PAYMENT_LEDGER §5b).
+  if (outcome.changed && outcome.order.status === "RETURNED" && outcome.order.courierCollectedAmount) await settleCollectedQuietly(id);
   const items = await attachLiveItemInfo(outcome.order.items, { requireAvailable: false });
   return { order: { ...outcome.order, items }, changed: outcome.changed };
 }
@@ -1486,7 +1496,7 @@ export async function adjustOrderPrice(id: string, input: AdjustOrderPriceInput,
   return prisma.$transaction(async (tx) => {
     // Re-checked under the row lock: a payment recorded between the read above and this write must win.
     await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
-    const paidRows = await tx.payment.count({ where: { orderId: id, status: "SUCCEEDED", amount: { gt: 0 } } });
+    const paidRows = await tx.payment.count({ where: { orderId: id, status: "SUCCEEDED", purpose: "ORDER", amount: { gt: 0 } } });
     if (paidRows > 0) {
       throw new AppError(409, "This order already has a payment recorded — record a refund instead of adjusting its total", { code: "ORDER_ALREADY_PAID" });
     }
@@ -1569,6 +1579,13 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
 
   const returnedEntries = input.items.filter((entry) => entry.returnedQuantity > 0);
   const courierLossFee = returnedEntries.length > 0 ? await getCourierReturnFee(existing.shippingDistrict) : null;
+  // What came back is valued exactly like an item-level return (the order's own allocated pricing), so the payment
+  // position charges only what the customer kept (PAYMENT_LEDGER §5c). Valued before the restock below.
+  const returnLines = returnedEntries.length
+    ? valueItemReturn(existing, { items: returnedEntries.map((e) => ({ orderItemId: e.orderItemId, quantity: e.returnedQuantity, restock: true })) }, await getCurrency())
+    : [];
+  const returnedByItem = new Map(returnedEntries.map((e) => [e.orderItemId, e.returnedQuantity]));
+  const keptNothing = existing.items.every((item) => (returnedByItem.get(item.id) ?? 0) >= item.quantity);
 
   const { order, replenished } = await prisma.$transaction(async (tx) => {
     // Row lock + re-check: two admins reconciling at once must not both restock.
@@ -1609,11 +1626,12 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
           orderId,
           customerId: existing.customerId,
           type: "RETURN",
-          reason: "Courier partial delivery — rejected by customer",
+          reason: PARTIAL_DELIVERY_RETURN_REASON,
           note: itemLines.join(", "),
           status: "APPROVED",
           reviewedAt: new Date(),
           reviewedByAdminId: adminId,
+          lines: returnLines as unknown as Prisma.InputJsonValue,
         },
       });
     }
@@ -1629,7 +1647,55 @@ export async function reconcilePartialDelivery(orderId: string, input: Reconcile
     return { order: updated, replenished: result.replenished };
   });
   notifyReplenished(replenished);
+  // The customer kept nothing: the order is returned (T7 — the stock is already back, so it moves none; points reverse).
+  // The Returned move also settles what Steadfast reported the rider collected as the return charge (§5b).
+  if (keptNothing) {
+    await changeOrderStatus(orderId, { status: "RETURNED", note: "Partial delivery reconciled — the customer kept nothing, order returned" }, adminId);
+    return getOrderById(orderId);
+  }
   return order;
+}
+
+const PARTIAL_DELIVERY_RETURN_REASON = "Courier partial delivery — rejected by customer";
+
+/** PAYMENT_LEDGER §5c backfill: partial deliveries reconciled before their return record carried values (`lines` null),
+ * so the ledger still charged the whole order. Each gets the lines reconciliation writes today — the units that came
+ * back are OrderItem.returnedQuantity minus what later item-level returns on the order recorded — valued with the
+ * order's own pricing, and its payment projection refreshed. Dry run unless `apply`. Orders whose customer kept nothing
+ * but are still Partly delivered are listed for staff to mark Returned (never moved automatically here). */
+export async function backfillPartialDeliveryReturns(opts: { apply?: boolean } = {}) {
+  const currency = await getCurrency();
+  const pending = await prisma.returnRequest.findMany({
+    where: { type: "RETURN", status: "APPROVED", reason: PARTIAL_DELIVERY_RETURN_REASON, lines: { equals: Prisma.DbNull } },
+    select: { id: true, orderId: true },
+  });
+  const rows: Array<{ orderNumber: string; returnRequestId: string; value: number; keptNothing: boolean; status: string }> = [];
+  for (const rr of pending) {
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: rr.orderId }, include: { items: true } });
+    const later = await prisma.returnRequest.findMany({ where: { orderId: rr.orderId, type: "RETURN", status: "APPROVED", NOT: { id: rr.id } }, select: { lines: true } });
+    const laterUnits = new Map<string, number>();
+    for (const r of later) {
+      for (const l of Array.isArray(r.lines) ? (r.lines as Array<{ orderItemId?: string; quantity?: number }>) : []) {
+        if (l.orderItemId) laterUnits.set(l.orderItemId, (laterUnits.get(l.orderItemId) ?? 0) + (l.quantity ?? 0));
+      }
+    }
+    const back = order.items
+      .map((i) => ({ orderItemId: i.id, quantity: Math.max(0, i.returnedQuantity - (laterUnits.get(i.id) ?? 0)), restock: true }))
+      .filter((e) => e.quantity > 0);
+    if (!back.length) continue;
+    // Valued as if not yet restocked: these are the units that already came back.
+    const lines = valueItemReturn({ ...order, items: order.items.map((i) => ({ ...i, restockedQuantity: 0 })) }, { items: back }, currency);
+    const keptNothing = order.items.every((i) => (back.find((b) => b.orderItemId === i.id)?.quantity ?? 0) >= i.quantity);
+    rows.push({ orderNumber: order.orderNumber, returnRequestId: rr.id, value: lines.reduce((n, l) => n + l.value, 0), keptNothing, status: order.status });
+    if (opts.apply) {
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.id} FOR UPDATE`;
+        await tx.returnRequest.update({ where: { id: rr.id }, data: { lines: lines as unknown as Prisma.InputJsonValue } });
+        await refreshPaymentStatus(tx, order.id, currency);
+      });
+    }
+  }
+  return { checked: pending.length, rows };
 }
 
 /** Un-hides a soft-deleted order. A pre-shipment order had its reservation released when it was trashed, so

@@ -22,10 +22,12 @@ import {
   derivePaymentPosition,
   fromMajor,
   min,
+  RETURN_CHARGE_ORDER_STATUSES,
   toMajor,
   type Money,
   type PaymentPosition,
   type OrderPaymentSummary,
+  type ReclassifyPaymentInput,
   type RecordPaymentInput,
   type RecordRefundInput,
   type CompleteRefundInput,
@@ -85,7 +87,8 @@ async function lockOrder(tx: Db, orderId: string): Promise<LockedOrder> {
 }
 
 type LedgerRows = {
-  payments: Array<{ status: string; amount: Prisma.Decimal | number | string }>;
+  /** `purpose` absent = ORDER. */
+  payments: Array<{ status: string; amount: Prisma.Decimal | number | string; purpose?: string }>;
   refunds: Array<{ status: string; amount: Prisma.Decimal | number | string }>;
   /** Σ store credit issued from this order's money. */
   credited?: Prisma.Decimal | number | string;
@@ -113,12 +116,14 @@ export function positionFromRows(
   currency: string,
 ): PaymentPosition {
   const m = (v: Prisma.Decimal | number | string) => fromMajor(v.toString(), currency);
+  const succeeded = rows.payments.filter((p) => p.status === "SUCCEEDED");
   return derivePaymentPosition({
     currency,
     total: m(order.total),
     paymentMethod: order.paymentMethod,
     orderStatus: order.status,
-    settlements: rows.payments.filter((p) => p.status === "SUCCEEDED").map((p) => m(p.amount)),
+    settlements: succeeded.filter((p) => p.purpose !== "RETURN_CHARGE").map((p) => m(p.amount)),
+    returnCharges: succeeded.filter((p) => p.purpose === "RETURN_CHARGE").map((p) => m(p.amount)),
     failedAttempts: rows.payments.filter((p) => p.status === "FAILED").length,
     refundsCompleted: rows.refunds.filter((r) => r.status === "COMPLETED").map((r) => m(r.amount)),
     refundsRequested: rows.refunds.filter((r) => r.status === "REQUESTED").map((r) => m(r.amount)),
@@ -129,7 +134,7 @@ export function positionFromRows(
 
 async function loadPosition(db: Db | typeof prisma, order: { id: string; total: Prisma.Decimal; paymentMethod: string; status: string }, currency: string) {
   const [payments, refunds, credited, returned] = await Promise.all([
-    db.payment.findMany({ where: { orderId: order.id }, select: { status: true, amount: true } }),
+    db.payment.findMany({ where: { orderId: order.id }, select: { status: true, amount: true, purpose: true } }),
     db.refund.findMany({ where: { orderId: order.id }, select: { status: true, amount: true } }),
     creditedByOrder(db, [order.id]),
     returnedValueByOrder(db, [order.id]),
@@ -143,7 +148,7 @@ export async function projectedPosition(db: Db | typeof prisma, orderId: string,
   const currency = await storeCurrency();
   const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, select: { id: true, total: true, paymentMethod: true, status: true } });
   const [payments, refunds, credited, returned] = await Promise.all([
-    db.payment.findMany({ where: { orderId }, select: { status: true, amount: true } }),
+    db.payment.findMany({ where: { orderId }, select: { status: true, amount: true, purpose: true } }),
     db.refund.findMany({ where: { orderId }, select: { status: true, amount: true } }),
     creditedByOrder(db, [orderId]),
     returnedValueByOrder(db, [orderId]),
@@ -263,7 +268,8 @@ const CLOSED = new Set<string>(CLOSED_ORDER_STATUSES);
 
 /** A payment staff record by hand (POST /orders/:id/payments). MANUAL: received out of band before dispatch; not on a
  * closed order, and not on a courier-booked COD order (its parcel's COD amount is fixed at booking). COD_COLLECTED: the
- * cash the courier collected on a partially delivered COD order. Always 0 < amount ≤ balance due. No status change. */
+ * cash the courier collected on a partially delivered COD order. Both 0 < amount ≤ balance due. RETURN_CHARGE (§5a): on a
+ * refused parcel, any positive amount — it is not order money, so the balance due does not bound it. No status change. */
 export async function recordManualPayment(orderId: string, input: RecordPaymentInput, adminId: string, idempotencyKey?: string | null) {
   if (idempotencyKey) {
     const existing = await prisma.payment.findUnique({ where: { idempotencyKey } });
@@ -274,6 +280,30 @@ export async function recordManualPayment(orderId: string, input: RecordPaymentI
     const payment = await prisma.$transaction(async (tx) => {
       const order = await lockOrder(tx, orderId);
       if (order.deletedAt) throw AppError.badRequest("Restore this order before recording a payment");
+      const amount = fromMajor(String(input.amount), currency);
+      if (input.kind === "RETURN_CHARGE") {
+        if (!RETURN_CHARGE_ORDER_STATUSES.includes(order.status)) {
+          throw AppError.badRequest("A return charge is recorded only for a refused parcel — partly delivered, returned or cancelled", { code: "PAYMENT_NOT_ALLOWED" });
+        }
+        if (amount.amount <= 0) throw AppError.badRequest("Amount must be positive");
+        const via = input.via ?? "COURIER";
+        const note = [via === "COURIER" ? "Through the courier" : null, input.method, input.note].filter(Boolean).join(" — ") || null;
+        const created = await tx.payment.create({
+          data: {
+            orderId,
+            provider: via === "COURIER" ? "COD" : "MANUAL",
+            purpose: "RETURN_CHARGE",
+            status: "SUCCEEDED",
+            amount: toMajor(amount),
+            note,
+            recordedByAdminId: adminId,
+            idempotencyKey: idempotencyKey ?? null,
+          },
+        });
+        await timelineNote(tx, orderId, order.status, `Return charge received: ${noteMoney(amount)}${note ? ` (${note})` : ""} — courier cost recovered, not owed back`, adminId);
+        await refreshPaymentStatus(tx, orderId, currency);
+        return created;
+      }
       if (input.kind === "COD_COLLECTED") {
         if (order.paymentMethod !== "COD" || order.status !== "PARTIALLY_DELIVERED") {
           throw AppError.badRequest("Courier-collected cash is recorded only for a partially delivered Cash on Delivery order", { code: "PAYMENT_NOT_ALLOWED" });
@@ -284,7 +314,6 @@ export async function recordManualPayment(orderId: string, input: RecordPaymentI
           throw AppError.badRequest("The courier already has this parcel's COD amount — unlink the booking before recording a prepayment", { code: "PAYMENT_NOT_ALLOWED" });
         }
       }
-      const amount = fromMajor(String(input.amount), currency);
       const position = await loadPosition(tx, order, currency);
       const check = checkManualPayment(position, amount);
       if (!check.ok) {
@@ -317,6 +346,88 @@ export async function recordManualPayment(orderId: string, input: RecordPaymentI
     }
     throw err;
   }
+}
+
+/** §5b — what Steadfast reported the rider collected on a partial delivery (Order.courierCollectedAmount), settled as the
+ * return charge once it is clear the customer kept nothing: the order is RETURNED, or its partial delivery was reconciled
+ * with every unit back. Then the whole collection is the refused parcel's charge — courier cost recovered (a COD row,
+ * purpose RETURN_CHARGE). One per order (idempotencyKey `courier-collected:<orderId>`). Skipped when staff already
+ * recorded courier cash on the order by hand (never counted twice); when the customer kept something, the collection pays
+ * for what they kept and staff record it (the form is prefilled). Safe to call any number of times. */
+export async function settleCourierCollected(orderId: string): Promise<"SETTLED" | "NOT_YET" | "SKIPPED"> {
+  const currency = await storeCurrency();
+  const key = `courier-collected:${orderId}`;
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const order = await lockOrder(tx, orderId);
+      const row = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        select: { courierCollectedAmount: true, partialDeliveryReconciledAt: true, items: { select: { quantity: true, returnedQuantity: true } } },
+      });
+      if (order.deletedAt || !row.courierCollectedAmount) return "NOT_YET";
+      const collected = fromMajor(row.courierCollectedAmount.toString(), currency);
+      if (collected.amount <= 0) return "NOT_YET";
+      const keptNothing =
+        order.status === "RETURNED" ||
+        (order.status === "PARTIALLY_DELIVERED" && row.partialDeliveryReconciledAt !== null && row.items.every((i) => i.returnedQuantity >= i.quantity));
+      if (!keptNothing) return "NOT_YET";
+      if (await tx.payment.findUnique({ where: { idempotencyKey: key }, select: { id: true } })) return "SKIPPED";
+      const byHand = await tx.payment.count({ where: { orderId, provider: "COD", status: "SUCCEEDED", amount: { gt: 0 } } });
+      if (byHand > 0) return "SKIPPED";
+      await tx.payment.create({
+        data: {
+          orderId,
+          provider: "COD",
+          purpose: "RETURN_CHARGE",
+          status: "SUCCEEDED",
+          amount: toMajor(collected),
+          note: "Steadfast: collected by the rider on a refused parcel",
+          idempotencyKey: key,
+        },
+      });
+      await timelineNote(tx, orderId, order.status, `Return charge recorded automatically: Steadfast reported ${noteMoney(collected)} collected by the rider — courier cost recovered, not owed back`);
+      await refreshPaymentStatus(tx, orderId, currency);
+      return "SETTLED";
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) return "SKIPPED";
+    throw err;
+  }
+}
+
+/** Re-marks a COD / MANUAL payment (PATCH /orders/:id/payments/:paymentId) — §5a. To RETURN_CHARGE: only on a refused
+ * parcel, and only while the order's remaining money still covers what was refunded, requested or credited from it
+ * (amount ≤ refundable), so a refund is never left without the payment it came from. Back to ORDER: always. The order
+ * timeline keeps who changed it and why. A repeat of the current purpose is a no-op. */
+export async function reclassifyPayment(orderId: string, paymentId: string, input: ReclassifyPaymentInput, adminId: string) {
+  const currency = await storeCurrency();
+  await prisma.$transaction(async (tx) => {
+    const order = await lockOrder(tx, orderId);
+    const payment = await tx.payment.findFirst({ where: { id: paymentId, orderId } });
+    if (!payment) throw AppError.notFound("Payment not found on this order");
+    if (payment.purpose === input.purpose) return;
+    if (payment.status !== "SUCCEEDED" || (payment.provider !== "COD" && payment.provider !== "MANUAL")) {
+      throw AppError.badRequest("Only cash on delivery or manually recorded money can be re-marked", { code: "PAYMENT_NOT_ALLOWED" });
+    }
+    const amount = fromMajor(payment.amount.toString(), currency);
+    if (input.purpose === "RETURN_CHARGE") {
+      if (!RETURN_CHARGE_ORDER_STATUSES.includes(order.status)) {
+        throw AppError.badRequest("A return charge is recorded only for a refused parcel — partly delivered, returned or cancelled", { code: "PAYMENT_NOT_ALLOWED" });
+      }
+      const position = await loadPosition(tx, order, currency);
+      if (amount.amount > position.refundable.amount) {
+        throw AppError.badRequest(`Part of this payment was already refunded or credited — only ${noteMoney(position.refundable)} of the order's money is still held`, {
+          code: "PAYMENT_ALREADY_REFUNDED",
+          refundable: toMajor(position.refundable),
+        });
+      }
+    }
+    await tx.payment.update({ where: { id: paymentId }, data: { purpose: input.purpose } });
+    const what = input.purpose === "RETURN_CHARGE" ? "marked as the return charge — courier cost recovered, not owed back" : "marked as order money again";
+    await timelineNote(tx, orderId, order.status, `Payment of ${noteMoney(amount)} ${what}${input.reason ? ` (${input.reason})` : ""}`, adminId);
+    await refreshPaymentStatus(tx, orderId, currency);
+  });
+  return getOrderPaymentSummary(orderId);
 }
 
 // ─── Refunds ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -583,6 +694,7 @@ const PAYMENT_SELECT = {
   orderId: true,
   provider: true,
   status: true,
+  purpose: true,
   amount: true,
   note: true,
   backfilled: true,
@@ -637,10 +749,12 @@ export async function summarizeOrderPayments(orderIds: string[]): Promise<Map<st
       refundable: toMajor(pos.refundable),
       refundDue: toMajor(pos.refundDue),
       overpaid: toMajor(pos.overpaid),
+      returnCharge: toMajor(pos.returnCharge),
       payments: ps.map((p) => ({
         id: p.id,
         provider: p.provider,
         status: p.status,
+        purpose: p.purpose,
         amount: Number(p.amount),
         note: p.note,
         backfilled: p.backfilled,
@@ -728,7 +842,7 @@ export async function paymentLedgerDrift(opts: { batchSize?: number } = {}) {
         paymentMethod: true,
         status: true,
         paymentStatus: true,
-        payments: { select: { status: true, amount: true } },
+        payments: { select: { status: true, amount: true, purpose: true } },
         refunds: { select: { status: true, amount: true } },
       },
     });

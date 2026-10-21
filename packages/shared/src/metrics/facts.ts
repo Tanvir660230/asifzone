@@ -74,9 +74,15 @@ export interface OrderFact {
   lines: LineFact[];
   /** `id` is the source row (Payment / Refund / StockMovement) when the loader has it — identity only, never used in a sum. */
   payments: Array<{ id?: string; amount: number; status: "SUCCEEDED" | "FAILED"; provider: string; settledAt: Date }>;
+  /** SUCCEEDED return-charge Payment rows (docs/PAYMENT_LEDGER.md §5a) — never in `payments` and never in a metric; the
+   * books post them as courier cost recovered. Absent = none. */
+  returnCharges?: Array<{ id: string; amount: number; provider: string; settledAt: Date }>;
   refunds: Array<{ id?: string; amount: number; status: "REQUESTED" | "COMPLETED"; completedAt: Date | null }>;
   /** Σ store credit issued from this order's money, minor units (CustomerCreditEntry; absent = 0). Not cash. */
   credited?: number;
+  /** Σ value of what came back and is no longer charged (approved returns' lines: item returns, reconciled partial
+   * deliveries), minor units — the ledger's `returned`. Position facts only (absent = 0). */
+  returnedValue?: number;
   /** Stock-ledger RETURN rows for this order: units back from the customer (return date = `at`). */
   returnMovements: Array<{ id?: string; variantId: string; units: number; at: Date }>;
   /** Original lines of APPROVED EXCHANGE requests (their returned units are not returns — P5-3). */

@@ -492,7 +492,9 @@ describe("the role matrix — every admin route, every identity", () => {
     // +4: courier claims (list, open, settle) and cancelling a landed cost
     // +1: a payout's unmatched parcels counted as sales outside the website
     // +11: Finance Center (docs/FINANCE_CENTER.md) — ad CSV import, summary, verifications 2, allocations 2, renewals, SMS 2, settings 2
-    expect(routes).toHaveLength(667);
+    // +7: owner & partners with monthly profit shares (docs/FINANCE_EQUITY.md §8); +1: ad spend for a period; +3: autopilot (§15)
+    // +1: re-mark a payment as a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a)
+    expect(routes).toHaveLength(668);
     for (const r of routes) expect(routePermission(r), `${r.method} ${r.path}`).not.toBe("(none)");
   });
 

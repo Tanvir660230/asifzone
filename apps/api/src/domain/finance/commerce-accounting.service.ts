@@ -239,6 +239,12 @@ export function desiredForOrder(o: OrderFact, x: OrderExtras): { events: Desired
     if (!p.id || p.status !== "SUCCEEDED" || p.amount <= 0) continue;
     events.push({ semanticKey: `${base}:payment:${p.id}`, type: COMMERCE_EVENT_TYPES.payment, at: p.settledAt, entityType: "Payment", entityId: p.id, payload: { paymentId: p.id, provider: p.provider, amount: p.amount, exchange } });
   }
+  // A refused parcel's return charge (§5a): courier cost recovered, outside the receivable. Re-marking a payment either
+  // way withdraws one event and adds the other (a different semantic key).
+  for (const p of o.returnCharges ?? []) {
+    if (p.amount <= 0) continue;
+    events.push({ semanticKey: `${base}:return_charge:${p.id}`, type: COMMERCE_EVENT_TYPES.returnCharge, at: p.settledAt, entityType: "Payment", entityId: p.id, payload: { paymentId: p.id, provider: p.provider, amount: p.amount, exchange } });
+  }
 
   // Store credit of this order. Issuance first settles what the order owes the customer (its receivable in credit — a
   // cancellation, a price decrease); the rest is a return settled in credit. The split replays the order's own receivable

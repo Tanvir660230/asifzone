@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   checkRefund,
+  clampNonNegative,
   derivePaymentPosition,
   money,
+  subtract,
   type Money,
   type PaymentLedgerInput,
   type PaymentPosition,
@@ -46,6 +48,8 @@ function violations(engine: Engine, allowRefund: RefundGate): string[] {
   check("P6 part-prepaid COD collects the rest", engine(input({ paid: [250] })).codToCollect.amount === T(750).amount);
   check("P6 online order collects 0", engine(input({ paymentMethod: "EPS_PG" })).codToCollect.amount === 0);
   check("P6 cancelled order collects 0", engine(input({ orderStatus: "CANCELLED" })).codToCollect.amount === 0);
+  check("P6 partial delivery collects 0 (the courier is done)", engine(input({ orderStatus: "PARTIALLY_DELIVERED" })).codToCollect.amount === 0);
+  check("closed order owes 0", engine(input({ orderStatus: "RETURNED", paid: [250] })).amountDue.amount === 0);
 
   // PL-1 status rules.
   check("PL-1 failed only when nothing received", engine(input({ paid: [1000], failedAttempts: 1 })).status === "PAID");
@@ -78,9 +82,13 @@ const mutants: Array<[string, Engine, RefundGate]> = [
     const p = canonical(i);
     return { ...p, codToCollect: i.paymentMethod === "COD" ? i.total : money(0, i.currency) };
   }, canonicalGate],
-  ["COD collected even for closed orders", (i) => {
+  ["COD collected even after the courier is done (partial delivery)", (i) => {
     const p = canonical(i);
     return { ...p, codToCollect: i.paymentMethod === "COD" ? p.amountDue : p.codToCollect };
+  }, canonicalGate],
+  ["a closed order still owes its unpaid total", (i) => {
+    const p = canonical(i);
+    return ["CANCELLED", "RETURNED", "REFUNDED"].includes(i.orderStatus) ? { ...p, amountDue: clampNonNegative(subtract(i.total, p.paid)) } : p;
   }, canonicalGate],
   ["FAILED even after a success", (i) => {
     const p = canonical(i);

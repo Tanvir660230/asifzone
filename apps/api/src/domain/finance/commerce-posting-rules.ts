@@ -19,6 +19,7 @@ export const COMMERCE_EVENT_TYPES = {
   recognised: "commerce.order.recognised",
   reversed: "commerce.order.recognition_reversed",
   payment: "commerce.payment.received",
+  returnCharge: "commerce.return_charge.received",
   refund: "commerce.refund.completed",
   returned: "commerce.return.restocked",
   writtenOff: "commerce.return.written_off",
@@ -190,6 +191,20 @@ registerPostingRule(COMMERCE_EVENT_TYPES.payment, 1, {
       const into = PROVIDER_CLEARING[p.provider];
       if (!into) throw new Error(`No clearing account for payment provider ${p.provider}`);
       return [debit(into, p.amount, party(p.orderId)), credit(hub(p.exchange), p.amount, party(p.orderId))];
+    }, p.orderNumber),
+});
+
+// ── a refused parcel's return charge (docs/PAYMENT_LEDGER.md §5a) ────────────────────────────────────────────────────
+// Not order money: it never touches the receivable. It lands in its provider's clearing and recovers courier cost — a
+// credit to delivery & courier expense, so the expense shows what the courier cost net of what customers paid back.
+
+registerPostingRule(COMMERCE_EVENT_TYPES.returnCharge, 1, {
+  payload: paymentPayload,
+  build: (p) =>
+    voidOr(p, `Return charge received (${p.provider}) — order ${p.orderNumber}`, () => {
+      const into = PROVIDER_CLEARING[p.provider];
+      if (!into) throw new Error(`No clearing account for payment provider ${p.provider}`);
+      return [debit(into, p.amount, party(p.orderId)), credit("expense.courier_fees", p.amount, party(p.orderId))];
     }, p.orderNumber),
 });
 

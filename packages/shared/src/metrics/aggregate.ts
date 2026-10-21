@@ -342,6 +342,7 @@ export function positionTotals(orders: OrderFact[], currency: string): PositionT
       refundsCompleted: o.refunds.filter((r) => r.status === "COMPLETED").map((r) => money(r.amount, currency)),
       refundsRequested: o.refunds.filter((r) => r.status === "REQUESTED").map((r) => money(r.amount, currency)),
       credits: o.credited ? [money(o.credited, currency)] : [],
+      returned: o.returnedValue ? [money(o.returnedValue, currency)] : [],
     });
     totals.outstandingCod += pos.codToCollect.amount;
     if (o.status !== "CANCELLED" && !["RETURNED", "REFUNDED"].includes(o.status) && pos.amountDue.amount > 0) {

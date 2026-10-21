@@ -140,13 +140,14 @@ export const paymentCallbackRateLimit = rateLimit({
   message: { error: "Too many requests, please try again shortly" },
 });
 
-/** Steadfast's delivery-status webhook — unauthenticated by design (Steadfast calls this directly)
- * and, since Steadfast doesn't sign payloads, each call also triggers an outbound re-verification
- * call back to Steadfast's own status API keyed off an attacker-suppliable consignment id. Same
- * shape as paymentCallbackRateLimit for the same reason. */
+/** Steadfast's webhook — authenticated by our shared token (courier.controller.ts). Only refused calls count (a wrong
+ * or missing token answers 401): guessing the token stays capped, while Steadfast's own pushes — every status change of
+ * every parcel, from one IP, never retried after a 4xx — are never dropped on a busy day. The outbound re-verification
+ * call to Steadfast's status API runs only after the token check. */
 export const courierWebhookRateLimit = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 30,
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again shortly" },

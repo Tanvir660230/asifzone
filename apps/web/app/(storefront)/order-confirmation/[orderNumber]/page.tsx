@@ -17,6 +17,7 @@ import { ApiError } from "@/lib/api-client";
 import { formatDateShort } from "@/lib/format";
 import { pixelPurchase } from "@/lib/pixels";
 import { useCartStore } from "@/store/cart";
+import { sessionGet, sessionSet } from "@/lib/safe-storage";
 
 const SESSION_KEY = "lastOrderPhone";
 const PAYMENT_TOAST_KEY = "paymentSuccessToastShown";
@@ -55,8 +56,8 @@ export default function OrderConfirmationPage() {
       // sessionStorage dedupe, so a refresh doesn't re-fire it.
       if (found.paymentMethod !== "COD" && found.paymentStatus === "PAID") {
         const toastKey = `${PAYMENT_TOAST_KEY}:${found.orderNumber}`;
-        if (!sessionStorage.getItem(toastKey)) {
-          sessionStorage.setItem(toastKey, "1");
+        if (!sessionGet(toastKey)) {
+          sessionSet(toastKey, "1");
           toast.success("Payment Successful");
           clearCart();
         }
@@ -72,7 +73,7 @@ export default function OrderConfirmationPage() {
   }
 
   useEffect(() => {
-    const remembered = sessionStorage.getItem(SESSION_KEY);
+    const remembered = sessionGet(SESSION_KEY);
     if (remembered) {
       attempt(remembered).finally(() => setLoading(false));
     } else {

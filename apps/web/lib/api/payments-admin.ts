@@ -1,4 +1,4 @@
-import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, RecordPaymentInput, Refund, RecordRefundInput, PaginatedResult, PaymentTransactionRow, RefundRow, PaymentSessionRow } from "@clothing-brand/shared";
+import type { CompleteRefundInput, OrderPaymentSummary, PaymentLinkChannel, PaymentLinkDto, ReclassifyPaymentInput, RecordPaymentInput, Refund, RecordRefundInput, PaginatedResult, PaymentTransactionRow, RefundRow, PaymentSessionRow } from "@clothing-brand/shared";
 import { apiFetch, type FetchSignal } from "../api-client";
 
 export interface PaymentsOverview {
@@ -81,6 +81,11 @@ export function completeRefund(orderId: string, refundId: string, input: Complet
 /** Records a payment received by hand (MANUAL) or the cash a courier collected on a partial delivery (COD_COLLECTED). */
 export function recordPayment(orderId: string, input: RecordPaymentInput, idempotencyKey?: string) {
   return apiFetch<{ summary: OrderPaymentSummary }>(`/api/orders/${orderId}/payments`, { method: "POST", body: input, idempotencyKey });
+}
+
+/** Re-marks a COD / manual payment as a refused parcel's return charge, or back to order money (PAYMENT_LEDGER §5a). */
+export function reclassifyPayment(orderId: string, paymentId: string, input: ReclassifyPaymentInput) {
+  return apiFetch<{ payment: OrderPaymentSummary }>(`/api/orders/${orderId}/payments/${paymentId}`, { method: "PATCH", body: input });
 }
 
 // ─── Order adjustments (docs/ORDER_ADJUSTMENTS.md) ───────────────────────────────────────────────────────────────────

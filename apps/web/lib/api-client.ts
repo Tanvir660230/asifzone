@@ -137,10 +137,18 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}, _r
 
   if (res.status === 204) return undefined as T;
 
-  const data = await res.json().catch(() => ({}));
+  const NOT_JSON = Symbol("not json");
+  const parsed = await res.json().catch(() => NOT_JSON);
+  const data = parsed === NOT_JSON ? {} : parsed;
 
   if (!res.ok) {
     throw new ApiError(res.status, data.error ?? "Something went wrong", data.details);
+  }
+  // A success status with a body that isn't JSON — a captive portal's or proxy's HTML page, a response cut off on a weak
+  // connection — is a failed request, not an empty result: resolving it to {} made callers crash on missing fields
+  // (the product page's reviews threw "Cannot read properties of undefined (reading 'map')").
+  if (parsed === NOT_JSON) {
+    throw new ApiError(502, "The connection dropped — please try again.");
   }
 
   return data as T;

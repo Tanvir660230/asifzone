@@ -130,6 +130,7 @@ export async function listPaymentTransactions(query: PaymentTransactionListQuery
     settledAt: p.settledAt.toISOString(),
     provider: p.provider,
     status: p.status,
+    purpose: p.purpose,
     amount: Number(p.amount),
     providerTransactionId: p.providerTransactionId,
     note: p.note,
