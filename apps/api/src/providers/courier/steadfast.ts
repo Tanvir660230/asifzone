@@ -209,6 +209,32 @@ export async function createBulkSteadfastConsignments(
   return rawResults.map(normalizeBulkResultItem);
 }
 
+/** Owner's books §3.2: Steadfast's payouts to the merchant (newest first, as Steadfast lists them). The response shape is
+ * known only from a third-party SDK (payments.list → id, amount, created_at), so it is returned as sent and parsed —
+ * defensively — by the finance side (domain/finance/courier-payouts.service.ts). */
+export async function getSteadfastPayments(): Promise<unknown> {
+  requireConfigured();
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/payments`, { headers: authHeaders() });
+  const { data, rawText } = await readSteadfastResponse(res);
+  if (!res.ok || data === null) {
+    logger.error(`[steadfast] payments list failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
+    throw AppError.badRequest(`Steadfast payments list failed: HTTP ${res.status}`, { status: res.status, body: rawText.slice(0, 2000) });
+  }
+  return data;
+}
+
+/** One payout with the consignments it pays (SDK: payments.get(id) → consignments[{ consignment_id, amount, … }]). */
+export async function getSteadfastPayment(paymentId: string): Promise<unknown> {
+  requireConfigured();
+  const res = await steadfastFetch(`${env.steadfast.baseUrl}/payments/${encodeURIComponent(paymentId)}`, { headers: authHeaders() });
+  const { data, rawText } = await readSteadfastResponse(res);
+  if (!res.ok || data === null) {
+    logger.error(`[steadfast] payment ${paymentId} failed (HTTP ${res.status}):`, { detail: rawText.slice(0, 2000) });
+    throw AppError.badRequest(`Steadfast payment ${paymentId} failed: HTTP ${res.status}`, { status: res.status, body: rawText.slice(0, 2000) });
+  }
+  return data;
+}
+
 export async function getSteadfastBalance(): Promise<number> {
   requireConfigured();
 

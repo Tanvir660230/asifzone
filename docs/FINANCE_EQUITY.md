@@ -92,3 +92,61 @@ unique and different).
 - **Capital rules:** minimum capital, interest on capital, and salary to partners.
 - **Sweat equity, vesting, a partner leaving** (settlement of their accounts).
 - **Partner loans** (2520) as a partner's sub-ledger.
+
+## 8. Owner, working partners and monthly profit shares (2026-10-21)
+
+The owner settled B-2 for this business on 2026-10-21:
+
+- **Abrarul Haque Asif** owns the business. He paid every cost from his own money and kept the Steadfast and EPS
+  payouts.
+- **Mehedi Hasan** is a working partner. He gets **20% of each month's net profit** for running the business. He puts
+  in no capital and bears no loss: a loss month shares nothing, and the next month shares its whole profit.
+- Both have been there since the business started (2026-08-01).
+
+**Roles** (`Partner.role`)
+- **OWNER** (one per business): the owner's accounts are the business's own **3100 Owner capital** and
+  **3300 Drawings** (mapping `equity.owner_drawings`). They are never renamed. The owner keeps what is left and never
+  has a share.
+- **WORKING**: shares profit, has no capital. Gets their own 31xx / 32xx accounts.
+- **INVESTOR**: the earlier register's default.
+
+**The share** (`profitSharePct`, `shareFrom`, `lossRule`)
+- It is stamped as confirmed (`shareConfirmedAt`, `shareConfirmedNote`) when it is set.
+- Only `ZERO_IN_LOSS_MONTHS` runs. `CARRY_LOSSES` is refused until it is needed.
+
+**Profit shares** (`ProfitShare`, `POST /equity/profit-shares/run`)
+- Each finished month from the share start is shared once, in order, and only after the books have started
+  (opening balances posted).
+- The month's net profit is the income statement's own figure.
+- Share = pct × profit, or 0 in a loss month.
+- The share is posted (`finance.partner.profit_shared`): **Dr 3350 Profit shared with partners** (equity), **Cr the
+  partner's current account**. Being equity, it does not change the profit it was computed from.
+- A posted share is never edited (trigger). If a shared month's profit later changes, the next month's share carries
+  a **correction**: what that month's share should be now, minus what was credited for it.
+- A negative total is **carried**. Nothing is ever taken back from the partner.
+- The running month is shown as an estimate and fixed when the month ends.
+
+**Paying** (`POST /equity/partners/:id/pay`)
+- A Treasury withdrawal from cash, bKash or bank against the partner's current account.
+- The method (cash / bKash / Nagad / bank / other) and a note are kept.
+- A payment can never be more than what is owed.
+
+**The owner's money**
+- `POST /equity/owner/money`: money put in is a deposit to owner capital; money taken out is a withdrawal to drawings.
+- `GET /equity/owner/payouts` and `POST /equity/owner/payouts-taken`: every posted Steadfast or EPS payout he kept
+  becomes a drawing from the account it was paid into, on the payout's date. This happens once per payout
+  (idempotency key per settlement).
+- A cost he paid from his own pocket is an expense with funding *capital*, as before (Expenses).
+
+**Activity** (`GET /equity/partners/:id/activity`)
+- Every posted line on the partner's two accounts, in date order, with running totals.
+- Totals: put in, credited, taken out, and net.
+
+**Page:** Finance › Payroll & partners › **Owner & partners**
+- The owner's card: put in, taken out and net invested; payouts not yet marked as taken; month-by-month history.
+- Each partner's card: owed, earned and paid; the running month's estimate; "Share N finished months";
+  "Pay <name>"; month by month with corrections; history.
+- Equity on the balance sheet, folded away.
+
+Migration `20261123100000_partner_profit_share`. Routes: 7 (owner-only, `finance.sensitive`; authorization matrix
+663). Tests: `finance-partner-profit.integration.test.ts` (6).

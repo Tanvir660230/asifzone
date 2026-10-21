@@ -87,8 +87,13 @@ export default function FinanceAccountsPage() {
                 <span className="font-medium tabular-nums">{formatPrice(m.amount)}</span>
                 {can("finance.post") && (
                   <span className="flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => decide.mutate({ id: m.id, approve: false })}>Reject</Button>
-                    <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ id: m.id, approve: true })}>Approve</Button>
+                    <Button size="sm" variant="ghost" onClick={() => decide.mutate({ id: m.id, approve: false })}>{m.receiverAdminId ? "Cancel" : "Reject"}</Button>
+                    {/* A handover waits for the person receiving the cash — they confirm it in My cash. */}
+                    {m.receiverAdminId ? (
+                      <a href="/admin/finance/my-cash" className="self-center text-xs text-ink-500 hover:underline">Waiting for the receiver to confirm</a>
+                    ) : (
+                      <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ id: m.id, approve: true })}>Approve</Button>
+                    )}
                   </span>
                 )}
               </li>

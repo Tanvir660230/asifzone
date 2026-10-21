@@ -14,6 +14,7 @@ import { resolveMappedAccount } from "./chart.service";
 import { accountSums, moneyBalanceAt } from "./ledger.service";
 import { businessDateOf, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { movementDto, requestMovementInTx } from "./treasury.service";
+import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 
 export const GROUP_FOR_KIND: Record<FinancialAccountKind, AccountMappingKey> = {
   CASH: "group.cash",
@@ -22,7 +23,11 @@ export const GROUP_FOR_KIND: Record<FinancialAccountKind, AccountMappingKey> = {
   PAYMENT_GATEWAY: "group.payment_gateway",
   COURIER: "group.courier",
   OTHER: "group.other_money",
+  AD_PLATFORM: "group.ad_platform",
 };
+
+/** What a money-account read loads: its ledger account and, for cash, who holds it. */
+const ACCOUNT_INCLUDE = { ledgerAccount: true, custodian: { select: { id: true, name: true, email: true } } } satisfies Prisma.FinancialAccountInclude;
 
 const inTransaction = financeTransaction;
 
@@ -40,7 +45,7 @@ async function openingBalances(businessId: string, currency: string, ids: string
   return out;
 }
 
-type AccountRow = FinancialAccount & { ledgerAccount: LedgerAccount };
+type AccountRow = Prisma.FinancialAccountGetPayload<{ include: typeof ACCOUNT_INCLUDE }>;
 
 function dto(f: AccountRow, balanceMinor: number, currency: string, extra: { openingMinor?: number; lastReconciledThrough?: string | null; pendingMovements?: number } = {}) {
   const major = (v: number) => toMajorNumber(v, currency);
@@ -49,6 +54,8 @@ function dto(f: AccountRow, balanceMinor: number, currency: string, extra: { ope
     accountTitle: f.accountTitle, branch: f.branch, accountReference: f.accountReference, metadata: f.metadata,
     approvalThreshold: f.approvalThreshold === null ? null : major(toMinor(f.approvalThreshold, currency)),
     brandId: f.brandId, isActive: f.isActive, status: f.isActive ? ("ACTIVE" as const) : ("INACTIVE" as const),
+    /** Owner's books §2: the person holding this cash (null for banks, wallets and clearing accounts). */
+    custodian: f.custodian,
     ledgerAccount: { id: f.ledgerAccount.id, code: f.ledgerAccount.code, name: f.ledgerAccount.name },
     /** The ledger balance (derived — there is no stored balance). */
     balance: major(balanceMinor),
@@ -66,7 +73,7 @@ export async function listFinancialAccounts(q: { brandId?: string; kind?: Financ
   const { business } = await getFinanceContext();
   const cur = business.baseCurrency;
   const [rows, sums] = await Promise.all([
-    prisma.financialAccount.findMany({ where: { businessId: business.id, brandId: q.brandId, kind: q.kind }, include: { ledgerAccount: true }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
+    prisma.financialAccount.findMany({ where: { businessId: business.id, brandId: q.brandId, kind: q.kind }, include: ACCOUNT_INCLUDE, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     accountSums(business.id, {}),
   ]);
   const byAccount = new Map(sums.map((s) => [s.accountId, toMinor(s.periodDebit, cur) - toMinor(s.periodCredit, cur)]));
@@ -138,6 +145,8 @@ export async function createFinancialAccountInTx(
   if (input.brandId && !(await tx.financeBrand.findFirst({ where: { id: input.brandId, businessId: business.id } }))) {
     throw financeError(400, "BRAND_NOT_FOUND", "Brand not found in this business");
   }
+  // An ad account lives under a group the owner's-books set-up adds to older charts.
+  if (input.kind === "AD_PLATFORM") await ensureOwnerBooksSetupInTx(tx, business, actor);
   const group = await resolveMappedAccount(tx, business.id, GROUP_FOR_KIND[input.kind]);
   const ledgerAccount = await tx.ledgerAccount.create({
     data: { businessId: business.id, code: await nextChildCode(tx, business.id, group), name: input.name, type: group.type, normalBalance: "DEBIT", parentId: group.id, isPostable: true, isSystem: true },

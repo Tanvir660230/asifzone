@@ -57,3 +57,26 @@ export async function sendSms({ to, body }: SmsInput): Promise<void> {
   if (!data) throw new SmsProviderError("[sms] BulkSMSBD returned an unreadable response", true);
   if (data.response_code !== 202) throw new SmsProviderError(`[sms] BulkSMSBD rejected the message: ${JSON.stringify(data)}`, false);
 }
+
+const BULKSMSBD_BALANCE_ENDPOINT = "https://bulksmsbd.net/api/getBalanceApi";
+
+/**
+ * The SMS account's balance (BDT) for Finance › SMS. Read-only. BulkSMSBD's balance endpoint has not been checked against
+ * the live account from this codebase, so the answer is read defensively: a numeric `balance` field, else nothing — the
+ * owner then types the balance in. Never throws; never logs the key.
+ */
+export async function readSmsBalance(): Promise<{ ok: true; balance: number } | { ok: false; reason: string }> {
+  if (!env.bulkSmsBd.apiKey) return { ok: false, reason: "The SMS provider is not connected" };
+  if (!liveProvidersEnabled()) return { ok: false, reason: "Live providers are off here" };
+  try {
+    const res = await fetch(`${BULKSMSBD_BALANCE_ENDPOINT}?${new URLSearchParams({ api_key: env.bulkSmsBd.apiKey })}`, { signal: AbortSignal.timeout(SMS_TIMEOUT_MS) });
+    if (!res.ok) return { ok: false, reason: `The SMS provider answered ${res.status}` };
+    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const raw = data?.balance ?? (data?.data as Record<string, unknown> | undefined)?.balance;
+    const balance = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+    if (!Number.isFinite(balance) || balance < 0) return { ok: false, reason: "The SMS provider's answer had no balance — type it in" };
+    return { ok: true, balance: Math.round(balance * 100) / 100 };
+  } catch {
+    return { ok: false, reason: "The SMS provider did not answer" };
+  }
+}

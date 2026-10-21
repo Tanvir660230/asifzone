@@ -34,6 +34,8 @@ import { processFinancialEvent, recordFinancialEvent } from "./events.service";
 import { COMMERCE_EVENT_TYPES, PROVIDER_CLEARING, type RecognitionComponents } from "./commerce-posting-rules";
 import { markEstimateApproved, upsertException, type ExceptionSpec } from "./finance-exceptions.service";
 import { commerceReadiness, ensureCommerceAccountingInTx } from "./commerce-setup.service";
+import { chargeEstimatesForOrder, loadRateCards } from "./charge-projection";
+import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 
 export const PROJECTOR_ACTOR: FinanceActor = { type: "SYSTEM", label: "system:commerce-projector" };
 
@@ -387,13 +389,15 @@ async function booksStarted(business: FinanceContext["business"]): Promise<boole
 }
 
 /** Brings one order's facts into the books (records, then posts). Idempotent. */
-export async function projectOrder(orderId: string, opts: { process?: boolean } = {}) {
+export async function projectOrder(orderId: string, opts: { process?: boolean; rates?: Awaited<ReturnType<typeof loadRateCards>> } = {}) {
   const ctx = await getFinanceContext();
   if (!(await booksStarted(ctx.business))) return { recorded: [] as string[], outcomes: {} };
   const [o] = await loadOrderFacts([orderId], ctx.business.baseCurrency);
   if (!o) return { recorded: [] as string[], outcomes: {} };
   const extras = await loadExtras(o, ctx);
   const { events, exceptions } = desiredForOrder(o, extras);
+  // Owner's books §3.3 / §4: the courier charge and gateway fee estimates of the order, until their payout replaces them.
+  events.push(...(await chargeEstimatesForOrder(o.id, ctx, opts.rates)));
   const recorded = await financeTransaction(async (tx) => {
     await lockScope(tx, `order:${o.id}`);
     return applyDesired(tx, ctx, `order:${o.id}:`, { orderId: o.id, orderNumber: o.orderNumber }, events, exceptions);
@@ -425,7 +429,7 @@ async function scanStock(tx: AppTransactionClient, ctx: FinanceContext, since: D
   const openingStart = new Date(`${ctx.business.openingDate}T00:00:00.000Z`);
   const from = since && since > openingStart ? since : openingStart;
   const moves = await tx.stockMovement.findMany({
-    where: { orderId: null, reason: { in: ["RESTOCK", "IMPORT", "ADJUSTMENT", "DAMAGED", "LOST"] }, createdAt: { gte: from } },
+    where: { orderId: null, reason: { in: ["RESTOCK", "IMPORT", "ADJUSTMENT", "DAMAGED", "LOST", "PACKAGING_USE"] }, createdAt: { gte: from } },
     select: { id: true, variantId: true, change: true, reason: true, note: true, createdAt: true, valuationEntry: { select: { valuationStatus: true } }, variant: { select: { sku: true, costPrice: true, product: { select: { name: true, costPrice: true } } } } },
     orderBy: { createdAt: "asc" },
     take: 2000,
@@ -470,6 +474,8 @@ async function changedOrders(since: Date | null): Promise<string[]> {
   add(await prisma.returnRequest.findMany({ where: { updatedAt: { gte: since } }, select: { orderId: true } }));
   add(await prisma.customerCreditEntry.findMany({ where: { createdAt: { gte: since } }, select: { orderId: true } }));
   add(await prisma.financeException.findMany({ where: { resolvedAt: { gte: since }, kind: "MISSING_COST" }, select: { orderId: true } }));
+  // Owner's books: a settlement posted or reversed withdraws or restores the order's charge estimates.
+  add(await prisma.clearingSettlementLine.findMany({ where: { settlement: { OR: [{ postedAt: { gte: since } }, { reversedAt: { gte: since } }] } }, select: { orderId: true } }));
   return [...ids];
 }
 
@@ -524,6 +530,8 @@ export async function syncCommerce(opts: { full?: boolean; actor?: FinanceActor 
     await financeTransaction((tx) => ensureCommerceAccountingInTx(tx, ctx.business, opts.actor));
     const readiness = await commerceReadiness(prisma, ctx.business.id);
     if (!readiness.ready) return { ...stats, skipped: "MAPPINGS_MISSING", missingMappings: readiness.missing };
+    const rates = await loadRateCards(ctx.business.id, ctx.business.baseCurrency);
+    if (rates.cards.length || rates.fees.size) await financeTransaction((tx) => ensureOwnerBooksSetupInTx(tx, ctx.business, opts.actor));
     const state = await prisma.financeSyncState.findUnique({ where: { businessId: ctx.business.id } });
     const startedAt = new Date();
     const since = opts.full || !state?.cursor ? null : new Date(state.cursor.getTime() - OVERLAP_MS);
@@ -534,7 +542,7 @@ export async function syncCommerce(opts: { full?: boolean; actor?: FinanceActor 
       }
     };
     for (const id of await changedOrders(since)) {
-      const r = await projectOrder(id);
+      const r = await projectOrder(id, { rates });
       stats.orders += 1;
       if (stats.orders % RENEW_EVERY === 0) await renewSweepLease(ctx.business.id, lease);
       stats.recorded += r.recorded.length;

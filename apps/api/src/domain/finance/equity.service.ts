@@ -18,8 +18,13 @@ import { businessDateOf, dateColumn, financeError, toMajorNumber, toMinor } from
 import { financeTransaction } from "./finance-tx";
 import { nextFinanceSequence } from "./suppliers.service";
 import { balanceSheet } from "./statements.service";
+import { resolveMappedAccount } from "./chart.service";
+import { ensureOwnerBooksSetupInTx } from "./owner-books-setup.service";
 
 const adminOf = (actor: FinanceActor) => (actor.type === "ADMIN" ? actor.adminId : null);
+/** A partner's role in the business (not an admin role): the owner keeps what is left and never shares. */
+export const isBusinessOwner = (role: string) => role === BUSINESS_OWNER;
+const BUSINESS_OWNER = "OWNER";
 export const partnerNumber = (n: number) => `PT-${String(n).padStart(2, "0")}`;
 const accountNames = (name: string) => ({ capital: `Partner capital — ${name}`, current: `Partner current — ${name}` });
 
@@ -32,6 +37,26 @@ export interface PartnerInput {
   agreedSharePct?: number | null;
   agreementReference?: string | null;
   notes?: string | null;
+  role?: "OWNER" | "WORKING" | "INVESTOR";
+  profitSharePct?: number | null;
+  shareFrom?: string | null;
+  lossRule?: "ZERO_IN_LOSS_MONTHS" | "CARRY_LOSSES";
+  shareConfirmedNote?: string | null;
+}
+
+/** The owner never shares profit (they keep what is left); a confirmed share needs a start and is stamped when set. */
+function shareFields(input: Partial<PartnerInput>, role: string, joinedOn: string, before?: { profitSharePct: unknown; shareConfirmedAt: Date | null }) {
+  if (input.profitSharePct === undefined && input.shareFrom === undefined && input.lossRule === undefined && input.shareConfirmedNote === undefined) return {};
+  if (isBusinessOwner(role) && input.profitSharePct) throw financeError(400, "OWNER_NO_SHARE", "The owner keeps what is left — a profit share is for partners");
+  const pct = input.profitSharePct === undefined ? (before?.profitSharePct == null ? null : Number(before.profitSharePct)) : input.profitSharePct;
+  const changed = input.profitSharePct !== undefined && pct !== (before?.profitSharePct == null ? null : Number(before.profitSharePct));
+  return {
+    profitSharePct: pct === null || pct === 0 ? null : pct.toFixed(4),
+    shareFrom: input.shareFrom === undefined ? undefined : input.shareFrom ? dateColumn(input.shareFrom) : dateColumn(joinedOn),
+    lossRule: input.lossRule,
+    shareConfirmedAt: pct ? (changed || !before?.shareConfirmedAt ? new Date() : undefined) : null,
+    shareConfirmedNote: input.shareConfirmedNote,
+  };
 }
 
 const INCLUDE = { capitalAccount: { select: { id: true, code: true, name: true } }, currentAccount: { select: { id: true, code: true, name: true } } } satisfies Prisma.PartnerInclude;
@@ -53,6 +78,8 @@ export async function createPartner(input: PartnerInput, actor: FinanceActor) {
     if (await tx.partner.findFirst({ where: { businessId: business.id, name: { equals: name, mode: "insensitive" } } })) throw financeError(409, "PARTNER_EXISTS", `${name} is already a partner`);
     const equity = await tx.ledgerAccount.findFirst({ where: { businessId: business.id, code: "3000" } });
     if (!equity || equity.isPostable || equity.type !== "EQUITY") throw financeError(409, "EQUITY_GROUP", "The chart needs the 3000 Equity group");
+    const role = input.role ?? "INVESTOR";
+    if (isBusinessOwner(role) && (await tx.partner.findFirst({ where: { businessId: business.id, role: "OWNER" } }))) throw financeError(409, "OWNER_EXISTS", "The business already has its owner");
     const names = accountNames(name);
     const audits: FinanceAuditInput[] = [];
     const make = async (code: string, accountName: string) => {
@@ -60,13 +87,22 @@ export async function createPartner(input: PartnerInput, actor: FinanceActor) {
       audits.push({ businessId: business.id, actor, action: "account.create", entityType: "LedgerAccount", entityId: a.id, after: a, reason: "Partner accounts" });
       return a;
     };
-    const capital = await make(await freeCode(tx, business.id, 3101, 3199), names.capital);
-    const current = await make(await freeCode(tx, business.id, 3201, 3299), names.current);
+    let capital: { id: string; code: string };
+    let current: { id: string; code: string };
+    if (isBusinessOwner(role)) {
+      await ensureOwnerBooksSetupInTx(tx, business, actor);
+      capital = await resolveMappedAccount(tx, business.id, "equity.owner_capital");
+      current = await resolveMappedAccount(tx, business.id, "equity.owner_drawings");
+    } else {
+      capital = await make(await freeCode(tx, business.id, 3101, 3199), names.capital);
+      current = await make(await freeCode(tx, business.id, 3201, 3299), names.current);
+    }
     const row = await tx.partner.create({
       data: {
         businessId: business.id, number: await nextFinanceSequence(tx, business.id, "partner"), name, phone: input.phone ?? null, email: input.email ?? null,
         joinedOn: dateColumn(input.joinedOn), leftOn: input.leftOn ? dateColumn(input.leftOn) : null, agreedSharePct: input.agreedSharePct === null || input.agreedSharePct === undefined ? null : input.agreedSharePct.toFixed(4),
         agreementReference: input.agreementReference ?? null, capitalAccountId: capital.id, currentAccountId: current.id, notes: input.notes ?? null, createdByAdminId: adminOf(actor),
+        role, ...shareFields(input, role, input.joinedOn),
       },
       include: INCLUDE,
     });
@@ -87,7 +123,8 @@ export async function updatePartner(id: string, input: Partial<PartnerInput>, ac
     if (leftOn && leftOn < joinedOn) throw financeError(400, "PARTNER_DATES", "The leaving date is on or after the joining date");
     const name = input.name?.trim() ?? before.name;
     const audits: FinanceAuditInput[] = [];
-    if (name !== before.name) {
+    if (input.role && input.role !== before.role) throw financeError(400, "PARTNER_ROLE_FIXED", "A partner's role is set when they are added");
+    if (name !== before.name && !isBusinessOwner(before.role)) {
       if (await tx.partner.findFirst({ where: { businessId: business.id, id: { not: id }, name: { equals: name, mode: "insensitive" } } })) throw financeError(409, "PARTNER_EXISTS", `${name} is already a partner`);
       const names = accountNames(name);
       for (const [accountId, accountName] of [[before.capitalAccountId, names.capital], [before.currentAccountId, names.current]] as const) {
@@ -102,6 +139,7 @@ export async function updatePartner(id: string, input: Partial<PartnerInput>, ac
         name, phone: input.phone, email: input.email, joinedOn: dateColumn(joinedOn), leftOn: leftOn ? dateColumn(leftOn) : null,
         agreedSharePct: input.agreedSharePct === undefined ? undefined : input.agreedSharePct === null ? null : input.agreedSharePct.toFixed(4),
         agreementReference: input.agreementReference, notes: input.notes,
+        ...shareFields(input, before.role, joinedOn, before),
       },
       include: INCLUDE,
     });
@@ -117,7 +155,9 @@ function partnerDto(p: PartnerRow, balances: Map<string, number>, cur: string) {
   const current = m(p.currentAccountId);
   return {
     id: p.id, number: partnerNumber(p.number), name: p.name, phone: p.phone, email: p.email, joinedOn: businessDateOf(p.joinedOn), leftOn: p.leftOn ? businessDateOf(p.leftOn) : null,
-    agreedSharePct: p.agreedSharePct === null ? null : Number(p.agreedSharePct), shareConfirmed: false as const, agreementReference: p.agreementReference, notes: p.notes,
+    agreedSharePct: p.agreedSharePct === null ? null : Number(p.agreedSharePct), agreementReference: p.agreementReference, notes: p.notes,
+    role: p.role, profitSharePct: p.profitSharePct === null ? null : Number(p.profitSharePct), shareFrom: p.shareFrom ? businessDateOf(p.shareFrom) : null, lossRule: p.lossRule,
+    shareConfirmed: Boolean(p.shareConfirmedAt), shareConfirmedAt: p.shareConfirmedAt?.toISOString() ?? null, shareConfirmedNote: p.shareConfirmedNote,
     capitalAccount: p.capitalAccount, currentAccount: p.currentAccount,
     balances: { capital, current, total: toMajorNumber(Math.round(capital * 100) + Math.round(current * 100), cur) },
   };

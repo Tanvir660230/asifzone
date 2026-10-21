@@ -15,7 +15,7 @@
 import type { CostBehaviour, CommitmentFrequency, Prisma, TreasuryMovementStatus } from "@prisma/client";
 import { prisma, type AppTransactionClient } from "../../config/prisma";
 import { recordFinanceAudit, type FinanceActor } from "./finance-audit";
-import { businessToday, getFinanceContext } from "./finance-context";
+import { businessToday, getFinanceContext, type FinanceBusinessInfo } from "./finance-context";
 import { businessDateOf, dateColumn, financeError, toDecimal, toMajorNumber, toMinor } from "./finance-values";
 import { financeTransaction } from "./finance-tx";
 import { nextFinanceSequence } from "./suppliers.service";
@@ -222,10 +222,16 @@ export function expenseDto(e: ExpenseRow, cur: string) {
 export async function recordExpense(input: ExpenseInput, actor: FinanceActor, idempotencyKey: string | null) {
   if (!idempotencyKey) throw financeError(400, "IDEMPOTENCY_KEY_REQUIRED", "Send an Idempotency-Key header with every expense");
   const { business } = await getFinanceContext();
+  return financeTransaction((tx) => recordExpenseInTx(tx, business, input, actor, idempotencyKey));
+}
+
+/** recordExpense in the caller's transaction (owner's books: an expense the owner paid personally is funded and paid in
+ * one step). */
+export async function recordExpenseInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, input: ExpenseInput, actor: FinanceActor, idempotencyKey: string) {
   const cur = business.baseCurrency;
   const expenseDate = input.expenseDate ?? businessToday(business);
   if (business.openingDate && expenseDate < business.openingDate) throw financeError(400, "BEFORE_OPENING_DATE", `The books start on ${business.openingDate}`);
-  return financeTransaction(async (tx) => {
+  {
     let commitment = null;
     if (input.commitmentId) {
       const [locked] = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "RecurringCommitment" WHERE id = ${input.commitmentId} AND "businessId" = ${business.id} FOR UPDATE`;
@@ -271,7 +277,7 @@ export async function recordExpense(input: ExpenseInput, actor: FinanceActor, id
     });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "expense.record", entityType: "Expense", entityId: e.id, after: { ...expenseDto(e, cur), movement: movementDto(movement).status } });
     return { expense: expenseDto(e, cur), replayed: false };
-  });
+  }
 }
 
 export async function listExpenses(q: { from?: string; to?: string; expenseAccountId?: string; costBehaviour?: CostBehaviour; commitmentId?: string; page: number; pageSize: number }) {

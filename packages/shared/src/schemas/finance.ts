@@ -45,7 +45,7 @@ export const ledgerAccountUpdateSchema = z
 
 export const accountMappingUpdateSchema = z.object({ accountId: id, reason: optionalText(500) });
 
-export const FINANCIAL_ACCOUNT_KINDS = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_GATEWAY", "COURIER", "OTHER"] as const;
+export const FINANCIAL_ACCOUNT_KINDS = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_GATEWAY", "COURIER", "OTHER", "AD_PLATFORM"] as const;
 export type FinancialAccountKindName = (typeof FINANCIAL_ACCOUNT_KINDS)[number];
 
 export const financialAccountCreateSchema = z.object({
@@ -276,6 +276,10 @@ export const payrollRemitSchema = z.object({ liabilityAccountId: id, amount: fin
 export const payRunReverseSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 
 // ERP E11 foundation (docs/FINANCE_EQUITY.md): partner register — the agreed share is a note until B-2
+export const PARTNER_ROLES = ["OWNER", "WORKING", "INVESTOR"] as const;
+/** ZERO_IN_LOSS_MONTHS: a loss month shares nothing and the next month shares its whole profit. CARRY_LOSSES: losses are made good first. */
+export const PROFIT_SHARE_LOSS_RULES = ["ZERO_IN_LOSS_MONTHS", "CARRY_LOSSES"] as const;
+export const PAYMENT_METHODS = ["CASH", "BKASH", "NAGAD", "BANK", "OTHER"] as const;
 const partnerBase = {
   name: z.string().trim().min(2).max(120),
   phone: optionalText(30),
@@ -285,10 +289,39 @@ const partnerBase = {
   agreedSharePct: z.coerce.number().min(0).max(100).optional().nullable(),
   agreementReference: optionalText(200),
   notes: optionalText(1000),
+  /** OWNER: the business's owner (owner capital 3100 / drawings 3300). WORKING: shares profit for their work, puts in no capital. */
+  role: z.enum(PARTNER_ROLES).optional(),
+  /** The share of each month's net profit — confirmed by the owner (docs/FINANCE_EQUITY.md §8). */
+  profitSharePct: z.coerce.number().min(0).max(100).optional().nullable(),
+  shareFrom: businessDate.optional().nullable(),
+  lossRule: z.enum(PROFIT_SHARE_LOSS_RULES).optional(),
+  shareConfirmedNote: optionalText(300),
 };
 export const partnerCreateSchema = z.object(partnerBase);
 export const partnerUpdateSchema = z.object(partnerBase).partial().refine((v) => Object.keys(v).length > 0, "Nothing to change");
 export const equityQuerySchema = z.object({ asOf: businessDate.optional() });
+const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "A month as YYYY-MM");
+/** Share every finished month not shared yet, up to and including `through` (default: last month). */
+export const profitShareRunSchema = z.object({ through: yearMonth.optional() });
+export const profitSharePaySchema = z.object({
+  fromFinancialAccountId: id,
+  amount: financeAmountSchema.refine((v) => v > 0, "More than zero"),
+  paymentDate: businessDate.optional(),
+  method: z.enum(PAYMENT_METHODS),
+  note: optionalText(300),
+});
+/** The owner putting money in (INVEST, to owner capital) or taking it out (WITHDRAW, to drawings), through a money account. */
+export const ownerMoneySchema = z.object({
+  kind: z.enum(["INVEST", "WITHDRAW"]),
+  financialAccountId: id,
+  amount: financeAmountSchema.refine((v) => v > 0, "More than zero"),
+  date: businessDate.optional(),
+  method: z.enum(PAYMENT_METHODS).optional(),
+  note: optionalText(300),
+});
+/** Courier / gateway payouts the owner took for himself — each becomes a drawing from the account it was paid into, once. */
+export const payoutsTakenSchema = z.object({ settlementIds: z.array(id).min(1).max(500) });
+export const partnerActivityQuerySchema = z.object({ from: businessDate.optional(), to: businessDate.optional() });
 
 // ERP E14 (docs/FINANCE_ALERTS.md): month-end close checklist
 export const monthEndQuerySchema = z.object({ month: budgetMonth.optional() });

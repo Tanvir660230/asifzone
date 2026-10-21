@@ -16,6 +16,8 @@ import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { FinancialAccount, FinancialAccountKind } from "@/lib/api/finance";
 import * as purchasingApi from "@/lib/api/purchasing";
+import * as booksApi from "@/lib/api/finance-books";
+import type { MoneyMap } from "@/lib/api/finance-books";
 import { navChildren, navNode } from "@/lib/admin/navigation";
 import { computeTrendPct, formatBookDate, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -30,6 +32,7 @@ const KIND_LABEL: Record<FinancialAccountKind, string> = {
   PAYMENT_GATEWAY: "Gateway",
   COURIER: "Courier",
   OTHER: "Other",
+  AD_PLATFORM: "Ad account",
 };
 /** The order the groups appear in the map — the same order as the sidebar. */
 const GROUPS = ["finance.money", "finance.selling", "finance.purchasing", "finance.books", "finance.people", "finance.setup"];
@@ -81,6 +84,7 @@ function BooksOverview() {
   const alerts = useQuery({ queryKey: financeApi.alertKeys.all, queryFn: financeApi.getFinanceAlerts });
   const payables = useQuery({ queryKey: purchasingApi.payablesKeys.ageing(), queryFn: purchasingApi.payablesAgeing, enabled: can("ap.view") });
   const forecast = useQuery({ queryKey: financeApi.budgetKeys.forecast(13), queryFn: () => financeApi.getCashForecast(13) });
+  const map = useQuery({ queryKey: booksApi.booksKeys.moneyMap(), queryFn: () => booksApi.getMoneyMap() });
 
   const active = (accounts.data?.financialAccounts ?? []).filter((a) => a.isActive);
   const held = sum(active, HELD);
@@ -198,6 +202,8 @@ function BooksOverview() {
         <SectionTitle title="Where your money is" href="/admin/finance/accounts" linkLabel="Money accounts" />
         {accounts.isLoading ? (
           <Skeleton className="h-32 w-full" />
+        ) : map.data && active.length > 0 ? (
+          <MoneyMapView map={map.data} />
         ) : active.length === 0 ? (
           <div className="flex flex-col items-start gap-3 rounded-lg bg-surface-muted p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
             <p className="text-fg-muted">No money accounts yet. Add your cash box, bank account and bKash / Nagad so every taka has a home.</p>
@@ -355,6 +361,73 @@ function Row({ label, value, prior, hint, strong, href }: { label: string; value
       </dt>
       {trend !== null && Number.isFinite(trend) && prior !== 0 && <span className="hidden text-xs tabular-nums text-fg-subtle sm:inline">last month {formatPrice(prior!)}</span>}
       <dd className={cn("w-32 shrink-0 text-right tabular-nums", strong ? "font-semibold text-fg" : "text-fg", strong && value < 0 && "text-danger-600")}>{formatPrice(value)}</dd>
+    </div>
+  );
+}
+
+/** Owner's books §2: where every taka is — cash by the person holding it, banks and wallets, what couriers and gateways
+ * still owe (net of the charges booked against it), ad accounts — then what else is yours and what you owe. */
+function MoneyMapView({ map }: { map: MoneyMap }) {
+  const t = map.totals;
+  const link = (a: MoneyMap["accounts"][number]) => `/admin/finance/accounts/${a.id}`;
+  const banks = map.accounts.filter((a) => !a.clearing && (a.kind === "BANK" || a.kind === "MOBILE_WALLET" || a.kind === "OTHER"));
+  const owedToYou = [
+    { label: "Steadfast (after its charges)", value: t.courierReceivable, href: "/admin/finance/courier" },
+    { label: "Payment gateways (after fees)", value: t.gatewayReceivable, href: "/admin/finance/settlements" },
+    { label: "Payments recorded, not banked", value: t.otherReceivable, href: "/admin/finance/settlements" },
+  ].filter((x) => x.value !== 0);
+  const alsoYours = [
+    { label: "Stock (at cost)", value: t.inventory, href: "/admin/finance/inventory-cutover" },
+    { label: "Prepaid, not used yet", value: t.prepaid, href: "/admin/finance/prepaid" },
+    { label: "Paid ahead to ad accounts", value: Math.max(0, t.adAccounts), href: "/admin/finance/ads" },
+    { label: "In production", value: t.workInProgress, href: "/admin/manufacturing" },
+  ].filter((x) => x.value !== 0);
+  const youOwe = [
+    { label: "Suppliers", value: t.suppliersOwed + t.goodsNotInvoiced, href: "/admin/finance/payables" },
+    { label: "Owner, to repay", value: t.ownerToRepay, href: "/admin/finance/expenses" },
+    { label: "Ad platforms (spent more than paid in)", value: Math.max(0, -t.adAccounts), href: "/admin/finance/ads" },
+    { label: "Loans", value: t.loans, href: "/admin/finance/loans" },
+    { label: "Customers' store credit", value: t.storeCredit, href: "/admin/finance/statements" },
+    { label: "VAT", value: t.vatOwed, href: "/admin/finance/statements" },
+  ].filter((x) => x.value !== 0);
+  return (
+    <div className="space-y-6" data-testid="money-map">
+      <div className="grid gap-x-10 gap-y-5 md:grid-cols-2">
+        <MapColumn title="Cash, by who holds it" total={t.cash} rows={map.cashByPerson.map((p) => ({ label: p.custodian?.name ?? "Not given to anyone", sub: p.accounts.map((a) => a.name).join(", "), value: p.total, href: p.accounts.length === 1 ? link(p.accounts[0]!) : "/admin/finance/accounts" }))} empty="No cash accounts." />
+        <MapColumn title="Banks & wallets" total={t.bank + t.wallets + t.otherMoney} rows={banks.map((a) => ({ label: a.name, sub: KIND_LABEL[a.kind], value: a.balance, href: link(a) }))} empty="No bank or wallet accounts." />
+        <MapColumn title="Still owed to you" total={owedToYou.reduce((s, x) => s + x.value, 0)} rows={owedToYou} empty="Nothing waiting with couriers or gateways." />
+        <MapColumn title="Also yours" total={alsoYours.reduce((s, x) => s + x.value, 0)} rows={alsoYours} empty="—" />
+      </div>
+      {youOwe.length > 0 && (
+        <div className="border-t border-line-subtle pt-4">
+          <MapColumn title="You owe" total={youOwe.reduce((s, x) => s + x.value, 0)} rows={youOwe} empty="" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MapColumn({ title, total, rows, empty }: { title: string; total: number; rows: Array<{ label: string; sub?: string; value: number; href: string }>; empty: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-baseline justify-between gap-3 border-b border-line-subtle pb-2">
+        <h3 className="text-[13px] font-medium text-fg-muted">{title}</h3>
+        <span className="text-sm font-semibold tabular-nums text-fg">{formatPrice(total)}</span>
+      </div>
+      <ul className="divide-y divide-line-subtle">
+        {rows.map((r) => (
+          <li key={r.label}>
+            <Link href={r.href} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-fast ease-smooth hover:bg-ink-900/[0.04]">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm text-fg">{r.label}</span>
+                {r.sub && <span className="block truncate text-xs text-fg-subtle">{r.sub}</span>}
+              </span>
+              <span className={cn("w-28 shrink-0 text-right text-sm tabular-nums", r.value < 0 ? "text-danger-600" : "text-fg")}>{formatPrice(r.value)}</span>
+            </Link>
+          </li>
+        ))}
+        {rows.length === 0 && empty && <li className="py-2.5 text-xs text-fg-subtle">{empty}</li>}
+      </ul>
     </div>
   );
 }

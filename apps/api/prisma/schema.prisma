@@ -234,6 +234,9 @@ enum StockMovementReason {
   PRODUCTION_RETURN
   /// Accepted finished goods received from a production order (docs/MANUFACTURING.md §8).
   PRODUCTION_RECEIPT
+  /// Owner's books (docs/FINANCE_OWNER_BOOKS.md §6.2): packaging material used for a parcel (negative), or put back
+  /// when the parcel never left (positive).
+  PACKAGING_USE
 }
 
 /// The two purchase-funnel steps that have no other trace anywhere in the schema — everything
@@ -306,6 +309,7 @@ model AdminUser {
   aiProposals            AiProposal[]
   conversationReplies    ConversationMessage[]
   assignedConversations  Conversation[]        @relation("ConversationAssignee")
+  custodyAccounts        FinancialAccount[]    @relation("FinancialAccountCustodian")
 }
 
 /// A pending admin account — created by an OWNER via the in-panel "invite admin" flow instead of any
@@ -708,6 +712,8 @@ model ProductVariant {
   purchaseReturnLines       PurchaseReturnLine[]
   /// Manufacturing — Restrict: a variant used in a BOM or a production order keeps its history.
   bomMaterialLines          BillOfMaterialsLine[]      @relation("BomMaterial")
+  stockCounts               StockCount[]
+  materialRolls             MaterialRoll[]
   bomFinishedLines          BillOfMaterialsLine[]      @relation("BomFinishedVariant")
   productionLines           ProductionOrderLine[]
   productionMaterialLines   ProductionMaterialLine[]
@@ -721,6 +727,8 @@ model ProductVariant {
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt
   supplierInvoiceLines      SupplierInvoiceLine[]
+  /// Owner's books §6.2: packing rules that use this material.
+  packingRules              PackingRule[]              @relation("PackingRuleMaterial")
 
   @@unique([productId, size, color])
   @@index([imageId])
@@ -2874,6 +2882,8 @@ enum FinancialAccountKind {
   PAYMENT_GATEWAY
   COURIER
   OTHER
+  /// Owner's books (docs/FINANCE_OWNER_BOOKS.md §5): an ad account (Meta, TikTok…) — money paid in, ad spend taken out.
+  AD_PLATFORM
 }
 
 enum FinancialPeriodStatus {
@@ -2970,6 +2980,20 @@ model FinanceBusiness {
   overReceiptTolerancePct     Decimal                   @default(0) @db.Decimal(5, 2)
   /// A supplier invoice's unit price may differ from the order's by this percentage before it needs purchasing.approve.
   invoicePriceTolerancePct    Decimal                   @default(0) @db.Decimal(5, 2)
+  /// Finance Center: the BDT per USD used when a foreign-currency cost (ad spend, hosting) has no rate of its own. Null =
+  /// none set (the amount is then asked for in BDT).
+  defaultUsdRate              Decimal?                  @db.Decimal(18, 6)
+  /// Finance Center: warn when the SMS balance falls to this (BDT). Null = no warning.
+  smsWarnAt                   Decimal?                  @db.Decimal(18, 2)
+  /// Autopilot (docs/FINANCE_OWNER_BOOKS.md §15): the money account Steadfast pays into — set = new payouts are brought
+  /// in every night (and posted when every parcel is accounted for); null = off.
+  autoPayoutAccountId         String?
+  /// The owner keeps every payout: each posted payout into that account becomes his drawing on its own day.
+  autoPayoutsToOwner          Boolean                   @default(false)
+  /// Partners' monthly profit shares are booked when each month ends.
+  autoProfitShares            Boolean                   @default(false)
+  /// What the last night's run did, for the settings page.
+  autopilotLastRun            Json?
   createdAt                   DateTime                  @default(now())
   updatedAt                   DateTime                  @updatedAt
   brands                      FinanceBrand[]
@@ -2988,6 +3012,17 @@ model FinanceBusiness {
   bankReconciliations         BankReconciliation[]
   exceptions                  FinanceException[]
   clearingSettlements         ClearingSettlement[]
+  cashCounts                  CashCount[]
+  courierRateCards            CourierRateCard[]
+  gatewayFeeRates             GatewayFeeRate[]
+  adCampaigns                 AdCampaign[]
+  prepaidCosts                PrepaidCost[]
+  verifications               FinanceVerification[]
+  smsBalanceSnapshots         SmsBalanceSnapshot[]
+  stockCounts                 StockCount[]
+  materialRolls               MaterialRoll[]
+  landedCosts                 LandedCost[]
+  courierClaims               CourierClaim[]
   syncState                   FinanceSyncState?
   suppliers                   Supplier[]
   taxCodes                    TaxCode[]
@@ -3014,6 +3049,7 @@ model FinanceBusiness {
   payRuns                     PayRun[]
   payrollRemittances          PayrollRemittance[]
   partners                    Partner[]
+  profitShares                ProfitShare[]
 }
 
 /// A brand of the business — a reporting identity at the financial boundary, NOT a tenant key on commerce tables. A brand
@@ -3071,12 +3107,14 @@ model LedgerAccount {
   purchaseOrderLines       PurchaseOrderLine[]
   supplierInvoiceLines     SupplierInvoiceLine[] @relation("SupplierInvoiceExpense")
   expenses                 Expense[]             @relation("ExpenseAccount")
+  expenseAllocations       ExpenseAllocation[]   @relation("ExpenseAllocationAccount")
   recurringCommitments     RecurringCommitment[] @relation("CommitmentAccount")
   fixedAssets              FixedAsset[]          @relation("FixedAssetAccount")
   budgetLines              BudgetLine[]          @relation("BudgetAccount")
   payComponentExpenses     PayComponent[]        @relation("PayComponentExpense")
   payComponentLiabilities  PayComponent[]        @relation("PayComponentLiability")
   payrollRemittances       PayrollRemittance[]   @relation("PayrollRemittanceAccount")
+  prepaidCosts             PrepaidCost[]         @relation("PrepaidExpenseAccount")
   partnerCapital           Partner?              @relation("PartnerCapital")
   partnerCurrent           Partner?              @relation("PartnerCurrent")
 
@@ -3141,8 +3179,344 @@ model FinancialAccount {
   recurringCommitments    RecurringCommitment[]
   fixedAssetDisposals     FixedAsset[]
   loans                   Loan[]
+  /// Owner's books §2: the person who holds this cash (a cash box is somebody's). Null for banks, wallets, clearing.
+  custodianAdminId        String?
+  custodian               AdminUser?            @relation("FinancialAccountCustodian", fields: [custodianAdminId], references: [id], onDelete: SetNull)
+  cashCounts              CashCount[]
+  adCampaigns             AdCampaign[]
 
   @@unique([businessId, name])
+}
+
+/// Owner's books (docs/FINANCE_OWNER_BOOKS.md §3.1): what a courier charges per parcel from a date — a fee per zone (an
+/// order's district or area), the COD charge (% of what was collected) and the charge on a returned parcel (% of the zone
+/// fee). Read only to ESTIMATE a delivered or returned parcel's charge; the payout statement's actual charge replaces it.
+/// A later card (later effectiveFrom) changes the estimate of parcels from that date on.
+model CourierRateCard {
+  id                  String          @id @default(cuid())
+  businessId          String
+  business            FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  courier             String          @default("STEADFAST")
+  effectiveFrom       DateTime        @db.Date
+  /// [{ name, districts: string[], areas: string[], charge }] — matched by area first, then district; charge in major units.
+  zones               Json
+  /// The fee where no zone matches (outside Dhaka, usually).
+  defaultCharge       Decimal         @db.Decimal(18, 2)
+  codPercent          Decimal         @db.Decimal(6, 3)
+  returnChargePercent Decimal         @db.Decimal(6, 3)
+  notes               String?
+  createdByAdminId    String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@unique([businessId, courier, effectiveFrom])
+}
+
+/// Owner's books §4: what a payment gateway keeps from each payment from a date (percent + fixed), to estimate the fee
+/// until the gateway's settlement statement replaces it.
+model GatewayFeeRate {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// The payment provider (EPS_PG, SSLCOMMERZ).
+  provider         String
+  effectiveFrom    DateTime        @db.Date
+  percent          Decimal         @db.Decimal(6, 3)
+  fixed            Decimal         @default(0) @db.Decimal(18, 2)
+  notes            String?
+  createdByAdminId String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([businessId, provider, effectiveFrom])
+}
+
+enum AdBudgetType {
+  DAILY
+  LIFETIME
+}
+
+/// Owner's books (docs/FINANCE_OWNER_BOOKS.md §5.1): one ad campaign, run from an ad account (a money account of kind
+/// AD_PLATFORM). Its spend is booked day by day: the ACTUAL spend (Meta's API or entered by hand) where known, else the
+/// budget spread over its days (a daily budget each day; a lifetime budget evenly over start → end) — labelled planned.
+model AdCampaign {
+  id                 String           @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  financialAccountId String
+  adAccount          FinancialAccount @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  platform           String           @default("META")
+  /// The platform's own campaign id (Meta campaign_id) — how API spend finds its campaign.
+  externalId         String?
+  name               String
+  objective          String?
+  startDate          DateTime         @db.Date
+  endDate            DateTime?        @db.Date
+  budgetType         AdBudgetType?
+  budget             Decimal?         @db.Decimal(18, 2)
+  /// The page the ads send people to (a landing page /lp/<slug>, a product) — for profit after ads.
+  landingPath        String?
+  isActive           Boolean          @default(true)
+  notes              String?
+  createdByAdminId   String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  spendDays          AdSpendDay[]
+  budgetChanges      AdBudgetChange[]
+
+  @@unique([financialAccountId, externalId])
+  @@index([businessId, startDate])
+}
+
+/// One day's ACTUAL spend of a campaign, in the books' currency (the platform's own figure and rate kept beside it).
+model AdSpendDay {
+  id               String     @id @default(cuid())
+  campaignId       String
+  campaign         AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  date             DateTime   @db.Date
+  /// META_API, MANUAL, CSV, or PERIOD (a period total shared over its days without their own figure).
+  source           String
+  amount           Decimal    @db.Decimal(18, 2)
+  originalAmount   Decimal?   @db.Decimal(18, 2)
+  originalCurrency String?    @db.VarChar(3)
+  fxRate           Decimal?   @db.Decimal(18, 6)
+  impressions      Int?
+  clicks           Int?
+  purchases        Int?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@unique([campaignId, date])
+  @@index([date])
+}
+
+/// Owner's books §6.1: a cost paid now for a period (a year's hosting, rent in advance): the payment goes to prepaid
+/// expenses and moves into its expense account month by month over the service period — so each month carries its share.
+model PrepaidCost {
+  id               String           @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  number           Int
+  name             String
+  expenseAccountId String
+  expenseAccount   LedgerAccount    @relation("PrepaidExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  amount           Decimal          @db.Decimal(18, 2)
+  serviceStart     DateTime         @db.Date
+  serviceEnd       DateTime         @db.Date
+  /// The payment (a Treasury withdrawal against prepaid expenses).
+  movementId       String           @unique
+  movement         TreasuryMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  payee            String?
+  reference        String?
+  notes            String?
+  /// Finance Center (subscriptions): remind this many days before serviceEnd, and what the renewal is expected to cost.
+  remindDaysBefore Int              @default(30)
+  renewalAmount    Decimal?         @db.Decimal(18, 2)
+  createdByAdminId String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([businessId, number])
+}
+
+/// Finance Center: how sure a record is. A record with no row here was entered normally (CONFIRMED by whoever entered it);
+/// historical and reported figures carry ESTIMATED / NEEDS_CHECK until someone checks them. The record itself is never
+/// changed by this — the status sits beside it, and every change is audited.
+enum EntryVerification {
+  CONFIRMED
+  ESTIMATED
+  NEEDS_CHECK
+  DISPUTED
+}
+
+model FinanceVerification {
+  id           String            @id @default(cuid())
+  businessId   String
+  business     FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  /// Expense, PrepaidCost, FixedAsset, OpeningBalanceLine, OpeningInventoryItem, LandedCost, TreasuryMovement, …
+  entityType   String
+  entityId     String
+  status       EntryVerification
+  /// Where the figure came from: "Owner's list 2026-10-21", "supplier invoice", "physical count", …
+  source       String?
+  note         String?
+  setByAdminId String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([businessId, entityType, entityId])
+  @@index([businessId, status])
+}
+
+/// Finance Center: one part of an expense that was paid into "Expenses awaiting allocation" (a van hired for several
+/// errands): posting moves the part from 6990 to its account, optionally naming the product it served. The parts never
+/// add up to more than the expense; what is not allocated stays visible as awaiting allocation.
+model ExpenseAllocation {
+  id               String        @id @default(cuid())
+  expenseId        String
+  expense          Expense       @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  lineNo           Int
+  accountId        String
+  account          LedgerAccount @relation("ExpenseAllocationAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  /// Plain id (reports only): the product this part of the cost served.
+  productId        String?
+  amount           Decimal       @db.Decimal(18, 2)
+  note             String?
+  createdByAdminId String?
+  createdAt        DateTime      @default(now())
+
+  @@unique([expenseId, lineNo])
+}
+
+/// Finance Center: a campaign's budget from a date on. Planned (not yet actual) spend of a day uses the budget in force
+/// that day, so changing a budget never rewrites the days before the change.
+model AdBudgetChange {
+  id               String        @id @default(cuid())
+  campaignId       String
+  campaign         AdCampaign    @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  effectiveDate    DateTime      @db.Date
+  budgetType       AdBudgetType?
+  budget           Decimal?      @db.Decimal(18, 2)
+  changedByAdminId String?
+  createdAt        DateTime      @default(now())
+
+  @@index([campaignId, effectiveDate])
+}
+
+/// Finance Center: the SMS account's balance at a moment — read from the provider or typed in. Usage between two
+/// readings = the drop in balance plus any recharge in between.
+model SmsBalanceSnapshot {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  takenAt          DateTime
+  balance          Decimal         @db.Decimal(18, 2)
+  /// PROVIDER or MANUAL.
+  source           String
+  note             String?
+  createdByAdminId String?
+  createdAt        DateTime        @default(now())
+
+  @@index([businessId, takenAt])
+}
+
+enum LandedCostMethod {
+  QUANTITY
+  VALUE
+}
+
+/// Owner's books §7.1: a cost of bringing goods in (transport, labour, customs) paid to anyone, added to the goods it
+/// brought — spread over the lines of one or more posted goods receipts by quantity or by value. The units still held
+/// carry it (their average rises); the share of units already sold goes to cost adjustments (5150). Paid through
+/// Treasury (Dr landed costs to allocate / Cr the money account); the allocation clears that account into inventory.
+model LandedCost {
+  id               String           @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  number           Int
+  costDate         DateTime         @db.Date
+  description      String
+  payee            String?
+  method           LandedCostMethod
+  amount           Decimal          @db.Decimal(18, 2)
+  goodsReceiptIds  String[]
+  /// [{ variantId, sku, qty, amount }] — what each variant received (major units).
+  allocations      Json
+  movementId       String           @unique
+  movement         TreasuryMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  createdByAdminId String?
+  createdAt        DateTime         @default(now())
+  /// Cancelled: its payment reversed, the goods' value taken back off, its posting reversed — all in one step.
+  reversedAt       DateTime?
+  reversalReason   String?
+  reversedByAdminId String?
+
+  @@unique([businessId, number])
+}
+
+enum CourierClaimStatus {
+  OPEN
+  SETTLED
+}
+
+/// Owner's books §3.5: a parcel the courier lost (or damaged), claimed back. Opening it books what Steadfast should pay
+/// (Dr 1540 courier claims / Cr 5200 — the recovery of the goods written off as lost). It is settled by money received
+/// (a Treasury deposit against 1540), by a Steadfast payout that included it (the payout's extra moved from settlement
+/// adjustments into the claim), and whatever is never paid is written off (back to 5200).
+model CourierClaim {
+  id               String             @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  number           Int
+  orderId          String
+  orderNumber      String
+  consignmentId    String?
+  claimDate        DateTime           @db.Date
+  amount           Decimal            @db.Decimal(18, 2)
+  reason           String
+  status           CourierClaimStatus @default(OPEN)
+  /// [{ kind: MONEY | PAYOUT | WRITE_OFF, amount, date, movementId?, eventId?, note }]
+  settlements      Json               @default("[]")
+  createdByAdminId String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([businessId, number])
+  @@index([orderId])
+}
+
+enum PackingRuleScope {
+  EVERY_PARCEL
+  CATEGORY
+  PRODUCT
+  VARIANT
+}
+
+enum PackingRulePer {
+  PARCEL
+  UNIT
+}
+
+/// Owner's books §6.2: packaging a parcel uses — a material (Product kind MATERIAL) and how many, for every parcel or for
+/// a category / product / variant, per parcel or per unit sold. When a parcel leaves (courier booked, or shipped), the
+/// material leaves stock (PACKAGING_USE, at its moving-average cost → 5300 packaging & fulfilment).
+model PackingRule {
+  id                String           @id @default(cuid())
+  scope             PackingRuleScope
+  /// The category, product or variant id (null for EVERY_PARCEL).
+  scopeId           String?
+  materialVariantId String
+  materialVariant   ProductVariant   @relation("PackingRuleMaterial", fields: [materialVariantId], references: [id], onDelete: Restrict)
+  quantity          Int
+  per               PackingRulePer   @default(PARCEL)
+  isActive          Boolean          @default(true)
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([isActive])
+}
+
+/// Owner's books (docs/FINANCE_OWNER_BOOKS.md §2): one physical count of a cash account. `expected` is what the books
+/// held at the count; a difference posts as an ADJUSTMENT against cash over/short (its movement), waiting for approval
+/// when the person counting may not post. Never changed or deleted.
+model CashCount {
+  id                 String            @id @default(cuid())
+  businessId         String
+  business           FinanceBusiness   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  financialAccountId String
+  financialAccount   FinancialAccount  @relation(fields: [financialAccountId], references: [id], onDelete: Restrict)
+  countDate          DateTime          @db.Date
+  counted            Decimal           @db.Decimal(18, 2)
+  expected           Decimal           @db.Decimal(18, 2)
+  difference         Decimal           @db.Decimal(18, 2)
+  movementId         String?           @unique
+  movement           TreasuryMovement? @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  note               String?
+  countedByAdminId   String?
+  createdAt          DateTime          @default(now())
+
+  @@index([financialAccountId, countDate])
 }
 
 /// One calendar month of business dates. OPEN: anyone allowed posts. SOFT_CLOSED: only finance.period_close holders post.
@@ -3512,8 +3886,13 @@ model TreasuryMovement {
   reversedByAdminId      String?
   reversedAt             DateTime?
   reversalReason         String?
+  /// Owner's books §2: a handover into cash someone else holds waits for THAT person to confirm they received it.
+  receiverAdminId        String?
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
+  cashCount              CashCount?
+  prepaidCost            PrepaidCost?
+  landedCost             LandedCost?
   matches                BankTransactionMatch[]
   supplierAllocations    SupplierAllocation[]
   expense                Expense?
@@ -3710,6 +4089,8 @@ enum ClearingSettlementStatus {
 enum ClearingSettlementSource {
   MANUAL
   CSV_IMPORT
+  /// Owner's books §3.2: pulled from the courier's payout API.
+  API_IMPORT
 }
 
 enum SettlementLineMatch {
@@ -3813,6 +4194,9 @@ model ClearingSettlementLine {
   fee          Decimal             @default(0) @db.Decimal(18, 2)
   adjustment   Decimal             @default(0) @db.Decimal(18, 2)
   matchStatus  SettlementLineMatch
+  /// Owner's books: a parcel booked straight on the courier's panel, never an order on the site — counted as a sale outside
+  /// the website (revenue.outside_sales) instead of money owed for an order.
+  outsideSale  Boolean             @default(false)
   note         String?
 
   @@unique([settlementId, lineNo])
@@ -4896,6 +5280,8 @@ model Expense {
   periodKey        String?
   createdByAdminId String?
   createdAt        DateTime             @default(now())
+  /// Finance Center: an expense paid into "Expenses awaiting allocation" is split later into where it belongs.
+  allocations      ExpenseAllocation[]
 
   @@unique([businessId, number])
   @@index([businessId, expenseDate])
@@ -5337,6 +5723,16 @@ model Partner {
   /// The share the partners have discussed — UNCONFIRMED until the signed agreement (B-2); nothing is computed from it.
   agreedSharePct     Decimal?        @db.Decimal(7, 4)
   agreementReference String?
+  /// OWNER: the business's owner — capital is 3100 Owner capital, the current account is 3300 Drawings (one per business).
+  /// WORKING: shares profit for their work and puts in no capital. INVESTOR: a partner with capital.
+  role               PartnerRole     @default(INVESTOR)
+  /// The CONFIRMED share of each month's net profit (docs/FINANCE_EQUITY.md §8) — profit shares are computed from it.
+  profitSharePct     Decimal?        @db.Decimal(7, 4)
+  shareFrom          DateTime?       @db.Date
+  lossRule           ProfitShareLossRule @default(ZERO_IN_LOSS_MONTHS)
+  shareConfirmedAt   DateTime?
+  shareConfirmedNote String?
+  profitShares       ProfitShare[]
   capitalAccountId   String          @unique
   capitalAccount     LedgerAccount   @relation("PartnerCapital", fields: [capitalAccountId], references: [id], onDelete: Restrict)
   currentAccountId   String          @unique
@@ -5401,4 +5797,87 @@ model WebVitalSample {
   createdAt DateTime @default(now())
 
   @@index([createdAt, metric])
+}
+
+/// A physical count of one variant (docs/FINANCE_CENTER.md §7). Recorded BESIDE the site's stock, never written into it:
+/// the stock check shows the difference, and any correction stays an ordinary, reasoned stock adjustment.
+model StockCount {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  variantId        String
+  variant          ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  countDate        DateTime        @db.Date
+  counted          Int
+  /// The site's stock when the count was recorded.
+  siteStock        Int
+  note             String?
+  countedByAdminId String?
+  createdAt        DateTime        @default(now())
+
+  @@index([variantId, countDate])
+}
+
+/// A roll of a material used up over many parcels (bubble poly). Opened and finished on dates; the parcels booked with
+/// the courier in between are its yield, so a cost per parcel exists only once a real roll has been finished.
+model MaterialRoll {
+  id                String          @id @default(cuid())
+  businessId        String
+  business          FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  materialVariantId String
+  materialVariant   ProductVariant  @relation(fields: [materialVariantId], references: [id], onDelete: Restrict)
+  openedOn          DateTime        @db.Date
+  finishedOn        DateTime?       @db.Date
+  /// Typed when the parcels were counted; otherwise the courier bookings between the dates are used.
+  parcelsCounted    Int?
+  note              String?
+  createdByAdminId  String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([materialVariantId, openedOn])
+}
+
+enum PartnerRole {
+  OWNER
+  WORKING
+  INVESTOR
+}
+
+enum ProfitShareLossRule {
+  /// A loss month shares nothing; the next month shares its whole profit (losses are not carried).
+  ZERO_IN_LOSS_MONTHS
+  /// Losses are made good from later profit before anything is shared.
+  CARRY_LOSSES
+}
+
+/// One partner's share of one finished month's net profit (docs/FINANCE_EQUITY.md §8). Posted once (Dr 3350 profit shared,
+/// Cr the partner's current account) and never recomputed: a later change to that month's profit is settled in the next
+/// month's share as a correction line.
+model ProfitShare {
+  id               String          @id @default(cuid())
+  businessId       String
+  business         FinanceBusiness @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  partnerId        String
+  partner          Partner         @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  /// YYYY-MM
+  period           String
+  periodStart      DateTime        @db.Date
+  periodEnd        DateTime        @db.Date
+  /// The month's net profit when it was shared (negative = a loss).
+  netProfit        Decimal         @db.Decimal(18, 2)
+  sharePct         Decimal         @db.Decimal(7, 4)
+  /// pct × the month's profit under the loss rule.
+  monthShare       Decimal         @db.Decimal(18, 2)
+  /// [{ period, amount, note }] — differences from earlier months whose profit changed, and any amount carried.
+  corrections      Json            @default("[]")
+  /// What was credited to the partner: monthShare + corrections, never below 0 (a negative rest is carried).
+  amount           Decimal         @db.Decimal(18, 2)
+  carried          Decimal         @default(0) @db.Decimal(18, 2)
+  eventId          String?
+  createdByAdminId String?
+  createdAt        DateTime        @default(now())
+
+  @@unique([partnerId, period])
+  @@index([businessId, period])
 }

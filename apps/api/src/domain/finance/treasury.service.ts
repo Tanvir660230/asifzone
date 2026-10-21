@@ -46,6 +46,8 @@ export interface MovementRequest {
   /** SUPPLIER_REFUND only — exactly one: the advance payment or the credit note refunded. */
   refundOfPaymentId?: string | null;
   refundOfCreditNoteId?: string | null;
+  /** TRANSFER only (owner's books §2): the person holding the destination cash — the handover waits until they confirm. */
+  receiverAdminId?: string | null;
 }
 
 /** Kinds of money account whose balance can't go below zero (an overdraft exists only at a bank or a gateway). */
@@ -90,6 +92,7 @@ export function movementDto(m: MovementRow) {
     reversedByAdminId: m.reversedByAdminId,
     reversedAt: m.reversedAt,
     reversalReason: m.reversalReason,
+    receiverAdminId: m.receiverAdminId,
     createdAt: m.createdAt,
   };
 }
@@ -102,6 +105,7 @@ function fingerprintOf(r: MovementRequest, currency: string): string {
     r.kind, r.direction ?? null, r.movementDate, toMinor(r.amount, currency), r.fromFinancialAccountId ?? null, r.toFinancialAccountId ?? null,
     r.counterAccountId ?? null, r.reference ?? null, r.description, r.bankTransactionId ?? null, ...(r.supplierId ? [r.supplierId] : []),
     ...(r.kind === "SUPPLIER_REFUND" ? [r.refundOfPaymentId ?? null, r.refundOfCreditNoteId ?? null] : []),
+    ...(r.receiverAdminId ? [r.receiverAdminId] : []),
   ]);
 }
 
@@ -287,7 +291,9 @@ export async function requestMovementInTx(tx: AppTransactionClient, business: Fi
   const amountMinor = toMinor(r.amount, business.baseCurrency);
   const thresholds = [x.from, x.to].map((a) => (a?.approvalThreshold != null ? toMinor(a.approvalThreshold, business.baseCurrency) : null)).filter((t): t is number => t !== null);
   const overThreshold = thresholds.some((t) => amountMinor >= t);
-  const needsApproval = overThreshold || !actorCan(actor, "finance.post");
+  if (r.receiverAdminId && r.kind !== "TRANSFER") throw financeError(400, "RECEIVER_ONLY_ON_TRANSFER", "Only a handover between two accounts waits for its receiver");
+  // A handover into cash someone else holds always waits for them to confirm it reached them.
+  const needsApproval = overThreshold || !actorCan(actor, "finance.post") || Boolean(r.receiverAdminId);
 
   const created = await tx.treasuryMovement.create({
     data: {
@@ -312,6 +318,7 @@ export async function requestMovementInTx(tx: AppTransactionClient, business: Fi
       supplierId: r.kind === "SUPPLIER_PAYMENT" || r.kind === "SUPPLIER_REFUND" ? r.supplierId ?? null : null,
       refundOfPaymentId: r.kind === "SUPPLIER_REFUND" ? r.refundOfPaymentId ?? null : null,
       refundOfCreditNoteId: r.kind === "SUPPLIER_REFUND" ? r.refundOfCreditNoteId ?? null : null,
+      receiverAdminId: r.receiverAdminId ?? null,
       requestedByAdminId: adminId(actor),
     },
     include: MOVEMENT_INCLUDE,
@@ -352,6 +359,10 @@ export async function approveMovement(id: string, actor: FinanceActor) {
     const m = await lockMovement(tx, business.id, id);
     if (m.status === "POSTED") return { movement: movementDto(m), alreadyPosted: true };
     if (m.status !== "PENDING_APPROVAL") throw financeError(409, "MOVEMENT_NOT_PENDING", `A ${m.status.toLowerCase()} movement can't be approved`);
+    if (m.receiverAdminId && m.receiverAdminId !== adminId(actor)) {
+      throw financeError(409, "AWAITING_RECEIVER", "This handover waits for the person receiving the cash to confirm it reached them");
+    }
+    if (m.receiverAdminId) return { movement: movementDto(await postMovement(tx, business, m, await resolvedOf(tx, m), actor, true)), alreadyPosted: false };
     if (!actorCan(actor, "finance.post")) throw financeError(409, "APPROVER_LACKS_PERMISSION", "Approving a movement needs finance.post");
     const x = await resolvedOf(tx, m);
     const thresholds = [x.from, x.to].map((a) => (a?.approvalThreshold != null ? toMinor(a.approvalThreshold, business.baseCurrency) : null)).filter((t): t is number => t !== null);
@@ -383,7 +394,12 @@ export async function rejectMovement(id: string, reason: string, actor: FinanceA
 /** Reverses a posted movement with a mirror journal. Refused while a statement line is matched to it (unmatch first). */
 export async function reverseMovement(id: string, input: { reason: string; reversalDate?: string }, actor: FinanceActor) {
   const { business } = await getFinanceContext();
-  return financeTransaction(async (tx) => {
+  return financeTransaction((tx) => reverseMovementInTx(tx, business, id, input, actor));
+}
+
+/** reverseMovement in the caller's transaction (a landed cost's cancellation reverses its payment with the rest of it). */
+export async function reverseMovementInTx(tx: AppTransactionClient, business: FinanceBusinessInfo, id: string, input: { reason: string; reversalDate?: string }, actor: FinanceActor) {
+  {
     const m = await lockMovement(tx, business.id, id);
     if (m.status === "REVERSED") return { movement: movementDto(m), replayed: true };
     if (m.status !== "POSTED") throw financeError(409, "MOVEMENT_NOT_POSTED", `A ${m.status.toLowerCase()} movement has nothing to reverse`);
@@ -402,7 +418,7 @@ export async function reverseMovement(id: string, input: { reason: string; rever
     });
     await recordFinanceAudit(tx, { businessId: business.id, actor, action: "movement.reverse", entityType: "TreasuryMovement", entityId: id, before: { status: m.status }, after: { status: after.status, reversalJournalEntryId: reversal.id }, reason: input.reason, sourceRef: reversal.id });
     return { movement: movementDto(after), replayed: false };
-  });
+  }
 }
 
 export async function getMovement(id: string) {

@@ -174,8 +174,12 @@ export default function FinanceAccountPage() {
                     <TableCell align="right">
                       {m.status === "PENDING_APPROVAL" && can("finance.post") && (
                         <span className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => act.mutate({ movementId: m.id, action: "reject" })}>Reject</Button>
-                          <Button size="sm" onClick={() => act.mutate({ movementId: m.id, action: "approve" })}>Approve</Button>
+                          <Button size="sm" variant="ghost" onClick={() => act.mutate({ movementId: m.id, action: "reject" })}>{m.receiverAdminId ? "Cancel" : "Reject"}</Button>
+                          {m.receiverAdminId ? (
+                            <span className="self-center text-xs text-ink-500">Waiting for the receiver</span>
+                          ) : (
+                            <Button size="sm" onClick={() => act.mutate({ movementId: m.id, action: "approve" })}>Approve</Button>
+                          )}
                         </span>
                       )}
                       {m.status === "POSTED" && can("finance.reverse") && (

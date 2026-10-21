@@ -22,6 +22,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { useCapabilities } from "@/hooks/use-capability";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
+import * as booksApi from "@/lib/api/finance-books";
 import type { FinancialAccount, Settlement } from "@/lib/api/finance";
 import { formatPrice } from "@/lib/format";
 import { idempotencyKeyFor } from "@/lib/idempotency";
@@ -54,6 +55,11 @@ export default function SettlementsPage() {
     mutationFn: (id: string) => financeApi.postSettlement(id),
     onSuccess: () => { refresh(); toast.success("Settlement posted"); },
     onError: (err) => toast.error(getErrorMessage(err, "The settlement couldn't be posted")),
+  });
+  const outside = useMutation({
+    mutationFn: (id: string) => booksApi.markOutsideSales(id),
+    onSuccess: (s) => { refresh(); toast.success(`${s.outsideSaleLines} parcel(s) counted as sales outside the website — check and post`); },
+    onError: (err) => toast.error(getErrorMessage(err, "Couldn't change the draft")),
   });
   const reverse = useMutation({
     mutationFn: () => financeApi.reverseSettlement(reversing!.id, reason.trim()),
@@ -154,7 +160,7 @@ export default function SettlementsPage() {
                   <TableCell>{s.settlementDate.slice(0, 10)}</TableCell>
                   <TableCell>
                     {s.reference}
-                    <span className="block text-xs text-ink-500">{s.lines.length} line(s){s.unmatchedLines ? ` · ${s.unmatchedLines} unmatched` : ""}{s.source === "CSV_IMPORT" ? " · imported" : ""}</span>
+                    <span className="block text-xs text-ink-500">{s.lines.length} line(s){s.unmatchedLines ? ` · ${s.unmatchedLines} unmatched` : ""}{s.outsideSaleLines ? ` · ${s.outsideSaleLines} outside the website` : ""}{s.source === "CSV_IMPORT" ? " · imported" : s.source === "API_IMPORT" ? " · from Steadfast" : ""}</span>
                   </TableCell>
                   <TableCell className="text-sm">{s.clearingAccount.name} → {s.destinationAccount.name}</TableCell>
                   <TableCell align="right" className="tabular-nums">{formatPrice(s.grossAmount)}</TableCell>
@@ -164,6 +170,9 @@ export default function SettlementsPage() {
                   <TableCell><Badge variant={STATUS_BADGE[s.status]}>{s.status.toLowerCase()}</Badge></TableCell>
                   <TableCell align="right">
                     <span className="flex justify-end gap-1">
+                      {s.status === "DRAFT" && s.unmatchedLines > 0 && can("finance.transact") && (
+                        <Button size="sm" variant="outline" loading={outside.isPending && outside.variables === s.id} onClick={async () => { if (await confirm(`${s.unmatchedLines} parcel(s) in ${s.reference} match no order on the site. Count them as sales outside the website (sent straight through the courier)?`, { title: "Sales outside the website", confirmLabel: "Count them", tone: "default" })) outside.mutate(s.id); }} data-testid="mark-outside-sales">Outside sales</Button>
+                      )}
                       {s.status === "DRAFT" && can("finance.post") && <Button size="sm" loading={post.isPending && post.variables === s.id} onClick={() => post.mutate(s.id)} data-testid="post-settlement">Post</Button>}
                       {s.status === "DRAFT" && can("finance.transact") && (
                         <Button size="sm" variant="ghost" aria-label="Delete draft" onClick={async () => { if (await confirm(`Delete the draft settlement ${s.reference}?`)) remove.mutate(s.id); }}>

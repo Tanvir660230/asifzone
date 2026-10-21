@@ -29,14 +29,17 @@ export const exceptionEstimateSchema = z.object({
 
 export const financeCostPolicySchema = z.object({ costPolicy: z.enum(["KNOWN_ONLY", "APPROVED_ESTIMATES"]), reason: z.string().trim().min(3).max(500) });
 
-const settlementLine = z.object({
-  orderNumber: optionalText(60),
-  externalRef: optionalText(120),
-  amount: financeAmountSchema.refine((v) => v > 0, "Amount must be more than zero"),
-  fee: financeAmountSchema.default(0),
-  adjustment: financeSignedAmountSchema.default(0),
-  note: optionalText(300),
-});
+/** A line collects money for an order, or — a returned parcel (owner's books §3.3) — only carries the charge deducted. */
+const settlementLine = z
+  .object({
+    orderNumber: optionalText(60),
+    externalRef: optionalText(120),
+    amount: financeAmountSchema,
+    fee: financeAmountSchema.default(0),
+    adjustment: financeSignedAmountSchema.default(0),
+    note: optionalText(300),
+  })
+  .refine((l) => l.amount > 0 || l.fee > 0 || l.adjustment !== 0, { message: "Amount must be more than zero (or zero with a charge)", path: ["amount"] });
 export const settlementCreateSchema = z
   .object({
     clearingFinancialAccountId: id,

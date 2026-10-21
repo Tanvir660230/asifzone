@@ -66,6 +66,7 @@ export const PERMISSIONS = [
   "finance.reconcile", // run reconciliation checks, retry financial events
   "finance.approve_high_value", // approve a money movement at or above an account's approval threshold (Phase 3)
   "finance.sensitive", // ownership, partner and payroll balances (Phase 3) — OWNER only
+  "finance.custody", // the cash a person holds (docs/FINANCE_OWNER_BOOKS.md §2): hand it over, confirm receiving it, count it, pay from it
   // purchasing, suppliers / AP and inventory costing (docs/FINANCE_PHASE_4.md §23)
   "suppliers.read",
   "suppliers.manage", // create / edit / hold suppliers
@@ -123,12 +124,12 @@ const ownerOnly = new Set<Permission>(OWNER_ONLY_PERMISSIONS);
 /** Finance roles: the books only (and, from Phase 4, the purchasing documents the books rest on — never receiving stock). Configuration, period closing, high-value approvals and sensitive (ownership, partner,
  * payroll) data stay with OWNER. ACCOUNTANT records and reconciles but can't post — what they record waits for approval. */
 const FINANCE_ADMIN_PERMISSIONS = [
-  "finance.read", "finance.transact", "finance.post", "finance.reverse", "finance.reconcile",
+  "finance.read", "finance.transact", "finance.post", "finance.reverse", "finance.reconcile", "finance.custody",
   "suppliers.read", "suppliers.manage", "purchasing.read", "purchasing.manage", "purchasing.approve", "ap.read", "ap.manage", "costing.read",
   "manufacturing.read", "manufacturing.manage", "manufacturing.approve",
 ] as const satisfies readonly Permission[];
 const ACCOUNTANT_PERMISSIONS = [
-  "finance.read", "finance.transact", "finance.reconcile",
+  "finance.read", "finance.transact", "finance.reconcile", "finance.custody",
   "suppliers.read", "suppliers.manage", "purchasing.read", "ap.read", "ap.manage", "costing.read", "manufacturing.read",
 ] as const satisfies readonly Permission[];
 const FINANCE_VIEWER_PERMISSIONS = ["finance.read", "suppliers.read", "purchasing.read", "ap.read", "costing.read", "manufacturing.read"] as const satisfies readonly Permission[];

@@ -17,6 +17,7 @@
     "payment-ledger:reconcile": "tsx scripts/payment-ledger-reconcile.ts",
     "partial-returns:backfill": "tsx src/cli/partial-returns-backfill.ts",
     "media:normalize": "tsx src/cli/media-normalize.ts",
+    "owner-history:asif-zone": "tsx scripts/finance/asif-zone-owner-history.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:presets": "tsx prisma/seed-presets.ts",
     "db:test:migrate": "tsx scripts/with-test-db.ts npx prisma migrate deploy",

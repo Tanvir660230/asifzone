@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -11,8 +11,12 @@ import { toast } from "@/components/ui/toast";
 import { getErrorMessage } from "@/lib/api-client";
 import * as financeApi from "@/lib/api/finance";
 import type { FinancialAccount, FinancialAccountKind } from "@/lib/api/finance";
+import * as booksApi from "@/lib/api/finance-books";
+import { listAdmins } from "@/lib/auth";
+import { useCapabilities } from "@/hooks/use-capability";
 
-const KINDS: FinancialAccountKind[] = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_GATEWAY", "OTHER"];
+const KINDS: FinancialAccountKind[] = ["CASH", "BANK", "MOBILE_WALLET", "PAYMENT_GATEWAY", "AD_PLATFORM", "OTHER"];
+const NAME_HINT: Partial<Record<FinancialAccountKind, string>> = { BANK: "City Bank current", MOBILE_WALLET: "bKash merchant", AD_PLATFORM: "Meta ads — main", CASH: "Cash — Manager" };
 
 /** New money account, or the editable details of an existing one (docs/FINANCE_PHASE_2.md §2). Type and opening balance
  * are fixed once the account exists. Never asks for — and the API refuses — passwords, PINs or keys. */
@@ -29,6 +33,15 @@ export function AccountDialog({ account, onClose }: { account?: FinancialAccount
   const [isActive, setActive] = useState(account?.isActive ?? true);
   const [openingAmount, setOpeningAmount] = useState("");
   const [openingDate, setOpeningDate] = useState(new Date().toISOString().slice(0, 10));
+  const [custodianId, setCustodianId] = useState(account?.custodian?.id ?? "");
+  const { can } = useCapabilities();
+  // Owner's books §2: a cash box is somebody's — choose who holds it.
+  const team = useQuery({ queryKey: ["auth", "admins"], queryFn: listAdmins, enabled: kind === "CASH" && can("team.manage") });
+  const holders = (team.data?.admins ?? []).filter((a) => a.isActive);
+  const saveCustodian = async (accountId: string) => {
+    if (kind !== "CASH" || custodianId === (account?.custodian?.id ?? "")) return;
+    await booksApi.setCustodian(accountId, custodianId || null);
+  };
 
   const update = useMutation({
     mutationFn: () =>
@@ -40,6 +53,9 @@ export function AccountDialog({ account, onClose }: { account?: FinancialAccount
         accountReference: accountReference.trim() || null,
         approvalThreshold: threshold ? Number(threshold) : null,
         ...(isActive !== account!.isActive ? { isActive } : {}),
+      }).then(async (a) => {
+        await saveCustodian(a.id);
+        return a;
       }),
     onSuccess: (a) => {
       void queryClient.invalidateQueries({ queryKey: financeApi.financeKeys.all });
@@ -60,6 +76,9 @@ export function AccountDialog({ account, onClose }: { account?: FinancialAccount
         accountReference: accountReference.trim() || null,
         approvalThreshold: threshold ? Number(threshold) : null,
         openingBalance: Number(openingAmount) > 0 ? { amount: Number(openingAmount), date: openingDate } : null,
+      }).then(async (a) => {
+        await saveCustodian(a.id);
+        return a;
       }),
     onSuccess: (account) => {
       void queryClient.invalidateQueries({ queryKey: financeApi.financeKeys.all });
@@ -105,15 +124,25 @@ export function AccountDialog({ account, onClose }: { account?: FinancialAccount
           </Select>
         </Field>
         <Field htmlFor="fa-name" label="Name" required>
-          <Input id="fa-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder={isBank ? "City Bank current" : kind === "MOBILE_WALLET" ? "bKash merchant" : "Cash box"} />
+          <Input id="fa-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder={NAME_HINT[kind] ?? "Cash box"} />
         </Field>
+        {kind === "CASH" && holders.length > 0 && (
+          <Field htmlFor="fa-custodian" label="Held by" hint="The person this cash is with — they hand it over and count it" className="sm:col-span-2">
+            <Select id="fa-custodian" value={custodianId} onChange={(e) => setCustodianId(e.target.value)} data-testid="account-custodian">
+              <option value="">Nobody in particular</option>
+              {holders.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </Select>
+          </Field>
+        )}
         {kind !== "CASH" && (
           <Field htmlFor="fa-provider" label={isBank ? "Bank" : "Provider"}>
             <Input id="fa-provider" value={provider} onChange={(e) => setProvider(e.target.value)} maxLength={80} />
           </Field>
         )}
         {kind !== "CASH" && (
-          <Field htmlFor="fa-reference" label="Account reference" hint="Masked number or merchant id — never a password">
+          <Field htmlFor="fa-reference" label="Account reference" hint={kind === "AD_PLATFORM" ? "The ad account id, e.g. act_1234567890 — how Meta's spend finds this account" : "Masked number or merchant id — never a password"}>
             <Input id="fa-reference" value={accountReference} onChange={(e) => setReference(e.target.value)} maxLength={64} />
           </Field>
         )}

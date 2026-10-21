@@ -509,7 +509,7 @@ export interface MovementToValue {
   ledger: LedgerOwner;
 }
 
-const COUNTER_FOR_REASON: Record<string, AccountMappingKey> = { DAMAGED: "cogs.inventory_shrinkage", LOST: "cogs.inventory_shrinkage" };
+const COUNTER_FOR_REASON: Record<string, AccountMappingKey> = { DAMAGED: "cogs.inventory_shrinkage", LOST: "cogs.inventory_shrinkage", PACKAGING_USE: "cogs.packaging" };
 
 function opFor(m: MovementToValue, position: CostPosition, currency: string): { op: CostOperation; unitCostMinor: number | null; lineSource?: LineCostSource } {
   const qty = Math.abs(m.movement.change);
